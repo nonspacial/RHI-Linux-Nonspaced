@@ -1,0 +1,43 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="RHI.Desktop.App"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="Background" Value="#121518"/>
+      <Setter Property="FontFamily" Value="Inter"/>
+    </Style>
+    <Style Selector="Button.rhi">
+      <Setter Property="Background" Value="#151A22"/>
+      <Setter Property="Foreground" Value="#4DC9E6"/>
+      <Setter Property="BorderBrush" Value="#1E4858"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="12,7"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="Button.chip">
+      <Setter Property="Background" Value="#1A2030"/>
+      <Setter Property="Foreground" Value="#8898B0"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="Padding" Value="10,5"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#141820"/>
+      <Setter Property="BorderBrush" Value="#1E2430"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="16"/>
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="#6B7A8E"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="TextBlock.secondary">
+      <Setter Property="Foreground" Value="#A0AABB"/>
+    </Style>
+  </Application.Styles>
+</Application>

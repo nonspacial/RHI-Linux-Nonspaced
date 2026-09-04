@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RHI Linux
+Comment=Manage HDR and graphics mods for Wine/Proton games
+Exec=rhi-linux
+Icon=applications-games
+Terminal=false
+Categories=Game;Utility;
+StartupNotify=true

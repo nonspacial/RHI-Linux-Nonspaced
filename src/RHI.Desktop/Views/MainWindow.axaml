@@ -1,0 +1,197 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="using:RHI.Core.Models"
+        xmlns:vm="using:RHI.Desktop.ViewModels"
+        x:Class="RHI.Desktop.Views.MainWindow"
+        Width="1450" Height="900" MinWidth="1080" MinHeight="680"
+        Title="RHI Linux — Simplified PC Gaming"
+        Background="#121518">
+  <Grid RowDefinitions="Auto,*,Auto">
+    <!-- Toolbar: deliberately mirrors the upstream RHI layout. -->
+    <Border Grid.Row="0" Padding="16,10" Background="#0F1318" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <Border Width="36" Height="36" CornerRadius="8" Background="#122830" BorderBrush="#1E4858" BorderThickness="1">
+            <TextBlock Text="R" FontWeight="Bold" FontSize="20" Foreground="#4DC9E6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <StackPanel VerticalAlignment="Center">
+            <TextBlock Text="RHI" FontSize="15" FontWeight="Bold" Foreground="#4DC9E6"/>
+            <TextBlock Text="Simplified PC Gaming · Linux" FontSize="10" Foreground="#2A7A90"/>
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button Classes="rhi" Content="Quick Start" IsEnabled="False" ToolTip.Tip="Port milestone: documentation dialog comes after core parity"/>
+          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+          <Button Classes="rhi" Content="Refresh" Command="{Binding RefreshCommand}"/>
+          <Button Classes="rhi" Content="Shaders/Addons" IsEnabled="False"/>
+          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+          <Button Classes="rhi" Content="Update All" IsEnabled="False" Foreground="#6B7A8E"/>
+          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+          <Button Classes="rhi" Content="Links" IsEnabled="False"/>
+          <Button Classes="rhi" Content="Help" IsEnabled="False"/>
+          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+          <Button Classes="rhi" Content="Detail View" IsEnabled="False"/>
+          <Button Classes="rhi" Content="Settings" IsEnabled="False"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="300,*">
+      <!-- Sidebar -->
+      <Border Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0">
+        <Grid RowDefinitions="Auto,Auto,Auto,*">
+          <Border Grid.Row="0" Padding="10,8,10,4" Background="#131820">
+            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                     Watermark="Filter games..." Background="#151A22" Foreground="#A0AABB"
+                     BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
+          </Border>
+          <Border Grid.Row="1" Padding="10,8" Background="#131820" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+            <WrapPanel Orientation="Horizontal">
+              <Button Classes="chip" Content="All Games" Margin="0,0,4,4" Background="#243050" Foreground="White"/>
+              <Button Classes="chip" Content="Installed" Margin="0,0,4,4" IsEnabled="False"/>
+              <Button Classes="chip" Content="Favourites" Margin="0,0,4,4" IsEnabled="False"/>
+              <Button Classes="chip" Content="Unreal" Margin="0,0,4,4" IsEnabled="False"/>
+              <Button Classes="chip" Content="RenoDX" Margin="0,0,4,4" IsEnabled="False"/>
+            </WrapPanel>
+          </Border>
+          <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,8">
+            <TextBlock Text="LIBRARY" Foreground="#6B7A8E" FontSize="10" FontWeight="SemiBold"/>
+            <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="#6B7A8E" FontSize="10"/>
+          </Grid>
+          <ListBox Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+                   Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="models:DetectedGame">
+                <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="#151C28" BorderBrush="#1E2C40" BorderThickness="1">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" Foreground="#E2E8FF" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding Source}" Foreground="#6B7A8E" FontSize="9"/>
+                    </StackPanel>
+                    <Border Grid.Column="1" Width="8" Height="8" CornerRadius="4" Background="#5ECB7D" VerticalAlignment="Center"
+                            ToolTip.Tip="Detected on Linux"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+
+      <!-- Detail panel -->
+      <ScrollViewer Grid.Column="1" Background="#121518">
+        <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="14">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+            <StackPanel>
+              <TextBlock Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+              <TextBlock Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Classes="rhi" Content="Open Folder" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button Classes="rhi" Content="Open Prefix" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button Content="Launch" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
+                      Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1"
+                      CornerRadius="8" Padding="16,8"/>
+            </StackPanel>
+          </Grid>
+
+          <Border Grid.Row="1" Classes="card">
+            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+              <TextBlock Grid.Row="0" Grid.Column="0" Text="Game directory" Classes="muted"/>
+              <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedInstallPath}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="1" Grid.Column="0" Text="Wine / Proton prefix" Classes="muted"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedPrefix}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="2" Grid.Column="0" Text="Executable" Classes="muted"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="3" Grid.Column="0" Text="Graphics API" Classes="muted"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB"/>
+            </Grid>
+          </Border>
+
+          <Border Grid.Row="2" Classes="card" BorderBrush="#1E4858">
+            <StackPanel Spacing="10">
+              <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                  <TextBlock Text="DLSS / Streamline" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                  <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0"/>
+                </StackPanel>
+                <Border Grid.Column="1" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5">
+                  <TextBlock Text="Game-local DLL backend" Foreground="#4DC9E6" FontSize="11"/>
+                </Border>
+              </Grid>
+
+              <Grid ColumnDefinitions="70,*,170,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
+                <TextBlock Grid.Row="0" Text="SR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DlssSrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="0" Grid.Column="2" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding DlssSrDetected}"/>
+                <Button Grid.Row="0" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrDetected}"/>
+                <Button Grid.Row="0" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrDetected}"/>
+
+                <TextBlock Grid.Row="1" Text="RR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DlssRrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding DlssRrDetected}"/>
+                <Button Grid.Row="1" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrDetected}"/>
+                <Button Grid.Row="1" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrDetected}"/>
+
+                <TextBlock Grid.Row="2" Text="FG" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DlssFgPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding DlssFgDetected}"/>
+                <Button Grid.Row="2" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgDetected}"/>
+                <Button Grid.Row="2" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgDetected}"/>
+
+                <TextBlock Grid.Row="3" Text="NR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DlssNrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <ComboBox Grid.Row="3" Grid.Column="2" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding DlssNrDetected}"/>
+                <Button Grid.Row="3" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrDetected}"/>
+                <Button Grid.Row="3" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrDetected}"/>
+              </Grid>
+
+              <TextBlock Text="Apply only replaces DLLs that already exist in the detected game tree. The first original is preserved as .original; a guessed target path is never created." Classes="muted" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+
+          <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
+            <StackPanel>
+              <TextBlock Text="Managed Components" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+              <TextBlock Text="Local presence is detected now. Install/update actions remain locked until each Linux deployment backend passes parity tests."
+                         Classes="muted" Margin="0,3,0,0"/>
+            </StackPanel>
+            <Border Grid.Column="1" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5">
+              <TextBlock Text="Linux backend active" Foreground="#5ECB7D" FontSize="11"/>
+            </Border>
+          </Grid>
+
+          <ItemsControl Grid.Row="4" ItemsSource="{Binding Components}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ComponentRowViewModel">
+                <Border Classes="card" Margin="0,0,0,8" Padding="14,11">
+                  <Grid ColumnDefinitions="220,150,*,Auto" ColumnSpacing="12">
+                    <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="3" Classes="rhi" Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" MinWidth="80"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Grid>
+      </ScrollViewer>
+
+      <Border Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.96" IsVisible="{Binding IsBusy}">
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+          <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
+          <TextBlock Text="Scanning game libraries…" Foreground="#A0AABB"/>
+        </StackPanel>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10"/>
+        <TextBlock Grid.Column="1" Text="RHI Linux v0.1.0 · native .NET 8 / Avalonia" Foreground="#404858" FontSize="10"/>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

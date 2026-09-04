@@ -1,5 +1,8 @@
 <Project>
-  <PropertyGroup Condition="'$(Platform)' == '' OR '$(Platform)' == 'AnyCPU'">
-    <Platform>x64</Platform>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>

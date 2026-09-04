@@ -1,1 +1,0 @@
-Hi to all the new users. If you need any help with anything then we have support channels on The Ultra Place and RenoDX Discords. Thank you for all of your support, Rank
