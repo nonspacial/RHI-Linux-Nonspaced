@@ -1,264 +1,407 @@
-# RHI Linux — Native Linux Port
+<div align="center">
 
-Native Linux port of [RankFTW/RHI](https://github.com/RankFTW/RHI), preserving the upstream workflow and component model while replacing WinUI / Windows App SDK and Windows-only platform integration with Linux-aware services for **Steam/Proton, Heroic, Lutris and standalone Wine/Bottles**.
+# RHI Linux
 
-> **Current status: v0.6.7 — RHI Windows 2.5.9 upstream-sync foundation**
+### Native Linux port of RHI for Steam / Proton, Heroic, Lutris and Wine
+
+[![Version](https://img.shields.io/badge/RHI%20Linux-v0.6.7-0ea5e9?style=for-the-badge)](https://github.com/wizardkof/RHI-Linux)
+[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.5.9-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
+[![Platform](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/wizardkof/RHI-Linux)
+[![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
+[![Avalonia](https://img.shields.io/badge/UI-Avalonia-8b5cf6?style=for-the-badge)](https://avaloniaui.net/)
+[![License](https://img.shields.io/github/license/wizardkof/RHI-Linux?style=for-the-badge)](LICENSE)
+
+**A native Linux reimplementation of [RankFTW/RHI](https://github.com/RankFTW/RHI), preserving the upstream workflow and component model while replacing WinUI, Windows App SDK and Windows-only platform integration with Linux-aware services.**
+
+<br>
+
+[Features](#-current-feature-set) ·
+[Status](#-project-status) ·
+[Quick Start](#-quick-start) ·
+[ReShade](#-reshade) ·
+[DLSS / Streamline](#-dlss--streamline) ·
+[Safety](#-safety-model) ·
+[Architecture](#-architecture) ·
+[Roadmap](#-still-locked--roadmap)
+
+</div>
+
+---
+
+## 🚀 Project status
+
+|                                   |                                          |
+| --------------------------------- | ---------------------------------------- |
+| **RHI Linux**                     | `v0.6.7`                                 |
+| **Upstream compatibility target** | `RHI 2.5.9`                              |
+| **Current upstream tag**          | `RHI-2.5.9`                              |
+| **Primary validated environment** | CachyOS + Proton                         |
+| **Runtime**                       | .NET 8                                   |
+| **Desktop UI**                    | Avalonia                                 |
+| **Current regression baseline**   | v0.6.6 accepted                          |
+| **v0.6.7 gate**                   | 🟡 Compile / xUnit + UI smoke validation |
+| **Static test cases**             | `155`                                    |
+
+> [!IMPORTANT]
+> **v0.6.7 is an upstream lifecycle foundation release.**
 >
-> The v0.6.6 CachyOS/Proton field regression is the current accepted ReShade/D3DCompiler baseline. Streamline and DLSS **Super Resolution**, **Ray Reconstruction** and **Frame Generation** have also completed real Apply → launch → Restore validation with byte-safe restoration.
+> It adds the infrastructure required by newer RHI 2.5.9 components, but **DLSS5 Feeder, DX11 Bridge and MFG Ada Unlock are not exposed in the Linux UI yet.**
+
+### Real-world validation completed
+
+The following paths have completed real CachyOS / Proton testing:
+
+* ✅ ReShade installation / removal
+* ✅ RenoDX dependency chain
+* ✅ OptiScaler installation / teardown
+* ✅ ReShade + OptiScaler coexistence
+* ✅ ReShade + RenoDX + OptiScaler coexistence
+* ✅ Native Microsoft `D3DCompiler_47.dll` shader workflow
+* ✅ ReLimiter
+* ✅ Display Commander
+* ✅ Heroic / Legendary discovery
+* ✅ Heroic sideload discovery
+* ✅ DLSS Super Resolution
+* ✅ DLSS Ray Reconstruction
+* ✅ DLSS Frame Generation
+* ✅ Streamline
+* ✅ Transactional `.original` restoration
+* ✅ SHA-256 byte verification
+* ✅ NVIDIA cache permission repair
+* ✅ ReShade third-party core-header dependency handling
+
+**Neural Rendering remains deferred for a suitable real-world acceptance gate.**
+
+---
+
+# ✨ Current feature set
+
+## Component matrix
+
+| Component                       | State | Current Linux support                           |
+| :------------------------------ | :---: | :---------------------------------------------- |
+| **ReShade**                     |   ✅   | Stable / Nightly / Legacy / Custom              |
+| **ReShade shader packs**        |   ✅   | Initial isolated Linux-safe pack subset         |
+| **RenoDX**                      |   ✅   | Install / remove + ReShade dependency ordering  |
+| **OptiScaler**                  |   ✅   | Supported x64 DX11 / DX12 Wine / Proton games   |
+| **DLSS Super Resolution**       |   ✅   | Apply / Restore validated                       |
+| **DLSS Ray Reconstruction**     |   ✅   | Apply / Restore validated                       |
+| **DLSS Frame Generation**       |   ✅   | Apply / Restore validated                       |
+| **DLSS Neural Rendering**       |   🟡  | Backend present; field gate deferred            |
+| **Streamline**                  |   ✅   | Multi-DLL / multi-folder transactional workflow |
+| **ReLimiter**                   |   ✅   | Native RHI-managed ReShade add-on               |
+| **Display Commander**           |   ✅   | Native RHI-managed ReShade add-on               |
+| **Luma**                        |   🔒  | Future component gate                           |
+| **REFramework**                 |   🔒  | Future component gate                           |
+| **DOF Fix**                     |   🔒  | Future component gate                           |
+| **DLSS5 Feeder**                |   🧱  | v0.6.7 infrastructure only                      |
+| **DX11 Bridge**                 |   🧱  | v0.6.7 infrastructure only                      |
+| **MFG Ada Unlock**              |   🧱  | v0.6.7 infrastructure only                      |
+| **Native Vulkan ReShade layer** |   🔒  | No fake Windows-DLL implementation              |
+| **NVIDIA DRS controls**         |   🚫  | No equivalent Linux backend available           |
+
+Legend:
+
+* ✅ **Available / validated**
+* 🟡 **Implemented but gate incomplete**
+* 🧱 **Foundation implemented; feature not exposed**
+* 🔒 **Not ported yet**
+* 🚫 **Intentionally unsupported**
+
+---
+
+# 🐧 Why a native Linux port?
+
+The upstream RHI desktop application targets Windows technologies including:
+
+* WinUI
+* Windows App SDK
+* Windows Registry
+* Windows-specific launcher discovery
+* NvAPI / NVIDIA DRS
+
+Simply installing .NET inside Wine does not turn that application into a native Linux program.
+
+RHI Linux instead keeps the portable RHI concepts while moving platform-specific functionality behind Linux implementations.
+
+### Linux integrations currently include
+
+* **Steam**
+* **Proton**
+* **Heroic**
+* **Legendary**
+* **Heroic sideload**
+* **Lutris**
+* **standalone Wine**
+* **Bottles-style prefixes**
+* Linux filesystem integration
+* Linux desktop file-manager integration
+
+> [!NOTE]
+> Windows-only features are not silently emulated.
 >
-> v0.6.7 adds the lifecycle infrastructure required by newer RHI 2.5.9 components: manifest-aware add-on metadata, dynamic GitHub release asset resolution, stable deployment filenames and persistent shader-pack exclusions.
->
-> **DLSS5 Feeder, DX11 Bridge and MFG Ada Unlock are not exposed in the Linux UI yet. Neural Rendering remains available at the DLSS backend level, but its real-world acceptance gate is still deferred.**
+> If Linux does not provide a real equivalent, RHI Linux keeps that functionality unavailable instead of presenting a fake or no-op implementation.
 
 ---
 
-## Why a native Linux port?
+# ⚡ Quick start
 
-Upstream RHI is a Windows application built around WinUI / Windows App SDK, Windows Registry integration and Windows-specific NVIDIA APIs.
+## CachyOS / Arch Linux
 
-RHI Linux keeps the portable .NET/core concepts while moving the desktop application to **Avalonia** and implementing Linux-specific platform services for:
+Install the required development packages:
 
-* Steam and Proton;
-* Heroic and Legendary;
-* Heroic sideload/custom games;
-* Lutris;
-* standalone Wine;
-* Bottles-style Wine prefixes;
-* Linux filesystem and desktop integration.
-
-Windows-only behavior is not silently emulated. Features without a real Linux equivalent remain explicitly unavailable.
-
----
-
-## Validated real-world baseline
-
-The following functionality has been exercised on **CachyOS + Proton** and forms the current regression baseline:
-
-* Native .NET 8 / Avalonia Linux application.
-* Steam, Heroic, Lutris and Wine/Bottles discovery.
-* Native Linux vs Wine/Proton runtime classification.
-* Background/cancellable game probing.
-* Conservative graphics API detection.
-* DLSS transactional replacement and restoration.
-* ReShade full-add-on installation/removal.
-* Exact per-game Wine Registry override cleanup.
-* RenoDX installation/removal with ReShade dependency ordering.
-* OptiScaler installation/removal on supported 64-bit DX11/DX12 Wine/Proton games.
-* ReShade + OptiScaler coexistence.
-* ReShade + RenoDX + OptiScaler coexistence.
-* Both validated safe teardown orders while preserving the surviving component chain.
-* ReShade shader packs with native Microsoft `D3DCompiler_47.dll`.
-* ReLimiter and Display Commander deployment/removal.
-* Heroic Legendary/Epic discovery.
-* Heroic sideload/custom-game discovery.
-* Streamline Apply / launch / Restore.
-* DLSS Super Resolution Apply / launch / Restore.
-* DLSS Ray Reconstruction Apply / launch / Restore.
-* DLSS Frame Generation Apply / launch / Restore.
-* Byte-for-byte verified `.original` restoration.
-* Linux NVIDIA cache permission repair.
-* ReShade third-party shader core-header dependency handling.
-
----
-
-## Component status
-
-| Component                   | Status                 | Notes                                                     |
-| --------------------------- | ---------------------- | --------------------------------------------------------- |
-| **ReShade**                 | ✅ Available            | Stable, Nightly, Legacy and Custom profiles               |
-| **ReShade shader packs**    | ✅ Available            | Initial isolated Linux-safe subset                        |
-| **RenoDX**                  | ✅ Available            | ReShade dependency ordering enforced                      |
-| **OptiScaler**              | ✅ Available            | Validated on supported x64 DX11/DX12 Wine/Proton titles   |
-| **DLSS Super Resolution**   | ✅ Validated            | Transactional Apply / Restore                             |
-| **DLSS Ray Reconstruction** | ✅ Validated            | Transactional Apply / Restore                             |
-| **DLSS Frame Generation**   | ✅ Validated            | Transactional Apply / Restore                             |
-| **DLSS Neural Rendering**   | ⚠️ Backend present     | Real-world acceptance remains deferred                    |
-| **Streamline**              | ✅ Validated            | Multi-DLL / multi-folder transactional Apply / Restore    |
-| **ReLimiter**               | ✅ Available            | ReShade add-on; mutually exclusive with Display Commander |
-| **Display Commander**       | ✅ Available            | ReShade add-on; mutually exclusive with ReLimiter         |
-| **Luma**                    | 🔒 Not yet ported      | Future auxiliary-component gate                           |
-| **REFramework**             | 🔒 Not yet ported      | Future auxiliary-component gate                           |
-| **DOF Fix**                 | 🔒 Not yet ported      | Future auxiliary-component gate                           |
-| **DLSS5 Feeder**            | 🔒 Infrastructure only | Not exposed in v0.6.7                                     |
-| **DX11 Bridge**             | 🔒 Infrastructure only | Not exposed in v0.6.7                                     |
-| **MFG Ada Unlock**          | 🔒 Infrastructure only | Not exposed in v0.6.7                                     |
-| **NVIDIA DRS controls**     | 🚫 Unsupported         | No fake Windows NvAPI/DRS emulation                       |
-
----
-
-## ReShade profiles
-
-RHI Linux supports the larger upstream-style ReShade channel workflow.
-
-### Stable
-
-Current full-add-on setup obtained from ReShade's official distribution source.
-
-### Nightly
-
-Current 32/64-bit artifact from the upstream ReShade development build workflow.
-
-### Legacy
-
-Explicit pinned numeric versions such as:
-
-```text
-6.4.1
+```fish
+sudo pacman -S --needed dotnet-sdk-8.0 7zip git
 ```
 
-Legacy profiles remain pinned instead of being automatically upgraded.
+Clone the project:
 
-### Custom
+```fish
+git clone https://github.com/wizardkof/RHI-Linux.git
+cd RHI-Linux
+```
 
-A user-selected local ReShade DLL.
+Restore dependencies:
 
-Before injection, RHI validates that the DLL:
+```fish
+dotnet restore RHI-Linux.sln
+```
 
-* is a valid PE file;
-* has a reasonable size;
-* matches the detected game architecture;
-* contains recognizable ReShade identification.
+Run the test suite:
 
-The installed ReShade channel/source is recorded per game.
+```fish
+dotnet test RHI-Linux.sln
+```
+
+Launch RHI Linux:
+
+```fish
+./run.fish
+```
+
+### Bash
+
+```bash
+./run.sh
+```
 
 ---
 
-## Conservative `ReShade.ini` management
+## Build
 
-RHI Linux does not replace an existing `ReShade.ini` wholesale.
+### Fish
 
-When **Manage / merge ReShade.ini** is enabled, RHI records only the values and search-path tokens it owns.
+```fish
+./build.fish
+```
 
-On teardown:
+### Bash
 
-* RHI-owned tokens can be removed;
-* unrelated user configuration is preserved;
-* user-edited files are not silently deleted;
-* a file created entirely by RHI may be removed only when its managed state still matches what RHI created.
+```bash
+./build.sh
+```
+
+Published files are written to:
+
+```text
+artifacts/linux-x64/
+```
+
+---
+
+# 🎨 ReShade
+
+RHI Linux implements an upstream-style ReShade profile workflow rather than supporting only one fixed build.
+
+## Available channels
+
+| Channel     | Behavior                           |
+| :---------- | :--------------------------------- |
+| **Stable**  | Current official full-add-on build |
+| **Nightly** | Development artifact               |
+| **Legacy**  | Explicit pinned version            |
+| **Custom**  | User-selected local ReShade DLL    |
+
+### Custom DLL protection
+
+Before injection, a Custom DLL must:
+
+* be a valid PE binary;
+* have a sane size;
+* match the target game's architecture;
+* contain recognizable ReShade identification.
+
+RHI records the source/channel identity per game.
+
+---
+
+<details>
+<summary><strong>📄 Conservative ReShade.ini ownership</strong></summary>
+
+<br>
+
+RHI Linux does **not** blindly replace an existing `ReShade.ini`.
+
+When **Manage / merge ReShade.ini** is enabled, RHI tracks only the values and search-path entries it owns.
+
+During teardown:
+
+* RHI-owned entries are removed;
+* unrelated user configuration survives;
+* edited files are preserved;
+* a completely RHI-created INI is removed only when it still matches the state RHI created.
+
+This makes cleanup ownership-based rather than filename-based.
+
+</details>
 
 ---
 
 ## Shader packs
 
-The first Linux-native shader-pack subset currently includes:
+The first Linux-native pack subset includes:
 
-* crosire `reshade-shaders`;
-* crosire legacy shaders;
-* clshortfuse ReShade shaders;
-* MaxG2D Simple HDR Shaders.
+* crosire `reshade-shaders`
+* crosire legacy shaders
+* clshortfuse ReShade shaders
+* MaxG2D Simple HDR Shaders
 
-Managed content is isolated below:
+Managed files remain isolated:
 
 ```text
-reshade-shaders/RHI/<Pack>/Shaders
-reshade-shaders/RHI/<Pack>/Textures
+reshade-shaders/
+└── RHI/
+    ├── <Pack>/
+    │   ├── Shaders/
+    │   └── Textures/
+    └── _Core/
+        └── Shaders/
 ```
 
-Per-game hashes are recorded so externally modified files are not silently overwritten or deleted.
+RHI tracks managed files through hashes.
 
-### ReShade core-header dependency
+An externally modified shader is **never silently overwritten or removed**.
 
-Real-world testing found that clshortfuse and MaxG2D effects require the standard:
+---
+
+<details>
+<summary><strong>🧩 ReShade.fxh / ReShadeUI.fxh dependency fix</strong></summary>
+
+<br>
+
+Real-world testing showed that clshortfuse and MaxG2D effects can depend on:
 
 ```text
 ReShade.fxh
 ReShadeUI.fxh
 ```
 
-even when the full crosire shader pack is not selected.
+without shipping those headers themselves.
 
-Since v0.6.6, RHI automatically stages only those required headers when one of the dependent packs is selected:
+Since v0.6.6, selecting one of the dependent packs automatically stages only the required core headers:
 
 ```text
 reshade-shaders/RHI/_Core/Shaders/ReShade.fxh
 reshade-shaders/RHI/_Core/Shaders/ReShadeUI.fxh
 ```
 
-The `_Core` search path is appended after pack-local paths.
+The fallback search path is appended after the individual pack paths.
 
-These files remain hash-managed and are removed only when they still match the RHI-owned copy.
+The files are hash tracked and removed only while they are still RHI-owned and unmodified.
+
+</details>
 
 ---
 
-## Native `D3DCompiler_47.dll` handling
+# 🧱 Native D3DCompiler_47 support
 
-Real-world Wine/Proton validation showed that ReShade itself could load correctly while some effects failed to compile using Wine's built-in `d3dcompiler_47`.
+A real Wine / Proton regression showed that ReShade could successfully load while individual shaders still failed to compile against Wine's built-in compiler.
 
-Using a native Microsoft `D3DCompiler_47.dll` with:
+Using a native Microsoft:
+
+```text
+D3DCompiler_47.dll
+```
+
+with:
 
 ```text
 d3dcompiler_47=native,builtin
 ```
 
-resolved those shader compilation failures.
+resolved those failures.
 
-RHI Linux therefore provides a conservative compatibility workflow when managed shader packs are selected.
+RHI Linux therefore manages this compatibility dependency explicitly when shader packs require it.
 
-It can:
+### Supported workflow
 
-* detect a native Microsoft compiler beside the game executable;
-* detect a suitable compiler already present in the Wine/Proton prefix;
-* accept a user-selected Microsoft DLL through an Avalonia **Browse…** picker;
-* validate PE architecture and Microsoft/HLSL compiler identity;
-* deploy a selected DLL application-local transactionally;
-* manage `d3dcompiler_47=native,builtin` per executable;
-* track the D3DCompiler override independently from the ReShade proxy override;
-* restore only state actually created by RHI;
-* preserve external/native compiler files;
-* refuse to replace an RHI-managed compiler whose hash changed externally.
+RHI can:
 
-If no valid native compiler exists, shader-pack deployment is blocked before ReShade modification.
+* find a native compiler beside the game executable;
+* detect one already installed inside the Wine / Proton prefix;
+* accept a user-selected DLL;
+* provide a native Avalonia **Browse…** picker;
+* validate PE architecture;
+* validate Microsoft / HLSL identity;
+* deploy the selected DLL application-local;
+* configure `d3dcompiler_47=native,builtin` per game;
+* track this Wine override independently from the ReShade proxy;
+* preserve pre-existing external compiler files;
+* hash-guard an RHI-managed compiler;
+* perform exact teardown of RHI-owned state.
 
-For Steam titles RHI can provide an AppID-specific hint such as:
+If no valid compiler exists, RHI stops **before modifying ReShade**.
+
+For Steam games it can provide a hint such as:
 
 ```fish
 protontricks <AppId> d3dcompiler_47
 ```
 
-**RHI Linux does not bundle or redistribute Microsoft's `D3DCompiler_47.dll`.**
+> [!CAUTION]
+> **Microsoft `D3DCompiler_47.dll` is not bundled or redistributed by RHI Linux.**
 
 ---
 
-## ReLimiter and Display Commander
+# 🧩 ReLimiter & Display Commander
 
-RHI Linux supports two upstream auxiliary ReShade add-ons:
+Two upstream auxiliary ReShade add-ons are currently supported.
 
-### ReLimiter
+## ReLimiter
 
-Uses the appropriate:
+Architecture-aware deployment of:
 
 ```text
 relimiter.addon64
 relimiter.addon32
 ```
 
-payload for the detected executable architecture.
+## Display Commander
 
-### Display Commander
-
-Uses the appropriate:
+Architecture-aware deployment of:
 
 ```text
 zzz_display_commander.addon64
 zzz_display_commander.addon32
 ```
 
-payload.
-
 Both implementations:
 
 * require ReShade full-add-on support;
-* respect `[ADDON] AddonPath` from `ReShade.ini`;
-* select x86/x64 assets automatically;
-* validate downloaded PE payloads;
-* verify a published SHA-256 digest when available;
-* refuse to overwrite unknown external add-on files;
-* hash-guard managed updates/removal;
-* block ReShade removal while an RHI-managed dependent add-on remains installed.
+* respect `[ADDON] AddonPath`;
+* select x86 / x64 automatically;
+* validate PE payloads;
+* verify GitHub-published SHA-256 when available;
+* refuse to overwrite external files;
+* hash-guard managed teardown;
+* block ReShade removal while a managed dependency remains.
 
-ReLimiter and Display Commander are intentionally **mutually exclusive**, matching upstream RHI behavior.
+> [!IMPORTANT]
+> **ReLimiter and Display Commander are mutually exclusive**, matching upstream RHI behavior.
 
-Since v0.5.1, configuration/support files such as:
+### Probe safety
+
+Files such as:
 
 ```text
 relimiter.ini
@@ -267,17 +410,24 @@ DisplayCommander.ini
 *.json
 ```
 
-do **not** count as installed add-ons.
+do **not** count as an installed add-on.
 
-Only actual `.addon64` / `.addon32` binaries determine installed state, allowing user configuration files to remain untouched after binary teardown.
+Only real:
+
+```text
+.addon64
+.addon32
+```
+
+binaries determine installed state.
+
+User configuration can therefore remain after removing the managed binary.
 
 ---
 
-## DLSS and Streamline
+# 🟢 DLSS / Streamline
 
-RHI Linux consumes the upstream RHI DLSS manifest for game-local DLSS and Streamline file management.
-
-The UI exposes the complete component names:
+RHI Linux consumes the upstream RHI DLSS manifest for game-local management of:
 
 * **Super Resolution**
 * **Ray Reconstruction**
@@ -285,69 +435,101 @@ The UI exposes the complete component names:
 * **Neural Rendering**
 * **Streamline**
 
-### Existing-file-only rule
+## Existing-file-only deployment
 
-RHI never invents a DLSS or Streamline target layout.
+A central safety rule is:
 
-Apply only touches DLL paths that already exist and are recognized.
+> **RHI never invents a DLSS or Streamline installation layout.**
 
-For Streamline, only known existing `sl.*.dll` modules inside detected game-local Streamline folders are eligible.
+A DLL is eligible only when:
 
-A downloaded package containing additional modules does not cause RHI to create them in the game.
+1. the target already exists in the game;
+2. its filename is recognized;
+3. the target location was detected by RHI.
 
----
-
-## Transactional `.original` safety
-
-File replacement is designed around preservation of the real game file.
-
-On a genuine replacement:
-
-1. the original file is preserved as `.original`;
-2. replacement staging is performed safely;
-3. copies are SHA-256 verified;
-4. multi-file operations act as a transaction;
-5. a failed operation rolls back to the pre-operation state.
-
-Since v0.6.3, source and target are SHA-256 compared before modification.
-
-If they are already identical:
-
-* Apply becomes a no-op;
-* no `.original` backup is created;
-* the UI reports that no change was required.
-
-Restore does **not** consume `.original` before verification.
-
-The target must match the backup SHA-256 after restoration before the backup may be removed. If restoration fails, RHI keeps the `.original` and restores the previously active target from a transaction snapshot.
+For Streamline, downloading a package containing more `sl.*.dll` files does **not** cause missing modules to be created automatically.
 
 ---
 
-## Linux DLSS / Streamline cache repair
+## Transactional replacement
 
-Real CachyOS testing discovered NVIDIA payloads in RHI's own cache with Unix mode:
+A genuine replacement follows this model:
+
+```text
+Game DLL
+   │
+   ├── preserve original
+   │      └── file.dll.original
+   │
+   ├── stage replacement
+   │
+   ├── verify SHA-256
+   │
+   └── activate replacement
+```
+
+Multi-file operations use the same transaction model.
+
+If an operation fails, RHI attempts to return the entire batch to its previous state.
+
+---
+
+## Byte-safe restore
+
+Since v0.6.3:
+
+* source and target are compared by SHA-256 before mutation;
+* identical payloads are treated as a **no-op**;
+* no `.original` is created for a no-op;
+* backup copies are SHA-256 verified;
+* transaction snapshots are verified;
+* staging files are verified;
+* restored files are verified before backup deletion;
+* `.original` is never consumed early;
+* restore failure keeps the backup available;
+* the previously active target is restored from a transaction snapshot when necessary.
+
+### No-op behavior
+
+If:
+
+```text
+downloaded DLL SHA-256 == current game DLL SHA-256
+```
+
+RHI reports that the game already has the selected payload.
+
+Nothing is rewritten.
+
+---
+
+# 🛠 Linux NVIDIA cache repair
+
+Real CachyOS testing exposed cached NVIDIA payload DLLs using the Unix mode:
 
 ```text
 0010
 ------x---
 ```
 
-The files existed but could not be read by the normal user.
+The files existed but the normal user could not read them.
 
-### v0.6.4
+## v0.6.4
 
-RHI now:
+RHI added:
 
-* normalizes relevant cached NVIDIA DLLs to `0644`;
-* verifies an actual readable file handle before cache reuse;
-* normalizes newly extracted DLLs immediately;
-* retries by downloading the payload again if an unreadable entry cannot be repaired.
+* permission normalization to `0644`;
+* actual readability checks;
+* post-extraction permission normalization;
+* damaged cache retry/redownload behavior.
 
-Only RHI's cache is modified. Game DLL permissions are not changed.
+Only RHI's own cache is modified.
 
-### v0.6.5
+**Game DLL permissions are never changed by this repair.**
 
-A proactive startup migration now scans only the RHI-owned NVIDIA cache namespaces:
+## v0.6.5
+
+RHI now performs a proactive migration sweep over only:
 
 ```text
 DLSS
@@ -357,75 +539,94 @@ DLSS-NR
 Streamline
 ```
 
-Recognized NVIDIA DLL payloads are normalized to:
+Recognized NVIDIA payload DLLs become:
 
 ```text
 0644
 rw-r--r--
 ```
 
-ReShade, RenoDX, OptiScaler, auxiliary add-on caches and unrelated files are not touched by this sweep.
+Unrelated ReShade, RenoDX, OptiScaler and add-on caches are left untouched.
 
 ---
 
-## Heroic / Legendary / sideload discovery
+# 🎮 Game discovery
 
-### Legendary and Epic
+## Steam / Proton
 
-RHI no longer assumes Heroic's Epic metadata is stored only inside the Heroic configuration directory.
+RHI Linux supports:
 
-Supported layouts include native Legendary metadata such as:
+* native Steam libraries;
+* additional `libraryfolders.vdf` libraries;
+* AppID association;
+* `compatdata/<appid>/pfx` prefix mapping;
+* executable probing.
+
+---
+
+## Heroic / Legendary
+
+The detector understands Linux Legendary metadata outside Heroic itself, including:
 
 ```text
 ~/.config/legendary/installed.json
 ```
 
-as well as Heroic-managed and Flatpak Legendary layouts.
+and Heroic-managed / Flatpak Legendary layouts.
 
-The detector also:
+It also supports:
 
-* parses nested Heroic `install` objects;
-* uses the registered executable when present;
-* ignores records explicitly marked `is_installed=false`;
-* preserves the actual Heroic app identity;
-* reads exact per-game `GamesConfig` `winePrefix` configuration before using fuzzy fallback matching.
+* nested `install` metadata;
+* registered executables;
+* `is_installed=false` filtering;
+* correct Heroic runner identity;
+* exact `GamesConfig` Wine-prefix association.
 
-### Heroic sideload
+---
 
-RHI also understands Heroic custom/sideload entries such as:
+## Heroic sideload
+
+Custom Heroic entries such as:
 
 ```text
 heroic://launch?appName=<id>&runner=sideload
 ```
 
-It reads the current sideload library:
+are supported.
+
+Current metadata path:
 
 ```text
 ~/.config/heroic/sideload_apps/library.json
 ```
 
-while retaining compatibility with the older nested layout.
+RHI understands:
 
-Supported sideload metadata includes:
+```text
+app_name
+title
+folder_name
+folderName
+install.executable
+GamesConfig/<appName>.json
+```
 
-* `app_name`;
-* `title`;
-* `folder_name` / `folderName`;
-* nested `install.executable`;
-* absolute executable paths;
-* exact `GamesConfig/<appName>.json` Wine-prefix association.
-
-RHI deliberately does **not** enumerate every directory inside Heroic's prefix directory as a game, because that would create false positives such as shared or utility prefixes.
-
-Discovery remains metadata-backed.
+> [!NOTE]
+> RHI deliberately does **not** treat every directory below Heroic's prefix directory as a game.
+>
+> Prefix-only discovery would create false entries such as shared prefixes and utility environments.
 
 ---
 
-## Open Folder / Open Prefix
+# 📂 Desktop integration
 
-Paths containing spaces are handled as one argument through `.NET ProcessStartInfo.ArgumentList`.
+**Open Folder** and **Open Prefix** safely handle paths containing spaces through:
 
-RHI also provides Linux desktop opener fallbacks including:
+```text
+ProcessStartInfo.ArgumentList
+```
+
+Linux opener fallback order includes:
 
 ```text
 xdg-open
@@ -435,64 +636,77 @@ kioclient6 exec
 kde-open5
 ```
 
-The same handling is used for both **Open Folder** and **Open Prefix**.
-
 ---
 
-## v0.6.7 — RHI Windows 2.5.9 lifecycle foundation
+# 🔄 v0.6.7 — RHI 2.5.9 lifecycle foundation
 
-The current upstream compatibility target is:
+Current upstream baseline:
 
 ```text
-Project: RankFTW/RHI
-Tag: RHI-2.5.9
-Release: v2.5.9
+Project:         RankFTW/RHI
+Compatibility:   RHI-2.5.9
+Upstream release: v2.5.9
 Baseline commit: c9eba5d7d728228402655580103a43ec1550ad60
 ```
 
-RHI Windows 2.5.7–2.5.9 introduced lifecycle changes that matter to the Linux port:
+RHI 2.5.7–2.5.9 introduced lifecycle behavior that also matters to Linux:
 
-1. add-on release asset filenames cannot always be assumed to remain fixed;
-2. newer add-on metadata is driven by `manifest.json` → `addonPacks`;
-3. shader-pack exclusions must persist across refresh/restart for newer DLSS5 Feeder orchestration.
+1. GitHub add-on asset names are not always stable.
+2. Add-on metadata is increasingly driven by `manifest.json → addonPacks`.
+3. Shader exclusions must survive restart / refresh.
+4. Newer DLSS5 Feeder behavior depends on persistent exclusions.
 
-v0.6.7 ports the shared Linux-safe infrastructure first.
+v0.6.7 ports the reusable Linux-safe primitives **before exposing the corresponding components**.
 
-### Dynamic GitHub release resolver
+---
 
-`GitHubReleaseAssetResolver` can consume:
+<details>
+<summary><strong>🌐 Dynamic GitHub release resolver</strong></summary>
+
+<br>
+
+`GitHubReleaseAssetResolver` understands both:
 
 ```text
 /releases/latest
 ```
 
-or release-list responses such as:
+and:
 
 ```text
 /releases?per_page=100
 ```
 
-It supports:
+Supported behavior includes:
 
 * exact filename matching;
-* regular-expression filename matching;
+* regex asset matching;
 * release-list fallback;
-* draft skipping;
-* release version extraction;
-* GitHub SHA-256 digest propagation when published.
+* draft-release skipping;
+* version extraction;
+* published GitHub SHA-256 propagation.
 
-The resolver is payload-agnostic so later gates can use either direct `.addon64/.addon32` files or dynamically named ZIP archives.
+The resolver is intentionally payload agnostic.
 
-### Stable deployment filenames
+Future consumers can therefore use either:
 
-`GitHubReShadeAddonDeploymentService` can now distinguish between:
+```text
+addon.addon64
+addon.addon32
+```
 
-* the changing filename of a downloaded GitHub release asset;
-* the stable filename that should exist inside the game.
+or dynamic ZIP packages without hardcoding a permanent GitHub asset filename.
 
-### Upstream add-on manifest reader
+</details>
 
-`UpstreamRhiManifestService` currently parses the RHI 2.5.9 `addonPacks` fields required by future Linux gates:
+---
+
+<details>
+<summary><strong>📦 Manifest-driven add-on metadata</strong></summary>
+
+<br>
+
+`UpstreamRhiManifestService` currently reads the upstream 2.5.9 `addonPacks` fields required by future Linux component gates:
 
 ```text
 packageName
@@ -507,262 +721,310 @@ releaseApiUrl
 disabled
 ```
 
-The compatibility source is pinned to the `RHI-2.5.9` tag for reproducible behavior.
+The compatibility source is pinned to:
 
-### Persistent shader-pack exclusions
+```text
+RHI-2.5.9
+```
 
-`ReShadeShaderPackService` now persists per-pack shader exclusions in:
+to keep this development gate reproducible.
+
+</details>
+
+---
+
+<details>
+<summary><strong>💾 Persistent shader-pack exclusions</strong></summary>
+
+<br>
+
+`ReShadeShaderPackService` now stores per-pack exclusions in:
 
 ```text
 .pack-settings.json
 ```
 
-Exclusions:
+These exclusions:
 
-* survive refresh/restart;
-* use case-insensitive shader filename matching;
-* apply to later shader synchronization;
+* survive service restart;
+* survive refresh;
+* use case-insensitive shader filenames;
+* apply to future pack synchronization;
 * do not filter textures;
-* survive per-game ReShade teardown.
+* are not destroyed by removing ReShade from one game.
 
-This infrastructure is required before enabling the newer DLSS5 Feeder lifecycle safely.
+This lifecycle support is required before DLSS5 Feeder can safely be exposed.
 
-### Not enabled by v0.6.7
-
-v0.6.7 does **not** yet:
-
-* automatically install a Neural Rendering workflow;
-* expose DLSS5 Feeder;
-* expose DX11 Bridge;
-* expose MFG Ada Unlock;
-* execute upstream PowerShell installers through Wine;
-* copy Windows NvAPI/NVIDIA-profile behavior;
-* claim a Neural Rendering real-world PASS.
-
-Those remain separate feature gates.
+</details>
 
 ---
 
-## Safety invariants
+## v0.6.7 does NOT yet enable
 
-RHI Linux follows several non-negotiable deployment rules:
+* ❌ automatic Neural Rendering workflow
+* ❌ DLSS5 Feeder UI
+* ❌ DX11 Bridge UI
+* ❌ MFG Ada Unlock UI
+* ❌ upstream PowerShell execution through Wine
+* ❌ Windows NvAPI profile behavior
+* ❌ fabricated Neural Rendering validation
 
-1. Unknown/external proxy DLLs are never silently overwritten or adopted.
-2. Managed binary removal/update remains hash guarded.
-3. Custom ReShade DLLs remain architecture/signature validated.
-4. RHI-managed shaders stay isolated below `reshade-shaders/RHI`.
-5. User-modified shader and INI content is preserved.
-6. A user-selected native D3DCompiler must match the target architecture and Microsoft/HLSL identity.
-7. An external D3DCompiler may be used without becoming RHI-owned.
-8. An RHI-deployed D3DCompiler is hash-tracked and restored/removed transactionally.
-9. Its Wine override is managed independently from the ReShade proxy override.
-10. ReShade + RenoDX + OptiScaler coexistence remains a regression invariant.
-11. Native Linux games do not receive Windows DLL injection.
-12. A missing DLSS/Streamline target is never invented.
-13. Failed multi-file deployment restores the previous state.
-14. RHI does not present a Windows DLL proxy as a native Vulkan layer.
-15. Windows-only NvAPI/DRS functionality is not represented as equivalent Linux functionality.
+These remain independent gates.
 
 ---
 
-## Anti-cheat / online warning
+# 🛡 Safety model
 
-ReShade full-add-on mode, RenoDX, OptiScaler and similar DLL-injection workflows modify or inject code into the Windows game process.
+RHI Linux uses ownership and transaction rules rather than blindly modifying game files.
 
-Use these workflows with **single-player/offline titles** unless the specific game's anti-cheat policy explicitly allows them.
+### Core invariants
+
+1. **Unknown proxy DLLs are never silently overwritten.**
+2. **External files are never automatically adopted as RHI-owned.**
+3. Managed updates and removal remain hash guarded.
+4. Custom ReShade remains architecture validated.
+5. RHI shader files stay inside `reshade-shaders/RHI`.
+6. User-modified shaders and configuration are preserved.
+7. External D3DCompiler binaries are usable without becoming RHI-owned.
+8. RHI-created D3DCompiler state is tracked independently.
+9. ReShade / RenoDX / OptiScaler coexistence remains a regression invariant.
+10. Native Linux games never receive Windows DLL injection.
+11. Missing DLSS / Streamline layouts are never invented.
+12. Multi-file failure triggers rollback behavior.
+13. Windows DLL proxy injection is never advertised as a native Vulkan layer.
+14. Unsupported NvAPI / DRS functionality is never faked.
+
+---
+
+# ⚠️ Anti-cheat / online games
+
+> [!WARNING]
+> **ReShade full-add-on mode, RenoDX, OptiScaler and similar workflows inject or load code inside the Windows game process.**
+
+Use them primarily with:
+
+* single-player games;
+* offline games;
+* titles whose anti-cheat policy explicitly allows the modification.
 
 **RHI Linux does not bypass anti-cheat.**
 
-RHI Linux is a third-party port/manager and is not an official ReShade, RenoDX, OptiScaler, NVIDIA, Valve, Heroic or Lutris application.
+RHI Linux is a third-party port / manager and is **not** an official application from:
+
+* ReShade
+* RenoDX
+* OptiScaler
+* NVIDIA
+* Valve
+* Heroic
+* Lutris
 
 ---
 
-## CachyOS / Arch quick start
+# 🧪 Validation
 
-Install the required build tools:
-
-```fish
-sudo pacman -S --needed dotnet-sdk-8.0 7zip git
-```
-
-Clone the repository:
-
-```fish
-git clone https://github.com/wizardkof/RHI-Linux.git
-cd RHI-Linux
-```
-
-Restore and test:
-
-```fish
-dotnet restore RHI-Linux.sln
-dotnet test RHI-Linux.sln
-```
-
-Run:
-
-```fish
-./run.fish
-```
-
-Bash users can use:
-
-```bash
-./run.sh
-```
-
----
-
-## Build
-
-Fish:
-
-```fish
-./build.fish
-```
-
-Bash:
-
-```bash
-./build.sh
-```
-
-Build output is written to:
-
-```text
-artifacts/linux-x64/
-```
-
----
-
-## Validation status
-
-The v0.6.7 source contains **155 statically counted xUnit cases**:
+Current v0.6.7 source:
 
 ```text
 125 [Fact]
-30  [InlineData] theory rows
-155 total
+ 30 [InlineData] theory rows
+---
+155 statically counted cases
 ```
 
-The v0.6.6 real-world CachyOS regression is accepted.
+The v0.6.6 real-world regression baseline is accepted.
 
-The current v0.6.7 upstream-sync infrastructure still requires its authoritative:
+The current v0.6.7 infrastructure must still complete:
 
-```text
+```fish
 dotnet test RHI-Linux.sln
 ```
 
-plus a normal UI smoke launch on CachyOS before the v0.6.7 lifecycle foundation is promoted to the stable accepted baseline.
+followed by a normal desktop UI smoke launch on the CachyOS validation machine.
 
----
+Only after that gate is accepted should the v0.6.7 lifecycle foundation become the new stable regression baseline.
 
-## Still locked / not parity-complete
 
-The Linux port intentionally does not claim full RHI parity yet.
-
-Still pending:
-
-* DLSS5 Feeder deployment and shader orchestration.
-* DX11 Bridge.
-* MFG Ada Unlock.
-* Neural Rendering real-world acceptance.
-* Broader RenoDX parity and per-game manifest behavior.
-* ReLimiter / Display Commander advanced INI and preset parity.
-* Luma.
-* REFramework.
-* DOF Fix.
-* Additional auxiliary upstream components.
-* Full upstream shader-pack catalog/import UI.
-* Deeper Streamline/custom configuration parity.
-* Native Vulkan ReShade-layer deployment.
-* Automatic Vulkan OptiScaler topology.
-* Full remote-manifest / Update All parity.
-* Background updater.
-* Complete settings parity.
-* Tray / compact-mode parity.
-* Finished release packaging.
-* Linux HDR/compositor integration.
-* NVIDIA functionality only where the Linux driver stack provides a real verifiable equivalent.
-
----
-
-## Architecture
+# 🏗 Architecture
 
 ```text
 RHI-Linux
-├── src/RHI.Core
-│   ├── Models
-│   └── Services
-├── src/RHI.Platform.Linux
-│   ├── Detection
-│   ├── Deployment
-│   ├── Launch
-│   └── Paths
-├── src/RHI.Desktop
-│   ├── ViewModels
-│   └── Views
-├── tests/RHI.Core.Tests
-└── packaging
+│
+├── src/
+│   │
+│   ├── RHI.Core/
+│   │   ├── Models/
+│   │   └── Services/
+│   │
+│   ├── RHI.Platform.Linux/
+│   │   ├── Detection/
+│   │   ├── Deployment/
+│   │   ├── Launch/
+│   │   └── Paths/
+│   │
+│   └── RHI.Desktop/
+│       ├── ViewModels/
+│       └── Views/
+│
+├── tests/
+│   └── RHI.Core.Tests/
+│
+└── packaging/
 ```
 
-The architectural boundary is deliberate:
+### Architectural boundary
 
-* cross-platform component/manifests logic belongs in `RHI.Core`;
-* Linux discovery, Wine/Proton, deployment and filesystem integration belong in `RHI.Platform.Linux`;
-* the desktop frontend belongs in `RHI.Desktop`.
+```text
+┌───────────────────────────┐
+│       RHI.Desktop         │
+│          Avalonia         │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│         RHI.Core          │
+│ Components / manifests /  │
+│ ownership / transactions  │
+└─────────────┬─────────────┘
+              │
+              ▼
+┌───────────────────────────┐
+│    RHI.Platform.Linux     │
+│ Steam / Heroic / Wine /   │
+│ Proton / filesystem / OS  │
+└───────────────────────────┘
+```
 
-Windows Registry APIs, WinUI and NvAPI must not leak into the cross-platform core.
+Cross-platform behavior belongs in:
+
+```text
+RHI.Core
+```
+
+Linux-specific behavior belongs in:
+
+```text
+RHI.Platform.Linux
+```
+
+Desktop presentation belongs in:
+
+```text
+RHI.Desktop
+```
+
+WinUI, Windows Registry APIs and NvAPI must not leak into the portable core.
 
 ---
 
-## Upstream relationship
+# 🔗 Upstream relationship
 
-Current compatibility baseline:
+RHI Linux is currently aligned against:
 
 ```text
 RankFTW/RHI
-RHI-2.5.9
-v2.5.9
+└── RHI-2.5.9
+    └── v2.5.9
 ```
 
-RHI Linux intentionally mirrors Linux-relevant upstream behavior where it can be implemented safely, including:
+Linux-relevant upstream behavior is mirrored where it can be implemented safely.
+
+Examples include:
 
 * ReShade proxy conventions;
-* full-add-on ReShade staging;
 * architecture-aware payload selection;
-* protection of occupied/external proxies;
-* ReShade/OptiScaler coexistence;
+* ReShade full-add-on staging;
+* occupied-proxy protection;
+* ReShade + OptiScaler chaining;
 * RenoDX catalog concepts;
 * normalized title matching;
-* ReShade add-on path handling;
-* game-local DLSS/Streamline manifest usage.
+* ReShade `AddonPath`;
+* DLSS / Streamline manifest usage;
+* newer manifest-driven add-on lifecycle concepts.
 
-Linux-specific divergence is intentional where required:
+Linux divergence is deliberate where required.
 
-* Avalonia replaces WinUI / Windows App SDK.
-* Linux launcher metadata replaces Windows storefront Registry discovery.
-* Wine/Proton DLL overrides are managed per application.
-* native Linux targets do not receive Windows DLL injection.
-* unsupported NvAPI/DRS functionality is not faked.
+| Windows RHI                           | RHI Linux                                                 |
+| :------------------------------------ | :-------------------------------------------------------- |
+| WinUI / Windows App SDK               | Avalonia                                                  |
+| Windows storefront Registry discovery | Steam / Heroic / Lutris / Wine metadata                   |
+| Windows DLL environment               | Per-application Wine / Proton overrides                   |
+| NvAPI / DRS                           | Only real Linux equivalents                               |
+| Windows injection into Windows titles | Windows DLL injection restricted to Wine / Proton targets |
 
-RHI Linux is a derivative Linux port, not a claim that the original WinUI executable itself is cross-platform.
+RHI Linux is a derivative port.
+
+It does **not** claim that the original WinUI executable itself is cross-platform.
 
 ---
 
-## License
+# 🔒 Still locked / roadmap
 
-RHI Linux is a derivative of the GPLv3-licensed [RankFTW/RHI](https://github.com/RankFTW/RHI) project and is distributed under **GPLv3**.
+The project intentionally does **not** claim full upstream parity yet.
+
+### Next component gates
+
+* [ ] DLSS5 Feeder
+* [ ] DX11 Bridge
+* [ ] MFG Ada Unlock
+* [ ] Neural Rendering field validation
+* [ ] Luma
+* [ ] REFramework
+* [ ] DOF Fix
+
+### Deeper parity
+
+* [ ] broader RenoDX behavior
+* [ ] per-game manifest parity
+* [ ] ReLimiter advanced INI / presets
+* [ ] Display Commander advanced INI / presets
+* [ ] deeper Streamline configuration
+* [ ] full upstream shader-pack catalog
+* [ ] shader import UI
+
+### Platform work
+
+* [ ] native Vulkan ReShade layer backend
+* [ ] Vulkan-aware OptiScaler topology
+* [ ] Update All
+* [ ] background updater
+* [ ] settings parity
+* [ ] tray integration
+* [ ] compact mode
+* [ ] final packaging
+* [ ] Linux HDR / compositor integration
+* [ ] NVIDIA controls where a real Linux API exists
+
+---
+
+# 📜 License
+
+RHI Linux is a derivative of the GPLv3-licensed:
+
+**[RankFTW/RHI](https://github.com/RankFTW/RHI)**
+
+and is distributed under **GPLv3**.
 
 See:
 
-```text
-LICENSE
-UPSTREAM.md
-```
+* [`LICENSE`](LICENSE)
+* [`UPSTREAM.md`](UPSTREAM.md)
 
-Third-party runtime binaries are not bundled in the source package.
+Third-party runtime binaries are **not bundled in the source repository**.
 
-ReShade, RenoDX, OptiScaler, shader content and supported auxiliary components are obtained from their respective runtime/upstream sources as required.
+ReShade, RenoDX, OptiScaler, shader content and supported auxiliary components are obtained from their respective upstream/runtime sources when required.
 
-Microsoft `D3DCompiler_47.dll` is **never bundled or redistributed by RHI Linux**.
+> [!CAUTION]
+> Microsoft `D3DCompiler_47.dll` is **never bundled or redistributed by RHI Linux**.
+
+---
+
+<div align="center">
+
+### RHI Linux
+
+**Native Linux tooling for the RHI ecosystem — without pretending Windows-only functionality exists where Linux has no equivalent.**
+
+[Back to top](#rhi-linux)
+
+</div>
