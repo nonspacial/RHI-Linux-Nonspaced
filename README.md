@@ -655,22 +655,6 @@ dotnet test RHI-Linux.sln
 
 plus a normal UI smoke launch on CachyOS before the v0.6.7 lifecycle foundation is promoted to the stable accepted baseline.
 
-Detailed validation and regression documents are kept in the repository, including:
-
-* `PORT_STATUS.md`
-* `BUILD_NOTES.md`
-* `OPTISCALER_GATE.md`
-* `RESHADE_PARITY_GATE.md`
-* `AUXILIARY_ADDON_GATE.md`
-* `DLSS_STREAMLINE_GATE.md`
-* `STREAMLINE_RESTORE_HOTFIX.md`
-* `CACHE_PERMISSIONS_HOTFIX.md`
-* `CACHE_SWEEP_HOTFIX.md`
-* `RESHADER_CORE_HEADERS_HOTFIX.md`
-* `HEROIC_DISCOVERY_HOTFIX.md`
-* `HEROIC_SIDELOAD_DISCOVERY_HOTFIX.md`
-* `UPSTREAM_SYNC_2_5_9.md`
-
 ---
 
 ## Still locked / not parity-complete
