@@ -58,7 +58,7 @@ sudo pacman -S dotnet-sdk-8.0
 Then (fish):
 
 ```fish
-git clone <git@github.com:wizardkof/RHI-Linux.git>
+git clone <https://github.com/wizardkof/RHI-Linux.git>
 cd RHI-Linux
 dotnet restore RHI-Linux.sln
 dotnet test RHI-Linux.sln
