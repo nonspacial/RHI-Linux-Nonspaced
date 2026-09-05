@@ -1,3 +1,5 @@
+<img width="1917" height="1041" alt="image" src="https://github.com/user-attachments/assets/2a8a8134-7e07-469c-9129-a8e6cac46199" />
+<img width="1917" height="1041" alt="image" src="https://github.com/user-attachments/assets/f46adb7c-faec-4dbf-bf0f-3a97fc2a1560" />
 <div align="center">
 
 # RHI Linux
