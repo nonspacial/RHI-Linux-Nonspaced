@@ -26,6 +26,12 @@ public sealed class WinePrefixDetector : IGameDetector
             foreach (var prefix in FindPrefixes(root, 3))
             {
                 ct.ThrowIfCancellationRequested();
+
+                // Steam and Heroic already have authoritative detectors. Walking their prefixes
+                // again turns Windows support applications into fake game entries.
+                if (DetectionHelpers.IsLauncherManagedPrefix(prefix))
+                    continue;
+
                 var driveC = Path.Combine(prefix, "drive_c");
                 var candidates = new[] { Path.Combine(driveC, "Program Files"), Path.Combine(driveC, "Program Files (x86)") }
                     .Where(Directory.Exists);
@@ -35,19 +41,24 @@ public sealed class WinePrefixDetector : IGameDetector
                     try { appDirs = Directory.GetDirectories(baseDir); } catch { continue; }
                     foreach (var appDir in appDirs)
                     {
+                        var appName = Path.GetFileName(appDir);
+                        if (DetectionHelpers.IsKnownNonGameWineDirectory(appName))
+                            continue;
+
                         var exe = DetectionHelpers.FindLikelyExecutable(appDir);
                         if (exe is null) continue;
-                        games.Add(new DetectedGame
+                        var game = new DetectedGame
                         {
-                            Name = Path.GetFileName(appDir),
+                            Name = appName,
                             InstallPath = appDir,
                             Source = "Wine",
                             PrefixPath = prefix,
                             ExecutablePath = exe,
+                            LaunchExecutablePath = exe,
                             Runner = "Wine",
-                            LaunchCommand = $"WINEPREFIX={Shell(prefix)} wine {Shell(exe)}",
-                            GraphicsApi = DetectionHelpers.GuessGraphicsApi(appDir)
-                        });
+                            LaunchCommand = $"WINEPREFIX={Shell(prefix)} wine {Shell(exe)}"
+                        };
+                        games.Add(game);
                     }
                 }
             }

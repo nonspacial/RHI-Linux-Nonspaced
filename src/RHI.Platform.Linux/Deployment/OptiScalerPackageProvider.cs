@@ -1,0 +1,222 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using RHI.Core.Services;
+using RHI.Platform.Linux.Paths;
+
+namespace RHI.Platform.Linux.Deployment;
+
+public enum OptiScalerVariant
+{
+    Stable,
+    Nightly,
+    DlssNr
+}
+
+public sealed record OptiScalerPackage(
+    string Version,
+    string SourceUrl,
+    string RootDirectory,
+    OptiScalerVariant Variant = OptiScalerVariant.Stable);
+
+public interface IOptiScalerPackageProvider
+{
+    Task<OptiScalerPackage> GetLatestAsync(CancellationToken cancellationToken = default);
+
+    Task<OptiScalerPackage> GetLatestAsync(
+        OptiScalerVariant variant,
+        CancellationToken cancellationToken = default)
+        => variant == OptiScalerVariant.Stable
+            ? GetLatestAsync(cancellationToken)
+            : Task.FromException<OptiScalerPackage>(
+                new NotSupportedException($"OptiScaler package provider does not support the {variant} channel."));
+}
+
+public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
+{
+    public const string LatestReleaseApi = "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest";
+    public const string NightlyReleasesApi = "https://api.github.com/repos/optiscaler/OptiScaler-nightly/releases";
+    public const string DlssNrReleasesApi = "https://api.github.com/repos/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass/releases";
+
+    private readonly HttpClient _http;
+    private readonly IOptiScalerArchiveExtractor _extractor;
+    private readonly string _cacheDir;
+
+    public OptiScalerPackageProvider(HttpClient http, IOptiScalerArchiveExtractor extractor, string? cacheDir = null)
+    {
+        _http = http;
+        _extractor = extractor;
+        _cacheDir = cacheDir ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "optiscaler");
+    }
+
+    public Task<OptiScalerPackage> GetLatestAsync(CancellationToken cancellationToken = default)
+        => GetLatestAsync(OptiScalerVariant.Stable, cancellationToken);
+
+    public async Task<OptiScalerPackage> GetLatestAsync(
+        OptiScalerVariant variant,
+        CancellationToken cancellationToken = default)
+    {
+        var (apiUrl, requiredExtension, responseIsList) = variant switch
+        {
+            OptiScalerVariant.Stable => (LatestReleaseApi, ".7z", false),
+            OptiScalerVariant.Nightly => (NightlyReleasesApi, ".7z", true),
+            OptiScalerVariant.DlssNr => (DlssNrReleasesApi, ".zip", true),
+            _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null)
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
+        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        var release = SelectRelease(doc.RootElement, responseIsList);
+        var rawTag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
+        if (string.IsNullOrWhiteSpace(rawTag))
+            throw new InvalidOperationException($"GitHub release response did not contain an OptiScaler {variant} tag.");
+        var version = NormalizeVersion(rawTag, variant);
+
+        var candidates = new List<JsonElement>();
+        if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var asset in assets.EnumerateArray())
+            {
+                var name = asset.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+                if (string.IsNullOrWhiteSpace(name) || !name.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase)) continue;
+                if (IsNonRuntimeAssetName(name)) continue;
+                candidates.Add(asset);
+            }
+        }
+        if (candidates.Count == 0)
+            throw new InvalidOperationException($"OptiScaler {variant} {rawTag} does not publish a runtime {requiredExtension} asset that RHI Linux can install.");
+
+        var selected = candidates
+            .OrderByDescending(asset =>
+            {
+                var name = asset.GetProperty("name").GetString() ?? "";
+                if (variant == OptiScalerVariant.DlssNr && name.Contains("DLSSNR", StringComparison.OrdinalIgnoreCase)) return 2;
+                return name.Contains("final", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            })
+            .ThenByDescending(asset => asset.TryGetProperty("size", out var size) && size.TryGetInt64(out var value) ? value : 0)
+            .First();
+
+        var assetName = selected.GetProperty("name").GetString()!;
+        var sourceUrl = selected.GetProperty("browser_download_url").GetString();
+        if (string.IsNullOrWhiteSpace(sourceUrl))
+            throw new InvalidOperationException("OptiScaler release asset is missing browser_download_url.");
+        var expectedSize = selected.TryGetProperty("size", out var sizeElement) && sizeElement.TryGetInt64(out var parsedSize) ? parsedSize : 0;
+        var digest = selected.TryGetProperty("digest", out var digestElement) ? digestElement.GetString() : null;
+
+        var variantRoot = variant == OptiScalerVariant.Stable
+            ? _cacheDir
+            : Path.Combine(_cacheDir, variant.ToString().ToLowerInvariant());
+        var versionDir = Path.Combine(variantRoot, Sanitize(rawTag));
+        var archive = Path.Combine(versionDir, assetName);
+        var extractDir = Path.Combine(versionDir, "extract");
+        Directory.CreateDirectory(versionDir);
+
+        if (!await IsUsableArchiveAsync(archive, expectedSize, digest, cancellationToken).ConfigureAwait(false))
+            await DownloadAsync(sourceUrl, archive, expectedSize, digest, cancellationToken).ConfigureAwait(false);
+
+        var packageRoot = FindPackageRoot(extractDir);
+        if (packageRoot is null)
+        {
+            try { if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true); } catch { }
+            Directory.CreateDirectory(extractDir);
+            await _extractor.ExtractAllAsync(archive, extractDir, cancellationToken).ConfigureAwait(false);
+            packageRoot = FindPackageRoot(extractDir);
+        }
+
+        if (packageRoot is null)
+            throw new InvalidOperationException($"The official OptiScaler {variant} archive did not contain OptiScaler.dll and OptiScaler.ini in the same package root.");
+        var dll = Path.Combine(packageRoot, "OptiScaler.dll");
+        if (!BinarySignatureInspector.HasPeSignature(dll, 250_000) || !BinarySignatureInspector.LooksLikeOptiScaler(dll))
+            throw new InvalidOperationException("The extracted OptiScaler.dll failed the local PE/signature-string sanity check.");
+        if (variant == OptiScalerVariant.DlssNr && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
+            throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
+
+        return new OptiScalerPackage(version, sourceUrl, packageRoot, variant);
+    }
+
+    private static JsonElement SelectRelease(JsonElement root, bool responseIsList)
+    {
+        if (!responseIsList)
+        {
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException("GitHub latest-release response was not an object.");
+            return root;
+        }
+
+        if (root.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("GitHub release-list response was not an array.");
+        foreach (var release in root.EnumerateArray())
+        {
+            if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
+            return release;
+        }
+        throw new InvalidOperationException("GitHub release list did not contain a usable release.");
+    }
+
+    internal static string NormalizeVersion(string tag, OptiScalerVariant variant)
+    {
+        var value = tag.Trim();
+        if (variant == OptiScalerVariant.Nightly && value.StartsWith("nightly-", StringComparison.OrdinalIgnoreCase))
+            value = value["nightly-".Length..];
+        if (value.StartsWith('v') || value.StartsWith('V')) value = value[1..];
+        return value;
+    }
+
+    private async Task DownloadAsync(string sourceUrl, string archive, long expectedSize, string? digest, CancellationToken cancellationToken)
+    {
+        var temp = archive + ".tmp";
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, sourceUrl);
+            request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+
+            if (!await IsUsableArchiveAsync(temp, expectedSize, digest, cancellationToken).ConfigureAwait(false))
+                throw new InvalidOperationException("Downloaded OptiScaler archive failed size/SHA-256 validation.");
+            File.Move(temp, archive, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
+        }
+    }
+
+    private static async Task<bool> IsUsableArchiveAsync(string path, long expectedSize, string? digest, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path)) return false;
+        var length = new FileInfo(path).Length;
+        if (length < 1_000_000 || (expectedSize > 0 && length != expectedSize)) return false;
+        if (string.IsNullOrWhiteSpace(digest) || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) return true;
+        var expected = digest[(digest.IndexOf(':') + 1)..].Trim();
+        await using var stream = File.OpenRead(path);
+        var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
+        return actual.Equals(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string? FindPackageRoot(string extractDirectory)
+    {
+        if (!Directory.Exists(extractDirectory)) return null;
+        return Directory.EnumerateFiles(extractDirectory, "OptiScaler.dll", SearchOption.AllDirectories)
+            .Select(path => Path.GetDirectoryName(path))
+            .OfType<string>()
+            .Where(path => File.Exists(Path.Combine(path, "OptiScaler.ini")))
+            .OrderBy(path => Path.GetRelativePath(extractDirectory, path).Count(c => c == Path.DirectorySeparatorChar))
+            .FirstOrDefault();
+    }
+
+    private static bool IsNonRuntimeAssetName(string name)
+        => new[] { "debug", "symbols", "symbol", "source", "src", "backup" }
+            .Any(token => name.Contains(token, StringComparison.OrdinalIgnoreCase));
+
+    private static string Sanitize(string value)
+        => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));
+}

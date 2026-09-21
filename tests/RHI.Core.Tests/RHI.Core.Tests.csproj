@@ -14,5 +14,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/RHI.Core/RHI.Core.csproj" />
     <ProjectReference Include="../../src/RHI.Platform.Linux/RHI.Platform.Linux.csproj" />
+    <ProjectReference Include="../../src/RHI.Desktop/RHI.Desktop.csproj" />
   </ItemGroup>
 </Project>

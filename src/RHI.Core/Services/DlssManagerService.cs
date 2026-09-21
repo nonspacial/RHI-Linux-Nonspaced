@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using RHI.Core;
 using RHI.Core.Models;
 
 namespace RHI.Core.Services;
@@ -30,6 +32,7 @@ public sealed class DlssManagerService
         _deployment = deployment;
         _cacheRoot = cacheRoot;
         Directory.CreateDirectory(_cacheRoot);
+        RepairLegacyCachePermissions();
     }
 
     public DlssManifestData? Manifest => _manifest;
@@ -40,7 +43,7 @@ public sealed class DlssManagerService
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ManifestUrl);
-            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("RHI-Linux", "0.1.0"));
+            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("RHI-Linux", RhiProductInfo.Version));
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -62,7 +65,11 @@ public sealed class DlssManagerService
         }
     }
 
-    public DlssDetectionResult Detect(string gameRoot)
+    public DlssDetectionResult Detect(
+        string gameRoot,
+        string? executablePath = null,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(gameRoot)) return new();
         var dlss = new List<string>();
@@ -71,8 +78,10 @@ public sealed class DlssManagerService
         var dlssnr = new List<string>();
         var streamline = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var file in EnumerateCandidateDlls(gameRoot, maxDepth: 8))
+        indexedFiles ??= GameFileIndexer.Build(gameRoot, 8, cancellationToken);
+        foreach (var file in indexedFiles)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             switch (Path.GetFileName(file).ToLowerInvariant())
             {
                 case "nvngx_dlss.dll": dlss.Add(file); break;
@@ -86,13 +95,20 @@ public sealed class DlssManagerService
             }
         }
 
+        var binaryDirectory = !string.IsNullOrWhiteSpace(executablePath)
+            ? Path.GetDirectoryName(executablePath)
+            : null;
+
         return new()
         {
-            DlssPaths = PreferLikelyGamePaths(dlss, gameRoot),
-            DlssdPaths = PreferLikelyGamePaths(dlssd, gameRoot),
-            DlssgPaths = PreferLikelyGamePaths(dlssg, gameRoot),
-            DlssnrPaths = PreferLikelyGamePaths(dlssnr, gameRoot),
-            StreamlineFolders = streamline.OrderBy(x => RelativeDepth(gameRoot, x)).ToArray()
+            DlssPaths = PreferLikelyGamePaths(dlss, gameRoot, binaryDirectory),
+            DlssdPaths = PreferLikelyGamePaths(dlssd, gameRoot, binaryDirectory),
+            DlssgPaths = PreferLikelyGamePaths(dlssg, gameRoot, binaryDirectory),
+            DlssnrPaths = PreferLikelyGamePaths(dlssnr, gameRoot, binaryDirectory),
+            StreamlineFolders = streamline
+                .OrderBy(x => PathAffinity(x, binaryDirectory, gameRoot))
+                .ThenBy(x => RelativeDepth(gameRoot, x))
+                .ToArray()
         };
     }
 
@@ -100,6 +116,68 @@ public sealed class DlssManagerService
     {
         var entries = Entries(kind);
         return entries.Select(x => x.Version).ToArray();
+    }
+
+    /// <summary>Best-effort PE version read used by Quick Apply to retain upstream DLSS 1.x protection.</summary>
+    public static string? TryGetDllVersion(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var info = FileVersionInfo.GetVersionInfo(path);
+            var raw = !string.IsNullOrWhiteSpace(info.FileVersion) ? info.FileVersion : info.ProductVersion;
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var token = raw.Trim().Split(new[] { ' ', '+', '-' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            return string.IsNullOrWhiteSpace(token) ? null : token;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Ensures the newest payload for one DLSS component is cached and returns its readable DLL path.
+    /// Unlike SwapAsync this does not require an existing game target and is used by orchestrated
+    /// workflows such as DLSS5 Feeder that intentionally create a complete private stack.
+    /// </summary>
+    public async Task<string?> EnsureNewestCachedAsync(
+        DlssComponentKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        if (_manifest is null)
+            await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        var entry = Entries(kind).FirstOrDefault();
+        if (entry is null) return null;
+        return await DownloadDllAsync(entry, DllName(kind), CacheSubdir(kind), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Ensures the newest Streamline package is cached and returns its directory.</summary>
+    public async Task<string?> EnsureNewestStreamlineCachedAsync(CancellationToken cancellationToken = default)
+    {
+        if (_manifest is null)
+            await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        var entry = (_manifest?.Streamline ?? []).FirstOrDefault();
+        if (entry is null) return null;
+        var cacheDir = Path.Combine(_cacheRoot, "Streamline", SanitizeVersion(entry.Version));
+        await DownloadStreamlineAsync(entry, cacheDir, cancellationToken).ConfigureAwait(false);
+        return cacheDir;
+    }
+
+    /// <summary>Ensures one exact Streamline version is cached and returns its directory.</summary>
+    public async Task<string?> EnsureStreamlineCachedAsync(
+        string version,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return null;
+        if (_manifest is null)
+            await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        var entry = (_manifest?.Streamline ?? [])
+            .FirstOrDefault(candidate => string.Equals(candidate.Version, version, StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return null;
+        var cacheDir = Path.Combine(_cacheRoot, "Streamline", SanitizeVersion(entry.Version));
+        await DownloadStreamlineAsync(entry, cacheDir, cancellationToken).ConfigureAwait(false);
+        return cacheDir;
     }
 
     public async Task<FileDeploymentBatchResult> SwapAsync(
@@ -119,41 +197,75 @@ public sealed class DlssManagerService
         return await _deployment.ReplaceBatchAsync(targets.Select(t => (cachedDll, t)), cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<FileDeploymentBatchResult> RestoreAsync(
+    public Task<FileDeploymentBatchResult> RestoreAsync(
         DlssComponentKind kind,
         IEnumerable<string> targetDlls,
         CancellationToken cancellationToken = default)
     {
-        var results = new List<FileDeploymentResult>();
-        foreach (var target in targetDlls.Distinct(StringComparer.Ordinal))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            results.Add(await _deployment.RestoreAsync(target, cancellationToken).ConfigureAwait(false));
-        }
-        return new(results.Count > 0 && results.All(r => r.Success), results,
-            results.FirstOrDefault(r => !r.Success)?.Error);
+        var targets = targetDlls.Distinct(StringComparer.Ordinal).ToArray();
+        if (targets.Length == 0)
+            return Task.FromResult(new FileDeploymentBatchResult(false, [], $"No existing {DllName(kind)} target was found."));
+        return _deployment.RestoreBatchAsync(targets, cancellationToken);
     }
 
-    public async Task<FileDeploymentBatchResult> SwapStreamlineAsync(
+    public Task<FileDeploymentBatchResult> SwapStreamlineAsync(
         string targetFolder,
+        string version,
+        CancellationToken cancellationToken = default)
+        => SwapStreamlineAsync(new[] { targetFolder }, version, cancellationToken);
+
+    public async Task<FileDeploymentBatchResult> SwapStreamlineAsync(
+        IEnumerable<string> targetFolders,
         string version,
         CancellationToken cancellationToken = default)
     {
         var entry = (_manifest?.Streamline ?? []).FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase));
         if (entry is null) return new(false, [], $"Streamline version '{version}' does not exist in the current manifest.");
-        if (!Directory.Exists(targetFolder)) return new(false, [], "Streamline target folder does not exist.");
+
+        var folders = targetFolders
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (folders.Length == 0) return new(false, [], "No detected Streamline target folder exists.");
 
         var cacheDir = Path.Combine(_cacheRoot, "Streamline", SanitizeVersion(version));
         await DownloadStreamlineAsync(entry, cacheDir, cancellationToken).ConfigureAwait(false);
 
-        var replacements = KnownStreamlineDlls
-            .Select(name => (Source: Path.Combine(cacheDir, name), Target: Path.Combine(targetFolder, name)))
+        // Upstream RHI only swaps DLLs that already exist in the game's Streamline layout.
+        // Keep the same invariant on Linux: never create guessed sl.* targets.
+        var replacements = folders
+            .SelectMany(folder => KnownStreamlineDlls.Select(name =>
+                (Source: Path.Combine(cacheDir, name), Target: Path.Combine(folder, name))))
             .Where(x => File.Exists(x.Source) && File.Exists(x.Target))
+            .DistinctBy(x => x.Target, StringComparer.Ordinal)
             .ToArray();
         if (replacements.Length == 0)
             return new(false, [], "No existing Streamline DLLs matched the downloaded set; refusing to create a guessed layout.");
 
         return await _deployment.ReplaceBatchAsync(replacements, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<FileDeploymentBatchResult> RestoreStreamlineAsync(
+        string targetFolder,
+        CancellationToken cancellationToken = default)
+        => RestoreStreamlineAsync(new[] { targetFolder }, cancellationToken);
+
+    public Task<FileDeploymentBatchResult> RestoreStreamlineAsync(
+        IEnumerable<string> targetFolders,
+        CancellationToken cancellationToken = default)
+    {
+        var targets = targetFolders
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.Ordinal)
+            .SelectMany(folder => KnownStreamlineDlls.Select(name => Path.Combine(folder, name)))
+            .Where(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (targets.Length == 0)
+            return Task.FromResult(new FileDeploymentBatchResult(false, [], "No RHI-created Streamline .original backups were found."));
+
+        return _deployment.RestoreBatchAsync(targets, cancellationToken);
     }
 
     private List<DlssManifestEntry> Entries(DlssComponentKind kind) => kind switch
@@ -192,7 +304,15 @@ public sealed class DlssManagerService
         ValidateDownloadUrl(entry.Url);
         var cacheDir = Path.Combine(_cacheRoot, componentDir, SanitizeVersion(entry.Version));
         var cachedDll = Path.Combine(cacheDir, expectedDll);
-        if (File.Exists(cachedDll) && new FileInfo(cachedDll).Length > 64 * 1024) return cachedDll;
+        if (File.Exists(cachedDll))
+        {
+            // Some upstream ZIP entries carry Unix external attributes that System.IO.Compression
+            // can materialize as execute-only files (for example mode 0010). Repair older
+            // cache entries in place before deciding whether the cached payload is reusable.
+            NormalizeCacheDllPermissions(cachedDll);
+            if (IsReadableCachedDll(cachedDll)) return cachedDll;
+            TryDeleteCacheFile(cachedDll);
+        }
 
         Directory.CreateDirectory(cacheDir);
         var zipPath = Path.Combine(cacheDir, "download.zip.part");
@@ -203,16 +323,31 @@ public sealed class DlssManagerService
                         ?? throw new InvalidDataException($"Downloaded archive does not contain {expectedDll}.");
             var temp = cachedDll + ".tmp";
             match.ExtractToFile(temp, overwrite: true);
-            if (new FileInfo(temp).Length < 64 * 1024) throw new InvalidDataException($"Extracted {expectedDll} is unexpectedly small.");
+            NormalizeCacheDllPermissions(temp);
+            if (!IsReadableCachedDll(temp))
+                throw new InvalidDataException($"Extracted {expectedDll} is unreadable or unexpectedly small.");
             File.Move(temp, cachedDll, overwrite: true);
+            NormalizeCacheDllPermissions(cachedDll);
         }
         File.Delete(zipPath);
+        if (!IsReadableCachedDll(cachedDll))
+            throw new IOException($"Cached {expectedDll} is not readable after extraction: {cachedDll}");
         return cachedDll;
     }
 
     private async Task DownloadStreamlineAsync(DlssManifestEntry entry, string cacheDir, CancellationToken ct)
     {
-        if (KnownStreamlineDlls.Any(name => File.Exists(Path.Combine(cacheDir, name)))) return;
+        var existing = KnownStreamlineDlls
+            .Select(name => Path.Combine(cacheDir, name))
+            .Where(File.Exists)
+            .ToArray();
+        if (existing.Length > 0)
+        {
+            foreach (var path in existing) NormalizeCacheDllPermissions(path);
+            if (existing.All(IsReadableCachedDll)) return;
+            foreach (var path in existing.Where(path => !IsReadableCachedDll(path))) TryDeleteCacheFile(path);
+        }
+
         ValidateDownloadUrl(entry.Url);
         Directory.CreateDirectory(cacheDir);
         var zipPath = Path.Combine(cacheDir, "download.zip.part");
@@ -223,12 +358,90 @@ public sealed class DlssManagerService
             {
                 var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), dll, StringComparison.OrdinalIgnoreCase));
                 if (match is null) continue;
-                match.ExtractToFile(Path.Combine(cacheDir, dll), overwrite: true);
+                var extracted = Path.Combine(cacheDir, dll);
+                match.ExtractToFile(extracted, overwrite: true);
+                NormalizeCacheDllPermissions(extracted);
+                if (!IsReadableCachedDll(extracted))
+                    throw new InvalidDataException($"Extracted Streamline DLL is unreadable or unexpectedly small: {dll}");
             }
         }
         File.Delete(zipPath);
-        if (!KnownStreamlineDlls.Any(name => File.Exists(Path.Combine(cacheDir, name))))
-            throw new InvalidDataException("Streamline archive contained no recognized DLLs.");
+        if (!KnownStreamlineDlls.Any(name => File.Exists(Path.Combine(cacheDir, name)) && IsReadableCachedDll(Path.Combine(cacheDir, name))))
+            throw new InvalidDataException("Streamline archive contained no readable recognized DLLs.");
+    }
+
+
+    private void RepairLegacyCachePermissions()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        // Earlier code repaired a cache entry only when that exact version was selected.
+        // Untouched legacy payloads could therefore remain
+        // mode 0010 indefinitely. Sweep only RHI-owned NVIDIA cache namespaces at
+        // service startup so every known DLSS/Streamline payload is readable before
+        // the user chooses a version. Unrelated add-on caches are intentionally out
+        // of scope.
+        var roots = new[] { "DLSS", "DLSS-D", "DLSS-G", "DLSS-NR", "Streamline" };
+        var knownNames = new HashSet<string>(KnownStreamlineDlls, StringComparer.OrdinalIgnoreCase)
+        {
+            "nvngx_dlss.dll", "nvngx_dlssd.dll", "nvngx_dlssg.dll", "nvngx_dlssnr.dll"
+        };
+
+        foreach (var component in roots)
+        {
+            var componentRoot = Path.Combine(_cacheRoot, component);
+            if (!Directory.Exists(componentRoot)) continue;
+
+            string[] dlls;
+            try
+            {
+                dlls = Directory.EnumerateFiles(componentRoot, "*.dll", SearchOption.AllDirectories).ToArray();
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (var path in dlls)
+            {
+                if (knownNames.Contains(Path.GetFileName(path)))
+                    NormalizeCacheDllPermissions(path);
+            }
+        }
+    }
+
+    private static bool IsReadableCachedDll(string path)
+    {
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length <= 64 * 1024) return false;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return stream.ReadByte() >= 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void NormalizeCacheDllPermissions(string path)
+    {
+        if (OperatingSystem.IsWindows() || !File.Exists(path)) return;
+        try
+        {
+            // DLLs are data payloads for Wine/Proton; execute permission is neither required nor
+            // desirable in the cache. Explicitly ignore ZIP-carried Unix modes and keep a normal
+            // user-owned readable cache file.
+            File.SetUnixFileMode(path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite |
+                UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        }
+        catch (PlatformNotSupportedException) { }
+    }
+
+    private static void TryDeleteCacheFile(string path)
+    {
+        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private async Task DownloadFileAsync(string url, string destination, CancellationToken ct)
@@ -260,45 +473,30 @@ public sealed class DlssManagerService
             throw new InvalidDataException($"Unexpected DLSS download host: {uri.Host}");
     }
 
-    private static IEnumerable<string> EnumerateCandidateDlls(string root, int maxDepth)
+    private static IReadOnlyList<string> PreferLikelyGamePaths(
+        IEnumerable<string> paths, string gameRoot, string? binaryDirectory)
+        => paths.Distinct(StringComparer.Ordinal)
+            .OrderBy(p => PathAffinity(Path.GetDirectoryName(p) ?? gameRoot, binaryDirectory, gameRoot))
+            .ThenBy(p => RelativeDepth(gameRoot, Path.GetDirectoryName(p) ?? gameRoot))
+            .ToArray();
+
+    private static int PathAffinity(string directory, string? binaryDirectory, string gameRoot)
     {
-        var rootDepth = RelativeDepth(root, root);
-        var pending = new Stack<string>();
-        pending.Push(root);
-        while (pending.Count > 0)
+        if (!string.IsNullOrWhiteSpace(binaryDirectory))
         {
-            var dir = pending.Pop();
-            var depth = RelativeDepth(root, dir) - rootDepth;
-            IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(dir, "*.dll"); }
-            catch { continue; }
-            foreach (var file in files)
-            {
-                var name = Path.GetFileName(file);
-                if (name.StartsWith("nvngx_dlss", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("sl.interposer.dll", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("sl.common.dll", StringComparison.OrdinalIgnoreCase))
-                    yield return file;
-            }
-            if (depth >= maxDepth) continue;
             try
             {
-                foreach (var sub in Directory.EnumerateDirectories(dir))
-                {
-                    var n = Path.GetFileName(sub);
-                    if (n.Equals("_CommonRedist", StringComparison.OrdinalIgnoreCase)) continue;
-                    pending.Push(sub);
-                }
+                if (Path.GetFullPath(directory) == Path.GetFullPath(binaryDirectory)) return 0;
+                var rel = Path.GetRelativePath(binaryDirectory, directory);
+                if (!rel.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) && rel != "..") return 1;
             }
             catch { }
         }
+        var normalized = directory.Replace('\\', '/');
+        if (normalized.Contains("/Binaries/Win64", StringComparison.OrdinalIgnoreCase)) return 2;
+        if (normalized.Contains("/Engine/Binaries", StringComparison.OrdinalIgnoreCase)) return 4;
+        return 3 + Math.Min(20, RelativeDepth(gameRoot, directory));
     }
-
-    private static IReadOnlyList<string> PreferLikelyGamePaths(IEnumerable<string> paths, string gameRoot)
-        => paths.Distinct(StringComparer.Ordinal)
-            .OrderBy(p => p.Contains("Engine/Binaries", StringComparison.OrdinalIgnoreCase) ? 1 : 0)
-            .ThenBy(p => RelativeDepth(gameRoot, Path.GetDirectoryName(p) ?? gameRoot))
-            .ToArray();
 
     private static int RelativeDepth(string root, string path)
     {

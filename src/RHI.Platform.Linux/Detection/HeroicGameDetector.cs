@@ -6,8 +6,9 @@ using RHI.Platform.Linux.Paths;
 namespace RHI.Platform.Linux.Detection;
 
 /// <summary>
-/// Tolerant Heroic detector. Heroic has changed its cache schema several times, so this
-/// intentionally walks JSON objects looking for install_path/installPath + title/appName.
+/// Tolerant Heroic detector. Heroic has changed its cache/config layout and JSON schema
+/// several times, so this reads both Heroic-managed metadata and Legendary's authoritative
+/// installed.json locations instead of assuming all Epic metadata lives below ~/.config/heroic.
 /// </summary>
 public sealed class HeroicGameDetector : IGameDetector
 {
@@ -19,77 +20,184 @@ public sealed class HeroicGameDetector : IGameDetector
     private IReadOnlyList<DetectedGame> Detect(CancellationToken ct)
     {
         var result = new Dictionary<string, DetectedGame>(StringComparer.OrdinalIgnoreCase);
+        var visitedFiles = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var heroicRoot in LinuxPaths.HeroicRoots())
         {
-            var jsonFiles = SafeJsonFiles(heroicRoot);
-            foreach (var file in jsonFiles)
+            foreach (var file in SafeJsonFiles(heroicRoot))
             {
                 ct.ThrowIfCancellationRequested();
-                try
-                {
-                    using var doc = JsonDocument.Parse(File.ReadAllText(file));
-                    Visit(doc.RootElement, result);
-                }
-                catch { }
+                ParseFile(file, result, StoreHintFromPath(file), visitedFiles);
             }
-
-            // Prefix folders are useful even if the installed-game cache schema changes.
-            var prefixRoot = Path.Combine(heroicRoot, "Prefixes");
-            if (!Directory.Exists(prefixRoot))
-                prefixRoot = Path.Combine(LinuxPaths.Home, "Games", "Heroic", "Prefixes");
-            if (Directory.Exists(prefixRoot))
-                AttachPrefixes(result.Values, prefixRoot);
         }
+
+        // Epic/Legendary is the important special case: on native Heroic this is commonly
+        // ~/.config/legendary/installed.json, i.e. outside HeroicRoots(). Newer Heroic builds
+        // can instead use heroic/legendaryConfig/legendary/installed.json. Support both.
+        foreach (var legendaryRoot in LinuxPaths.HeroicLegendaryRoots())
+        {
+            ct.ThrowIfCancellationRequested();
+            var installed = Path.Combine(legendaryRoot, "installed.json");
+            ParseFile(installed, result, "legendary", visitedFiles);
+        }
+
+        // Prefer exact prefix data from per-game Heroic settings when available, then fall
+        // back to the long-standing ~/Games/Heroic/Prefixes name match.
+        AttachConfiguredPrefixes(result.Values);
+        foreach (var prefixRoot in LinuxPaths.HeroicPrefixRoots())
+            AttachPrefixes(result.Values.Where(g => string.IsNullOrWhiteSpace(g.PrefixPath)), prefixRoot);
+
         return result.Values.ToArray();
+    }
+
+    private static void ParseFile(
+        string file,
+        IDictionary<string, DetectedGame> result,
+        string? sourceHint,
+        ISet<string>? visitedFiles = null)
+    {
+        if (!File.Exists(file)) return;
+        var full = Path.GetFullPath(file);
+        if (visitedFiles != null && !visitedFiles.Add(full)) return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(file));
+            Visit(doc.RootElement, result, sourceHint);
+        }
+        catch
+        {
+            // Heroic caches are not all game metadata and some can be transient/truncated.
+            // A malformed optional cache should not abort the complete library scan.
+        }
     }
 
     private static IEnumerable<string> SafeJsonFiles(string root)
     {
-        var likely = new[] { "installed.json", "store_cache", "gog_store", "legendaryConfig", "nile_config" };
+        foreach (var file in HeroicMetadataFileCandidates(root))
+            if (File.Exists(file)) yield return file;
+
+        var likely = new[]
+        {
+            "store_cache",
+            "gog_store",
+            "legendaryConfig",
+            "nile_config",
+            "GamesConfig",
+            "sideload_apps",
+            Path.Combine("store", "sideload_apps")
+        };
         foreach (var key in likely)
         {
             var path = Path.Combine(root, key);
-            if (File.Exists(path) && path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) yield return path;
             if (!Directory.Exists(path)) continue;
             IEnumerable<string> files;
             try { files = Directory.EnumerateFiles(path, "*.json", SearchOption.AllDirectories); }
             catch { continue; }
-            foreach (var file in files.Take(200)) yield return file;
+            foreach (var file in files.Take(500)) yield return file;
         }
     }
 
-    private static void Visit(JsonElement element, IDictionary<string, DetectedGame> result)
+    private static IEnumerable<string> HeroicMetadataFileCandidates(string root)
+    {
+        yield return Path.Combine(root, "installed.json");
+        yield return Path.Combine(root, "gog_store", "installed.json");
+        // Current Heroic sideload store (electron-store cwd='sideload_apps', name='library').
+        yield return Path.Combine(root, "sideload_apps", "library.json");
+        // Older/alternate layout retained for compatibility.
+        yield return Path.Combine(root, "store", "sideload_apps", "library.json");
+    }
+
+    private static string? StoreHintFromPath(string file)
+    {
+        var normalized = file.Replace('\\', '/');
+        if (normalized.Contains("/legendaryConfig/", StringComparison.OrdinalIgnoreCase)
+            || normalized.EndsWith("/legendary/installed.json", StringComparison.OrdinalIgnoreCase))
+            return "legendary";
+        if (normalized.Contains("/gog_store/", StringComparison.OrdinalIgnoreCase))
+            return "gog";
+        if (normalized.Contains("/nile_config/", StringComparison.OrdinalIgnoreCase))
+            return "nile";
+        if (normalized.Contains("/sideload_apps/", StringComparison.OrdinalIgnoreCase))
+            return "sideload";
+        return null;
+    }
+
+    private static void Visit(JsonElement element, IDictionary<string, DetectedGame> result, string? sourceHint)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
             var props = element.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
-            var install = StringValue(props, "install_path", "installPath", "installLocation", "path");
-            var name = StringValue(props, "title", "name", "app_title", "appName");
-            if (!string.IsNullOrWhiteSpace(install) && !string.IsNullOrWhiteSpace(name) && Directory.Exists(install))
+
+            // Installed records are usually flat (Legendary/GOG installed.json). Some Heroic
+            // library caches nest these fields in an "install" object, so merge that object for
+            // detection while keeping the parent title/app_name fields.
+            var merged = new Dictionary<string, JsonElement>(props, StringComparer.OrdinalIgnoreCase);
+            if (props.TryGetValue("install", out var installObject) && installObject.ValueKind == JsonValueKind.Object)
             {
-                var source = StringValue(props, "platform", "store", "runner") ?? "Heroic";
-                var appName = StringValue(props, "app_name", "appName", "app_name_string");
+                foreach (var p in installObject.EnumerateObject())
+                    if (!merged.ContainsKey(p.Name)) merged[p.Name] = p.Value;
+            }
+
+            var executable = StringValue(merged, "executable", "exe");
+            var install = StringValue(merged,
+                "install_path", "installPath", "installLocation", "path",
+                // Heroic sideload records keep the executable in install.executable and
+                // its containing directory in the parent folder_name field.
+                "folder_name", "folderName");
+            if (string.IsNullOrWhiteSpace(install) && !string.IsNullOrWhiteSpace(executable))
+            {
+                var normalizedExecutable = executable.Replace('\\', Path.DirectorySeparatorChar)
+                    .Replace('/', Path.DirectorySeparatorChar);
+                if (Path.IsPathRooted(normalizedExecutable))
+                    install = Path.GetDirectoryName(normalizedExecutable);
+            }
+
+            var name = StringValue(merged, "title", "name", "app_title", "appTitle");
+            var isInstalled = BoolValue(merged, "is_installed", "isInstalled");
+
+            if (!string.IsNullOrWhiteSpace(install)
+                && !string.IsNullOrWhiteSpace(name)
+                && Directory.Exists(install)
+                && isInstalled != false)
+            {
+                var explicitRunner = StringValue(merged, "runner", "store");
+                var runner = NormalizeRunner(explicitRunner ?? sourceHint ?? "heroic");
+                var appName = StringValue(merged, "app_name", "appName", "app_name_string");
+                var executablePath = ResolveExecutable(install, executable)
+                    ?? DetectionHelpers.FindLikelyExecutable(install);
+
                 var game = new DetectedGame
                 {
                     Name = name,
-                    InstallPath = install,
-                    Source = $"Heroic/{source}",
-                    EpicAppName = appName,
-                    ExecutablePath = DetectionHelpers.FindLikelyExecutable(install),
+                    InstallPath = Path.GetFullPath(install),
+                    Source = DisplaySource(runner),
+                    EpicAppName = runner == "legendary" ? appName : null,
+                    HeroicAppName = appName,
+                    ExecutablePath = executablePath,
+                    LaunchExecutablePath = executablePath,
                     Runner = "Wine/Proton (Heroic)",
-                    GraphicsApi = DetectionHelpers.GuessGraphicsApi(install),
                     LaunchCommand = !string.IsNullOrWhiteSpace(appName)
-                        ? $"xdg-open {EscapeShell(BuildHeroicUri(appName, StringValue(props, "runner", "store") ?? source))}"
+                        ? $"xdg-open {EscapeShell(BuildHeroicUri(appName, runner))}"
                         : null
                 };
-                result[Path.GetFullPath(install)] = game;
+                result[game.InstallPath] = game;
             }
-            foreach (var p in props.Values) Visit(p, result);
+
+            foreach (var p in props.Values) Visit(p, result, sourceHint);
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in element.EnumerateArray()) Visit(item, result);
+            foreach (var item in element.EnumerateArray()) Visit(item, result, sourceHint);
         }
+    }
+
+    private static string? ResolveExecutable(string installPath, string? executable)
+    {
+        if (string.IsNullOrWhiteSpace(executable)) return null;
+        var normalized = executable.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        var candidate = Path.IsPathRooted(normalized) ? normalized : Path.Combine(installPath, normalized);
+        return File.Exists(candidate) ? candidate : null;
     }
 
     private static string? StringValue(Dictionary<string, JsonElement> props, params string[] keys)
@@ -98,6 +206,142 @@ public sealed class HeroicGameDetector : IGameDetector
             if (props.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String)
                 return v.GetString();
         return null;
+    }
+
+    private static bool? BoolValue(Dictionary<string, JsonElement> props, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (!props.TryGetValue(key, out var v)) continue;
+            if (v.ValueKind == JsonValueKind.True) return true;
+            if (v.ValueKind == JsonValueKind.False) return false;
+        }
+        return null;
+    }
+
+    private static void AttachConfiguredPrefixes(IEnumerable<DetectedGame> games)
+    {
+        var byApp = games
+            .Select(g => (game: g, appName: g.HeroicAppName ?? g.EpicAppName))
+            .Where(x => !string.IsNullOrWhiteSpace(x.appName))
+            .GroupBy(x => x.appName!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().game, StringComparer.OrdinalIgnoreCase);
+        if (byApp.Count == 0) return;
+
+        foreach (var heroicRoot in LinuxPaths.HeroicRoots())
+        {
+            var settingsDir = Path.Combine(heroicRoot, "GamesConfig");
+            if (!Directory.Exists(settingsDir)) continue;
+
+            IEnumerable<string> files;
+            try { files = Directory.EnumerateFiles(settingsDir, "*.json", SearchOption.TopDirectoryOnly); }
+            catch { continue; }
+
+            foreach (var file in files)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                    ExtractConfiguredPrefix(doc.RootElement, byApp);
+                }
+                catch { }
+            }
+        }
+    }
+
+    private static void ExtractConfiguredPrefix(JsonElement element, IDictionary<string, DetectedGame> byApp)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return;
+        foreach (var property in element.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object
+                || !byApp.TryGetValue(property.Name, out var game))
+                continue;
+
+            var props = property.Value.EnumerateObject()
+                .ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+
+            var prefix = ExpandHome(StringValue(props, "winePrefix", "wine_prefix", "prefix"));
+            if (!string.IsNullOrWhiteSpace(prefix) && Directory.Exists(prefix))
+                game.PrefixPath = FindWinePrefix(prefix);
+
+            if (!props.TryGetValue("wineVersion", out var wineVersion))
+                continue;
+
+            if (wineVersion.ValueKind == JsonValueKind.String)
+            {
+                game.CompatibilityTool = wineVersion.GetString();
+                continue;
+            }
+
+            if (wineVersion.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var wineProps = wineVersion.EnumerateObject()
+                .ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+            var type = StringValue(wineProps, "type")?.Trim().ToLowerInvariant();
+            var name = StringValue(wineProps, "name");
+            var configuredBin = ExpandHome(StringValue(wineProps, "bin"));
+            var configuredWineServer = ExpandHome(StringValue(wineProps, "wineserver"));
+
+            game.CompatibilityLayerType = type;
+            game.CompatibilityTool = name ?? game.CompatibilityTool;
+
+            var wineBin = ResolveHeroicWineBinary(configuredBin, type);
+            if (!string.IsNullOrWhiteSpace(wineBin))
+            {
+                game.WineBinaryPath = wineBin;
+                game.WineServerPath = ResolveMatchingWineServer(wineBin, configuredWineServer);
+            }
+
+            game.Runner = type switch
+            {
+                "proton" => "Heroic Proton",
+                "wine" => "Heroic Wine",
+                "crossover" => "Heroic CrossOver",
+                "toolkit" => "Heroic Toolkit",
+                _ => game.Runner
+            };
+        }
+    }
+
+    private static string? ResolveHeroicWineBinary(string? configuredBin, string? type)
+    {
+        if (string.IsNullOrWhiteSpace(configuredBin)) return null;
+        configuredBin = Path.GetFullPath(configuredBin);
+
+        if (string.Equals(type, "proton", StringComparison.OrdinalIgnoreCase))
+        {
+            var baseDir = Path.GetDirectoryName(configuredBin);
+            if (!string.IsNullOrWhiteSpace(baseDir))
+            {
+                foreach (var dist in new[] { "files", "dist" })
+                {
+                    var candidate = Path.Combine(baseDir, dist, "bin", "wine");
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+        }
+
+        return File.Exists(configuredBin) ? configuredBin : null;
+    }
+
+    private static string? ResolveMatchingWineServer(string wineBin, string? configuredWineServer)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredWineServer) && File.Exists(configuredWineServer))
+            return Path.GetFullPath(configuredWineServer);
+
+        var sibling = Path.Combine(Path.GetDirectoryName(wineBin) ?? string.Empty, "wineserver");
+        return File.Exists(sibling) ? sibling : null;
+    }
+
+    private static string? ExpandHome(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        if (value == "~") return LinuxPaths.Home;
+        if (value.StartsWith("~/", StringComparison.Ordinal))
+            return Path.Combine(LinuxPaths.Home, value[2..]);
+        return Environment.ExpandEnvironmentVariables(value);
     }
 
     private static void AttachPrefixes(IEnumerable<DetectedGame> games, string prefixRoot)
@@ -123,6 +367,26 @@ public sealed class HeroicGameDetector : IGameDetector
         return Directory.Exists(Path.Combine(pfx, "drive_c")) ? pfx : root;
     }
 
+    private static string NormalizeRunner(string value)
+    {
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "epic" or "egs" => "legendary",
+            "amazon" => "nile",
+            _ => normalized
+        };
+    }
+
+    private static string DisplaySource(string runner) => runner switch
+    {
+        "legendary" => "Heroic/Epic",
+        "gog" => "Heroic/GOG",
+        "nile" => "Heroic/Amazon",
+        "sideload" => "Heroic/Sideload",
+        _ => "Heroic"
+    };
+
     private static string Normalize(string value) => new(value.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
     private static double Similarity(string a, string b)
     {
@@ -132,8 +396,32 @@ public sealed class HeroicGameDetector : IGameDetector
         var common = a.Intersect(b).Count();
         return (double)common / Math.Max(a.Length, b.Length);
     }
+
     private static string BuildHeroicUri(string appName, string runner)
         => $"heroic://launch?appName={Uri.EscapeDataString(appName)}&runner={Uri.EscapeDataString(runner)}";
 
     private static string EscapeShell(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    // Internal hooks for focused tests; production uses the same parser/path candidate code.
+    internal static IReadOnlyList<DetectedGame> ParseInstalledJsonForTests(string file, string sourceHint)
+    {
+        var result = new Dictionary<string, DetectedGame>(StringComparer.OrdinalIgnoreCase);
+        ParseFile(file, result, sourceHint);
+        return result.Values.ToArray();
+    }
+
+    internal static IReadOnlyList<string> HeroicMetadataFileCandidatesForTests(string heroicRoot)
+        => HeroicMetadataFileCandidates(heroicRoot).ToArray();
+
+    internal static void ApplyConfiguredPrefixJsonForTests(string json, DetectedGame game)
+    {
+        var appName = game.HeroicAppName ?? game.EpicAppName;
+        if (string.IsNullOrWhiteSpace(appName)) return;
+        var byApp = new Dictionary<string, DetectedGame>(StringComparer.OrdinalIgnoreCase)
+        {
+            [appName] = game
+        };
+        using var doc = JsonDocument.Parse(json);
+        ExtractConfiguredPrefix(doc.RootElement, byApp);
+    }
 }

@@ -1,0 +1,656 @@
+using System.Globalization;
+using Avalonia;
+
+namespace RHI.Desktop.Localization;
+
+public static class UiLocalizationService
+{
+    private static readonly IReadOnlyDictionary<string, string> PtBr = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["Ui.WindowTitle"] = "RHI-Linux — Jogos de PC simplificados",
+        ["Ui.Tagline"] = "Jogos de PC simplificados · Linux",
+        ["Ui.QuickStart"] = "Início rápido",
+        ["Ui.Refresh"] = "Atualizar",
+        ["Ui.AddGame"] = "Adicionar jogo",
+        ["Ui.ShadersAddons"] = "Shaders/Add-ons",
+        ["Ui.UpdateAll"] = "Atualizar tudo",
+        ["Ui.BatchDlss"] = "DLSS em lote",
+        ["Ui.Links"] = "Links",
+        ["Ui.Motd"] = "MOTD",
+        ["Ui.Settings"] = "Configurações",
+        ["Ui.ViewDetail"] = "Visualização detalhada",
+        ["Ui.ViewCompact"] = "Visualização compacta",
+        ["Ui.SearchGames"] = "Filtrar jogos...",
+        ["Ui.Library"] = "BIBLIOTECA",
+        ["Ui.All"] = "Todos",
+        ["Ui.Favourites"] = "Favoritos",
+        ["Ui.Installed"] = "Instalados",
+        ["Ui.Other"] = "Outros",
+        ["Ui.Hidden"] = "Ocultos",
+        ["Ui.Games"] = "jogos",
+        ["Ui.Edit"] = "Editar",
+        ["Ui.RemoveManual"] = "Remover manual",
+        ["Ui.OpenFolder"] = "Abrir pasta",
+        ["Ui.OpenPrefix"] = "Abrir prefixo",
+        ["Ui.Play"] = "Jogar",
+        ["Ui.Show"] = "Mostrar",
+        ["Ui.Hide"] = "Ocultar",
+        ["Ui.FavouriteOn"] = "★ Favorito",
+        ["Ui.FavouriteOff"] = "☆ Favorito",
+        ["Ui.ExecutionGame"] = "Execução / Jogo",
+        ["Ui.ExecutionGameNote"] = "Destino de execução, prefixo Wine/Proton e detecção da API gráfica.",
+        ["Ui.Launcher"] = "Inicialização / launcher",
+        ["Ui.TargetSafety"] = "Segurança do alvo",
+        ["Ui.GameRoot"] = "Raiz do jogo / patches",
+        ["Ui.Prefix"] = "Prefixo Wine / Proton",
+        ["Ui.TargetExe"] = "Executável alvo",
+        ["Ui.PatchDirectory"] = "Diretório de binários/patches",
+        ["Ui.GraphicsApi"] = "API gráfica",
+        ["Ui.ForceApi"] = "Forçar API",
+        ["Ui.LumaMode"] = "Modo Luma",
+        ["Ui.HdrExecution"] = "Execução HDR",
+        ["Ui.NeuralRendering"] = "Renderização neural",
+        ["Ui.EngineArchitecture"] = "Motor / arquitetura",
+        ["Ui.ApiEvidence"] = "Evidência da API",
+        ["Ui.DlssStreamline"] = "DLSS / Streamline",
+        ["Ui.GameDlls"] = "DLLs locais do jogo",
+        ["Ui.SuperResolution"] = "Super-resolução",
+        ["Ui.RayReconstruction"] = "Reconstrução de raios",
+        ["Ui.FrameGeneration"] = "Geração de quadros",
+        ["Ui.StreamlineUpdate"] = "Streamline — Atualização",
+        ["Ui.StreamlineUpdateNote"] = "Atualiza e restaura DLLs NVIDIA Streamline já existentes no jogo. Separadamente, o OptiScaler Nightly/DLSS NR pode implantar sua própria pilha Streamline + DLSS Enabler, como no RHI Windows.",
+        ["Ui.StreamlineDetectedNote"] = "Integração Streamline detectada. Use esta seção para atualizar/restaurar as DLLs existentes; o deploy privado do OptiScaler fica nas configurações avançadas do OptiScaler Nightly/DLSS NR.",
+        ["Ui.StreamlineMissingNote"] = "Streamline nativo não detectado neste jogo. Esta linha não cria uma integração nativa; porém o OptiScaler Nightly/DLSS NR pode implantar Streamline + DLSS Enabler em OptiScaler/, igual ao RHI Windows.",
+        ["Ui.StatusDetected"] = "Detectado",
+        ["Ui.StatusNotDetected"] = "Não detectado",
+        ["Ui.ReShadeProfile"] = "Perfil do ReShade",
+        ["Ui.ManagedComponents"] = "Componentes gerenciados",
+        ["Ui.LinuxBackendActive"] = "Integração Linux ativa",
+        ["Ui.Extras"] = "Extras",
+        ["Ui.CheckUpdate"] = "Verificar atualização",
+        ["Ui.Install"] = "Instalar",
+        ["Ui.Remove"] = "Remover",
+        ["Ui.Apply"] = "Aplicar",
+        ["Ui.Restore"] = "Restaurar",
+        ["Ui.Browse"] = "Procurar…",
+        ["Ui.Clear"] = "Limpar",
+        ["Ui.SettingsWindowTitle"] = "RHI-Linux — Configurações",
+        ["Ui.Language"] = "Idioma",
+        ["Ui.LanguageNote"] = "A alteração é aplicada imediatamente à janela principal e fica salva no XDG. Reabra Configurações para atualizar todos os textos desta janela.",
+        ["Ui.Save"] = "Salvar",
+        ["Ui.ResetSettings"] = "Restaurar configurações",
+        ["Ui.UxTab"] = "UX",
+        ["Ui.MaintenanceTab"] = "Manutenção",
+        ["Ui.Maintenance"] = "Manutenção / caminhos XDG",
+        ["Ui.DesktopExperience"] = "Experiência de desktop Linux",
+        ["Ui.ViewMode"] = "Modo de visualização",
+        ["Ui.SettingsSaved"] = "Configurações salvas.",
+        ["Ui.QuickStartTip"] = "Guia inicial do Linux e regras de responsabilidade dos componentes",
+        ["Ui.AddGameTip"] = "Adiciona manualmente um executável de jogo do Windows à biblioteca persistente",
+        ["Ui.BatchDlssTip"] = "Aplica ou restaura versões locais de DLSS/Streamline em vários jogos detectados",
+        ["Ui.MotdTip"] = "Mostra a mensagem do dia do RHI-Linux",
+        ["Ui.ViewModeTip"] = "Alterna entre visualização detalhada e compacta",
+        ["Ui.DetectedLinuxTip"] = "Detectado no Linux",
+        ["Ui.EditTip"] = "Separar o launcher usado para iniciar do executável real que recebe detecção, mods e patches",
+        ["Ui.RemoveManualTip"] = "Remove somente a entrada manual salva; os arquivos do jogo não são alterados",
+
+        ["Ui.DlssNote"] = "O gerenciador local substitui apenas DLLs de DLSS/Streamline que o próprio jogo já fornece. Jogos sem DLSS usam o DLSS5 Feeder Full; trocas diretas ficam bloqueadas enquanto o Feeder Full controla sua pilha privada de SR/NR. Aplicar padrões usa as versões salvas; um padrão vazio significa não alterar o componente. O selo ✓ RHI aplicado indica que existe backup .original do RHI e a restauração está disponível.",
+        ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
+        ["Ui.ManagedProfileControls"] = "Controles do perfil gerenciado pelo RHI",
+        ["Ui.Channel"] = "Canal",
+        ["Ui.LegacyVersion"] = "Versão legada",
+        ["Ui.LegacyVersionNote"] = "Fixado: canais legados nunca são atualizados automaticamente.",
+        ["Ui.CustomDll"] = "DLL personalizada",
+        ["Ui.CustomDllPlaceholder"] = "Selecione uma DLL do ReShade ou digite o caminho",
+        ["Ui.D3DCompilerPlaceholder"] = "Detectar no prefixo ou selecionar Microsoft D3DCompiler_47.dll",
+        ["Ui.D3DCompilerNote"] = "Os dois auxiliares instalam o d3dcompiler_47 nativo da Microsoft e o RHI aplica d3dcompiler_47=native,builtin apenas ao jogo selecionado. O Feeder Full aceita o compilador do prefixo sem diferenciar maiúsculas/minúsculas e pode usar diretamente a DLL da Microsoft selecionada; Aplicar continua salvando-a no perfil do ReShade. O RHI nunca redistribui essa DLL da Microsoft.",
+        ["Ui.FeederConsumerPackage"] = "Pacote consumidor do Feeder",
+        ["Ui.FeederConsumer"] = "Consumidor do Feeder",
+        ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 é o consumidor neural padrão do Feeder. O RHI baixa a versão compatível automaticamente; não instala Deep Fried Chicken nem adiciona LoadFromDllMain do Chicken.",
+        ["Ui.FeederPackagePlaceholder"] = "Selecione o pacote oficial Deep Fried Chicken (.zip ou .7z) antes de instalar o Feeder Full",
+        ["Ui.FeederPackageNote"] = "O Feeder Full usa RenoDX DLSS5 como consumidor neural padrão e mantém Deep Fried Chicken como alternativa manual. Com RenoDX DLSS5, o RHI baixa o consumidor dedicado automaticamente. Com DFC, o pacote oficial é validado pelo SHA256SUMS.txt e pacotes AES conhecidos usam a senha pública do upstream sem persistência. Apenas um consumidor neural pode ser usado por instalação.",
+        ["Ui.QuickPackages"] = "Pacotes rápidos:",
+        ["Ui.XdgSettingsNote"] = "As configurações são nativas do XDG e incluem monitor de add-ons opcional, visualização detalhada/compacta, bandeja/fechar para a bandeja e preferências de MOTD. Controles exclusivos do Windows, como NVAPI e perfis de driver, permanecem fora do RHI-Linux.",
+        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander e add-ons por jogo ficam disponíveis em alvos Wine/Proton compatíveis. A tradução DirectX continua sob responsabilidade do runner no Linux. Instalações externas permanecem protegidas contra remoção.",
+        ["Ui.ExtrasNote"] = "Integrações extras · orquestração do UAL e ShortFuse.",
+        ["Ui.PerGameOrchestration"] = "Orquestração por jogo",
+        ["Ui.LinuxPolicyNote"] = "Política Linux: a tradução DirectX pertence ao runner Wine/Proton selecionado; o RHI-Linux não instala, atualiza, substitui nem remove DLLs da camada de tradução. O HDR apenas prepara um perfil de execução por jogo. Launchers de lojas devem aplicar esse perfil; o RHI não encapsula o processo do launcher.",
+        ["Ui.UalPolicyNote"] = "O Ultimate ASI Loader baixa a versão oficial correspondente à arquitetura, valida o SHA-256 publicado pelo GitHub quando disponível, instala ao lado do executável selecionado, aplica o override Wine native,builtin por jogo e usa encadeamento <nome>Hooked.dll apenas para DLLs existentes que não pertençam ao RHI. A remoção restaura o original encadeado e o override Wine anterior. Use injeção ASI somente em títulos single-player/offline, salvo quando a política anti-cheat do jogo permitir explicitamente.",
+        ["Ui.Processing"] = "Processando…",
+        ["Ui.LegacyWsi"] = "WSI legado",
+        ["Ui.CopyLaunchProfile"] = "Copiar perfil de execução",
+        ["Ui.ApplyDefaults"] = "Aplicar padrões",
+        ["Ui.RestoreAll"] = "Restaurar tudo",
+        ["Ui.ApplyUpdate"] = "Aplicar / Atualizar",
+        ["Ui.InstallProtontricks"] = "Instalar via Protontricks",
+        ["Ui.ManageReShadeIni"] = "Gerenciar / mesclar ReShade.ini",
+        ["Ui.OfficialLegacy"] = "Oficial legado",
+        ["Ui.FullShaderManager"] = "Gerenciador completo de Shaders/Add-ons…",
+        ["Ui.AutoAsiConfig"] = "⚙ Configuração ASI automática (opcional)",
+        ["Ui.DragSectionTip"] = "Arraste para reordenar a seção",
+        ["Ui.CollapseExpandTip"] = "Recolher / expandir",
+        ["Ui.LegacyWsiTip"] = "Adiciona apenas ENABLE_HDR_WSI=1. Mantenha desativado em Mesa/NVIDIA modernos, salvo quando o caminho HDR WSI realmente exigir essa camada de compatibilidade.",
+        ["Ui.ApplyDefaultsTip"] = "Aplica somente as versões padrão configuradas de DLSS/Streamline aos alvos locais já existentes no jogo",
+        ["Ui.RenoDxSettingsTip"] = "Configurações de compatibilidade do RenoDX",
+        ["Ui.OptiScalerSettingsTip"] = "Configurações avançadas do OptiScaler",
+        ["Ui.Dlssg2030SettingsTip"] = "RTX 20 FG Unlock legado — DLL proxy",
+        ["Ui.Dlssg2030Title"] = "RTX 20 FG Unlock — Legado/Experimental",
+        ["Ui.Dlssg2030Intro"] = "Caminho legado SM75 para RTX 20 em jogos Windows x64 DirectX 12 sob Wine/Proton. Novas instalações RTX 30 foram movidas para Universal MFG. O RHI mantém este caminho para RTX 20 e para remover/atualizar registros antigos com segurança.",
+        ["Ui.Dlssg2030RouteNote"] = "Novas instalações usam somente RTX 20 / Router=SM75. RTX 30 / SM86 foi aposentado neste caminho e agora usa Universal MFG. Registros RTX 30 antigos continuam removíveis e atualizáveis para preservar restauração e remoção seguras.",
+        ["Ui.Dlssg2030Gpu"] = "Geração da GPU",
+        ["Ui.Dlssg2030Proxy"] = "DLL proxy",
+        ["Ui.Dlssg2030Check"] = "Verificar atualização",
+        ["Ui.Dlssg2030Update"] = "Atualizar",
+        ["Ui.Dlssg2030CompatibilityNote"] = "Compatibilidade experimental: confirme em jogo real que o proxy SM75 é carregado sem crash, tela preta ou perda do dispositivo e que a Geração de Quadros funciona. Para RTX 30, use o Universal MFG.",
+        ["Ui.DlssEnablerStandaloneSettingsTip"] = "DLSS Enabler Standalone — DLL proxy e atualização",
+        ["Ui.DlssEnablerStandaloneTitle"] = "DLSS Enabler Standalone",
+        ["Ui.DlssEnablerStandaloneIntro"] = "Instala o DLSS Enabler como DLL proxy diretamente ao lado do executável alvo, independente do OptiScaler. O RHI protege slots existentes, valida o pacote Windows x64 e aplica native,builtin somente ao jogo selecionado.",
+        ["Ui.DlssEnablerStandaloneProxy"] = "DLL proxy",
+        ["Ui.DlssEnablerStandaloneCheck"] = "Verificar atualização",
+        ["Ui.DlssEnablerStandaloneUpdate"] = "Atualizar",
+        ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Compatibilidade experimental: confirme em jogo real sob Wine/Proton que o proxy escolhido é carregado sem crash, tela preta ou perda do dispositivo.",
+        ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — geração da GPU, DLL proxy e atualização",
+        ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
+        ["Ui.Rtx40MfgIntro"] = "Instala o Universal RTXMFG como uma única DLL proxy ao lado do executável alvo. RTX 40 usa DX12 e Vulkan experimental; RTX 30 usa somente DX12 e permanece experimental upstream. Exige uma pilha funcional de Streamline DLSS Frame Generation, fornecida pelo jogo ou pelo fluxo OptiScaler Nightly/DLSS NR + Streamline/DLSS Enabler. O RHI valida SHA-256/PE x64 e protege slots existentes.",
+        ["Ui.Rtx40MfgGpuGeneration"] = "Geração da GPU",
+        ["Ui.Rtx40MfgProxy"] = "DLL proxy",
+        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 principal e Vulkan experimental. RTX 30: DirectX 12 apenas e suporte ainda muito experimental upstream. RTX 20 permanece no caminho legado SM75. Proxies Bink continuam bloqueados até existir chaining/rollback dedicado. Backspace abre o menu do RTXMFG.",
+        ["Ui.Rtx40MfgCheck"] = "Verificar atualização",
+        ["Ui.Rtx40MfgUpdate"] = "Atualizar",
+        ["Ui.Rtx40MfgCompatibilityNote"] = "Compatibilidade experimental: valide em hardware real sob Wine/Proton. O menu deve abrir, Frame Generation/MFG deve funcionar e não deve haver crash, congelamento, tela preta, perda do dispositivo ou regressão de apresentação.",
+        ["Ui.ProxyNameTip"] = "Nome da DLL proxy. As opções recomendadas são version.dll, winmm.dll e winhttp.dll.",
+        ["Ui.ShortFuseAutoTip"] = "Quando ativado: ReShade → ReShade64.asi, UAL automático winmm→version→dinput8, HookStreamline=1 e HookDirectX=1.",
+        ["Ui.NrVersions"] = "Versões NR",
+        ["Ui.LatestPinNote"] = "Mais recente usa a release mais nova; uma tag fixa mantém esse add-on nessa versão para este jogo.",
+        ["Ui.LoadHistory"] = "Atualizar versões",
+        ["Ui.Official"] = "Oficial",
+        ["Ui.WineProtonProxy"] = "Proxy Wine / Proton",
+        ["Ui.OptionStable"] = "Estável",
+        ["Ui.OptionNightly"] = "Desenvolvimento",
+        ["Ui.OptionLegacy"] = "Legado",
+        ["Ui.OptionCustom"] = "Personalizado",
+        ["Ui.OptionAutomatic"] = "Automático",
+        ["Ui.OptionEnabled"] = "Ativado",
+        ["Ui.OptionDisabled"] = "Desativado",
+        ["Ui.OptionLatest"] = "Mais recente",
+        ["Ui.HdrOff"] = "Desativado",
+        ["Ui.HdrNativeWayland"] = "Wayland nativo",
+        ["Ui.HdrGamescope"] = "Gamescope",
+        ["Ui.ProductRuntime"] = ".NET 8 / Avalonia nativo",
+        ["Ui.Starting"] = "Iniciando RHI-Linux…",
+        ["Ui.SelectGame"] = "Selecione um jogo",
+        ["Ui.UnknownRunner"] = "executor desconhecido",
+        ["Ui.NotCheckedYet"] = "Última versão ainda não verificada.",
+        ["Ui.ReShadeApplyHint"] = "Selecione um canal e use Aplicar / Atualizar. Estável é o padrão.",
+        ["Ui.ReShadeGlobalDefault"] = "Selecione um canal e use Aplicar / Atualizar. Padrão global: {0}.",
+        ["Ui.StatusInstalled"] = "Instalado",
+        ["Ui.StatusExternal"] = "externo",
+        ["Ui.StatusUpdateAvailable"] = "Atualização disponível",
+        ["Ui.StatusUnsupported"] = "Não compatível",
+        ["Ui.StatusAvailable"] = "Disponível",
+        ["Ui.StatusUnknown"] = "Desconhecido",
+        ["Ui.ActionInstall"] = "Instalar",
+        ["Ui.ActionRemove"] = "Remover",
+        ["Ui.CurrentHotkey"] = "Combinação atual: {0}",
+        ["Ui.UnknownExistingKey"] = "Tecla existente (não reconhecida)",
+        ["Ui.ReShadeInternalFormat"] = "Formato interno do ReShade: {0}\nOrdem interna: tecla, Ctrl, Shift, Alt.",
+        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário."
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["Ui.WindowTitle"] = "RHI-Linux — Simplified PC gaming",
+        ["Ui.Tagline"] = "Simplified PC gaming · Linux",
+        ["Ui.QuickStart"] = "Quick start",
+        ["Ui.Refresh"] = "Refresh",
+        ["Ui.AddGame"] = "Add game",
+        ["Ui.ShadersAddons"] = "Shaders/Add-ons",
+        ["Ui.UpdateAll"] = "Update all",
+        ["Ui.BatchDlss"] = "Batch DLSS",
+        ["Ui.Links"] = "Links",
+        ["Ui.Motd"] = "MOTD",
+        ["Ui.Settings"] = "Settings",
+        ["Ui.ViewDetail"] = "Detailed view",
+        ["Ui.ViewCompact"] = "Compact view",
+        ["Ui.SearchGames"] = "Filter games...",
+        ["Ui.Library"] = "LIBRARY",
+        ["Ui.All"] = "All",
+        ["Ui.Favourites"] = "Favourites",
+        ["Ui.Installed"] = "Installed",
+        ["Ui.Other"] = "Other",
+        ["Ui.Hidden"] = "Hidden",
+        ["Ui.Games"] = "games",
+        ["Ui.Edit"] = "Edit",
+        ["Ui.RemoveManual"] = "Remove manual entry",
+        ["Ui.OpenFolder"] = "Open folder",
+        ["Ui.OpenPrefix"] = "Open prefix",
+        ["Ui.Play"] = "Play",
+        ["Ui.Show"] = "Show",
+        ["Ui.Hide"] = "Hide",
+        ["Ui.FavouriteOn"] = "★ Favourite",
+        ["Ui.FavouriteOff"] = "☆ Favourite",
+        ["Ui.ExecutionGame"] = "Launch / Game",
+        ["Ui.ExecutionGameNote"] = "Launch target, Wine/Proton prefix and graphics API detection.",
+        ["Ui.Launcher"] = "Launch / launcher",
+        ["Ui.TargetSafety"] = "Target safety",
+        ["Ui.GameRoot"] = "Game root / patches",
+        ["Ui.Prefix"] = "Wine / Proton prefix",
+        ["Ui.TargetExe"] = "Target executable",
+        ["Ui.PatchDirectory"] = "Binaries / patch directory",
+        ["Ui.GraphicsApi"] = "Graphics API",
+        ["Ui.ForceApi"] = "Force API",
+        ["Ui.LumaMode"] = "Luma mode",
+        ["Ui.HdrExecution"] = "HDR launch",
+        ["Ui.NeuralRendering"] = "Neural rendering",
+        ["Ui.EngineArchitecture"] = "Engine / architecture",
+        ["Ui.ApiEvidence"] = "API evidence",
+        ["Ui.DlssStreamline"] = "DLSS / Streamline",
+        ["Ui.GameDlls"] = "Game-local DLLs",
+        ["Ui.SuperResolution"] = "Super resolution",
+        ["Ui.RayReconstruction"] = "Ray reconstruction",
+        ["Ui.FrameGeneration"] = "Frame generation",
+        ["Ui.StreamlineUpdate"] = "Streamline — Update",
+        ["Ui.StreamlineUpdateNote"] = "Updates and restores NVIDIA Streamline DLLs already present in the game. Separately, OptiScaler Nightly/DLSS NR can deploy its own Streamline + DLSS Enabler stack, matching Windows RHI.",
+        ["Ui.StreamlineDetectedNote"] = "Streamline integration detected. Use this section to update/restore the existing DLLs; OptiScaler private deployment is available in the advanced settings for Nightly/DLSS NR.",
+        ["Ui.StreamlineMissingNote"] = "Native Streamline was not detected in this game. This row does not create a native integration; however OptiScaler Nightly/DLSS NR can deploy Streamline + DLSS Enabler under OptiScaler/, matching Windows RHI.",
+        ["Ui.StatusDetected"] = "Detected",
+        ["Ui.StatusNotDetected"] = "Not detected",
+        ["Ui.ReShadeProfile"] = "ReShade profile",
+        ["Ui.ManagedComponents"] = "Managed components",
+        ["Ui.LinuxBackendActive"] = "Linux integration active",
+        ["Ui.Extras"] = "Extras",
+        ["Ui.CheckUpdate"] = "Check for update",
+        ["Ui.Install"] = "Install",
+        ["Ui.Remove"] = "Remove",
+        ["Ui.Apply"] = "Apply",
+        ["Ui.Restore"] = "Restore",
+        ["Ui.Browse"] = "Browse…",
+        ["Ui.Clear"] = "Clear",
+        ["Ui.SettingsWindowTitle"] = "RHI-Linux — Settings",
+        ["Ui.Language"] = "Language",
+        ["Ui.LanguageNote"] = "The change is applied immediately to the main window and is saved in XDG. Reopen Settings to refresh every label in this dialog.",
+        ["Ui.Save"] = "Save",
+        ["Ui.ResetSettings"] = "Reset settings",
+        ["Ui.UxTab"] = "UX",
+        ["Ui.MaintenanceTab"] = "Maintenance",
+        ["Ui.Maintenance"] = "Maintenance / XDG paths",
+        ["Ui.DesktopExperience"] = "Linux desktop experience",
+        ["Ui.ViewMode"] = "View mode",
+        ["Ui.SettingsSaved"] = "Settings saved.",
+        ["Ui.QuickStartTip"] = "Linux quick-start guide and component responsibility rules",
+        ["Ui.AddGameTip"] = "Manually adds a Windows game executable to the persistent library",
+        ["Ui.BatchDlssTip"] = "Applies or restores game-local DLSS/Streamline versions across detected games",
+        ["Ui.MotdTip"] = "Shows the RHI-Linux message of the day",
+        ["Ui.ViewModeTip"] = "Switches between detailed and compact views",
+        ["Ui.DetectedLinuxTip"] = "Detected on Linux",
+        ["Ui.EditTip"] = "Separate the launcher used to start the game from the real executable that receives detection, mods and patches",
+        ["Ui.RemoveManualTip"] = "Removes only the saved manual entry; game files are not changed",
+
+        ["Ui.DlssNote"] = "The local manager only replaces DLSS/Streamline DLLs that the game already ships. Games without DLSS use DLSS5 Feeder Full; direct swaps stay blocked while Feeder Full controls its private SR/NR stack. Apply defaults uses the saved versions; an empty default means do not change that component. The ✓ RHI applied badge means an RHI .original backup exists and restore is available.",
+        ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
+        ["Ui.ManagedProfileControls"] = "RHI-managed profile controls",
+        ["Ui.Channel"] = "Channel",
+        ["Ui.LegacyVersion"] = "Legacy version",
+        ["Ui.LegacyVersionNote"] = "Pinned: legacy channels are never updated automatically.",
+        ["Ui.CustomDll"] = "Custom DLL",
+        ["Ui.CustomDllPlaceholder"] = "Select a ReShade DLL or enter its path",
+        ["Ui.D3DCompilerPlaceholder"] = "Detect in prefix or select Microsoft D3DCompiler_47.dll",
+        ["Ui.D3DCompilerNote"] = "Both helpers install Microsoft's native d3dcompiler_47 and RHI applies d3dcompiler_47=native,builtin only to the selected game. Feeder Full accepts the compiler from the prefix case-insensitively and can use the selected Microsoft DLL directly; Apply still saves it to the ReShade profile. RHI never redistributes this Microsoft DLL.",
+        ["Ui.FeederConsumerPackage"] = "Feeder consumer package",
+        ["Ui.FeederConsumer"] = "Feeder consumer",
+        ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 is the default neural consumer for Feeder. RHI downloads the compatible version automatically; it does not install Deep Fried Chicken or add the Chicken LoadFromDllMain token.",
+        ["Ui.FeederPackagePlaceholder"] = "Select the official Deep Fried Chicken package (.zip or .7z) before installing Feeder Full",
+        ["Ui.FeederPackageNote"] = "Feeder Full uses RenoDX DLSS5 as the default neural consumer and keeps Deep Fried Chicken as a manual alternative. With RenoDX DLSS5, RHI downloads the dedicated consumer automatically. With DFC, the official package is validated against SHA256SUMS.txt and known AES packages use the public upstream password without persistence. Only one neural consumer may be used per installation.",
+        ["Ui.QuickPackages"] = "Quick packages:",
+        ["Ui.XdgSettingsNote"] = "Settings are native XDG settings and include optional add-on monitoring, detailed/compact view, tray/close-to-tray and MOTD preferences. Windows-only controls such as NVAPI and driver profiles remain outside RHI-Linux.",
+        ["Ui.ManagedComponentsNote"] = "ReShade, RenoDX HDR, RenoDX Upgrade, OptiScaler, RE Framework, ReLimiter, Display Commander, Universal MFG, legacy RTX 20 FG Unlock, and per-game add-ons are available on compatible Wine/Proton targets. DirectX translation remains the runner's responsibility on Linux. External installations remain protected from removal.",
+        ["Ui.ExtrasNote"] = "Extra integrations · UAL and ShortFuse orchestration.",
+        ["Ui.PerGameOrchestration"] = "Per-game orchestration",
+        ["Ui.LinuxPolicyNote"] = "Linux policy: DirectX translation belongs to the selected Wine/Proton runner; RHI-Linux does not install, update, replace or remove translation-layer DLLs. HDR only prepares a per-game launch profile. Store launchers must apply that profile; RHI does not wrap the launcher process.",
+        ["Ui.UalPolicyNote"] = "Ultimate ASI Loader downloads the official build for the detected architecture, validates the GitHub-published SHA-256 when available, installs beside the selected executable, applies the per-game Wine native,builtin override and uses <name>Hooked.dll chaining only for existing DLLs not owned by RHI. Removal restores the chained original and the previous Wine override. Use ASI injection only in single-player/offline titles unless the game's anti-cheat policy explicitly allows it.",
+        ["Ui.Processing"] = "Processing…",
+        ["Ui.LegacyWsi"] = "Legacy WSI",
+        ["Ui.CopyLaunchProfile"] = "Copy launch profile",
+        ["Ui.ApplyDefaults"] = "Apply defaults",
+        ["Ui.RestoreAll"] = "Restore all",
+        ["Ui.ApplyUpdate"] = "Apply / Update",
+        ["Ui.InstallProtontricks"] = "Install via Protontricks",
+        ["Ui.ManageReShadeIni"] = "Manage / merge ReShade.ini",
+        ["Ui.OfficialLegacy"] = "Official legacy",
+        ["Ui.FullShaderManager"] = "Full Shaders/Add-ons manager…",
+        ["Ui.AutoAsiConfig"] = "⚙ Automatic ASI configuration (optional)",
+        ["Ui.DragSectionTip"] = "Drag to reorder the section",
+        ["Ui.CollapseExpandTip"] = "Collapse / expand",
+        ["Ui.LegacyWsiTip"] = "Adds ENABLE_HDR_WSI=1 only. Keep it disabled on modern Mesa/NVIDIA unless the HDR WSI path actually requires this compatibility layer.",
+        ["Ui.ApplyDefaultsTip"] = "Applies only the configured default DLSS/Streamline versions to game-local targets that already exist",
+        ["Ui.RenoDxSettingsTip"] = "RenoDX compatibility settings",
+        ["Ui.OptiScalerSettingsTip"] = "Advanced OptiScaler settings",
+        ["Ui.Dlssg2030SettingsTip"] = "Legacy RTX 20 FG Unlock — proxy DLL",
+        ["Ui.Dlssg2030Title"] = "RTX 20 FG Unlock — Legacy/Experimental",
+        ["Ui.Dlssg2030Intro"] = "Legacy SM75 path for RTX 20 on Windows x64 DirectX 12 games under Wine/Proton. New RTX 30 installs moved to Universal MFG. RHI keeps this path for RTX 20 and for safe removal/update of historical managed records.",
+        ["Ui.Dlssg2030RouteNote"] = "New installs expose RTX 20 / Router=SM75 only. RTX 30 / SM86 is retired in this path and now uses Universal MFG. Historical RTX 30 records remain removable/updateable so safe restore and removal are preserved.",
+        ["Ui.Dlssg2030Gpu"] = "GPU generation",
+        ["Ui.Dlssg2030Proxy"] = "Proxy DLL",
+        ["Ui.Dlssg2030Check"] = "Check for update",
+        ["Ui.Dlssg2030Update"] = "Update",
+        ["Ui.Dlssg2030CompatibilityNote"] = "Experimental compatibility: confirm in a real game that the SM75 proxy loads without crashes, black screens, or device loss and that Frame Generation works. For RTX 30, use Universal MFG.",
+        ["Ui.DlssEnablerStandaloneSettingsTip"] = "Standalone DLSS Enabler — proxy DLL and updates",
+        ["Ui.DlssEnablerStandaloneTitle"] = "Standalone DLSS Enabler",
+        ["Ui.DlssEnablerStandaloneIntro"] = "Installs DLSS Enabler as a proxy DLL directly beside the target executable, independently of OptiScaler. RHI protects occupied slots, validates the Windows x64 package, and applies native,builtin only to the selected game.",
+        ["Ui.DlssEnablerStandaloneProxy"] = "Proxy DLL",
+        ["Ui.DlssEnablerStandaloneCheck"] = "Check for update",
+        ["Ui.DlssEnablerStandaloneUpdate"] = "Update",
+        ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Experimental compatibility: confirm in a real game under Wine/Proton that the selected proxy loads without crashes, black screens, or device loss.",
+        ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — GPU generation, proxy DLL and updates",
+        ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
+        ["Ui.Rtx40MfgIntro"] = "Installs Universal RTXMFG as a single proxy DLL beside the target executable. RTX 40 uses DX12 plus experimental Vulkan; RTX 30 is DX12-only and remains experimental upstream. A functional Streamline DLSS Frame Generation stack is required, either game-provided or managed through OptiScaler Nightly/DLSS NR + Streamline/DLSS Enabler. RHI validates SHA-256/PE x64 and protects occupied slots.",
+        ["Ui.Rtx40MfgGpuGeneration"] = "GPU generation",
+        ["Ui.Rtx40MfgProxy"] = "Proxy DLL",
+        ["Ui.Rtx40MfgCompatibility"] = "RTX 40: DirectX 12 primary plus experimental Vulkan. RTX 30: DirectX 12 only and still very experimental upstream. RTX 20 remains on the legacy SM75 path. Bink proxies stay blocked until dedicated chaining/rollback exists. Press Backspace in-game to open the RTXMFG menu.",
+        ["Ui.Rtx40MfgCheck"] = "Check for update",
+        ["Ui.Rtx40MfgUpdate"] = "Update",
+        ["Ui.Rtx40MfgCompatibilityNote"] = "Experimental compatibility: validate on real hardware under Wine/Proton. The menu must open, Frame Generation/MFG must work, and there must be no crash, freeze, black screen, device loss, or presentation regression.",
+        ["Ui.ProxyNameTip"] = "Proxy DLL name. Recommended options are version.dll, winmm.dll and winhttp.dll.",
+        ["Ui.ShortFuseAutoTip"] = "When enabled: ReShade → ReShade64.asi, automatic UAL winmm→version→dinput8, HookStreamline=1 and HookDirectX=1.",
+        ["Ui.NrVersions"] = "NR versions",
+        ["Ui.LatestPinNote"] = "Latest uses the newest release; a fixed tag keeps this add-on pinned to that version for this game.",
+        ["Ui.LoadHistory"] = "Refresh versions",
+        ["Ui.Official"] = "Official",
+        ["Ui.WineProtonProxy"] = "Wine / Proton proxy",
+        ["Ui.OptionStable"] = "Stable",
+        ["Ui.OptionNightly"] = "Nightly",
+        ["Ui.OptionLegacy"] = "Legacy",
+        ["Ui.OptionCustom"] = "Custom",
+        ["Ui.OptionAutomatic"] = "Automatic",
+        ["Ui.OptionEnabled"] = "Enabled",
+        ["Ui.OptionDisabled"] = "Disabled",
+        ["Ui.OptionLatest"] = "Latest",
+        ["Ui.HdrOff"] = "Off",
+        ["Ui.HdrNativeWayland"] = "Native Wayland",
+        ["Ui.HdrGamescope"] = "Gamescope",
+        ["Ui.ProductRuntime"] = ".NET 8 / native Avalonia",
+        ["Ui.Starting"] = "Starting RHI-Linux…",
+        ["Ui.SelectGame"] = "Select a game",
+        ["Ui.UnknownRunner"] = "unknown runner",
+        ["Ui.NotCheckedYet"] = "Latest version has not been checked yet.",
+        ["Ui.ReShadeApplyHint"] = "Select a channel and use Apply / Update. Stable is the default.",
+        ["Ui.ReShadeGlobalDefault"] = "Select a channel and use Apply / Update. Global default: {0}.",
+        ["Ui.StatusInstalled"] = "Installed",
+        ["Ui.StatusExternal"] = "external",
+        ["Ui.StatusUpdateAvailable"] = "Update available",
+        ["Ui.StatusUnsupported"] = "Unsupported",
+        ["Ui.StatusAvailable"] = "Available",
+        ["Ui.StatusUnknown"] = "Unknown",
+        ["Ui.ActionInstall"] = "Install",
+        ["Ui.ActionRemove"] = "Remove",
+        ["Ui.CurrentHotkey"] = "Current binding: {0}",
+        ["Ui.UnknownExistingKey"] = "Existing key (unrecognized)",
+        ["Ui.ReShadeInternalFormat"] = "Internal ReShade format: {0}\nInternal order: key, Ctrl, Shift, Alt.",
+        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed."
+    };
+
+
+    private static readonly (string En, string Pt)[] ExactPresentationPairs =
+    [
+        // RenoDX compatibility settings are emitted by the platform layer with stable internal keys.
+        ("Game binary directory is not known yet.", "O diretório de binários do jogo ainda não é conhecido."),
+        ("No ReShade.ini was found in the game binary directory.", "Nenhum ReShade.ini foi encontrado no diretório de binários do jogo."),
+        ("Run the game once with RenoDX installed to generate the [renodx] settings section.", "Execute o jogo uma vez com o RenoDX instalado para gerar a seção de configurações [renodx]."),
+        ("The RHI manifest could not be loaded; built-in RenoDX compatibility settings remain available.", "O manifesto do RHI não pôde ser carregado; as configurações internas de compatibilidade do RenoDX continuam disponíveis."),
+        ("RGB 10-bit + Alpha — Generic", "RGB 10-bit + Alpha — Genérico"),
+        ("RGB 10-bit + Alpha — Normalized", "RGB 10-bit + Alpha — Normalizado"),
+        ("RGB Float 11/11/10 — High dynamic range", "RGB Float 11/11/10 — Alta faixa dinâmica"),
+        ("RGBA 16-bit — High precision", "RGBA 16-bit — Alta precisão"),
+        ("RGBA 8-bit — Generic", "RGBA 8-bit — Genérico"),
+        ("RGBA 8-bit — Linear", "RGBA 8-bit — Linear"),
+        ("RGBA 8-bit — sRGB", "RGBA 8-bit — sRGB"),
+        ("Update copy destinations", "Atualizar destinos de cópia"),
+        ("Use scRGB", "Usar scRGB"),
+        ("Swapchain compatibility", "Compatibilidade da swapchain"),
+        ("Upgrade path", "Caminho de upgrade"),
+        ("Export LUT shaders", "Exportar shaders LUT"),
+        ("Disabled", "Desativado"),
+        ("Enabled", "Ativado"),
+        ("Output size", "Tamanho da saída"),
+        ("Output ratio", "Proporção da saída"),
+        ("Any size", "Qualquer tamanho"),
+        ("All copies", "Todas as cópias"),
+        ("HDR — Disabled", "HDR — Desativado"),
+        ("SDR — Enabled", "SDR — Ativado"),
+
+        // OptiScaler advanced UI metadata. Values/INI keys remain unchanged; only presentation is localized.
+        ("OptiScaler is not RHI-managed for this game. External OptiScaler.ini files are protected from modification.", "O OptiScaler não é gerenciado pelo RHI neste jogo. Arquivos OptiScaler.ini externos são protegidos contra alterações."),
+        ("Streamline / DLSS Enabler", "Streamline / DLSS Enabler"),
+        ("Streamline Version", "Versão do Streamline"),
+        ("FG Nvngx Replacement", "Substituição FG Nvngx"),
+        ("Yes", "Sim"),
+        ("No", "Não"),
+        ("Auto (Default)", "Auto (Padrão)"),
+        ("OptiFG (Upscaler)", "OptiFG (Upscaler)"),
+        ("DLSSG via Streamline", "DLSSG via Streamline"),
+        ("DLSSG via Nvngx", "DLSSG via Nvngx"),
+        ("FSR 3.1 FG", "FSR 3.1 FG"),
+        ("FSR 3.0 FG", "FSR 3.0 FG"),
+        ("None (Real DLSSG)", "Nenhum (DLSSG real)"),
+        ("Enabler", "Enabler"),
+        ("FSR 3/4 FG", "FSR 3/4 FG"),
+        ("Matches upstream Windows RHI: deploys Streamline DLLs to OptiScaler/Streamline and dlss-enabler-headless.dll to OptiScaler/.", "Replica o RHI Windows upstream: implanta as DLLs Streamline em OptiScaler/Streamline e dlss-enabler-headless.dll em OptiScaler/."),
+        ("Version used by the OptiScaler-managed Streamline stack. Upstream Windows RHI defaults to 2.12.0 when available.", "Versão usada pela pilha Streamline gerenciada pelo OptiScaler. O RHI Windows upstream usa 2.12.0 como padrão quando disponível."),
+        ("Only relevant when FG Output = DLSSG. Enabler uses dlss-enabler-headless.dll from the managed OptiScaler Streamline stack.", "Só é relevante quando a saída FG = DLSSG. Enabler usa dlss-enabler-headless.dll da pilha Streamline gerenciada pelo OptiScaler."),
+        ("The RHI-managed OptiScaler record exists, but OptiScaler.ini is missing.", "O registro do OptiScaler gerenciado pelo RHI existe, mas o OptiScaler.ini está ausente."),
+        ("LoadReshade is intentionally chain-owned by RHI Linux and is not exposed here. Streamline/DLSS Enabler deployment also remains in its dedicated component flows.", "LoadReshade pertence intencionalmente à cadeia gerenciada pelo RHI Linux e não é exposto aqui. A instalação do Streamline/DLSS Enabler também permanece nos fluxos dedicados desses componentes."),
+        ("Upscalers", "Upscalers"),
+        ("Frame Generation", "Geração de quadros"),
+        ("DLSS Overrides", "Overrides do DLSS"),
+        ("Compatibility", "Compatibilidade"),
+        ("Menu", "Menu"),
+        ("DirectX 11 upscaler", "Upscaler DirectX 11"),
+        ("DirectX 12 upscaler", "Upscaler DirectX 12"),
+        ("Vulkan upscaler", "Upscaler Vulkan"),
+        ("FG input/source", "Entrada/fonte de FG"),
+        ("FG output", "Saída de FG"),
+        ("HUD Fix", "Correção de HUD"),
+        ("Disable HUD Fix tracking", "Desativar rastreamento da correção de HUD"),
+        ("DLSS SR render preset", "Preset de renderização DLSS SR"),
+        ("DLSS RR render preset", "Preset de renderização DLSS RR"),
+        ("Internal render scale", "Escala interna de renderização"),
+        ("Disable NVIDIA Flip Metering", "Desativar NVIDIA Flip Metering"),
+        ("Framerate limit", "Limite de FPS"),
+        ("OptiScaler menu shortcut", "Atalho do menu do OptiScaler"),
+        ("Compatible OptiScaler values. DX11on12 options remain explicit.", "Valores compatíveis do OptiScaler. As opções DX11on12 permanecem explícitas."),
+        ("Controls OptiScaler FrameGen.Enabled only; it does not install missing FG libraries.", "Controla apenas FrameGen.Enabled do OptiScaler; não instala bibliotecas de FG ausentes."),
+        ("Selecting an output does not invent or download its required libraries.", "Selecionar uma saída não cria nem baixa as bibliotecas exigidas por ela."),
+        ("Auto disables OptiScaler's DLSS RenderPresetOverride. Explicit values enable it and set RenderPresetForAll.", "Auto desativa o RenderPresetOverride do DLSS no OptiScaler. Valores explícitos o ativam e definem RenderPresetForAll."),
+        ("Auto disables OptiScaler's DLSSD RenderPresetOverride.", "Auto desativa o RenderPresetOverride do DLSSD no OptiScaler."),
+        ("This is OptiScaler's file-local UpscaleRatio override, not an NVIDIA driver-profile render-scale override.", "Este é o override UpscaleRatio local do arquivo do OptiScaler, não um override de escala de renderização do perfil do driver NVIDIA."),
+        ("OptiScaler documents this primarily for Fakenvapi/NukemFG compatibility.", "O OptiScaler documenta esta opção principalmente para compatibilidade com Fakenvapi/NukemFG."),
+        ("OptiScaler's Reflex-based limiter. Auto/Off leaves the limiter disabled by default.", "Limitador baseado em Reflex do OptiScaler. Auto/Desativado mantém o limitador desativado por padrão."),
+        ("Auto", "Auto"),
+        ("Auto / Off", "Auto / Desativado"),
+        ("Auto / Insert", "Auto / Insert"),
+        ("Off", "Desativado"),
+        ("On", "Ativado"),
+        ("No frame generation", "Sem geração de quadros"),
+        ("DLSS-G input", "Entrada DLSS-G"),
+        ("Nukem FSR3 input", "Entrada Nukem FSR3"),
+        ("FSR FG input", "Entrada FSR FG"),
+        ("Upscaler input", "Entrada do upscaler"),
+        ("FSR FG 3.0 input", "Entrada FSR FG 3.0"),
+        ("FSR Frame Generation", "FSR Frame Generation"),
+        ("XeSS Frame Generation", "XeSS Frame Generation"),
+        ("Nukem Frame Generation", "Nukem Frame Generation"),
+        ("FSR 2.1 native Vulkan", "FSR 2.1 nativo Vulkan"),
+        ("FSR 2.2 native Vulkan", "FSR 2.2 nativo Vulkan"),
+        ("FSR 3.1 / FSR4 native Vulkan", "FSR 3.1 / FSR4 nativo Vulkan"),
+        ("XeSS native Vulkan", "XeSS nativo Vulkan"),
+        ("XeSS native", "XeSS nativo"),
+        ("100% DLAA", "100% DLAA"),
+        ("99% DLAA Alt", "99% DLAA alternativo"),
+        ("88% DLAA Lite", "88% DLAA leve"),
+        ("77% Ultra Quality", "77% Ultra Qualidade"),
+        ("75% Quality+", "75% Qualidade+"),
+        ("67% Quality", "67% Qualidade"),
+        ("58% Balanced", "58% Balanceado"),
+        ("50% Performance", "50% Desempenho"),
+        ("45% Performance-", "45% Desempenho-"),
+        ("33% Ultra Performance", "33% Ultra Desempenho")
+    ];
+
+    private static readonly (string En, string Pt)[] PresentationPairs =
+    [
+        ("Luma mode enabled", "Modo Luma ativado"),
+        ("Luma mode not enabled", "Modo Luma não ativado"),
+        ("authority: user enabled", "autoridade: ativado pelo usuário"),
+        ("authority: user disabled", "autoridade: desativado pelo usuário"),
+        ("authority: upstream lumaDefaultGames", "autoridade: lumaDefaultGames do upstream"),
+        ("authority: automatic/no default", "autoridade: automático/sem padrão"),
+        ("authority: automatic/not primed", "autoridade: automático/ainda não carregado"),
+        ("RenoDX coexistence allowed by lumaRenodxCompat", "coexistência com RenoDX permitida por lumaRenodxCompat"),
+        ("RenoDX/Luma mutually exclusive", "RenoDX/Luma mutuamente exclusivos"),
+        ("manifest policy not primed", "dados de compatibilidade ainda não carregados"),
+        ("Native Linux target: the current RHI Linux integration deploys Windows DLL components only to Wine/Proton games.", "Alvo Linux nativo: a integração atual do RHI Linux instala componentes DLL do Windows apenas em jogos Wine/Proton."),
+        ("Safe game-local ReShade deployment is currently enabled for DirectX 8/9/10/11/12 and OpenGL targets; this API needs a different integration path.", "A instalação segura e local do ReShade está habilitada para alvos DirectX 8/9/10/11/12 e OpenGL; esta API exige outro caminho de integração."),
+        ("Start the Windows game once so its Wine/Proton prefix is created before installing ReShade.", "Execute o jogo Windows uma vez para criar o prefixo Wine/Proton antes de instalar o ReShade."),
+        ("Will coexist with RHI-managed OptiScaler as ReShade64.dll; RHI enables OptiScaler's LoadReshade setting automatically.", "Vai coexistir com o OptiScaler gerenciado pelo RHI como ReShade64.dll; o RHI ativa LoadReshade no OptiScaler automaticamente."),
+        ("Full add-on ReShade build. Use only with single-player/offline titles; add-on injection can trigger anti-cheat.", "Build do ReShade com suporte completo a add-ons. Use apenas em jogos single-player/offline; a injeção de add-ons pode acionar anti-cheat."),
+        ("Start the RE Engine game once so its Wine/Proton prefix exists before installing RE Framework.", "Execute o jogo RE Engine uma vez para criar o prefixo Wine/Proton antes de instalar o RE Framework."),
+        ("An external dinput8.dll already exists beside the game executable. RHI will not overwrite or adopt that proxy.", "Já existe um dinput8.dll externo ao lado do executável. O RHI não sobrescreverá nem adotará esse proxy."),
+        ("Remove RHI-managed ReShade first; this RE Engine ReShade path depends on RE Framework.", "Remova primeiro o ReShade gerenciado pelo RHI; este caminho de ReShade para RE Engine depende do RE Framework."),
+        ("Upstream wikiUnlinks explicitly removes this title from RenoDX named and generic deployment.", "O wikiUnlinks do upstream remove explicitamente este jogo das instalações RenoDX nomeadas e genéricas."),
+        ("Remove RHI-managed Luma Framework before installing RenoDX HDR; this title is not listed in upstream lumaRenodxCompat.", "Remova o Luma Framework gerenciado pelo RHI antes de instalar RenoDX HDR; este jogo não está em lumaRenodxCompat do upstream."),
+        ("Upstream lumaRenodxCompat allows RenoDX HDR and Luma Framework to coexist for this title. Existing ownership and dependency guards still apply.", "O lumaRenodxCompat do upstream permite coexistência entre RenoDX HDR e Luma Framework neste jogo. As proteções de ownership e dependências continuam válidas."),
+        ("RenoDX Upgrade requires a detected 32-bit or 64-bit Windows executable.", "RenoDX Upgrade exige um executável Windows de 32 ou 64 bits detectado."),
+        ("ReLimiter and Display Commander are mutually exclusive in upstream RHI. Remove Display Commander first.", "ReLimiter e Display Commander são mutuamente exclusivos no RHI upstream. Remova o Display Commander primeiro."),
+        ("Display Commander and ReLimiter are mutually exclusive in upstream RHI. Remove ReLimiter first.", "Display Commander e ReLimiter são mutuamente exclusivos no RHI upstream. Remova o ReLimiter primeiro."),
+        ("MFG Ada Unlock is a 64-bit ReShade add-on.", "MFG Ada Unlock é um add-on ReShade de 64 bits."),
+        ("This game already has native DLSS. Feeder Full is the no-DLSS path; use the native DLSS/Neural Rendering workflow instead.", "Este jogo já possui DLSS nativo. O Feeder Full é o caminho para jogos sem DLSS; use o fluxo de DLSS nativo/Renderização Neural."),
+        ("Remove OptiScaler DLSS NR first. Feeder and that OptiScaler variant would both own nvngx_dlssnr.dll; shared-file ownership is not yet enabled in the Linux port.", "Remova primeiro o OptiScaler DLSS NR. O Feeder e essa variante do OptiScaler disputariam nvngx_dlssnr.dll; ownership compartilhado ainda não está habilitado no port Linux."),
+        ("ShortFuse auto-setup will not rewrite an active OptiScaler/ReShade chain. Remove OptiScaler first.", "A configuração automática do ShortFuse não reescreve uma cadeia OptiScaler/ReShade ativa. Remova o OptiScaler primeiro."),
+        ("ShortFuse upstream supports 64-bit Windows targets except OpenGL; this game is detected as OpenGL.", "O ShortFuse upstream suporta alvos Windows de 64 bits exceto OpenGL; este jogo foi detectado como OpenGL."),
+        ("ShortFuse is enabled for detected 64-bit Windows games.", "ShortFuse está habilitado para jogos Windows de 64 bits detectados."),
+        ("Start the game once so its Wine/Proton prefix exists before installing ShortFuse.", "Execute o jogo uma vez para criar o prefixo Wine/Proton antes de instalar o ShortFuse."),
+        ("Remove ShortFuse before changing the OptiScaler/ReShade proxy chain.", "Remova o ShortFuse antes de alterar a cadeia de proxy OptiScaler/ReShade."),
+        ("Automatic OptiScaler deployment is currently limited to detected 64-bit Windows executables.", "A instalação automática do OptiScaler está limitada a executáveis Windows de 64 bits detectados."),
+        ("Start the game once so its Wine/Proton prefix exists before installing OptiScaler.", "Execute o jogo uma vez para criar o prefixo Wine/Proton antes de instalar o OptiScaler."),
+        ("Managed by RHI Linux", "Gerenciado pelo RHI Linux"),
+        ("HDR launch profile is Off. Runner graphics stack remains untouched. Host:", "Perfil de inicialização HDR desativado. A pilha gráfica do runner permanece intacta. Host:"),
+        ("Desktop HDR must already be enabled. Host:", "O HDR do desktop já deve estar ativado. Host:"),
+        ("Gamescope HDR wrapper enabled.", "Wrapper HDR do Gamescope ativado."),
+        ("Desktop/output HDR support is still required. Host:", "O suporte HDR do desktop/saída continua obrigatório. Host:"),
+        ("RE Engine games require RE Framework. When installing ReShade, RHI will automatically install RE Framework first and continue only if the dependency becomes valid.", "Jogos RE Engine exigem RE Framework. Ao instalar ReShade, o RHI instalará automaticamente o RE Framework primeiro e só continuará se a dependência ficar válida."),
+        ("Luma Framework requires RHI-managed ReShade. An external ReShade was detected and will be preserved; RHI will not automatically adopt or overwrite it.", "Luma Framework exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará nem sobrescreverá automaticamente."),
+        ("Luma Framework requires RHI-managed ReShade; installing Luma will automatically install ReShade before the Luma package. On DX9, dgVoodoo2 is still prepared automatically when required by the catalog.", "Luma Framework exige ReShade gerenciado pelo RHI; a instalação do Luma instalará ReShade automaticamente antes do pacote Luma. Em DX9, dgVoodoo2 continua sendo preparado automaticamente quando exigido pelo catálogo."),
+        ("RenoDX HDR requires ReShade with full add-on support; RHI will automatically install ReShade before RenoDX.", "RenoDX HDR exige ReShade com suporte completo a add-ons; o RHI instalará ReShade automaticamente antes do RenoDX."),
+        ("RenoDX Upgrade is a ReShade add-on; RHI will automatically install ReShade before the Upgrade.", "RenoDX Upgrade é um add-on do ReShade; o RHI instalará ReShade automaticamente antes do Upgrade."),
+        ("is a ReShade add-on; RHI will automatically install ReShade before this component.", "é um add-on do ReShade; o RHI instalará ReShade automaticamente antes deste componente."),
+        ("ShortFuse requires RHI-managed ReShade. An external ReShade was detected and will be preserved; RHI will not automatically adopt it.", "ShortFuse exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará automaticamente."),
+        ("ShortFuse requires RHI-managed ReShade; ReShade will be installed automatically before ShortFuse. If Auto Config is enabled, Ultimate ASI Loader is still installed automatically by the ShortFuse flow.", "ShortFuse exige ReShade gerenciado pelo RHI; o ReShade será instalado automaticamente antes do ShortFuse. Se Auto Config estiver ativo, o Ultimate ASI Loader continua sendo instalado automaticamente pelo próprio fluxo do ShortFuse."),
+        ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.")
+    ];
+
+    public static string CurrentLanguage { get; private set; } = "en-US";
+
+    public static string Text(string key)
+    {
+        var table = CurrentLanguage == "pt-BR" ? PtBr : EnUs;
+        return table.TryGetValue(key, out var value) ? value : key;
+    }
+
+    public static string TextFor(string? language, string key)
+    {
+        var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
+        var table = normalized == "pt-BR" ? PtBr : EnUs;
+        return table.TryGetValue(key, out var value) ? value : key;
+    }
+
+    public static string Format(string key, params object?[] args)
+        => string.Format(CultureInfo.CurrentUICulture, Text(key), args);
+
+    public static string Choose(string ptBr, string enUs)
+        => CurrentLanguage == "pt-BR" ? ptBr : enUs;
+
+    public static string ChooseFormat(string ptBr, string enUs, params object?[] args)
+        => string.Format(CultureInfo.CurrentUICulture, Choose(ptBr, enUs), args);
+
+    public static bool HasKeyParity => PtBr.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(EnUs.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal);
+
+    public static string Present(string? value)
+        => PresentFor(CurrentLanguage, value);
+
+    public static string PresentFor(string? language, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value ?? string.Empty;
+        var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
+        foreach (var pair in ExactPresentationPairs)
+        {
+            if (normalized == "pt-BR" && value.Equals(pair.En, StringComparison.Ordinal)) return pair.Pt;
+            if (normalized != "pt-BR" && value.Equals(pair.Pt, StringComparison.Ordinal)) return pair.En;
+        }
+
+        var result = value;
+        if (normalized == "pt-BR")
+        {
+            foreach (var pair in PresentationPairs.OrderByDescending(pair => pair.En.Length))
+                result = result.Replace(pair.En, pair.Pt, StringComparison.Ordinal);
+        }
+        else
+        {
+            foreach (var pair in PresentationPairs.OrderByDescending(pair => pair.Pt.Length))
+                result = result.Replace(pair.Pt, pair.En, StringComparison.Ordinal);
+        }
+
+        // Never leak a clearly opposite-language backend sentence into the selected UI.
+        // Known messages above retain their detailed translation; old/unmapped platform text
+        // fails closed to a localized generic presentation instead of producing mixed UI.
+        if (LooksLikeOppositeLanguage(normalized, result))
+            return TextFor(normalized, "Ui.UnlocalizedPlatformMessage");
+
+        return result;
+    }
+
+    private static bool LooksLikeOppositeLanguage(string language, string value)
+    {
+        if (value.Length < 24) return false;
+        var tokens = value
+            .Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '/', '\\', '-', '—', '_' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length < 4) return false;
+
+        var english = CountMarkers(tokens, EnglishMarkers);
+        var portuguese = CountMarkers(tokens, PortugueseMarkers);
+        return language == "pt-BR"
+            ? english >= 3 && english > portuguese + 1
+            : portuguese >= 3 && portuguese > english + 1;
+    }
+
+    private static int CountMarkers(IEnumerable<string> tokens, HashSet<string> markers)
+        => tokens.Count(token => markers.Contains(token));
+
+    private static readonly HashSet<string> EnglishMarkers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "this", "that", "is", "are", "was", "were", "not", "no", "before", "after",
+        "first", "game", "games", "directory", "file", "files", "detected", "managed", "requires",
+        "install", "installed", "remove", "removed", "update", "failed", "available", "missing",
+        "prefix", "executable", "target", "external", "preserve", "preserved", "restore", "restored",
+        "cannot", "could", "will", "only", "with", "without", "from", "into", "current"
+    };
+
+    private static readonly HashSet<string> PortugueseMarkers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "o", "a", "os", "as", "este", "esta", "isso", "não", "antes", "depois", "primeiro",
+        "jogo", "jogos", "diretório", "arquivo", "arquivos", "detectado", "detectada", "gerenciado",
+        "gerenciada", "exige", "instalar", "instalado", "instalada", "remover", "removido", "removida",
+        "atualizar", "atualização", "falha", "disponível", "ausente", "prefixo", "executável", "alvo",
+        "externo", "externa", "preservar", "preservado", "preservada", "restaurar", "restaurado",
+        "restaurada", "somente", "com", "sem", "para", "atual"
+    };
+
+    public static void Apply(string? language)
+    {
+        CurrentLanguage = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
+        var resources = Application.Current?.Resources;
+        if (resources is null) return;
+        var table = CurrentLanguage == "pt-BR" ? PtBr : EnUs;
+        foreach (var item in table)
+            resources[item.Key] = item.Value;
+    }
+}

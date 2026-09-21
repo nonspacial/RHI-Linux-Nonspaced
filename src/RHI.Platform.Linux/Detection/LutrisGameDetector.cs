@@ -35,22 +35,122 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         else continue;
                     }
                     var slug = Path.GetFileNameWithoutExtension(file);
-                    games.Add(new DetectedGame
+                    var configuredRunner = MatchValue(text, "runner");
+                    var wineVersion = MatchSectionValue(text, "wine", "version");
+                    var hasWineRuntime = string.Equals(configuredRunner, "wine", StringComparison.OrdinalIgnoreCase)
+                        || !string.IsNullOrWhiteSpace(wineVersion)
+                        || !string.IsNullOrWhiteSpace(prefix);
+                    var layerType = hasWineRuntime
+                        ? (LooksLikeProton(wineVersion) ? "proton" : "wine")
+                        : null;
+                    var wineBinary = hasWineRuntime ? ResolveLutrisWineBinary(wineVersion) : null;
+                    var detectedExecutable = File.Exists(exe) ? exe : DetectionHelpers.FindLikelyExecutable(install);
+
+                    var game = new DetectedGame
                     {
                         Name = name,
                         InstallPath = install,
                         Source = "Lutris",
-                        ExecutablePath = File.Exists(exe) ? exe : DetectionHelpers.FindLikelyExecutable(install),
+                        ExecutablePath = detectedExecutable,
+                        LaunchExecutablePath = detectedExecutable,
                         PrefixPath = Directory.Exists(prefix) ? prefix : null,
-                        Runner = MatchValue(text, "runner") ?? "Lutris",
-                        LaunchCommand = "lutris " + Shell($"lutris:rungame/{slug}"),
-                        GraphicsApi = DetectionHelpers.GuessGraphicsApi(install)
-                    });
+                        Runner = layerType switch
+                        {
+                            "proton" => "Lutris Proton",
+                            "wine" => "Lutris Wine",
+                            _ => configuredRunner ?? "Lutris"
+                        },
+                        CompatibilityTool = wineVersion,
+                        CompatibilityLayerType = layerType,
+                        WineBinaryPath = wineBinary,
+                        WineServerPath = ResolveMatchingWineServer(wineBinary),
+                        LaunchCommand = "lutris " + Shell($"lutris:rungame/{slug}")
+                    };
+                    games.Add(game);
                 }
                 catch { }
             }
         }
         return games;
+    }
+
+
+    private static string? MatchSectionValue(string text, string section, string key)
+    {
+        var sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>[ \t]*){Regex.Escape(section)}\s*:\s*$");
+        if (!sectionMatch.Success) return null;
+
+        var sectionIndent = sectionMatch.Groups["indent"].Value.Length;
+        var tailStart = sectionMatch.Index + sectionMatch.Length;
+        var tail = text.Substring(tailStart);
+        foreach (var rawLine in tail.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(rawLine)) continue;
+            var indent = rawLine.TakeWhile(char.IsWhiteSpace).Count();
+            if (indent <= sectionIndent) break;
+            var trimmed = rawLine.Trim();
+            var match = Regex.Match(trimmed, $"^{Regex.Escape(key)}\\s*:\\s*(?<v>.+)$");
+            if (match.Success) return match.Groups["v"].Value.Trim().Trim('"', '\'');
+        }
+        return null;
+    }
+
+    private static bool LooksLikeProton(string? version)
+        => !string.IsNullOrWhiteSpace(version)
+           && (version.Contains("proton", StringComparison.OrdinalIgnoreCase)
+               || version.Contains("umu", StringComparison.OrdinalIgnoreCase));
+
+    private static string? ResolveLutrisWineBinary(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version) || string.Equals(version, "system", StringComparison.OrdinalIgnoreCase))
+            return FindOnPath("wine");
+
+        var expanded = Expand(version);
+        if (!string.IsNullOrWhiteSpace(expanded) && Path.IsPathRooted(expanded) && File.Exists(expanded))
+            return Path.GetFullPath(expanded);
+
+        foreach (var root in LutrisWineRunnerRoots())
+        {
+            var baseDir = Path.Combine(root, version);
+            foreach (var relative in new[]
+            {
+                Path.Combine("bin", "wine"),
+                Path.Combine("files", "bin", "wine"),
+                Path.Combine("dist", "bin", "wine")
+            })
+            {
+                var candidate = Path.Combine(baseDir, relative);
+                if (File.Exists(candidate)) return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> LutrisWineRunnerRoots()
+    {
+        yield return Path.Combine(LinuxPaths.DataHome, "lutris", "runners", "wine");
+        yield return Path.Combine(LinuxPaths.Home, ".local", "share", "lutris", "runners", "wine");
+        yield return Path.Combine(LinuxPaths.Home, ".var", "app", "net.lutris.Lutris", "data", "lutris", "runners", "wine");
+    }
+
+    private static string? ResolveMatchingWineServer(string? wineBinary)
+    {
+        if (string.IsNullOrWhiteSpace(wineBinary)) return null;
+        var candidate = Path.Combine(Path.GetDirectoryName(wineBinary) ?? string.Empty, "wineserver");
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    private static string? FindOnPath(string executable)
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var candidate = Path.Combine(dir, executable);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
     }
 
     private static string? MatchValue(string text, string key)
@@ -67,5 +167,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
         if (string.IsNullOrWhiteSpace(value)) return null;
         if (value.StartsWith("~/")) return Path.Combine(LinuxPaths.Home, value[2..]);
         return Environment.ExpandEnvironmentVariables(value);
+    }
+
+    internal static (string? Version, string? LayerType) ParseWineRuntimeForTests(string text)
+    {
+        var version = MatchSectionValue(text, "wine", "version");
+        return (version, string.IsNullOrWhiteSpace(version) ? null : (LooksLikeProton(version) ? "proton" : "wine"));
     }
 }

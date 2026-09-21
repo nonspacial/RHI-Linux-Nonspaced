@@ -2,20 +2,77 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="RHI.Desktop.App"
              RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <ResourceDictionary>
+      <SolidColorBrush x:Key="RhiBackgroundBrush">#121518</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiSurfaceBrush">#141820</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiControlBrush">#151A22</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiControlHoverBrush">#1A2430</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiControlPressedBrush">#102331</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiBorderBrush">#1E2630</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiAccentBorderBrush">#1E4858</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiAccentBrush">#4DC9E6</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiTextBrush">#E8ECF2</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiSecondaryTextBrush">#A0AABB</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiMutedTextBrush">#6B7A8E</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiRemoveBackgroundBrush">#281818</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiRemoveForegroundBrush">#E07A7A</SolidColorBrush>
+      <SolidColorBrush x:Key="RhiRemoveBorderBrush">#563030</SolidColorBrush>
+    </ResourceDictionary>
+  </Application.Resources>
+
   <Application.Styles>
     <FluentTheme />
+
+    <!-- Every generated/configuration window inherits the same RHI-Linux surface. -->
     <Style Selector="Window">
-      <Setter Property="Background" Value="#121518"/>
+      <Setter Property="Background" Value="{DynamicResource RhiBackgroundBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
       <Setter Property="FontFamily" Value="Inter"/>
     </Style>
-    <Style Selector="Button.rhi">
-      <Setter Property="Background" Value="#151A22"/>
-      <Setter Property="Foreground" Value="#4DC9E6"/>
-      <Setter Property="BorderBrush" Value="#1E4858"/>
+    <Style Selector="TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource RhiTextBrush}"/>
+    </Style>
+
+    <!-- Default controls intentionally match Button.rhi so code-created dialogs cannot fall back to Fluent defaults. -->
+    <Style Selector="Button">
+      <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="Padding" Value="12,7"/>
       <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="Button:pointerover">
+      <Setter Property="Background" Value="{DynamicResource RhiControlHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="#2A6378"/>
+    </Style>
+    <Style Selector="Button:pressed">
+      <Setter Property="Background" Value="{DynamicResource RhiControlPressedBrush}"/>
+    </Style>
+    <Style Selector="Button:disabled">
+      <Setter Property="Background" Value="#17191D"/>
+      <Setter Property="Foreground" Value="#626A75"/>
+      <Setter Property="BorderBrush" Value="#292D34"/>
+      <Setter Property="Opacity" Value="0.55"/>
+    </Style>
+
+    <Style Selector="Button.rhi">
+      <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi.remove">
+      <Setter Property="Background" Value="{DynamicResource RhiRemoveBackgroundBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiRemoveForegroundBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiRemoveBorderBrush}"/>
+    </Style>
+    <Style Selector="Button.rhi:disabled">
+      <Setter Property="Background" Value="#17191D"/>
+      <Setter Property="Foreground" Value="#626A75"/>
+      <Setter Property="BorderBrush" Value="#292D34"/>
+      <Setter Property="Opacity" Value="0.55"/>
     </Style>
     <Style Selector="Button.chip">
       <Setter Property="Background" Value="#1A2030"/>
@@ -25,19 +82,77 @@
       <Setter Property="Padding" Value="10,5"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
+    <Style Selector="Button.chip:pointerover">
+      <Setter Property="Background" Value="#202A3A"/>
+      <Setter Property="Foreground" Value="#B8C9E0"/>
+    </Style>
+
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="SelectionBrush" Value="#2A6378"/>
+    </Style>
+    <Style Selector="TextBox:focus">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+
+    <Style Selector="ComboBox">
+      <Setter Property="Background" Value="{DynamicResource RhiControlBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="MinHeight" Value="32"/>
+    </Style>
+    <Style Selector="ComboBox:focus">
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBrush}"/>
+    </Style>
+
+    <Style Selector="CheckBox">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+    <Style Selector="RadioButton">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+    </Style>
+
+    <Style Selector="TabControl">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="TabItem">
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="Background" Value="#101419"/>
+      <Setter Property="Padding" Value="12,7"/>
+    </Style>
+    <Style Selector="TabItem:selected">
+      <Setter Property="Foreground" Value="{DynamicResource RhiAccentBrush}"/>
+      <Setter Property="Background" Value="#14212A"/>
+    </Style>
+
+    <Style Selector="ToolTip">
+      <Setter Property="Background" Value="#101419"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="10,7"/>
+    </Style>
+
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="#141820"/>
+      <Setter Property="Background" Value="{DynamicResource RhiSurfaceBrush}"/>
       <Setter Property="BorderBrush" Value="#1E2430"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="CornerRadius" Value="10"/>
       <Setter Property="Padding" Value="16"/>
     </Style>
     <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="#6B7A8E"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiMutedTextBrush}"/>
       <Setter Property="FontSize" Value="11"/>
     </Style>
     <Style Selector="TextBlock.secondary">
-      <Setter Property="Foreground" Value="#A0AABB"/>
+      <Setter Property="Foreground" Value="{DynamicResource RhiSecondaryTextBrush}"/>
     </Style>
   </Application.Styles>
 </Application>

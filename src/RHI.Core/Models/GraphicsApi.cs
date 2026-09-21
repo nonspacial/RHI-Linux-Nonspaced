@@ -8,5 +8,6 @@ public enum GraphicsApi
     DirectX11,
     DirectX12,
     Vulkan,
-    OpenGL
+    OpenGL,
+    DirectX8
 }

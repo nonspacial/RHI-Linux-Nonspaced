@@ -1,0 +1,411 @@
+using System.Text.Json.Serialization;
+
+namespace RHI.Platform.Linux.Deployment;
+
+public sealed record UpstreamSplitGameDefinition(string Name, string SubPath);
+public sealed record UpstreamExternalDefinition(string Url, string Label);
+public sealed record UpstreamDllNamesDefinition(string? ReShade, string? DisplayCommander);
+public sealed record UpstreamUeExtendedCompatibilityDefinition(bool? Hdr, bool? Lut);
+public sealed record UpstreamGameNoteDefinition(string? Notes, string? Url, string? UrlLabel);
+
+/// <summary>
+/// Normalized, Linux-consumable policy snapshot from upstream RHI's remote manifest.
+/// It intentionally contains policy metadata even when the corresponding deployment
+/// backend is not implemented yet, so future features can consume one shared authority.
+/// </summary>
+public sealed class UpstreamLibraryPolicySnapshot
+{
+    public int Version { get; init; }
+    /// <summary>All game-title keys known to this manifest, including fields consumed by later probes.</summary>
+    public IReadOnlySet<string> KnownGameNames { get; init; } = EmptySet();
+    public IReadOnlySet<string> Blacklist { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyList<string> BlacklistPrefixes { get; init; } = [];
+    public IReadOnlyDictionary<string, string> WikiNameOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> InstallPathOverrides { get; init; } = EmptyStrings();
+    /// <summary>Per-game upstream engine-files template filename. The template itself is fetched separately and applied transactionally.</summary>
+    public IReadOnlyDictionary<string, string> EngineIniFiles { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, IReadOnlyList<UpstreamSplitGameDefinition>> SplitGames { get; init; }
+        = new Dictionary<string, IReadOnlyList<UpstreamSplitGameDefinition>>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, int> SteamAppIdOverrides { get; init; }
+        = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlySet<string> WikiUnlinks { get; init; } = EmptySet();
+    public IReadOnlySet<string> DlssSkipGames { get; init; } = EmptySet();
+    public IReadOnlySet<string> UeExtendedGames { get; init; } = EmptySet();
+    public IReadOnlySet<string> NativeHdrGames { get; init; } = EmptySet();
+    public IReadOnlySet<string> NoUeExtendedGames { get; init; } = EmptySet();
+    public IReadOnlyDictionary<string, UpstreamUeExtendedCompatibilityDefinition> UeExtendedCompatibility { get; init; }
+        = new Dictionary<string, UpstreamUeExtendedCompatibilityDefinition>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, UpstreamExternalDefinition> ForceExternalOnly { get; init; }
+        = new Dictionary<string, UpstreamExternalDefinition>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, UpstreamDllNamesDefinition> DllNameOverrides { get; init; }
+        = new Dictionary<string, UpstreamDllNamesDefinition>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, string> OptiScalerDllOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> LaunchExeOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> PdUpscalerGames { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> WikiStatusOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> NexusUrlOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> PcgwUrlOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> UwFixUrlOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> UltraPlusUrlOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, string> AuthorOverrides { get; init; } = EmptyStrings();
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> InstallWarnings { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, UpstreamGameNoteDefinition> GameNotes { get; init; }
+        = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyDictionary<string, string> EmptyStrings()
+        => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    private static IReadOnlySet<string> EmptySet()
+        => new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+}
+
+internal sealed partial class UpstreamManifestDocument
+{
+    [JsonPropertyName("blacklist")]
+    public List<string>? Blacklist { get; set; }
+
+    [JsonPropertyName("blacklistPrefixes")]
+    public List<string>? BlacklistPrefixes { get; set; }
+
+    [JsonPropertyName("wikiNameOverrides")]
+    public Dictionary<string, string>? WikiNameOverrides { get; set; }
+
+    [JsonPropertyName("installPathOverrides")]
+    public Dictionary<string, string>? InstallPathOverrides { get; set; }
+
+    [JsonPropertyName("splitGames")]
+    public Dictionary<string, List<UpstreamManifestSplitGame>>? SplitGames { get; set; }
+
+    [JsonPropertyName("steamAppIdOverrides")]
+    public Dictionary<string, int>? SteamAppIdOverrides { get; set; }
+
+    [JsonPropertyName("wikiUnlinks")]
+    public List<string>? WikiUnlinks { get; set; }
+
+    [JsonPropertyName("dlssSkipGames")]
+    public List<string>? DlssSkipGames { get; set; }
+
+    [JsonPropertyName("ueExtendedGames")]
+    public List<string>? UeExtendedGames { get; set; }
+
+    [JsonPropertyName("nativeHdrGames")]
+    public List<string>? NativeHdrGames { get; set; }
+
+    [JsonPropertyName("noUeExtendedGames")]
+    public List<string>? NoUeExtendedGames { get; set; }
+
+    [JsonPropertyName("ueExtendedCompatibility")]
+    public Dictionary<string, UpstreamManifestUeExtendedCompatibility>? UeExtendedCompatibility { get; set; }
+
+    [JsonPropertyName("forceExternalOnly")]
+    public Dictionary<string, UpstreamManifestForceExternal>? ForceExternalOnly { get; set; }
+
+    [JsonPropertyName("dllNameOverrides")]
+    public Dictionary<string, UpstreamManifestDllNames>? DllNameOverrides { get; set; }
+
+    [JsonPropertyName("optiScalerDllOverrides")]
+    public Dictionary<string, string>? OptiScalerDllOverrides { get; set; }
+
+    [JsonPropertyName("launchExeOverrides")]
+    public Dictionary<string, string>? LaunchExeOverrides { get; set; }
+
+    [JsonPropertyName("pdUpscalerGames")]
+    public Dictionary<string, string>? PdUpscalerGames { get; set; }
+
+    [JsonPropertyName("wikiStatusOverrides")]
+    public Dictionary<string, string>? WikiStatusOverrides { get; set; }
+
+    [JsonPropertyName("nexusUrlOverrides")]
+    public Dictionary<string, string>? NexusUrlOverrides { get; set; }
+
+    [JsonPropertyName("pcgwUrlOverrides")]
+    public Dictionary<string, string>? PcgwUrlOverrides { get; set; }
+
+    [JsonPropertyName("uwFixUrlOverrides")]
+    public Dictionary<string, string>? UwFixUrlOverrides { get; set; }
+
+    [JsonPropertyName("ultraPlusUrlOverrides")]
+    public Dictionary<string, string>? UltraPlusUrlOverrides { get; set; }
+
+    [JsonPropertyName("authorOverrides")]
+    public Dictionary<string, string>? AuthorOverrides { get; set; }
+
+    [JsonPropertyName("installWarnings")]
+    public Dictionary<string, Dictionary<string, string>>? InstallWarnings { get; set; }
+
+    [JsonPropertyName("gameNotes")]
+    public Dictionary<string, UpstreamManifestGameNote>? GameNotes { get; set; }
+}
+
+internal sealed class UpstreamManifestSplitGame
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("subPath")]
+    public string? SubPath { get; set; }
+}
+
+internal sealed class UpstreamManifestForceExternal
+{
+    [JsonPropertyName("url")]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("label")]
+    public string? Label { get; set; }
+}
+
+internal sealed class UpstreamManifestDllNames
+{
+    [JsonPropertyName("reshade")]
+    public string? ReShade { get; set; }
+
+    [JsonPropertyName("dc")]
+    public string? DisplayCommander { get; set; }
+}
+
+internal sealed class UpstreamManifestUeExtendedCompatibility
+{
+    [JsonPropertyName("hdr")]
+    public bool? Hdr { get; set; }
+
+    [JsonPropertyName("lut")]
+    public bool? Lut { get; set; }
+}
+
+internal sealed class UpstreamManifestGameNote
+{
+    [JsonPropertyName("notes")]
+    public string? Notes { get; set; }
+
+    [JsonPropertyName("notesUrl")]
+    public string? Url { get; set; }
+
+    [JsonPropertyName("notesUrlLabel")]
+    public string? UrlLabel { get; set; }
+}
+
+public sealed partial class UpstreamRhiManifestService
+{
+    public async Task<UpstreamLibraryPolicySnapshot> FetchLibraryPolicyAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var manifest = await FetchDocumentAsync(cancellationToken).ConfigureAwait(false);
+
+        return new UpstreamLibraryPolicySnapshot
+        {
+            Version = manifest.Version,
+            KnownGameNames = BuildKnownGameNames(manifest),
+            Blacklist = NormalizeSet(manifest.Blacklist),
+            BlacklistPrefixes = NormalizeList(manifest.BlacklistPrefixes),
+            WikiNameOverrides = NormalizeStringDictionary(manifest.WikiNameOverrides),
+            InstallPathOverrides = NormalizeStringDictionaryAllowEmpty(manifest.InstallPathOverrides),
+            EngineIniFiles = NormalizeStringDictionary(manifest.EngineIniFiles),
+            SplitGames = NormalizeSplitGames(manifest.SplitGames),
+            SteamAppIdOverrides = NormalizeIntDictionary(manifest.SteamAppIdOverrides),
+            WikiUnlinks = NormalizeSet(manifest.WikiUnlinks),
+            DlssSkipGames = NormalizeSet(manifest.DlssSkipGames),
+            UeExtendedGames = NormalizeSet(manifest.UeExtendedGames),
+            NativeHdrGames = NormalizeSet(manifest.NativeHdrGames),
+            NoUeExtendedGames = NormalizeSet(manifest.NoUeExtendedGames),
+            UeExtendedCompatibility = NormalizeUeExtendedCompatibility(manifest.UeExtendedCompatibility),
+            ForceExternalOnly = NormalizeExternal(manifest.ForceExternalOnly),
+            DllNameOverrides = NormalizeDllNames(manifest.DllNameOverrides),
+            OptiScalerDllOverrides = NormalizeStringDictionary(manifest.OptiScalerDllOverrides),
+            LaunchExeOverrides = NormalizeStringDictionary(manifest.LaunchExeOverrides),
+            PdUpscalerGames = NormalizeStringDictionary(manifest.PdUpscalerGames),
+            WikiStatusOverrides = NormalizeStringDictionary(manifest.WikiStatusOverrides),
+            NexusUrlOverrides = NormalizeStringDictionary(manifest.NexusUrlOverrides),
+            PcgwUrlOverrides = NormalizeStringDictionary(manifest.PcgwUrlOverrides),
+            UwFixUrlOverrides = NormalizeStringDictionary(manifest.UwFixUrlOverrides),
+            UltraPlusUrlOverrides = NormalizeStringDictionary(manifest.UltraPlusUrlOverrides),
+            AuthorOverrides = NormalizeStringDictionary(manifest.AuthorOverrides),
+            InstallWarnings = NormalizeNestedDictionary(manifest.InstallWarnings),
+            GameNotes = NormalizeGameNotes(manifest.GameNotes)
+        };
+    }
+
+
+    private static IReadOnlySet<string> BuildKnownGameNames(UpstreamManifestDocument manifest)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        static void Add(HashSet<string> target, IEnumerable<string>? values)
+        {
+            if (values is null) return;
+            foreach (var value in values)
+                if (!string.IsNullOrWhiteSpace(value)) target.Add(value.Trim());
+        }
+
+        // Launcher/library policy keys.
+        Add(result, manifest.Blacklist);
+        Add(result, manifest.WikiNameOverrides?.Keys);
+        Add(result, manifest.InstallPathOverrides?.Keys);
+        Add(result, manifest.SplitGames?.Keys);
+        if (manifest.SplitGames is not null)
+            foreach (var entries in manifest.SplitGames.Values)
+                Add(result, entries?.Select(x => x.Name ?? ""));
+        Add(result, manifest.SteamAppIdOverrides?.Keys);
+        Add(result, manifest.WikiUnlinks);
+        Add(result, manifest.DlssSkipGames);
+        Add(result, manifest.UeExtendedGames);
+        Add(result, manifest.NativeHdrGames);
+        Add(result, manifest.NoUeExtendedGames);
+        Add(result, manifest.UeExtendedCompatibility?.Keys);
+        Add(result, manifest.ForceExternalOnly?.Keys);
+        Add(result, manifest.DllNameOverrides?.Keys);
+        Add(result, manifest.OptiScalerDllOverrides?.Keys);
+        Add(result, manifest.LaunchExeOverrides?.Keys);
+        Add(result, manifest.PdUpscalerGames?.Keys);
+        Add(result, manifest.WikiStatusOverrides?.Keys);
+        Add(result, manifest.NexusUrlOverrides?.Keys);
+        Add(result, manifest.PcgwUrlOverrides?.Keys);
+        Add(result, manifest.UwFixUrlOverrides?.Keys);
+        Add(result, manifest.UltraPlusUrlOverrides?.Keys);
+        Add(result, manifest.AuthorOverrides?.Keys);
+        Add(result, manifest.InstallWarnings?.Keys);
+        Add(result, manifest.GameNotes?.Keys);
+
+        // Existing deployment/runtime fields are part of the same canonical-name authority.
+        Add(result, manifest.EngineOverrides?.Keys);
+        Add(result, manifest.EngineHintOverrides?.Keys);
+        Add(result, manifest.EngineIniPathOverrides?.Keys);
+        Add(result, manifest.EngineIniFiles?.Keys);
+        Add(result, manifest.GraphicsApiOverrides?.Keys);
+        Add(result, manifest.SnapshotOverrides?.Keys);
+        Add(result, manifest.ThirtyTwoBitGames);
+        Add(result, manifest.SixtyFourBitGames);
+        Add(result, manifest.RenoDxIniOverrides?.Keys);
+        Add(result, manifest.DofFixForceGames);
+        Add(result, manifest.DofFixSkipGames);
+        Add(result, manifest.LumaNameOverrides?.Keys);
+        Add(result, manifest.LumaDefaultGames);
+        Add(result, manifest.LumaRenoDxCompat);
+        return result;
+    }
+
+    private static IReadOnlySet<string> NormalizeSet(IEnumerable<string>? values)
+        => new HashSet<string>(
+            (values ?? []).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyList<string> NormalizeList(IEnumerable<string>? values)
+        => (values ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static IReadOnlyDictionary<string, string> NormalizeStringDictionary(
+        IReadOnlyDictionary<string, string>? values)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, value) in values)
+            if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(value))
+                result[key.Trim()] = value.Trim();
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, string> NormalizeStringDictionaryAllowEmpty(
+        IReadOnlyDictionary<string, string>? values)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, value) in values)
+            if (!string.IsNullOrWhiteSpace(key) && value is not null)
+                result[key.Trim()] = value.Trim();
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, int> NormalizeIntDictionary(
+        IReadOnlyDictionary<string, int>? values)
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, value) in values)
+            if (!string.IsNullOrWhiteSpace(key) && value > 0)
+                result[key.Trim()] = value;
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<UpstreamSplitGameDefinition>> NormalizeSplitGames(
+        IReadOnlyDictionary<string, List<UpstreamManifestSplitGame>>? values)
+    {
+        var result = new Dictionary<string, IReadOnlyList<UpstreamSplitGameDefinition>>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, entries) in values)
+        {
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            var normalized = (entries ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x.Name) && !string.IsNullOrWhiteSpace(x.SubPath))
+                .Select(x => new UpstreamSplitGameDefinition(x.Name!.Trim(), x.SubPath!.Trim()))
+                .ToArray();
+            if (normalized.Length > 0) result[key.Trim()] = normalized;
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, UpstreamUeExtendedCompatibilityDefinition> NormalizeUeExtendedCompatibility(
+        IReadOnlyDictionary<string, UpstreamManifestUeExtendedCompatibility>? values)
+    {
+        var result = new Dictionary<string, UpstreamUeExtendedCompatibilityDefinition>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, entry) in values)
+            if (!string.IsNullOrWhiteSpace(key) && entry is not null)
+                result[key.Trim()] = new(entry.Hdr, entry.Lut);
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, UpstreamExternalDefinition> NormalizeExternal(
+        IReadOnlyDictionary<string, UpstreamManifestForceExternal>? values)
+    {
+        var result = new Dictionary<string, UpstreamExternalDefinition>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, entry) in values)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(entry?.Url)) continue;
+            result[key.Trim()] = new(entry.Url!.Trim(), string.IsNullOrWhiteSpace(entry.Label) ? "Open external mod" : entry.Label!.Trim());
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, UpstreamDllNamesDefinition> NormalizeDllNames(
+        IReadOnlyDictionary<string, UpstreamManifestDllNames>? values)
+    {
+        var result = new Dictionary<string, UpstreamDllNamesDefinition>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, entry) in values)
+        {
+            if (string.IsNullOrWhiteSpace(key) || entry is null) continue;
+            result[key.Trim()] = new(NullIfWhiteSpace(entry.ReShade), NullIfWhiteSpace(entry.DisplayCommander));
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> NormalizeNestedDictionary(
+        IReadOnlyDictionary<string, Dictionary<string, string>>? values)
+    {
+        var result = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, nested) in values)
+        {
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            var normalized = NormalizeStringDictionary(nested);
+            if (normalized.Count > 0) result[key.Trim()] = normalized;
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, UpstreamGameNoteDefinition> NormalizeGameNotes(
+        IReadOnlyDictionary<string, UpstreamManifestGameNote>? values)
+    {
+        var result = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
+        if (values is null) return result;
+        foreach (var (key, note) in values)
+        {
+            if (string.IsNullOrWhiteSpace(key) || note is null) continue;
+            result[key.Trim()] = new(NullIfWhiteSpace(note.Notes), NullIfWhiteSpace(note.Url), NullIfWhiteSpace(note.UrlLabel));
+        }
+        return result;
+    }
+}

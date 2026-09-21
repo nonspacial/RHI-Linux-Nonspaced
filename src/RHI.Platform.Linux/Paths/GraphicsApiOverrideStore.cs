@@ -1,0 +1,72 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using RHI.Core.Models;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Platform.Linux.Paths;
+
+/// <summary>
+/// Persists explicit per-game graphics API authority separately from runtime detection.
+/// This mirrors upstream RHI's per-game API override concept without rewriting detector evidence.
+/// </summary>
+public sealed class GraphicsApiOverrideStore
+{
+    private readonly string _path;
+    private readonly object _gate = new();
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public GraphicsApiOverrideStore(string? path = null)
+        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "game-api-overrides.json");
+
+    public GraphicsApi? Get(DetectedGame game)
+    {
+        lock (_gate)
+        {
+            var entries = LoadUnsafe();
+            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var api) ? api : null;
+        }
+    }
+
+    /// <summary>Stores an explicit API. Null/Unknown clears the override and returns to automatic detection.</summary>
+    public void Set(DetectedGame game, GraphicsApi? api)
+    {
+        lock (_gate)
+        {
+            var entries = LoadUnsafe();
+            var key = LinuxDeploymentRecordStore.GameKey(game);
+            if (!api.HasValue || api.Value == GraphicsApi.Unknown)
+                entries.Remove(key);
+            else
+                entries[key] = api.Value;
+            SaveUnsafe(entries);
+        }
+    }
+
+    private Dictionary<string, GraphicsApi> LoadUnsafe()
+    {
+        try
+        {
+            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
+            var parsed = JsonSerializer.Deserialize<Dictionary<string, GraphicsApi>>(File.ReadAllText(_path), JsonOptions)
+                         ?? new Dictionary<string, GraphicsApi>();
+            return new Dictionary<string, GraphicsApi>(parsed, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void SaveUnsafe(Dictionary<string, GraphicsApi> entries)
+    {
+        var dir = Path.GetDirectoryName(_path)!;
+        Directory.CreateDirectory(dir);
+        var temp = _path + ".tmp";
+        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
+        File.Move(temp, _path, overwrite: true);
+    }
+}

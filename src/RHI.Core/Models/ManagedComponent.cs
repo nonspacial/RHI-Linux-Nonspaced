@@ -2,18 +2,28 @@ namespace RHI.Core.Models;
 
 public enum ManagedComponentKind
 {
-    ReShade,
-    RenoDX,
-    RenoDXUpgrade,
-    ReLimiter,
-    DisplayCommander,
-    OptiScaler,
-    REFramework,
-    LumaFramework,
-    DXVK,
-    DofFix,
-    Dlss,
-    Streamline
+    Unknown = -1,
+    ReShade = 0,
+    RenoDX = 1,
+    RenoDXUpgrade = 2,
+    ReLimiter = 3,
+    DisplayCommander = 4,
+    MfgAdaUnlock = 5,
+    Dlss5Feeder = 6,
+    Dlss5Dx11Bridge = 7,
+    OptiScaler = 8,
+    REFramework = 9,
+    LumaFramework = 10,
+    // 11 was a retired Linux translation-layer component. Keep the numeric slot unused
+    // so a legacy numeric record cannot be reinterpreted as another component.
+    DofFix = 12,
+    Dlss = 13,
+    Streamline = 14,
+    UltimateAsiLoader = 15,
+    ShortFuse = 16,
+    Dlssg2030Unlock = 17,
+    DlssEnablerStandalone = 18,
+    Rtx40MfgStandalone = 19
 }
 
 public enum ComponentAvailability
@@ -33,4 +43,6 @@ public sealed class ManagedComponent
     public string? InstalledVersion { get; set; }
     public string? LatestVersion { get; set; }
     public string? Note { get; set; }
+    public bool ManagedByRhi { get; set; }
+    public bool ActionAllowed { get; set; }
 }

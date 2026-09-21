@@ -1,0 +1,1005 @@
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using RHI.Core.Models;
+using RHI.Core.Services;
+using RHI.Platform.Linux.Paths;
+
+namespace RHI.Platform.Linux.Deployment;
+
+public sealed partial class ReShadeDeploymentService
+{
+    public const string HomeUrl = "https://reshade.me";
+    internal const string Nightly64Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(64-bit).zip";
+    internal const string Nightly32Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(32-bit).zip";
+    private const long MinDllSize = 1_000_000;
+
+    private const string MetaChannel = "ReShade.Channel";
+    private const string MetaSourceIdentity = "ReShade.SourceIdentity";
+    private const string MetaCustomSource = "ReShade.CustomSource";
+    private const string MetaLegacyVersion = "ReShade.LegacyVersion";
+    private const string MetaShaderPacks = "ReShade.ShaderPacks";
+    private const string MetaD3DCompilerSource = "ReShade.D3DCompiler47Source";
+    private const string D3DCompilerFileName = "D3DCompiler_47.dll";
+    private const string D3DCompilerOverrideName = "d3dcompiler_47";
+    private const string MetaIniCreated = "ReShade.IniCreatedByRhi";
+    private const string MetaIniEffectCreated = "ReShade.IniEffectKeyCreated";
+    private const string MetaIniTextureCreated = "ReShade.IniTextureKeyCreated";
+    private const string MetaIniEffectAdded = "ReShade.IniEffectPathsAdded";
+    private const string MetaIniTextureAdded = "ReShade.IniTexturePathsAdded";
+    private const string MetaShortFuseOriginalPayloadPath = ShortFuseDeploymentService.MetaReShadeOriginalPath;
+
+    private readonly HttpClient _http;
+    private readonly IFileDeploymentService _files;
+    private readonly LinuxDeploymentRecordStore _records;
+    private readonly WineDllOverrideService _overrides;
+    private readonly IReShadeArchiveExtractor _extractor;
+    private readonly ReShadeShaderPackService _shaderPacks;
+    private readonly string _cacheDir;
+
+    public ReShadeDeploymentService(
+        HttpClient http,
+        IFileDeploymentService files,
+        LinuxDeploymentRecordStore records,
+        WineDllOverrideService overrides,
+        IReShadeArchiveExtractor extractor,
+        string? cacheDir = null,
+        ReShadeShaderPackService? shaderPacks = null,
+        UpstreamRhiManifestService? upstreamManifest = null)
+    {
+        _http = http;
+        _files = files;
+        _records = records;
+        _overrides = overrides;
+        _extractor = extractor;
+        _cacheDir = cacheDir ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade");
+        _shaderPacks = shaderPacks ?? new ReShadeShaderPackService(
+            http,
+            Path.Combine(_cacheDir, "shader-packs"),
+            upstreamManifest);
+    }
+
+    public IReadOnlyList<ReShadeShaderPackInfo> AvailableShaderPacks => _shaderPacks.AvailablePacks;
+    public string CustomShaderRoot => _shaderPacks.CustomRoot;
+    public Task<IReadOnlyList<ReShadeShaderPackInfo>> RefreshShaderPackCatalogAsync(CancellationToken cancellationToken = default)
+        => _shaderPacks.RefreshCatalogAsync(cancellationToken);
+    public Task<IReadOnlyList<ReShadeShaderPackFileInfo>> ListShaderPackFilesAsync(string packId, CancellationToken cancellationToken = default)
+        => _shaderPacks.ListPackFilesAsync(packId, cancellationToken);
+    public void SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
+        => _shaderPacks.SetExcludedFiles(packId, excluded);
+    public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.ReShade) is not null;
+
+    public ReShadeInstallOptions GetInstalledOptions(DetectedGame game)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null) return new ReShadeInstallOptions();
+        var channel = ParseChannel(record.Metadata.GetValueOrDefault(MetaChannel));
+        return new ReShadeInstallOptions
+        {
+            Channel = channel,
+            LegacyVersion = record.Metadata.GetValueOrDefault(MetaLegacyVersion),
+            CustomDllPath = record.Metadata.GetValueOrDefault(MetaCustomSource),
+            ManageIni = record.Files.Any(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)),
+            D3DCompiler47Path = record.Metadata.GetValueOrDefault(MetaD3DCompilerSource),
+            ShaderPackIds = ReadStringList(record.Metadata.GetValueOrDefault(MetaShaderPacks))
+        };
+    }
+
+    public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => InstallAsync(game, new ReShadeInstallOptions(), cancellationToken);
+
+    public async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        ReShadeInstallOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
+            return ComponentOperationResult.Fail("ReShade DLL deployment is only for Windows games running through Wine/Proton.");
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
+            return ComponentOperationResult.Fail("Game binary directory is not known yet.");
+        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
+            return ComponentOperationResult.Fail("Game executable was not detected.");
+
+        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
+            return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
+
+        var directProxy = SelectProxyName(game.EffectiveGraphicsApi);
+        if (directProxy is null)
+            return ComponentOperationResult.Fail("This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
+
+        var existingRecord = _records.Find(game, ManagedComponentKind.ReShade);
+        var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
+        var directTarget = Path.Combine(game.BinaryDirectory, directProxy);
+        var target = directTarget;
+        var coexist = false;
+
+        if (existingRecord is not null)
+        {
+            var payload = existingRecord.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+            if (payload is null)
+                return ComponentOperationResult.Fail("RHI has a ReShade record for this game, but its managed DLL path is missing. Update is blocked until the record is repaired or removed safely.");
+            target = payload.Path;
+            coexist = Path.GetFileName(target).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) && managedOptiScaler is not null;
+        }
+        else if (File.Exists(directTarget))
+        {
+            if (BinarySignatureInspector.LooksLikeReShade(directTarget))
+                return ComponentOperationResult.Fail($"ReShade is already present at {directTarget}, but it was not installed by RHI Linux. Removal/update is locked to protect the external setup.");
+            if (architecture == PeArchitecture.X64 && BinarySignatureInspector.LooksLikeOptiScaler(directTarget))
+            {
+                if (managedOptiScaler is null)
+                    return ComponentOperationResult.Fail($"OptiScaler occupies {directTarget}, but it is not managed by RHI Linux. The external setup is protected; RHI will not edit its OptiScaler.ini automatically.");
+                var managedProxy = managedOptiScaler.Files.FirstOrDefault(file =>
+                    Path.GetFullPath(file.Path).Equals(Path.GetFullPath(directTarget), StringComparison.Ordinal));
+                if (managedProxy is null)
+                    return ComponentOperationResult.Fail($"An OptiScaler record exists, but it does not own {directTarget}. RHI treats the current proxy as external and will not build a ReShade chain on top of it.");
+                if (!string.IsNullOrWhiteSpace(managedProxy.Sha256))
+                {
+                    var currentProxyHash = await Sha256Async(directTarget, cancellationToken).ConfigureAwait(false);
+                    if (!string.Equals(currentProxyHash, managedProxy.Sha256, StringComparison.OrdinalIgnoreCase))
+                        return ComponentOperationResult.Fail($"Managed OptiScaler proxy was modified outside RHI. ReShade coexistence is blocked: {directTarget}");
+                }
+                target = Path.Combine(game.BinaryDirectory, "ReShade64.dll");
+                coexist = true;
+                if (File.Exists(target))
+                {
+                    if (BinarySignatureInspector.LooksLikeReShade(target))
+                        return ComponentOperationResult.Fail($"ReShade already exists at the OptiScaler coexistence target {target}, but it was not installed by RHI Linux. The external setup is protected.");
+                    return ComponentOperationResult.Fail($"OptiScaler coexistence target is occupied by an unknown DLL: {target}");
+                }
+            }
+            else
+            {
+                return ComponentOperationResult.Fail($"Foreign DLL protection: '{directProxy}' already exists and is not recognized as ReShade or OptiScaler. Nothing was overwritten.");
+            }
+        }
+
+        D3DCompilerPlan? d3dCompilerPlan = null;
+        if (options.ShaderPackIds.Count > 0 || !string.IsNullOrWhiteSpace(options.D3DCompiler47Path))
+        {
+            try
+            {
+                d3dCompilerPlan = BuildD3DCompilerPlan(game, architecture, options, existingRecord);
+            }
+            catch (Exception ex)
+            {
+                return ComponentOperationResult.Fail($"ReShade shader compiler compatibility check failed: {ex.Message}");
+            }
+        }
+
+        ReShadeStagedDll staged;
+        try
+        {
+            staged = await ResolveStagedAsync(options, architecture, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"ReShade source preparation failed: {ex.Message}");
+        }
+
+        var previousPayload = existingRecord?.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+        var existedBefore = previousPayload?.ExistedBeforeInstall ?? File.Exists(target);
+        var previousOverride = existingRecord?.WineOverride;
+        var previousAdditionalOverrides = existingRecord?.AdditionalWineOverrides ?? new List<WineOverrideRecord>();
+        var previousCompilerOverride = previousAdditionalOverrides.FirstOrDefault(IsD3DCompilerOverride);
+        var previousCompilerFile = existingRecord?.Files.FirstOrDefault(file => IsD3DCompilerPath(file.Path));
+        WineOverrideRecord? appliedOverride = previousOverride;
+        WineOverrideRecord? appliedCompilerOverride = previousCompilerOverride;
+        var overrideCreatedThisAttempt = false;
+        var compilerOverrideCreatedThisAttempt = false;
+        var compilerFileCreatedThisAttempt = false;
+        var fileReplaced = false;
+        string? updateSnapshot = null;
+        var oldOptions = existingRecord is null ? null : GetInstalledOptions(game);
+        if (existingRecord is not null && previousPayload is not null)
+        {
+            var shortFuseActive = existingRecord.Metadata.TryGetValue(MetaShortFuseOriginalPayloadPath, out var sfOriginalPath)
+                                  && !string.IsNullOrWhiteSpace(sfOriginalPath)
+                                  && Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
+            var backupBasePath = shortFuseActive ? sfOriginalPath! : target;
+            var originalBackup = backupBasePath + TransactionalFileDeploymentService.BackupExtension;
+            if (File.Exists(target) && !string.IsNullOrWhiteSpace(previousPayload.Sha256))
+            {
+                var currentManagedHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(currentManagedHash, previousPayload.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return ComponentOperationResult.Fail($"Managed ReShade DLL was modified outside RHI; update is blocked to protect the current file: {target}");
+            }
+            if (previousPayload.ExistedBeforeInstall && !File.Exists(originalBackup))
+                return ComponentOperationResult.Fail($"The original backup for managed ReShade is missing, so update is blocked rather than replacing the only recoverable state: {originalBackup}");
+            if (!previousPayload.ExistedBeforeInstall && File.Exists(originalBackup))
+                return ComponentOperationResult.Fail($"An unexpected .original file appeared beside an RHI-created ReShade proxy. Update is blocked to avoid adopting ambiguous backup state: {originalBackup}");
+
+            if (File.Exists(target))
+            {
+                updateSnapshot = target + $".rhi-update-snapshot-{Guid.NewGuid():N}";
+                File.Copy(target, updateSnapshot, overwrite: false);
+            }
+        }
+
+        if (previousCompilerFile is not null)
+        {
+            if (!File.Exists(previousCompilerFile.Path))
+                return ComponentOperationResult.Fail($"The RHI-managed D3DCompiler_47.dll is missing, so ReShade update is blocked until the compiler state is repaired or ReShade is removed safely: {previousCompilerFile.Path}");
+            if (!string.IsNullOrWhiteSpace(previousCompilerFile.Sha256))
+            {
+                var currentCompilerHash = await Sha256Async(previousCompilerFile.Path, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(currentCompilerHash, previousCompilerFile.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return ComponentOperationResult.Fail($"Managed D3DCompiler_47.dll was modified outside RHI; update is blocked to protect the current file: {previousCompilerFile.Path}");
+            }
+            if (!LooksLikeNativeD3DCompiler(previousCompilerFile.Path, architecture))
+                return ComponentOperationResult.Fail($"The RHI-managed D3DCompiler_47.dll no longer looks like a native Microsoft shader compiler: {previousCompilerFile.Path}");
+        }
+
+        try
+        {
+            // Remove only RHI-owned shader/INI entries from the previous profile before applying a new profile.
+            if (existingRecord is not null)
+            {
+                CleanupManagedIni(existingRecord);
+                _shaderPacks.Cleanup(game.BinaryDirectory);
+            }
+
+            // For an update of an RHI-created proxy there is intentionally no long-lived .original.
+            // Remove the current managed payload after snapshotting it so ReplaceAsync does not mistake
+            // that managed DLL for a pre-RHI original and create a bogus .original backup.
+            var shortFuseUpdate = existingRecord is not null
+                                  && existingRecord.Metadata.ContainsKey(MetaShortFuseOriginalPayloadPath)
+                                  && Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
+            if (existingRecord is not null && previousPayload is not null &&
+                (!previousPayload.ExistedBeforeInstall || shortFuseUpdate) && File.Exists(target))
+                File.Delete(target);
+
+            var result = await _files.ReplaceAsync(staged.DllPath, target, cancellationToken).ConfigureAwait(false);
+            if (!result.Success) throw new IOException(result.Error ?? "Failed to deploy ReShade DLL.");
+            fileReplaced = true;
+
+            WineOverrideRecord? overrideRecord = previousOverride;
+            if (!coexist)
+            {
+                if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
+                    throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
+                if (overrideRecord is null)
+                {
+                    overrideRecord = _overrides.EnsureNativeBuiltin(prefix, directProxy, Path.GetFileName(game.ExecutablePath));
+                    appliedOverride = overrideRecord;
+                    overrideCreatedThisAttempt = true;
+                }
+            }
+            else
+            {
+                OptiScalerIniEditor.SetLoadReShade(game.BinaryDirectory, true);
+                await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
+            }
+
+            LinuxDeployedFile? compilerFileRecord = previousCompilerFile;
+            var additionalOverrides = previousAdditionalOverrides
+                .Where(record => !IsD3DCompilerOverride(record))
+                .ToList();
+
+            // ReShade 6.5+ intentionally avoids Wine's incomplete built-in D3DCompiler implementation.
+            // When RHI shader packs are selected, make the native Microsoft compiler deterministic.
+            if (d3dCompilerPlan is not null)
+            {
+                if (game.PrefixPath is not { } compilerPrefix || !Directory.Exists(compilerPrefix))
+                    throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.");
+
+                if (d3dCompilerPlan.DeploySourcePath is not null)
+                {
+                    var compilerDeploy = await _files.ReplaceAsync(
+                        d3dCompilerPlan.DeploySourcePath,
+                        d3dCompilerPlan.TargetPath,
+                        cancellationToken).ConfigureAwait(false);
+                    if (!compilerDeploy.Success)
+                        throw new IOException(compilerDeploy.Error ?? "Failed to deploy native D3DCompiler_47.dll.");
+                    compilerFileCreatedThisAttempt = previousCompilerFile is null;
+                    compilerFileRecord = new LinuxDeployedFile
+                    {
+                        Path = d3dCompilerPlan.TargetPath,
+                        ExistedBeforeInstall = d3dCompilerPlan.TargetExistedBefore,
+                        Sha256 = await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
+                    };
+                }
+
+                if (appliedCompilerOverride is null)
+                {
+                    appliedCompilerOverride = _overrides.EnsureNativeBuiltin(
+                        compilerPrefix,
+                        D3DCompilerOverrideName,
+                        Path.GetFileName(game.ExecutablePath));
+                    compilerOverrideCreatedThisAttempt = true;
+                }
+                additionalOverrides.Add(appliedCompilerOverride);
+            }
+            else if (previousCompilerOverride is not null)
+            {
+                // Once enabled, retain the compiler compatibility override for the lifetime of this
+                // ReShade installation. It is restored exactly on ReShade removal.
+                additionalOverrides.Add(previousCompilerOverride);
+            }
+
+            var shaderResult = await _shaderPacks.SyncAsync(game.BinaryDirectory, options.ShaderPackIds, cancellationToken).ConfigureAwait(false);
+            ReShadeIniApplyResult? iniResult = null;
+            if (options.ManageIni)
+                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);
+
+            var files = new List<LinuxDeployedFile>
+            {
+                new()
+                {
+                    Path = target,
+                    ExistedBeforeInstall = existedBefore,
+                    Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                }
+            };
+            if (compilerFileRecord is not null)
+                files.Add(compilerFileRecord);
+            if (iniResult is not null)
+            {
+                files.Add(new LinuxDeployedFile
+                {
+                    Path = iniResult.Path,
+                    ExistedBeforeInstall = iniResult.ExistedBefore,
+                    Sha256 = iniResult.Sha256,
+                    AllowUserChanges = true
+                });
+            }
+
+            var metadata = existingRecord?.Metadata is { } oldMetadata
+                ? new Dictionary<string, string>(oldMetadata, StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            metadata[MetaChannel] = staged.Channel.ToString();
+            metadata[MetaSourceIdentity] = staged.SourceIdentity;
+            metadata[MetaShaderPacks] = JsonSerializer.Serialize(shaderResult.PackIds);
+            SetOrRemove(metadata, MetaCustomSource, options.Channel == ReShadeChannel.Custom ? staged.SourceUrl : null);
+            SetOrRemove(metadata, MetaLegacyVersion, options.Channel == ReShadeChannel.Legacy ? options.LegacyVersion?.Trim() : null);
+            if (d3dCompilerPlan is not null)
+                SetOrRemove(metadata, MetaD3DCompilerSource, d3dCompilerPlan.UserSourcePath);
+            WriteIniMetadata(metadata, iniResult);
+
+            var record = new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game),
+                GameName = game.Name,
+                Component = ManagedComponentKind.ReShade,
+                BinaryDirectory = game.BinaryDirectory,
+                SourceUrl = staged.SourceUrl,
+                Version = staged.Version,
+                InstalledAtUtc = DateTime.UtcNow,
+                WineOverride = overrideRecord,
+                AdditionalWineOverrides = additionalOverrides,
+                Files = files,
+                Metadata = metadata
+            };
+            _records.Upsert(record);
+            try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
+
+            var mode = Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase)
+                ? "ReShade64.asi (ShortFuse / UAL)"
+                : coexist ? "ReShade64.dll (OptiScaler coexistence)" : Path.GetFileName(target);
+            var packs = shaderResult.PackIds.Count == 0 ? "no RHI shader packs" : $"shader packs: {string.Join(", ", shaderResult.PackIds)}";
+            var compilerNote = d3dCompilerPlan is null
+                ? ""
+                : $" Native D3DCompiler_47 is active ({d3dCompilerPlan.Description}) with a per-game native,builtin override.";
+            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}", target);
+        }
+        catch (Exception ex)
+        {
+            // Best-effort rollback. On an update, the long-lived .original is the real pre-RHI game file,
+            // so do not restore it over the previous managed ReShade. Instead the update is blocked before
+            // destructive operations where possible; for a fresh install, restore/remove normally.
+            if (existingRecord is null && fileReplaced)
+                await RollbackFreshFileAsync(target, existedBefore, cancellationToken).ConfigureAwait(false);
+            if (existingRecord is null && overrideCreatedThisAttempt && game.PrefixPath is { } prefix && Directory.Exists(prefix))
+                _overrides.Restore(prefix, appliedOverride);
+            if (compilerOverrideCreatedThisAttempt && game.PrefixPath is { } compilerPrefix && Directory.Exists(compilerPrefix))
+                _overrides.Restore(compilerPrefix, appliedCompilerOverride);
+            if (compilerFileCreatedThisAttempt && d3dCompilerPlan is not null)
+            {
+                try
+                {
+                    if (d3dCompilerPlan.TargetExistedBefore && File.Exists(d3dCompilerPlan.TargetPath + TransactionalFileDeploymentService.BackupExtension))
+                        await _files.RestoreAsync(d3dCompilerPlan.TargetPath, CancellationToken.None).ConfigureAwait(false);
+                    else
+                    {
+                        if (File.Exists(d3dCompilerPlan.TargetPath)) File.Delete(d3dCompilerPlan.TargetPath);
+                        var backup = d3dCompilerPlan.TargetPath + TransactionalFileDeploymentService.BackupExtension;
+                        if (File.Exists(backup)) File.Delete(backup);
+                    }
+                }
+                catch { }
+            }
+            if (existingRecord is not null && updateSnapshot is not null && File.Exists(updateSnapshot))
+            {
+                try { File.Copy(updateSnapshot, target, overwrite: true); } catch { }
+            }
+            try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
+
+            // If this was an update and profile application failed, keep the record conservative and try
+            // to restore its previous INI/shader selection from cached sources.
+            if (existingRecord is not null && oldOptions is not null)
+            {
+                try
+                {
+                    var oldShaders = await _shaderPacks.SyncAsync(game.BinaryDirectory, oldOptions.ShaderPackIds, CancellationToken.None).ConfigureAwait(false);
+                    if (oldOptions.ManageIni)
+                        _ = ReShadeIniManager.Apply(game.BinaryDirectory, oldShaders.EffectSearchPaths, oldShaders.TextureSearchPaths);
+                }
+                catch { }
+            }
+            return ComponentOperationResult.Fail($"ReShade install/update failed: {ex.Message}");
+        }
+    }
+
+    public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null)
+            return ComponentOperationResult.Fail("ReShade was detected, but it is not managed by RHI Linux. Removal is locked to protect the external installation.");
+
+        var binaryDirectory = !string.IsNullOrWhiteSpace(game.BinaryDirectory)
+            ? game.BinaryDirectory
+            : record.BinaryDirectory;
+        if (string.IsNullOrWhiteSpace(binaryDirectory))
+            return ComponentOperationResult.Fail("The managed ReShade installation has no recorded game directory, so removal was stopped safely.");
+
+        var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
+        var coexist = managedOptiScaler is not null &&
+            record.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
+        var disabledOptiLoader = false;
+
+        try
+        {
+            foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
+            {
+                if (!File.Exists(file.Path)) continue;
+                if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension)) continue;
+                var currentHash = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
+            }
+
+            if (coexist)
+            {
+                OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false);
+                await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
+                disabledOptiLoader = true;
+            }
+
+            _shaderPacks.Cleanup(binaryDirectory);
+            CleanupManagedIni(record);
+
+            foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
+                {
+                    var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                    if (!restored.Success) throw new IOException(restored.Error ?? $"Could not restore {file.Path}");
+                }
+                else if (File.Exists(file.Path))
+                {
+                    File.Delete(file.Path);
+                }
+            }
+
+            if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
+            {
+                foreach (var additionalOverride in record.AdditionalWineOverrides.AsEnumerable().Reverse())
+                    _overrides.Restore(prefix, additionalOverride);
+                _overrides.Restore(prefix, record.WineOverride);
+            }
+            _records.Remove(game, ManagedComponentKind.ReShade);
+            return ComponentOperationResult.Ok(coexist
+                ? "RHI-managed ReShade removed; OptiScaler LoadReshade was disabled. RHI shader files were cleaned and user-edited ReShade.ini content was preserved."
+                : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.");
+        }
+        catch (Exception ex)
+        {
+            if (disabledOptiLoader)
+            {
+                try
+                {
+                    OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
+                    await RefreshManagedOptiScalerIniHashAsync(game, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch { }
+            }
+            return ComponentOperationResult.Fail($"ReShade removal failed: {ex.Message}");
+        }
+    }
+
+    public async Task<ReShadeUpdateStatus> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null) return new(false, false, "ReShade is not installed by RHI Linux.");
+        var channel = ParseChannel(record.Metadata.GetValueOrDefault(MetaChannel));
+        try
+        {
+            switch (channel)
+            {
+                case ReShadeChannel.Stable:
+                {
+                    var latest = await GetLatestStableAsync(cancellationToken).ConfigureAwait(false);
+                    var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase);
+                    return new(true, update, update ? $"Stable update available: {record.Version} → {latest.Version}." : $"Stable {record.Version} is current.", record.Version, latest.Version, channel);
+                }
+                case ReShadeChannel.Nightly:
+                {
+                    var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
+                    var url = architecture == PeArchitecture.X86 ? Nightly32Url : Nightly64Url;
+                    var remote = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
+                    if (remote <= 0) return new(true, false, "Could not determine the current nightly artifact size.", record.Version, null, channel);
+                    var identity = $"zip-size:{remote}";
+                    var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.Ordinal);
+                    return new(true, update, update ? "A newer/different ReShade nightly artifact is available." : "ReShade nightly is current.", record.Version, "Nightly", channel);
+                }
+                case ReShadeChannel.Legacy:
+                    return new(true, false, $"Legacy ReShade {record.Version} is pinned; RHI does not auto-upgrade legacy channels.", record.Version, record.Version, channel);
+                case ReShadeChannel.Custom:
+                {
+                    var source = record.Metadata.GetValueOrDefault(MetaCustomSource);
+                    if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
+                        return new(true, false, "Custom ReShade source file is unavailable; installed DLL remains untouched.", record.Version, null, channel);
+                    var identity = "sha256:" + await Sha256Async(source, cancellationToken).ConfigureAwait(false);
+                    var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.OrdinalIgnoreCase);
+                    return new(true, update, update ? "The custom ReShade DLL changed since it was applied." : "Custom ReShade source matches the installed profile.", record.Version, update ? "custom changed" : record.Version, channel);
+                }
+                default:
+                    return new(true, false, "Unknown ReShade channel; update is locked conservatively.", record.Version, null, channel);
+            }
+        }
+        catch (Exception ex)
+        {
+            return new(true, false, $"ReShade update check failed: {ex.Message}", record.Version, null, channel);
+        }
+    }
+
+    private D3DCompilerPlan BuildD3DCompilerPlan(
+        DetectedGame game,
+        PeArchitecture architecture,
+        ReShadeInstallOptions options,
+        LinuxDeploymentRecord? existingRecord)
+    {
+        if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
+            throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.");
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || string.IsNullOrWhiteSpace(game.ExecutablePath))
+            throw new InvalidOperationException("Game executable/binary directory is not available.");
+
+        var target = Path.Combine(game.BinaryDirectory, D3DCompilerFileName);
+        var existingManaged = existingRecord?.Files.FirstOrDefault(file => IsD3DCompilerPath(file.Path));
+        if (existingManaged is not null)
+        {
+            if (!File.Exists(target))
+                throw new InvalidOperationException($"RHI previously managed {D3DCompilerFileName}, but the file is missing: {target}");
+            if (!LooksLikeNativeD3DCompiler(target, architecture))
+                throw new InvalidOperationException($"RHI-managed {D3DCompilerFileName} is no longer a valid native Microsoft compiler: {target}");
+            return new(target, null, false, "RHI-managed app-local compiler", existingRecord?.Metadata.GetValueOrDefault(MetaD3DCompilerSource));
+        }
+
+        var existingAppLocal = FindFileCaseInsensitive(game.BinaryDirectory, D3DCompilerFileName);
+        if (existingAppLocal is not null)
+        {
+            if (!LooksLikeNativeD3DCompiler(existingAppLocal, architecture))
+                throw new InvalidOperationException(
+                    $"{Path.GetFileName(existingAppLocal)} already exists beside the game but is not recognized as a native Microsoft compiler. " +
+                    "RHI will not overwrite an external DLL.");
+            return new(existingAppLocal, null, true, "existing app-local Microsoft compiler", null);
+        }
+
+        var userSource = ExpandUserPath(options.D3DCompiler47Path);
+        if (!string.IsNullOrWhiteSpace(userSource))
+        {
+            if (!LooksLikeNativeD3DCompiler(userSource, architecture))
+                throw new InvalidOperationException(
+                    $"The selected {D3DCompilerFileName} is missing, has the wrong architecture, or is not recognized as the native Microsoft HLSL compiler: {userSource}");
+            return new(target, userSource, false, "RHI app-local compiler from selected Microsoft DLL", userSource);
+        }
+
+        foreach (var candidate in PrefixD3DCompilerCandidates(prefix, architecture))
+        {
+            if (LooksLikeNativeD3DCompiler(candidate, architecture))
+                return new(target, null, false, $"native Microsoft compiler already present in prefix ({candidate})", null);
+        }
+
+        var appIdHint = game.SteamAppId.HasValue
+            ? $" For this Steam game you can install it into the prefix with: protontricks {game.SteamAppId.Value} d3dcompiler_47"
+            : " Install the native d3dcompiler_47 verb with winetricks for this prefix, or select a Microsoft D3DCompiler_47.dll in the ReShade profile.";
+        throw new InvalidOperationException(
+            $"RHI shader packs under Wine/Proton need a native Microsoft {D3DCompilerFileName}; Wine's built-in compiler is not sufficient for all ReShade effects." +
+            appIdHint);
+    }
+
+    internal static bool LooksLikeNativeD3DCompiler(string path, PeArchitecture architecture)
+    {
+        try
+        {
+            if (!File.Exists(path) || new FileInfo(path).Length < 500_000) return false;
+            if (!BinarySignatureInspector.HasPeSignature(path, 500_000)) return false;
+            if (PeArchitectureDetector.Detect(path) != architecture) return false;
+
+            // Native Windows SDK/system D3DCompiler binaries identify both Microsoft and the HLSL compiler.
+            // Wine's built-in d3dcompiler does not carry these native product strings.
+            var bytes = File.ReadAllBytes(path);
+            var microsoft = ContainsAscii(bytes, "Microsoft") || ContainsUtf16Le(bytes, "Microsoft");
+            var compiler = ContainsAscii(bytes, "HLSL Shader Compiler") || ContainsUtf16Le(bytes, "HLSL Shader Compiler") ||
+                           ContainsAscii(bytes, "D3DCompiler_47") || ContainsUtf16Le(bytes, "D3DCompiler_47");
+            return microsoft && compiler;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    internal static string? FindNativeD3DCompilerInPrefix(string prefix, PeArchitecture architecture)
+    {
+        foreach (var candidate in PrefixD3DCompilerCandidates(prefix, architecture))
+            if (LooksLikeNativeD3DCompiler(candidate, architecture))
+                return candidate;
+        return null;
+    }
+
+    internal static string? FindNativeD3DCompilerForGame(DetectedGame game, PeArchitecture architecture)
+    {
+        if (!string.IsNullOrWhiteSpace(game.BinaryDirectory) && Directory.Exists(game.BinaryDirectory))
+        {
+            var appLocal = FindFileCaseInsensitive(game.BinaryDirectory, D3DCompilerFileName);
+            if (appLocal is not null && LooksLikeNativeD3DCompiler(appLocal, architecture))
+                return appLocal;
+        }
+
+        if (!string.IsNullOrWhiteSpace(game.PrefixPath) && Directory.Exists(game.PrefixPath))
+            return FindNativeD3DCompilerInPrefix(game.PrefixPath, architecture);
+
+        return null;
+    }
+
+    private static IEnumerable<string> PrefixD3DCompilerCandidates(string prefix, PeArchitecture architecture)
+    {
+        var windows = Path.Combine(prefix, "drive_c", "windows");
+        var directories = architecture == PeArchitecture.X86
+            ? new[] { Path.Combine(windows, "syswow64"), Path.Combine(windows, "system32") }
+            : new[] { Path.Combine(windows, "system32"), Path.Combine(windows, "syswow64") };
+
+        foreach (var directory in directories)
+        {
+            var candidate = FindFileCaseInsensitive(directory, D3DCompilerFileName);
+            if (candidate is not null)
+                yield return candidate;
+        }
+    }
+
+    internal static string? FindFileCaseInsensitive(string directory, string fileName)
+    {
+        if (!Directory.Exists(directory)) return null;
+
+        var canonical = Path.Combine(directory, fileName);
+        if (File.Exists(canonical)) return canonical;
+
+        var lowercase = Path.Combine(directory, fileName.ToLowerInvariant());
+        if (File.Exists(lowercase)) return lowercase;
+
+        try
+        {
+            return Directory.EnumerateFiles(directory)
+                .FirstOrDefault(path => Path.GetFileName(path).Equals(fileName, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? ExpandUserPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (expanded == "~") expanded = home;
+        else if (expanded.StartsWith("~/", StringComparison.Ordinal))
+            expanded = Path.Combine(home, expanded[2..]);
+        return Path.GetFullPath(expanded);
+    }
+
+    private static bool ContainsUtf16Le(byte[] bytes, string value)
+    {
+        var needle = System.Text.Encoding.Unicode.GetBytes(value);
+        return ContainsBytes(bytes, needle);
+    }
+
+    private static bool ContainsAscii(byte[] bytes, string value)
+    {
+        var needle = System.Text.Encoding.ASCII.GetBytes(value);
+        return ContainsBytes(bytes, needle);
+    }
+
+    private static bool ContainsBytes(byte[] bytes, byte[] needle)
+    {
+        if (needle.Length == 0 || bytes.Length < needle.Length) return false;
+        for (var i = 0; i <= bytes.Length - needle.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                var a = bytes[i + j];
+                var b = needle[j];
+                if (a == b) continue;
+                if (a >= (byte)'A' && a <= (byte)'Z') a = (byte)(a + 32);
+                if (b >= (byte)'A' && b <= (byte)'Z') b = (byte)(b + 32);
+                if (a != b) { match = false; break; }
+            }
+            if (match) return true;
+        }
+        return false;
+    }
+
+    private static bool IsD3DCompilerPath(string path)
+        => Path.GetFileName(path).Equals(D3DCompilerFileName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsD3DCompilerOverride(WineOverrideRecord record)
+        => string.Equals(Path.GetFileNameWithoutExtension(record.DllName), D3DCompilerOverrideName, StringComparison.OrdinalIgnoreCase);
+
+    private sealed record D3DCompilerPlan(
+        string TargetPath,
+        string? DeploySourcePath,
+        bool TargetExistedBefore,
+        string Description,
+        string? UserSourcePath);
+
+    private async Task<ReShadeStagedDll> ResolveStagedAsync(ReShadeInstallOptions options, PeArchitecture architecture, CancellationToken cancellationToken)
+        => options.Channel switch
+        {
+            ReShadeChannel.Stable => await EnsureLatestStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
+            ReShadeChannel.Nightly => await EnsureNightlyStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
+            ReShadeChannel.Legacy => await EnsureLegacyStagedAsync(options.LegacyVersion, architecture, cancellationToken).ConfigureAwait(false),
+            ReShadeChannel.Custom => await EnsureCustomStagedAsync(options.CustomDllPath, architecture, cancellationToken).ConfigureAwait(false),
+            _ => throw new InvalidOperationException("Unknown ReShade channel.")
+        };
+
+    internal async Task<ReShadeStagedDll> EnsureLatestStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
+    {
+        var latest = await GetLatestStableAsync(cancellationToken).ConfigureAwait(false);
+        return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<ReShadeStagedDll> EnsureLegacyStagedAsync(string? version, PeArchitecture architecture, CancellationToken cancellationToken = default)
+    {
+        version = version?.Trim();
+        if (string.IsNullOrWhiteSpace(version) || !LegacyVersionRegex().IsMatch(version))
+            throw new InvalidOperationException("Legacy channel needs an explicit numeric ReShade version such as 6.4.1.");
+        var url = $"{HomeUrl}/downloads/ReShade_Setup_{version}_Addon.exe";
+        return await EnsureSetupStagedAsync(version, url, architecture, Path.Combine("legacy", version), ReShadeChannel.Legacy, $"version:{version}", cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<ReShadeStagedDll> EnsureNightlyStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
+    {
+        var is32 = architecture == PeArchitecture.X86;
+        var url = is32 ? Nightly32Url : Nightly64Url;
+        var dllName = is32 ? "ReShade32.dll" : "ReShade64.dll";
+        var dir = Path.Combine(_cacheDir, "nightly", is32 ? "x86" : "x64");
+        Directory.CreateDirectory(dir);
+        var staged = Path.Combine(dir, dllName);
+        var marker = Path.Combine(dir, "zip-size.txt");
+        var remoteSize = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
+        if (remoteSize > 0 && File.Exists(marker) && long.TryParse(File.ReadAllText(marker).Trim(), out var known) && known == remoteSize && IsValidReShadeDll(staged))
+            return new(staged, "Nightly", url, $"zip-size:{remoteSize}", ReShadeChannel.Nightly);
+
+        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+        var tempZip = Path.Combine(dir, "nightly.zip.tmp");
+        try
+        {
+            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (var output = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            var actualZipSize = new FileInfo(tempZip).Length;
+            using var archive = ZipFile.OpenRead(tempZip);
+            var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                        ?? archive.Entries.FirstOrDefault(e => e.FullName.EndsWith(dllName, StringComparison.OrdinalIgnoreCase));
+            if (entry is null) throw new InvalidDataException($"{dllName} was not found in the nightly artifact.");
+            entry.ExtractToFile(staged, overwrite: true);
+            if (!IsValidReShadeDll(staged)) throw new InvalidDataException($"Extracted nightly {dllName} is invalid or too small.");
+            File.WriteAllText(marker, actualZipSize.ToString());
+            return new(staged, "Nightly", url, $"zip-size:{actualZipSize}", ReShadeChannel.Nightly);
+        }
+        finally
+        {
+            try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+        }
+    }
+
+    internal async Task<ReShadeStagedDll> EnsureCustomStagedAsync(string? sourcePath, PeArchitecture architecture, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath)) throw new InvalidOperationException("Custom channel needs a path to a ReShade DLL.");
+        var expanded = Environment.ExpandEnvironmentVariables(sourcePath.Trim());
+        if (expanded == "~") expanded = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        else if (expanded.StartsWith("~/", StringComparison.Ordinal))
+            expanded = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), expanded[2..]);
+        var full = Path.GetFullPath(expanded);
+        if (!IsValidReShadeDll(full)) throw new InvalidOperationException("Custom ReShade file is missing, not a PE DLL, or is smaller than 1 MB.");
+        if (!BinarySignatureInspector.LooksLikeReShade(full))
+            throw new InvalidOperationException("Custom DLL does not contain a recognizable ReShade signature; RHI will not inject an arbitrary DLL.");
+        var customArch = PeArchitectureDetector.Detect(full);
+        if (customArch != architecture)
+            throw new InvalidOperationException($"Custom ReShade architecture mismatch: game is {architecture}, DLL is {customArch}.");
+        var hash = await Sha256Async(full, cancellationToken).ConfigureAwait(false);
+        var dir = Path.Combine(_cacheDir, "custom", hash[..16]);
+        Directory.CreateDirectory(dir);
+        var name = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
+        var staged = Path.Combine(dir, name);
+        File.Copy(full, staged, overwrite: true);
+        return new(staged, $"Custom {hash[..12]}", full, "sha256:" + hash, ReShadeChannel.Custom);
+    }
+
+    private async Task<ReShadeStagedDll> EnsureSetupStagedAsync(
+        string version,
+        string url,
+        PeArchitecture architecture,
+        string relativeCache,
+        ReShadeChannel channel,
+        string identity,
+        CancellationToken cancellationToken)
+    {
+        var versionDir = Path.Combine(_cacheDir, relativeCache);
+        Directory.CreateDirectory(versionDir);
+        var desiredName = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
+        var staged = Path.Combine(versionDir, desiredName);
+        if (IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
+
+        var setup = Path.Combine(versionDir, $"ReShade_Setup_{version}_Addon.exe");
+        if (!File.Exists(setup) || new FileInfo(setup).Length < 500_000 || !BinarySignatureInspector.HasPeSignature(setup, 500_000))
+        {
+            try { if (File.Exists(setup)) File.Delete(setup); } catch { }
+            var temp = setup + ".tmp";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Referrer = new Uri(HomeUrl + "/");
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            if (!BinarySignatureInspector.HasPeSignature(temp, 500_000))
+            {
+                File.Delete(temp);
+                throw new InvalidOperationException("reshade.me returned a file that is not a valid ReShade setup executable.");
+            }
+            File.Move(temp, setup, overwrite: true);
+        }
+
+        var extractDir = Path.Combine(versionDir, "extract");
+        Directory.CreateDirectory(extractDir);
+        await _extractor.ExtractDllsAsync(setup, extractDir, cancellationToken).ConfigureAwait(false);
+        foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll" })
+        {
+            var source = Path.Combine(extractDir, name);
+            if (IsValidReShadeDll(source)) File.Copy(source, Path.Combine(versionDir, name), overwrite: true);
+        }
+        if (!IsValidReShadeDll(staged)) throw new InvalidOperationException($"{desiredName} was not extracted from the ReShade setup.");
+        return new(staged, version, url, identity, channel);
+    }
+
+    private async Task<(string Version, string Url)> GetLatestStableAsync(CancellationToken cancellationToken)
+    {
+        var html = await _http.GetStringAsync(HomeUrl, cancellationToken).ConfigureAwait(false);
+        var match = AddonDownloadRegex().Match(html);
+        if (!match.Success) throw new InvalidOperationException("Could not find the current full add-on ReShade download on reshade.me.");
+        var version = match.Groups[1].Value;
+        var relative = match.Value;
+        var url = relative.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? relative : HomeUrl + relative;
+        return (version, url);
+    }
+
+    private async Task<long> GetRemoteLengthAsync(string url, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength is long length && length > 0) return length;
+        }
+        catch { }
+        return -1;
+    }
+
+    private void CleanupManagedIni(LinuxDeploymentRecord record)
+    {
+        var ini = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
+        if (ini is null) return;
+        ReShadeIniManager.Cleanup(
+            ini.Path,
+            ReadBool(record.Metadata, MetaIniCreated),
+            ini.Sha256,
+            ReadStringList(record.Metadata.GetValueOrDefault(MetaIniEffectAdded)),
+            ReadStringList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
+            ReadBool(record.Metadata, MetaIniEffectCreated),
+            ReadBool(record.Metadata, MetaIniTextureCreated));
+    }
+
+    private static void WriteIniMetadata(Dictionary<string, string> metadata, ReShadeIniApplyResult? ini)
+    {
+        foreach (var key in new[] { MetaIniCreated, MetaIniEffectCreated, MetaIniTextureCreated, MetaIniEffectAdded, MetaIniTextureAdded }) metadata.Remove(key);
+        if (ini is null) return;
+        metadata[MetaIniCreated] = ini.CreatedByRhi.ToString();
+        metadata[MetaIniEffectCreated] = ini.EffectKeyCreated.ToString();
+        metadata[MetaIniTextureCreated] = ini.TextureKeyCreated.ToString();
+        metadata[MetaIniEffectAdded] = JsonSerializer.Serialize(ini.AddedEffectPaths);
+        metadata[MetaIniTextureAdded] = JsonSerializer.Serialize(ini.AddedTexturePaths);
+    }
+
+    private async Task RefreshManagedOptiScalerIniHashAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        var record = _records.Find(game, ManagedComponentKind.OptiScaler);
+        if (record is null) return;
+        var ini = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase));
+        if (ini is null || !File.Exists(ini.Path)) return;
+        ini.Sha256 = await Sha256Async(ini.Path, cancellationToken).ConfigureAwait(false);
+        ini.AllowUserChanges = true;
+        _records.Upsert(record);
+    }
+
+    internal static string? SelectProxyName(GraphicsApi api) => api switch
+    {
+        GraphicsApi.DirectX9 => "d3d9.dll",
+        GraphicsApi.DirectX10 or GraphicsApi.DirectX11 or GraphicsApi.DirectX12 => "dxgi.dll",
+        GraphicsApi.OpenGL => "opengl32.dll",
+        _ => null
+    };
+
+    private static bool IsReShadePayloadPath(string path)
+    {
+        var name = Path.GetFileName(path);
+        return name.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("opengl32.dll", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsValidReShadeDll(string path)
+        => File.Exists(path) && new FileInfo(path).Length > MinDllSize && BinarySignatureInspector.HasPeSignature(path, MinDllSize);
+
+    private async Task RollbackFreshFileAsync(string target, bool existedBefore, CancellationToken cancellationToken)
+    {
+        if (existedBefore && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
+            await _files.RestoreAsync(target, cancellationToken).ConfigureAwait(false);
+        else
+        {
+            try { if (File.Exists(target)) File.Delete(target); } catch { }
+        }
+    }
+
+    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(path);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return Convert.ToHexString(hash);
+    }
+
+    private static ReShadeChannel ParseChannel(string? value)
+        => Enum.TryParse<ReShadeChannel>(value, true, out var channel) ? channel : ReShadeChannel.Stable;
+
+    private static IReadOnlyList<string> ReadStringList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+        try { return JsonSerializer.Deserialize<string[]>(value) ?? []; }
+        catch { return []; }
+    }
+
+    private static bool ReadBool(IReadOnlyDictionary<string, string> metadata, string key)
+        => metadata.TryGetValue(key, out var value) && bool.TryParse(value, out var result) && result;
+
+    private static void SetOrRemove(Dictionary<string, string> metadata, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) metadata.Remove(key);
+        else metadata[key] = value;
+    }
+
+    [GeneratedRegex(@"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe", RegexOptions.IgnoreCase)]
+    private static partial Regex AddonDownloadRegex();
+
+    [GeneratedRegex(@"^\d+(?:\.\d+){1,3}$", RegexOptions.CultureInvariant)]
+    private static partial Regex LegacyVersionRegex();
+}

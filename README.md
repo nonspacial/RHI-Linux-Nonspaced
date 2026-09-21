@@ -4,21 +4,22 @@
 
 ### Native Linux port of RHI for Steam / Proton, Heroic, Lutris and Wine
 
-[![Version](https://img.shields.io/badge/RHI%20Linux-v0.9.2-0ea5e9?style=for-the-badge)](https://github.com/wizardkof/RHI-Linux)
-[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.6.0-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
+[![Version](https://img.shields.io/badge/RHI%20Linux-v0.9.23.4--beta.1-0ea5e9?style=for-the-badge)](https://github.com/wizardkof/RHI-Linux)
+[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.7.5-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
 [![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/wizardkof/RHI-Linux)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
 [![License](https://img.shields.io/github/license/wizardkof/RHI-Linux?style=for-the-badge)](LICENSE)
 
-**RHI Linux brings the RHI component-management workflow to Linux with native .NET 8 + Avalonia integration for Wine and Proton games.**
+**RHI Linux brings the RHI workflow to Linux with a native .NET 8 + Avalonia application for Windows games running through Wine and Proton.**
 
 <br>
 
-[Features](#-features) ·
+[Status](#-status) ·
 [Supported Launchers](#-supported-launchers) ·
 [Quick Start](#-quick-start) ·
-[Compatibility](#-compatibility--limitations) ·
-[Roadmap](#-roadmap)
+[Compatibility](#️-compatibility) ·
+[Upstream](#-upstream) ·
+[License](#-license)
 
 <br>
 
@@ -46,207 +47,68 @@
 
 ## 🚀 Status
 
-**Current development:** `v0.9.2`
-**Upstream target:** `RHI 2.6.0`
+**Current public beta:** `v0.9.23.4-beta.1`
+**Upstream target:** `RHI 2.7.5`
 
-RHI Linux is actively developed and already provides functional Linux-native management for several RHI components.
+RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton.
 
-The current development focus is **ShortFuse / Frame Generation orchestration** on top of the Ultimate ASI Loader backend introduced in v0.9.1.
+The project targets functional parity with upstream RHI where the same functionality can be implemented reliably on Linux.
+
+This release is published as a **beta** while broader testing continues across different Linux distributions, Wine / Proton versions, GPUs, launchers and games.
 
 > [!NOTE]
-> RHI Linux is a native Linux port of the RHI workflow.
-> It does not run the original WinUI application through Wine.
-
----
-
-# ✨ Features
-
-| Component                        | Status |
-| :------------------------------- | :----: |
-| **ReShade**                      |    ✅   |
-| **ReShade shader packs**         |    ✅   |
-| **RenoDX HDR**                   |    ✅   |
-| **OptiScaler**                   |    ✅   |
-| **DLSS Super Resolution**        |    ✅   |
-| **DLSS Ray Reconstruction**      |    ✅   |
-| **DLSS Frame Generation**        |    ✅   |
-| **Streamline**                   |    ✅   |
-| **MFG Ada Unlock**               |    ✅   |
-| **DLSS5 Feeder**                 |    ✅   |
-| **DLSS5 Feeder Full**            |    ✅   |
-| **DLSS5 DX11 Bridge**            |    ✅   |
-| **ReLimiter**                    |    ✅   |
-| **Display Commander**            |    ✅   |
-| **Ultimate ASI Loader**          |    ✅   |
-| **ShortFuse auto-configuration** |   🚧   |
-| **Luma**                         |   🔒   |
-| **REFramework**                  |   🔒   |
-| **DOF Fix**                      |   🔒   |
-
-### Status
-
-* ✅ Available
-* 🚧 In development
-* 🔒 Not ported yet
-
----
-
-## 🎨 ReShade
-
-RHI Linux supports multiple ReShade sources:
-
-* **Stable**
-* **Nightly**
-* **Legacy**
-* **Custom DLL**
-
-It also supports managed shader packs and preserves user configuration during install and removal.
-
-Existing files are protected whenever possible instead of being blindly overwritten.
-
----
-
-## 🟢 DLSS & Streamline
-
-RHI Linux can manage game-local versions of:
-
-* **DLSS Super Resolution**
-* **Ray Reconstruction**
-* **Frame Generation**
-* **Neural Rendering runtimes**
-* **Streamline**
-
-Changes use a transactional backup system with `.original` restoration.
+> RHI Linux is a native Linux application.
+>
+> It does not run the original Windows RHI application through Wine.
 
 > [!IMPORTANT]
-> Standard DLSS swapping only works when the game already contains a recognized target DLL.
+> DLSS5 Feeder / Neural Rendering workflows are experimental.
 >
-> RHI does not guess or create arbitrary DLSS locations.
+> The default DLSS5 Feeder consumer is **RenoDX DLSS5**.
 
 ---
 
-## 🧠 DLSS5 Feeder Full
-
-For compatible games without an existing game-local DLSS runtime, RHI Linux provides a separate **Feeder Full** workflow.
-
-It can manage:
-
-* DLSS5 Feeder
-* private DLSS SR / NR runtimes
-* Lumenite Kernel
-* DLSS5 Feed shaders
-* ReShade dependencies
-* native `D3DCompiler_47.dll` integration
-* per-game Wine overrides
-
-The current Linux-safe consumer path uses **Deep Fried Chicken**.
-
-> [!NOTE]
-> Deep Fried Chicken is not bundled with RHI Linux.
->
-> The package must be supplied by the user.
-
-User-modified `deep-fried-chicken.cfg` files are preserved during removal and can be reused during reinstall.
-
----
-
-## 🔌 Ultimate ASI Loader
-
-RHI Linux includes native management for **Ultimate ASI Loader** under Wine and Proton.
-
-Supported behavior includes:
-
-* x86 / x64 automatic selection
-* per-game proxy selection
-* Steam / Proton
-* Heroic
-* Lutris
-* standalone Wine
-* per-application `native,builtin` overrides
-* existing proxy preservation
-* `Hooked.dll` chaining
-* safe Update / Remove
-* restoration of previous Wine override state
-
----
-
-## 🧱 Native D3DCompiler support
-
-Some ReShade shaders require Microsoft's native:
-
-```text
-D3DCompiler_47.dll
-```
-
-RHI Linux can detect a valid compiler from:
-
-* the game directory
-* the Wine / Proton prefix
-* a user-selected DLL
-* Protontricks
-* Winetricks
-
-Supported launchers use their actual active Wine / Proton runner instead of blindly falling back to system Wine.
-
-> [!CAUTION]
-> Microsoft `D3DCompiler_47.dll` is **not bundled or redistributed by RHI Linux**.
-
----
-
-# 🎮 Supported launchers
+# 🎮 Supported Launchers
 
 ## Steam / Proton
+
+RHI Linux supports Steam games running through Proton, including:
 
 * Steam library discovery
 * additional Steam libraries
 * AppID detection
-* automatic Proton prefix mapping
-* Protontricks integration
+* Proton prefix detection
+* game executable discovery
+* launching through Steam / Proton
 
 ## Heroic
 
-* Legendary / Epic games
-* custom / sideload games
-* Wine and Proton prefixes
+RHI Linux supports games managed through Heroic, including:
+
+* Epic / Legendary games
+* sideloaded games
+* Wine prefixes
+* Proton prefixes
 * per-game runner detection
-* launcher-aware Winetricks
 
 ## Lutris
+
+RHI Linux supports Lutris configurations, including:
 
 * game discovery
 * executable detection
 * Wine prefix detection
-* active Wine runner integration
+* active runner detection
 
 ## Standalone Wine
 
-Existing standalone Wine prefixes are also supported.
+Manually added games and standalone Wine prefixes are also supported.
+
+The game executable and Wine prefix can be configured independently when necessary.
 
 ---
 
-# 🖥 Interface
-
-RHI Linux uses **Avalonia** for a native Linux desktop interface.
-
-Game detail sections can be:
-
-* collapsed
-* expanded
-* reordered
-
-The layout persists between sessions.
-
-DLSS and Streamline components also show their current state directly:
-
-```text
-— Not present
-• Game DLL
-✓ RHI applied
-```
-
----
-
-# ⚡ Quick start
+# ⚡ Quick Start
 
 ## CachyOS / Arch Linux
 
@@ -256,17 +118,11 @@ Install the required packages:
 sudo pacman -S --needed dotnet-sdk-8.0 7zip git
 ```
 
-Clone:
+Clone RHI Linux:
 
 ```fish
 git clone https://github.com/wizardkof/RHI-Linux.git
 cd RHI-Linux
-```
-
-Restore:
-
-```fish
-dotnet restore RHI-Linux.sln
 ```
 
 Run:
@@ -281,87 +137,42 @@ Run:
 ./run.sh
 ```
 
----
-
-## Build
-
-Fish:
-
-```fish
-./build.fish
-```
-
-Bash:
-
-```bash
-./build.sh
-```
-
-Output:
-
-```text
-artifacts/linux-x64/
-```
+The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
 
 ---
 
-# 🛡 File safety
+# ⚠️ Compatibility
 
-RHI Linux is designed to avoid destructive game modifications.
+RHI Linux manages Windows game components running through Wine and Proton.
 
-Managed workflows use:
+Compatibility may vary depending on:
 
-* `.original` backups
-* SHA-256 verification
-* transactional replacement
-* rollback after failure
-* ownership tracking
-* protection of external files
-* preservation of user-modified configuration
-
-RHI will refuse some operations rather than overwrite a file it cannot safely identify as its own.
-
----
-
-# ⚠️ Compatibility & limitations
-
-RHI Linux manages Windows game components running through Wine / Proton.
-
-Compatibility can vary depending on:
-
+* game
 * game engine
 * Wine / Proton version
-* GPU generation
-* driver version
+* GPU
+* graphics driver
+* launcher
 * existing mods
-* anti-cheat
 
-Some features are therefore available only when the selected game meets their requirements.
+Some Windows-only RHI functionality may remain unavailable when Linux does not provide a real equivalent.
 
 ### Native Linux games
 
-Windows DLL injection components are not installed into native Linux games.
+Windows DLL injection components are not intended for native Linux games.
 
-### NVIDIA Windows features
+### Windows-specific NVIDIA features
 
-Windows NvAPI / DRS functionality is not emulated when Linux has no real equivalent.
+Windows NvAPI / DRS functionality is not emulated when the Linux NVIDIA stack does not provide a real equivalent.
 
-### Neural Rendering
+RHI Linux targets functional parity where possible instead of presenting unsupported Windows functionality as available.
 
-Deployment infrastructure exists, but actual feature availability still depends on the game, GPU and NVIDIA runtime.
-
----
-
-# ⚠️ Anti-cheat
+### Anti-cheat
 
 > [!WARNING]
-> ReShade full-add-on mode, RenoDX, OptiScaler, Ultimate ASI Loader and similar components load or inject code into the Windows game process.
+> ReShade, RenoDX, OptiScaler and similar components may not be appropriate for games using anti-cheat systems.
 
-Use these features primarily with:
-
-* single-player games
-* offline games
-* titles whose anti-cheat policy explicitly permits modifications
+Use game modifications only when permitted by the game and service involved.
 
 **RHI Linux does not bypass anti-cheat.**
 
@@ -369,53 +180,50 @@ Use these features primarily with:
 
 # 🔄 Upstream
 
-RHI Linux currently follows:
+RHI Linux is a native Linux derivative of:
+
+**[RankFTW/RHI](https://github.com/RankFTW/RHI)**
+
+The current synchronization target is:
 
 ```text
-RankFTW/RHI
-└── RHI-2.6.0
-    └── v2.6.0
+RHI 2.7.5
 ```
 
-The Linux port follows upstream behavior where it can be implemented safely.
+RHI Linux aims to preserve the functionality and workflow of the original RHI project while adapting Windows-specific behavior for Linux, Wine and Proton.
 
-Platform-specific differences are intentional:
+Functional parity is the goal; the underlying platform implementation does not need to be identical.
 
-| RHI Windows                  | RHI Linux                             |
-| :--------------------------- | :------------------------------------ |
-| WinUI / Windows App SDK      | Avalonia                              |
-| Windows launcher discovery   | Steam / Heroic / Lutris               |
-| Windows Registry integration | Wine / Proton prefix integration      |
-| Windows DLL environment      | Per-game Wine overrides               |
-| NvAPI / DRS                  | Linux equivalents only when available |
+When an upstream feature can function under Wine or Proton, RHI Linux aims to provide an equivalent Linux-compatible workflow.
+
+When Linux does not provide a real equivalent, the corresponding functionality may remain unavailable.
+
+See [`UPSTREAM.md`](UPSTREAM.md) for more information about the relationship with the original project.
 
 ---
 
-# 🚧 Roadmap
+# 🙏 Original Projects
 
-### Current development
+RHI Linux exists thanks to the original **RHI** project and the wider PC graphics modding ecosystem.
 
-* [ ] ShortFuse Frame Generation orchestration
-* [ ] automatic `Reshade64.asi` workflow
-* [ ] automatic Ultimate ASI Loader setup
-* [ ] `HookStreamline`
-* [ ] `HookDirectX`
-* [ ] complete transactional rollback
+Original and third-party projects used or supported by RHI Linux include:
 
-### Future
+* [RHI](https://github.com/RankFTW/RHI)
+* [ReShade](https://reshade.me/)
+* [RenoDX](https://github.com/clshortfuse/renodx)
+* [OptiScaler](https://github.com/optiscaler/OptiScaler)
+* [Luma Framework](https://github.com/Filoppi/Luma-Framework)
+* [RE Framework](https://github.com/praydog/REFramework)
+* [ReLimiter](https://github.com/RankFTW/ReLimiter)
+* [Display Commander](https://github.com/pmnoxx/display-commander)
+* Ultimate ASI Loader
+* ShortFuse
 
-* [ ] Luma
-* [ ] REFramework
-* [ ] DOF Fix
-* [ ] broader RenoDX HDR parity
-* [ ] deeper Streamline configuration
-* [ ] additional shader management
-* [ ] native Vulkan workflows
-* [ ] Update All
-* [ ] background updater
-* [ ] tray integration
-* [ ] final Linux packaging
-* [ ] HDR / compositor integration
+RHI Linux does not claim ownership of these projects.
+
+All third-party projects and components remain the property of their respective authors and contributors.
+
+Where required, third-party components are obtained from their original or supported upstream sources.
 
 ---
 
@@ -425,14 +233,14 @@ RHI Linux is a derivative of the GPLv3-licensed:
 
 **[RankFTW/RHI](https://github.com/RankFTW/RHI)**
 
-and is distributed under **GPLv3**.
+RHI Linux is distributed under **GPLv3**.
 
 See:
 
 * [`LICENSE`](LICENSE)
 * [`UPSTREAM.md`](UPSTREAM.md)
 
-Third-party runtime components are downloaded from their respective upstream sources when required and are not bundled with the RHI Linux source repository.
+Third-party projects and components retain their respective original licenses.
 
 ---
 
@@ -441,6 +249,8 @@ Third-party runtime components are downloaded from their respective upstream sou
 ### RHI Linux
 
 **Native Linux tooling for the RHI ecosystem.**
+
+`v0.9.23.4-beta.1`
 
 [Back to top](#rhi-linux)
 

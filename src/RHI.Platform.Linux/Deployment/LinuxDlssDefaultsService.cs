@@ -1,0 +1,384 @@
+using RHI.Core.Models;
+using RHI.Core.Services;
+
+namespace RHI.Platform.Linux.Deployment;
+
+/// <summary>
+/// Linux-native adaptation of upstream RHI's DLSS/Streamline defaults, Quick Apply and
+/// batch deployment. Only game-local DLL versions are managed here; NVIDIA driver-profile
+/// presets/render scales remain Windows/NVAPI-only and are intentionally out of scope.
+/// </summary>
+public sealed record LinuxDlssVersionDefaults(
+    string SuperResolution = "",
+    string RayReconstruction = "",
+    string FrameGeneration = "",
+    string NeuralRendering = "",
+    string Streamline = "")
+{
+    public LinuxDlssVersionDefaults Normalize() => this with
+    {
+        SuperResolution = SuperResolution?.Trim() ?? "",
+        RayReconstruction = RayReconstruction?.Trim() ?? "",
+        FrameGeneration = FrameGeneration?.Trim() ?? "",
+        NeuralRendering = NeuralRendering?.Trim() ?? "",
+        Streamline = Streamline?.Trim() ?? ""
+    };
+
+    public bool HasAny =>
+        !string.IsNullOrWhiteSpace(SuperResolution) ||
+        !string.IsNullOrWhiteSpace(RayReconstruction) ||
+        !string.IsNullOrWhiteSpace(FrameGeneration) ||
+        !string.IsNullOrWhiteSpace(NeuralRendering) ||
+        !string.IsNullOrWhiteSpace(Streamline);
+}
+
+public enum LinuxDlssBatchComponent
+{
+    SuperResolution,
+    RayReconstruction,
+    FrameGeneration,
+    NeuralRendering,
+    Streamline
+}
+
+public sealed record LinuxDlssBatchItemResult(
+    string GameName,
+    LinuxDlssBatchComponent Component,
+    bool Success,
+    bool Changed,
+    bool Deferred,
+    bool Skipped,
+    string Message);
+
+public sealed record LinuxDlssBatchResult(IReadOnlyList<LinuxDlssBatchItemResult> Items)
+{
+    public int ChangedCount => Items.Count(item => item.Changed);
+    public int FailedCount => Items.Count(item => !item.Success && !item.Deferred && !item.Skipped);
+    public int DeferredCount => Items.Count(item => item.Deferred);
+    public int SkippedCount => Items.Count(item => item.Skipped);
+    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Skipped);
+
+    public string Summary => Items.Count == 0
+        ? "No eligible DLSS/Streamline targets were found."
+        : $"DLSS/Streamline: {ChangedCount} changed · {CurrentCount} current · {SkippedCount} skipped · {DeferredCount} deferred · {FailedCount} failed.";
+}
+
+public sealed record LinuxDlssBatchCandidate(
+    DetectedGame Game,
+    bool Eligible,
+    string Reason,
+    DlssDetectionResult Detection);
+
+public sealed class LinuxDlssDefaultsService
+{
+    private readonly DlssManagerService _dlss;
+    private readonly LinuxDeploymentRecordStore _records;
+    private readonly IGameRunningProbe _running;
+
+    public LinuxDlssDefaultsService(
+        DlssManagerService dlss,
+        LinuxDeploymentRecordStore records,
+        IGameRunningProbe? runningProbe = null)
+    {
+        _dlss = dlss;
+        _records = records;
+        _running = runningProbe ?? new LinuxGameRunningProbe();
+    }
+
+    public LinuxDlssBatchCandidate Inspect(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+
+        if (!game.HasConfirmedPatchTarget)
+            return new(game, false, "Alvo de modificações não definido — o launcher foi preservado, mas o executável real do jogo ainda precisa ser confirmado em Editar jogo.", new());
+        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
+            return new(game, false, "Native Linux target — Windows DLSS/Streamline DLL swapping does not apply.", new());
+        if (game.DlssScanSkippedByManifest)
+            return new(game, false, "Upstream manifest suppresses recursive DLSS/Streamline scanning for this title.", new());
+        if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
+            return new(game, false, "Game install directory is unavailable.", new());
+        if (HasOrchestratedStack(game, out var owner))
+            return new(game, false, $"{owner} owns the DLSS/Streamline stack; remove it before direct Quick Apply/Batch Deploy.", new());
+
+        var detection = _dlss.Detect(game.InstallPath, game.ExecutablePath, indexedFiles, cancellationToken);
+        return detection.HasAny
+            ? new(game, true, BuildDetectionSummary(detection), detection)
+            : new(game, false, "No existing game-local DLSS/Streamline DLLs were detected; RHI will not invent target paths.", detection);
+    }
+
+    public async Task<LinuxDlssBatchResult> ApplyDefaultsAsync(
+        DetectedGame game,
+        LinuxDlssVersionDefaults defaults,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        defaults = defaults.Normalize();
+        if (!defaults.HasAny)
+            return new LinuxDlssBatchResult([]);
+
+        var candidate = Inspect(game, indexedFiles, cancellationToken);
+        if (!candidate.Eligible)
+            return new LinuxDlssBatchResult([
+                new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
+                    true, false, false, true, candidate.Reason)
+            ]);
+
+        if (_running.IsRunning(game))
+            return BuildWholeGameDeferred(game, "Game is running; Quick Apply/Batch Deploy is deferred to protect loaded DLLs.");
+
+        if (_dlss.Manifest is null)
+            await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+
+        var results = new List<LinuxDlssBatchItemResult>();
+        await ApplyDllAsync(game, LinuxDlssBatchComponent.SuperResolution, DlssComponentKind.SuperResolution,
+            candidate.Detection.DlssPaths, defaults.SuperResolution, results, cancellationToken).ConfigureAwait(false);
+        await ApplyDllAsync(game, LinuxDlssBatchComponent.RayReconstruction, DlssComponentKind.RayReconstruction,
+            candidate.Detection.DlssdPaths, defaults.RayReconstruction, results, cancellationToken).ConfigureAwait(false);
+        await ApplyDllAsync(game, LinuxDlssBatchComponent.FrameGeneration, DlssComponentKind.FrameGeneration,
+            candidate.Detection.DlssgPaths, defaults.FrameGeneration, results, cancellationToken).ConfigureAwait(false);
+        await ApplyDllAsync(game, LinuxDlssBatchComponent.NeuralRendering, DlssComponentKind.NeuralRendering,
+            candidate.Detection.DlssnrPaths, defaults.NeuralRendering, results, cancellationToken).ConfigureAwait(false);
+        await ApplyStreamlineAsync(game, candidate.Detection.StreamlineFolders, defaults.Streamline, results, cancellationToken).ConfigureAwait(false);
+        return new LinuxDlssBatchResult(results);
+    }
+
+    public async Task<LinuxDlssBatchResult> RestoreAllAsync(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var candidate = Inspect(game, indexedFiles, cancellationToken);
+        if (!candidate.Eligible)
+            return new LinuxDlssBatchResult([
+                new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
+                    true, false, false, true, candidate.Reason)
+            ]);
+
+        if (_running.IsRunning(game))
+            return BuildWholeGameDeferred(game, "Game is running; restore is deferred to protect loaded DLLs.");
+
+        var results = new List<LinuxDlssBatchItemResult>();
+        await RestoreDllAsync(game, LinuxDlssBatchComponent.SuperResolution, DlssComponentKind.SuperResolution,
+            candidate.Detection.DlssPaths, results, cancellationToken).ConfigureAwait(false);
+        await RestoreDllAsync(game, LinuxDlssBatchComponent.RayReconstruction, DlssComponentKind.RayReconstruction,
+            candidate.Detection.DlssdPaths, results, cancellationToken).ConfigureAwait(false);
+        await RestoreDllAsync(game, LinuxDlssBatchComponent.FrameGeneration, DlssComponentKind.FrameGeneration,
+            candidate.Detection.DlssgPaths, results, cancellationToken).ConfigureAwait(false);
+        await RestoreDllAsync(game, LinuxDlssBatchComponent.NeuralRendering, DlssComponentKind.NeuralRendering,
+            candidate.Detection.DlssnrPaths, results, cancellationToken).ConfigureAwait(false);
+        await RestoreStreamlineAsync(game, candidate.Detection.StreamlineFolders, results, cancellationToken).ConfigureAwait(false);
+        return new LinuxDlssBatchResult(results);
+    }
+
+    public IReadOnlyList<LinuxDlssBatchCandidate> InspectBatch(
+        IEnumerable<DetectedGame> games,
+        Func<DetectedGame, IReadOnlyList<string>?>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new List<LinuxDlssBatchCandidate>();
+        foreach (var game in games)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            results.Add(Inspect(game, indexedFiles?.Invoke(game), cancellationToken));
+        }
+        return results;
+    }
+
+    public async Task<LinuxDlssBatchResult> ApplyBatchAsync(
+        IReadOnlyList<DetectedGame> games,
+        LinuxDlssVersionDefaults defaults,
+        Func<DetectedGame, IReadOnlyList<string>?>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var all = new List<LinuxDlssBatchItemResult>();
+        foreach (var game in games)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await ApplyDefaultsAsync(game, defaults, indexedFiles?.Invoke(game), cancellationToken).ConfigureAwait(false);
+                all.AddRange(result.Items);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
+                    false, false, false, false, $"Batch deploy failed: {ex.Message}"));
+            }
+        }
+        return new LinuxDlssBatchResult(all);
+    }
+
+    public async Task<LinuxDlssBatchResult> RestoreBatchAsync(
+        IReadOnlyList<DetectedGame> games,
+        Func<DetectedGame, IReadOnlyList<string>?>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var all = new List<LinuxDlssBatchItemResult>();
+        foreach (var game in games)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await RestoreAllAsync(game, indexedFiles?.Invoke(game), cancellationToken).ConfigureAwait(false);
+                all.AddRange(result.Items);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                all.Add(new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
+                    false, false, false, false, $"Batch restore failed: {ex.Message}"));
+            }
+        }
+        return new LinuxDlssBatchResult(all);
+    }
+
+    private async Task ApplyDllAsync(
+        DetectedGame game,
+        LinuxDlssBatchComponent batchComponent,
+        DlssComponentKind kind,
+        IReadOnlyList<string> targets,
+        string version,
+        List<LinuxDlssBatchItemResult> results,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return; // upstream "Default" = don't change
+        if (targets.Count == 0)
+        {
+            results.Add(new(game.Name, batchComponent, true, false, false, true,
+                $"{Display(batchComponent)} not present; skipped without creating a target."));
+            return;
+        }
+
+        if (kind == DlssComponentKind.SuperResolution && targets.Any(IsDlss1x))
+        {
+            results.Add(new(game.Name, batchComponent, true, false, false, true,
+                "DLSS Super Resolution 1.x target detected; newer manifest DLLs are not applied over DLSS 1.x."));
+            return;
+        }
+
+        var swap = await _dlss.SwapAsync(kind, targets, version, cancellationToken).ConfigureAwait(false);
+        var changed = swap.Results.Count(result => result.Changed);
+        results.Add(new(game.Name, batchComponent, swap.Success, changed > 0, false, false,
+            swap.Success
+                ? changed > 0
+                    ? $"Applied {Display(batchComponent)} {version} to {changed} existing target(s); true originals remain as .original."
+                    : $"{Display(batchComponent)} already matches {version}; no backup was created."
+                : swap.Error ?? $"Could not apply {Display(batchComponent)} {version}."));
+    }
+
+    private async Task ApplyStreamlineAsync(
+        DetectedGame game,
+        IReadOnlyList<string> folders,
+        string version,
+        List<LinuxDlssBatchItemResult> results,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return;
+        if (folders.Count == 0)
+        {
+            results.Add(new(game.Name, LinuxDlssBatchComponent.Streamline, true, false, false, true,
+                "Streamline not present; skipped without creating a layout."));
+            return;
+        }
+        var swap = await _dlss.SwapStreamlineAsync(folders, version, cancellationToken).ConfigureAwait(false);
+        var changed = swap.Results.Count(result => result.Changed);
+        results.Add(new(game.Name, LinuxDlssBatchComponent.Streamline, swap.Success, changed > 0, false, false,
+            swap.Success
+                ? changed > 0
+                    ? $"Applied Streamline {version} to {changed} existing DLL(s); true originals remain as .original."
+                    : $"Existing Streamline DLLs already match {version}; nothing changed."
+                : swap.Error ?? $"Could not apply Streamline {version}."));
+    }
+
+    private async Task RestoreDllAsync(
+        DetectedGame game,
+        LinuxDlssBatchComponent batchComponent,
+        DlssComponentKind kind,
+        IReadOnlyList<string> targets,
+        List<LinuxDlssBatchItemResult> results,
+        CancellationToken cancellationToken)
+    {
+        var restoreTargets = targets
+            .Where(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
+            .ToArray();
+        if (restoreTargets.Length == 0) return;
+        var restore = await _dlss.RestoreAsync(kind, restoreTargets, cancellationToken).ConfigureAwait(false);
+        results.Add(new(game.Name, batchComponent, restore.Success,
+            restore.Success && restore.Results.Any(result => result.Changed), false, false,
+            restore.Success
+                ? $"Restored {restore.Results.Count} original {Display(batchComponent)} target(s)."
+                : restore.Error ?? $"Could not restore {Display(batchComponent)}."));
+    }
+
+    private async Task RestoreStreamlineAsync(
+        DetectedGame game,
+        IReadOnlyList<string> folders,
+        List<LinuxDlssBatchItemResult> results,
+        CancellationToken cancellationToken)
+    {
+        var hasBackup = folders
+            .SelectMany(folder => DlssManagerService.KnownStreamlineDlls.Select(name => Path.Combine(folder, name)))
+            .Any(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension));
+        if (!hasBackup) return;
+        var restore = await _dlss.RestoreStreamlineAsync(folders, cancellationToken).ConfigureAwait(false);
+        results.Add(new(game.Name, LinuxDlssBatchComponent.Streamline, restore.Success,
+            restore.Success && restore.Results.Any(result => result.Changed), false, false,
+            restore.Success
+                ? $"Restored {restore.Results.Count} original Streamline DLL(s)."
+                : restore.Error ?? "Could not restore Streamline."));
+    }
+
+    private bool HasOrchestratedStack(DetectedGame game, out string owner)
+    {
+        if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
+        {
+            owner = "ShortFuse";
+            return true;
+        }
+
+        var feeder = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
+        if (feeder is not null && feeder.Metadata.TryGetValue("Feeder.FullStack", out var value) && value == "1")
+        {
+            owner = "DLSS5 Feeder Full";
+            return true;
+        }
+
+        owner = "";
+        return false;
+    }
+
+    private static LinuxDlssBatchResult BuildWholeGameDeferred(DetectedGame game, string message)
+        => new([
+            new LinuxDlssBatchItemResult(game.Name, LinuxDlssBatchComponent.SuperResolution,
+                true, false, true, false, message)
+        ]);
+
+    private static bool IsDlss1x(string path)
+    {
+        var version = DlssManagerService.TryGetDllVersion(path);
+        return version?.StartsWith("1.", StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static string BuildDetectionSummary(DlssDetectionResult detection)
+        => $"SR {detection.DlssPaths.Count} · RR {detection.DlssdPaths.Count} · FG {detection.DlssgPaths.Count} · NR {detection.DlssnrPaths.Count} · Streamline {detection.StreamlineFolders.Count}";
+
+    private static string Display(LinuxDlssBatchComponent component) => component switch
+    {
+        LinuxDlssBatchComponent.SuperResolution => "Super Resolution",
+        LinuxDlssBatchComponent.RayReconstruction => "Ray Reconstruction",
+        LinuxDlssBatchComponent.FrameGeneration => "Frame Generation",
+        LinuxDlssBatchComponent.NeuralRendering => "Neural Rendering",
+        LinuxDlssBatchComponent.Streamline => "Streamline",
+        _ => component.ToString()
+    };
+}

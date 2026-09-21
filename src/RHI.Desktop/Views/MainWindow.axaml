@@ -4,8 +4,9 @@
         xmlns:vm="using:RHI.Desktop.ViewModels"
         x:Class="RHI.Desktop.Views.MainWindow"
         Width="1450" Height="900" MinWidth="1080" MinHeight="680"
-        Title="RHI Linux — Simplified PC Gaming"
-        Background="#121518">
+        Title="{DynamicResource Ui.WindowTitle}"
+        Background="#121518"
+        DragDrop.AllowDrop="True" DragDrop.DragOver="GameFiles_DragOver" DragDrop.Drop="GameFiles_Drop">
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar: deliberately mirrors the upstream RHI layout. -->
     <Border Grid.Row="0" Padding="16,10" Background="#0F1318" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
@@ -16,61 +17,71 @@
           </Border>
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="RHI" FontSize="15" FontWeight="Bold" Foreground="#4DC9E6"/>
-            <TextBlock Text="Simplified PC Gaming · Linux" FontSize="10" Foreground="#2A7A90"/>
+            <TextBlock Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="#2A7A90"/>
           </StackPanel>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <Button Classes="rhi" Content="Quick Start" IsEnabled="False" ToolTip.Tip="Port milestone: documentation dialog comes after core parity"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
           <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="Refresh" Command="{Binding RefreshCommand}"/>
-          <Button Classes="rhi" Content="Shaders/Addons" IsEnabled="False"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
           <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="Update All" IsEnabled="False" Foreground="#6B7A8E"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
+                  ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
           <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="Links" IsEnabled="False"/>
-          <Button Classes="rhi" Content="Help" IsEnabled="False"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
           <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="Detail View" IsEnabled="False"/>
-          <Button Classes="rhi" Content="Settings" IsEnabled="False"/>
+          <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.Settings}" Click="Settings_Click"/>
         </StackPanel>
       </Grid>
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="300,*">
+    <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*">
       <!-- Sidebar -->
-      <Border Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0">
+      <Border x:Name="LibrarySidebar" Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0" ClipToBounds="True">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
           <Border Grid.Row="0" Padding="10,8,10,4" Background="#131820">
             <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                     Watermark="Filter games..." Background="#151A22" Foreground="#A0AABB"
+                     PlaceholderText="{DynamicResource Ui.SearchGames}" Background="#151A22" Foreground="#A0AABB"
                      BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
           </Border>
-          <Border Grid.Row="1" Padding="10,8" Background="#131820" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+          <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,8" Background="#131820" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
             <WrapPanel Orientation="Horizontal">
-              <Button Classes="chip" Content="All Games" Margin="0,0,4,4" Background="#243050" Foreground="White"/>
-              <Button Classes="chip" Content="Installed" Margin="0,0,4,4" IsEnabled="False"/>
-              <Button Classes="chip" Content="Favourites" Margin="0,0,4,4" IsEnabled="False"/>
-              <Button Classes="chip" Content="Unreal" Margin="0,0,4,4" IsEnabled="False"/>
-              <Button Classes="chip" Content="RenoDX" Margin="0,0,4,4" IsEnabled="False"/>
+              <Button Classes="chip" Content="{DynamicResource Ui.All}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="All Games"/>
+              <Button Classes="chip" Content="{DynamicResource Ui.Favourites}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Favourites"/>
+              <Button Classes="chip" Content="{DynamicResource Ui.Installed}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Installed"/>
+              <Button Classes="chip" Content="Unreal" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unreal"/>
+              <Button Classes="chip" Content="Unity" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Unity"/>
+              <Button Classes="chip" Content="{DynamicResource Ui.Other}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Other"/>
+              <Button Classes="chip" Content="RenoDX" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="RenoDX"/>
+              <Button Classes="chip" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
+              <Button Classes="chip" Content="{DynamicResource Ui.Hidden}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Hidden"/>
             </WrapPanel>
           </Border>
           <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,8">
-            <TextBlock Text="LIBRARY" Foreground="#6B7A8E" FontSize="10" FontWeight="SemiBold"/>
+            <TextBlock Text="{DynamicResource Ui.Library}" Foreground="#6B7A8E" FontSize="10" FontWeight="SemiBold"/>
             <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="#6B7A8E" FontSize="10"/>
           </Grid>
-          <ListBox Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+          <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
+                   SelectionChanged="GameLibrary_SelectionChanged" ClipToBounds="True"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="models:DetectedGame">
                 <Border Padding="10,8" Margin="0,1" CornerRadius="7" Background="#151C28" BorderBrush="#1E2C40" BorderThickness="1">
-                  <Grid ColumnDefinitions="*,Auto">
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                     <StackPanel>
                       <TextBlock Text="{Binding Name}" Foreground="#E2E8FF" FontSize="12" TextTrimming="CharacterEllipsis"/>
                       <TextBlock Text="{Binding Source}" Foreground="#6B7A8E" FontSize="9"/>
                     </StackPanel>
-                    <Border Grid.Column="1" Width="8" Height="8" CornerRadius="4" Background="#5ECB7D" VerticalAlignment="Center"
-                            ToolTip.Tip="Detected on Linux"/>
+                    <TextBlock Grid.Column="1" Text="{Binding LibraryBadge}" Foreground="#D4A856" VerticalAlignment="Center" FontSize="12"/>
+                    <Border Grid.Column="2" Width="8" Height="8" CornerRadius="4" Background="#5ECB7D" VerticalAlignment="Center"
+                            ToolTip.Tip="{DynamicResource Ui.DetectedLinuxTip}"/>
                   </Grid>
                 </Border>
               </DataTemplate>
@@ -80,109 +91,464 @@
       </Border>
 
       <!-- Detail panel -->
-      <ScrollViewer Grid.Column="1" Background="#121518">
-        <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="14">
+      <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="#121518">
+        <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto" RowSpacing="14">
           <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-            <StackPanel>
-              <TextBlock Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-              <TextBlock Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"/>
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                <TextBlock Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"/>
+              </StackPanel>
+
+              <!-- Identity badges: first = library source, second = launcher/platform. -->
+              <Border Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                      Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
+                <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
+              </Border>
+              <Border Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                      Padding="5" IsVisible="{Binding ShowLaunchProviderBadge}" ToolTip.Tip="{Binding LaunchProviderToolTip}">
+                <Image Source="{Binding SelectedLaunchProviderIcon}" Stretch="Uniform"/>
+              </Border>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Classes="rhi" Content="Open Folder" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button Classes="rhi" Content="Open Prefix" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button Content="Launch" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
+              <Button Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
+                      ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
+              <Button Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding RemoveManualGameCommand}" IsEnabled="{Binding CanRemoveManualGame}"
+                      ToolTip.Tip="{DynamicResource Ui.RemoveManualTip}"/>
+              <Button Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+              <Button Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
                       Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1"
                       CornerRadius="8" Padding="16,8"/>
             </StackPanel>
           </Grid>
 
-          <Border Grid.Row="1" Classes="card">
-            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Game directory" Classes="muted"/>
-              <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedInstallPath}" Foreground="#A0AABB" TextWrapping="Wrap"/>
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Wine / Proton prefix" Classes="muted"/>
-              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedPrefix}" Foreground="#A0AABB" TextWrapping="Wrap"/>
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Executable" Classes="muted"/>
-              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Graphics API" Classes="muted"/>
-              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB"/>
-            </Grid>
-          </Border>
+          <!-- Detail sections are collapsible and drag-reorderable; Linux stores state in XDG_CONFIG_HOME. -->
+          <StackPanel x:Name="DetailSectionsPanel" Grid.Row="1" Spacing="14">
+            <Border x:Name="RuntimeSection" Tag="Runtime" Classes="card"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel>
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="Runtime" FontSize="18" Foreground="#6B7A8E"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0"/>
+                  </StackPanel>
+                  <Button x:Name="RuntimeSectionToggle" Grid.Column="2" Tag="Runtime" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+                <Grid x:Name="RuntimeSectionBody" Margin="0,10,0,0"
+                      ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource Ui.Launcher}" Classes="muted"/>
+                  <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedLaunchExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-          <Border Grid.Row="2" Classes="card" BorderBrush="#1E4858">
-            <StackPanel Spacing="10">
-              <Grid ColumnDefinitions="*,Auto">
-                <StackPanel>
-                  <TextBlock Text="DLSS / Streamline" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-                  <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0"/>
-                </StackPanel>
-                <Border Grid.Column="1" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5">
-                  <TextBlock Text="Game-local DLL backend" Foreground="#4DC9E6" FontSize="11"/>
-                </Border>
-              </Grid>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource Ui.TargetSafety}" Classes="muted"/>
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PatchTargetStatusText}" Foreground="#4DC9E6" TextWrapping="Wrap"/>
 
-              <Grid ColumnDefinitions="70,*,170,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
-                <TextBlock Grid.Row="0" Text="SR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DlssSrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="0" Grid.Column="2" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding DlssSrDetected}"/>
-                <Button Grid.Row="0" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrDetected}"/>
-                <Button Grid.Row="0" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrDetected}"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource Ui.GameRoot}" Classes="muted"/>
+                  <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedInstallPath}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-                <TextBlock Grid.Row="1" Text="RR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DlssRrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding DlssRrDetected}"/>
-                <Button Grid.Row="1" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrDetected}"/>
-                <Button Grid.Row="1" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrDetected}"/>
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource Ui.Prefix}" Classes="muted"/>
+                  <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedPrefix}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-                <TextBlock Grid.Row="2" Text="FG" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DlssFgPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="2" Grid.Column="2" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding DlssFgDetected}"/>
-                <Button Grid.Row="2" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgDetected}"/>
-                <Button Grid.Row="2" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgDetected}"/>
+                  <TextBlock Grid.Row="4" Grid.Column="0" Text="{DynamicResource Ui.TargetExe}" Classes="muted"/>
+                  <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-                <TextBlock Grid.Row="3" Text="NR" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DlssNrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                <ComboBox Grid.Row="3" Grid.Column="2" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding DlssNrDetected}"/>
-                <Button Grid.Row="3" Grid.Column="3" Classes="rhi" Content="Apply" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrDetected}"/>
-                <Button Grid.Row="3" Grid.Column="4" Classes="rhi" Content="Restore" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrDetected}"/>
-              </Grid>
+                  <TextBlock Grid.Row="5" Grid.Column="0" Text="{DynamicResource Ui.PatchDirectory}" Classes="muted"/>
+                  <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-              <TextBlock Text="Apply only replaces DLLs that already exist in the detected game tree. The first original is preserved as .original; a guessed target path is never created." Classes="muted" TextWrapping="Wrap"/>
-            </StackPanel>
-          </Border>
+                  <TextBlock Grid.Row="6" Grid.Column="0" Text="{DynamicResource Ui.GraphicsApi}" Classes="muted"/>
+                  <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
-          <Grid Grid.Row="3" ColumnDefinitions="*,Auto">
-            <StackPanel>
-              <TextBlock Text="Managed Components" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-              <TextBlock Text="Local presence is detected now. Install/update actions remain locked until each Linux deployment backend passes parity tests."
-                         Classes="muted" Margin="0,3,0,0"/>
-            </StackPanel>
-            <Border Grid.Column="1" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5">
-              <TextBlock Text="Linux backend active" Foreground="#5ECB7D" FontSize="11"/>
+                  <TextBlock Grid.Row="7" Grid.Column="0" Text="{DynamicResource Ui.ForceApi}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                  <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4">
+                    <ComboBox Width="180" HorizontalAlignment="Left"
+                              ItemsSource="{Binding GraphicsApiOverrideOptions}"
+                              SelectedItem="{Binding SelectedGraphicsApiOverride, Mode=TwoWay}"
+                              IsEnabled="{Binding CanSelectGraphicsApiOverride}"/>
+                    <TextBlock Text="{Binding GraphicsApiOverrideHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                  </StackPanel>
+
+                  <TextBlock Grid.Row="8" Grid.Column="0" Text="{DynamicResource Ui.LumaMode}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                  <StackPanel Grid.Row="8" Grid.Column="1" Spacing="4">
+                    <ComboBox Width="180" HorizontalAlignment="Left"
+                              ItemsSource="{Binding LumaModeOptions}"
+                              SelectedItem="{Binding SelectedLumaModePreference, Mode=TwoWay}"
+                              IsEnabled="{Binding CanSelectLumaMode}"/>
+                    <TextBlock Text="{Binding LumaPolicyText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                  </StackPanel>
+
+                  <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"/>
+                      <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
+                                ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
+                      <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}" Padding="10,5"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap"/>
+                  </StackPanel>
+
+                  <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
+                  <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
+
+                  <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
+                  <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+
+                  <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
+                  <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
+                </Grid>
+              </StackPanel>
             </Border>
-          </Grid>
 
-          <ItemsControl Grid.Row="4" ItemsSource="{Binding Components}">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:ComponentRowViewModel">
-                <Border Classes="card" Margin="0,0,0,8" Padding="14,11">
-                  <Grid ColumnDefinitions="220,150,*,Auto" ColumnSpacing="12">
-                    <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                    <Button Grid.Column="3" Classes="rhi" Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" MinWidth="80"/>
+            <Border x:Name="DlssStreamlineSection" Tag="DlssStreamline" Classes="card" BorderBrush="#1E4858"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="DlssStreamline" FontSize="18" Foreground="#6B7A8E"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Ui.DlssStreamline}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0"/>
+                  </StackPanel>
+                  <Border Grid.Column="2" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5">
+                    <TextBlock Text="{DynamicResource Ui.GameDlls}" Foreground="#4DC9E6" FontSize="11"/>
+                  </Border>
+                  <Button x:Name="DlssStreamlineSectionToggle" Grid.Column="3" Tag="DlssStreamline" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+
+                <StackPanel x:Name="DlssStreamlineSectionBody" Spacing="10">
+                  <Grid ColumnDefinitions="170,*,145,160,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
+                    <TextBlock Grid.Row="0" Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DlssSrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Border Grid.Row="0" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                      <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Border>
+                    <ComboBox Grid.Row="0" Grid.Column="3" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
+                    <Button Grid.Row="0" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding CanSwapDlssSr}"/>
+                    <Button Grid.Row="0" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
+
+                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DlssRrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Border Grid.Row="1" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                      <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Border>
+                    <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
+                    <Button Grid.Row="1" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding CanSwapDlssRr}"/>
+                    <Button Grid.Row="1" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
+
+                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DlssFgPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Border Grid.Row="2" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                      <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Border>
+                    <ComboBox Grid.Row="2" Grid.Column="3" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
+                    <Button Grid.Row="2" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding CanSwapDlssFg}"/>
+                    <Button Grid.Row="2" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
+
+                    <TextBlock Grid.Row="3" Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DlssNrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Border Grid.Row="3" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                      <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Border>
+                    <ComboBox Grid.Row="3" Grid.Column="3" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
+                    <Button Grid.Row="3" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding CanSwapDlssNr}"/>
+                    <Button Grid.Row="3" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
+
+                    <TextBlock Grid.Row="4" Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
+                               ToolTip.Tip="{DynamicResource Ui.StreamlineUpdateNote}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding StreamlinePath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    <Border Grid.Row="4" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                      <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    </Border>
+                    <ComboBox Grid.Row="4" Grid.Column="3" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
+                    <Button Grid.Row="4" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapStreamlineCommand}" IsEnabled="{Binding CanSwapStreamline}"/>
+                    <Button Grid.Row="4" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreStreamlineCommand}" IsEnabled="{Binding StreamlineRestoreAvailable}"/>
                   </Grid>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
+
+                  <TextBlock Text="{DynamicResource Ui.StreamlineUpdateNote}" Classes="muted" TextWrapping="Wrap"/>
+
+                  <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Text="{Binding DlssDefaultsSummary}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <Button Grid.Column="1" Classes="rhi" Content="{DynamicResource Ui.ApplyDefaults}" Command="{Binding QuickApplyDlssDefaultsCommand}"
+                            IsEnabled="{Binding CanQuickApplyDlssDefaults}" Padding="12,6"
+                            ToolTip.Tip="{DynamicResource Ui.ApplyDefaultsTip}"/>
+                    <Button Grid.Column="2" Classes="rhi" Content="{DynamicResource Ui.RestoreAll}" Command="{Binding RestoreAllDlssCommand}"
+                            IsEnabled="{Binding CanRestoreAllDlss}" Padding="12,6"/>
+                  </Grid>
+
+                  <TextBlock Text="{DynamicResource Ui.DlssNote}" Classes="muted" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border x:Name="ReShadeProfileSection" Tag="ReShadeProfile" Classes="card" BorderBrush="#2A4468"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="ReShadeProfile" FontSize="18" Foreground="#6B7A8E"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Ui.ReShadeProfile}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ReShadeProfileNote}"
+                               Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Button x:Name="ReShadeProfileSectionToggle" Grid.Column="2" Tag="ReShadeProfile" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+
+                <StackPanel x:Name="ReShadeProfileSectionBody" Spacing="10">
+                  <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Text="{DynamicResource Ui.ManagedProfileControls}" Classes="muted" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                      <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+                      <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
+                              Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
+                    </StackPanel>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="120,220,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
+                    <TextBlock Grid.Row="0" Text="{DynamicResource Ui.Channel}" Classes="muted" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ReShadeChannels}" SelectedItem="{Binding SelectedReShadeChannel}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeLegacy}"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ReShadeLegacyVersion}" PlaceholderText="6.4.1" IsVisible="{Binding IsReShadeLegacy}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeLegacy}"/>
+
+                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeCustom}"/>
+                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding IsReShadeCustom}">
+                      <TextBox Text="{Binding ReShadeCustomDllPath}" PlaceholderText="{DynamicResource Ui.CustomDllPlaceholder}"/>
+                      <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseReShadeCustomDll_Click" Padding="12,6"/>
+                      <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearReShadeCustomDll_Click" Padding="12,6"/>
+                    </Grid>
+                  </Grid>
+
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
+                    <TextBlock Text="D3DCompiler 47" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
+                    <StackPanel Grid.Column="1" Spacing="7">
+                      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBox Text="{Binding ReShadeD3DCompiler47Path}"
+                                 PlaceholderText="{DynamicResource Ui.D3DCompilerPlaceholder}"/>
+                        <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseD3DCompiler47_Click" Padding="12,6"/>
+                        <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearD3DCompiler47_Click" Padding="12,6"/>
+                      </Grid>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="{DynamicResource Ui.InstallProtontricks}"
+                                Command="{Binding InstallD3DCompilerWithProtontricksCommand}"
+                                IsVisible="{Binding CanInstallD3DCompilerWithProtontricks}"
+                                Padding="12,6"/>
+                        <Button Content="{Binding D3DCompilerWinetricksButtonText}"
+                                Command="{Binding InstallD3DCompilerWithWinetricksCommand}"
+                                IsVisible="{Binding CanInstallD3DCompilerWithWinetricks}"
+                                Padding="12,6"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="{Binding D3DCompilerToolHint}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{DynamicResource Ui.D3DCompilerNote}"
+                             Classes="muted" TextWrapping="Wrap"/>
+
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
+                    <TextBlock Text="{DynamicResource Ui.FeederConsumer}" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
+                    <StackPanel Grid.Column="1" Spacing="7">
+                      <ComboBox Width="280" HorizontalAlignment="Left"
+                                ItemsSource="{Binding Dlss5FeederConsumerOptions}"
+                                SelectedItem="{Binding SelectedDlss5FeederConsumer, Mode=TwoWay}"/>
+                      <StackPanel Spacing="7" IsVisible="{Binding IsDeepFriedChickenFeederConsumer}">
+                        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                          <TextBox Text="{Binding Dlss5FeederConsumerPackagePath}"
+                                   PlaceholderText="{DynamicResource Ui.FeederPackagePlaceholder}"/>
+                          <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseDlss5FeederConsumer_Click" Padding="12,6"/>
+                          <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearDlss5FeederConsumer_Click" Padding="12,6"/>
+                        </Grid>
+                        <TextBlock Text="{DynamicResource Ui.FeederPackageNote}" Classes="muted" TextWrapping="Wrap"/>
+                      </StackPanel>
+                      <TextBlock Text="{DynamicResource Ui.FeederRenoDxNote}" Classes="muted" TextWrapping="Wrap"
+                                 IsVisible="{Binding IsRenoDxDlss5FeederConsumer}"/>
+                    </StackPanel>
+                  </Grid>
+
+                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10">
+                    <StackPanel Spacing="7">
+                      <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{DynamicResource Ui.NrVersions}" Classes="muted" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{DynamicResource Ui.LatestPinNote}" Classes="muted" TextWrapping="Wrap"/>
+                        <Button Grid.Column="2" Content="{DynamicResource Ui.LoadHistory}" Command="{Binding LoadNeuralVersionHistoryCommand}"
+                                IsEnabled="{Binding CanLoadNeuralVersionHistory}" Padding="12,6"/>
+                      </Grid>
+                      <Grid ColumnDefinitions="120,220,120,220,100,220" ColumnSpacing="8">
+                        <TextBlock Text="Feeder" Classes="muted" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding Dlss5FeederVersionOptions}"
+                                  SelectedItem="{Binding SelectedDlss5FeederVersion, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureFeederVersionPin}"/>
+                        <TextBlock Grid.Column="2" Text="DX11 Bridge" Classes="muted" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="3" ItemsSource="{Binding Dlss5BridgeVersionOptions}"
+                                  SelectedItem="{Binding SelectedDlss5BridgeVersion, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureBridgeVersionPin}"/>
+                        <TextBlock Grid.Column="4" Text="ShortFuse" Classes="muted" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="5" ItemsSource="{Binding ShortFuseVersionOptions}"
+                                  SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <StackPanel Orientation="Horizontal" Spacing="14">
+                    <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeManageIni}"/>
+                    <TextBlock Text="{DynamicResource Ui.QuickPackages}" Classes="muted" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
+                    <CheckBox Content="{DynamicResource Ui.OfficialLegacy}" IsChecked="{Binding ShaderCrosireLegacy}"/>
+                    <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ShaderClshortfuse}"/>
+                    <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ShaderMaxG2D}"/>
+                    <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
+                  </StackPanel>
+                  <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"
+                             Classes="muted" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border x:Name="ManagedComponentsSection" Tag="ManagedComponents" Classes="card"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="ManagedComponents" FontSize="18" Foreground="#6B7A8E"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Ui.ManagedComponents}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ManagedComponentsNote}"
+                               Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                  </StackPanel>
+                  <Border Grid.Column="2" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5">
+                    <TextBlock Text="{DynamicResource Ui.LinuxBackendActive}" Foreground="#5ECB7D" FontSize="11"/>
+                  </Border>
+                  <Button x:Name="ManagedComponentsSectionToggle" Grid.Column="3" Tag="ManagedComponents" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+
+                <ItemsControl x:Name="ManagedComponentsSectionBody" ItemsSource="{Binding Components}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ComponentRowViewModel">
+                      <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
+                        <Grid ColumnDefinitions="220,180,*,Auto,Auto" ColumnSpacing="12">
+                          <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
+                          <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                          <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRenoDxSettings}"
+                                  Click="RenoDxSettings_Click" ToolTip.Tip="{DynamicResource Ui.RenoDxSettingsTip}" Padding="10,6"/>
+                          <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasOptiScalerSettings}"
+                                  Click="OptiScalerSettings_Click" ToolTip.Tip="{DynamicResource Ui.OptiScalerSettingsTip}" Padding="10,6"/>
+                          <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasDlssg2030Settings}"
+                                  Click="Dlssg2030Settings_Click" ToolTip.Tip="{DynamicResource Ui.Dlssg2030SettingsTip}" Padding="10,6"/>
+                          <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasStandaloneDlssEnablerSettings}"
+                                  Click="StandaloneDlssEnablerSettings_Click" ToolTip.Tip="{DynamicResource Ui.DlssEnablerStandaloneSettingsTip}" Padding="10,6"/>
+                          <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtx40MfgSettings}"
+                                  Click="Rtx40MfgSettings_Click" ToolTip.Tip="{DynamicResource Ui.Rtx40MfgSettingsTip}" Padding="10,6"/>
+                          <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
+                                  Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
+                                  CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
+                        </Grid>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+
+            <Border x:Name="ExtrasSection" Tag="Extras" Classes="card" BorderBrush="#3A3348"
+                    DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
+              <StackPanel Spacing="10">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                  <TextBlock Grid.Column="0" Text="≡" Tag="Extras" FontSize="18" Foreground="#6B7A8E"
+                             VerticalAlignment="Center" ToolTip.Tip="{DynamicResource Ui.DragSectionTip}"
+                             PointerPressed="SectionDragHandle_PointerPressed"/>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
+                    <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0"/>
+                  </StackPanel>
+                  <Button x:Name="ExtrasSectionToggle" Grid.Column="2" Tag="Extras" Classes="rhi" Content="▼"
+                          Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
+                </Grid>
+                <StackPanel x:Name="ExtrasSectionBody" Spacing="10">
+                  <Grid ColumnDefinitions="150,150,190,Auto,Auto,Auto" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                      <TextBlock Text="Ultimate ASI Loader" Foreground="#E8ECF2" FontWeight="SemiBold"/>
+                      <TextBlock Text="{DynamicResource Ui.WineProtonProxy}" Classes="muted" FontSize="10"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1" Text="{Binding UalStatusText}" Foreground="#5ECB7D"
+                               VerticalAlignment="Center" TextWrapping="Wrap"/>
+
+                    <ComboBox Grid.Column="2"
+                              ItemsSource="{Binding UalProxyNames}"
+                              SelectedItem="{Binding SelectedUalProxyName}"
+                              IsEnabled="{Binding CanSelectUalProxy}"
+                              ToolTip.Tip="{DynamicResource Ui.ProxyNameTip}"/>
+
+                    <Button Grid.Column="3" Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}"
+                            Command="{Binding CheckUalUpdateCommand}"
+                            IsEnabled="{Binding HasSelectedGame}"
+                            Padding="12,6"/>
+
+                    <Button Grid.Column="4" Classes="rhi" Content="{Binding UalActionText}"
+                            Command="{Binding InstallOrUpdateUalCommand}"
+                            IsEnabled="{Binding CanInstallOrUpdateUal}"
+                            Padding="12,6"/>
+
+                    <Button Grid.Column="5" Classes="rhi remove" Content="{DynamicResource Ui.Remove}"
+                            Command="{Binding RemoveUalCommand}"
+                            IsEnabled="{Binding CanRemoveUal}"
+                            Padding="12,6"/>
+                  </Grid>
+
+                  <TextBlock Text="{Binding UalProxyHint}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding UalLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
+
+                  <Border Height="1" Background="#2A3038" Margin="0,4"/>
+                  <Grid ColumnDefinitions="150,180,190,Auto,Auto" ColumnSpacing="10">
+                    <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                      <TextBlock Text="ShortFuse / DLSS FG" Foreground="#E8ECF2" FontWeight="SemiBold"/>
+                      <TextBlock Text="{DynamicResource Ui.PerGameOrchestration}" Classes="muted" FontSize="10"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1" Text="{Binding ShortFuseStatusText}" Foreground="#5ECB7D" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <CheckBox Grid.Column="2" Content="{DynamicResource Ui.AutoAsiConfig}" IsChecked="{Binding ShortFuseAutoConfigEnabled}"
+                              IsEnabled="{Binding CanConfigureShortFuse}" VerticalAlignment="Center"
+                              ToolTip.Tip="{DynamicResource Ui.ShortFuseAutoTip}"/>
+                    <Button Grid.Column="3" Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding CheckShortFuseUpdateCommand}"
+                            IsEnabled="{Binding HasSelectedGame}" Padding="12,6"/>
+                    <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Install}" Command="{Binding InstallOrRemoveShortFuseCommand}"
+                            IsVisible="{Binding ShortFuseNotInstalled}" IsEnabled="{Binding CanInstallOrRemoveShortFuse}"
+                            ToolTip.Tip="{Binding ShortFuseActionHint}" Padding="12,6"/>
+                    <Button Grid.Column="4" Classes="rhi remove" Content="{DynamicResource Ui.Remove}" Command="{Binding InstallOrRemoveShortFuseCommand}"
+                            IsVisible="{Binding ShortFuseInstalled}" IsEnabled="{Binding CanInstallOrRemoveShortFuse}"
+                            ToolTip.Tip="{Binding ShortFuseActionHint}" Padding="12,6"/>
+                  </Grid>
+                  <TextBlock Text="{Binding ShortFuseLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{DynamicResource Ui.LinuxPolicyNote}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{DynamicResource Ui.UalPolicyNote}"
+                             Classes="muted" TextWrapping="Wrap"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
         </Grid>
       </ScrollViewer>
 
       <Border Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.96" IsVisible="{Binding IsBusy}">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
           <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
-          <TextBlock Text="Scanning game libraries…" Foreground="#A0AABB"/>
+          <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="#A0AABB"/>
         </StackPanel>
       </Border>
     </Grid>
@@ -190,7 +556,7 @@
     <Border Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10"/>
-        <TextBlock Grid.Column="1" Text="RHI Linux v0.1.0 · native .NET 8 / Avalonia" Foreground="#404858" FontSize="10"/>
+        <TextBlock Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"/>
       </Grid>
     </Border>
   </Grid>

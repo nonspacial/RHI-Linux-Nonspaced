@@ -30,23 +30,49 @@ public sealed partial class SteamGameDetector : IGameDetector
                         var fields = DetectionHelpers.ParseFlatVdf(File.ReadAllText(acf));
                         if (!fields.TryGetValue("name", out var name) || !fields.TryGetValue("installdir", out var installDir))
                             continue;
+                        if (DetectionHelpers.IsKnownSteamTool(name, installDir))
+                            continue;
                         var gameRoot = Path.Combine(steamapps, "common", installDir);
                         if (!Directory.Exists(gameRoot)) continue;
                         var appId = ExtractAppIdFromAcfFilename(Path.GetFileName(acf));
                         var prefix = appId is int id ? Path.Combine(steamapps, "compatdata", id.ToString(), "pfx") : null;
                         if (prefix is not null && !Directory.Exists(prefix)) prefix = null;
-                        games.Add(new DetectedGame
+                        var index = GameFileIndexer.Build(gameRoot, 8, cancellationToken);
+                        var nativeExecutable = prefix is null
+                            ? DetectionHelpers.FindLikelyNativeExecutable(gameRoot, index, cancellationToken)
+                            : null;
+                        var windowsExecutable = DetectionHelpers.FindLikelyExecutable(gameRoot, index, cancellationToken);
+
+                        string? executable;
+                        string runner;
+                        if (nativeExecutable is not null)
+                        {
+                            executable = nativeExecutable;
+                            runner = "Native Linux";
+                        }
+                        else
+                        {
+                            executable = windowsExecutable;
+                            runner = prefix is not null
+                                ? "Proton"
+                                : windowsExecutable is not null
+                                    ? "Windows/Proton (prefix not created)"
+                                    : "Native/Unknown";
+                        }
+
+                        var game = new DetectedGame
                         {
                             Name = name,
                             InstallPath = gameRoot,
                             Source = "Steam",
                             SteamAppId = appId,
                             PrefixPath = prefix,
-                            ExecutablePath = DetectionHelpers.FindLikelyExecutable(gameRoot),
-                            Runner = prefix is null ? "Native/Unknown" : "Proton",
-                            LaunchCommand = appId is int launchId ? $"steam -applaunch {launchId}" : null,
-                            GraphicsApi = DetectionHelpers.GuessGraphicsApi(gameRoot)
-                        });
+                            ExecutablePath = executable,
+                            LaunchExecutablePath = executable,
+                            Runner = runner,
+                            LaunchCommand = appId is int launchId ? $"steam -applaunch {launchId}" : null
+                        };
+                        games.Add(game);
                     }
                     catch { }
                 }
