@@ -40,7 +40,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     // A whole Wine prefix is not a game directory. Indexing it walks the entire
                     // Windows image and (through dosdevices symlinks) every mounted drive.
                     if (IsWinePrefixRoot(install)) continue;
-                    var slug = Path.GetFileNameWithoutExtension(file);
+                    var slug = ResolveLutrisSlug(Path.GetFileNameWithoutExtension(file));
                     var configuredRunner = MatchValue(text, "runner");
                     var wineVersion = MatchSectionValue(text, "wine", "version");
                     var hasWineRuntime = string.Equals(configuredRunner, "wine", StringComparison.OrdinalIgnoreCase)
@@ -196,6 +196,16 @@ public sealed partial class LutrisGameDetector : IGameDetector
             if (File.Exists(candidate)) return candidate;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Lutris names a game's config file <c>&lt;slug&gt;-&lt;unix timestamp&gt;.yml</c>; the slug is what
+    /// <c>lutris:rungame/&lt;slug&gt;</c> expects. Using the full stem launches nothing ("No game found").
+    /// </summary>
+    internal static string ResolveLutrisSlug(string configStem)
+    {
+        var match = Regex.Match(configStem, @"^(?<slug>.+)-(?<ts>\d{9,11})$");
+        return match.Success ? match.Groups["slug"].Value : configStem;
     }
 
     internal static bool IsWinePrefixRoot(string path)

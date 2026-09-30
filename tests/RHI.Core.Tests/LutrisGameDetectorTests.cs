@@ -38,6 +38,14 @@ public sealed class LutrisGameDetectorTests
         Assert.Equal("proton", runtime.LayerType);
     }
 
+    [Theory]
+    [InlineData("battlenet-1763437958", "battlenet")]
+    [InlineData("blue-prince-1763483489", "blue-prince")]
+    [InlineData("rekordbox-setup-1761693617", "rekordbox-setup")]
+    [InlineData("custom-game", "custom-game")]
+    public void LaunchSlug_StripsLutrisTimestampSuffix(string stem, string expected)
+        => Assert.Equal(expected, LutrisGameDetector.ResolveLutrisSlug(stem));
+
     [Fact]
     public void RelativeExe_ResolvesAgainstPrefix_NotWholePrefix()
     {

@@ -29,7 +29,10 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
             if (IsBlacklisted(game.Name, policy)) continue;
 
             var canonical = ResolveCanonicalName(game, knownNames) ?? game.Name.Trim();
-            if (IsBlacklisted(canonical, policy)) continue;
+            // The blacklist is a title policy. A canonical name recovered from path evidence
+            // (mount point "Windows", a "Blender" folder, "Unreal Engine" in a path) must never
+            // hide a game; only a title-level match may.
+            if (IsBlacklisted(canonical, policy) && IsTitleMatch(game.Name, canonical)) continue;
 
             if (TryGet(policy.SplitGames, canonical, out var splitEntries))
             {
@@ -162,6 +165,12 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
         return policy.Blacklist.Contains(trimmed)
                || policy.BlacklistPrefixes.Any(prefix => trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>True when the canonical name was reached from the title itself rather than from path evidence.</summary>
+    private static bool IsTitleMatch(string title, string canonical)
+        => !string.IsNullOrWhiteSpace(title) &&
+           (title.Trim().Equals(canonical, StringComparison.OrdinalIgnoreCase) ||
+            NormalizeIdentity(title) == NormalizeIdentity(canonical));
 
     private static string? ResolveCanonicalName(DetectedGame game, IReadOnlySet<string> knownNames)
     {

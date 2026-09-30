@@ -252,6 +252,9 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
         }
         catch (Exception ex)
         {
+            // Put every target and .original back from its snapshot. If any of those copies fails,
+            // the snapshot is the only surviving copy of the user's file, so keep it on disk.
+            var rollbackFailed = false;
             foreach (var (target, state) in snapshots.Reverse())
             {
                 try
@@ -264,12 +267,18 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
                     if (File.Exists(state.BackupSnapshot))
                         File.Copy(state.BackupSnapshot, target + BackupExtension, overwrite: true);
                 }
-                catch { }
+                catch
+                {
+                    rollbackFailed = true;
+                }
             }
 
-            CleanupRestoreSnapshots(snapshots);
+            if (!rollbackFailed)
+                CleanupRestoreSnapshots(snapshots);
             if (ex is OperationCanceledException) throw;
-            return new(false, results, ex.Message);
+            return new(false, results, rollbackFailed
+                ? $"{ex.Message} Rollback was incomplete; the pre-restore copies (*.rhi-restore-*-{transactionId}) were kept next to the affected files."
+                : ex.Message);
         }
     }
 

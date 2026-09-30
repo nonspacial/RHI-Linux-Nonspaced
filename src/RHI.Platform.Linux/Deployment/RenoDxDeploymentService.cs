@@ -235,17 +235,17 @@ public sealed class RenoDxDeploymentService
                 try
                 {
                     if (targetExistedBeforeCopy && targetBeforeCopy is not null)
-                        await File.WriteAllBytesAsync(target, targetBeforeCopy, cancellationToken).ConfigureAwait(false);
+                        await File.WriteAllBytesAsync(target, targetBeforeCopy, CancellationToken.None).ConfigureAwait(false);
                     else if (!targetExistedBeforeCopy && File.Exists(target))
                         File.Delete(target);
                     if (iniPathBeforeApply is not null && iniBeforeApply is not null)
-                        await File.WriteAllBytesAsync(iniPathBeforeApply, iniBeforeApply, cancellationToken).ConfigureAwait(false);
+                        await File.WriteAllBytesAsync(iniPathBeforeApply, iniBeforeApply, CancellationToken.None).ConfigureAwait(false);
                     if (engineIniSnapshotPath is not null)
                     {
                         if (engineIniBeforeExisted && engineIniBeforeApply is not null)
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                            await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniBeforeApply, cancellationToken).ConfigureAwait(false);
+                            await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniBeforeApply, CancellationToken.None).ConfigureAwait(false);
                         }
                         else if (File.Exists(engineIniSnapshotPath))
                         {
@@ -494,9 +494,9 @@ public sealed class RenoDxDeploymentService
                 try
                 {
                     if (iniSnapshotPath is not null && iniSnapshot is not null)
-                        await File.WriteAllBytesAsync(iniSnapshotPath, iniSnapshot, cancellationToken).ConfigureAwait(false);
+                        await File.WriteAllBytesAsync(iniSnapshotPath, iniSnapshot, CancellationToken.None).ConfigureAwait(false);
                     if (engineIniSnapshotPath is not null && engineIniSnapshot is not null)
-                        await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniSnapshot, cancellationToken).ConfigureAwait(false);
+                        await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniSnapshot, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch { }
                 throw;

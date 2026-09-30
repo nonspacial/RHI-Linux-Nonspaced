@@ -37,6 +37,57 @@ public sealed class UpstreamGameLibraryPolicyServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_BlacklistNeverMatchesPathEvidence()
+    {
+        // "Windows" is a real upstream blacklist entry. A library mounted under a path containing
+        // that word (dual-boot NTFS at /mnt/windows) must not make every unlisted game vanish.
+        var json = """
+        {
+          "version": 3,
+          "blacklist": ["Windows", "Blender"]
+        }
+        """;
+        using var http = Http(json);
+        var policy = new UpstreamGameLibraryPolicyService(
+            new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"));
+        using var root = new TempTree();
+        var windowsLib = root.Dir(Path.Combine("Windows", "SteamLibrary", "steamapps", "common", "Some Game"));
+        var blenderDir = root.Dir(Path.Combine("Blender", "Other Game"));
+        var games = new[]
+        {
+            Game("Some Game", windowsLib),
+            Game("Other Game", blenderDir),
+            Game("Windows", root.Dir("win"))
+        };
+
+        var result = await policy.ApplyAsync(games);
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, g => g.Name == "Some Game");
+        Assert.Contains(result, g => g.Name == "Other Game");
+        Assert.DoesNotContain(result, g => g.Name == "Windows");
+    }
+
+    [Fact]
+    public async Task Manifest_ReadsPrefixedEngineOverridesKey()
+    {
+        var json = """
+        {
+          "version": 3,
+          "_engineOverrides": { "CrossCode": "NW.js" }
+        }
+        """;
+        using var http = Http(json);
+        var manifest = new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json");
+        var game = Game("CrossCode", Path.GetTempPath());
+
+        var resolved = await manifest.ResolveGameOverrideAsync(game);
+
+        Assert.NotNull(resolved);
+        Assert.Equal("NW.js", resolved!.EngineOverride ?? resolved.EngineHint);
+    }
+
+    [Fact]
     public async Task ApplyAsync_SplitsBundleAndThenAppliesChildPolicies()
     {
         var json = """

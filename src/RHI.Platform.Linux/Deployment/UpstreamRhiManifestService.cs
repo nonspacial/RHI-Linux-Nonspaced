@@ -69,7 +69,14 @@ internal sealed partial class UpstreamManifestDocument
     public Dictionary<string, UpstreamManifestShaderPack>? ShaderPacks { get; set; }
 
     [JsonPropertyName("engineOverrides")]
-    public Dictionary<string, string>? EngineOverrides { get; set; }
+    public Dictionary<string, string>? LegacyEngineOverrides { get; set; }
+
+    // Upstream RHI 2.7.6+ renamed this key to "_engineOverrides"; older manifests use the bare name.
+    [JsonPropertyName("_engineOverrides")]
+    public Dictionary<string, string>? PrefixedEngineOverrides { get; set; }
+
+    [JsonIgnore]
+    public Dictionary<string, string>? EngineOverrides => PrefixedEngineOverrides ?? LegacyEngineOverrides;
 
     [JsonPropertyName("engineHintOverrides")]
     public Dictionary<string, string>? EngineHintOverrides { get; set; }

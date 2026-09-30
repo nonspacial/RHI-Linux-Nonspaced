@@ -302,14 +302,15 @@ public sealed partial class OptiScalerDeploymentService
         }
         catch (Exception ex)
         {
+            // Compensation must run even when the failure *is* a cancellation.
             if (deployed)
-                await RollbackDeploymentAsync(requested, existedBefore, createdDirectories, cancellationToken).ConfigureAwait(false);
+                await RollbackDeploymentAsync(requested, existedBefore, createdDirectories, CancellationToken.None).ConfigureAwait(false);
             if (overrideCreatedHere && overrideRecord is not null)
             {
                 try { _overrides.Restore(prefix, overrideRecord); } catch { }
             }
             if (migration is not null)
-                await RollbackReShadeMigrationAsync(migration, cancellationToken).ConfigureAwait(false);
+                await RollbackReShadeMigrationAsync(migration, CancellationToken.None).ConfigureAwait(false);
             return ComponentOperationResult.Fail($"OptiScaler install failed: {ex.Message}");
         }
     }

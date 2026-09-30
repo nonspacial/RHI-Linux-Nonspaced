@@ -209,9 +209,9 @@ public sealed partial class MainWindow
                     LaunchCommand = string.IsNullOrWhiteSpace(launchBox.Text) ? null : launchBox.Text.Trim(),
                     Runner = prefix is null ? "Manual Windows" : "Manual Wine"
                 };
-                var result = await vm.AddManualGameAsync(entry);
+                var (added, result) = await vm.TryAddManualGameAsync(entry);
                 status.Text = result;
-                if (result.StartsWith("Added ", StringComparison.Ordinal))
+                if (added)
                     dialog.Close();
             }
             catch (Exception ex)

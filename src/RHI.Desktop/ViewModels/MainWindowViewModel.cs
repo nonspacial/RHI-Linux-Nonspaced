@@ -63,6 +63,12 @@ public partial class MainWindowViewModel : ObservableObject
     private LinuxAppSettings _settings;
     private LinuxGameLibraryState _libraryState;
     private bool _loadingGraphicsApiOverride;
+    /// <summary>
+    /// Raised while an option list bound as ItemsSource is being rebuilt. Avalonia writes null
+    /// back to the TwoWay SelectedItem when the list is cleared; every persisting handler below
+    /// must ignore that transient write or per-game preferences get deleted on a Settings save.
+    /// </summary>
+    private bool _rebuildingOptionLists;
     private bool _loadingOptiScalerVariant;
     private bool _loadingLumaModePreference;
     private bool _loadingHdrProfile;
@@ -711,6 +717,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshLocalizedPresentation()
     {
+        _rebuildingOptionLists = true;
+        try { RefreshLocalizedPresentationCore(); }
+        finally { _rebuildingOptionLists = false; }
+    }
+
+    private void RefreshLocalizedPresentationCore()
+    {
         var channel = ReShadeChannelValue(SelectedReShadeChannel);
         var apiOverride = ParseGraphicsApiOverride(SelectedGraphicsApiOverride);
         var optiScalerVariant = ParseOptiScalerVariant(SelectedOptiScalerVariant);
@@ -916,7 +929,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedGraphicsApiOverrideChanged(string value)
     {
-        if (_loadingGraphicsApiOverride || SelectedGame is null) return;
+        if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
         SelectedGame.UserGraphicsApiOverride = api;
         _apiOverrideStore.Set(SelectedGame, api);
@@ -925,7 +938,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedOptiScalerVariantChanged(string value)
     {
-        if (_loadingOptiScalerVariant || SelectedGame is null) return;
+        if (_rebuildingOptionLists || _loadingOptiScalerVariant || SelectedGame is null) return;
         var installed = _managedComponents.GetInstalledOptiScalerVariant(SelectedGame);
         if (installed is not null)
         {
@@ -941,7 +954,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedLumaModePreferenceChanged(string value)
     {
-        if (_loadingLumaModePreference || SelectedGame is null) return;
+        if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
         _managedComponents.SetLumaModePreference(SelectedGame, preference);
         ReevaluateCurrentGameForLumaPolicy(SelectedGame);
@@ -953,7 +966,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        if (_loadingHdrProfile || SelectedGame is null) return;
+        if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
         SaveHdrProfile(SelectedGame);
     }
 
@@ -963,7 +976,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        if (_loadingHdrProfile || SelectedGame is null) return;
+        if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
         SaveHdrProfile(SelectedGame);
     }
 
@@ -1120,17 +1133,35 @@ public partial class MainWindowViewModel : ObservableObject
             var found = await _scanner.ScanAsync(onlyDetectors);
             _libraryState = _libraryStore.Load();
             LibraryFilterMode = _libraryState.FilterMode;
+
+            // Partial refresh: the scanner hands back fresh detector-level instances, but the
+            // runtime probe (binary directory, graphics API, engine hint) only ever ran on the old
+            // instances. Keep any old instance that still has a valid probe cache entry so a cache
+            // hit is never applied to an un-probed game. Everything else takes the normal path.
+            var previous = onlyDetectors is null
+                ? null
+                : _allGames.Where(g => _probeCache.ContainsKey(Key(g))).ToDictionary(Key, StringComparer.Ordinal);
+            var merged = new List<DetectedGame>(found.Count);
             foreach (var game in found)
             {
                 game.LibraryIdentityPath ??= game.InstallPath;
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
+                if (previous is not null && previous.TryGetValue(libraryKey, out var kept))
+                {
+                    kept.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
+                    kept.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
+                    merged.Add(kept);
+                    continue;
+                }
+                _probeCache.Remove(libraryKey);
                 _libraryState.GameEdits.TryGetValue(libraryKey, out var edit);
                 LinuxGameIdentityService.ApplyDetectedIdentity(game, edit);
                 game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
+                merged.Add(game);
             }
             _allGames.Clear();
-            _allGames.AddRange(found);
+            _allGames.AddRange(merged);
             ApplyFilter();
             SelectedGame = currentKey is null
                 ? Games.FirstOrDefault()
@@ -2548,23 +2579,27 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
+        => (await TryAddManualGameAsync(entry)).Message;
+
+    /// <summary>Adds a manual game; <c>Added</c> is the structural success flag (the message is localised).</summary>
+    public async Task<(bool Added, string Message)> TryAddManualGameAsync(LinuxManualGameEntry entry)
     {
-        if (string.IsNullOrWhiteSpace(entry.Name)) return L("Digite um nome para o jogo.", "Enter a name for the game.");
+        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, L("Digite um nome para o jogo.", "Enter a name for the game."));
         if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
-            return L("O diretório do jogo não existe.", "The game directory does not exist.");
+            return (false, L("O diretório do jogo não existe.", "The game directory does not exist."));
         if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
-            return L("O executável selecionado não existe.", "The selected executable does not exist.");
+            return (false, L("O executável selecionado não existe.", "The selected executable does not exist."));
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
-            return L("O prefixo Wine/Proton selecionado não existe.", "The selected Wine/Proton prefix does not exist.");
+            return (false, L("O prefixo Wine/Proton selecionado não existe.", "The selected Wine/Proton prefix does not exist."));
 
         var normalizedPath = Path.GetFullPath(entry.InstallPath);
         if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
-            return L("Esse diretório de jogo já está presente na biblioteca.", "That game directory is already in the library.");
+            return (false, L("Esse diretório de jogo já está presente na biblioteca.", "That game directory is already in the library."));
 
         _libraryState = _libraryStore.Load();
         if (_libraryState.ManualGames.Any(existing =>
                 Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
-            return L("Esse jogo manual já está salvo.", "That manual game is already saved.");
+            return (false, L("Esse jogo manual já está salvo.", "That manual game is already saved."));
 
         _libraryState.ManualGames.Add(entry);
         _libraryState.FilterMode = "All Games";
@@ -2573,7 +2608,7 @@ public partial class MainWindowViewModel : ObservableObject
         await RefreshAsync(ManualOnly);
         SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
             Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
-        return LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name);
+        return (true, LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name));
     }
 
     [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]
@@ -2677,7 +2712,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void SaveNeuralVersionPin(ManagedComponentKind kind, string value)
     {
-        if (SelectedGame is null) return;
+        // A null/empty value only ever arrives from an ItemsSource rebuild, never from the user.
+        if (_rebuildingOptionLists || string.IsNullOrWhiteSpace(value) || SelectedGame is null) return;
         var installed = kind switch
         {
             ManagedComponentKind.Dlss5Feeder => _managedComponents.IsDlss5FeederFullManaged(SelectedGame),
@@ -2754,9 +2790,21 @@ public partial class MainWindowViewModel : ObservableObject
         var bridgeTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Dx11Bridge);
         var shortFuseTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.ShortFuse);
         await Task.WhenAll(feederTask, bridgeTask, shortFuseTask);
-        ReplaceVersionOptions(Dlss5FeederVersionOptions, feederTask.Result, SelectedDlss5FeederVersion);
-        ReplaceVersionOptions(Dlss5BridgeVersionOptions, bridgeTask.Result, SelectedDlss5BridgeVersion);
-        ReplaceVersionOptions(ShortFuseVersionOptions, shortFuseTask.Result, SelectedShortFuseVersion);
+        var feederSelected = SelectedDlss5FeederVersion;
+        var bridgeSelected = SelectedDlss5BridgeVersion;
+        var shortFuseSelected = SelectedShortFuseVersion;
+        _rebuildingOptionLists = true;
+        try
+        {
+            ReplaceVersionOptions(Dlss5FeederVersionOptions, feederTask.Result, feederSelected);
+            ReplaceVersionOptions(Dlss5BridgeVersionOptions, bridgeTask.Result, bridgeSelected);
+            ReplaceVersionOptions(ShortFuseVersionOptions, shortFuseTask.Result, shortFuseSelected);
+            // Clearing the list nulled the bound selection; restore it now that the option exists again.
+            SelectedDlss5FeederVersion = feederSelected ?? LatestDisplay();
+            SelectedDlss5BridgeVersion = bridgeSelected ?? LatestDisplay();
+            SelectedShortFuseVersion = shortFuseSelected ?? LatestDisplay();
+        }
+        finally { _rebuildingOptionLists = false; }
     }
 
     private static void ReplaceVersionOptions(ObservableCollection<string> target, IReadOnlyList<GitHubReleaseVersion> versions, string selected)
