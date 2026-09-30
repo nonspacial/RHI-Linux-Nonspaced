@@ -23,6 +23,44 @@ public sealed class GameFileIndexerTests : IDisposable
     }
 
     [Fact]
+    public void Build_DoesNotFollowDirectorySymlinks()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        File.WriteAllText(Path.Combine(_root, "Game.exe"), "x");
+        var outside = Path.Combine(Path.GetTempPath(), "rhi-index-outside-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "leak.txt"), "x");
+        try
+        {
+            // Mirrors a Wine prefix dosdevices/z: -> / link.
+            Directory.CreateSymbolicLink(Path.Combine(_root, "z:"), outside);
+
+            var files = GameFileIndexer.Build(_root);
+
+            Assert.Contains(Path.Combine(_root, "Game.exe"), files);
+            Assert.DoesNotContain(files, f => f.EndsWith("leak.txt", StringComparison.Ordinal));
+        }
+        finally
+        {
+            try { Directory.Delete(outside, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void Build_SkipsDosDevicesAndHonorsFileCap()
+    {
+        var dosdevices = Path.Combine(_root, "dosdevices");
+        Directory.CreateDirectory(dosdevices);
+        File.WriteAllText(Path.Combine(dosdevices, "c.txt"), "x");
+        for (var i = 0; i < 10; i++) File.WriteAllText(Path.Combine(_root, $"f{i}.bin"), "x");
+
+        var files = GameFileIndexer.Build(_root, maxDepth: 8, maxFiles: 4);
+
+        Assert.Equal(4, files.Count);
+        Assert.DoesNotContain(files, f => f.Contains("dosdevices", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Build_HonorsCancellation()
     {
         File.WriteAllText(Path.Combine(_root, "Game.exe"), "x");

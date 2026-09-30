@@ -1093,20 +1093,31 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelected();
     }
 
+    private static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
+    private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
+
     [RelayCommand]
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => RefreshAsync(null);
+
+    /// <summary>
+    /// Full library refresh when <paramref name="onlyDetectors"/> is null; otherwise only the named
+    /// detectors are re-run and the rest of the library is reused from the previous scan.
+    /// </summary>
+    private async Task RefreshAsync(IReadOnlySet<string>? onlyDetectors)
     {
         if (IsBusy) return;
         IsBusy = true;
-        StatusText = L("Verificando Steam, Heroic, Lutris e prefixos Wine…", "Scanning Steam, Heroic, Lutris and Wine prefixes…");
+        StatusText = onlyDetectors is null
+            ? L("Verificando Steam, Heroic, Lutris e prefixos Wine…", "Scanning Steam, Heroic, Lutris and Wine prefixes…")
+            : L("Atualizando a biblioteca…", "Updating library…");
         try
         {
             var currentKey = SelectedGame is null ? null : Key(SelectedGame);
             CancelSelectionProbe();
-            _probeCache.Clear();
+            if (onlyDetectors is null) _probeCache.Clear();
             SelectedGame = null;
 
-            var found = await _scanner.ScanAsync();
+            var found = await _scanner.ScanAsync(onlyDetectors);
             _libraryState = _libraryStore.Load();
             LibraryFilterMode = _libraryState.FilterMode;
             foreach (var game in found)
@@ -2514,7 +2525,8 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryStore.Save(_libraryState);
 
         var name = SelectedGame.Name;
-        await RefreshAsync();
+        _probeCache.Remove(Key(SelectedGame));
+        await RefreshAsync(NoDetectors);
         return LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name);
     }
 
@@ -2528,7 +2540,8 @@ public partial class MainWindowViewModel : ObservableObject
         var removed = _libraryState.GameEdits.Remove(key);
         _libraryStore.Save(_libraryState);
         var name = SelectedGame.Name;
-        await RefreshAsync();
+        _probeCache.Remove(Key(SelectedGame));
+        await RefreshAsync(NoDetectors);
         return removed
             ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
             : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
@@ -2557,7 +2570,7 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryState.FilterMode = "All Games";
         _libraryStore.Save(_libraryState);
         LibraryFilterMode = "All Games";
-        await RefreshAsync();
+        await RefreshAsync(ManualOnly);
         SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
             Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
         return LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name);
@@ -2575,7 +2588,7 @@ public partial class MainWindowViewModel : ObservableObject
             catch { return false; }
         });
         _libraryStore.Save(_libraryState);
-        await RefreshAsync();
+        await RefreshAsync(ManualOnly);
         StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
     }
 

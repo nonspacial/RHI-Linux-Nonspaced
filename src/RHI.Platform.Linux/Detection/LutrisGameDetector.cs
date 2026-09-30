@@ -26,14 +26,20 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     var name = MatchValue(text, "name") ?? Path.GetFileNameWithoutExtension(file).Replace('-', ' ');
                     var exe = MatchValue(text, "exe");
                     var prefix = MatchValue(text, "prefix");
+                    var workingDir = MatchValue(text, "working_dir");
                     exe = Expand(exe);
                     prefix = Expand(prefix);
+                    workingDir = Expand(workingDir);
+                    exe = ResolveRelativeExe(exe, prefix, workingDir);
                     string? install = exe is null ? null : Path.GetDirectoryName(exe);
                     if (install is null || !Directory.Exists(install))
                     {
                         if (prefix is not null && Directory.Exists(prefix)) install = prefix;
                         else continue;
                     }
+                    // A whole Wine prefix is not a game directory. Indexing it walks the entire
+                    // Windows image and (through dosdevices symlinks) every mounted drive.
+                    if (IsWinePrefixRoot(install)) continue;
                     var slug = Path.GetFileNameWithoutExtension(file);
                     var configuredRunner = MatchValue(text, "runner");
                     var wineVersion = MatchSectionValue(text, "wine", "version");
@@ -168,6 +174,34 @@ public sealed partial class LutrisGameDetector : IGameDetector
         if (value.StartsWith("~/")) return Path.Combine(LinuxPaths.Home, value[2..]);
         return Environment.ExpandEnvironmentVariables(value);
     }
+
+    /// <summary>
+    /// Lutris stores installer-created games with an exe path relative to the prefix
+    /// (e.g. <c>drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe</c>) and
+    /// sometimes <c>$GAMEDIR</c> placeholders. Resolve those against the prefix / working
+    /// directory so the install directory is the game folder, never the whole prefix.
+    /// </summary>
+    internal static string? ResolveRelativeExe(string? exe, string? prefix, string? workingDir)
+    {
+        if (string.IsNullOrWhiteSpace(exe)) return null;
+        if (exe.Contains("_xXx_", StringComparison.Ordinal)) return null; // Lutris auto-detect placeholder
+        if (exe.StartsWith("$GAMEDIR/", StringComparison.Ordinal))
+            exe = exe["$GAMEDIR/".Length..];
+        if (Path.IsPathRooted(exe)) return exe;
+
+        foreach (var baseDir in new[] { workingDir, prefix })
+        {
+            if (string.IsNullOrWhiteSpace(baseDir)) continue;
+            var candidate = Path.GetFullPath(Path.Combine(baseDir, exe));
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    internal static bool IsWinePrefixRoot(string path)
+        => Directory.Exists(Path.Combine(path, "drive_c")) ||
+           Directory.Exists(Path.Combine(path, "dosdevices")) ||
+           File.Exists(Path.Combine(path, "system.reg"));
 
     internal static (string? Version, string? LayerType) ParseWineRuntimeForTests(string text)
     {

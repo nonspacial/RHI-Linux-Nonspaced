@@ -6,6 +6,8 @@ public sealed class GameLibraryScanner
 {
     private readonly IGameDetector[] _detectors;
     private readonly IGameLibraryPolicy[] _policies;
+    private readonly Dictionary<string, IReadOnlyList<DetectedGame>> _lastRawResults = new(StringComparer.Ordinal);
+    private readonly object _rawLock = new();
 
     public GameLibraryScanner(
         IEnumerable<IGameDetector> detectors,
@@ -15,23 +17,59 @@ public sealed class GameLibraryScanner
         _policies = policies?.ToArray() ?? [];
     }
 
-    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DetectedGame>> ScanAsync(CancellationToken cancellationToken = default)
+        => ScanAsync(null, cancellationToken);
+
+    /// <summary>
+    /// Runs the library scan. When <paramref name="onlyDetectors"/> is given, only those detectors
+    /// (by <see cref="IGameDetector.Name"/>) are re-run; every other detector reuses its result from
+    /// the previous scan. This keeps cheap library edits (adding/removing a manual game) from
+    /// re-walking every Steam/Heroic/Lutris/Wine install on disk. Falls back to a full scan when
+    /// no previous result exists for a detector that was not requested.
+    /// </summary>
+    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(
+        IReadOnlySet<string>? onlyDetectors,
+        CancellationToken cancellationToken = default)
     {
+        bool partial;
+        lock (_rawLock)
+        {
+            partial = onlyDetectors is not null &&
+                      _detectors.All(d => onlyDetectors.Contains(d.Name) || _lastRawResults.ContainsKey(d.Name));
+        }
+
         var tasks = _detectors.Select(async detector =>
         {
-            try
+            IReadOnlyList<DetectedGame> raw;
+            if (partial && !onlyDetectors!.Contains(detector.Name))
             {
-                return await detector.DetectAsync(cancellationToken).ConfigureAwait(false);
+                lock (_rawLock) raw = _lastRawResults[detector.Name];
             }
-            catch (OperationCanceledException) { throw; }
-            catch
+            else
             {
-                return Array.Empty<DetectedGame>();
+                try
+                {
+                    raw = await detector.DetectAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch
+                {
+                    raw = Array.Empty<DetectedGame>();
+                }
             }
+            return (detector.Name, raw);
         });
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
-        IReadOnlyList<DetectedGame> games = results.SelectMany(x => x).ToArray();
+        lock (_rawLock)
+        {
+            // Keep pristine snapshots: downstream stages mutate the instances they receive.
+            foreach (var (name, list) in results)
+                _lastRawResults[name] = list.Select(g => g.ShallowClone()).ToArray();
+        }
+        IReadOnlyList<DetectedGame> games = results
+            .SelectMany(x => x.raw.Select(g => g.ShallowClone()))
+            .ToArray();
 
         foreach (var policy in _policies)
         {

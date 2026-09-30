@@ -6,6 +6,13 @@ namespace RHI.Core.Models;
 /// </summary>
 public sealed class DetectedGame
 {
+    /// <summary>
+    /// Shallow copy of the detector output. Detector results are cached between partial rescans
+    /// and every downstream stage (policy, merge, identity, runtime probe) mutates the instance,
+    /// so cached entries must never be handed out directly.
+    /// </summary>
+    public DetectedGame ShallowClone() => (DetectedGame)MemberwiseClone();
+
     public string Name { get; set; } = "";
     public string InstallPath { get; set; } = "";
     public string Source { get; set; } = "";

@@ -29,6 +29,10 @@ internal static partial class DetectionHelpers
         if (n.Equals("Steamworks Common Redistributables", StringComparison.OrdinalIgnoreCase)) return true;
         if (n.Equals("Proton Experimental", StringComparison.OrdinalIgnoreCase)) return true;
         if (n.Equals("Proton Hotfix", StringComparison.OrdinalIgnoreCase)) return true;
+        // Versioned Proton runtimes ("Proton 9.0", "Proton 8.0") ship a Windows image full of
+        // .exe files and are picked up as a game otherwise.
+        if (n.StartsWith("Proton ", StringComparison.OrdinalIgnoreCase) && n.Length > 7 && char.IsDigit(n[7])) return true;
+        if (d.StartsWith("Proton ", StringComparison.OrdinalIgnoreCase) && d.Length > 7 && char.IsDigit(d[7])) return true;
         if (n.StartsWith("Proton EasyAntiCheat Runtime", StringComparison.OrdinalIgnoreCase)) return true;
         if (n.StartsWith("Proton BattlEye Runtime", StringComparison.OrdinalIgnoreCase)) return true;
         if (n.StartsWith("Steam Controller Configs", StringComparison.OrdinalIgnoreCase)) return true;
