@@ -145,12 +145,118 @@ public sealed class Dlss5FeederFullDeploymentService
         string? d3dCompiler47Path,
         string? releaseTag,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, neuralRenderingDllVersion: null, cancellationToken);
+
+    public Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        Dlss5FeederConsumer consumer,
+        string? deepFriedChickenPackagePath,
+        string? d3dCompiler47Path,
+        string? releaseTag,
+        string? neuralRenderingDllVersion,
+        CancellationToken cancellationToken = default)
         => Task.Run(
-            () => InstallCoreAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, cancellationToken),
+            () => InstallCoreAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, neuralRenderingDllVersion, cancellationToken),
             cancellationToken);
+
+    /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
+    public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken);
 
     public Task<IReadOnlyList<GitHubReleaseVersion>> ListVersionsAsync(CancellationToken cancellationToken = default)
         => _releaseResolver.ListVersionsAsync(FeederReleaseApi, cancellationToken);
+
+    public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
+    {
+        var record = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
+        if (record is null) return new ManagedUpdateCheck(false, false, "DLSS5 Feeder is not managed by RHI Linux.");
+        if (!record.Metadata.TryGetValue(FullStackMetadata, out var full) || full != "1")
+            return new ManagedUpdateCheck(true, false, "Legacy DLSS5 Feeder add-on-only deployment; remove and reinstall to update.", record.Version);
+        try
+        {
+            var target = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
+            var update = !string.Equals(record.Version, target.Version, StringComparison.OrdinalIgnoreCase);
+            var mode = string.IsNullOrWhiteSpace(releaseTag) ? "latest" : $"pinned {releaseTag}";
+            return new ManagedUpdateCheck(true, update,
+                update ? $"DLSS5 Feeder {mode}: {record.Version} → {target.Version}." : $"DLSS5 Feeder {record.Version} is current ({mode}).",
+                record.Version, target.Version);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new ManagedUpdateCheck(true, false, $"DLSS5 Feeder update check failed: {ex.Message}", record.Version);
+        }
+    }
+
+    /// <summary>
+    /// Replaces only the Feeder add-on (plus the host64 helper on 32-bit games, which ships in the
+    /// same archive and must match it) with the pinned or latest release. The consumer, DLSS DLLs,
+    /// shaders, preset and ReShade.ini are left as installed.
+    /// </summary>
+    public Task<ComponentOperationResult> SwapFeederVersionAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
+        => Task.Run(() => SwapFeederVersionCoreAsync(game, releaseTag, cancellationToken), cancellationToken);
+
+    private async Task<ComponentOperationResult> SwapFeederVersionCoreAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken)
+    {
+        var record = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
+        if (record is null)
+            return ComponentOperationResult.Fail("DLSS5 Feeder is not managed by RHI Linux.");
+        if (!record.Metadata.TryGetValue(FullStackMetadata, out var full) || full != "1")
+            return ComponentOperationResult.Fail("Legacy DLSS5 Feeder add-on-only deployment cannot be swapped in place. Remove it, then install the full Feeder stack.");
+
+        var payloadNames = new List<string>();
+        if (ManagedFileSwap.FindFile(record, FeederAddonName) is not null) payloadNames.Add(FeederAddonName);
+        else if (ManagedFileSwap.FindFile(record, FeederAddon32Name) is not null) payloadNames.Add(FeederAddon32Name);
+        else return ComponentOperationResult.Fail("The DLSS5 Feeder record does not own a Feeder add-on. Remove and reinstall DLSS5 Feeder.");
+        if (ManagedFileSwap.FindFile(record, Host64ExecutableName) is not null) payloadNames.Add(Host64ExecutableName);
+
+        var stageRoot = Path.Combine(_cacheDir, $"swap-{Guid.NewGuid():N}");
+        try
+        {
+            GitHubResolvedReleaseAsset release;
+            var items = new List<(string RecordedPath, string SourcePath)>();
+            try
+            {
+                Directory.CreateDirectory(stageRoot);
+                release = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
+                var zip = await DownloadAssetAsync(release, Path.Combine(stageRoot, "feeder.zip"), cancellationToken).ConfigureAwait(false);
+                foreach (var name in payloadNames)
+                    items.Add((ManagedFileSwap.FindFile(record, name)!.Path,
+                        ExtractReleasePayloadByName(zip, name, Path.Combine(stageRoot, name), minimumSize: 64 * 1024, requirePe: true)));
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                return ComponentOperationResult.Fail($"DLSS5 Feeder download failed; nothing was changed: {ex.Message}");
+            }
+
+            try
+            {
+                var changed = await ManagedFileSwap.ReplaceAsync(record, items, updated =>
+                {
+                    updated.Version = release.Version;
+                    updated.SourceUrl = release.AssetUrl;
+                    updated.Metadata[MetaFeederVersion] = release.Version;
+                    updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                    _records.Upsert(updated);
+                }, cancellationToken).ConfigureAwait(false);
+                return ComponentOperationResult.Ok(changed == 0
+                    ? $"DLSS5 Feeder {release.Version} is already installed."
+                    : $"DLSS5 Feeder swapped in place to {release.Version}. Consumer, DLSS DLLs, shaders and configs were not changed.",
+                    items.Select(item => item.RecordedPath).ToArray());
+            }
+            catch (ManagedFileRestoreException ex)
+            {
+                return ComponentOperationResult.Fail($"DLSS5 Feeder in-place swap failed and the previous files could not be restored: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                return ComponentOperationResult.Fail($"DLSS5 Feeder in-place swap failed; the previous files were kept: {ex.Message}");
+            }
+        }
+        finally
+        {
+            try { if (Directory.Exists(stageRoot)) Directory.Delete(stageRoot, true); } catch { }
+        }
+    }
 
     private async Task<ComponentOperationResult> InstallCoreAsync(
         DetectedGame game,
@@ -158,6 +264,7 @@ public sealed class Dlss5FeederFullDeploymentService
         string? deepFriedChickenPackagePath,
         string? d3dCompiler47Path,
         string? releaseTag,
+        string? neuralRenderingDllVersion,
         CancellationToken cancellationToken)
     {
         // Installation can perform bounded recursive file indexing, archive validation,
@@ -382,7 +489,7 @@ public sealed class Dlss5FeederFullDeploymentService
 
             var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Super Resolution runtime.");
-            var cachedNr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false)
+            var cachedNr = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Neural Rendering runtime.");
             ValidateCachedRuntime(cachedSr, DlssName);
             ValidateCachedRuntime(cachedNr, NrName);

@@ -95,16 +95,106 @@ public sealed class ShortFuseDeploymentService
         }
     }
 
+    /// <summary>
+    /// Replaces only the ShortFuse add-on owned by the record with the pinned (or latest) release.
+    /// The file keeps its recorded name (renodx-dlss.addon64 or the ZZZ load-order name). ReShade,
+    /// UAL, INI and the DLSS/Streamline stack stay as installed. Used by the in-place version swap
+    /// and by Update All.
+    /// </summary>
+    public async Task<ComponentOperationResult> SwapAddonVersionAsync(
+        DetectedGame game,
+        string? releaseTag,
+        CancellationToken cancellationToken = default)
+    {
+        var record = GetRecord(game);
+        if (record is null)
+            return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux.");
+        var addon = FindRecordedAddon(record);
+        if (addon is null)
+            return ComponentOperationResult.Fail("The ShortFuse record does not own a ShortFuse add-on. Remove and reinstall ShortFuse.");
+
+        ShortFuseReleaseInfo release;
+        string staged;
+        try
+        {
+            release = await FetchReleaseAsync(releaseTag, cancellationToken).ConfigureAwait(false);
+            staged = await EnsureCachedAddonAsync(release, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ComponentOperationResult.Fail($"ShortFuse download failed; nothing was changed: {ex.Message}");
+        }
+
+        try
+        {
+            var changed = await ManagedFileSwap.ReplaceAsync(record, [(addon.Path, staged)], updated =>
+            {
+                updated.Version = release.Version;
+                updated.SourceUrl = release.AssetUrl;
+                updated.Metadata[MetaAddonSha256] = updated.Files.First(f => f.Path == addon.Path).Sha256 ?? "";
+                updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                _records.Upsert(updated);
+            }, cancellationToken).ConfigureAwait(false);
+            return ComponentOperationResult.Ok(changed == 0
+                ? $"ShortFuse {release.Version} is already installed."
+                : $"ShortFuse add-on swapped in place to {release.Version}. ReShade, UAL and the DLSS stack were not changed.", addon.Path);
+        }
+        catch (ManagedFileRestoreException ex)
+        {
+            return ComponentOperationResult.Fail($"ShortFuse in-place swap failed and the previous add-on could not be restored: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"ShortFuse in-place swap failed; the previous add-on was kept: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The add-on entry of a ShortFuse record. The record is the authority: the entry whose hash is
+    /// the recorded add-on hash, else the single entry named *renodx-dlss.addon64 (the plain or the
+    /// ZZZ load-order name). Ambiguity returns null rather than guessing.
+    /// </summary>
+    internal static LinuxDeployedFile? FindRecordedAddon(LinuxDeploymentRecord record)
+    {
+        var addons = record.Files
+            .Where(f => Path.GetFileName(f.Path).EndsWith(AddonFileName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (record.Metadata.TryGetValue(MetaAddonSha256, out var hash) && !string.IsNullOrWhiteSpace(hash))
+        {
+            var byHash = addons.Where(f => string.Equals(f.Sha256, hash, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (byHash.Length == 1) return byHash[0];
+        }
+        return addons.Length == 1 ? addons[0] : null;
+    }
+
+    /// <summary>Swaps the ShortFuse-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
+    public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.ShortFuse, "ShortFuse", version, cancellationToken);
+
+    public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
+    {
+        var status = await CheckLatestAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
+        return new ManagedUpdateCheck(GetRecord(game) is not null, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion);
+    }
+
     public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         bool autoConfigEnabled = true,
         CancellationToken cancellationToken = default)
         => InstallAsync(game, autoConfigEnabled, releaseTag: null, cancellationToken);
 
+    public Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        bool autoConfigEnabled,
+        string? releaseTag,
+        CancellationToken cancellationToken = default)
+        => InstallAsync(game, autoConfigEnabled, releaseTag, neuralRenderingDllVersion: null, cancellationToken);
+
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         bool autoConfigEnabled,
         string? releaseTag,
+        string? neuralRenderingDllVersion,
         CancellationToken cancellationToken = default)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
@@ -176,7 +266,7 @@ public sealed class ShortFuseDeploymentService
                 [DlssComponentKind.SuperResolution] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.RayReconstruction] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.RayReconstruction, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.FrameGeneration] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.FrameGeneration, cancellationToken).ConfigureAwait(false),
-                [DlssComponentKind.NeuralRendering] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false),
+                [DlssComponentKind.NeuralRendering] = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false),
             };
             cachedStreamline = await _dlss.EnsureNewestStreamlineCachedAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -621,7 +711,7 @@ public sealed class ShortFuseDeploymentService
         if (doc.RootElement.ValueKind is not (JsonValueKind.Array or JsonValueKind.Object))
             throw new InvalidDataException("ShortFuse release response was not an object or array.");
 
-        var candidates = new List<(ShortFuseReleaseInfo Info, Version Parsed)>();
+        var candidates = new List<(ShortFuseReleaseInfo Info, (Version Base, int PreRelease) Parsed)>();
         var releases = doc.RootElement.ValueKind == JsonValueKind.Array
             ? doc.RootElement.EnumerateArray().Select(static element => element.Clone()).ToArray()
             : new[] { doc.RootElement.Clone() };
@@ -659,7 +749,7 @@ public sealed class ShortFuseDeploymentService
             if (!string.IsNullOrWhiteSpace(digest) && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) digest = digest[7..];
 
             var versionText = tag[ReleaseTagPrefix.Length..];
-            var parsed = Version.TryParse(versionText, out var version) ? version : new Version(0, 0);
+            var parsed = ReleaseVersionOrdering.Key(versionText);
             candidates.Add((new ShortFuseReleaseInfo(
                 versionText, tag, url, string.IsNullOrWhiteSpace(digest) ? null : digest,
                 assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), assetName), parsed));
@@ -669,7 +759,11 @@ public sealed class ShortFuseDeploymentService
             throw new InvalidDataException(string.IsNullOrWhiteSpace(requiredTag)
                 ? $"No {ReleaseTagPrefix} release containing {AddonFileName} or a {ArchiveAssetPrefix}*.zip payload was found."
                 : $"Pinned ShortFuse release {requiredTag} was not found or does not contain a supported payload.");
-        return candidates.OrderByDescending(c => c.Parsed).First().Info;
+        // Version.TryParse rejected every "-rcN" tag, so rc builds fell back to API order (rc5 could beat rc10).
+        return candidates
+            .OrderByDescending(c => c.Parsed.Base)
+            .ThenByDescending(c => c.Parsed.PreRelease)
+            .First().Info;
     }
 
     private async Task<string> EnsureCachedAddonAsync(ShortFuseReleaseInfo release, CancellationToken ct)

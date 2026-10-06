@@ -118,7 +118,12 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.LumaFramework,
         ManagedComponentKind.DofFix,
         ManagedComponentKind.DlssEnablerStandalone,
-        ManagedComponentKind.Rtx40MfgStandalone
+        ManagedComponentKind.Rtx40MfgStandalone,
+        // Neural Rendering add-ons follow their per-game pin; Latest auto-updates (upstream 2.7.9).
+        // Only the add-on file is replaced in place; DLSS DLLs and configs are left alone.
+        ManagedComponentKind.Dlss5Feeder,
+        ManagedComponentKind.Dlss5Dx11Bridge,
+        ManagedComponentKind.ShortFuse
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
@@ -236,6 +241,9 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.DofFix => 7,
         ManagedComponentKind.DlssEnablerStandalone => 8,
         ManagedComponentKind.Rtx40MfgStandalone => 9,
+        ManagedComponentKind.Dlss5Feeder => 10,
+        ManagedComponentKind.Dlss5Dx11Bridge => 11,
+        ManagedComponentKind.ShortFuse => 12,
         _ => 99
     };
 }

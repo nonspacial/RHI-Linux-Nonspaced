@@ -45,6 +45,36 @@ public sealed class NeuralAddonVersionPreferenceStore
         }
     }
 
+    /// <summary>
+    /// Per-game nvngx_dlssnr.dll manifest version for the orchestrated NR methods (ShortFuse,
+    /// Feeder). Null means the newest manifest entry.
+    /// </summary>
+    public string? GetNeuralRenderingDllVersion(DetectedGame game)
+    {
+        lock (_gate)
+            return LoadUnsafe().TryGetValue(DllKey(game), out var version) && IsSafeDllVersion(version) ? version : null;
+    }
+
+    public void SetNeuralRenderingDllVersion(DetectedGame game, string? version)
+    {
+        var normalized = string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+        if (normalized is not null && !IsSafeDllVersion(normalized))
+            throw new ArgumentException("DLSS NR version label is not valid.", nameof(version));
+        lock (_gate)
+        {
+            var entries = LoadUnsafe();
+            if (normalized is null) entries.Remove(DllKey(game));
+            else entries[DllKey(game)] = normalized;
+            SaveUnsafe(entries);
+        }
+    }
+
+    private static string DllKey(DetectedGame game) => $"{LinuxDeploymentRecordStore.GameKey(game)}|NeuralRenderingDll";
+
+    // Manifest labels carry spaces and brackets, e.g. "310.8.2 (20/30/40/50)"; only control characters are refused.
+    private static bool IsSafeDllVersion(string value)
+        => value.Length is > 0 and <= 128 && !value.Any(char.IsControl);
+
     private static string Key(DetectedGame game, ManagedComponentKind kind)
         => $"{LinuxDeploymentRecordStore.GameKey(game)}|{kind}";
 

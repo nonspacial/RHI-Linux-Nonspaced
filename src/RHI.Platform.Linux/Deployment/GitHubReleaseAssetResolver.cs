@@ -104,7 +104,8 @@ public sealed class GitHubReleaseAssetResolver
             var prerelease = release.TryGetProperty("prerelease", out var prereleaseEl) && prereleaseEl.ValueKind == JsonValueKind.True;
             result.Add(new GitHubReleaseVersion(tag, tag.TrimStart('v', 'V'), prerelease));
         }
-        return result;
+        // Newest first by version, not publish date, so rc10 lists above rc5 (upstream 2.7.9).
+        return ReleaseVersionOrdering.NewestFirst(result);
     }
 
     internal static string BuildReleaseTagApiUrl(string releaseApiUrl, string releaseTag)
