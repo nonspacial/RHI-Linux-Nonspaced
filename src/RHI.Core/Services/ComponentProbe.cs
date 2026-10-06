@@ -73,7 +73,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG (Experimental)", false),
             Make(ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", files.Any(IsDlss5FeederAddonFileName)),
             Make(ManagedComponentKind.Dlss5Dx11Bridge, "DLSS5 DX11 Bridge", files.Any(IsDlss5BridgeAddonFileName)),
-            Make(ManagedComponentKind.ShortFuse, "ShortFuse / DLSS Frame Generation", files.Contains("renodx-dlss.addon64")),
+            Make(ManagedComponentKind.ShortFuse, "ShortFuse / DLSS Frame Generation", files.Contains("renodx-dlss.addon64") || files.Contains("zzz_renodx-dlss.addon64")),
             Make(ManagedComponentKind.DofFix, "Universal UE DOF Fix", indexedFiles.Any(path =>
                 Path.GetFileName(path).Equals("renodx-universal_ue-dof-fix.addon64", StringComparison.OrdinalIgnoreCase) &&
                 (binaryDirectory is null || string.Equals(

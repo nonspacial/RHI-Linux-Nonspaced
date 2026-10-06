@@ -15,6 +15,8 @@ public sealed class FeederConflictRegressionTests : IDisposable
     [Theory]
     [InlineData(Dlss5FeederConsumer.DeepFriedChicken, "RenoDX-DLSS5.addon64")]
     [InlineData(Dlss5FeederConsumer.RenoDxDlss5, "Deep-Fried-Chicken.addon64")]
+    [InlineData(Dlss5FeederConsumer.RenoDxDlss5, "zzz_renodx-dlss.addon64")]
+    [InlineData(Dlss5FeederConsumer.DeepFriedChicken, "ZZZ_RenoDX-DLSS.addon64")]
     public async Task Install_RejectsCaseVariantOpposingConsumerBeforeNetwork(
         Dlss5FeederConsumer consumer, string externalFileName)
         => await AssertExternalConsumerGuardAsync(consumer, externalFileName, "Consumidor neural conflitante");
