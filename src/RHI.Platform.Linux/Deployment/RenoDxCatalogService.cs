@@ -15,7 +15,8 @@ public sealed record RenoDxModEntry(
     bool IsGeneric = false)
 {
     public string? UrlFor(PeArchitecture architecture)
-        => architecture == PeArchitecture.X86 ? SnapshotUrl32 ?? SnapshotUrl64 : SnapshotUrl64 ?? SnapshotUrl32;
+        => RenoDxCatalogService.ResolveAddonUrl(
+            architecture == PeArchitecture.X86 ? SnapshotUrl32 ?? SnapshotUrl64 : SnapshotUrl64 ?? SnapshotUrl32);
 }
 
 public sealed class RenoDxCatalogService
@@ -286,6 +287,17 @@ public sealed class RenoDxCatalogService
         foreach (var ch in decomposed)
             if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark) sb.Append(ch);
         return Regex.Replace(sb.ToString().ToLowerInvariant(), "[^a-z0-9]", "");
+    }
+
+    // Upstream 2.7.6: the Unity add-on always comes from GitHub Releases, whatever URL the manifest,
+    // database or wiki carries. GitHub Pages omits Content-Length on HEAD, which defeats the cache.
+    public static string? ResolveAddonUrl(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
+        var fileName = Path.GetFileName(uri.LocalPath);
+        if (fileName.Equals("renodx-unityengine.addon64", StringComparison.OrdinalIgnoreCase)) return GenericUnityUrl64;
+        if (fileName.Equals("renodx-unityengine.addon32", StringComparison.OrdinalIgnoreCase)) return GenericUnityUrl32;
+        return url;
     }
 
     internal static bool LooksLikeUnity(IReadOnlyList<string> files)

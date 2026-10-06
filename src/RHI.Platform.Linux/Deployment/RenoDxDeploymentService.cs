@@ -576,6 +576,9 @@ public sealed class RenoDxDeploymentService
     {
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
+        var source = cache + ".source";
+        if (await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false))
+            return cache;
         var temp = cache + ".tmp";
         using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -587,8 +590,34 @@ public sealed class RenoDxDeploymentService
             File.Delete(temp);
             throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
         }
+        if (File.Exists(source)) File.Delete(source);
         File.Move(temp, cache, overwrite: true);
+        await File.WriteAllTextAsync(source, url, CancellationToken.None).ConfigureAwait(false);
         return cache;
+    }
+
+    // Upstream 2.7.6-2.7.9: reuse the cached add-on unless the remote size explicitly differs; a failed
+    // HEAD or missing Content-Length keeps the cache. The .source sidecar stops a same-named add-on
+    // from another repository being served from cache.
+    private async Task<bool> IsCacheCurrentAsync(string url, string cache, string source, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(cache) || !File.Exists(source)) return false;
+        if (!string.Equals((await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false)).Trim(), url, StringComparison.Ordinal))
+            return false;
+        if (!BinarySignatureInspector.HasPeSignature(cache, 100 * 1024)) return false;
+
+        long? remoteSize = null;
+        try
+        {
+            using var headCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            headCts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headCts.Token).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode) remoteSize = response.Content.Headers.ContentLength;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { }
+        return remoteSize is null or <= 0 || remoteSize.Value == new FileInfo(cache).Length;
     }
 
     private static bool HasReShade(string binaryDirectory)
