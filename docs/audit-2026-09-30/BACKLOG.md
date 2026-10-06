@@ -9,12 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 89 |
+| `audit-remediation` | 91 |
 | `upstream-sync/2.7.9` | 14 |
 | `upstream-sync/2.8.5` | 1 |
 | `feature-parity` | 11 |
 | (none) | 1 (#101 overview) |
-| **Total** | **116** |
+| **Total** | **118** |
 
 ## upstream-sync/2.7.9
 
@@ -35,7 +35,7 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 | #22 | PAR-D12 | [2.7.9] Launch working directory for exe-override launches (test under Wine) | upstream-drift | P1 |
 | #112 | sync-18 review 3 | Record NR in-place swaps (SwapNeuralAddonVersionAsync / SwapNeuralRenderingDllAsync) in the update history after sync/10-19 merges | upstream-drift | P2 |
 
-Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30f632`, #20/#21 `8e06564`, #13/#14 `8aeca3f`, #12 `d49f1af`, #18 `b8fcee2`. Still on lane branches: #10/#19 (`sync/10-19`), #17 (`sync/17`). Not started: #11, #15, #16. Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.7.6–2.7.9)`.
+Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30f632`, #20/#21 `8e06564`, #13/#14 `8aeca3f`, #12 `d49f1af`, #18 `b8fcee2`, #10/#19 `b87c35b`, #17 `dfe35f4`; integration fixes and #112 (NR swaps in the update history) `a108618`. Not started: #11, #15, #16. Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.7.6–2.7.9)`.
 
 ## upstream-sync/2.8.5
 
@@ -143,6 +143,8 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #113 | sync-10-19 review 3 | Manual Update All reports every component as "updated" even when nothing changed (all component types) | audit:ui | P2 |
 | #114 | sync-10-19 review 3 | DLSS5 Feeder swap re-downloads the whole release zip per game on every manual run | audit:data-safety | P3 |
 | #115 | sync-10-19 review 4 | Legacy add-on-only DLSS5 Feeder installs: pin change always fails and Update All reports them as failed | audit:ui | P2 |
+| #117 | sync-10-19 review 6 | Test: Full Refresh re-fetches NR version lists | hygiene | P3 |
+| #118 | sync-10-19 re-review nit 2 | Record-copy uses indented JSON options (perf nit) | hygiene | P3 |
 
 ## feature-parity
 
