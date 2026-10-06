@@ -12,18 +12,39 @@ namespace RHI.Platform.Linux.Detection;
 /// </summary>
 public sealed partial class PcGamingWikiGraphicsApiService
 {
+    /// <summary>Pause applied after a timeout/network error, or a 429 without a usable Retry-After.</summary>
+    internal static readonly TimeSpan DefaultPause = TimeSpan.FromMinutes(5);
+    internal static readonly TimeSpan MinPause = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan MaxPause = TimeSpan.FromMinutes(15);
+
+    /// <summary>PCGW documents 60 requests/minute; one request per second stays under it.</summary>
+    private static readonly TimeSpan DefaultMinRequestGap = TimeSpan.FromSeconds(1);
+
     private readonly HttpClient _http;
     private readonly string _cachePath;
+    private readonly TimeProvider _time;
+    private readonly TimeSpan _minRequestGap;
     private readonly SemaphoreSlim _cacheGate = new(1, 1);
+    private readonly SemaphoreSlim _requestGate = new(1, 1);
     private Dictionary<string, string[]>? _cache;
+    private long _pausedUntilUtcTicks;
 
-    public PcGamingWikiGraphicsApiService(HttpClient http, string? cachePath = null)
+    public PcGamingWikiGraphicsApiService(
+        HttpClient http,
+        string? cachePath = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? minRequestGap = null)
     {
         _http = http;
         _cachePath = cachePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "RHI", "pcgw_graphics_api_cache.json");
+        _time = timeProvider ?? TimeProvider.System;
+        _minRequestGap = minRequestGap ?? DefaultMinRequestGap;
     }
+
+    /// <summary>True while PCGW requests are paused after a rate limit or failure; expires on its own.</summary>
+    public bool IsPaused => _time.GetUtcNow().UtcTicks < Volatile.Read(ref _pausedUntilUtcTicks);
 
     public async Task<GraphicsApiDetection> ResolveAndFetchAsync(
         string gameName,
@@ -58,18 +79,10 @@ public sealed partial class PcGamingWikiGraphicsApiService
         if (cache.TryGetValue(uri.AbsoluteUri, out var cachedNames))
             return FromNames(cachedNames, $"PCGamingWiki API table: {string.Join(", ", cachedNames)}");
 
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        linked.CancelAfter(TimeSpan.FromSeconds(8));
+        var html = await GetTextAsync(uri, TimeSpan.FromSeconds(8), cancellationToken).ConfigureAwait(false);
+        if (html is null)
+            return GraphicsApiDetection.Unknown with { Evidence = $"PCGamingWiki unavailable for {gameName}; not cached, retried later" };
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(
-            request,
-            HttpCompletionOption.ResponseContentRead,
-            linked.Token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-        var html = await response.Content.ReadAsStringAsync(linked.Token).ConfigureAwait(false);
         var apis = ParseWindowsApis(html);
         if (apis.Count == 0)
             return GraphicsApiDetection.Unknown with { Evidence = $"PCGamingWiki API table contained no Windows renderer for {gameName}" };
@@ -115,15 +128,11 @@ public sealed partial class PcGamingWikiGraphicsApiService
         if (string.IsNullOrWhiteSpace(gameName))
             return null;
 
-        var url = $"https://www.pcgamingwiki.com/w/api.php?action=opensearch&search={Uri.EscapeDataString(gameName)}&limit=5&format=json";
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        linked.CancelAfter(TimeSpan.FromSeconds(5));
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, linked.Token).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        var url = new Uri($"https://www.pcgamingwiki.com/w/api.php?action=opensearch&search={Uri.EscapeDataString(gameName)}&limit=5&format=json");
+        var json = await GetTextAsync(url, TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+        if (json is null)
+            return null;
 
-        var json = await response.Content.ReadAsStringAsync(linked.Token).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
         if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() < 4)
             return null;
@@ -139,6 +148,85 @@ public sealed partial class PcGamingWikiGraphicsApiService
                 return safe.AbsoluteUri;
         }
 
+        return null;
+    }
+
+    /// <summary>
+    /// Sends one PCGW request through the shared gate (serialised, minimum gap between requests).
+    /// Returns null when paused, on a non-success status, or on a timeout/network failure. 429 and
+    /// 503 pause all PCGW traffic for the server's Retry-After (clamped); timeouts and network
+    /// errors pause for <see cref="DefaultPause"/>. The pause expires, so the session recovers.
+    /// </summary>
+    private async Task<string?> GetTextAsync(Uri uri, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        if (IsPaused)
+            return null;
+
+        await _requestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var sent = false;
+        try
+        {
+            // Another caller may have tripped the pause while this one queued.
+            if (IsPaused)
+                return null;
+
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            linked.CancelAfter(timeout);
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
+            sent = true;
+            try
+            {
+                using var response = await _http.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseContentRead,
+                    linked.Token).ConfigureAwait(false);
+                if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
+                {
+                    Pause(ParseRetryAfter(response, _time.GetUtcNow()) ?? DefaultPause);
+                    return null;
+                }
+                if (!response.IsSuccessStatusCode)
+                    return null;
+                return await response.Content.ReadAsStringAsync(linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                Pause(DefaultPause);
+                return null;
+            }
+            catch (HttpRequestException)
+            {
+                Pause(DefaultPause);
+                return null;
+            }
+        }
+        finally
+        {
+            if (sent && _minRequestGap > TimeSpan.Zero)
+                await Task.Delay(_minRequestGap, _time, CancellationToken.None).ConfigureAwait(false);
+            _requestGate.Release();
+        }
+    }
+
+    private void Pause(TimeSpan requested)
+    {
+        var until = _time.GetUtcNow() + ClampPause(requested);
+        Volatile.Write(ref _pausedUntilUtcTicks, until.UtcTicks);
+    }
+
+    /// <summary>Bounds a pause so a bogus Retry-After neither disables PCGW for hours nor hot-loops.</summary>
+    internal static TimeSpan ClampPause(TimeSpan requested)
+        => requested < MinPause ? MinPause : requested > MaxPause ? MaxPause : requested;
+
+    /// <summary>Reads Retry-After (delta-seconds or HTTP-date); null when absent.</summary>
+    internal static TimeSpan? ParseRetryAfter(HttpResponseMessage response, DateTimeOffset now)
+    {
+        var header = response.Headers.RetryAfter;
+        if (header?.Delta is TimeSpan delta)
+            return delta;
+        if (header?.Date is DateTimeOffset date)
+            return date > now ? date - now : TimeSpan.Zero;
         return null;
     }
 
