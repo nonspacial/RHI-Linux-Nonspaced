@@ -40,8 +40,8 @@ public static class LinuxGameIdentityService
             : edit!.LaunchProvider;
 
         var discoveredSharedLauncher = IsSharedLauncherExecutable(game.LaunchExecutablePath);
-        // A detector may already have found no real game folder (e.g. a Lutris wrapper script);
-        // that verdict must survive, or the placeholder folder would become the patch target.
+        // A detector may already have decided its folder is no confirmed patch target;
+        // that fail-closed verdict must survive identity resolution.
         var detectorRequiresTarget = game.RequiresExplicitPatchTarget;
         game.RequiresExplicitPatchTarget = discoveredSharedLauncher || detectorRequiresTarget;
         game.PatchTargetAuthority = "Automatic";

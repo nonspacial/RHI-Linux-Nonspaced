@@ -67,7 +67,9 @@ public sealed class LutrisWrapperDetectionTests : IDisposable
             game_slug: blue-prince
             name: Blue Prince
             """);
-        var rekordConfig = Config("rekordbox-setup-1761693617", $"""
+        // A wrapper driving a whole prefix has no real game folder (Rekordbox: an application, not a
+        // game). It is not listed at all.
+        Config("rekordbox-setup-1761693617", $"""
             game:
               exe: {rekordWrapper}
               prefix: {prefix}
@@ -86,27 +88,50 @@ public sealed class LutrisWrapperDetectionTests : IDisposable
 
         var games = LutrisGameDetector.DetectIn([ConfigRoot], Home, CancellationToken.None);
 
-        Assert.Equal(["Blue Prince", "Rekordbox"], games.Select(g => g.Name).Order().ToArray());
-        Assert.DoesNotContain(games, g => PathEq(g.InstallPath, Bin) || PathEq(g.InstallPath, prefix));
-
-        var blue = games.Single(g => g.Name == "Blue Prince");
+        var blue = Assert.Single(games);
+        Assert.Equal("Blue Prince", blue.Name);
         Assert.Equal(gameDir, blue.InstallPath);
         Assert.Equal(gameExe, blue.ExecutablePath);
         Assert.Equal(blueWrapper, blue.LaunchExecutablePath);
         Assert.False(blue.RequiresExplicitPatchTarget);
+        Assert.Null(blue.LibraryIdentityPath);
+    }
 
-        var rekord = games.Single(g => g.Name == "Rekordbox");
-        Assert.True(rekord.RequiresExplicitPatchTarget);
-        Assert.Null(rekord.ExecutablePath);
-        Assert.Equal(rekordWrapper, rekord.LaunchExecutablePath);
-        Assert.Equal(rekordConfig, rekord.LibraryIdentityPath);
-        Assert.Equal(prefix, rekord.PrefixPath);
-        Assert.Equal("lutris 'lutris:rungame/rekordbox-setup'", rekord.LaunchCommand);
+    [Fact]
+    public void WrapperWithNoResolvableGameFolder_YieldsNoGame()
+    {
+        // working_dir is a shared bin folder and the prefix is a whole Wine prefix: neither is a game folder.
+        var wrapper = Script("rekordbox-linux");
+        var prefix = WinePrefix("rekordbox");
+        Config("rekordbox-setup-1761693617", $"""
+            game:
+              exe: {wrapper}
+              prefix: {prefix}
+              working_dir: {Bin}
+            name: Rekordbox
+            """);
 
-        // The flag survives identity resolution, so nothing is probed or deployed until Edit game.
-        LinuxGameIdentityService.ApplyDetectedIdentity(rekord);
-        Assert.True(rekord.RequiresExplicitPatchTarget);
-        Assert.False(rekord.HasConfirmedPatchTarget);
+        Assert.Empty(LutrisGameDetector.DetectIn([ConfigRoot], Home, CancellationToken.None));
+    }
+
+    [Fact]
+    public void DetectorPatchTargetVerdict_SurvivesIdentityResolution()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(Home, "Games", "x")).FullName;
+        var game = new RHI.Core.Models.DetectedGame
+        {
+            Name = "X",
+            InstallPath = dir,
+            Source = "Lutris",
+            ExecutablePath = Pe(dir, "X.exe"),
+            RequiresExplicitPatchTarget = true
+        };
+
+        LinuxGameIdentityService.ApplyDetectedIdentity(game);
+
+        Assert.True(game.RequiresExplicitPatchTarget);
+        Assert.False(game.HasConfirmedPatchTarget);
+        Assert.Null(game.ExecutablePath);
     }
 
     [Fact]

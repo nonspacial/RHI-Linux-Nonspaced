@@ -35,16 +35,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     workingDir = Expand(workingDir);
                     exe = ResolveRelativeExe(exe, prefix, workingDir);
                     var install = ResolveInstallRoot(exe, workingDir, prefix, home);
-                    var launchOnly = install is null;
-                    if (launchOnly)
-                    {
-                        // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix).
-                        // Keep it launchable through Lutris when its launcher exists, anchored on the Lutris
-                        // config folder, and require an explicit patch target before anything is probed or
-                        // deployed. A config whose launcher is gone stays hidden, as before.
-                        if (exe is null || !File.Exists(exe)) continue;
-                        install = configRoot;
-                    }
+                    // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix,
+                    // such as an application installed through Lutris): not a game, not listed.
+                    if (install is null) continue;
                     var slug = ResolveLutrisSlug(Path.GetFileNameWithoutExtension(file));
                     var configuredRunner = MatchValue(text, "runner");
                     var wineVersion = MatchSectionValue(text, "wine", "version");
@@ -56,19 +49,15 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         : null;
                     var wineBinary = hasWineRuntime ? ResolveLutrisWineBinary(wineVersion) : null;
                     var exeExists = exe is not null && File.Exists(exe);
-                    string? detectedExecutable = launchOnly
-                        ? null
-                        : exeExists && IsWithin(install!, exe!) ? exe : DetectionHelpers.FindLikelyExecutable(install!);
+                    var detectedExecutable = exeExists && IsWithin(install, exe!) ? exe : DetectionHelpers.FindLikelyExecutable(install);
 
                     var game = new DetectedGame
                     {
                         Name = name,
-                        InstallPath = install!,
+                        InstallPath = install,
                         Source = "Lutris",
                         ExecutablePath = detectedExecutable,
                         LaunchExecutablePath = exeExists ? exe : detectedExecutable,
-                        LibraryIdentityPath = launchOnly ? file : null,
-                        RequiresExplicitPatchTarget = launchOnly,
                         PrefixPath = Directory.Exists(prefix) ? prefix : null,
                         Runner = layerType switch
                         {

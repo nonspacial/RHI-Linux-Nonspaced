@@ -78,7 +78,8 @@ public static class LinuxPaths
 
     /// <summary>
     /// Lutris game configs. The Wine detector skips every prefix these reference, so a root missing
-    /// here would make that launcher's games vanish rather than merely duplicate.
+    /// here would make that launcher's games vanish rather than merely duplicate. (A Lutris entry with
+    /// no real game folder, e.g. an application behind a wrapper script, is deliberately not listed.)
     /// </summary>
     internal static IEnumerable<string> LutrisConfigRootCandidates(string home, string configHome, string dataHome)
     {
