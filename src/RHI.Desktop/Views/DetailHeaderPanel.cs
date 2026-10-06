@@ -1,7 +1,8 @@
-using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 
 namespace RHI.Desktop.Views;
@@ -30,7 +31,11 @@ public enum DetailHeaderRole
 /// 3. if they do not fit even at the minimum scale, the actions move to their own line(s) below the
 ///    title row, left-aligned, measured at the panel width so they wrap;
 /// 4. the title row then trims its text with an ellipsis as the last resort.
-/// The scale only ever decreases as the width decreases, so the header never jumps back up.
+/// The scale is chosen once per measure from an off-tree width estimate (<see cref="WidthEstimator"/>: text via
+/// FormattedText at the candidate sizes, plus paddings/borders/spacings), so it depends only on the width and the
+/// content: it never rises as the width falls and is the same whichever way the window is resized. The chosen
+/// values are then written once (only when they change), the affected controls are invalidated, and the children
+/// are measured a single time. At scale 1 style-provided values are cleared back to the style.
 /// </summary>
 public sealed class DetailHeaderPanel : Panel
 {
@@ -42,10 +47,16 @@ public sealed class DetailHeaderPanel : Panel
 
     private const double TitleMinFontSize = 16;
     private const double BadgeMinSize = 36;
-    private const int SearchSteps = 10;
+    private const int SearchSteps = 12;
+    // Rounding headroom between the estimate and the real measure.
+    private const double FitTolerance = 1;
+    // A one-line header keeps at least this gap between the badges and the first action button.
+    private const double MinActionsGap = 12;
 
-    // Authored values captured before the panel first overrides them.
-    private readonly ConditionalWeakTable<Control, Authored> _authored = new();
+    private List<RoleEntry>? _roles;
+    // Authored values are captured once per control, before the panel first writes them, and survive re-attachment.
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RoleEntry> _entries = new();
+    private readonly List<Control> _watched = [];
     private bool _stacked;
 
     static DetailHeaderPanel() => AffectsMeasure<DetailHeaderPanel>(RowSpacingProperty);
@@ -65,50 +76,48 @@ public sealed class DetailHeaderPanel : Panel
     /// <summary>Current typography scale: 1 = authored sizes, 0 = minimum sizes.</summary>
     public double Scale { get; private set; } = 1;
 
+    /// <summary>Chooses the typography scale for an available width without touching the live controls.</summary>
+    public (double Scale, bool Stacked) ChooseScale(double availableWidth)
+    {
+        if (Children.Count != 2 || double.IsInfinity(availableWidth)) return (1, false);
+        var roles = Roles();
+        bool Fits(double scale)
+        {
+            var estimator = new WidthEstimator(new WidthEstimator.Values
+            {
+                FontSize = c => Find(roles, c) is { } r ? r.FontSizeAt(scale) : null,
+                Padding = c => Find(roles, c) is { } r ? r.PaddingAt(scale) : null,
+                Width = c => Find(roles, c) is { } r ? r.WidthAt(scale) : null
+            });
+            return estimator.Estimate(Children[0]) + estimator.Estimate(Children[1]) + MinActionsGap + FitTolerance <= availableWidth;
+        }
+
+        if (Fits(1)) return (1, false);
+        if (!Fits(0)) return (0, true);
+        double lo = 0, hi = 1;
+        for (var i = 0; i < SearchSteps; i++)
+        {
+            var mid = (lo + hi) / 2;
+            if (Fits(mid)) lo = mid; else hi = mid;
+        }
+        return (lo, false);
+    }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         if (Children.Count != 2)
             throw new InvalidOperationException($"{nameof(DetailHeaderPanel)} expects exactly two children (title row, actions).");
         var title = Children[0];
         var actions = Children[1];
-        var scaled = ScaledDescendants();
-        var unbounded = new Size(double.PositiveInfinity, availableSize.Height);
 
-        bool FitsOnOneLine(double scale)
-        {
-            Apply(scaled, scale);
-            title.Measure(unbounded);
-            actions.Measure(unbounded);
-            return title.DesiredSize.Width + actions.DesiredSize.Width <= availableSize.Width;
-        }
+        var (scale, stacked) = ChooseScale(availableSize.Width);
+        Scale = scale;
+        _stacked = stacked;
+        ApplyOnce(scale);
 
-        double chosen;
-        if (double.IsInfinity(availableSize.Width) || FitsOnOneLine(1))
-        {
-            chosen = 1;
-            _stacked = false;
-        }
-        else if (!FitsOnOneLine(0))
-        {
-            chosen = 0;
-            _stacked = true;
-        }
-        else
-        {
-            double lo = 0, hi = 1;
-            for (var i = 0; i < SearchSteps; i++)
-            {
-                var mid = (lo + hi) / 2;
-                if (FitsOnOneLine(mid)) lo = mid; else hi = mid;
-            }
-            chosen = lo;
-            _stacked = false;
-        }
-
-        Scale = chosen;
-        Apply(scaled, chosen);
         if (!_stacked)
         {
+            var unbounded = new Size(double.PositiveInfinity, availableSize.Height);
             actions.Measure(unbounded);
             var actionsWidth = actions.DesiredSize.Width;
             title.Measure(double.IsInfinity(availableSize.Width)
@@ -144,70 +153,150 @@ public sealed class DetailHeaderPanel : Panel
         return finalSize;
     }
 
-    private List<(Control Control, DetailHeaderRole Role, Authored Authored)> ScaledDescendants()
+    // Writes the chosen values once; only controls whose value really changes are touched, and each is invalidated
+    // together with its template and its ancestors below this panel, so the single measure that follows is fresh.
+    private void ApplyOnce(double scale)
     {
-        var list = new List<(Control, DetailHeaderRole, Authored)>();
-        foreach (var visual in this.GetVisualDescendants())
+        foreach (var role in Roles())
         {
-            if (visual is not Control control) continue;
-            var role = GetRole(control);
-            if (role == DetailHeaderRole.None) continue;
-            if (!_authored.TryGetValue(control, out var authored))
-            {
-                authored = Authored.Capture(control);
-                _authored.Add(control, authored);
-            }
-            list.Add((control, role, authored));
+            if (!role.Control.IsVisible) continue;
+            if (role.Apply(scale)) InvalidateForRemeasure(role.Control);
         }
-        return list;
+    }
+
+    private void InvalidateForRemeasure(Control control)
+    {
+        control.InvalidateMeasure();
+        foreach (var d in control.GetVisualDescendants().OfType<Layoutable>()) d.InvalidateMeasure();
+        for (var node = control.GetVisualParent(); node is Layoutable l && !ReferenceEquals(node, this); node = node.GetVisualParent())
+            l.InvalidateMeasure();
+    }
+
+    private static RoleEntry? Find(List<RoleEntry> roles, Control c)
+    {
+        foreach (var r in roles) if (ReferenceEquals(r.Control, c)) return r;
+        return null;
+    }
+
+    // Role controls are XAML children (logical tree), not template parts; cached until the panel is re-attached.
+    private List<RoleEntry> Roles()
+        => _roles ??= this.GetLogicalDescendants().OfType<Control>()
+            .Where(c => GetRole(c) != DetailHeaderRole.None)
+            .Select(c => _entries.GetValue(c, key => new RoleEntry(key, GetRole(key))))
+            .ToList();
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _roles = null;
+        // A content or visibility change that keeps a child's desired size would not re-measure this panel; the
+        // chosen scale depends on it, so ask for a measure explicitly.
+        foreach (var c in this.GetLogicalDescendants().OfType<Control>())
+        {
+            c.PropertyChanged += OnDescendantPropertyChanged;
+            _watched.Add(c);
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        foreach (var c in _watched) c.PropertyChanged -= OnDescendantPropertyChanged;
+        _watched.Clear();
+        _roles = null;
+    }
+
+    private void OnDescendantPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == TextBlock.TextProperty || e.Property == ContentControl.ContentProperty || e.Property == IsVisibleProperty)
+            InvalidateMeasure();
     }
 
     private static double Lerp(double min, double max, double scale) => min + (max - min) * scale;
 
-    private void Apply(List<(Control Control, DetailHeaderRole Role, Authored Authored)> scaled, double scale)
+    /// <summary>A role control with its authored values (captured before the panel first writes them).</summary>
+    private sealed class RoleEntry
     {
-        ApplyValues(scaled, scale);
-        // A changed descendant only invalidates itself; its intermediate panels would otherwise answer the
-        // trial measures below from their cached desired size.
-        foreach (var (control, _, _) in scaled)
-            for (var node = control.GetVisualParent(); node is Layoutable layoutable && !ReferenceEquals(node, this); node = node.GetVisualParent())
-                layoutable.InvalidateMeasure();
-    }
+        private readonly bool _fontSizeLocal, _paddingLocal;
+        private readonly double _fontSize, _width, _height;
+        private readonly Thickness _padding;
 
-    private static void ApplyValues(List<(Control Control, DetailHeaderRole Role, Authored Authored)> scaled, double scale)
-    {
-        foreach (var (control, role, a) in scaled)
+        public RoleEntry(Control control, DetailHeaderRole role)
         {
-            switch (role)
+            Control = control;
+            Role = role;
+            switch (control)
             {
-                case DetailHeaderRole.Title when control is TextBlock text:
-                    text.FontSize = scale >= 1 ? a.FontSize : Lerp(Math.Min(TitleMinFontSize, a.FontSize), a.FontSize, scale);
+                case TextBlock t:
+                    _fontSizeLocal = t.IsSet(TextBlock.FontSizeProperty);
+                    _fontSize = t.FontSize;
                     break;
-                case DetailHeaderRole.Subtitle when control is TextBlock text:
-                    text.FontSize = scale >= 1 ? a.FontSize : Lerp(a.FontSize - 1, a.FontSize, scale);
-                    break;
-                case DetailHeaderRole.Badge:
-                    var size = scale >= 1 ? a.Width : Lerp(Math.Min(BadgeMinSize, a.Width), a.Width, scale);
-                    control.Width = size;
-                    control.Height = size * (a.Height / a.Width);
-                    break;
-                case DetailHeaderRole.Action when control is Button button:
-                    button.FontSize = scale >= 1 ? a.FontSize : Lerp(a.FontSize - 1, a.FontSize, scale);
-                    var p = a.Padding;
-                    var f = scale >= 1 ? 1 : Lerp(0.75, 1, scale);
-                    button.Padding = new Thickness(p.Left * f, p.Top * f, p.Right * f, p.Bottom * f);
+                case Button b:
+                    _fontSizeLocal = b.IsSet(TemplatedControl.FontSizeProperty);
+                    _fontSize = b.FontSize;
+                    _paddingLocal = b.IsSet(TemplatedControl.PaddingProperty);
+                    _padding = b.Padding;
                     break;
             }
+            _width = control.Width;
+            _height = control.Height;
         }
-    }
 
-    private sealed record Authored(double FontSize, double Width, double Height, Thickness Padding)
-    {
-        public static Authored Capture(Control control) => control switch
+        public Control Control { get; }
+        public DetailHeaderRole Role { get; }
+
+        public double? FontSizeAt(double scale) => Role switch
         {
-            TextBlock t => new(t.FontSize, t.Width, t.Height, default),
-            Button b => new(b.FontSize, b.Width, b.Height, b.Padding),
-            _ => new(double.NaN, control.Width, control.Height, default)
+            DetailHeaderRole.Title => scale >= 1 ? _fontSize : Lerp(Math.Min(TitleMinFontSize, _fontSize), _fontSize, scale),
+            DetailHeaderRole.Subtitle or DetailHeaderRole.Action => scale >= 1 ? _fontSize : Lerp(_fontSize - 1, _fontSize, scale),
+            _ => null
         };
+
+        public Thickness? PaddingAt(double scale)
+        {
+            if (Role != DetailHeaderRole.Action) return null;
+            var f = scale >= 1 ? 1 : Lerp(0.75, 1, scale);
+            return new Thickness(_padding.Left * f, _padding.Top * f, _padding.Right * f, _padding.Bottom * f);
+        }
+
+        public double? WidthAt(double scale)
+            => Role == DetailHeaderRole.Badge && !double.IsNaN(_width)
+                ? (scale >= 1 ? _width : Lerp(Math.Min(BadgeMinSize, _width), _width, scale))
+                : null;
+
+        /// <summary>Writes the values for <paramref name="scale"/>; true when anything changed.</summary>
+        public bool Apply(double scale)
+        {
+            var changed = false;
+            switch (Role)
+            {
+                case DetailHeaderRole.Title or DetailHeaderRole.Subtitle when Control is TextBlock text:
+                    changed |= Set(text, TextBlock.FontSizeProperty, FontSizeAt(scale)!.Value, scale >= 1 && !_fontSizeLocal);
+                    break;
+                case DetailHeaderRole.Action when Control is Button button:
+                    changed |= Set(button, TemplatedControl.FontSizeProperty, FontSizeAt(scale)!.Value, scale >= 1 && !_fontSizeLocal);
+                    changed |= Set(button, TemplatedControl.PaddingProperty, PaddingAt(scale)!.Value, scale >= 1 && !_paddingLocal);
+                    break;
+                case DetailHeaderRole.Badge when WidthAt(scale) is { } size:
+                    changed |= Set(Control, WidthProperty, size, false);
+                    changed |= Set(Control, HeightProperty, size * (_height / _width), false);
+                    break;
+            }
+            return changed;
+        }
+
+        // At scale 1 a value that came from a style is cleared back to the style rather than pinned locally.
+        private static bool Set<T>(Control control, StyledProperty<T> property, T value, bool clearToStyle)
+        {
+            if (clearToStyle)
+            {
+                if (!control.IsSet(property)) return false;
+                control.ClearValue(property);
+                return true;
+            }
+            if (control.IsSet(property) && EqualityComparer<T>.Default.Equals(control.GetValue(property), value)) return false;
+            control.SetValue(property, value);
+            return true;
+        }
     }
 }

@@ -119,8 +119,8 @@
               <StackPanel VerticalAlignment="Center">
                 <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
-                <TextBlock views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"
-                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="SelectedSourceText" views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedSource}"/>
               </StackPanel>
             </DockPanel>
             <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
