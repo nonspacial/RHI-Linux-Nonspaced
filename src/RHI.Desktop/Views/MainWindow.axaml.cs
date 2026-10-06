@@ -69,6 +69,10 @@ public sealed partial class MainWindow : Window
         ApplyDetailSectionLayout();
         InitializeLinuxUx();
         InitializeSectionSummaries();
+        // The full title is only offered as a tooltip when the header had to trim it.
+        if (this.FindControl<TextBlock>("SelectedTitleText") is { } titleText)
+            ToolTip.AddToolTipOpeningHandler(titleText, (_, e) =>
+                e.Cancel = !titleText.TextLayout.TextLines.Any(line => line.HasCollapsed));
     }
 
     private async void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e)

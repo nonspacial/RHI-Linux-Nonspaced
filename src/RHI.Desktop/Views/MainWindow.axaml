@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="using:RHI.Core.Models"
         xmlns:vm="using:RHI.Desktop.ViewModels"
+        xmlns:views="using:RHI.Desktop.Views"
         x:Class="RHI.Desktop.Views.MainWindow"
         Width="1450" Height="900" MinWidth="1080" MinHeight="680"
         Title="{DynamicResource Ui.WindowTitle}"
@@ -95,38 +96,50 @@
       <!-- Detail panel -->
       <ScrollViewer x:Name="DetailScroller" Grid.Column="1" Background="#121518">
         <Grid x:Name="DetailRoot" Margin="24" RowDefinitions="Auto,Auto" RowSpacing="14">
-          <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
-            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-              <StackPanel VerticalAlignment="Center">
-                <TextBlock Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-                <TextBlock Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"/>
+          <!-- Responsive header: steps typography down, then moves the actions below the title, then trims (DetailHeaderPanel). -->
+          <views:DetailHeaderPanel Grid.Row="0" RowSpacing="8">
+            <DockPanel HorizontalAlignment="Left" VerticalAlignment="Center">
+              <!-- Identity badges: first = library source, second = launcher/platform. Never shrunk by trimming. -->
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="10" Margin="10,0,0,0" VerticalAlignment="Center">
+                <StackPanel.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.Or}">
+                    <Binding Path="ShowLibraryProviderBadge"/>
+                    <Binding Path="ShowLaunchProviderBadge"/>
+                  </MultiBinding>
+                </StackPanel.IsVisible>
+                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                        Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
+                  <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
+                </Border>
+                <Border views:DetailHeaderPanel.Role="Badge" Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
+                        Padding="5" IsVisible="{Binding ShowLaunchProviderBadge}" ToolTip.Tip="{Binding LaunchProviderToolTip}">
+                  <Image Source="{Binding SelectedLaunchProviderIcon}" Stretch="Uniform"/>
+                </Border>
               </StackPanel>
-
-              <!-- Identity badges: first = library source, second = launcher/platform. -->
-              <Border Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
-                      Padding="5" IsVisible="{Binding ShowLibraryProviderBadge}" ToolTip.Tip="{Binding LibraryProviderToolTip}">
-                <Image Source="{Binding SelectedLibraryProviderIcon}" Stretch="Uniform"/>
-              </Border>
-              <Border Width="50" Height="50" CornerRadius="9" Background="#151A22" BorderBrush="#1E4858" BorderThickness="1"
-                      Padding="5" IsVisible="{Binding ShowLaunchProviderBadge}" ToolTip.Tip="{Binding LaunchProviderToolTip}">
-                <Image Source="{Binding SelectedLaunchProviderIcon}" Stretch="Uniform"/>
-              </Border>
-            </StackPanel>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="SelectedTitleText" views:DetailHeaderPanel.Role="Title" Text="{Binding SelectedTitle}" FontSize="25" FontWeight="SemiBold" Foreground="#E8ECF2"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedTitle}"/>
+                <TextBlock views:DetailHeaderPanel.Role="Subtitle" Text="{Binding SelectedSource}" FontSize="12" Foreground="#4DC9E6" Margin="0,4,0,0"
+                           TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+            </DockPanel>
+            <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8" VerticalAlignment="Center">
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding FavouriteActionText}" Command="{Binding ToggleFavouriteCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{Binding HideActionText}" Command="{Binding ToggleHiddenCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
-              <Button Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding RemoveManualGameCommand}" IsEnabled="{Binding CanRemoveManualGame}"
+              <!-- Only manually added games can be removed; hide the button for everything else. -->
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding RemoveManualGameCommand}" IsEnabled="{Binding CanRemoveManualGame}"
+                      IsVisible="{Binding SelectedGame.IsManuallyAdded, FallbackValue=False, TargetNullValue=False}"
                       ToolTip.Tip="{DynamicResource Ui.RemoveManualTip}"/>
-              <Button Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-              <Button Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
-              <Button Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
+              <Button views:DetailHeaderPanel.Role="Action" Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
                       ToolTip.Tip="{Binding LaunchToolTip}"
                       Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1"
                       CornerRadius="8" Padding="16,8"/>
-            </StackPanel>
-          </Grid>
+            </WrapPanel>
+          </views:DetailHeaderPanel>
 
           <!-- Detail sections are collapsible and drag-reorderable; Linux stores state in XDG_CONFIG_HOME. -->
           <StackPanel x:Name="DetailSectionsPanel" Grid.Row="1" Spacing="14">
