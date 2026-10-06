@@ -233,8 +233,24 @@ public sealed partial class MainWindow : Window
         footer.Children.Add(deploy); Grid.SetColumn(deploy, 2);
         footer.Children.Add(close); Grid.SetColumn(close, 3);
 
+        // Narrow dialogs (capped to the main window) put the versions under the games instead of beside them.
+        void ArrangeBody(double width)
+        {
+            var stacked = width < 700;
+            body.ColumnDefinitions = new ColumnDefinitions(stacked ? "*" : "*,Auto,*");
+            body.RowDefinitions = new RowDefinitions(stacked ? "Auto,Auto,Auto" : "*");
+            body.RowSpacing = stacked ? 14 : 0;
+            left.MinWidth = stacked ? 0 : 350;
+            right.MinWidth = stacked ? 0 : 270;
+            Grid.SetColumn(divider, stacked ? 0 : 1); Grid.SetRow(divider, stacked ? 1 : 0);
+            divider.Width = stacked ? double.NaN : 1;
+            divider.Height = stacked ? 1 : double.NaN;
+            Grid.SetColumn(right, stacked ? 0 : 2); Grid.SetRow(right, stacked ? 2 : 0);
+        }
+
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
-        root.Children.Add(body); Grid.SetRow(body, 0);
+        var bodyScroll = new ScrollViewer { Content = body, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled };
+        root.Children.Add(bodyScroll); Grid.SetRow(bodyScroll, 0);
         root.Children.Add(footer); Grid.SetRow(footer, 1);
 
         var dialog = new Window
@@ -247,6 +263,8 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = root
         };
+
+        dialog.SizeChanged += (_, args) => ArrangeBody(args.NewSize.Width);
 
         IReadOnlyList<DetectedGame> SelectedGames() => rows
             .Where(row => row.Check.IsChecked == true)
@@ -292,7 +310,7 @@ public sealed partial class MainWindow : Window
         deploy.Click += async (_, _) => await RunAsync(restoreMode: false);
         restore.Click += async (_, _) => await RunAsync(restoreMode: true);
         close.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async Task ShowSimpleMessageAsync(string title, string message)
@@ -311,7 +329,7 @@ public sealed partial class MainWindow : Window
             Content = panel
         };
         close.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void Settings_Click(object? sender, RoutedEventArgs e)
@@ -680,7 +698,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = root
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async Task<string?> PickFolderAsync(string title)
@@ -889,7 +907,7 @@ public sealed partial class MainWindow : Window
             Content = layout
         };
 
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void BrowseD3DCompiler47_Click(object? sender, RoutedEventArgs e)
@@ -999,7 +1017,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = root
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void BrowseDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e)
@@ -1174,7 +1192,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e)
@@ -1290,7 +1308,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e)
@@ -1438,7 +1456,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void RenoDxSettings_Click(object? sender, RoutedEventArgs e)
@@ -1563,7 +1581,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void OptiScalerSettings_Click(object? sender, RoutedEventArgs e)
@@ -1737,7 +1755,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private void ToggleSection_Click(object? sender, RoutedEventArgs e)

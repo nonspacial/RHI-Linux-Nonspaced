@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.VisualTree;
 using RHI.Desktop.ViewModels;
 
@@ -11,7 +12,7 @@ namespace RHI.Desktop.Views;
 
 /// <summary>
 /// Window-size responsiveness: the library column becomes a slide-out overlay below 900 px, the status-bar version
-/// hides below 700 px, and the toolbar overflow menu.
+/// hides below 700 px, the toolbar overflow menu, and dialogs capped to the main window.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -19,6 +20,7 @@ public sealed partial class MainWindow
     public const double LibraryOverlayBelow = 900;
     private const double LibraryOverlayMaxWidth = 340;
     private const double VersionTextHiddenBelow = 700;
+    private const double DialogSideMargin = 32;
 
     // Live source of the '…' menu: refilled on Opening; assigned before the first open so the presenter binds to it.
     private readonly System.Collections.ObjectModel.ObservableCollection<MenuItem> _overflowMenuItems = [];
@@ -168,5 +170,42 @@ public sealed partial class MainWindow
         if (button.Command is { } command && command.CanExecute(button.CommandParameter))
             command.Execute(button.CommandParameter);
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
+    }
+
+    /// <summary>Caps a dialog to the main window (width − 32 px, height) and lets its content scroll vertically.</summary>
+    private void FitDialogToOwner(Window dialog)
+    {
+        var maxWidth = Math.Max(200, LayoutWidth - DialogSideMargin);
+        var maxHeight = Math.Max(160, ClientSize.Height > 0 ? ClientSize.Height : Height);
+        dialog.MaxWidth = Math.Min(dialog.MaxWidth, maxWidth);
+        dialog.MinWidth = Math.Min(dialog.MinWidth, maxWidth);
+        if (!double.IsNaN(dialog.Width)) dialog.Width = Math.Min(dialog.Width, maxWidth);
+        dialog.MaxHeight = Math.Min(dialog.MaxHeight, maxHeight);
+        dialog.MinHeight = Math.Min(dialog.MinHeight, maxHeight);
+        if (!double.IsNaN(dialog.Height)) dialog.Height = Math.Min(dialog.Height, maxHeight);
+        // Dialogs that already own a scroll region keep it (their footers stay pinned); the rest scroll as a whole.
+        if (dialog.Content is Control content and not ScrollViewer
+            && !content.GetLogicalDescendants().Any(d => d is ScrollViewer or TabControl))
+        {
+            dialog.Content = null;
+            dialog.Content = new ScrollViewer
+            {
+                Content = content,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            };
+        }
+    }
+
+    private Task ShowFittedDialogAsync(Window dialog)
+    {
+        FitDialogToOwner(dialog);
+        return dialog.ShowDialog(this);
+    }
+
+    private Task<T> ShowFittedDialogAsync<T>(Window dialog)
+    {
+        FitDialogToOwner(dialog);
+        return dialog.ShowDialog<T>(this);
     }
 }
