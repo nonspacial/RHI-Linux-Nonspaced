@@ -16,3 +16,7 @@ Platform adaptations include:
 - native Linux games are not targets for Windows DLL injection components.
 
 RHI Linux remains a GPLv3 derivative of the upstream project.
+
+## Parity note: launch working directory (upstream 2.7.9, #22)
+
+Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
