@@ -12,7 +12,8 @@ public sealed record RenoDxModEntry(
     string? SnapshotUrl64,
     string? SnapshotUrl32,
     string? Notes,
-    bool IsGeneric = false)
+    bool IsGeneric = false,
+    bool IsWorkInProgress = false)
 {
     public string? UrlFor(PeArchitecture architecture)
         => RenoDxCatalogService.ResolveAddonUrl(
@@ -211,7 +212,8 @@ public sealed class RenoDxCatalogService
                 prior.SnapshotUrl64 ?? entry.SnapshotUrl64,
                 prior.SnapshotUrl32 ?? entry.SnapshotUrl32,
                 prior.Notes ?? entry.Notes,
-                entry.IsGeneric || prior.IsGeneric);
+                entry.IsGeneric || prior.IsGeneric,
+                prior.IsWorkInProgress);
         }
 
         return merged.Values.ToArray();
@@ -235,7 +237,10 @@ public sealed class RenoDxCatalogService
             if (!string.IsNullOrWhiteSpace(url32) && !LooksLikeAddonUrl(url32)) url32 = null;
             if (url64 is null && url32 is null) continue;
             var notes = item.TryGetProperty("notes", out var notesEl) ? notesEl.GetString()?.Trim() : null;
-            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes));
+            // Upstream RenoDXDbService.MapStatus: only "WIP" marks a mod as work in progress.
+            var wip = item.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String
+                && string.Equals(statusEl.GetString()?.Trim(), "WIP", StringComparison.OrdinalIgnoreCase);
+            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip));
         }
 
         return result

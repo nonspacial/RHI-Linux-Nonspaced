@@ -68,6 +68,7 @@ public sealed partial class MainWindow : Window
         _detailLayout = _detailLayoutStore.Load();
         ApplyDetailSectionLayout();
         InitializeLinuxUx();
+        InitializeSectionSummaries();
     }
 
     private async void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e)
@@ -1748,6 +1749,7 @@ public sealed partial class MainWindow : Window
         if (collapse)
             _detailLayout.CollapsedSections.Add(sectionKey);
         SaveDetailSectionLayout();
+        UpdateSectionSummaries();
     }
 
     private async void SectionDragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -1823,6 +1825,7 @@ public sealed partial class MainWindow : Window
             body.IsVisible = !isCollapsed;
             toggle.Content = isCollapsed ? "▶" : "▼";
         }
+        UpdateSectionSummaries();
     }
 
     private Control? FindSectionContainer(string key) => key switch

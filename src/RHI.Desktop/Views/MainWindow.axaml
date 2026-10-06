@@ -23,6 +23,7 @@
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
           <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
+          <Button Classes="rhi" Content="{DynamicResource Ui.AvailableHdrMods}" Click="AvailableHdrMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableHdrModsTip}"/>
           <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
           <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
           <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
@@ -138,6 +139,8 @@
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
                     <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0"/>
+                    <TextBlock x:Name="RuntimeSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
                   <Button x:Name="RuntimeSectionToggle" Grid.Column="2" Tag="Runtime" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
@@ -437,6 +440,8 @@
                     <TextBlock Text="{DynamicResource Ui.ManagedComponents}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
                     <TextBlock Text="{DynamicResource Ui.ManagedComponentsNote}"
                                Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ManagedComponentsSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
                   <Border Grid.Column="2" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5">
                     <TextBlock Text="{DynamicResource Ui.LinuxBackendActive}" Foreground="#5ECB7D" FontSize="11"/>
@@ -484,6 +489,8 @@
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
                     <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0"/>
+                    <TextBlock x:Name="ExtrasSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
+                               TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
                   <Button x:Name="ExtrasSectionToggle" Grid.Column="2" Tag="Extras" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
