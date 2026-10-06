@@ -122,13 +122,15 @@ public sealed class App : Application
             var lumaModeStore = new LumaModePreferenceStore();
             var lumaPolicy = new LumaPolicyService(upstreamManifest, lumaModeStore);
             var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
+            var updateLog = new ComponentUpdateLogStore();
             var managedComponents = new LinuxManagedComponentService(
                 records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
-                mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore);
+                mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
+                updateLog);
             var updateAll = new LinuxUpdateAllService(records, managedComponents);
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
-            desktop.MainWindow = new MainWindow { DataContext = vm };
+            desktop.MainWindow = new MainWindow { DataContext = vm, UpdateLogStore = updateLog };
         }
         base.OnFrameworkInitializationCompleted();
     }

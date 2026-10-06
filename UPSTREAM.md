@@ -31,6 +31,10 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 - 2.7.6 RenoDX Unity add-on: any `renodx-unityengine.addon64/32` URL (manifest, RHI database or wiki, including the old `notvoosh.github.io` Pages links) is resolved to the `NotVoosh/renodx-unity` GitHub Releases snapshot. Downloads are cached in `~/.cache/rhi-linux/renodx/` and reused unless the remote `Content-Length` explicitly differs (upstream 2.7.9 rule: a failed HEAD or missing length keeps the cache). Linux addition: a `.source` sidecar ties each cached file to its URL so a same-named add-on from another repository is never served from cache. Host allow-listing for catalogue URLs remains DEP-06.
 
+### #18 — Component update history (2.7.9)
+
+- **2.7.9 component update history (#18).** The "Updates" toolbar button opens a dated log (Today / Yesterday / full date, old → new version, clearable). Linux deviation: upstream logs global payload downloads; RHI Linux has no global staging, so it logs each per-game install, update and removal of RHI-managed components (manual actions, Update all and the background pass), including managed dependencies and failures. DLSS/Streamline DLL swaps, shader-pack catalogue refreshes and add-on selection changes are not recorded. Stored in `~/.local/share/rhi-linux/update-log.json` (newest 200 events, atomic writes; an unreadable file is copied aside and recording pauses until the history is cleared).
+
 ### #20/#21 — Shaders and ReShade channel (2.7.9)
 
 - **Shaders (2.7.9):** upstream's global shader "Off" overriding per-game overrides does not apply: RHI Linux has no global shader mode or global selection fallback; each game's pack selection is stored on its own ReShade record. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
