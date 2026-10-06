@@ -380,13 +380,16 @@ public sealed class ReShadeShaderPackService
         var result = new List<string>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        void Visit(string id)
+        void Visit(string id, bool explicitlySelected)
         {
+            // Never pull the user's local custom shaders in as a dependency (upstream 2.7.9):
+            // they deploy only when ticked explicitly, whatever a remote manifest declares.
+            if (!explicitlySelected && byId.TryGetValue(id, out var candidate) && candidate.IsCustom) return;
             if (!visited.Add(id)) return;
             if (byId.TryGetValue(id, out var pack))
             {
                 foreach (var dependency in pack.Requires ?? Array.Empty<string>())
-                    Visit(dependency);
+                    Visit(dependency, explicitlySelected: false);
                 result.Add(pack.Id);
             }
             else
@@ -396,7 +399,7 @@ public sealed class ReShadeShaderPackService
         }
 
         foreach (var id in selected.Where(x => !string.IsNullOrWhiteSpace(x)))
-            Visit(id.Trim());
+            Visit(id.Trim(), explicitlySelected: true);
 
         return result;
     }

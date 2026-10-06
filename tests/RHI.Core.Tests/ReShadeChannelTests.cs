@@ -118,6 +118,63 @@ public sealed class ReShadeChannelTests : IDisposable
     }
 
     [Fact]
+    public async Task CustomChannel_AfterSwitchFromStable_ReportsNoFalseUpdate()
+    {
+        // Upstream 2.7.9: a game moved to Custom kept flagging Stable updates. Here the channel
+        // lives on the record and is rewritten by the apply that switches it.
+        var (game, store) = CreateGame("custom-switch");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var service = NewService(store, handler, Path.Combine(_root, "custom-switch-cache"));
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var custom = Path.Combine(_root, "custom-switch", "MyReShade.dll");
+        PeArchitectureDetectorTests.WritePe(custom, 0x8664, 1_100_000);
+        StampReShadeSignature(custom);
+        var switched = await service.InstallAsync(game, new ReShadeInstallOptions
+        {
+            Channel = ReShadeChannel.Custom,
+            CustomDllPath = custom,
+            ManageIni = false
+        });
+        Assert.True(switched.Success, switched.Message);
+
+        handler.StableVersion = "10.0.0";
+        var requestsBefore = handler.RequestCount;
+        var status = await service.CheckUpdateAsync(game);
+
+        Assert.True(status.IsInstalled);
+        Assert.False(status.UpdateAvailable, status.Message);
+        Assert.Equal(ReShadeChannel.Custom, status.Channel);
+        Assert.Equal(requestsBefore, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task ShaderSelection_IsPerGameWithNoGlobalFallback()
+    {
+        // Upstream 2.7.9 fixed a global shader "Off" overriding per-game picks. RHI-Linux has no
+        // global shader mode: each game's selection lives on its own record and deploys as-is.
+        var (game, store) = CreateGame("per-game-shaders");
+        var compiler = Path.Combine(_root, "per-game-native", "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        var cache = Path.Combine(_root, "per-game-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var service = NewService(store, new MutableHandler(), cache);
+
+        var installed = await service.InstallAsync(game, new ReShadeInstallOptions
+        {
+            ManageIni = false,
+            D3DCompiler47Path = compiler,
+            ShaderPackIds = ["CrosireMaster"]
+        });
+
+        Assert.True(installed.Success, installed.Message);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
+        Assert.Equal(["CrosireMaster"], service.GetInstalledOptions(game).ShaderPackIds);
+        var other = CreateGame("per-game-other").Game;
+        other.SteamAppId = 4343;
+        Assert.Empty(service.GetInstalledOptions(other).ShaderPackIds);
+    }
+
+    [Fact]
     public async Task NightlyChannel_StagesArchitectureSpecificArtifact()
     {
         var handler = new MutableHandler { NightlyPayload = CreateNightlyZip("ReShade64.dll") };

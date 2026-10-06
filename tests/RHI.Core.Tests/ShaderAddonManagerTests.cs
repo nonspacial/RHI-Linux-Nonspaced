@@ -31,6 +31,22 @@ public sealed class ShaderAddonManagerTests : IDisposable
     }
 
     [Fact]
+    public void ExpandDependencies_NeverAutoSelectsCustomShaders()
+    {
+        // Upstream 2.7.9: the dependency pass ticked the user's custom folder. A pack that
+        // declares it as a requirement must not drag it in; an explicit tick still deploys it.
+        var custom = ReShadeShaderPackCatalog.CustomPackId;
+        var catalog = ReShadeShaderPackService.MergeManifestOverridesForTest(
+            new Dictionary<string, UpstreamShaderPackDefinition>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["RemotePack"] = new("RemotePack", "Remote Pack", "DirectUrl", "https://example.test/remote.zip", false, null, "OTA pack", "Extra", [custom, "CrosireMaster"], false),
+            });
+
+        Assert.Equal(["CrosireMaster", "RemotePack"], ReShadeShaderPackService.ExpandDependencies(["RemotePack"], catalog));
+        Assert.Equal(["CrosireMaster", "RemotePack", custom], ReShadeShaderPackService.ExpandDependencies(["RemotePack", custom], catalog));
+    }
+
+    [Fact]
     public void ShaderService_CustomSentinelUsesInjectedXdgRoot()
     {
         var custom = Path.Combine(_root, "custom-shaders");

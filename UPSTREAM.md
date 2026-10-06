@@ -19,6 +19,11 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 ## Parity notes (upstream 2.7.6–2.7.9)
 
+### #20/#21 — Shaders and ReShade channel (2.7.9)
+
+- **Shaders (2.7.9):** upstream's global shader "Off" overriding per-game overrides does not apply: RHI Linux has no global shader mode or global selection fallback; each game's pack selection is stored on its own ReShade record. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
+- **ReShade (2.7.9):** the Custom-channel false update does not apply: the channel is stored on the ReShade record and rewritten by the apply that changes it, so the update check never sees a stale channel. Covered by tests.
+
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
