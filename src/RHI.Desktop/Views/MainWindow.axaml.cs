@@ -68,6 +68,7 @@ public sealed partial class MainWindow : Window
         _detailLayout = _detailLayoutStore.Load();
         ApplyDetailSectionLayout();
         InitializeLinuxUx();
+        InitializeResponsive();
         InitializeSectionSummaries();
         // The full title and subtitle are only offered as a tooltip when the header had to trim them.
         foreach (var name in new[] { "SelectedTitleText", "SelectedSourceText" })

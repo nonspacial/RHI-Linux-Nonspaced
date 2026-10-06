@@ -92,33 +92,23 @@ public sealed partial class MainWindow
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var compact = vm.IsCompactView;
-        var main = this.FindControl<Grid>("MainContentGrid");
         var filters = this.FindControl<Border>("LibraryFilterBar");
         var detail = this.FindControl<Grid>("DetailRoot");
-        if (main is not null)
-            main.ColumnDefinitions = new ColumnDefinitions(compact ? "235,*" : "300,*");
         if (filters is not null)
             filters.IsVisible = !compact;
         if (detail is not null)
             detail.Margin = new Thickness(compact ? 12 : 24);
 
-        if (compact)
+        // 640 × 480 minimum in both views; the user's window is never enlarged. Compact keeps its 1280 × 760 maximum.
+        MinWidth = 640;
+        MinHeight = 480;
+        if (compact && (Width > 1280 || Height > 780))
         {
-            MinWidth = 1120;
-            MinHeight = 620;
-            if (Width > 1280 || Height > 780)
-            {
-                Width = 1280;
-                Height = 760;
-            }
+            Width = 1280;
+            Height = 760;
         }
-        else
-        {
-            MinWidth = 1080;
-            MinHeight = 680;
-            if (Width < 1320) Width = 1450;
-            if (Height < 820) Height = 900;
-        }
+        _libraryLayoutKey = null;
+        ApplyLibraryLayout();
     }
 
     private async Task ShowAddGameDialogForExecutableAsync(string executable)

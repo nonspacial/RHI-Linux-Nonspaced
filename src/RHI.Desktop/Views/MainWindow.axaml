@@ -4,47 +4,58 @@
         xmlns:vm="using:RHI.Desktop.ViewModels"
         xmlns:views="using:RHI.Desktop.Views"
         x:Class="RHI.Desktop.Views.MainWindow"
-        Width="1450" Height="900" MinWidth="1080" MinHeight="680"
+        Width="1450" Height="900" MinWidth="640" MinHeight="480"
         Title="{DynamicResource Ui.WindowTitle}"
         Background="#121518"
         DragDrop.AllowDrop="True" DragDrop.DragOver="GameFiles_DragOver" DragDrop.Drop="GameFiles_Drop">
   <Grid RowDefinitions="Auto,*,Auto">
-    <!-- Toolbar: deliberately mirrors the upstream RHI layout. -->
+    <!-- Toolbar: deliberately mirrors the upstream RHI layout. Always one row (ToolbarPanel): the brand subtitle hides
+         first, then buttons move from the right end into the '…' menu; Settings stays pinned at the far right. -->
     <Border Grid.Row="0" Padding="16,10" Background="#0F1318" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+      <views:ToolbarPanel x:Name="ToolbarRow" Spacing="8" LeadingSpacing="10" MinGap="16">
+        <!-- Below 900 px the library column becomes a slide-out overlay opened from here. -->
+        <Button x:Name="LibraryToggleButton" views:ToolbarPanel.Slot="Leading" Classes="rhi" Content="{DynamicResource Ui.LibraryToggle}"
+                Click="LibraryToggle_Click" ToolTip.Tip="{DynamicResource Ui.LibraryToggleTip}" IsVisible="False"/>
+        <StackPanel views:ToolbarPanel.Slot="Leading" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
           <Border Width="36" Height="36" CornerRadius="8" Background="#122830" BorderBrush="#1E4858" BorderThickness="1">
             <TextBlock Text="R" FontWeight="Bold" FontSize="20" Foreground="#4DC9E6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <StackPanel VerticalAlignment="Center">
             <TextBlock Text="RHI" FontSize="15" FontWeight="Bold" Foreground="#4DC9E6"/>
-            <TextBlock Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="#2A7A90"/>
+            <TextBlock views:ToolbarPanel.Collapsible="True" Text="{DynamicResource Ui.Tagline}" FontSize="10" Foreground="#2A7A90"/>
           </StackPanel>
         </StackPanel>
 
-        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.AvailableHdrMods}" Click="AvailableHdrMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableHdrModsTip}"/>
-          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
-                  ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
-          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.UpdateHistory}" Click="UpdateHistory_Click" ToolTip.Tip="{DynamicResource Ui.UpdateHistoryTip}"/>
-          <Border Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-          <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
-          <Button Classes="rhi" Content="{DynamicResource Ui.Settings}" Click="Settings_Click"/>
-        </StackPanel>
-      </Grid>
+        <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.AvailableHdrMods}" Click="AvailableHdrMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableHdrModsTip}"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.Refresh}" Command="{Binding RefreshCommand}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
+                ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateHistory}" Click="UpdateHistory_Click" ToolTip.Tip="{DynamicResource Ui.UpdateHistoryTip}"/>
+        <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
+        <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
+        <Button x:Name="ToolbarOverflowButton" views:ToolbarPanel.Slot="Overflow" Classes="rhi" Content="…"
+                ToolTip.Tip="{DynamicResource Ui.MoreActions}">
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="ToolbarOverflowMenu_Opening"/>
+          </Button.Flyout>
+        </Button>
+        <Button views:ToolbarPanel.Slot="Trailing" Classes="rhi" Content="{DynamicResource Ui.Settings}" Click="Settings_Click"/>
+      </views:ToolbarPanel>
     </Border>
 
     <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*">
+      <!-- Below 900 px the column is removed and the same sidebar opens over this dimmed backdrop (MainWindow.Responsive.cs). -->
+      <Border x:Name="LibraryBackdrop" Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.75" IsVisible="False" ZIndex="10"
+              PointerPressed="LibraryBackdrop_PointerPressed"/>
       <!-- Sidebar -->
       <Border x:Name="LibrarySidebar" Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0" ClipToBounds="True">
         <Grid RowDefinitions="Auto,Auto,Auto,*">
@@ -71,7 +82,7 @@
             <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="#6B7A8E" FontSize="10"/>
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
-                   SelectionChanged="GameLibrary_SelectionChanged" ClipToBounds="True"
+                   SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" KeyDown="GameLibrary_KeyDown" ClipToBounds="True"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
@@ -590,7 +601,7 @@
         </Grid>
       </ScrollViewer>
 
-      <Border Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.96" IsVisible="{Binding IsBusy}">
+      <Border Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.96" IsVisible="{Binding IsBusy}" ZIndex="20">
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
           <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
           <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="#A0AABB"/>
@@ -599,9 +610,10 @@
     </Grid>
 
     <Border Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10"/>
-        <TextBlock Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"/>
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+        <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
+        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"/>
       </Grid>
     </Border>
   </Grid>
