@@ -77,6 +77,27 @@ public sealed class WinePrefixDetectorTests : IDisposable
     }
 
     [Fact]
+    public async Task EaAndOriginLibraries_ListEachGame_NotTheLibraryFolder()
+    {
+        var prefix = Prefix(Path.Combine(_home, "Games", "ea"));
+        Exe(prefix, "Program Files/Electronic Arts/EA Desktop/EA Desktop/EADesktop.exe");
+        // Each product is its own entry, including one whose exe sits only under `bin/`.
+        var a = Exe(prefix, "Program Files/EA Games/Game A/bin/GameA.exe", bytes: 4096);
+        var b = Exe(prefix, "Program Files/EA Games/Game B/GameB.exe", bytes: 4096);
+        var c = Exe(prefix, "Program Files (x86)/Origin Games/Game C/GameC.exe", bytes: 4096);
+        // A loose exe in the library folder itself is not a game: the folder is never one entry.
+        Exe(prefix, "Program Files/EA Games/Cleanup.exe");
+
+        var games = (await Detect()).ToDictionary(g => g.Name, g => g.ExecutablePath);
+
+        Assert.Equal(a, games["Game A"]);
+        Assert.Equal(b, games["Game B"]);
+        Assert.Equal(c, games["Game C"]);
+        Assert.DoesNotContain("EA Games", games.Keys);
+        Assert.DoesNotContain("Origin Games", games.Keys);
+    }
+
+    [Fact]
     public async Task ProtonBuiltPrefix_LaunchesWithItsOwnWine_OrNotAtAll()
     {
         var dist = Path.Combine(_root, "GE-Proton10-32", "files");
