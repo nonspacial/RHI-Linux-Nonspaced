@@ -1248,7 +1248,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 var cleanup = await RemoveConflictingNeuralRenderingMethodsAsync(game, ManagedComponentKind.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
                 if (cleanup is not null) return cleanup;
                 var pin = _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder);
-                return await _dlss5Feeder.InstallAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, pin, cancellationToken).ConfigureAwait(false);
+                return await _dlss5Feeder.InstallAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, pin,
+                    _neuralVersionPins.GetNeuralRenderingDllVersion(game), cancellationToken).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -1265,6 +1266,29 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public void SetNeuralAddonVersionPin(DetectedGame game, ManagedComponentKind kind, string? releaseTag)
         => _neuralVersionPins.Set(game, kind, releaseTag);
+
+    public string? GetNeuralRenderingDllVersionPin(DetectedGame game)
+        => _neuralVersionPins.GetNeuralRenderingDllVersion(game);
+
+    public void SetNeuralRenderingDllVersionPin(DetectedGame game, string? version)
+        => _neuralVersionPins.SetNeuralRenderingDllVersion(game, version);
+
+    /// <summary>
+    /// Swaps the nvngx_dlssnr.dll owned by the installed ShortFuse or DLSS5 Feeder Full stack to the
+    /// stored NR DLL pin (or the newest manifest version). DX11 Bridge owns no NR DLL on Linux; its
+    /// game's own DLL stays under the regular DLSS swap row.
+    /// </summary>
+    public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(
+        DetectedGame game,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = PatchTargetGuard(game);
+        if (guard is not null) return Task.FromResult(guard);
+        var version = _neuralVersionPins.GetNeuralRenderingDllVersion(game);
+        if (IsShortFuseManaged(game)) return _shortFuse.SwapNeuralRenderingDllAsync(game, version, cancellationToken);
+        if (IsDlss5FeederFullManaged(game)) return _dlss5Feeder.SwapNeuralRenderingDllAsync(game, version, cancellationToken);
+        return Task.FromResult(ComponentOperationResult.Fail("No ShortFuse or DLSS5 Feeder Full stack owns nvngx_dlssnr.dll for this game; the version applies at the next install."));
+    }
 
     /// <summary>
     /// Brings an installed Neural Rendering add-on to its stored pin (or latest) by replacing only
@@ -1343,7 +1367,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             {
                 var cleanup = await RemoveConflictingNeuralRenderingMethodsAsync(game, ManagedComponentKind.ShortFuse, cancellationToken).ConfigureAwait(false);
                 if (cleanup is not null) return cleanup;
-                return await _shortFuse.InstallAsync(game, autoConfigEnabled, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false);
+                return await _shortFuse.InstallAsync(game, autoConfigEnabled, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse),
+                    _neuralVersionPins.GetNeuralRenderingDllVersion(game), cancellationToken).ConfigureAwait(false);
             },
             cancellationToken).ConfigureAwait(false);
     }
@@ -1644,9 +1669,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 deepFriedChickenPackagePath: null,
                 d3dCompiler47Path: null,
                 releaseTag: _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder),
+                neuralRenderingDllVersion: _neuralVersionPins.GetNeuralRenderingDllVersion(game),
                 cancellationToken: cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.InstallAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
-            ManagedComponentKind.ShortFuse => await _shortFuse.InstallAsync(game, _shortFuse.GetAutoConfigEnabled(game), _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.ShortFuse => await _shortFuse.InstallAsync(game, _shortFuse.GetAutoConfigEnabled(game), _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse),
+                _neuralVersionPins.GetNeuralRenderingDllVersion(game), cancellationToken).ConfigureAwait(false),
             _ => ComponentOperationResult.Fail($"{target} is not a Neural Rendering method.")
         };
     }

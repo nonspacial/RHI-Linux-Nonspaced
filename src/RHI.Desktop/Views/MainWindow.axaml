@@ -400,6 +400,13 @@
                                   SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
                                   IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
                       </Grid>
+                      <Grid ColumnDefinitions="120,220,*" ColumnSpacing="8">
+                        <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding NeuralRenderingDllVersionOptions}"
+                                  SelectedItem="{Binding SelectedNeuralRenderingDllVersion, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanConfigureNeuralRenderingDllVersion}"/>
+                        <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      </Grid>
                     </StackPanel>
                   </Border>
 

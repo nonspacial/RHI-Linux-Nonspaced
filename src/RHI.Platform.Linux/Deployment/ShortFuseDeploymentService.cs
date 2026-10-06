@@ -144,6 +144,10 @@ public sealed class ShortFuseDeploymentService
         }
     }
 
+    /// <summary>Swaps the ShortFuse-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
+    public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.ShortFuse, "ShortFuse", version, cancellationToken);
+
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
     {
         var status = await CheckLatestAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
@@ -156,10 +160,18 @@ public sealed class ShortFuseDeploymentService
         CancellationToken cancellationToken = default)
         => InstallAsync(game, autoConfigEnabled, releaseTag: null, cancellationToken);
 
+    public Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        bool autoConfigEnabled,
+        string? releaseTag,
+        CancellationToken cancellationToken = default)
+        => InstallAsync(game, autoConfigEnabled, releaseTag, neuralRenderingDllVersion: null, cancellationToken);
+
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         bool autoConfigEnabled,
         string? releaseTag,
+        string? neuralRenderingDllVersion,
         CancellationToken cancellationToken = default)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
@@ -231,7 +243,7 @@ public sealed class ShortFuseDeploymentService
                 [DlssComponentKind.SuperResolution] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.RayReconstruction] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.RayReconstruction, cancellationToken).ConfigureAwait(false),
                 [DlssComponentKind.FrameGeneration] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.FrameGeneration, cancellationToken).ConfigureAwait(false),
-                [DlssComponentKind.NeuralRendering] = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false),
+                [DlssComponentKind.NeuralRendering] = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false),
             };
             cachedStreamline = await _dlss.EnsureNewestStreamlineCachedAsync(cancellationToken).ConfigureAwait(false);
         }

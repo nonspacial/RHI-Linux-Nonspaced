@@ -106,6 +106,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<string> Dlss5FeederVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
     public ObservableCollection<string> Dlss5BridgeVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
     public ObservableCollection<string> ShortFuseVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
+    public ObservableCollection<string> NeuralRenderingDllVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
     public ObservableCollection<string> UalProxyNames { get; } = [];
     public string ProductVersionText => $"RHI-Linux v{RhiProductInfo.Version} · {UiLocalizationService.Text("Ui.ProductRuntime")}";
 
@@ -135,6 +136,7 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string selectedDlss5FeederVersion = UiLocalizationService.Text("Ui.OptionLatest");
     [ObservableProperty] private string selectedDlss5BridgeVersion = UiLocalizationService.Text("Ui.OptionLatest");
     [ObservableProperty] private string selectedShortFuseVersion = UiLocalizationService.Text("Ui.OptionLatest");
+    [ObservableProperty] private string selectedNeuralRenderingDllVersion = UiLocalizationService.Text("Ui.OptionLatest");
     public bool IsDeepFriedChickenFeederConsumer => SelectedDlss5FeederConsumer == "Deep Fried Chicken";
     public bool IsRenoDxDlss5FeederConsumer => !IsDeepFriedChickenFeederConsumer;
     [ObservableProperty] private bool reShadeManageIni = true;
@@ -491,9 +493,11 @@ public partial class MainWindowViewModel : ObservableObject
                 ? PresentOr(CurrentShortFuseComponent.Note, "ShortFuse está disponível para este jogo.", "ShortFuse is available for this game.")
                 : PresentOr(CurrentShortFuseComponent?.Note, "ShortFuse ficará disponível após a conclusão da análise do jogo.", "ShortFuse will become available after game analysis completes.");
     public bool CanConfigureShortFuse => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !ShortFuseInstalled;
-    public bool CanConfigureFeederVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !_managedComponents.IsDlss5FeederFullManaged(SelectedGame);
-    public bool CanConfigureBridgeVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !_managedComponents.IsManaged(SelectedGame, ManagedComponentKind.Dlss5Dx11Bridge);
-    public bool CanConfigureShortFuseVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !ShortFuseInstalled;
+    // Pins stay editable while installed: a change swaps the add-on in place (upstream 2.7.6).
+    public bool CanConfigureFeederVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
+    public bool CanConfigureBridgeVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
+    public bool CanConfigureShortFuseVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
+    public bool CanConfigureNeuralRenderingDllVersion => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
     public bool CanLoadNeuralVersionHistory => !IsBusy;
     public bool OrchestratedDlssStackManaged => Dlss5FeederFullManaged || ShortFuseInstalled;
 
@@ -732,6 +736,7 @@ public partial class MainWindowViewModel : ObservableObject
         var feederPin = IsLatestSelection(SelectedDlss5FeederVersion) ? null : SelectedDlss5FeederVersion;
         var bridgePin = IsLatestSelection(SelectedDlss5BridgeVersion) ? null : SelectedDlss5BridgeVersion;
         var shortFusePin = IsLatestSelection(SelectedShortFuseVersion) ? null : SelectedShortFuseVersion;
+        var nrDllPin = IsLatestSelection(SelectedNeuralRenderingDllVersion) ? null : SelectedNeuralRenderingDllVersion;
 
         ReShadeChannels.Clear();
         foreach (var item in new[] { "Ui.OptionStable", "Ui.OptionNightly", "Ui.OptionLegacy", "Ui.OptionCustom" })
@@ -771,9 +776,11 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedDlss5FeederVersion = feederPin ?? LatestDisplay();
         SelectedDlss5BridgeVersion = bridgePin ?? LatestDisplay();
         SelectedShortFuseVersion = shortFusePin ?? LatestDisplay();
+        SelectedNeuralRenderingDllVersion = nrDllPin ?? LatestDisplay();
         ReplaceLatestLabel(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
         ReplaceLatestLabel(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
         ReplaceLatestLabel(ShortFuseVersionOptions, SelectedShortFuseVersion);
+        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
 
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         if (SelectedGame is { } game)
@@ -838,6 +845,15 @@ public partial class MainWindowViewModel : ObservableObject
             FillVersions(DlssRrVersions, manifest.Dlssd.Select(x => x.Version));
             FillVersions(DlssFgVersions, manifest.Dlssg.Select(x => x.Version));
             FillVersions(DlssNrVersions, manifest.Dlssnr.Select(x => x.Version));
+            var nrDllSelected = SelectedNeuralRenderingDllVersion;
+            _rebuildingOptionLists = true;
+            try
+            {
+                FillVersions(NeuralRenderingDllVersionOptions, manifest.Dlssnr.Select(x => x.Version).Prepend(LatestDisplay()));
+                EnsureOption(NeuralRenderingDllVersionOptions, nrDllSelected);
+                SelectedNeuralRenderingDllVersion = nrDllSelected ?? LatestDisplay();
+            }
+            finally { _rebuildingOptionLists = false; }
             FillVersions(StreamlineVersions, manifest.Streamline.Select(x => x.Version));
             SelectedDlssSrVersion = DlssSrVersions.FirstOrDefault();
             SelectedDlssRrVersion = DlssRrVersions.FirstOrDefault();
@@ -920,6 +936,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedShortFuseVersionChanged(string value)
         => SaveNeuralVersionPin(ManagedComponentKind.ShortFuse, value);
+
+    partial void OnSelectedNeuralRenderingDllVersionChanged(string value)
+        => SaveNeuralRenderingDllPin(value);
 
     partial void OnSelectedReShadeChannelChanged(string value)
     {
@@ -2703,9 +2722,11 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedDlss5FeederVersion = LatestDisplay();
         SelectedDlss5BridgeVersion = LatestDisplay();
         SelectedShortFuseVersion = LatestDisplay();
+        SelectedNeuralRenderingDllVersion = LatestDisplay();
         ReplaceLatestLabel(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
         ReplaceLatestLabel(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
         ReplaceLatestLabel(ShortFuseVersionOptions, SelectedShortFuseVersion);
+        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
     }
 
     private void LoadNeuralVersionPins(DetectedGame game)
@@ -2713,27 +2734,79 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedDlss5FeederVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Feeder) ?? LatestDisplay();
         SelectedDlss5BridgeVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Dx11Bridge) ?? LatestDisplay();
         SelectedShortFuseVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.ShortFuse) ?? LatestDisplay();
+        SelectedNeuralRenderingDllVersion = _managedComponents.GetNeuralRenderingDllVersionPin(game) ?? LatestDisplay();
         EnsureOption(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
         EnsureOption(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
         EnsureOption(ShortFuseVersionOptions, SelectedShortFuseVersion);
+        EnsureOption(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
     }
 
     private void SaveNeuralVersionPin(ManagedComponentKind kind, string value)
     {
         // A null/empty value only ever arrives from an ItemsSource rebuild, never from the user.
         if (_rebuildingOptionLists || string.IsNullOrWhiteSpace(value) || SelectedGame is null) return;
-        var installed = kind switch
+        var game = SelectedGame;
+        var pin = IsLatestSelection(value) ? null : value;
+        var previous = _managedComponents.GetNeuralAddonVersionPin(game, kind);
+        // Loading a game's pins re-sets the same value; only a real change persists or swaps.
+        if (string.Equals(previous, pin, StringComparison.OrdinalIgnoreCase)) return;
+        _managedComponents.SetNeuralAddonVersionPin(game, kind, pin);
+        if (_managedComponents.IsManaged(game, kind))
+            _ = SwapNeuralVersionInPlaceAsync(game, kind, previous);
+    }
+
+    private void SaveNeuralRenderingDllPin(string value)
+    {
+        if (_rebuildingOptionLists || string.IsNullOrWhiteSpace(value) || SelectedGame is null) return;
+        var game = SelectedGame;
+        var pin = IsLatestSelection(value) ? null : value;
+        var previous = _managedComponents.GetNeuralRenderingDllVersionPin(game);
+        if (string.Equals(previous, pin, StringComparison.Ordinal)) return;
+        _managedComponents.SetNeuralRenderingDllVersionPin(game, pin);
+        if (OrchestratedDlssStackManaged)
+            _ = SwapNeuralVersionInPlaceAsync(game, kind: null, previous);
+    }
+
+    /// <summary>
+    /// Applies a changed pin to an installed NR method by swapping only the add-on (kind set) or
+    /// the orchestrated nvngx_dlssnr.dll (kind null). On failure the previous pin and selection
+    /// are restored so the dropdown keeps describing what is installed.
+    /// </summary>
+    private async Task SwapNeuralVersionInPlaceAsync(DetectedGame game, ManagedComponentKind? kind, string? previousPin)
+    {
+        void RevertPin()
         {
-            ManagedComponentKind.Dlss5Feeder => _managedComponents.IsDlss5FeederFullManaged(SelectedGame),
-            ManagedComponentKind.Dlss5Dx11Bridge => _managedComponents.IsManaged(SelectedGame, kind),
-            ManagedComponentKind.ShortFuse => ShortFuseInstalled,
-            _ => true
-        };
-        if (installed) return;
-        _managedComponents.SetNeuralAddonVersionPin(
-            SelectedGame,
-            kind,
-            IsLatestSelection(value) ? null : value);
+            if (kind is { } addon) _managedComponents.SetNeuralAddonVersionPin(game, addon, previousPin);
+            else _managedComponents.SetNeuralRenderingDllVersionPin(game, previousPin);
+            if (ReferenceEquals(SelectedGame, game)) LoadNeuralVersionPins(game);
+        }
+
+        IsBusy = true;
+        try
+        {
+            StatusText = L("Trocando a versão NR no local…", "Swapping the NR version in place…");
+            var result = kind is { } addon
+                ? await _managedComponents.SwapNeuralAddonVersionAsync(game, addon)
+                : await _managedComponents.SwapNeuralRenderingDllAsync(game);
+            StatusText = UiLocalizationService.Present(result.Message);
+            if (result.Success)
+            {
+                await ReprobeGameAsync(game);
+                RefreshShortFuseState(game);
+                return;
+            }
+            RevertPin();
+        }
+        catch (Exception ex)
+        {
+            StatusText = LF("Falha ao trocar a versão NR: {0}", "Failed to swap the NR version: {0}", ex.Message);
+            try { RevertPin(); } catch { /* the status line already reports the failure */ }
+        }
+        finally
+        {
+            IsBusy = false;
+            NotifyDlss();
+        }
     }
 
     [RelayCommand]
@@ -3325,6 +3398,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanConfigureFeederVersionPin));
         OnPropertyChanged(nameof(CanConfigureBridgeVersionPin));
         OnPropertyChanged(nameof(CanConfigureShortFuseVersionPin));
+        OnPropertyChanged(nameof(CanConfigureNeuralRenderingDllVersion));
         OnPropertyChanged(nameof(CanLoadNeuralVersionHistory));
         OnPropertyChanged(nameof(OrchestratedDlssStackManaged));
         OnPropertyChanged(nameof(CanSwapDlssSr));

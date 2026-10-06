@@ -145,9 +145,23 @@ public sealed class Dlss5FeederFullDeploymentService
         string? d3dCompiler47Path,
         string? releaseTag,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, neuralRenderingDllVersion: null, cancellationToken);
+
+    public Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        Dlss5FeederConsumer consumer,
+        string? deepFriedChickenPackagePath,
+        string? d3dCompiler47Path,
+        string? releaseTag,
+        string? neuralRenderingDllVersion,
+        CancellationToken cancellationToken = default)
         => Task.Run(
-            () => InstallCoreAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, cancellationToken),
+            () => InstallCoreAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, releaseTag, neuralRenderingDllVersion, cancellationToken),
             cancellationToken);
+
+    /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
+    public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken);
 
     public Task<IReadOnlyList<GitHubReleaseVersion>> ListVersionsAsync(CancellationToken cancellationToken = default)
         => _releaseResolver.ListVersionsAsync(FeederReleaseApi, cancellationToken);
@@ -246,6 +260,7 @@ public sealed class Dlss5FeederFullDeploymentService
         string? deepFriedChickenPackagePath,
         string? d3dCompiler47Path,
         string? releaseTag,
+        string? neuralRenderingDllVersion,
         CancellationToken cancellationToken)
     {
         // Installation can perform bounded recursive file indexing, archive validation,
@@ -470,7 +485,7 @@ public sealed class Dlss5FeederFullDeploymentService
 
             var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Super Resolution runtime.");
-            var cachedNr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false)
+            var cachedNr = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Neural Rendering runtime.");
             ValidateCachedRuntime(cachedSr, DlssName);
             ValidateCachedRuntime(cachedNr, NrName);

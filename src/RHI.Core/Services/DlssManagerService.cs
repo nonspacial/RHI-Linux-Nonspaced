@@ -152,6 +152,24 @@ public sealed class DlssManagerService
         return await DownloadDllAsync(entry, DllName(kind), CacheSubdir(kind), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Ensures one manifest version of a DLSS component is cached and returns its DLL path. A null
+    /// or no-longer-published version falls back to the newest entry, as upstream RHI does.
+    /// </summary>
+    public async Task<string?> EnsureCachedAsync(
+        DlssComponentKind kind,
+        string? version,
+        CancellationToken cancellationToken = default)
+    {
+        if (_manifest is null)
+            await FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+        var entries = Entries(kind);
+        var entry = entries.FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase))
+                    ?? entries.FirstOrDefault();
+        if (entry is null) return null;
+        return await DownloadDllAsync(entry, DllName(kind), CacheSubdir(kind), cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Ensures the newest Streamline package is cached and returns its directory.</summary>
     public async Task<string?> EnsureNewestStreamlineCachedAsync(CancellationToken cancellationToken = default)
     {
