@@ -113,6 +113,57 @@ public sealed class NeuralRenderingDllVersionTests : IDisposable
         Assert.Equal("310.2", records.Find(game, ManagedComponentKind.ShortFuse)!.Metadata["NeuralRendering.DllVersion"]);
     }
 
+    [Fact]
+    public async Task ManagedService_NrDllSwap_LogsOldToNewVersion_AndFailedSwapAsFailure()
+    {
+        // Ticket #112: the UI-triggered NR DLL swap goes through the update-history recorder.
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "history")).FullName;
+        var game = Game(bin);
+        var nr = Path.Combine(bin, "nvngx_dlssnr.dll");
+        File.WriteAllBytes(nr, Pe(0x21));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "history-deployments.json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ShortFuse,
+            BinaryDirectory = bin, Version = "1.0", Files = [new LinuxDeployedFile { Path = nr, Sha256 = Sha256(nr) }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase) { ["NeuralRendering.DllVersion"] = "310.1" }
+        });
+        using var http = new HttpClient(Handler());
+        var files = new TransactionalFileDeploymentService();
+        var overrides = new WineDllOverrideService();
+        var sf = new ShortFuseDeploymentService(http, files, records, overrides,
+            new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(_root, "cache-ual")),
+            new DlssManagerService(http, files, Path.Combine(_root, "cache-dlss")),
+            Path.Combine(_root, "cache-sf"), new ShortFuseSettingsStore(Path.Combine(_root, "sf.json")));
+        var pins = new NeuralAddonVersionPreferenceStore(Path.Combine(_root, "history-pins.json"));
+        var log = new ComponentUpdateLogStore(Path.Combine(_root, "update-log.json"));
+        // Only the services the NR DLL swap reaches are real; the rest are never touched on this path.
+        var service = new LinuxManagedComponentService(records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: sf, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!,
+            neuralVersionPins: pins, updateLog: log);
+
+        pins.SetNeuralRenderingDllVersion(game, "310.2");
+        var swapped = await service.SwapNeuralRenderingDllAsync(game);
+
+        Assert.True(swapped.Success, swapped.Message);
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal((ManagedComponentKind.ShortFuse, ComponentUpdateAction.Update, "310.1", "310.2", true),
+            (entry.Component, entry.Action, entry.FromVersion, entry.ToVersion, entry.Success));
+        Assert.Contains("nvngx_dlssnr.dll", entry.ComponentName);
+
+        File.Delete(nr); // the swap now refuses ("Managed file is missing")
+        pins.SetNeuralRenderingDllVersion(game, "310.1");
+        var refused = await service.SwapNeuralRenderingDllAsync(game);
+
+        Assert.False(refused.Success);
+        Assert.Equal(2, log.GetAll().Count);
+        var failed = log.GetAll()[0];
+        Assert.Equal((false, ManagedComponentKind.ShortFuse, "310.2", (string?)null), (failed.Success, failed.Component, failed.FromVersion, failed.ToVersion));
+        Assert.Equal(refused.Message, failed.Message);
+    }
+
     private static DetectedGame Game(string bin) => new()
     {
         Name = "NR DLL test", InstallPath = bin, Source = "Test", Runner = "Wine", BinaryDirectory = bin,

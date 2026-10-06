@@ -46,6 +46,77 @@ public sealed class ComponentUpdateRecorder
         }
     }
 
+    /// <summary>
+    /// Wraps an in-place swap of one file owned by <paramref name="owner"/> whose version lives in the
+    /// owner's record metadata rather than in <see cref="LinuxDeploymentRecord.Version"/> (e.g. the
+    /// nvngx_dlssnr.dll inside a ShortFuse or DLSS5 Feeder Full stack). Logs one Update entry when the
+    /// version read by <paramref name="versionOf"/> changes, and one failed entry when the swap fails.
+    /// </summary>
+    public async Task<ComponentOperationResult> TrackOwnedFileAsync(
+        DetectedGame game,
+        ManagedComponentKind owner,
+        string fileLabel,
+        Func<LinuxDeploymentRecord, string?> versionOf,
+        Func<Task<ComponentOperationResult>> operation)
+    {
+        var (beforeKnown, before) = OwnedVersion(game, owner, versionOf);
+        ComponentOperationResult? result = null;
+        Exception? error = null;
+        try
+        {
+            result = await operation().ConfigureAwait(false);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+            throw;
+        }
+        finally
+        {
+            try
+            {
+                var failed = result is { Success: false } || (error is not null && error is not OperationCanceledException);
+                var (afterKnown, after) = OwnedVersion(game, owner, versionOf);
+                ComponentUpdateLogEntry? entry = null;
+                if (failed)
+                    entry = OwnedEntry(game, owner, fileLabel, before, null) with { Success = false, Message = result?.Message ?? error?.Message };
+                else if (result is { Success: true } && beforeKnown && afterKnown && !string.Equals(before, after, StringComparison.Ordinal))
+                    entry = OwnedEntry(game, owner, fileLabel, before, after);
+                if (entry is not null) _log.Record(entry);
+            }
+            catch
+            {
+                // History is informational; it must never fail or alter the swap.
+            }
+        }
+    }
+
+    private (bool Known, string? Version) OwnedVersion(DetectedGame game, ManagedComponentKind owner, Func<LinuxDeploymentRecord, string?> versionOf)
+    {
+        try
+        {
+            var record = _records.Find(game, owner);
+            return (true, record is null ? null : versionOf(record));
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
+    private ComponentUpdateLogEntry OwnedEntry(DetectedGame game, ManagedComponentKind owner, string fileLabel, string? from, string? to) => new()
+    {
+        TimestampUtc = _utcNow(),
+        GameName = game.Name,
+        GameKey = LinuxDeploymentRecordStore.GameKey(game),
+        Component = owner,
+        ComponentName = $"{LinuxManagedComponentService.DisplayDependencyName(owner)} ({fileLabel})",
+        Action = ComponentUpdateAction.Update,
+        FromVersion = from,
+        ToVersion = to
+    };
+
     private Dictionary<ManagedComponentKind, (string? Version, DateTime InstalledAtUtc)> Snapshot(DetectedGame game)
     {
         try

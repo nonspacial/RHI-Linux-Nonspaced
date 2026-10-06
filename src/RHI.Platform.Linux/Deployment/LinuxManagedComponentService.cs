@@ -1302,8 +1302,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = PatchTargetGuard(game);
         if (guard is not null) return Task.FromResult(guard);
         var version = _neuralVersionPins.GetNeuralRenderingDllVersion(game);
-        if (IsShortFuseManaged(game)) return _shortFuse.SwapNeuralRenderingDllAsync(game, version, cancellationToken);
-        if (IsDlss5FeederFullManaged(game)) return _dlss5Feeder.SwapNeuralRenderingDllAsync(game, version, cancellationToken);
+        if (IsShortFuseManaged(game))
+            return TrackNeuralRenderingDll(game, ManagedComponentKind.ShortFuse,
+                () => _shortFuse.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
+        if (IsDlss5FeederFullManaged(game))
+            return TrackNeuralRenderingDll(game, ManagedComponentKind.Dlss5Feeder,
+                () => _dlss5Feeder.SwapNeuralRenderingDllAsync(game, version, cancellationToken));
         return Task.FromResult(ComponentOperationResult.Fail("No ShortFuse or DLSS5 Feeder Full stack owns nvngx_dlssnr.dll for this game; the version applies at the next install."));
     }
 
@@ -1317,8 +1321,24 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
-        return guard is null ? SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken) : Task.FromResult(guard);
+        if (guard is not null) return Task.FromResult(guard);
+        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse))
+            return SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken);
+        // Logged like Update All's NR updates (which reach the same core through UpdateManagedAsync).
+        return Track(game, kind, ComponentUpdateAction.Update, () => SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken));
     }
+
+    // The NR DLL version lives in the owning record's metadata, not in its Version, so the plain
+    // ledger diff in Track would miss it.
+    private Task<ComponentOperationResult> TrackNeuralRenderingDll(
+        DetectedGame game,
+        ManagedComponentKind owner,
+        Func<Task<ComponentOperationResult>> swap)
+        => _history is null
+            ? swap()
+            : _history.TrackOwnedFileAsync(game, owner, NeuralRenderingDllSwap.DllName,
+                static record => record.Metadata.TryGetValue(NeuralRenderingDllSwap.MetaDllVersion, out var v) ? v : null,
+                swap);
 
     private Task<ComponentOperationResult> SwapNeuralAddonVersionCoreAsync(
         DetectedGame game,

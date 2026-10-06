@@ -129,9 +129,9 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Ok($"ShortFuse will be deployed as {targetName} on the next install.");
         }
 
-        // Work on a copy: the store hands out its cached instances, and editing one would change the
-        // in-memory ledger before (or without) a successful write.
-        var record = CloneRecord(stored);
+        // Work on a private copy (the shared deep copy) so nothing this method edits can reach the
+        // in-memory ledger before, or without, a successful write.
+        var record = LinuxDeploymentRecordStore.Clone(stored);
         var entry = record.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path)));
         if (entry is null)
             return ComponentOperationResult.Fail(NoAddonEntryMessage);
@@ -212,31 +212,6 @@ public sealed class ShortFuseDeploymentService
     private static string OtherAddonPath(string addonPath)
         => Path.Combine(Path.GetDirectoryName(addonPath)!,
             Path.GetFileName(addonPath).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase) ? AddonFileName : ZzzAddonFileName);
-
-    private static LinuxDeploymentRecord CloneRecord(LinuxDeploymentRecord source) => new()
-    {
-        GameKey = source.GameKey,
-        GameName = source.GameName,
-        Component = source.Component,
-        BinaryDirectory = source.BinaryDirectory,
-        SourceUrl = source.SourceUrl,
-        Version = source.Version,
-        InstalledAtUtc = source.InstalledAtUtc,
-        Files = source.Files.Select(f => new LinuxDeployedFile
-        {
-            Path = f.Path, ExistedBeforeInstall = f.ExistedBeforeInstall, Sha256 = f.Sha256, AllowUserChanges = f.AllowUserChanges
-        }).ToList(),
-        DirectoriesCreatedByRhi = [.. source.DirectoriesCreatedByRhi],
-        WineOverride = CloneOverride(source.WineOverride),
-        AdditionalWineOverrides = source.AdditionalWineOverrides.Select(o => CloneOverride(o)!).ToList(),
-        Metadata = new Dictionary<string, string>(source.Metadata, StringComparer.OrdinalIgnoreCase)
-    };
-
-    private static WineOverrideRecord? CloneOverride(WineOverrideRecord? o) => o is null ? null : new()
-    {
-        DllName = o.DllName, PreviousValue = o.PreviousValue, ChangedByRhi = o.ChangedByRhi,
-        SectionCreatedByRhi = o.SectionCreatedByRhi, ApplicationName = o.ApplicationName
-    };
 
     /// <summary>
     /// Points the record's add-on entry at whichever ShortFuse name is on disk (an interrupted rename can
@@ -589,7 +564,7 @@ public sealed class ShortFuseDeploymentService
         if (stored is null)
             return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux. External/stale ShortFuse files are protected from implicit removal.");
         // Copy: the store's cached instance must not change unless a write succeeds.
-        var record = CloneRecord(stored);
+        var record = LinuxDeploymentRecordStore.Clone(stored);
 
         // An interrupted ZZZ load-order rename can leave the record one name behind; follow the
         // owned add-on to its other name so the hash guard and teardown below still apply to it.
