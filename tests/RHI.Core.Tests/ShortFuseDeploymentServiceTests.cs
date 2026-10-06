@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -474,6 +475,211 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         Assert.False(File.Exists(zzz));
     }
 
+    [Fact]
+    public async Task Toggle_CorruptLedger_RefusesBeforeTouchingTheAddon()
+    {
+        using var fixture = CreateGame("zzz-corrupt-ledger");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.WriteAllText(LedgerPath(fixture), "{ not json");
+
+        var result = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+
+        Assert.False(result.Success);
+        Assert.Contains("ledger is unreadable", result.Message, StringComparison.Ordinal);
+        Assert.Contains("nothing was renamed", result.Message, StringComparison.Ordinal);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+        AssertPresentedInPortuguese(result.Message);
+    }
+
+    [Fact]
+    public async Task Toggle_RecordWriteFails_RenamesBackAndFileAndRecordAgree()
+    {
+        using var fixture = CreateGame("zzz-ledger-readonly");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+
+        ComponentOperationResult result;
+        using (ReadOnlyLedgerDirectory(fixture))
+            result = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+
+        Assert.False(result.Success);
+        Assert.Contains($"renamed back to {ShortFuseDeploymentService.AddonFileName}", result.Message, StringComparison.Ordinal);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        // Both the ledger on disk and the store's in-memory cache still name the file that exists.
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+        Assert.Equal(normal, AddonEntryPath(ctx.Records, fixture));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderInEffect(fixture.Game));
+        AssertPresentedInPortuguese(result.Message);
+    }
+
+    [Fact]
+    public async Task Toggle_RecordWriteAndRollbackFail_ReportsTheSplitStateHonestly()
+    {
+        using var fixture = CreateGame("zzz-rollback-fails");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        var realMove = ctx.ShortFuse.MoveAddonFile;
+        var moves = 0;
+        ctx.ShortFuse.MoveAddonFile = (from, to) =>
+        {
+            if (++moves == 2) throw new IOException("simulated rollback failure");
+            realMove(from, to);
+        };
+
+        ComponentOperationResult result;
+        using (ReadOnlyLedgerDirectory(fixture))
+            result = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+
+        Assert.False(result.Success);
+        Assert.Contains($"now named {ShortFuseDeploymentService.ZzzAddonFileName}", result.Message, StringComparison.Ordinal);
+        Assert.Contains($"still says {ShortFuseDeploymentService.AddonFileName}", result.Message, StringComparison.Ordinal);
+        Assert.Contains("simulated rollback failure", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("renamed back", result.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(normal));
+        Assert.True(File.Exists(zzz));
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+        // The checkbox follows the file ReShade will load, not the stale preference.
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+        Assert.True(ctx.ShortFuse.GetZzzLoadOrderInEffect(fixture.Game));
+        AssertPresentedInPortuguese(result.Message);
+
+        // Once the ledger is writable, switching the toggle back heals file, record and preference.
+        ctx.ShortFuse.MoveAddonFile = realMove;
+        var heal = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false);
+        Assert.True(heal.Success, heal.Message);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+    }
+
+    [Fact]
+    public async Task Toggle_AfterInterruptedRename_PersistsRepairedRecord()
+    {
+        using var fixture = CreateGame("zzz-interrupted-toggle");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        var hash = Sha256(normal);
+        File.Move(normal, zzz); // crash between rename and record write: record and preference still say normal
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+        Assert.True(ctx.ShortFuse.GetZzzLoadOrderInEffect(fixture.Game));
+
+        var on = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+
+        Assert.True(on.Success, on.Message);
+        Assert.True(File.Exists(zzz));
+        Assert.False(File.Exists(normal));
+        Assert.Equal(hash, Sha256(zzz));
+        Assert.Equal(zzz, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+        Assert.True(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+
+        var off = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false);
+        Assert.True(off.Success, off.Message);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+    }
+
+    [Fact]
+    public async Task Toggle_BackToRecordedNameAfterInterruptedRename_NeedsNoLedgerWrite()
+    {
+        using var fixture = CreateGame("zzz-interrupted-back");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.Move(normal, zzz); // record still says normal
+
+        ComponentOperationResult off;
+        using (ReadOnlyLedgerDirectory(fixture))
+            off = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false);
+
+        Assert.True(off.Success, off.Message);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderInEffect(fixture.Game));
+    }
+
+    [Fact]
+    public async Task Toggle_BothNamesPresent_RefusesWithoutDataLoss()
+    {
+        using var fixture = CreateGame("zzz-both-names");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        var hash = Sha256(normal);
+        File.WriteAllText(zzz, "user-zzz");
+
+        foreach (var enabled in new[] { true, false })
+        {
+            var result = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, enabled);
+            Assert.False(result.Success);
+            Assert.Contains("ReShade would load ShortFuse twice", result.Message, StringComparison.Ordinal);
+            AssertPresentedInPortuguese(result.Message);
+        }
+
+        Assert.Equal(hash, Sha256(normal));
+        Assert.Equal("user-zzz", File.ReadAllText(zzz));
+        Assert.Equal(normal, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+    }
+
+    [Fact]
+    public async Task Remove_AfterInterruptedRename_PersistsRepairedRecordEvenWhenBlockedLater()
+    {
+        using var fixture = CreateGame("zzz-remove-repair");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.Move(normal, zzz);
+        ctx.Records.Remove(fixture.Game, ManagedComponentKind.ReShade); // makes Remove block after the follow
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+
+        Assert.False(remove.Success);
+        Assert.True(File.Exists(zzz));
+        Assert.Equal(zzz, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
+    }
+
+    private static string LedgerPath(GameFixture fixture) => Path.Combine(fixture.Root, "deployments.json");
+
+    private static string AddonEntryPath(LinuxDeploymentRecordStore store, GameFixture fixture)
+        => store.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Files
+            .Single(f => ShortFuseDeploymentService.IsAddonFileName(Path.GetFileName(f.Path))).Path;
+
+    private static void AssertPresentedInPortuguese(string message)
+    {
+        var pt = UiLocalizationService.PresentFor("pt-BR", message);
+        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+        Assert.NotEqual(message, pt);
+    }
+
+    /// <summary>Makes the ledger's directory read-only so the record write fails; the game directory beneath it stays writable.</summary>
+    private static IDisposable ReadOnlyLedgerDirectory(GameFixture fixture)
+    {
+        if (OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Unix permission test");
+        var mode = File.GetUnixFileMode(fixture.Root);
+        File.SetUnixFileMode(fixture.Root, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        return new Restore(() => { if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixture.Root, mode); });
+    }
+
+    private sealed class Restore(Action undo) : IDisposable { public void Dispose() => undo(); }
+
     private static (string Normal, string Zzz) AddonPaths(GameFixture fixture)
     {
         var dir = RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin);
@@ -489,7 +695,9 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         var http = new HttpClient(handler);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(fixture.Root, "cache-dlss"));
         var ual = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache-ual"));
-        var settings = new ShortFuseSettingsStore(Path.Combine(fixture.Root, "sf-settings.json"));
+        // Own directory, so tests can make the ledger's directory read-only without blocking settings writes.
+        var settingsDir = Directory.CreateDirectory(Path.Combine(fixture.Root, "settings")).FullName;
+        var settings = new ShortFuseSettingsStore(Path.Combine(settingsDir, "sf-settings.json"));
         var sf = new ShortFuseDeploymentService(http, deployment, records, overrides, ual, dlss, Path.Combine(fixture.Root, "cache-sf"), settings);
         return new(records, ual, sf, http);
     }

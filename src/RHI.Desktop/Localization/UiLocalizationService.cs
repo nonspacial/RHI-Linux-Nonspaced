@@ -549,6 +549,28 @@ public static class UiLocalizationService
         ("is a ReShade add-on; RHI will automatically install ReShade before this component.", "é um add-on do ReShade; o RHI instalará ReShade automaticamente antes deste componente."),
         ("ShortFuse requires RHI-managed ReShade. An external ReShade was detected and will be preserved; RHI will not automatically adopt it.", "ShortFuse exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará automaticamente."),
         ("ShortFuse requires RHI-managed ReShade; ReShade will be installed automatically before ShortFuse. If Auto Config is enabled, Ultimate ASI Loader is still installed automatically by the ShortFuse flow.", "ShortFuse exige ReShade gerenciado pelo RHI; o ReShade será instalado automaticamente antes do ShortFuse. Se Auto Config estiver ativo, o Ultimate ASI Loader continua sendo instalado automaticamente pelo próprio fluxo do ShortFuse."),
+        // ShortFuse ZZZ load-order failures (fragments of ShortFuseDeploymentService messages; paths and
+        // exception text sit between them).
+        ("The RHI deployment ledger is unreadable, so the ShortFuse load-order change was refused and nothing was renamed. Quarantined copy:", "O registro de implantações do RHI está ilegível; a mudança da ordem de carga do ShortFuse foi recusada e nada foi renomeado. Cópia em quarentena:"),
+        ("The ShortFuse ownership record has no add-on entry; the load-order rename is blocked.", "O registro de propriedade do ShortFuse não tem entrada do add-on; a renomeação da ordem de carga está bloqueada."),
+        (" already exists and is not owned by this ShortFuse record; the load-order rename is blocked.", " já existe e não pertence a este registro do ShortFuse; a renomeação da ordem de carga está bloqueada."),
+        ("Could not rename the ShortFuse add-on to ", "Não foi possível renomear o add-on do ShortFuse para "),
+        ("Could not save the ShortFuse ownership record, so the add-on was renamed back to ", "Não foi possível salvar o registro de propriedade do ShortFuse; por isso o add-on voltou a se chamar "),
+        ("The ShortFuse add-on is now named ", "O add-on do ShortFuse agora se chama "),
+        (", but its ownership record still says ", ", mas o registro de propriedade ainda indica "),
+        (": saving the record failed (", ": a gravação do registro falhou ("),
+        (") and renaming the add-on back also failed (", ") e renomear o add-on de volta também falhou ("),
+        ("). Rename the file back by hand, or switch the toggle again once the ledger is writable.", "). Renomeie o arquivo de volta manualmente ou alterne a opção de novo quando o registro puder ser gravado."),
+        ("The ShortFuse add-on is already named ", "O add-on do ShortFuse já se chama "),
+        (", but saving the repaired ownership record failed (", ", mas a gravação do registro de propriedade corrigido falhou ("),
+        ("); the record still says ", "); o registro ainda indica "),
+        ("The ShortFuse add-on is missing from ", "O add-on do ShortFuse está ausente de "),
+        ("Both renodx-dlss.addon64 and zzz_renodx-dlss.addon64 exist in ", "renodx-dlss.addon64 e zzz_renodx-dlss.addon64 existem ambos em "),
+        ("; ReShade would load ShortFuse twice. Remove the one RHI does not own first.", "; o ReShade carregaria o ShortFuse duas vezes. Remova primeiro o arquivo que não pertence ao RHI."),
+        ("ShortFuse ownership record has no SHA-256 for ", "O registro de propriedade do ShortFuse não tem SHA-256 para "),
+        ("ShortFuse-owned file was modified outside RHI: ", "Arquivo pertencente ao ShortFuse foi modificado fora do RHI: "),
+        ("Could not save the repaired ShortFuse ownership record (", "Não foi possível salvar o registro de propriedade corrigido do ShortFuse ("),
+        ("); Remove is blocked before anything was changed.", "); a remoção foi bloqueada antes de qualquer alteração."),
         ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.")
     ];
 

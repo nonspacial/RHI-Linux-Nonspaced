@@ -84,51 +84,101 @@ public sealed class ShortFuseDeploymentService
         => fileName.Equals(AddonFileName, StringComparison.OrdinalIgnoreCase)
            || fileName.Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The saved per-game preference; it decides the name used by the next install.</summary>
     public bool GetZzzLoadOrderEnabled(DetectedGame game) => _settings.IsZzzLoadOrderEnabled(game);
 
     /// <summary>
+    /// Whether ReShade will actually load ShortFuse under the ZZZ name. For a managed install this is
+    /// read from the add-on on disk (the recorded path, or the other name if a rename was cut short),
+    /// so the UI never claims a load order the files do not have; otherwise it is the saved preference.
+    /// </summary>
+    public bool GetZzzLoadOrderInEffect(DetectedGame game)
+    {
+        if (GetRecord(game)?.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path))) is not { } entry)
+            return GetZzzLoadOrderEnabled(game);
+        if (File.Exists(entry.Path))
+            return Path.GetFileName(entry.Path).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase);
+        var other = OtherAddonPath(entry.Path);
+        return File.Exists(other)
+            ? Path.GetFileName(other).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase)
+            : GetZzzLoadOrderEnabled(game);
+    }
+
+    // Seam for the rename so tests can make the rollback rename fail; production always uses rename(2).
+    internal Action<string, string> MoveAddonFile { get; set; } = static (from, to) => File.Move(from, to, overwrite: true);
+
+    /// <summary>
     /// Persists the per-game ZZZ load-order preference. When ShortFuse is managed, the owned add-on is
-    /// renamed in place (one atomic rename) and its ownership record follows; a modified, missing or
-    /// externally occupied add-on blocks the change and leaves preference, file and record untouched.
+    /// renamed in place (one atomic rename) and its ownership record follows; an unreadable ledger, or a
+    /// modified, missing or externally occupied add-on, blocks the change and leaves preference, file and
+    /// record untouched. If the record cannot be saved after the rename, the rename is undone, and if that
+    /// also fails the result says exactly which name the file and the record each hold.
     /// </summary>
     public async Task<ComponentOperationResult> SetZzzLoadOrderAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
     {
         var targetName = enabled ? ZzzAddonFileName : AddonFileName;
-        var record = GetRecord(game);
-        if (record is null)
+        // Checked before anything is touched: renaming first and then failing the ledger write is the
+        // one path that can leave the file and the record disagreeing.
+        if (_records.CorruptLedgerPath is { } quarantined)
+            return ComponentOperationResult.Fail($"{LedgerUnreadableMessage} {quarantined}");
+
+        var stored = GetRecord(game);
+        if (stored is null)
         {
             _settings.SetZzzLoadOrderEnabled(game, enabled);
             return ComponentOperationResult.Ok($"ShortFuse will be deployed as {targetName} on the next install.");
         }
 
+        // Work on a copy: the store hands out its cached instances, and editing one would change the
+        // in-memory ledger before (or without) a successful write.
+        var record = CloneRecord(stored);
         var entry = record.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path)));
         if (entry is null)
-            return ComponentOperationResult.Fail("The ShortFuse ownership record has no add-on entry; the load-order rename is blocked.");
+            return ComponentOperationResult.Fail(NoAddonEntryMessage);
+        var recordedPath = entry.Path;
         var resolved = await ResolveOwnedAddonAsync(entry, cancellationToken).ConfigureAwait(false);
         if (!resolved.Success) return resolved;
 
         var current = entry.Path;
         var target = Path.Combine(Path.GetDirectoryName(current)!, targetName);
-        if (!Path.GetFileName(current).Equals(targetName, StringComparison.Ordinal))
+        if (Path.GetFileName(current).Equals(targetName, StringComparison.Ordinal))
+        {
+            // Already named as requested. If the record was one name behind (interrupted rename),
+            // persist the repaired path now rather than leaving the ledger stale.
+            if (!current.Equals(recordedPath, StringComparison.Ordinal))
+            {
+                try { _records.Upsert(record); }
+                catch (Exception ex)
+                {
+                    return ComponentOperationResult.Fail(
+                        $"{RepairSaveFailedPrefix}{targetName}{RepairSaveFailedMiddle}{ex.Message}{RepairSaveFailedSuffix}{Path.GetFileName(recordedPath)}.");
+                }
+            }
+        }
+        else
         {
             if (ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(target)!, targetName) is { } occupied)
-                return ComponentOperationResult.Fail($"{occupied} already exists and is not owned by this ShortFuse record; the load-order rename is blocked.");
+                return ComponentOperationResult.Fail($"{occupied}{OccupiedSuffix}");
             // overwrite:true maps to rename(2), which is atomic. overwrite:false links then unlinks on
             // Unix, briefly leaving both names, and a crash there would make ReShade load the add-on twice.
-            try { File.Move(current, target, overwrite: true); }
+            try { MoveAddonFile(current, target); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return ComponentOperationResult.Fail($"Could not rename the ShortFuse add-on to {targetName}: {ex.Message}");
+                return ComponentOperationResult.Fail($"{RenameFailedPrefix}{targetName}: {ex.Message}");
             }
-            try
+            entry.Path = target;
+            // Renaming back to the name the record still holds (interrupted earlier rename) needs no write.
+            try { if (!target.Equals(recordedPath, StringComparison.Ordinal)) _records.Upsert(record); }
+            catch (Exception saveError)
             {
-                entry.Path = target;
-                _records.Upsert(record);
-            }
-            catch (Exception ex)
-            {
-                try { File.Move(target, current, overwrite: true); } catch { }
-                return ComponentOperationResult.Fail($"Could not record the ShortFuse rename; the add-on name was restored: {ex.Message}");
+                try { MoveAddonFile(target, current); }
+                catch (Exception rollbackError)
+                {
+                    return ComponentOperationResult.Fail(
+                        $"{SplitStatePrefix}{targetName}{SplitStateRecord}{Path.GetFileName(recordedPath)}{SplitStateSave}{saveError.Message}" +
+                        $"{SplitStateRollback}{rollbackError.Message}{SplitStateSuffix}");
+                }
+                return ComponentOperationResult.Fail($"{SaveFailedRestoredPrefix}{Path.GetFileName(current)} ({saveError.Message}).");
             }
         }
 
@@ -136,9 +186,62 @@ public sealed class ShortFuseDeploymentService
         return ComponentOperationResult.Ok($"ShortFuse add-on is now {targetName}.", target);
     }
 
+    // Failure texts are split around the variable parts so UiLocalizationService can pair each
+    // fixed fragment with its PT-BR text; keep both in step.
+    internal const string LedgerUnreadableMessage = "The RHI deployment ledger is unreadable, so the ShortFuse load-order change was refused and nothing was renamed. Quarantined copy:";
+    internal const string NoAddonEntryMessage = "The ShortFuse ownership record has no add-on entry; the load-order rename is blocked.";
+    internal const string OccupiedSuffix = " already exists and is not owned by this ShortFuse record; the load-order rename is blocked.";
+    internal const string RenameFailedPrefix = "Could not rename the ShortFuse add-on to ";
+    internal const string SaveFailedRestoredPrefix = "Could not save the ShortFuse ownership record, so the add-on was renamed back to ";
+    internal const string SplitStatePrefix = "The ShortFuse add-on is now named ";
+    internal const string SplitStateRecord = ", but its ownership record still says ";
+    internal const string SplitStateSave = ": saving the record failed (";
+    internal const string SplitStateRollback = ") and renaming the add-on back also failed (";
+    internal const string SplitStateSuffix = "). Rename the file back by hand, or switch the toggle again once the ledger is writable.";
+    internal const string RepairSaveFailedPrefix = "The ShortFuse add-on is already named ";
+    internal const string RepairSaveFailedMiddle = ", but saving the repaired ownership record failed (";
+    internal const string RepairSaveFailedSuffix = "); the record still says ";
+    internal const string AddonMissingPrefix = "The ShortFuse add-on is missing from ";
+    internal const string BothNamesPrefix = "Both " + AddonFileName + " and " + ZzzAddonFileName + " exist in ";
+    internal const string BothNamesSuffix = "; ReShade would load ShortFuse twice. Remove the one RHI does not own first.";
+    internal const string NoSha256Prefix = "ShortFuse ownership record has no SHA-256 for ";
+    internal const string ModifiedOutsidePrefix = "ShortFuse-owned file was modified outside RHI: ";
+    internal const string RemoveRepairSaveFailedPrefix = "Could not save the repaired ShortFuse ownership record (";
+    internal const string RemoveRepairSaveFailedSuffix = "); Remove is blocked before anything was changed.";
+
+    private static string OtherAddonPath(string addonPath)
+        => Path.Combine(Path.GetDirectoryName(addonPath)!,
+            Path.GetFileName(addonPath).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase) ? AddonFileName : ZzzAddonFileName);
+
+    private static LinuxDeploymentRecord CloneRecord(LinuxDeploymentRecord source) => new()
+    {
+        GameKey = source.GameKey,
+        GameName = source.GameName,
+        Component = source.Component,
+        BinaryDirectory = source.BinaryDirectory,
+        SourceUrl = source.SourceUrl,
+        Version = source.Version,
+        InstalledAtUtc = source.InstalledAtUtc,
+        Files = source.Files.Select(f => new LinuxDeployedFile
+        {
+            Path = f.Path, ExistedBeforeInstall = f.ExistedBeforeInstall, Sha256 = f.Sha256, AllowUserChanges = f.AllowUserChanges
+        }).ToList(),
+        DirectoriesCreatedByRhi = [.. source.DirectoriesCreatedByRhi],
+        WineOverride = CloneOverride(source.WineOverride),
+        AdditionalWineOverrides = source.AdditionalWineOverrides.Select(o => CloneOverride(o)!).ToList(),
+        Metadata = new Dictionary<string, string>(source.Metadata, StringComparer.OrdinalIgnoreCase)
+    };
+
+    private static WineOverrideRecord? CloneOverride(WineOverrideRecord? o) => o is null ? null : new()
+    {
+        DllName = o.DllName, PreviousValue = o.PreviousValue, ChangedByRhi = o.ChangedByRhi,
+        SectionCreatedByRhi = o.SectionCreatedByRhi, ApplicationName = o.ApplicationName
+    };
+
     /// <summary>
     /// Points the record's add-on entry at whichever ShortFuse name is on disk (an interrupted rename can
-    /// leave the record one name behind) and applies the hash guard to that file.
+    /// leave the record one name behind) and applies the hash guard to that file. Mutates
+    /// <paramref name="entry"/>; pass an entry from a cloned record.
     /// </summary>
     private async Task<ComponentOperationResult> ResolveOwnedAddonAsync(LinuxDeployedFile entry, CancellationToken ct)
     {
@@ -146,13 +249,13 @@ public sealed class ShortFuseDeploymentService
         var onDisk = new[] { entry.Path, Path.Combine(dir, AddonFileName), Path.Combine(dir, ZzzAddonFileName) }
             .Distinct(StringComparer.Ordinal).Where(File.Exists).ToArray();
         if (onDisk.Length == 0)
-            return ComponentOperationResult.Fail($"The ShortFuse add-on is missing from {dir}.");
+            return ComponentOperationResult.Fail($"{AddonMissingPrefix}{dir}.");
         if (onDisk.Length > 1)
-            return ComponentOperationResult.Fail($"Both {AddonFileName} and {ZzzAddonFileName} exist in {dir}; ReShade would load ShortFuse twice. Remove the one RHI does not own first.");
+            return ComponentOperationResult.Fail($"{BothNamesPrefix}{dir}{BothNamesSuffix}");
         if (string.IsNullOrWhiteSpace(entry.Sha256))
-            return ComponentOperationResult.Fail($"ShortFuse ownership record has no SHA-256 for {entry.Path}.");
+            return ComponentOperationResult.Fail($"{NoSha256Prefix}{entry.Path}.");
         if (!string.Equals(await Sha256Async(onDisk[0], ct).ConfigureAwait(false), entry.Sha256, StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail($"ShortFuse-owned file was modified outside RHI: {onDisk[0]}.");
+            return ComponentOperationResult.Fail($"{ModifiedOutsidePrefix}{onDisk[0]}.");
         entry.Path = onDisk[0];
         return ComponentOperationResult.Ok("ShortFuse add-on ownership verified.");
     }
@@ -392,17 +495,23 @@ public sealed class ShortFuseDeploymentService
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        var record = GetRecord(game);
-        if (record is null)
+        var stored = GetRecord(game);
+        if (stored is null)
             return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux. External/stale ShortFuse files are protected from implicit removal.");
+        // Copy: the store's cached instance must not change unless a write succeeds.
+        var record = CloneRecord(stored);
 
         // An interrupted ZZZ load-order rename can leave the record one name behind; follow the
         // owned add-on to its other name so the hash guard and teardown below still apply to it.
+        var addonFollowed = false;
         if (record.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path))) is { } addonEntry && !File.Exists(addonEntry.Path))
         {
-            var otherName = Path.GetFileName(addonEntry.Path).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase) ? AddonFileName : ZzzAddonFileName;
-            var other = Path.Combine(Path.GetDirectoryName(addonEntry.Path)!, otherName);
-            if (File.Exists(other)) addonEntry.Path = other;
+            var other = OtherAddonPath(addonEntry.Path);
+            if (File.Exists(other))
+            {
+                addonEntry.Path = other;
+                addonFollowed = true;
+            }
         }
 
         // Hash guard every non-user-editable ShortFuse-owned file before destructive teardown.
@@ -414,6 +523,17 @@ public sealed class ShortFuseDeploymentService
             var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"ShortFuse-owned file was modified outside RHI: {file.Path}. Remove is blocked to protect the external change.");
+        }
+
+        // The followed add-on passed the hash guard, so it is ours: persist the repaired path. Doing it
+        // here also proves the ledger is writable before any teardown starts.
+        if (addonFollowed)
+        {
+            try { _records.Upsert(record); }
+            catch (Exception ex)
+            {
+                return ComponentOperationResult.Fail($"{RemoveRepairSaveFailedPrefix}{ex.Message}{RemoveRepairSaveFailedSuffix}");
+            }
         }
 
         var reshadeRecord = _records.Find(game, ManagedComponentKind.ReShade);

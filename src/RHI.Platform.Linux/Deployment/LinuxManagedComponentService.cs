@@ -1302,6 +1302,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public bool GetShortFuseZzzLoadOrderEnabled(DetectedGame game) => _shortFuse.GetZzzLoadOrderEnabled(game);
 
+    /// <summary>ZZZ state as ReShade will see it: the owned add-on's on-disk name when managed, else the preference.</summary>
+    public bool GetShortFuseZzzLoadOrderInEffect(DetectedGame game) => _shortFuse.GetZzzLoadOrderInEffect(game);
+
     public Task<ComponentOperationResult> SetShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);

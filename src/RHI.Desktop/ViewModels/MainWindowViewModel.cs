@@ -2950,7 +2950,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void RefreshShortFuseState(DetectedGame game)
     {
         ShortFuseAutoConfigEnabled = _managedComponents.GetShortFuseAutoConfigEnabled(game);
-        SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderEnabled(game));
+        SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
         var record = _managedComponents.GetShortFuseRecord(game);
         ShortFuseLatestVersionText = FormatLatestVersionSummary(record?.Version, _shortFuseLatestVersionCache);
         NotifyShortFuse();
@@ -3006,7 +3006,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             IsBusy = false;
             if (ReferenceEquals(SelectedGame, game))
-                SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderEnabled(game));
+                SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
         }
     }
 
