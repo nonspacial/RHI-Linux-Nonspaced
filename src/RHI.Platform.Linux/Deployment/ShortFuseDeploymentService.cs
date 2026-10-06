@@ -96,7 +96,8 @@ public sealed class ShortFuseDeploymentService
     }
 
     /// <summary>
-    /// Replaces only the managed renodx-dlss.addon64 with the pinned (or latest) release. ReShade,
+    /// Replaces only the ShortFuse add-on owned by the record with the pinned (or latest) release.
+    /// The file keeps its recorded name (renodx-dlss.addon64 or the ZZZ load-order name). ReShade,
     /// UAL, INI and the DLSS/Streamline stack stay as installed. Used by the in-place version swap
     /// and by Update All.
     /// </summary>
@@ -108,9 +109,9 @@ public sealed class ShortFuseDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux.");
-        var addon = ManagedFileSwap.FindFile(record, AddonFileName);
+        var addon = FindRecordedAddon(record);
         if (addon is null)
-            return ComponentOperationResult.Fail($"The ShortFuse record does not own {AddonFileName}. Remove and reinstall ShortFuse.");
+            return ComponentOperationResult.Fail("The ShortFuse record does not own a ShortFuse add-on. Remove and reinstall ShortFuse.");
 
         ShortFuseReleaseInfo release;
         string staged;
@@ -126,22 +127,44 @@ public sealed class ShortFuseDeploymentService
 
         try
         {
-            var changed = await ManagedFileSwap.ReplaceAsync([(addon, staged)], () =>
+            var changed = await ManagedFileSwap.ReplaceAsync(record, [(addon.Path, staged)], updated =>
             {
-                record.Version = release.Version;
-                record.SourceUrl = release.AssetUrl;
-                record.Metadata[MetaAddonSha256] = addon.Sha256 ?? "";
-                record.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
-                _records.Upsert(record);
+                updated.Version = release.Version;
+                updated.SourceUrl = release.AssetUrl;
+                updated.Metadata[MetaAddonSha256] = updated.Files.First(f => f.Path == addon.Path).Sha256 ?? "";
+                updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                _records.Upsert(updated);
             }, cancellationToken).ConfigureAwait(false);
             return ComponentOperationResult.Ok(changed == 0
                 ? $"ShortFuse {release.Version} is already installed."
                 : $"ShortFuse add-on swapped in place to {release.Version}. ReShade, UAL and the DLSS stack were not changed.", addon.Path);
         }
+        catch (ManagedFileRestoreException ex)
+        {
+            return ComponentOperationResult.Fail($"ShortFuse in-place swap failed and the previous add-on could not be restored: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return ComponentOperationResult.Fail($"ShortFuse in-place swap failed; the previous add-on was kept: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// The add-on entry of a ShortFuse record. The record is the authority: the entry whose hash is
+    /// the recorded add-on hash, else the single entry named *renodx-dlss.addon64 (the plain or the
+    /// ZZZ load-order name). Ambiguity returns null rather than guessing.
+    /// </summary>
+    internal static LinuxDeployedFile? FindRecordedAddon(LinuxDeploymentRecord record)
+    {
+        var addons = record.Files
+            .Where(f => Path.GetFileName(f.Path).EndsWith(AddonFileName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (record.Metadata.TryGetValue(MetaAddonSha256, out var hash) && !string.IsNullOrWhiteSpace(hash))
+        {
+            var byHash = addons.Where(f => string.Equals(f.Sha256, hash, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (byHash.Length == 1) return byHash[0];
+        }
+        return addons.Length == 1 ? addons[0] : null;
     }
 
     /// <summary>Swaps the ShortFuse-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>

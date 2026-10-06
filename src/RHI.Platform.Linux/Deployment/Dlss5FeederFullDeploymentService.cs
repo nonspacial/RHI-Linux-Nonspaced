@@ -213,14 +213,14 @@ public sealed class Dlss5FeederFullDeploymentService
         try
         {
             GitHubResolvedReleaseAsset release;
-            var items = new List<(LinuxDeployedFile File, string SourcePath)>();
+            var items = new List<(string RecordedPath, string SourcePath)>();
             try
             {
                 Directory.CreateDirectory(stageRoot);
                 release = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
                 var zip = await DownloadAssetAsync(release, Path.Combine(stageRoot, "feeder.zip"), cancellationToken).ConfigureAwait(false);
                 foreach (var name in payloadNames)
-                    items.Add((ManagedFileSwap.FindFile(record, name)!,
+                    items.Add((ManagedFileSwap.FindFile(record, name)!.Path,
                         ExtractReleasePayloadByName(zip, name, Path.Combine(stageRoot, name), minimumSize: 64 * 1024, requirePe: true)));
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
@@ -230,18 +230,22 @@ public sealed class Dlss5FeederFullDeploymentService
 
             try
             {
-                var changed = await ManagedFileSwap.ReplaceAsync(items, () =>
+                var changed = await ManagedFileSwap.ReplaceAsync(record, items, updated =>
                 {
-                    record.Version = release.Version;
-                    record.SourceUrl = release.AssetUrl;
-                    record.Metadata[MetaFeederVersion] = release.Version;
-                    record.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
-                    _records.Upsert(record);
+                    updated.Version = release.Version;
+                    updated.SourceUrl = release.AssetUrl;
+                    updated.Metadata[MetaFeederVersion] = release.Version;
+                    updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                    _records.Upsert(updated);
                 }, cancellationToken).ConfigureAwait(false);
                 return ComponentOperationResult.Ok(changed == 0
                     ? $"DLSS5 Feeder {release.Version} is already installed."
                     : $"DLSS5 Feeder swapped in place to {release.Version}. Consumer, DLSS DLLs, shaders and configs were not changed.",
-                    items.Select(item => item.File.Path).ToArray());
+                    items.Select(item => item.RecordedPath).ToArray());
+            }
+            catch (ManagedFileRestoreException ex)
+            {
+                return ComponentOperationResult.Fail($"DLSS5 Feeder in-place swap failed and the previous files could not be restored: {ex.Message}");
             }
             catch (Exception ex)
             {

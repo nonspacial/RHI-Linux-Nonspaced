@@ -30,29 +30,37 @@ internal static class NeuralRenderingDllSwap
         if (file is null)
             return ComponentOperationResult.Fail($"{displayName} does not own {DllName} for this game; nothing was swapped.");
 
-        string? source;
+        (string Path, string Version)? cached;
         try
         {
-            source = await dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, version, cancellationToken).ConfigureAwait(false);
+            cached = await dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, version, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             return ComponentOperationResult.Fail($"{DllName} download failed; nothing was changed: {ex.Message}");
         }
-        if (source is null)
+        if (cached is not { } source)
             return ComponentOperationResult.Fail("The DLSS manifest does not provide a Neural Rendering runtime.");
 
-        var label = string.IsNullOrWhiteSpace(version) ? "the newest version" : version;
+        // A pin that is no longer published falls back to the newest entry; report what was used.
+        var fallback = !string.IsNullOrWhiteSpace(version) &&
+                       !string.Equals(version, source.Version, StringComparison.OrdinalIgnoreCase)
+            ? $"{DllName} {version} is no longer published; using {source.Version}. "
+            : "";
         try
         {
-            var changed = await ManagedFileSwap.ReplaceAsync([(file, source)], () =>
+            var changed = await ManagedFileSwap.ReplaceAsync(record, [(file.Path, source.Path)], updated =>
             {
-                record.Metadata[MetaDllVersion] = version ?? "";
-                records.Upsert(record);
+                updated.Metadata[MetaDllVersion] = source.Version;
+                records.Upsert(updated);
             }, cancellationToken).ConfigureAwait(false);
-            return ComponentOperationResult.Ok(changed == 0
-                ? $"{displayName}: {DllName} already matches {label}."
-                : $"{displayName}: {DllName} swapped in place to {label}. Nothing else was changed.", file.Path);
+            return ComponentOperationResult.Ok(fallback + (changed == 0
+                ? $"{displayName}: {DllName} already matches {source.Version}."
+                : $"{displayName}: {DllName} swapped in place to {source.Version}. Nothing else was changed."), file.Path);
+        }
+        catch (ManagedFileRestoreException ex)
+        {
+            return ComponentOperationResult.Fail($"{displayName}: {DllName} swap failed and the previous DLL could not be restored: {ex.Message}");
         }
         catch (Exception ex)
         {

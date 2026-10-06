@@ -43,6 +43,8 @@ public sealed class NeuralRenderingDllVersionTests : IDisposable
 
         Assert.Equal(Pe(0x21), File.ReadAllBytes((await dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, "310.1"))!));
         Assert.Equal(Pe(0x22), File.ReadAllBytes((await dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, "gone"))!));
+        Assert.Equal("310.2", (await dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, "gone"))!.Value.Version);
+        Assert.Equal("310.1", (await dlss.EnsureCachedVersionAsync(DlssComponentKind.NeuralRendering, "310.1"))!.Value.Version);
     }
 
     [Fact]
@@ -79,6 +81,36 @@ public sealed class NeuralRenderingDllVersionTests : IDisposable
         Assert.Equal(Sha256(nr), ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256);
         Assert.Equal("310.1", record.Metadata["NeuralRendering.DllVersion"]);
         Assert.Equal("1.0", record.Version);
+    }
+
+    [Fact]
+    public async Task NrDllSwap_UnpublishedPinReportsAndRecordsTheVersionActuallyInstalled()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "fallback")).FullName;
+        var game = Game(bin);
+        var nr = Path.Combine(bin, "nvngx_dlssnr.dll");
+        File.WriteAllBytes(nr, Pe(0x21));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "fallback-deployments.json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ShortFuse,
+            BinaryDirectory = bin, Version = "1.0", Files = [new LinuxDeployedFile { Path = nr, Sha256 = Sha256(nr) }]
+        });
+        using var http = new HttpClient(Handler());
+        var files = new TransactionalFileDeploymentService();
+        var overrides = new WineDllOverrideService();
+        var sf = new ShortFuseDeploymentService(http, files, records, overrides,
+            new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(_root, "cache-ual")),
+            new DlssManagerService(http, files, Path.Combine(_root, "cache-dlss")),
+            Path.Combine(_root, "cache-sf"), new ShortFuseSettingsStore(Path.Combine(_root, "sf.json")));
+
+        var result = await sf.SwapNeuralRenderingDllAsync(game, "309.9");
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(Pe(0x22), File.ReadAllBytes(nr));
+        Assert.Contains("309.9 is no longer published; using 310.2", result.Message);
+        Assert.Contains("swapped in place to 310.2", result.Message);
+        Assert.Equal("310.2", records.Find(game, ManagedComponentKind.ShortFuse)!.Metadata["NeuralRendering.DllVersion"]);
     }
 
     private static DetectedGame Game(string bin) => new()

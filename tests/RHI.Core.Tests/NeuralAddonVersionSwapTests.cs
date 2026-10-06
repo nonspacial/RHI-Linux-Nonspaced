@@ -48,34 +48,181 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
     }
 
     [Fact]
-    public async Task ManagedFileSwap_ReplacesOnlyTargetAndRestoresWhenPersistFails()
+    public async Task ManagedFileSwap_ReplacesOnlyTargetAndRestoresFileAndRecordWhenSaveFails()
     {
-        var target = Write("addon.addon64", [1, 2, 3]);
-        var file = new LinuxDeployedFile { Path = target, Sha256 = Sha256(target) };
-        var oldHash = file.Sha256;
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "rollback")).FullName;
+        var game = Game(bin);
+        var target = Write(Path.Combine(bin, "addon.addon64"), [1, 2, 3]);
+        var other = Write(Path.Combine(bin, "other.dll"), [4, 5, 6]);
+        var ledger = Path.Combine(_root, "rollback-deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var seeded = Record(game, ManagedComponentKind.ShortFuse, "OLD", target, other);
+        seeded.SourceUrl = "https://example.invalid/old";
+        seeded.Metadata["GitHub.ReleaseTagPin"] = "vOLD";
+        records.Upsert(seeded);
+        var oldHash = Sha256(target);
         var source = Write("new.addon64", [9, 9, 9]);
 
-        await Assert.ThrowsAsync<IOException>(() => ManagedFileSwap.ReplaceAsync([(file, source)], () => throw new IOException("disk full")));
+        // The ledger's temp path is a directory, so Upsert fails after the file was swapped.
+        Directory.CreateDirectory(ledger + ".tmp");
+        var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
+        await Assert.ThrowsAnyAsync<Exception>(() => ManagedFileSwap.ReplaceAsync(record, [(target, source)], updated =>
+        {
+            updated.Version = "NEW";
+            updated.SourceUrl = "https://example.invalid/new";
+            updated.Metadata["GitHub.ReleaseTagPin"] = "vNEW";
+            records.Upsert(updated);
+        }));
+        Directory.Delete(ledger + ".tmp");
+
         Assert.Equal([1, 2, 3], File.ReadAllBytes(target));
-        Assert.Equal(oldHash, file.Sha256);
+        Assert.Equal(oldHash, ManagedFileSwap.FindFile(record, "addon.addon64")!.Sha256);
+        Assert.Equal("OLD", record.Version);
+        // The store, and the ledger after an unrelated save, still describe the old file.
+        records.Upsert(Record(game, ManagedComponentKind.ReShade, "1", other));
+        foreach (var stored in new[] { records.Find(game, ManagedComponentKind.ShortFuse)!, new LinuxDeploymentRecordStore(ledger).Find(game, ManagedComponentKind.ShortFuse)! })
+        {
+            Assert.Equal("OLD", stored.Version);
+            Assert.Equal("https://example.invalid/old", stored.SourceUrl);
+            Assert.Equal("vOLD", stored.Metadata["GitHub.ReleaseTagPin"]);
+            Assert.Equal(oldHash, ManagedFileSwap.FindFile(stored, "addon.addon64")!.Sha256);
+        }
+        Assert.Single(Directory.EnumerateFiles(bin, "addon.addon64*"));
 
         var persisted = 0;
-        Assert.Equal(1, await ManagedFileSwap.ReplaceAsync([(file, source)], () => persisted++));
+        Assert.Equal(1, await ManagedFileSwap.ReplaceAsync(record, [(target, source)], updated =>
+        {
+            persisted++;
+            records.Upsert(updated);
+        }));
         Assert.Equal([9, 9, 9], File.ReadAllBytes(target));
-        Assert.Equal(Sha256(target), file.Sha256);
+        Assert.Equal([4, 5, 6], File.ReadAllBytes(other));
+        Assert.Equal(Sha256(target), ManagedFileSwap.FindFile(records.Find(game, ManagedComponentKind.ShortFuse)!, "addon.addon64")!.Sha256);
+        Assert.Equal(oldHash, ManagedFileSwap.FindFile(record, "addon.addon64")!.Sha256);
         Assert.Equal(1, persisted);
-        Assert.Single(Directory.EnumerateFiles(Path.GetDirectoryName(target)!, "addon.addon64*"));
+        Assert.Single(Directory.EnumerateFiles(bin, "addon.addon64*"));
+    }
+
+    [Fact]
+    public async Task ManagedFileSwap_KeepsBackupAndSaysSoWhenRestoreFails()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "restore-fails")).FullName;
+        var target = Write(Path.Combine(bin, "addon.addon64"), [1, 2, 3]);
+        var record = Record(Game(bin), ManagedComponentKind.ShortFuse, "OLD", target);
+        var source = Write("new.addon64", [9, 9, 9]);
+
+        // Persist fails after something replaced the target with a non-empty directory, so the
+        // backup cannot be renamed back over it.
+        var ex = await Assert.ThrowsAsync<ManagedFileRestoreException>(() => ManagedFileSwap.ReplaceAsync(record, [(target, source)], _ =>
+        {
+            File.Delete(target);
+            Directory.CreateDirectory(target);
+            File.WriteAllBytes(Path.Combine(target, "blocker"), [0]);
+            throw new IOException("disk full");
+        }));
+
+        var backup = target + ManagedFileSwap.BackupSuffix;
+        Assert.Equal([backup], ex.BackupPaths);
+        Assert.Equal([1, 2, 3], File.ReadAllBytes(backup));
+        Assert.Contains("could not be restored", ex.Message);
+        Assert.Contains(backup, ex.Message);
+        Assert.Contains("disk full", ex.Message);
+        Assert.IsType<IOException>(ex.InnerException);
+        Assert.Equal(Sha256(backup), record.Files[0].Sha256);
     }
 
     [Fact]
     public async Task ManagedFileSwap_RefusesFileModifiedOutsideRhi()
     {
         var target = Write("edited.addon64", [1]);
-        var file = new LinuxDeployedFile { Path = target, Sha256 = new string('0', 64) };
+        var record = new LinuxDeploymentRecord { Files = [new LinuxDeployedFile { Path = target, Sha256 = new string('0', 64) }] };
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            ManagedFileSwap.ReplaceAsync([(file, Write("src.addon64", [2]))], () => { }));
+            ManagedFileSwap.ReplaceAsync(record, [(target, Write("src.addon64", [2]))], _ => { }));
         Assert.Equal([1], File.ReadAllBytes(target));
+    }
+
+    [Fact]
+    public async Task ShortFuseSwap_FailedSaveKeepsAddonAndRecord()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "sf-fail", "game")).FullName;
+        var game = Game(bin);
+        var addon = Write(Path.Combine(bin, ShortFuseDeploymentService.AddonFileName), Payload(0x10, 40 * 1024));
+        var ledger = Path.Combine(_root, "sf-fail-deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var seeded = Record(game, ManagedComponentKind.ShortFuse, "8.5.0-rc5", addon);
+        seeded.SourceUrl = "https://example.invalid/rc5";
+        seeded.Metadata["GitHub.ReleaseTagPin"] = "renodx-dlss-SF-8.5.0-rc5";
+        seeded.Metadata["ShortFuse.AddonSha256"] = Sha256(addon);
+        records.Upsert(seeded);
+        var oldBytes = File.ReadAllBytes(addon);
+        using var http = ShortFuseHttp(Payload(0x30, 40 * 1024));
+        var sf = ShortFuse(http, records, "sf-fail");
+
+        Directory.CreateDirectory(ledger + ".tmp");
+        var result = await sf.SwapAddonVersionAsync(game, releaseTag: null);
+        Directory.Delete(ledger + ".tmp");
+
+        Assert.False(result.Success);
+        Assert.Contains("the previous add-on was kept", result.Message);
+        Assert.Equal(oldBytes, File.ReadAllBytes(addon));
+        var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
+        Assert.Equal("8.5.0-rc5", record.Version);
+        Assert.Equal("https://example.invalid/rc5", record.SourceUrl);
+        Assert.Equal("renodx-dlss-SF-8.5.0-rc5", record.Metadata["GitHub.ReleaseTagPin"]);
+        Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"]);
+        Assert.Equal(Sha256(addon), record.Files[0].Sha256);
+    }
+
+    [Fact]
+    public async Task ShortFuseSwap_UsesRecordedZzzAddonAndKeepsItsName()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "sf-zzz", "game")).FullName;
+        var game = Game(bin);
+        var addon = Write(Path.Combine(bin, "zzz_renodx-dlss.addon64"), Payload(0x10, 40 * 1024));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "sf-zzz-deployments.json"));
+        var seeded = Record(game, ManagedComponentKind.ShortFuse, "8.5.0-rc5", addon);
+        seeded.Metadata["ShortFuse.AddonSha256"] = Sha256(addon);
+        records.Upsert(seeded);
+        var newAddon = Payload(0x30, 40 * 1024);
+        using var http = ShortFuseHttp(newAddon);
+
+        var result = await ShortFuse(http, records, "sf-zzz").SwapAddonVersionAsync(game, releaseTag: null);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(newAddon, File.ReadAllBytes(addon));
+        Assert.False(File.Exists(Path.Combine(bin, ShortFuseDeploymentService.AddonFileName)));
+        Assert.Equal(addon, Assert.Single(result.ChangedFiles!));
+        var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
+        Assert.Equal("8.5.0-rc10", record.Version);
+        Assert.Equal(addon, Assert.Single(record.Files).Path);
+        Assert.Equal(Sha256(addon), record.Files[0].Sha256);
+        Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"]);
+    }
+
+    private static HttpClient ShortFuseHttp(byte[] rc10Addon)
+    {
+        var json = """
+        [
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+        ]
+        """;
+        return new HttpClient(new MapHandler(new()
+        {
+            [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes(json),
+            ["https://example.invalid/rc10"] = rc10Addon
+        }));
+    }
+
+    private ShortFuseDeploymentService ShortFuse(HttpClient http, LinuxDeploymentRecordStore records, string tag)
+    {
+        var files = new TransactionalFileDeploymentService();
+        var overrides = new WineDllOverrideService();
+        return new ShortFuseDeploymentService(http, files, records, overrides,
+            new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(_root, tag + "-cache-ual")),
+            new DlssManagerService(http, files, Path.Combine(_root, tag + "-cache-dlss")),
+            Path.Combine(_root, tag + "-cache-sf"), new ShortFuseSettingsStore(Path.Combine(_root, tag + "-sf.json")));
     }
 
     [Fact]

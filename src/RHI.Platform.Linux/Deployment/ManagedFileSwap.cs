@@ -6,12 +6,13 @@ namespace RHI.Platform.Linux.Deployment;
 /// In-place replacement of files already owned by an RHI deployment record (upstream RHI 2.7.6
 /// "swap while installed"). Only the named files change; every other file of the record is left
 /// alone. Each target must still match its recorded hash, so a file edited outside RHI is never
-/// overwritten. When copying or persisting the record fails, the previous bytes and hashes are
-/// put back.
+/// overwritten. The caller's record is never mutated: the new hashes go into a copy, which the
+/// persist callback updates and saves. When copying or persisting fails, the previous bytes are
+/// put back; a file that cannot be put back keeps its backup and is reported, never hidden.
 /// </summary>
 public static class ManagedFileSwap
 {
-    private const string BackupSuffix = ".rhi-swap-old";
+    public const string BackupSuffix = ".rhi-swap-old";
     private const string StagingSuffix = ".rhi-swap-new";
 
     /// <summary>Returns the record file matching <paramref name="fileName"/> (case-insensitive leaf name).</summary>
@@ -20,18 +21,26 @@ public static class ManagedFileSwap
             Path.GetFileName(file.Path).Equals(fileName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Replaces each recorded file with its source, updates the recorded hashes, then calls
-    /// <paramref name="persist"/>. Returns the number of files whose bytes actually changed.
+    /// Replaces each recorded file (by its recorded path) with its source, then hands a copy of
+    /// <paramref name="record"/> carrying the new hashes to <paramref name="persist"/>, which must
+    /// apply any other changes to that copy and save it. Returns the number of files whose bytes
+    /// changed. <paramref name="record"/> itself is left as it was, whatever happens.
     /// </summary>
+    /// <exception cref="ManagedFileRestoreException">A previous file could not be put back; its backup was kept.</exception>
     public static async Task<int> ReplaceAsync(
-        IReadOnlyList<(LinuxDeployedFile File, string SourcePath)> items,
-        Action persist,
+        LinuxDeploymentRecord record,
+        IReadOnlyList<(string RecordedPath, string SourcePath)> items,
+        Action<LinuxDeploymentRecord> persist,
         CancellationToken cancellationToken = default)
     {
+        var updated = LinuxDeploymentRecordStore.Clone(record);
+
         // Verify everything before touching anything.
         var plan = new List<(LinuxDeployedFile File, string Source, string NewHash, string? OldHash)>();
-        foreach (var (file, source) in items)
+        foreach (var (recordedPath, source) in items)
         {
+            var file = updated.Files.FirstOrDefault(f => string.Equals(f.Path, recordedPath, StringComparison.Ordinal))
+                ?? throw new InvalidOperationException($"The deployment record does not own {recordedPath}.");
             if (!File.Exists(source))
                 throw new FileNotFoundException("Swap source is missing.", source);
             if (!File.Exists(file.Path))
@@ -43,7 +52,8 @@ public static class ManagedFileSwap
             plan.Add((file, source, await Sha256Async(source, cancellationToken).ConfigureAwait(false), file.Sha256));
         }
 
-        var swapped = new List<(LinuxDeployedFile File, string? OldHash)>();
+        var swapped = new List<LinuxDeployedFile>();
+        var keptBackups = new List<string>();
         try
         {
             foreach (var (file, source, newHash, oldHash) in plan)
@@ -54,19 +64,23 @@ public static class ManagedFileSwap
                 File.Copy(file.Path, file.Path + BackupSuffix, overwrite: true);
                 File.Copy(source, staging, overwrite: true);
                 File.Move(staging, file.Path, overwrite: true);
-                swapped.Add((file, oldHash));
+                swapped.Add(file);
                 file.Sha256 = newHash;
             }
-            persist();
+            persist(updated);
         }
-        catch
+        catch (Exception failure)
         {
             // Compensation never honours cancellation: a half-swapped component must be restored.
-            foreach (var (file, oldHash) in swapped.AsEnumerable().Reverse())
+            foreach (var file in swapped.AsEnumerable().Reverse())
             {
-                try { File.Copy(file.Path + BackupSuffix, file.Path, overwrite: true); } catch { }
-                file.Sha256 = oldHash;
+                var backup = file.Path + BackupSuffix;
+                // A rename is atomic and consumes the backup only once it has taken the file's place.
+                try { File.Move(backup, file.Path, overwrite: true); }
+                catch { keptBackups.Add(backup); }
             }
+            if (keptBackups.Count > 0)
+                throw new ManagedFileRestoreException(keptBackups, failure);
             throw;
         }
         finally
@@ -74,7 +88,8 @@ public static class ManagedFileSwap
             foreach (var (file, _, _, _) in plan)
             {
                 TryDelete(file.Path + StagingSuffix);
-                TryDelete(file.Path + BackupSuffix);
+                if (!keptBackups.Contains(file.Path + BackupSuffix))
+                    TryDelete(file.Path + BackupSuffix);
             }
         }
         return swapped.Count;
@@ -90,4 +105,16 @@ public static class ManagedFileSwap
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
+}
+
+/// <summary>
+/// A swap failed and at least one previous file could not be put back. Its backup is kept beside
+/// it; the deployment record still describes the previous file.
+/// </summary>
+public sealed class ManagedFileRestoreException(IReadOnlyList<string> backupPaths, Exception cause)
+    : IOException(
+        $"The previous file could not be restored. Its backup is kept at {string.Join(", ", backupPaths)}; " +
+        $"move it back over the original name before retrying. Cause: {cause.Message}", cause)
+{
+    public IReadOnlyList<string> BackupPaths { get; } = backupPaths;
 }
