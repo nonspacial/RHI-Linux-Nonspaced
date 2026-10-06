@@ -30,11 +30,11 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
     {
         var lutris = new FixedDetector("Lutris",
             Game("Blue Prince", "Lutris", _root, "/cfg/blue-prince-1.yml"),
-            Game("Rekordbox", "Lutris", _root, "/cfg/rekordbox-setup-2.yml"));
+            Game("Second Game", "Lutris", _root, "/cfg/second-game-2.yml"));
 
         var games = await new GameLibraryScanner([lutris]).ScanAsync();
 
-        Assert.Equal(["Blue Prince", "Rekordbox"], games.Select(g => g.Name).ToArray());
+        Assert.Equal(["Blue Prince", "Second Game"], games.Select(g => g.Name).ToArray());
     }
 
     [Fact]
@@ -52,5 +52,19 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         Assert.Equal(2, games.Count);
         Assert.Contains(games, g => g.Name == "Battle.net" && g.InstallPath == _root);
         Assert.Contains(games, g => g.Name == "Game" && g.Source == "Lutris" && g.InstallPath == other);
+    }
+
+    [Fact]
+    public async Task Merge_KeepsAFailClosedPatchTargetVerdictFromAnyDuplicate()
+    {
+        var wine = new FixedDetector("Wine", Game("Game", "Wine", _root));
+        var flagged = Game("Game", "Lutris", _root);
+        flagged.RequiresExplicitPatchTarget = true;
+        var lutris = new FixedDetector("Lutris", flagged);
+
+        var merged = Assert.Single(await new GameLibraryScanner([wine, lutris]).ScanAsync());
+
+        Assert.Equal("Wine", merged.Source);
+        Assert.True(merged.RequiresExplicitPatchTarget);
     }
 }
