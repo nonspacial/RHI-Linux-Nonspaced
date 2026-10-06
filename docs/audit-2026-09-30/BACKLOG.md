@@ -1,0 +1,134 @@
+# Backlog — 2026-09-30 audit
+
+Tracker: local Forgejo `infra/RHI-Linux` (<http://localhost:3000/infra/RHI-Linux/issues>). Git remote `forge`.
+Overview and order: #101 **Backlog overview** (pinned).
+
+Order: #1 (PAR-B04) first; then the upstream-sync and data-safety lanes in parallel; then detection; then UI. Feature-parity items stay unscheduled until decided.
+
+Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port. `fix/<issue>` worktrees under `/mnt/vdo_storage/worktrees/rhi-linux/` for everything else. Push to `forge` only; a GitHub PR to `wizardkof/RHI-Linux` only after a change has lived on `main`.
+
+| Milestone | Issues |
+|---|---|
+| `audit-remediation` | 76 |
+| `upstream-sync/2.7.9` | 13 |
+| `feature-parity` | 11 |
+| (none) | 1 (#101 overview) |
+| **Total** | **101** |
+
+## upstream-sync/2.7.9
+
+| # | Finding | Title | Labels | Priority |
+|---|---|---|---|---|
+| #10 | PAR-D01, PAR-42 | [2.7.6] NR in-place version swap and NR DLL version selection for all methods | upstream-drift | P2 |
+| #11 | PAR-D02, PAR-56, PAR-53 | [2.7.6] Available HDR Mods dialog, collapsed-section summaries and DLL-naming dropdowns | upstream-drift | P2 |
+| #12 | PAR-D04, PAR-06 | [2.7.6] PCGW single-file data model (pcgw_data.json) and Retry-After backoff | upstream-drift | P1 |
+| #13 | PAR-D05, PAR-47 | [2.7.6] OptiScaler FG Nvngx "Combo" option and RR Preset F | upstream-drift | P2 |
+| #14 | PAR-D06 | [2.7.6] Unity addon URLs on GitHub Releases; stop re-downloading on every install | upstream-drift | P2 |
+| #15 | PAR-D08, PAR-19 | [2.7.9] Unity per-game INI settings from the RHI database | upstream-drift | P2 |
+| #16 | PAR-D08, PAR-63 | [2.7.9] Control Ultimate Edition RR automation | upstream-drift | P2 |
+| #17 | PAR-D08, PAR-44 | [2.7.9] DLSS Tool "ZZZ load order" toggle | upstream-drift | P2 |
+| #18 | PAR-D08, PAR-55 | [2.7.9] Component update history log | upstream-drift | P2 |
+| #19 | PAR-D09 | [2.7.9] NR fixes: rc10 vs rc5 sort, Full Refresh bypasses version cache, redeploy untracked NR files | upstream-drift | P2 |
+| #20 | PAR-D10 | [2.7.9] Global shader "Off" overrides per-game overrides; custom folder auto-tick | upstream-drift | P2 |
+| #21 | PAR-D11 | [2.7.9] Custom ReShade channel shows a false update | upstream-drift | P2 |
+| #22 | PAR-D12 | [2.7.9] Launch working directory for exe-override launches (test under Wine) | upstream-drift | P1 |
+
+## audit-remediation
+
+| # | Finding | Title | Labels | Priority |
+|---|---|---|---|---|
+| #1 | PAR-B04 | PAR-B04: validate.sh hard-codes test count and ~20 source literals; every PR breaks CI | hygiene | P0 |
+| #2 | PAR-B01 | PAR-B01: AppImage build is not in the repo; released artefact cannot be reproduced | hygiene | P1 |
+| #3 | PAR-B02 | PAR-B02: AppImage does not bundle 7z/bsdtar; ReShade extraction needs a host tool | hygiene | P2 |
+| #4 | PAR-B05 | PAR-B05: pin the .NET SDK with global.json and add a package lock file | hygiene | P2 |
+| #5 | PAR-B06 | PAR-B06: CI hygiene: SHA-pin actions, add permissions block, cache, test results, release job | hygiene | P2 |
+| #6 | PAR-B07 | PAR-B07: install-user.sh wipes the install dir silently and does not refresh desktop caches | hygiene | P3 |
+| #7 | PAR-B08 | PAR-B08: validate.sh deletes all bin/obj and artifacts/ in a developer tree | hygiene | P3 |
+| #8 | PAR-61 | MOTD URL returns 404: motd.md missing from the repo | hygiene | P2 |
+| #9 | analyzers-summary | Analyzer warnings baseline (834): CA1869 JsonSerializerOptions per call ×18, CA2016 token not forwarded ×12, CA1310 culture-sensitive EndsWith in DetectionHelpers ×4 | hygiene | P3 |
+| #23 | DEP-03 | DEP-03: write-ahead journal for deployments; crash mid-operation leaves unowned payloads and unswept .rhi-* temp copies | audit:data-safety | P1 |
+| #24 | DEP-05 | DEP-05: lock user.reg and rewrite atomically; refuse edits while Wine owns the prefix; ShortFuse truncate-and-write restore | audit:data-safety | P1 |
+| #25 | DEP-06 | DEP-06: RenoDX add-on downloads need an HTTPS + host allow-list (DLLs from any URL today) | audit:data-safety | P0 |
+| #26 | DEP-07 | DEP-07: GitHub asset digests are optional: verification is fail-open almost everywhere | audit:data-safety | P1 |
+| #27 | DEP-08 | DEP-08: ReShade binaries: no hash, a third-party proxy for nightly builds, and a size-only identity | audit:data-safety | P1 |
+| #28 | DEP-09 | DEP-09: ReShade Addon Manager: fragile rollback, a separate ledger and unvalidated URLs | audit:data-safety | P1 |
+| #29 | DEP-10 | DEP-10: RenoDX can overwrite and later delete a foreign file without a backup | audit:data-safety | P1 |
+| #30 | DEP-11 | DEP-11: Wine override restore ignores user changes; the registry backup is taken once and never used | audit:data-safety | P1 |
+| #31 | DEP-12 | DEP-12: Writes are not durable, and several "atomic" copies verify length only | audit:data-safety | P1 |
+| #32 | DEP-13 | DEP-13: The record store re-reads and re-parses the whole JSON on every `Find`; `Decorate` does this about 39 times per refresh | audit:data-safety | P3 |
+| #33 | DEP-14 | DEP-14: Hash and copy amplification in `TransactionalFileDeploymentService` | audit:data-safety | P2 |
+| #34 | DEP-15 | DEP-15: Whole-file reads and naive scans in binary sniffing, repeated per probe | audit:data-safety | P2 |
+| #35 | DEP-16 | DEP-16: No conditional requests, no release-lookup cache, and repeated downloads (GitHub rate limit) | audit:data-safety | P2 |
+| #36 | DEP-17 | DEP-17: GitHub token stored in plain text with no permission check | audit:data-safety | P3 |
+| #37 | DEP-18 | DEP-18: External extractors: no timeout and no post-extraction containment or symlink check | audit:data-safety | P3 |
+| #38 | DEP-19 | DEP-19: `GameKey` identity and absolute paths make records brittle across library moves | audit:data-safety | P3 |
+| #39 | DEP-20 | DEP-20: `DlssManagerService` cache hygiene | audit:data-safety | P3 |
+| #40 | DEP-21 | DEP-21: `RestoreAsync` deletes an unowned `.rhi_custom` sidecar | audit:data-safety | P3 |
+| #41 | DEP-22 | DEP-22: The Dlssg2030 doc claims a pinned commit, but the code resolves the latest commit at runtime | audit:data-safety | P3 |
+| #42 | DEP-S1, DEP-S4, DEP-S5 | Deployment layer shared toolkit: TrustedDownload / AtomicFile / OwnedFileSet kit (~2–3k duplicated lines) | audit:structure | P2 |
+| #43 | DET-03 | DET-03: Startup library scan waits behind an untimed DLSS manifest fetch (up to 5 min) | audit:detection | P1 |
+| #44 | DET-05 | DET-05: Lutris native-wrapper games take the wrapper's folder as install path, and distinct games merge into one card | audit:detection, needs-decision | P1 |
+| #45 | DET-06 | DET-06: Manifest `installPathOverrides` and `splitGames` can move `InstallPath` outside the game | audit:detection | P1 |
+| #46 | DET-07 | DET-07: HDR launch wraps `xdg-open` for Heroic games and reports HDR as applied | audit:detection | P1 |
+| #47 | DET-08 | DET-08: Steam roots and libraries are de-duplicated by string, so each library is walked 2–3 times | audit:detection | P2 |
+| #48 | DET-09 | DET-09: Scan-time indexes are thrown away, and several walks ignore cancellation | audit:detection | P2 |
+| #49 | DET-10 | DET-10: Lutris YAML parsing: folded/multi-line scalars truncate `exe`, and names fall back to a timestamped config stem | audit:detection | P2 |
+| #50 | DET-11 | DET-11: WinePrefixDetector double-lists Lutris/umu prefixes, uses the wrong granularity, and launches Proton prefixes with system `wine` | audit:detection, needs-decision | P2 |
+| #51 | DET-12 | DET-12: Heroic fuzzy prefix matching can attach the wrong Wine prefix | audit:detection | P2 |
+| #52 | DET-13 | DET-13: Runtime-log attribution matches on the full log path, so a launcher inherits another game's renderer at High confidence | audit:detection | P2 |
+| #53 | DET-14 | DET-14: An executable containing several API strings is reported as the highest API at High confidence | audit:detection, needs-decision | P2 |
+| #54 | DET-15 | DET-15: PCGamingWiki fallback overrides native Linux results, caches no misses, and blocks selection | audit:detection | P2 |
+| #55 | DET-16 | DET-16: `GameLibraryScanner.Merge` is lossy, and the merge key is not canonical | audit:detection | P2 |
+| #56 | DET-17 | DET-17: Detector failures are swallowed and the scan still reports success | audit:detection | P2 |
+| #57 | DET-18 | DET-18: every JSON store fails open to empty state and the next save overwrites user data (game-library, settings, API overrides, prefs, addon-manager, …) — not only deployments.json | audit:detection | P1 |
+| #58 | DET-19 | DET-19: Removing or adding manual games can silently do nothing | audit:detection | P2 |
+| #59 | DET-20 | DET-20: Manual (and Heroic) entries accept a prefix root, `$HOME` or `/` as the game root (sibling of the HEAD fix) | audit:detection | P1 |
+| #60 | DET-21 | DET-21: `_probeCache` holds full file lists for every game ever selected, with no eviction | audit:detection | P2 |
+| #61 | DET-22 | DET-22: Every refresh, including the "6 ms" partial one, invalidates and re-downloads the upstream manifest | audit:detection | P2 |
+| #62 | DET-23 | DET-23: Path-identity canonicalisation assigns other titles' policies (sibling of DET-01) | audit:detection | P2 |
+| #63 | DET-24 | DET-24: Synchronous JSON reads on the UI thread, N+1 per property evaluation | audit:detection | P2 |
+| #64 | DET-25 | DET-25: Other recursive enumerations still follow symlinks | audit:detection | P3 |
+| #65 | DET-26 | DET-26: `FindLikelyExecutable` hard-ignores by substring | audit:detection | P3 |
+| #66 | DET-27 | DET-27: Steam classification is shallow | audit:detection | P3 |
+| #67 | DET-28 | DET-28: Lutris path expansion is partial | audit:detection | P3 |
+| #68 | DET-29 | DET-29: Refresh UX and cancellation | audit:detection | P3 |
+| #69 | DET-30 | DET-30: Manual UE inference stops at `<Project>` | audit:detection | P3 |
+| #70 | DET-31 | DET-31: Launcher assumptions | audit:detection | P3 |
+| #71 | UI-03 | UI-03: Property getters do synchronous disk I/O on the UI thread (≈220 full `deployments.json` parses per game selection) | audit:ui | P1 |
+| #72 | UI-04 | UI-04: Several bulk operations clear the cache without re-probing, which wedges component actions ("wait for analysis") | audit:ui | P1 |
+| #73 | UI-05 | UI-05: Unhandled exceptions from UI handlers and persistence writes can terminate the process | audit:ui | P1 |
+| #74 | UI-06 | UI-06: `_probeCache` keeps every visited game's full file index for the whole session | audit:ui | P2 |
+| #75 | UI-07 | UI-07: Each search keystroke and filter change resets the selection, cancelling and restarting analysis | audit:ui | P2 |
+| #76 | UI-08 | UI-08: `IsBusy` has no owner, so concurrent operations clear each other's gate | audit:ui | P1 |
+| #77 | UI-09 | UI-09: Long operations cannot be cancelled while the busy overlay blocks the whole window | audit:ui | P2 |
+| #78 | UI-10 | UI-10: Edit-game dialog closes by matching localised success text (add dialog fixed; finish the result record) | audit:ui | P2 |
+| #79 | UI-11 | UI-11: localisation split across two mechanisms; PT-only strings remain (tray, pickers, window titles) | audit:ui | P2 |
+| #80 | UI-12 | UI-12: A pinned neural version is saved but the ComboBox shows blank | audit:ui | P2 |
+| #81 | UI-13 | UI-13: The background update loop dies permanently on its first exception | audit:ui | P2 |
+| #82 | UI-15 | UI-15: The probe mutates the shared `DetectedGame` off-thread while getters read it | audit:ui | P3 |
+| #83 | UI-16 | UI-16: Some mutations leave the cached file index stale | audit:ui | P3 |
+| #84 | UI-17 | UI-17: "Clear cache" runs synchronously on the UI thread | audit:ui | P3 |
+| #85 | UI-18 | UI-18: `DetectedGame` is not observable | audit:ui | P3 |
+| #86 | UI-19 | UI-19: "Latest version" caches never expire | audit:ui | P3 |
+| #87 | UI-20 | UI-20: Duplicated display↔value mapping between the VM and the Settings dialog | audit:ui | P3 |
+| #88 | UI-14 | UI-14: Enable compiled bindings (212 reflection bindings, no build-time checking) | audit:ui | P1 |
+| #89 | UI-Structure | Epic: Split MainWindowViewModel (7 units) | audit:structure, audit:ui | P2 |
+
+## feature-parity
+
+| # | Finding | Title | Labels | Priority |
+|---|---|---|---|---|
+| #90 | PAR-03 | [parity] Store coverage: Xbox/Game Pass, EA App, Ubisoft, Battle.net, Rockstar, itch.io | feature-gap, needs-decision | P3 |
+| #91 | PAR-09 | [parity] ReShade "No Addons" channel | feature-gap, needs-decision | P3 |
+| #92 | PAR-10 | [parity] ReShade for Vulkan games (global implicit layer) | feature-gap, needs-decision | P3 |
+| #93 | PAR-14 | [parity] Named shader selection profiles with zip export | feature-gap, needs-decision | P3 |
+| #94 | PAR-23 | [parity] Luma mods from GitHub release assets not yet on the wiki | feature-gap, needs-decision | P3 |
+| #95 | PAR-33 | [parity] Per-game opt-in DLSS auto-update from the manifest | feature-gap, needs-decision | P3 |
+| #96 | PAR-43 | [parity] NR Cost Scaler | feature-gap, needs-decision | P3 |
+| #97 | PAR-48 | [parity] OptiScaler per-GPU INI templates | feature-gap, needs-decision | P3 |
+| #98 | PAR-49 | [parity] OptiPatcher auto-deploy | feature-gap, needs-decision | P3 |
+| #99 | PAR-58 | [parity] Nexus Mods integration (NXM handler, API key, links) | feature-gap, needs-decision | P3 |
+| #100 | PAR-62 | [parity] App self-update check | feature-gap, needs-decision | P3 |
+
+Not filed (already fixed on `main` by `3aa0f21`/`5d431b8`): DET-01, DET-02, DET-04, UI-01, UI-02, add-game `Added` check, DEP-01, DEP-02, DEP-04, PAR-D03, PAR-D13, PAR-D14, Lutris relative-exe / dosdevices indexing, partial rescan.
+Not filed separately: PAR-D07 (moot until Vulkan ReShade, see the Vulkan parity issue), PAR-D15 (arrives through the live manifest), DEP-S2/S3 (inside the toolkit issue), PAR-B03/B09 (informational).
