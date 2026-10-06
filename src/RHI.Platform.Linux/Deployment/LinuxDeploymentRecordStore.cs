@@ -17,6 +17,8 @@ public sealed class LinuxDeploymentRecordStore
 
     // Read cache keyed on the file's (mtime, length). The UI evaluates dozens of record lookups
     // per selection change; without this every lookup re-read and re-parsed the file.
+    // Cached instances are private: reads hand out deep copies and writes cache a copy, so a
+    // caller that mutates a record and then fails to save cannot poison the next save.
     private List<LinuxDeploymentRecord>? _cached;
     private (DateTime Mtime, long Length)? _cachedStamp;
 
@@ -39,13 +41,16 @@ public sealed class LinuxDeploymentRecordStore
     public LinuxDeploymentRecord? Find(DetectedGame game, ManagedComponentKind component)
     {
         lock (_gate)
-            return LoadUnsafe().FirstOrDefault(r => r.GameKey == GameKey(game) && r.Component == component);
+        {
+            var record = LoadUnsafe().FirstOrDefault(r => r.GameKey == GameKey(game) && r.Component == component);
+            return record is null ? null : Clone(record);
+        }
     }
 
     public IReadOnlyList<LinuxDeploymentRecord> FindAll(DetectedGame game)
     {
         lock (_gate)
-            return LoadUnsafe().Where(r => r.GameKey == GameKey(game)).ToArray();
+            return LoadUnsafe().Where(r => r.GameKey == GameKey(game)).Select(Clone).ToArray();
     }
 
     public void Upsert(LinuxDeploymentRecord record)
@@ -55,7 +60,8 @@ public sealed class LinuxDeploymentRecordStore
             var records = LoadUnsafe();
             EnsureWritable();
             var index = records.FindIndex(r => r.GameKey == record.GameKey && r.Component == record.Component);
-            if (index >= 0) records[index] = record; else records.Add(record);
+            var copy = Clone(record);
+            if (index >= 0) records[index] = copy; else records.Add(copy);
             SaveUnsafe(records);
         }
     }
@@ -69,6 +75,17 @@ public sealed class LinuxDeploymentRecordStore
             records.RemoveAll(r => r.GameKey == GameKey(game) && r.Component == component);
             SaveUnsafe(records);
         }
+    }
+
+    /// <summary>Deep copy, including files, directories, Wine overrides and metadata.</summary>
+    public static LinuxDeploymentRecord Clone(LinuxDeploymentRecord record)
+    {
+        var copy = JsonSerializer.Deserialize<LinuxDeploymentRecord>(
+            JsonSerializer.SerializeToUtf8Bytes(record, JsonOptions), JsonOptions)!;
+        copy.Metadata = record.Metadata is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(record.Metadata, StringComparer.OrdinalIgnoreCase);
+        return copy;
     }
 
     public static string GameKey(DetectedGame game)

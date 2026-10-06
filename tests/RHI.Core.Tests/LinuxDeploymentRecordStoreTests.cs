@@ -90,6 +90,103 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         Assert.Empty(store.FindAll(game));
     }
 
+    [Fact]
+    public void Find_ReturnsCopies_SoUnsavedMutationNeverReachesTheCache()
+    {
+        var path = Path.Combine(_root, "records.json");
+        var store = new LinuxDeploymentRecordStore(path);
+        var game = new DetectedGame { Name = "Game", InstallPath = "/tmp/game", SteamAppId = 42 };
+        store.Upsert(Seed());
+
+        var found = store.Find(game, ManagedComponentKind.ShortFuse)!;
+        Mutate(found);
+        store.FindAll(game).Single().Files[0].Sha256 = "mutated";
+
+        AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+        // An unrelated save must persist the original, not the abandoned mutation.
+        store.Upsert(new LinuxDeploymentRecord { GameKey = "steam:42", Component = ManagedComponentKind.ReShade, BinaryDirectory = "/tmp/game" });
+        AssertUnchanged(new LinuxDeploymentRecordStore(path).Find(game, ManagedComponentKind.ShortFuse)!);
+    }
+
+    [Fact]
+    public void Upsert_CachesPrivateCopy_SoCallerMutationAfterSaveIsNotSeen()
+    {
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json"));
+        var game = new DetectedGame { Name = "Game", InstallPath = "/tmp/game", SteamAppId = 42 };
+        var record = Seed();
+        store.Upsert(record);
+
+        Mutate(record);
+
+        AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+    }
+
+    [Fact]
+    public void Upsert_ThatFailsToSave_LeavesCacheAndLedgerUnchanged()
+    {
+        var path = Path.Combine(_root, "records.json");
+        var store = new LinuxDeploymentRecordStore(path);
+        var game = new DetectedGame { Name = "Game", InstallPath = "/tmp/game", SteamAppId = 42 };
+        store.Upsert(Seed());
+        var ledger = File.ReadAllText(path);
+
+        // The temp file path is occupied by a directory, so the write fails with the cache stamp intact.
+        Directory.CreateDirectory(path + ".tmp");
+        var changed = store.Find(game, ManagedComponentKind.ShortFuse)!;
+        Mutate(changed);
+        Assert.ThrowsAny<Exception>(() => store.Upsert(changed));
+        Directory.Delete(path + ".tmp");
+
+        AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+        Assert.Equal(ledger, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Upsert_RefusedOnCorruptLedger_LeavesRecordUnchanged()
+    {
+        var path = Path.Combine(_root, "records.json");
+        var store = new LinuxDeploymentRecordStore(path);
+        var game = new DetectedGame { Name = "Game", InstallPath = "/tmp/game", SteamAppId = 42 };
+        store.Upsert(Seed());
+        var ledger = File.ReadAllText(path);
+        var changed = store.Find(game, ManagedComponentKind.ShortFuse)!;
+        Mutate(changed);
+
+        File.WriteAllText(path, "{ this is not json");
+        Assert.Throws<InvalidOperationException>(() => store.Upsert(changed));
+        File.WriteAllText(path, ledger);
+
+        AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+    }
+
+    private static LinuxDeploymentRecord Seed() => new()
+    {
+        GameKey = "steam:42", GameName = "Game", Component = ManagedComponentKind.ShortFuse, BinaryDirectory = "/tmp/game",
+        Version = "1.0", SourceUrl = "https://example.invalid/1.0",
+        Files = [new LinuxDeployedFile { Path = "/tmp/game/renodx-dlss.addon64", Sha256 = "old" }],
+        DirectoriesCreatedByRhi = ["/tmp/game/reshade-shaders"],
+        Metadata = new(StringComparer.OrdinalIgnoreCase) { ["GitHub.ReleaseTagPin"] = "v1.0" }
+    };
+
+    private static void Mutate(LinuxDeploymentRecord record)
+    {
+        record.Version = "2.0";
+        record.SourceUrl = "https://example.invalid/2.0";
+        record.Files[0].Sha256 = "new";
+        record.Files.Add(new LinuxDeployedFile { Path = "/tmp/game/extra.dll" });
+        record.DirectoriesCreatedByRhi.Clear();
+        record.Metadata["GitHub.ReleaseTagPin"] = "v2.0";
+    }
+
+    private static void AssertUnchanged(LinuxDeploymentRecord record)
+    {
+        Assert.Equal("1.0", record.Version);
+        Assert.Equal("https://example.invalid/1.0", record.SourceUrl);
+        Assert.Equal("old", Assert.Single(record.Files).Sha256);
+        Assert.Equal(["/tmp/game/reshade-shaders"], record.DirectoriesCreatedByRhi);
+        Assert.Equal("v1.0", record.Metadata["github.releasetagpin"]);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch { }
