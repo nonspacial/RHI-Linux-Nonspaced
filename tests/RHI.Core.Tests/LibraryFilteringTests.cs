@@ -19,6 +19,7 @@ public class LibraryFilteringTests
     [InlineData("Windows Media Player", true)]
     [InlineData("Windows NT", true)]
     [InlineData("AntiCheatExpert", true)]
+    [InlineData("Bome MIDI Translator Pro", true)]
     [InlineData("World of Warcraft", false)]
     [InlineData("Street Fighter 6", false)]
     public void WineDirectoryFilter_RemovesKnownSupportApps(string name, bool expected)

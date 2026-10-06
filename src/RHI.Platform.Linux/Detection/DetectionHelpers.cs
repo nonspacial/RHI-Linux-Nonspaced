@@ -69,7 +69,10 @@ internal static partial class DetectionHelpers
             "EasyAntiCheat",
             "EasyAntiCheat_EOS",
             "BattlEye",
-            "Epic Online Services"
+            "Epic Online Services",
+            // MIDI utility, not a game (DET-11 repro).
+            "Bome MIDI Translator",
+            "Bome MIDI Translator Pro"
         ];
         return exact.Any(x => n.Equals(x, StringComparison.OrdinalIgnoreCase));
     }
