@@ -57,7 +57,22 @@ public sealed class DetailHeaderPanel : Panel
     // Authored values are captured once per control, before the panel first writes them, and survive re-attachment.
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RoleEntry> _entries = new();
     private readonly List<Control> _watched = [];
+    private readonly Dictionary<double, double> _oneLineWidths = [];
+    private bool _applying;
     private bool _stacked;
+
+    // Properties the width estimate reads; a change outside ApplyOnce drops the cached widths and re-measures.
+    private static readonly HashSet<AvaloniaProperty> EstimateInputs =
+    [
+        TextBlock.TextProperty, ContentControl.ContentProperty, IsVisibleProperty,
+        TextBlock.FontSizeProperty, TextBlock.FontFamilyProperty, TextBlock.FontWeightProperty, TextBlock.FontStyleProperty,
+        TextBlock.FontStretchProperty, TextBlock.PaddingProperty,
+        TemplatedControl.FontSizeProperty, TemplatedControl.FontFamilyProperty, TemplatedControl.FontWeightProperty,
+        TemplatedControl.FontStyleProperty, TemplatedControl.FontStretchProperty, TemplatedControl.PaddingProperty,
+        TemplatedControl.BorderThicknessProperty, Border.PaddingProperty, Border.BorderThicknessProperty,
+        MarginProperty, WidthProperty, MinWidthProperty, MaxWidthProperty,
+        StackPanel.SpacingProperty, StackPanel.OrientationProperty, WrapPanel.ItemSpacingProperty, DockPanel.DockProperty
+    ];
 
     static DetailHeaderPanel() => AffectsMeasure<DetailHeaderPanel>(RowSpacingProperty);
 
@@ -80,17 +95,7 @@ public sealed class DetailHeaderPanel : Panel
     public (double Scale, bool Stacked) ChooseScale(double availableWidth)
     {
         if (Children.Count != 2 || double.IsInfinity(availableWidth)) return (1, false);
-        var roles = Roles();
-        bool Fits(double scale)
-        {
-            var estimator = new WidthEstimator(new WidthEstimator.Values
-            {
-                FontSize = c => Find(roles, c) is { } r ? r.FontSizeAt(scale) : null,
-                Padding = c => Find(roles, c) is { } r ? r.PaddingAt(scale) : null,
-                Width = c => Find(roles, c) is { } r ? r.WidthAt(scale) : null
-            });
-            return estimator.Estimate(Children[0]) + estimator.Estimate(Children[1]) + MinActionsGap + FitTolerance <= availableWidth;
-        }
+        bool Fits(double scale) => OneLineWidth(scale) + MinActionsGap + FitTolerance <= availableWidth;
 
         if (Fits(1)) return (1, false);
         if (!Fits(0)) return (0, true);
@@ -101,6 +106,24 @@ public sealed class DetailHeaderPanel : Panel
             if (Fits(mid)) lo = mid; else hi = mid;
         }
         return (lo, false);
+    }
+
+    // Estimated one-line width (title row + actions) at a scale. It depends only on the content, not on the
+    // available width, and the bisection always probes the same scales, so it is cached per scale until a watched
+    // property of a descendant changes (content, text, visibility, font, padding, size).
+    private double OneLineWidth(double scale)
+    {
+        if (_oneLineWidths.TryGetValue(scale, out var cached)) return cached;
+        var roles = Roles();
+        var estimator = new WidthEstimator(new WidthEstimator.Values
+        {
+            FontSize = c => Find(roles, c) is { } r ? r.FontSizeAt(scale) : null,
+            Padding = c => Find(roles, c) is { } r ? r.PaddingAt(scale) : null,
+            Width = c => Find(roles, c) is { } r ? r.WidthAt(scale) : null
+        });
+        var width = estimator.Estimate(Children[0]) + estimator.Estimate(Children[1]);
+        _oneLineWidths[scale] = width;
+        return width;
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -157,10 +180,18 @@ public sealed class DetailHeaderPanel : Panel
     // together with its template and its ancestors below this panel, so the single measure that follows is fresh.
     private void ApplyOnce(double scale)
     {
-        foreach (var role in Roles())
+        _applying = true;
+        try
         {
-            if (!role.Control.IsVisible) continue;
-            if (role.Apply(scale)) InvalidateForRemeasure(role.Control);
+            foreach (var role in Roles())
+            {
+                if (!role.Control.IsVisible) continue;
+                if (role.Apply(scale)) InvalidateForRemeasure(role.Control);
+            }
+        }
+        finally
+        {
+            _applying = false;
         }
     }
 
@@ -189,6 +220,7 @@ public sealed class DetailHeaderPanel : Panel
     {
         base.OnAttachedToVisualTree(e);
         _roles = null;
+        _oneLineWidths.Clear();
         // A content or visibility change that keeps a child's desired size would not re-measure this panel; the
         // chosen scale depends on it, so ask for a measure explicitly.
         foreach (var c in this.GetLogicalDescendants().OfType<Control>())
@@ -204,12 +236,15 @@ public sealed class DetailHeaderPanel : Panel
         foreach (var c in _watched) c.PropertyChanged -= OnDescendantPropertyChanged;
         _watched.Clear();
         _roles = null;
+        _oneLineWidths.Clear();
     }
 
     private void OnDescendantPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property == TextBlock.TextProperty || e.Property == ContentControl.ContentProperty || e.Property == IsVisibleProperty)
-            InvalidateMeasure();
+        // The panel's own writes (ApplyOnce) are outputs, not inputs: the estimate substitutes the role values.
+        if (_applying || !EstimateInputs.Contains(e.Property)) return;
+        _oneLineWidths.Clear();
+        InvalidateMeasure();
     }
 
     private static double Lerp(double min, double max, double scale) => min + (max - min) * scale;

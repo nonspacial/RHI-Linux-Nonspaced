@@ -27,9 +27,34 @@ public sealed class WidthEstimator
 
     public WidthEstimator(Values? values = null) => _values = values ?? new Values();
 
+    // Shaping text is the expensive part of every estimate, and a resize asks for the same (text, font, size)
+    // again and again (header scale search, path ellipsis candidates), so widths are memoised. Bounded: cleared when
+    // full or when the UI culture changes.
+    private const int TextWidthCacheLimit = 16384;
+    private static readonly Dictionary<(string Text, Typeface Typeface, double Size), double> TextWidths = new();
+    private static readonly object TextWidthsLock = new();
+    private static CultureInfo? _textWidthsCulture;
+
+    /// <summary>One-line width of <paramref name="text"/> (rounded up), memoised per (text, typeface, size).</summary>
     public static double TextWidth(string? text, Typeface typeface, double fontSize)
-        => string.IsNullOrEmpty(text) ? 0 : Math.Ceiling(new FormattedText(text, CultureInfo.CurrentUICulture,
-            FlowDirection.LeftToRight, typeface, fontSize, null).WidthIncludingTrailingWhitespace);
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        var culture = CultureInfo.CurrentUICulture;
+        var key = (text, typeface, fontSize);
+        lock (TextWidthsLock)
+        {
+            if (!Equals(culture, _textWidthsCulture) || TextWidths.Count >= TextWidthCacheLimit)
+            {
+                TextWidths.Clear();
+                _textWidthsCulture = culture;
+            }
+            if (TextWidths.TryGetValue(key, out var cached)) return cached;
+        }
+        var width = Math.Ceiling(new FormattedText(text, culture, FlowDirection.LeftToRight, typeface, fontSize, null)
+            .WidthIncludingTrailingWhitespace);
+        lock (TextWidthsLock) TextWidths[key] = width;
+        return width;
+    }
 
     private static Typeface TypefaceOf(Control c) => c switch
     {
