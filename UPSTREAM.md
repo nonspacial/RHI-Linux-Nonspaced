@@ -16,3 +16,7 @@ Platform adaptations include:
 - native Linux games are not targets for Windows DLL injection components.
 
 RHI Linux remains a GPLv3 derivative of the upstream project.
+
+## Upstream 2.7.6–2.7.9 port notes
+
+- 2.7.6 OptiScaler: FG Nvngx override offers `Combo` (`[FrameGen] FGNvngxReplacement=Combo`) and the DLSS RR preset list adds Preset F. Deviation: Linux writes `[DLSSD] RenderPresetForAll=6` for F, following OptiScaler's documented numbering (0 = Default, 1 = A); upstream writes `5`, which OptiScaler reads as E.

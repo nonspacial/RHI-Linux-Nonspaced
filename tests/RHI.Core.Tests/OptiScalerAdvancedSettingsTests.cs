@@ -199,6 +199,34 @@ public sealed class OptiScalerAdvancedSettingsTests : IDisposable
     }
 
     [Fact]
+    public void SetAdvancedSetting_ComboNvngxAndRrPresetFRoundTrip()
+    {
+        var (game, store, ini) = CreateGame("combo", managed: true);
+        File.WriteAllText(ini, "[FrameGen]\nFGOutput=dlssg\n[User]\nCustom=42\n");
+        var service = NewService(store);
+
+        var before = service.GetAdvancedSettings(game).Settings;
+        Assert.Contains(before.Single(s => s.Id == "FGNvngxReplacement").Options, o => o.Value == "Combo" && o.Name == "Combo");
+        Assert.Contains(before.Single(s => s.Id == "RrPreset").Options, o => o.Value == "6" && o.Name == "Preset F");
+
+        Assert.True(service.SetAdvancedSetting(game, "FGNvngxReplacement", "combo").Success);
+        Assert.True(service.SetAdvancedSetting(game, "RrPreset", "6").Success);
+
+        var text = File.ReadAllText(ini);
+        Assert.Contains("FGNvngxReplacement=Combo", text);
+        Assert.Contains("RenderPresetForAll=6", text);
+        Assert.Contains("FGOutput=dlssg", text);
+        Assert.Contains("Custom=42", text);
+        var after = service.GetAdvancedSettings(game).Settings;
+        var nvngx = after.Single(s => s.Id == "FGNvngxReplacement");
+        var rr = after.Single(s => s.Id == "RrPreset");
+        Assert.Equal("Combo", nvngx.CurrentValue);
+        Assert.Equal("6", rr.CurrentValue);
+        Assert.DoesNotContain(nvngx.Options, o => o.Name.StartsWith("Current / custom"));
+        Assert.DoesNotContain(rr.Options, o => o.Name.StartsWith("Current / custom"));
+    }
+
+    [Fact]
     public void SetAdvancedSetting_RenderScaleMapsDisplayChoiceToOptiScalerRatio()
     {
         var (game, store, ini) = CreateGame("scale", managed: true);

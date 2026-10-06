@@ -53,10 +53,12 @@ public sealed partial class OptiScalerDeploymentService
 
     private static readonly OptiScalerAdvancedOption[] FgNvngxOptions = Options(
         ("None", "None (Real DLSSG)"), ("Nukems", "Nukem's"),
-        ("Arturs", "Enabler"), ("FFX", "FSR 3/4 FG"));
+        ("Arturs", "Enabler"), ("FFX", "FSR 3/4 FG"), ("Combo", "Combo"));
 
     private static readonly OptiScalerAdvancedOption[] SrPresetOptions = BuildPresetOptions(15);
-    private static readonly OptiScalerAdvancedOption[] RrPresetOptions = BuildPresetOptions(5);
+    // OptiScaler's [DLSSD] ordering is 0 = Default, 1 = A ... so Preset F is 6. Upstream 2.7.6 writes 5
+    // for F, which OptiScaler documents as E; we follow OptiScaler's own numbering.
+    private static readonly OptiScalerAdvancedOption[] RrPresetOptions = BuildPresetOptions(6);
 
     private static readonly OptiScalerAdvancedOption[] RenderScaleOptions = Options(
         ("off", "Off"), ("1.0", "100% DLAA"), ("1.0101", "99% DLAA Alt"),
@@ -111,7 +113,7 @@ public sealed partial class OptiScalerDeploymentService
             new("FGInput", "Frame Generation", "FG input/source", Read("FrameGen", "FGInput"), EnsureCurrent(FgInputOptions, Read("FrameGen", "FGInput"))),
             new("FGOutput", "Frame Generation", "FG output", Read("FrameGen", "FGOutput"), EnsureCurrent(FgOutputOptions, Read("FrameGen", "FGOutput"))),
             new("FGNvngxReplacement", "Frame Generation", "FG Nvngx Replacement", Read("FrameGen", "FGNvngxReplacement", "None"), EnsureCurrent(FgNvngxOptions, Read("FrameGen", "FGNvngxReplacement", "None")),
-                "Only relevant when FG Output = DLSSG. Enabler uses dlss-enabler-headless.dll from the managed OptiScaler Streamline stack."),
+                "Only relevant when FG Output = DLSSG. Enabler uses dlss-enabler-headless.dll from the managed OptiScaler Streamline stack. Combo needs the FSR 3/4 FG and Enabler files: FSR FG renders the middle frames, Enabler the rest."),
             new("HUDFix", "Frame Generation", "HUD Fix", Read("OptiFG", "HUDFix"), AutoBoolOptions),
             new("DisableHUDFix", "Frame Generation", "Disable HUD Fix tracking", Read("OptiFG", "DisableHUDFix"), AutoBoolOptions),
 
