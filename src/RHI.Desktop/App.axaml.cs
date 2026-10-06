@@ -48,8 +48,10 @@ public sealed class App : Application
             var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest);
             var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
             var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
+            var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
             var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
-                unityDatabase: new RenoDxUnityDatabaseService(http));
+                unityDatabase: new RenoDxUnityDatabaseService(http),
+                controlUe: new ControlUePostInstallService(deployment, dlss));
             var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest);
             var relimiter = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
                 ManagedComponentKind.ReLimiter,
@@ -102,7 +104,6 @@ public sealed class App : Application
                 AssetNamePattern32: @"^DLSS5-Feeder-.*\.zip$",
                 DeployFileName64: "dlss5-feed.addon64",
                 DeployFileName32: "dlss5-feed.addon32"));
-            var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
             var d3dCompilerTools = new D3DCompilerToolInstaller(wineOverrides);
             var dgVoodoo = new DgVoodooDeploymentService(http);
             var dx9ReShade = new Dx9TranslationReShadeCoordinator(records, wineOverrides);

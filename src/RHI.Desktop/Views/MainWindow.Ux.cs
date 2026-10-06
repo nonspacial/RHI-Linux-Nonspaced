@@ -34,6 +34,8 @@ public sealed partial class MainWindow
 
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
+            if (DataContext is MainWindowViewModel confirmVm)
+                confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
@@ -550,7 +552,7 @@ public sealed partial class MainWindow
         vm.StatusText = vm.ImportCustomAddonFile(path);
     }
 
-    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText)
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280)
     {
         var accept = new Button { Content = acceptText, Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
@@ -563,7 +565,7 @@ public sealed partial class MainWindow
         {
             Title = title,
             Width = 600,
-            Height = 280,
+            Height = height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = panel

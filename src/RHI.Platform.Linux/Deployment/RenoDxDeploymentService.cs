@@ -29,6 +29,7 @@ public sealed class RenoDxDeploymentService
     private readonly UpstreamRhiManifestService? _upstreamManifest;
     private readonly UpstreamEngineIniFileManager _engineIniFiles;
     private readonly RenoDxUnityDatabaseService? _unityDatabase;
+    private readonly ControlUePostInstallService _controlUe;
     private readonly string _cacheDir;
 
     public RenoDxDeploymentService(
@@ -37,9 +38,12 @@ public sealed class RenoDxDeploymentService
         RenoDxCatalogService catalog,
         string? cacheDir = null,
         UpstreamRhiManifestService? upstreamManifest = null,
-        RenoDxUnityDatabaseService? unityDatabase = null)
+        RenoDxUnityDatabaseService? unityDatabase = null,
+        ControlUePostInstallService? controlUe = null)
     {
         _http = http;
+        // Without a DLSS manager the Control UE step still restores on removal; it just cannot fetch DLLs.
+        _controlUe = controlUe ?? new ControlUePostInstallService(new TransactionalFileDeploymentService(), newestDll: null);
         _records = records;
         _catalog = catalog;
         _upstreamManifest = upstreamManifest;
@@ -181,6 +185,14 @@ public sealed class RenoDxDeploymentService
         try
         {
             var cached = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
+            // Control UE (upstream 2.7.9): runs on a fresh install, which the UI confirms first, or
+            // on a reinstall/update of an install that already carries the step. Downloads happen
+            // here, before any game file changes, so cancelling cannot leave the step half done.
+            var previousControlState = ControlUePostInstallService.Deserialize(existingRecord);
+            var controlSources = ControlUePostInstallService.Applies(game, fileName) &&
+                                 (existingRecord is null || previousControlState is not null)
+                ? await _controlUe.PrepareAsync(cancellationToken).ConfigureAwait(false)
+                : null;
             LinuxDeployedFile? oldManagedFile = null;
             if (existingRecord is not null && managedOldPath is not null && !Path.GetFullPath(managedOldPath).Equals(Path.GetFullPath(target), StringComparison.Ordinal))
             {
@@ -269,6 +281,24 @@ public sealed class RenoDxDeploymentService
             if (oldManagedFile is not null && File.Exists(oldManagedFile.Path))
                 File.Delete(oldManagedFile.Path);
 
+            // Put the previous Control UE changes back first, then apply afresh, so the first
+            // pre-RHI state stays the restore point. A partial restore keeps what is left owned.
+            var controlNotes = new List<string>();
+            var controlState = previousControlState;
+            ControlUePostInstallState? controlApplied = null;
+            if (previousControlState is not null)
+            {
+                var restored = await _controlUe.RestoreAsync(previousControlState).ConfigureAwait(false);
+                controlState = restored.Remaining;
+                if (restored.Remaining is not null) controlNotes.AddRange(restored.Notes);
+            }
+            if (controlSources is not null && controlState is null)
+            {
+                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources).ConfigureAwait(false);
+                controlState = controlApplied = applied.State;
+                controlNotes.AddRange(applied.Notes);
+            }
+
             var record = new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -292,7 +322,19 @@ public sealed class RenoDxDeploymentService
                 record.Metadata[RenoDxIniOverrideManager.MetadataKey] = RenoDxIniOverrideManager.Serialize(iniApply.State);
             if (engineIniApply.State is not null)
                 record.Metadata[UpstreamEngineIniFileManager.MetadataKey] = UpstreamEngineIniFileManager.Serialize(engineIniApply.State);
-            _records.Upsert(record);
+            if (controlState is not null)
+                record.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.Serialize(controlState);
+            try
+            {
+                _records.Upsert(record);
+            }
+            catch
+            {
+                // Nothing would own the Control UE changes; undo them rather than orphan them.
+                if (controlApplied is not null)
+                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); } catch { }
+                throw;
+            }
             var iniSummary = iniApply.AppliedCount > 0
                 ? unityUpgrades.Count > 0
                     ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database + manifest)"
@@ -305,7 +347,8 @@ public sealed class RenoDxDeploymentService
                 : engineIniApply.PreservedUserEdits > 0
                     ? $" · {engineIniApply.PreservedUserEdits} user-edited Engine.ini key(s) preserved"
                     : "";
-            return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}", target);
+            var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
+            return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}", target);
         }
         catch (Exception ex)
         {
@@ -512,6 +555,23 @@ public sealed class RenoDxDeploymentService
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
 
+            // Control UE DLLs and renderer.ini go back first. If any of them cannot, RenoDX stays
+            // installed and the record keeps owning what is left, so a retry can finish the job.
+            var controlSummary = "";
+            if (ControlUePostInstallService.Deserialize(record) is { } controlState)
+            {
+                var restored = await _controlUe.RestoreAsync(controlState).ConfigureAwait(false);
+                if (restored.Remaining is not null)
+                {
+                    record.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.Serialize(restored.Remaining);
+                    _records.Upsert(record);
+                    return ComponentOperationResult.Fail($"Control UE restore incomplete; RenoDX was kept: {string.Join(" ", restored.Notes)}");
+                }
+                record.Metadata.Remove(ControlUePostInstallService.MetadataKey);
+                _records.Upsert(record);
+                controlSummary = $" Control UE: {string.Join(" ", restored.Notes)}";
+            }
+
             var iniState = record.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var iniJson)
                 ? RenoDxIniOverrideManager.Deserialize(iniJson)
                 : null;
@@ -548,7 +608,7 @@ public sealed class RenoDxDeploymentService
             }
 
             _records.Remove(game, ManagedComponentKind.RenoDX);
-            return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored.");
+            return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored." + controlSummary);
         }
         catch (Exception ex)
         {
