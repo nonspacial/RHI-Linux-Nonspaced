@@ -46,6 +46,21 @@ public sealed class LocalizationAndFeederDefaultsTests
     public void Localization_PresentationBoundary_FailsClosedInsteadOfMixingLanguages(string language, string source, string expected)
         => Assert.Equal(expected, UiLocalizationService.PresentFor(language, source));
 
+    [Theory]
+    [InlineData("ShortFuse in-place swap failed; the previous add-on was kept: Managed file was modified outside RHI and will not be replaced: /g/zzz_renodx-dlss.addon64",
+        "Falha na troca no local do ShortFuse; o add-on anterior foi mantido: O arquivo gerenciado foi modificado fora do RHI e não será substituído: /g/zzz_renodx-dlss.addon64")]
+    [InlineData("DLSS5 Feeder in-place swap failed and the previous files could not be restored: The previous file could not be restored. Its backup is kept at /g/a.addon64.rhi-swap-old; move it back over the original name before retrying. Cause: disk full",
+        "Falha na troca no local do DLSS5 Feeder e os arquivos anteriores não puderam ser restaurados: O arquivo anterior não pôde ser restaurado. A cópia de segurança foi mantida em /g/a.addon64.rhi-swap-old; mova-a de volta para o nome original antes de tentar novamente. Causa: disk full")]
+    [InlineData("nvngx_dlssnr.dll 309.9 is no longer published; using 310.2. ShortFuse: nvngx_dlssnr.dll swapped in place to 310.2. Nothing else was changed.",
+        "nvngx_dlssnr.dll 309.9 não é mais publicado; usando 310.2. ShortFuse: nvngx_dlssnr.dll trocado no local para 310.2. Nada mais foi alterado.")]
+    [InlineData("ShortFuse: nvngx_dlssnr.dll swap failed; the previous DLL was kept: Swap source is missing.",
+        "ShortFuse: falha na troca do nvngx_dlssnr.dll; a DLL anterior foi mantida: A origem da troca está ausente.")]
+    public void Localization_NrSwapMessages_HavePtBrAndEnPairs(string en, string pt)
+    {
+        Assert.Equal(pt, UiLocalizationService.PresentFor("pt-BR", en));
+        Assert.Equal(en, UiLocalizationService.PresentFor("en-US", pt));
+    }
+
     [Fact]
     public void Streamline_ComponentRow_IsInformational_NotInstallable()
     {
