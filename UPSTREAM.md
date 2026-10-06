@@ -16,3 +16,8 @@ Platform adaptations include:
 - native Linux games are not targets for Windows DLL injection components.
 
 RHI Linux remains a GPLv3 derivative of the upstream project.
+
+## Parity notes (upstream 2.7.6–2.7.9)
+
+- **Shaders (2.7.9):** upstream's global shader "Off" overriding per-game overrides does not apply: RHI Linux has no global shader mode or global selection fallback; each game's pack selection is stored on its own ReShade record. The custom-folder auto-tick fix is ported: dependency expansion never pulls in the local Custom Shaders pack; it deploys only when ticked explicitly.
+- **ReShade (2.7.9):** the Custom-channel false update does not apply: the channel is stored on the ReShade record and rewritten by the apply that changes it, so the update check never sees a stale channel. Covered by tests.
