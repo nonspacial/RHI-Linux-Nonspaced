@@ -241,6 +241,16 @@ internal static class GraphicsApiDetector
             $"Nearby engine binary signature: {string.Join(", ", nearbyOrdered.Select(ApiDllName))}");
     }
 
+    /// <summary>
+    /// True when a result came only from PE import/string scanning (steps 2, 4 and 6 above), which
+    /// legacy D3D shims in NW.js/Electron runtimes can fool. Logs and config files are not included.
+    /// </summary>
+    internal static bool IsBinarySignatureEvidence(string? evidence)
+        => evidence is not null
+           && (evidence.StartsWith("Executable signature:", StringComparison.Ordinal)
+               || evidence.StartsWith("Executable deep signature:", StringComparison.Ordinal)
+               || evidence.StartsWith("Nearby engine binary signature:", StringComparison.Ordinal));
+
     private static GraphicsApiDetection DetectFromConfigs(
         string gameRoot,
         string? executablePath,

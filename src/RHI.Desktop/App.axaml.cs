@@ -40,7 +40,8 @@ public sealed class App : Application
             var launcher = new LinuxGameLauncher();
             var deployment = new TransactionalFileDeploymentService();
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
-            var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics);
+            var pcgwData = new PcgwCentralDataService(http);
+            var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
             var records = new LinuxDeploymentRecordStore();
             var wineOverrides = new WineDllOverrideService();
             var reshadeExtractor = new ReShadeArchiveExtractor();
