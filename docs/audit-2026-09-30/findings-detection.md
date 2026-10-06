@@ -129,6 +129,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** Lutris test with a wrapped `exe:` and a nested `script.game.exe`; assert the top-level value is used.
 
 ### DET-11 — WinePrefixDetector double-lists Lutris/umu prefixes, uses the wrong granularity, and launches Proton prefixes with system `wine`
+- **Status:** fixed in `161634c` (#50). Lutris-config and umu prefixes are skipped (canonical paths); vendor folders give way to their products and `games/` libraries; `drive_c/Games` is scanned; Proton-built prefixes launch with their own `bin/wine` or not at all. Games inside Lutris-owned launcher prefixes are not listed by any detector yet (see #50).
 - **Where:** `src/RHI.Platform.Linux/Detection/WinePrefixDetector.cs:17-22, 32, 36-48, 59`; `DetectionHelpers.cs:81-86`.
 - **What happens:**
   - `IsLauncherManagedPrefix` skips only Heroic prefixes and `compatdata`. Lutris prefixes (`~/Games/<slug>`) and `~/Games/umu/*` are re-scanned.

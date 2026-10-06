@@ -72,13 +72,20 @@ public static class LinuxPaths
     }
 
     public static IEnumerable<string> LutrisConfigRoots()
+        => LutrisConfigRootCandidates(Home, ConfigHome, DataHome)
+            .Distinct(StringComparer.Ordinal)
+            .Where(Directory.Exists);
+
+    /// <summary>
+    /// Lutris game configs. The Wine detector skips every prefix these reference, so a root missing
+    /// here would make that launcher's games vanish rather than merely duplicate.
+    /// </summary>
+    internal static IEnumerable<string> LutrisConfigRootCandidates(string home, string configHome, string dataHome)
     {
-        var candidates = new[]
-        {
-            Path.Combine(ConfigHome, "lutris", "games"),
-            Path.Combine(DataHome, "lutris", "games"),
-            Path.Combine(Home, ".var", "app", "net.lutris.Lutris", "config", "lutris", "games")
-        };
-        return candidates.Distinct(StringComparer.Ordinal).Where(Directory.Exists);
+        yield return Path.Combine(configHome, "lutris", "games");
+        yield return Path.Combine(dataHome, "lutris", "games");
+        yield return Path.Combine(home, ".var", "app", "net.lutris.Lutris", "config", "lutris", "games");
+        // Newer Lutris keeps games under its data directory; the flatpak mirrors that under data/.
+        yield return Path.Combine(home, ".var", "app", "net.lutris.Lutris", "data", "lutris", "games");
     }
 }
