@@ -13,9 +13,12 @@ public sealed partial class LutrisGameDetector : IGameDetector
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
     private static IReadOnlyList<DetectedGame> Detect(CancellationToken ct)
+        => DetectIn(LinuxPaths.LutrisConfigRoots(), LinuxPaths.Home, ct);
+
+    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct)
     {
-        var games = new List<DetectedGame>();
-        foreach (var configRoot in LinuxPaths.LutrisConfigRoots())
+        var games = new List<(DetectedGame Game, string Slug, string ConfigFile)>();
+        foreach (var configRoot in configRoots)
         {
             foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")))
             {
@@ -31,15 +34,17 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     prefix = Expand(prefix);
                     workingDir = Expand(workingDir);
                     exe = ResolveRelativeExe(exe, prefix, workingDir);
-                    string? install = exe is null ? null : Path.GetDirectoryName(exe);
-                    if (install is null || !Directory.Exists(install))
+                    var install = ResolveInstallRoot(exe, workingDir, prefix, home);
+                    var launchOnly = install is null;
+                    if (launchOnly)
                     {
-                        if (prefix is not null && Directory.Exists(prefix)) install = prefix;
-                        else continue;
+                        // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix).
+                        // Keep it launchable through Lutris when its launcher exists, anchored on the Lutris
+                        // config folder, and require an explicit patch target before anything is probed or
+                        // deployed. A config whose launcher is gone stays hidden, as before.
+                        if (exe is null || !File.Exists(exe)) continue;
+                        install = configRoot;
                     }
-                    // A whole Wine prefix is not a game directory. Indexing it walks the entire
-                    // Windows image and (through dosdevices symlinks) every mounted drive.
-                    if (IsWinePrefixRoot(install)) continue;
                     var slug = ResolveLutrisSlug(Path.GetFileNameWithoutExtension(file));
                     var configuredRunner = MatchValue(text, "runner");
                     var wineVersion = MatchSectionValue(text, "wine", "version");
@@ -50,15 +55,20 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         ? (LooksLikeProton(wineVersion) ? "proton" : "wine")
                         : null;
                     var wineBinary = hasWineRuntime ? ResolveLutrisWineBinary(wineVersion) : null;
-                    var detectedExecutable = File.Exists(exe) ? exe : DetectionHelpers.FindLikelyExecutable(install);
+                    var exeExists = exe is not null && File.Exists(exe);
+                    string? detectedExecutable = launchOnly
+                        ? null
+                        : exeExists && IsWithin(install!, exe!) ? exe : DetectionHelpers.FindLikelyExecutable(install!);
 
                     var game = new DetectedGame
                     {
                         Name = name,
-                        InstallPath = install,
+                        InstallPath = install!,
                         Source = "Lutris",
                         ExecutablePath = detectedExecutable,
-                        LaunchExecutablePath = detectedExecutable,
+                        LaunchExecutablePath = exeExists ? exe : detectedExecutable,
+                        LibraryIdentityPath = launchOnly ? file : null,
+                        RequiresExplicitPatchTarget = launchOnly,
                         PrefixPath = Directory.Exists(prefix) ? prefix : null,
                         Runner = layerType switch
                         {
@@ -72,12 +82,85 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         WineServerPath = ResolveMatchingWineServer(wineBinary),
                         LaunchCommand = "lutris " + Shell($"lutris:rungame/{slug}")
                     };
-                    games.Add(game);
+                    games.Add((game, slug, file));
                 }
                 catch { }
             }
         }
-        return games;
+
+        // Distinct Lutris games that resolve to one folder must not share a library identity
+        // (favourites, edits, probe cache) or merge into one card. Duplicate configs of the same
+        // slug (e.g. two Battle.net installs into one prefix) still share it, as before.
+        foreach (var sameFolder in games.GroupBy(x => NormalisePath(x.Game.InstallPath), StringComparer.Ordinal))
+        {
+            if (sameFolder.Select(x => x.Slug).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 2) continue;
+            foreach (var (game, _, configFile) in sameFolder)
+                game.LibraryIdentityPath ??= configFile;
+        }
+        return games.Select(x => x.Game).ToArray();
+    }
+
+    /// <summary>
+    /// Picks the game folder from the config's structured fields. A Windows exe keeps its own folder
+    /// (launchers such as Battle.net set <c>working_dir</c> to an unrelated library folder). A native
+    /// launcher (wrapper script, ELF) prefers <c>working_dir</c>, which is where Lutris runs it. Shared
+    /// executable folders and whole Wine prefixes are never game folders; null means none was found.
+    /// </summary>
+    internal static string? ResolveInstallRoot(string? exe, string? workingDir, string? prefix, string home)
+    {
+        var exeDir = exe is null ? null : Path.GetDirectoryName(exe);
+        var nativeLauncher = exe is not null && File.Exists(exe) && !IsWindowsExecutable(exe);
+        var candidates = nativeLauncher
+            ? new[] { workingDir, exeDir, prefix }
+            : new[] { exeDir, prefix };
+        return candidates.FirstOrDefault(dir =>
+            !string.IsNullOrWhiteSpace(dir) &&
+            Directory.Exists(dir) &&
+            !IsSharedDirectory(dir, home) &&
+            // A whole Wine prefix is not a game directory. Indexing it walks the entire
+            // Windows image and (through dosdevices symlinks) every mounted drive.
+            !IsWinePrefixRoot(dir));
+    }
+
+    /// <summary>
+    /// Folders that hold executables for many programs (or everything): a wrapper living there says
+    /// nothing about where the game is, and deploying DLLs there would pollute PATH.
+    /// </summary>
+    internal static bool IsSharedDirectory(string path, string home)
+    {
+        var normalised = NormalisePath(path);
+        string[] shared =
+        [
+            "/", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
+            "/usr/games", "/usr/local/games",
+            NormalisePath(home), NormalisePath(Path.Combine(home, "bin")), NormalisePath(Path.Combine(home, ".local", "bin"))
+        ];
+        if (shared.Contains(normalised, StringComparer.Ordinal)) return true;
+        try
+        {
+            var target = new DirectoryInfo(normalised).ResolveLinkTarget(returnFinalTarget: true);
+            return target is not null && shared.Contains(NormalisePath(target.FullName), StringComparer.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    private static bool IsWindowsExecutable(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
+        }
+        catch { return false; }
+    }
+
+    private static bool IsWithin(string root, string path)
+        => NormalisePath(path).StartsWith(NormalisePath(root) + "/", StringComparison.Ordinal);
+
+    private static string NormalisePath(string path)
+    {
+        var full = Path.GetFullPath(path);
+        return full.Length > 1 ? full.TrimEnd(Path.DirectorySeparatorChar) : full;
     }
 
 

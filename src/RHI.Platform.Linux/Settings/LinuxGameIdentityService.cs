@@ -40,7 +40,10 @@ public static class LinuxGameIdentityService
             : edit!.LaunchProvider;
 
         var discoveredSharedLauncher = IsSharedLauncherExecutable(game.LaunchExecutablePath);
-        game.RequiresExplicitPatchTarget = discoveredSharedLauncher;
+        // A detector may already have found no real game folder (e.g. a Lutris wrapper script);
+        // that verdict must survive, or the placeholder folder would become the patch target.
+        var detectorRequiresTarget = game.RequiresExplicitPatchTarget;
+        game.RequiresExplicitPatchTarget = discoveredSharedLauncher || detectorRequiresTarget;
         game.PatchTargetAuthority = "Automatic";
 
         if (edit?.HasPatchTarget == true)
@@ -69,7 +72,7 @@ public static class LinuxGameIdentityService
         // A launcher/client can remain the launch target, but it must never become the game-local
         // deployment authority. Leave the library identity intact and fail closed until Editar jogo
         // supplies a separate executable/root/binary directory.
-        if (discoveredSharedLauncher)
+        if (discoveredSharedLauncher || detectorRequiresTarget)
         {
             game.ExecutablePath = null;
             game.BinaryDirectory = null;
