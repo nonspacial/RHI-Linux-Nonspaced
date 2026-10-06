@@ -9,11 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 76 |
-| `upstream-sync/2.7.9` | 13 |
+| `audit-remediation` | 89 |
+| `upstream-sync/2.7.9` | 14 |
+| `upstream-sync/2.8.5` | 1 |
 | `feature-parity` | 11 |
 | (none) | 1 (#101 overview) |
-| **Total** | **101** |
+| **Total** | **116** |
 
 ## upstream-sync/2.7.9
 
@@ -32,6 +33,15 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 | #20 | PAR-D10 | [2.7.9] Global shader "Off" overrides per-game overrides; custom folder auto-tick | upstream-drift | P2 |
 | #21 | PAR-D11 | [2.7.9] Custom ReShade channel shows a false update | upstream-drift | P2 |
 | #22 | PAR-D12 | [2.7.9] Launch working directory for exe-override launches (test under Wine) | upstream-drift | P1 |
+| #112 | sync-18 review 3 | Record NR in-place swaps (SwapNeuralAddonVersionAsync / SwapNeuralRenderingDllAsync) in the update history after sync/10-19 merges | upstream-drift | P2 |
+
+Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30f632`, #20/#21 `8e06564`, #13/#14 `8aeca3f`, #12 `d49f1af`, #18 `b8fcee2`. Still on lane branches: #10/#19 (`sync/10-19`), #17 (`sync/17`). Not started: #11, #15, #16. Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.7.6–2.7.9)`.
+
+## upstream-sync/2.8.5
+
+| # | Finding | Title | Labels | Priority |
+|---|---|---|---|---|
+| #116 | — | [2.8.5] Upstream drift inventory RHI-2.7.9 → RHI-2.8.5 | upstream-drift | P2 |
 
 ## audit-remediation
 
@@ -113,6 +123,26 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 | #87 | UI-20 | UI-20: Duplicated display↔value mapping between the VM and the Settings dialog | audit:ui | P3 |
 | #88 | UI-14 | UI-14: Enable compiled bindings (212 reflection bindings, no build-time checking) | audit:ui | P1 |
 | #89 | UI-Structure | Epic: Split MainWindowViewModel (7 units) | audit:structure, audit:ui | P2 |
+
+### Follow-ups from the upstream-sync lane reviews
+
+Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
+
+| # | Finding | Title | Labels | Priority |
+|---|---|---|---|---|
+| #102 | sync-12 review 1 | PCGW data: first 5 MB download is tied to the selected game's cancellation token (up to 120 s stall) | audit:detection | P2 |
+| #103 | sync-12 review 2 | PcgwCentralDataService swallows every fetch and parse failure (bare catch blocks, no diagnostics) | audit:detection, hygiene | P3 |
+| #104 | sync-12 review 3 | PCGW data is never refreshed within a session (no invalidation hook) | audit:detection | P3 |
+| #105 | sync-12 review 4 | Test gap: PCGW in-file entry without API data must skip the live PCGW lookup | audit:detection, hygiene | P3 |
+| #106 | sync-22 review 1 (see #46) | Unify store hand-off classification: LinuxGameLauncher.IsStoreHandoff vs LinuxHdrLaunchProfileService.IsLauncherMediated | audit:detection | P2 |
+| #107 | sync-13-14 review 1 | RenoDX add-on cache is judged current by Content-Length only; a same-size rebuilt snapshot is served stale | audit:data-safety | P2 |
+| #108 | sync-13-14 review 2 | Bare catch around the RenoDX cache HEAD check swallows programming faults | hygiene | P3 |
+| #109 | sync-18 review 1 | Update history logs a failed (rolled-back) update as a success | audit:data-safety | P2 |
+| #110 | sync-18 review 2 | Test gap: LinuxManagedComponentService.Track wiring into the update recorder is untested | hygiene | P3 |
+| #111 | sync-18 review 4 | Update history silently stops recording on a log write error | audit:ui | P3 |
+| #113 | sync-10-19 review 3 | Manual Update All reports every component as "updated" even when nothing changed (all component types) | audit:ui | P2 |
+| #114 | sync-10-19 review 3 | DLSS5 Feeder swap re-downloads the whole release zip per game on every manual run | audit:data-safety | P3 |
+| #115 | sync-10-19 review 4 | Legacy add-on-only DLSS5 Feeder installs: pin change always fails and Update All reports them as failed | audit:ui | P2 |
 
 ## feature-parity
 
