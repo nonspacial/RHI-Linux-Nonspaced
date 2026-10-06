@@ -9,12 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 91 |
+| `audit-remediation` | 98 |
 | `upstream-sync/2.7.9` | 14 |
 | `upstream-sync/2.8.5` | 1 |
-| `feature-parity` | 11 |
+| `feature-parity` | 12 |
 | (none) | 1 (#101 overview) |
-| **Total** | **118** |
+| **Total** | **126** |
 
 ## upstream-sync/2.7.9
 
@@ -35,7 +35,7 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 | #22 | PAR-D12 | [2.7.9] Launch working directory for exe-override launches (test under Wine) | upstream-drift | P1 |
 | #112 | sync-18 review 3 | Record NR in-place swaps (SwapNeuralAddonVersionAsync / SwapNeuralRenderingDllAsync) in the update history after sync/10-19 merges | upstream-drift | P2 |
 
-Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30f632`, #20/#21 `8e06564`, #13/#14 `8aeca3f`, #12 `d49f1af`, #18 `b8fcee2`, #10/#19 `b87c35b`, #17 `dfe35f4`; integration fixes and #112 (NR swaps in the update history) `a108618`. Not started: #11, #15, #16. Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.7.6–2.7.9)`.
+Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30f632`, #20/#21 `8e06564`, #13/#14 `8aeca3f`, #12 `d49f1af`, #18 `b8fcee2`, #10/#19 `b87c35b`, #17 `dfe35f4`; integration fixes and #112 (NR swaps in the update history) `a108618`. Merged into `integration/wave2` (from `main` @ `dc528e8`; open until Robbie's GUI check): #11 `c68a918`, #15 `6f2c6d4`, #16 `3fd51a5` (fix/15 × fix/16 conflict resolved there, both post-install steps kept). Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.7.6–2.7.9)`.
 
 ## upstream-sync/2.8.5
 
@@ -77,13 +77,13 @@ Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30
 | #41 | DEP-22 | DEP-22: The Dlssg2030 doc claims a pinned commit, but the code resolves the latest commit at runtime | audit:data-safety | P3 |
 | #42 | DEP-S1, DEP-S4, DEP-S5 | Deployment layer shared toolkit: TrustedDownload / AtomicFile / OwnedFileSet kit (~2–3k duplicated lines) | audit:structure | P2 |
 | #43 | DET-03 | DET-03: Startup library scan waits behind an untimed DLSS manifest fetch (up to 5 min) | audit:detection | P1 |
-| #44 | DET-05 | DET-05: Lutris native-wrapper games take the wrapper's folder as install path, and distinct games merge into one card | audit:detection, needs-decision | P1 |
+| #44 | DET-05 | DET-05: Lutris native-wrapper games take the wrapper's folder as install path, and distinct games merge into one card | audit:detection | P1 |
 | #45 | DET-06 | DET-06: Manifest `installPathOverrides` and `splitGames` can move `InstallPath` outside the game | audit:detection | P1 |
 | #46 | DET-07 | DET-07: HDR launch wraps `xdg-open` for Heroic games and reports HDR as applied | audit:detection | P1 |
 | #47 | DET-08 | DET-08: Steam roots and libraries are de-duplicated by string, so each library is walked 2–3 times | audit:detection | P2 |
 | #48 | DET-09 | DET-09: Scan-time indexes are thrown away, and several walks ignore cancellation | audit:detection | P2 |
 | #49 | DET-10 | DET-10: Lutris YAML parsing: folded/multi-line scalars truncate `exe`, and names fall back to a timestamped config stem | audit:detection | P2 |
-| #50 | DET-11 | DET-11: WinePrefixDetector double-lists Lutris/umu prefixes, uses the wrong granularity, and launches Proton prefixes with system `wine` | audit:detection, needs-decision | P2 |
+| #50 | DET-11 | DET-11: WinePrefixDetector double-lists Lutris/umu prefixes, uses the wrong granularity, and launches Proton prefixes with system `wine` | audit:detection | P2 |
 | #51 | DET-12 | DET-12: Heroic fuzzy prefix matching can attach the wrong Wine prefix | audit:detection | P2 |
 | #52 | DET-13 | DET-13: Runtime-log attribution matches on the full log path, so a launcher inherits another game's renderer at High confidence | audit:detection | P2 |
 | #53 | DET-14 | DET-14: An executable containing several API strings is reported as the highest API at High confidence | audit:detection, needs-decision | P2 |
@@ -145,6 +145,15 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #115 | sync-10-19 review 4 | Legacy add-on-only DLSS5 Feeder installs: pin change always fails and Update All reports them as failed | audit:ui | P2 |
 | #117 | sync-10-19 review 6 | Test: Full Refresh re-fetches NR version lists | hygiene | P3 |
 | #118 | sync-10-19 re-review nit 2 | Record-copy uses indented JSON options (perf nit) | hygiene | P3 |
+| #119 | #44/#50 decision; fix-50 review 1 | List games inside Lutris launcher prefixes as their own cards | audit:detection | P1 |
+| #121 | fix-15 review 1 | ReShade.ini rewritten non-atomically by RenoDxIniOverrideManager; no snapshot on remove | audit:data-safety | P1 |
+| #122 | fix-15 review 3 | Manifest renodxIniOverrides are not injection-checked | audit:data-safety | P2 |
+| #123 | fix-15 review 2 | UPSTREAM.md #15: database keys first applied on update overwrite earlier user values | hygiene | P3 |
+| #124 | fix-16 review 1–3 | Control UE post-install: keep .rhi-control-previous, update re-apply over user changes, missing tests | audit:data-safety | P3 |
+| #125 | fix-50 review 2, 3 | Proton wine path not tied to a Proton install; Winetricks on orphaned Proton prefix uses system wine | audit:detection | P2 |
+| #126 | fix-11 review 1 | Available HDR mods: add RHI Unity database games | upstream-drift | P3 |
+
+Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, #44 `c4cc212`. Owner decisions (recorded on the tickets): a Lutris entry with no real game folder (Rekordbox) is not listed (`884c716`); games inside Lutris launcher prefixes become their own cards (#119). Integration fixes: scanner merge keeps `RequiresExplicitPatchTarget` (`963059c`, fix-44 review 1); direct-wine Proton prefixes report native-Wayland HDR as Blocked (`327ea7f`, fix-50 review 4).
 
 ## feature-parity
 
@@ -161,6 +170,7 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #98 | PAR-49 | [parity] OptiPatcher auto-deploy | feature-gap, needs-decision | P3 |
 | #99 | PAR-58 | [parity] Nexus Mods integration (NXM handler, API key, links) | feature-gap, needs-decision | P3 |
 | #100 | PAR-62 | [parity] App self-update check | feature-gap, needs-decision | P3 |
+| #120 | PAR-53 (deferred from #11) | User-chosen proxy DLL name for ReShade/OptiScaler (upstream DLL-naming dropdowns) | feature-gap | P3 |
 
 Not filed (already fixed on `main` by `3aa0f21`/`5d431b8`): DET-01, DET-02, DET-04, UI-01, UI-02, add-game `Added` check, DEP-01, DEP-02, DEP-04, PAR-D03, PAR-D13, PAR-D14, Lutris relative-exe / dosdevices indexing, partial rescan.
 Not filed separately: PAR-D07 (moot until Vulkan ReShade, see the Vulkan parity issue), PAR-D15 (arrives through the live manifest), DEP-S2/S3 (inside the toolkit issue), PAR-B03/B09 (informational).
