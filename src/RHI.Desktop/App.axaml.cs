@@ -48,7 +48,8 @@ public sealed class App : Application
             var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest);
             var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
             var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
-            var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest);
+            var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
+                unityDatabase: new RenoDxUnityDatabaseService(http));
             var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest);
             var relimiter = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
                 ManagedComponentKind.ReLimiter,

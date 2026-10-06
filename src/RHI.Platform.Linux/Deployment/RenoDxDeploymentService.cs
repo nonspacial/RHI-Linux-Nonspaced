@@ -28,6 +28,7 @@ public sealed class RenoDxDeploymentService
     private readonly RenoDxCatalogService _catalog;
     private readonly UpstreamRhiManifestService? _upstreamManifest;
     private readonly UpstreamEngineIniFileManager _engineIniFiles;
+    private readonly RenoDxUnityDatabaseService? _unityDatabase;
     private readonly string _cacheDir;
 
     public RenoDxDeploymentService(
@@ -35,12 +36,14 @@ public sealed class RenoDxDeploymentService
         LinuxDeploymentRecordStore records,
         RenoDxCatalogService catalog,
         string? cacheDir = null,
-        UpstreamRhiManifestService? upstreamManifest = null)
+        UpstreamRhiManifestService? upstreamManifest = null,
+        RenoDxUnityDatabaseService? unityDatabase = null)
     {
         _http = http;
         _records = records;
         _catalog = catalog;
         _upstreamManifest = upstreamManifest;
+        _unityDatabase = unityDatabase;
         _cacheDir = cacheDir ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "renodx");
         _engineIniFiles = new UpstreamEngineIniFileManager(http, Path.Combine(_cacheDir, "engine-files"));
     }
@@ -157,6 +160,9 @@ public sealed class RenoDxDeploymentService
             }
         }
 
+        var unityUpgrades = await ResolveUnityDatabaseUpgradesAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
+        var requestedIniOverrides = MergeIniOverrides(unityUpgrades, manifestIniOverrides);
+
         var deployDir = ResolveAddonDeployPath(game.BinaryDirectory);
         Directory.CreateDirectory(deployDir);
         var target = Path.Combine(deployDir, fileName);
@@ -217,7 +223,7 @@ public sealed class RenoDxDeploymentService
                     existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
                     ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
                     : null;
-                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, manifestIniOverrides, previousIniState);
+                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState);
 
                 if (!string.IsNullOrWhiteSpace(game.EngineIniFileOverride))
                 {
@@ -288,7 +294,9 @@ public sealed class RenoDxDeploymentService
                 record.Metadata[UpstreamEngineIniFileManager.MetadataKey] = UpstreamEngineIniFileManager.Serialize(engineIniApply.State);
             _records.Upsert(record);
             var iniSummary = iniApply.AppliedCount > 0
-                ? $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
+                ? unityUpgrades.Count > 0
+                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database + manifest)"
+                    : $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
                 : iniApply.PreservedUserEdits > 0
                     ? $" · {iniApply.PreservedUserEdits} user-edited [renodx] override(s) preserved"
                     : "";
@@ -305,6 +313,43 @@ public sealed class RenoDxDeploymentService
         }
     }
 
+
+    // Upstream 2.7.9+ (InstallModAsync / UpdateOrchestrationService): for a Unity-engine game, the
+    // RHI Unity database's per-game [renodx] keys are written on install and update. Upstream keys
+    // this on EngineHint, which it sets from UnityPlayer.dll; Linux checks both.
+    private async Task<IReadOnlyList<KeyValuePair<string, string>>> ResolveUnityDatabaseUpgradesAsync(
+        DetectedGame game,
+        IReadOnlyList<string> indexedFiles,
+        CancellationToken cancellationToken)
+    {
+        if (_unityDatabase is null) return [];
+        var isUnity = game.EngineHint?.Contains("Unity", StringComparison.OrdinalIgnoreCase) == true
+                      || RenoDxCatalogService.LooksLikeUnity(indexedFiles);
+        if (!isUnity) return [];
+        try
+        {
+            var database = await _unityDatabase.GetAsync(cancellationToken).ConfigureAwait(false);
+            return database?.Find(game.Name)?.ParsedUpgrades() ?? [];
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            // Enrichment only, as upstream: an unreadable database must not block the add-on install.
+            return [];
+        }
+    }
+
+    // Upstream writes the Unity database keys first and the manifest renodxIniOverrides after, so
+    // the manifest wins on a shared key.
+    internal static IReadOnlyDictionary<string, string> MergeIniOverrides(
+        IReadOnlyList<KeyValuePair<string, string>> unityUpgrades,
+        IReadOnlyDictionary<string, string> manifestOverrides)
+    {
+        if (unityUpgrades.Count == 0) return manifestOverrides;
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in unityUpgrades) merged[key] = value;
+        foreach (var (key, value) in manifestOverrides) merged[key] = value;
+        return merged;
+    }
 
     public async Task<RenoDxCompatibilitySnapshot> GetCompatibilitySettingsAsync(
         DetectedGame game,
