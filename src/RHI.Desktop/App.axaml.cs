@@ -130,7 +130,12 @@ public sealed class App : Application
             var updateAll = new LinuxUpdateAllService(records, managedComponents);
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
-            desktop.MainWindow = new MainWindow { DataContext = vm, UpdateLogStore = updateLog };
+            desktop.MainWindow = new MainWindow
+            {
+                DataContext = vm,
+                UpdateLogStore = updateLog,
+                HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog)
+            };
         }
         base.OnFrameworkInitializationCompleted();
     }

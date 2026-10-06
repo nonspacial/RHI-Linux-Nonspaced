@@ -8,6 +8,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
 {
     public ManagedComponentKind Kind => component.Kind;
     public ComponentAvailability Availability => component.Availability;
+    public string? InstalledVersion => component.InstalledVersion;
     public string Name => component.Kind == ManagedComponentKind.Streamline
         ? UiLocalizationService.Text("Ui.StreamlineUpdate")
         : component.DisplayName;
