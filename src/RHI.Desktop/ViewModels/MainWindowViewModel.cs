@@ -1546,6 +1546,9 @@ public partial class MainWindowViewModel : ObservableObject
         return result;
     }
 
+    /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
+    public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
+
     [RelayCommand]
     private async Task ManageComponentAsync(ManagedComponentKind kind)
     {
@@ -1571,6 +1574,36 @@ public partial class MainWindowViewModel : ObservableObject
             if (!removing && kind == ManagedComponentKind.Dlss5Feeder && IsDeepFriedChickenFeederConsumer && string.IsNullOrWhiteSpace(Dlss5FeederConsumerPackagePath))
             {
                 StatusText = L("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial (.zip ou .7z). Selecione-o primeiro em Perfil do ReShade → Consumidor do Feeder.", "DLSS5 Feeder Full with Deep Fried Chicken requires the official package (.zip or .7z). Select it first under ReShade Profile → Feeder consumer.");
+                return;
+            }
+
+            // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
+            if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
+                ConfirmAsync is { } confirm &&
+                !await confirm(L("Control Ultimate Edition — mod RenoDX", "Control Ultimate Edition — RenoDX mod"), L(
+                    "⚠ Este NÃO é um mod HDR.\n\n" +
+                    "Ele corrige o ruído do RT com Ray Reconstruction. Duas estratégias (escolha uma; são mutuamente exclusivas):\n" +
+                    "• Desative o denoiser de RT do jogo e use o preset M ou L do DLSS Super Resolution\n" +
+                    "• Use Ray Reconstruction com entradas extras derivadas dos shaders do jogo (o denoiser do jogo também fica desativado — o RR exige isso)\n\n" +
+                    "DLSS, Ray Tracing e SSAO precisam estar ativados no jogo para o Ray Reconstruction funcionar corretamente.\n\n" +
+                    "Instalar também vai:\n" +
+                    "• Atualizar nvngx_dlss.dll para a versão mais recente disponível\n" +
+                    "• Instalar nvngx_dlssd.dll (runtime do DLSS Ray Reconstruction)\n" +
+                    "• Definir o preset HDR do renderer.ini (m_eHDRPreset) como 2\n\n" +
+                    "O passo do preset SR no perfil do driver NVIDIA é ignorado no Linux. Remover o RenoDX restaura as DLLs e o renderer.ini anteriores.",
+                    "⚠ This is NOT an HDR mod.\n\n" +
+                    "It fixes RT noise using Ray Reconstruction. Two strategies (pick one; they are mutually exclusive):\n" +
+                    "• Turn off the in-game RT denoiser and use DLSS Super Resolution preset M or L\n" +
+                    "• Use Ray Reconstruction with extra inputs derived from the game's shaders (the game denoiser is turned off here too — RR needs that)\n\n" +
+                    "DLSS, Ray Tracing and SSAO must all be enabled in-game for Ray Reconstruction to work correctly.\n\n" +
+                    "Installing will also:\n" +
+                    "• Upgrade nvngx_dlss.dll to the newest available version\n" +
+                    "• Deploy nvngx_dlssd.dll (DLSS Ray Reconstruction runtime)\n" +
+                    "• Set the renderer.ini HDR preset (m_eHDRPreset) to 2\n\n" +
+                    "The NVIDIA driver-profile SR preset step is skipped on Linux. Removing RenoDX restores the previous DLLs and renderer.ini."),
+                    L("Instalar", "Install")))
+            {
+                StatusText = L("Instalação do RenoDX cancelada.", "RenoDX installation cancelled.");
                 return;
             }
 

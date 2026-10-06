@@ -509,6 +509,28 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] PresentationPairs =
     [
+        // Control UE RR post-install (upstream 2.7.9). Fragments compose around DLL names, versions and paths.
+        ("Control UE restore incomplete; RenoDX was kept:", "Restauração do Control UE incompleta; o RenoDX foi mantido:"),
+        ("renderer.ini not found in the game folder; launch the game once, then reinstall RenoDX to set the HDR preset.", "renderer.ini não encontrado na pasta do jogo; abra o jogo uma vez e reinstale o RenoDX para definir o preset HDR."),
+        ("m_eHDRPreset key not found; nothing changed.", "chave m_eHDRPreset não encontrada; nada foi alterado."),
+        ("NVIDIA driver-profile SR preset step skipped: no driver profiles under Wine/Proton.", "Etapa do preset SR do perfil de driver NVIDIA ignorada: o Wine/Proton não tem perfis de driver."),
+        ("skipped: DLSS manifest unavailable.", "ignorado: manifesto DLSS indisponível."),
+        ("skipped: not in the DLSS manifest.", "ignorado: ausente do manifesto DLSS."),
+        ("skipped: download failed (", "ignorado: falha no download ("),
+        (" was changed outside RHI and was left as it is.", " foi alterado fora do RHI e foi mantido como está."),
+        ("no longer exists; nothing to restore.", "não existe mais; nada a restaurar."),
+        ("previous copy is missing (", "cópia anterior ausente ("),
+        ("backup is missing; left as it is.", "cópia de segurança ausente; mantido como está."),
+        ("); left as it is.", "); mantido como está."),
+        ("; other settings kept.", "; demais configurações mantidas."),
+        (" could not be restored: ", " não pôde ser restaurado: "),
+        ("m_eHDRPreset restored to", "m_eHDRPreset restaurado para"),
+        ("m_eHDRPreset already", "m_eHDRPreset já está em"),
+        ("file is unexpectedly large.", "o arquivo é inesperadamente grande."),
+        (" not changed: ", " não alterado: "),
+        (": already ", ": já está em "),
+        (": restored.", ": restaurado."),
+        (": removed.", ": removido."),
         // NR in-place version swap (upstream 2.7.6). Fragments compose around versions, paths and causes.
         ("ShortFuse in-place swap failed; the previous add-on was kept:", "Falha na troca no local do ShortFuse; o add-on anterior foi mantido:"),
         ("ShortFuse in-place swap failed and the previous add-on could not be restored:", "Falha na troca no local do ShortFuse e o add-on anterior não pôde ser restaurado:"),
