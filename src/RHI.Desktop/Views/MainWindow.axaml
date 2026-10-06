@@ -43,9 +43,9 @@
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
         <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
         <Button x:Name="ToolbarOverflowButton" views:ToolbarPanel.Slot="Overflow" Classes="rhi" Content="…"
-                ToolTip.Tip="{DynamicResource Ui.MoreActions}">
+                ToolTip.Tip="{DynamicResource Ui.MoreActions}" AutomationProperties.Name="{DynamicResource Ui.MoreActions}">
           <Button.Flyout>
-            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="ToolbarOverflowMenu_Opening"/>
+            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="ToolbarOverflowMenu_Opening" FlyoutPresenterClasses="toolbarOverflow"/>
           </Button.Flyout>
         </Button>
         <Button views:ToolbarPanel.Slot="Trailing" Classes="rhi" Content="{DynamicResource Ui.Settings}" Click="Settings_Click"/>
@@ -82,7 +82,7 @@
             <TextBlock Grid.Column="1" Text="{Binding GameCountText}" Foreground="#6B7A8E" FontSize="10"/>
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}"
-                   SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" KeyDown="GameLibrary_KeyDown" ClipToBounds="True"
+                   SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" ClipToBounds="True"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
@@ -493,7 +493,9 @@
                     <DataTemplate x:DataType="vm:ComponentRowViewModel">
                       <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
                         <views:ResponsiveRow Columns="220,180,*,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160">
-                          <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                          <!-- Names wider than the 220 px column end in a word ellipsis; the full name is in a 2 s tooltip. -->
+                          <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
+                                     TextTrimming="WordEllipsis" ToolTip.Tip="{Binding Name}" ToolTip.ShowDelay="2000"/>
                           <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
                           <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
                           <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRenoDxSettings}"
@@ -609,7 +611,7 @@
       </Border>
     </Grid>
 
-    <Border Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
+    <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->

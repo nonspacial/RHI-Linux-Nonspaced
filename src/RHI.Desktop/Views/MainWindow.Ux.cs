@@ -99,14 +99,10 @@ public sealed partial class MainWindow
         if (detail is not null)
             detail.Margin = new Thickness(compact ? 12 : 24);
 
-        // 640 × 480 minimum in both views; the user's window is never enlarged. Compact keeps its 1280 × 760 maximum.
+        // 640 × 480 minimum in both views. Switching view changes the layout only: the app never resizes the
+        // user's window (no enlarge for Detailed, no shrink or cap for Compact).
         MinWidth = 640;
         MinHeight = 480;
-        if (compact && (Width > 1280 || Height > 780))
-        {
-            Width = 1280;
-            Height = 760;
-        }
         _libraryLayoutKey = null;
         ApplyLibraryLayout();
     }
