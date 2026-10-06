@@ -61,6 +61,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** Unit test on a yml plus a fixture `pga.db`; assert the command uses the numeric id.
 
 ### DET-05 — Lutris native-wrapper games take the wrapper's folder as install path, and distinct games merge into one card
+- **Status:** fixed in `849d9a1` (#44). Native launchers prefer `working_dir`; shared bin dirs and prefix roots are never a game root; no-folder entries are launch-only with an explicit patch target; one source's distinct entries no longer merge.
 - **Where:** `src/RHI.Platform.Linux/Detection/LutrisGameDetector.cs:33-39`; `src/RHI.Core/Services/GameLibraryScanner.cs:96-107, 109-164`.
 - **What happens:**
   - The install path is always `dirname(exe)`, even for `runner: linux` and even when `working_dir` is set.
