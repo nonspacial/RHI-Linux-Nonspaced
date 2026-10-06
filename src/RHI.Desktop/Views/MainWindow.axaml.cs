@@ -1845,7 +1845,7 @@ public sealed partial class MainWindow : Window
 
     private Control? FindSectionBody(string key) => key switch
     {
-        "Runtime" => this.FindControl<Grid>("RuntimeSectionBody"),
+        "Runtime" => this.FindControl<LabelValuePanel>("RuntimeSectionBody"),
         "DlssStreamline" => this.FindControl<StackPanel>("DlssStreamlineSectionBody"),
         "ReShadeProfile" => this.FindControl<StackPanel>("ReShadeProfileSectionBody"),
         "ManagedComponents" => this.FindControl<ItemsControl>("ManagedComponentsSectionBody"),

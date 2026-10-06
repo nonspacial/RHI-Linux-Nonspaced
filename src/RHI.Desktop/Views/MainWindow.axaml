@@ -152,32 +152,32 @@
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{DynamicResource Ui.ExecutionGame}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-                    <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0"/>
+                    <TextBlock Text="{DynamicResource Ui.ExecutionGameNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="RuntimeSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
                   <Button x:Name="RuntimeSectionToggle" Grid.Column="2" Tag="Runtime" Classes="rhi" Content="▼"
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
-                <Grid x:Name="RuntimeSectionBody" Margin="0,10,0,0"
-                      ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="18" RowSpacing="8">
+                <!-- Label/value form; labels move above their values below ~760 px of detail width. -->
+                <views:LabelValuePanel x:Name="RuntimeSectionBody" Margin="0,10,0,0" ColumnSpacing="18" RowSpacing="8" StackBelow="678">
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource Ui.Launcher}" Classes="muted"/>
-                  <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedLaunchExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <views:MiddleEllipsisText Grid.Row="0" Grid.Column="1" FullText="{Binding SelectedLaunchExecutable}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource Ui.TargetSafety}" Classes="muted"/>
                   <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PatchTargetStatusText}" Foreground="#4DC9E6" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource Ui.GameRoot}" Classes="muted"/>
-                  <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedInstallPath}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <views:MiddleEllipsisText Grid.Row="2" Grid.Column="1" FullText="{Binding SelectedInstallPath}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource Ui.Prefix}" Classes="muted"/>
-                  <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedPrefix}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <views:MiddleEllipsisText Grid.Row="3" Grid.Column="1" FullText="{Binding SelectedPrefix}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="4" Grid.Column="0" Text="{DynamicResource Ui.TargetExe}" Classes="muted"/>
-                  <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedExecutable}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <views:MiddleEllipsisText Grid.Row="4" Grid.Column="1" FullText="{Binding SelectedExecutable}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="5" Grid.Column="0" Text="{DynamicResource Ui.PatchDirectory}" Classes="muted"/>
-                  <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <views:MiddleEllipsisText Grid.Row="5" Grid.Column="1" FullText="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="6" Grid.Column="0" Text="{DynamicResource Ui.GraphicsApi}" Classes="muted"/>
                   <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
@@ -203,12 +203,12 @@
 
                   <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
                   <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
                       <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"/>
                       <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
                                 ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
                       <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}" Padding="10,5"/>
-                    </StackPanel>
+                    </WrapPanel>
                     <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap"/>
                   </StackPanel>
@@ -221,7 +221,7 @@
 
                   <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
                   <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
-                </Grid>
+                </views:LabelValuePanel>
               </StackPanel>
             </Border>
 
@@ -234,9 +234,9 @@
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{DynamicResource Ui.DlssStreamline}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-                    <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0"/>
+                    <TextBlock Text="{Binding DlssStatusSummary}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                   </StackPanel>
-                  <Border Grid.Column="2" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5">
+                  <Border Grid.Column="2" Background="#122830" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
                     <TextBlock Text="{DynamicResource Ui.GameDlls}" Foreground="#4DC9E6" FontSize="11"/>
                   </Border>
                   <Button x:Name="DlssStreamlineSectionToggle" Grid.Column="3" Tag="DlssStreamline" Classes="rhi" Content="▼"
@@ -244,53 +244,60 @@
                 </Grid>
 
                 <StackPanel x:Name="DlssStreamlineSectionBody" Spacing="10">
-                  <Grid ColumnDefinitions="170,*,145,160,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="7">
-                    <TextBlock Grid.Row="0" Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DlssSrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Border Grid.Row="0" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                      <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                    <ComboBox Grid.Row="0" Grid.Column="3" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
-                    <Button Grid.Row="0" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding CanSwapDlssSr}"/>
-                    <Button Grid.Row="0" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
-
-                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DlssRrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Border Grid.Row="1" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                      <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                    <ComboBox Grid.Row="1" Grid.Column="3" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
-                    <Button Grid.Row="1" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding CanSwapDlssRr}"/>
-                    <Button Grid.Row="1" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
-
-                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DlssFgPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Border Grid.Row="2" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                      <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                    <ComboBox Grid.Row="2" Grid.Column="3" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
-                    <Button Grid.Row="2" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding CanSwapDlssFg}"/>
-                    <Button Grid.Row="2" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
-
-                    <TextBlock Grid.Row="3" Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding DlssNrPath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Border Grid.Row="3" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                      <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                    <ComboBox Grid.Row="3" Grid.Column="3" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
-                    <Button Grid.Row="3" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding CanSwapDlssNr}"/>
-                    <Button Grid.Row="3" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
-
-                    <TextBlock Grid.Row="4" Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
-                               ToolTip.Tip="{DynamicResource Ui.StreamlineUpdateNote}"/>
-                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding StreamlinePath}" Classes="muted" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                    <Border Grid.Row="4" Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
-                      <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                    </Border>
-                    <ComboBox Grid.Row="4" Grid.Column="3" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
-                    <Button Grid.Row="4" Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapStreamlineCommand}" IsEnabled="{Binding CanSwapStreamline}"/>
-                    <Button Grid.Row="4" Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreStreamlineCommand}" IsEnabled="{Binding StreamlineRestoreAvailable}"/>
-                  </Grid>
+                  <!-- One Grid-identical row per component; the controls wrap under the status when it would get < 220 px. -->
+                  <StackPanel Spacing="7">
+                    <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
+                      <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssSrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding DlssSrVersions}" SelectedItem="{Binding SelectedDlssSrVersion}" IsEnabled="{Binding CanSwapDlssSr}"/>
+                      <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding CanSwapDlssSr}"/>
+                      <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
+                    </views:ResponsiveRow>
+                    <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
+                      <TextBlock Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssRrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding DlssRrVersions}" SelectedItem="{Binding SelectedDlssRrVersion}" IsEnabled="{Binding CanSwapDlssRr}"/>
+                      <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding CanSwapDlssRr}"/>
+                      <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
+                    </views:ResponsiveRow>
+                    <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
+                      <TextBlock Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssFgPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding DlssFgVersions}" SelectedItem="{Binding SelectedDlssFgVersion}" IsEnabled="{Binding CanSwapDlssFg}"/>
+                      <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding CanSwapDlssFg}"/>
+                      <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
+                    </views:ResponsiveRow>
+                    <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
+                      <TextBlock Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssNrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding DlssNrVersions}" SelectedItem="{Binding SelectedDlssNrVersion}" IsEnabled="{Binding CanSwapDlssNr}"/>
+                      <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding CanSwapDlssNr}"/>
+                      <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
+                    </views:ResponsiveRow>
+                    <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
+                      <TextBlock Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
+                                 ToolTip.Tip="{DynamicResource Ui.StreamlineUpdateNote}"/>
+                      <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding StreamlinePath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
+                      <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
+                        <TextBlock Text="{Binding StreamlineDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                      </Border>
+                      <ComboBox Grid.Column="3" ItemsSource="{Binding StreamlineVersions}" SelectedItem="{Binding SelectedStreamlineVersion}" IsEnabled="{Binding CanSwapStreamline}"/>
+                      <Button Grid.Column="4" Classes="rhi" Content="{DynamicResource Ui.Apply}" Command="{Binding SwapStreamlineCommand}" IsEnabled="{Binding CanSwapStreamline}"/>
+                      <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreStreamlineCommand}" IsEnabled="{Binding StreamlineRestoreAvailable}"/>
+                    </views:ResponsiveRow>
+                  </StackPanel>
 
                   <TextBlock Text="{DynamicResource Ui.StreamlineUpdateNote}" Classes="muted" TextWrapping="Wrap"/>
 
@@ -404,20 +411,26 @@
                         <Button Grid.Column="2" Content="{DynamicResource Ui.LoadHistory}" Command="{Binding LoadNeuralVersionHistoryCommand}"
                                 IsEnabled="{Binding CanLoadNeuralVersionHistory}" Padding="12,6"/>
                       </Grid>
-                      <Grid ColumnDefinitions="120,220,120,220,100,220" ColumnSpacing="8">
-                        <TextBlock Text="Feeder" Classes="muted" VerticalAlignment="Center"/>
-                        <ComboBox Grid.Column="1" ItemsSource="{Binding Dlss5FeederVersionOptions}"
-                                  SelectedItem="{Binding SelectedDlss5FeederVersion, Mode=TwoWay}"
-                                  IsEnabled="{Binding CanConfigureFeederVersionPin}"/>
-                        <TextBlock Grid.Column="2" Text="DX11 Bridge" Classes="muted" VerticalAlignment="Center"/>
-                        <ComboBox Grid.Column="3" ItemsSource="{Binding Dlss5BridgeVersionOptions}"
-                                  SelectedItem="{Binding SelectedDlss5BridgeVersion, Mode=TwoWay}"
-                                  IsEnabled="{Binding CanConfigureBridgeVersionPin}"/>
-                        <TextBlock Grid.Column="4" Text="ShortFuse" Classes="muted" VerticalAlignment="Center"/>
-                        <ComboBox Grid.Column="5" ItemsSource="{Binding ShortFuseVersionOptions}"
-                                  SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
-                                  IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
-                      </Grid>
+                      <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="7">
+                        <Grid ColumnDefinitions="120,220" ColumnSpacing="8">
+                          <TextBlock Text="Feeder" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding Dlss5FeederVersionOptions}"
+                                    SelectedItem="{Binding SelectedDlss5FeederVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureFeederVersionPin}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="120,220" ColumnSpacing="8">
+                          <TextBlock Text="DX11 Bridge" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding Dlss5BridgeVersionOptions}"
+                                    SelectedItem="{Binding SelectedDlss5BridgeVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureBridgeVersionPin}"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="100,220" ColumnSpacing="8">
+                          <TextBlock Text="ShortFuse" Classes="muted" VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1" ItemsSource="{Binding ShortFuseVersionOptions}"
+                                    SelectedItem="{Binding SelectedShortFuseVersion, Mode=TwoWay}"
+                                    IsEnabled="{Binding CanConfigureShortFuseVersionPin}"/>
+                        </Grid>
+                      </WrapPanel>
                       <Grid ColumnDefinitions="120,220,*" ColumnSpacing="8">
                         <TextBlock Text="NR DLL" Classes="muted" VerticalAlignment="Center"/>
                         <ComboBox Grid.Column="1" ItemsSource="{Binding NeuralRenderingDllVersionOptions}"
@@ -428,7 +441,7 @@
                     </StackPanel>
                   </Border>
 
-                  <StackPanel Orientation="Horizontal" Spacing="14">
+                  <WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4">
                     <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeManageIni}"/>
                     <TextBlock Text="{DynamicResource Ui.QuickPackages}" Classes="muted" VerticalAlignment="Center" Margin="10,0,0,0"/>
                     <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
@@ -436,7 +449,7 @@
                     <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ShaderClshortfuse}"/>
                     <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ShaderMaxG2D}"/>
                     <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
-                  </StackPanel>
+                  </WrapPanel>
                   <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"
                              Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>
@@ -457,7 +470,7 @@
                     <TextBlock x:Name="ManagedComponentsSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
-                  <Border Grid.Column="2" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5">
+                  <Border Grid.Column="2" Background="#122818" BorderBrush="#1E4028" BorderThickness="1" CornerRadius="8" Padding="10,5" MaxHeight="40">
                     <TextBlock Text="{DynamicResource Ui.LinuxBackendActive}" Foreground="#5ECB7D" FontSize="11"/>
                   </Border>
                   <Button x:Name="ManagedComponentsSectionToggle" Grid.Column="3" Tag="ManagedComponents" Classes="rhi" Content="▼"
@@ -468,7 +481,7 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:ComponentRowViewModel">
                       <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
-                        <Grid ColumnDefinitions="220,180,*,Auto,Auto" ColumnSpacing="12">
+                        <views:ResponsiveRow Columns="220,180,*,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160">
                           <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
                           <TextBlock Grid.Column="1" Text="{Binding Status}" Foreground="#5ECB7D" FontSize="12" VerticalAlignment="Center"/>
                           <TextBlock Grid.Column="2" Text="{Binding Note}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -485,7 +498,7 @@
                           <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
                                   Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                   CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
-                        </Grid>
+                        </views:ResponsiveRow>
                       </Border>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
@@ -502,7 +515,7 @@
                              PointerPressed="SectionDragHandle_PointerPressed"/>
                   <StackPanel Grid.Column="1">
                     <TextBlock Text="{DynamicResource Ui.Extras}" FontSize="16" FontWeight="SemiBold" Foreground="#E8ECF2"/>
-                    <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0"/>
+                    <TextBlock Text="{DynamicResource Ui.ExtrasNote}" Classes="muted" Margin="0,3,0,0" TextWrapping="Wrap"/>
                     <TextBlock x:Name="ExtrasSectionSummary" FontSize="11" Margin="0,3,0,0" IsVisible="False"
                                TextTrimming="CharacterEllipsis"/>
                   </StackPanel>
@@ -510,7 +523,7 @@
                           Click="ToggleSection_Click" ToolTip.Tip="{DynamicResource Ui.CollapseExpandTip}" Padding="8,4"/>
                 </Grid>
                 <StackPanel x:Name="ExtrasSectionBody" Spacing="10">
-                  <Grid ColumnDefinitions="150,150,190,Auto,Auto,Auto" ColumnSpacing="10">
+                  <views:ResponsiveRow Columns="150,150,190,Auto,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                       <TextBlock Text="Ultimate ASI Loader" Foreground="#E8ECF2" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.WineProtonProxy}" Classes="muted" FontSize="10"/>
@@ -539,13 +552,13 @@
                             Command="{Binding RemoveUalCommand}"
                             IsEnabled="{Binding CanRemoveUal}"
                             Padding="12,6"/>
-                  </Grid>
+                  </views:ResponsiveRow>
 
                   <TextBlock Text="{Binding UalProxyHint}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{Binding UalLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
 
                   <Border Height="1" Background="#2A3038" Margin="0,4"/>
-                  <Grid ColumnDefinitions="150,180,190,Auto,Auto" ColumnSpacing="10">
+                  <views:ResponsiveRow Columns="150,180,190,Auto,Auto" ColumnSpacing="10" LineSpacing="8" HeadColumns="2">
                     <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
                       <TextBlock Text="ShortFuse / DLSS FG" Foreground="#E8ECF2" FontWeight="SemiBold"/>
                       <TextBlock Text="{DynamicResource Ui.PerGameOrchestration}" Classes="muted" FontSize="10"/>
@@ -562,7 +575,7 @@
                     <Button Grid.Column="4" Classes="rhi remove" Content="{DynamicResource Ui.Remove}" Command="{Binding InstallOrRemoveShortFuseCommand}"
                             IsVisible="{Binding ShortFuseInstalled}" IsEnabled="{Binding CanInstallOrRemoveShortFuse}"
                             ToolTip.Tip="{Binding ShortFuseActionHint}" Padding="12,6"/>
-                  </Grid>
+                  </views:ResponsiveRow>
                   <CheckBox Content="{DynamicResource Ui.ShortFuseZzzLoadOrder}" IsChecked="{Binding ShortFuseZzzLoadOrder}"
                             IsEnabled="{Binding CanConfigureShortFuseZzzLoadOrder}"
                             ToolTip.Tip="{DynamicResource Ui.ShortFuseZzzTip}"/>
