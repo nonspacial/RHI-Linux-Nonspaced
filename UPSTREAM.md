@@ -16,3 +16,11 @@ Platform adaptations include:
 - native Linux games are not targets for Windows DLL injection components.
 
 RHI Linux remains a GPLv3 derivative of the upstream project.
+
+## Parity notes (upstream 2.7.6–2.7.9 sync)
+
+### Neural Rendering add-on versions (2.7.9, #19)
+
+- Version lists (Feeder, DX11 Bridge, ShortFuse) are sorted newest first by version, then by rc number, so `rc10` lists above `rc5` and a stable release above any rc. ShortFuse "Latest" uses the same order; it previously fell back to GitHub's API order for every `-rcN` tag.
+- Full Refresh re-fetches the NR version lists and the ShortFuse latest version. Linux had no 1-hour TTL; the lists were cached for the whole session.
+- Update All and the background pass now include DLSS5 Feeder, DX11 Bridge and ShortFuse. With Latest selected they move to the newest release; a pinned tag is respected. Only the add-on file is replaced in place (Feeder: `dlss5-feed.addon64/.addon32`, plus `host64/dlss5-feed-host64.exe` on 32-bit games because it ships in the same archive). Upstream's `rhi_install.txt` ownership check has no Linux equivalent: Linux deployment records already own these files.

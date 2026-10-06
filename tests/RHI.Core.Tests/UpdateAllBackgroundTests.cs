@@ -7,9 +7,9 @@ namespace RHI.Core.Tests;
 public sealed class UpdateAllBackgroundTests
 {
     [Fact]
-    public void SupportedComponents_MirrorsLinuxNativeTenFamilies()
+    public void SupportedComponents_MirrorsLinuxNativeFamilies()
     {
-        Assert.Equal(10, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Equal(13, LinuxUpdateAllService.SupportedComponents.Count);
         Assert.Contains(ManagedComponentKind.ReShade, LinuxUpdateAllService.SupportedComponents);
         Assert.Contains(ManagedComponentKind.RenoDX, LinuxUpdateAllService.SupportedComponents);
         Assert.Contains(ManagedComponentKind.ReLimiter, LinuxUpdateAllService.SupportedComponents);
@@ -23,13 +23,10 @@ public sealed class UpdateAllBackgroundTests
     }
 
     [Fact]
-    public void SupportedComponents_ExcludesNeuralRenderingAndAuxiliaryFamilies()
+    public void SupportedComponents_ExcludesAuxiliaryFamilies()
     {
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Dlss));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Streamline));
-        Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.ShortFuse));
-        Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Dlss5Feeder));
-        Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Dlss5Dx11Bridge));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.UltimateAsiLoader));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.RenoDXUpgrade));
         Assert.False(LinuxUpdateAllService.IsSupported(ManagedComponentKind.Unknown));
@@ -130,7 +127,7 @@ public sealed class UpdateAllBackgroundTests
         using var fixture = new Fixture();
         var game = fixture.Game("unsupported");
         fixture.Record(game, ManagedComponentKind.Dlss);
-        fixture.Record(game, ManagedComponentKind.ShortFuse);
+        fixture.Record(game, ManagedComponentKind.UltimateAsiLoader);
         var backend = new FakeBackend();
         var service = fixture.Service(backend);
 

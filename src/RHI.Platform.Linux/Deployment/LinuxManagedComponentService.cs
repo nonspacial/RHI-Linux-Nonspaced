@@ -1266,6 +1266,31 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public void SetNeuralAddonVersionPin(DetectedGame game, ManagedComponentKind kind, string? releaseTag)
         => _neuralVersionPins.Set(game, kind, releaseTag);
 
+    /// <summary>
+    /// Brings an installed Neural Rendering add-on to its stored pin (or latest) by replacing only
+    /// the add-on file(s) in place; the rest of the method's stack is untouched (upstream RHI 2.7.6).
+    /// </summary>
+    public Task<ComponentOperationResult> SwapNeuralAddonVersionAsync(
+        DetectedGame game,
+        ManagedComponentKind kind,
+        CancellationToken cancellationToken = default)
+    {
+        var guard = PatchTargetGuard(game);
+        return guard is null ? SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken) : Task.FromResult(guard);
+    }
+
+    private Task<ComponentOperationResult> SwapNeuralAddonVersionCoreAsync(
+        DetectedGame game,
+        ManagedComponentKind kind,
+        CancellationToken cancellationToken)
+        => kind switch
+        {
+            ManagedComponentKind.Dlss5Feeder => _dlss5Feeder.SwapFeederVersionAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
+            ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.UpdateAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
+            ManagedComponentKind.ShortFuse => _shortFuse.SwapAddonVersionAsync(game, _neuralVersionPins.Get(game, kind), cancellationToken),
+            _ => Task.FromResult(ComponentOperationResult.Fail($"{kind} is not a Neural Rendering add-on."))
+        };
+
     public Task<IReadOnlyList<GitHubReleaseVersion>> ListNeuralAddonVersionsAsync(
         ManagedComponentKind kind,
         CancellationToken cancellationToken = default)
@@ -1481,6 +1506,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DlssEnablerStandalone => await _dlssEnablerStandalone.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Rtx40MfgStandalone => await _rtx40Mfg.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         };
     }
@@ -1512,7 +1539,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DofFix => _dofFix.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.UpdateAsync(game, cancellationToken),
-            ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.UpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken),
+            ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse
+                => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         };
     }

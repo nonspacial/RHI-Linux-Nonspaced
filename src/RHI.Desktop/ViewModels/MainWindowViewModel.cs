@@ -1128,6 +1128,13 @@ public partial class MainWindowViewModel : ObservableObject
             var currentKey = SelectedGame is null ? null : Key(SelectedGame);
             CancelSelectionProbe();
             if (onlyDetectors is null) _probeCache.Clear();
+            // Full Refresh bypasses the session NR version caches (upstream 2.7.9).
+            Task? neuralCatalogRefresh = null;
+            if (onlyDetectors is null)
+            {
+                _shortFuseLatestVersionCache = null;
+                neuralCatalogRefresh = EnsureNeuralVersionCatalogAsync(forceRefresh: true);
+            }
             SelectedGame = null;
 
             var found = await _scanner.ScanAsync(onlyDetectors);
@@ -1166,6 +1173,7 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedGame = currentKey is null
                 ? Games.FirstOrDefault()
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
+            if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             StatusText = LF("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", _allGames.Count);
         }
         catch (Exception ex)
