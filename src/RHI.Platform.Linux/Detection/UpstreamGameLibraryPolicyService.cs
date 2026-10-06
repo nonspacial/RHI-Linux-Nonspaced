@@ -294,6 +294,7 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
             PatchTargetAuthority = game.PatchTargetAuthority,
             Runner = game.Runner,
             LaunchCommand = game.LaunchCommand,
+            ParentLauncherName = game.ParentLauncherName,
             CompatibilityTool = game.CompatibilityTool,
             CompatibilityLayerType = game.CompatibilityLayerType,
             WineBinaryPath = game.WineBinaryPath,

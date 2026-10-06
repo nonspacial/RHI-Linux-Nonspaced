@@ -112,9 +112,15 @@ public sealed class UpstreamGameLibraryPolicyServiceTests
         Directory.CreateDirectory(Path.Combine(bundle, "Game", "ME1", "Binaries", "Win64"));
         Directory.CreateDirectory(Path.Combine(bundle, "Game", "ME2", "Binaries", "Win64"));
 
-        var result = await policy.ApplyAsync([Game("Mass Effect Legendary Edition", bundle)]);
+        var parent = Game("Mass Effect Legendary Edition", bundle);
+        parent.LaunchCommand = "lutris 'lutris:rungame/ea-app'";
+        parent.ParentLauncherName = "EA App";
+
+        var result = await policy.ApplyAsync([parent]);
 
         Assert.Equal(2, result.Count);
+        // A split child of a launcher-prefix card still launches, and says it launches, the launcher.
+        Assert.All(result, child => Assert.Equal(("lutris 'lutris:rungame/ea-app'", "EA App"), (child.LaunchCommand, child.ParentLauncherName)));
         var me1 = result.Single(x => x.Name.StartsWith("Mass Effect 1", StringComparison.Ordinal));
         Assert.Equal("Mass Effect : Legendary Edition", me1.WikiNameOverride);
         Assert.Equal(bundle, me1.ManifestInstallRoot);
