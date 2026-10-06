@@ -40,6 +40,26 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
         Assert.Null(plan.CommandPrefix);
     }
 
+    [Theory]
+    [InlineData("GE-Proton10-23")]
+    [InlineData("proton-cachyos-11.0")]
+    public void ProtonPrefixLaunchedDirectlyWithItsWine_NativeWayland_IsBlocked(string tool)
+    {
+        // Standalone Wine-prefix entry built by Proton: started with files/bin/wine, never the
+        // proton script, so PROTON_ENABLE_HDR/WAYLAND would be ignored.
+        var game = Game(tool);
+        game.Source = "Wine";
+        game.LaunchCommand = "WINEPREFIX='/p' '/proton/files/bin/wine' '/p/drive_c/Game/game.exe'";
+
+        var plan = Service(wayland: true, gamescope: false).BuildPlan(game, Profile(LinuxHdrModes.NativeWayland));
+
+        Assert.False(plan.CanApply);
+        Assert.DoesNotContain("PROTON_ENABLE_HDR", plan.Environment.Keys);
+        Assert.DoesNotContain("PROTON_ENABLE_WAYLAND", plan.Environment.Keys);
+        Assert.Equal("%command%", plan.LaunchOptions);
+        Assert.Contains("proton script", plan.Summary);
+    }
+
     [Fact]
     public void ProtonCachy_NativeWayland_DoesNotInventRemovedProtonHdrAlias()
     {

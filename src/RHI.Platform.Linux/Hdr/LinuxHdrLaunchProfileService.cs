@@ -120,6 +120,9 @@ public sealed partial class LinuxHdrLaunchProfileService
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var family = RunnerFamily(game);
+        if (family != "Wine" && IsDirectWineLaunch(game))
+            return Blocked(profile, host,
+                "This game is started directly with its Proton build's wine, not through the proton script, so Proton's HDR/Wayland variables do not apply. Launch it through Steam or a Proton/umu launcher for native Wayland HDR, or use Gamescope mode.");
         string note;
         if (family == "GE")
         {
@@ -207,6 +210,14 @@ public sealed partial class LinuxHdrLaunchProfileService
                command.StartsWith("heroic ", StringComparison.OrdinalIgnoreCase) ||
                command.StartsWith("lutris ", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// Standalone Wine-prefix entries (including Proton-built prefixes) are started with the runner's
+    /// <c>wine</c> binary, never the <c>proton</c> script that reads PROTON_* variables. Manual games
+    /// keep their own launch command (which may be umu-run/proton) and are not judged here.
+    /// </summary>
+    internal static bool IsDirectWineLaunch(DetectedGame game)
+        => string.Equals(game.Source, "Wine", StringComparison.OrdinalIgnoreCase);
 
     internal static string BuildLaunchOptions(IReadOnlyDictionary<string, string> environment, string? prefix)
     {
