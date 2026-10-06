@@ -20,16 +20,19 @@ public sealed partial class LutrisGameDetector : IGameDetector
         var games = new List<(DetectedGame Game, string Slug, string ConfigFile)>();
         foreach (var configRoot in configRoots)
         {
-            foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")))
+            // Sorted: configs sharing a prefix list its games under the first (oldest) config.
+            foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")).Order(StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
                 try
                 {
                     var text = File.ReadAllText(file);
                     var name = MatchValue(text, "name") ?? Path.GetFileNameWithoutExtension(file).Replace('-', ' ');
-                    var exe = MatchValue(text, "exe");
-                    var prefix = MatchValue(text, "prefix");
-                    var workingDir = MatchValue(text, "working_dir");
+                    // Same reader as LauncherOwnedPrefixes (folded long lines joined), so a prefix the
+                    // Wine detector skips as Lutris-owned is read here in full, never truncated.
+                    var exe = ReadScalar(text, "exe");
+                    var prefix = ReadScalar(text, "prefix");
+                    var workingDir = ReadScalar(text, "working_dir");
                     exe = Expand(exe);
                     prefix = Expand(prefix);
                     workingDir = Expand(workingDir);
@@ -86,8 +89,67 @@ public sealed partial class LutrisGameDetector : IGameDetector
             foreach (var (game, _, configFile) in sameFolder)
                 game.LibraryIdentityPath ??= configFile;
         }
-        return games.Select(x => x.Game).ToArray();
+        var listed = games.Select(x => x.Game).ToList();
+        return [.. listed, .. LauncherPrefixGames(listed, ct)];
     }
+
+    /// <summary>
+    /// Games installed inside a listed launcher's prefix (Ubisoft Connect's <c>games</c> folder,
+    /// Battle.net's <c>drive_c/Games</c>, <c>EA Games</c>): one card per game folder, with the launcher's
+    /// prefix and runner. Launch starts the launcher; the user starts the game from there. Each prefix is
+    /// read once, under its first config. A folder that is (or holds) another listed entry, such as the
+    /// launcher itself, is not listed again; neither is a folder with no game executable.
+    /// </summary>
+    private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<DetectedGame> listed, CancellationToken ct)
+    {
+        var found = new List<DetectedGame>();
+        var listedRoots = listed.Select(g => LauncherOwnedPrefixes.Canonicalise(g.InstallPath)).ToArray();
+        var seenPrefixes = new HashSet<string>(StringComparer.Ordinal);
+        var seenFolders = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var launcher in listed)
+        {
+            if (launcher.PrefixPath is null || !seenPrefixes.Add(LauncherOwnedPrefixes.Canonicalise(launcher.PrefixPath)))
+                continue;
+            try
+            {
+                foreach (var entry in PrefixGameFolders.Find(Path.Combine(launcher.PrefixPath, "drive_c")))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    // Only store libraries; a library entry that has a library of its own is a launcher.
+                    if (entry.Library is null || entry.Excluded is not null) continue;
+                    var folder = LauncherOwnedPrefixes.Canonicalise(entry.Directory);
+                    if (listedRoots.Any(root => root == folder || root.StartsWith(folder + "/", StringComparison.Ordinal)))
+                        continue;
+                    if (!seenFolders.Add(folder)) continue;
+                    var exe = PrefixGameFolders.FindExecutable(entry, ct);
+                    if (exe is null) continue;
+                    found.Add(new DetectedGame
+                    {
+                        Name = Path.GetFileName(entry.Directory),
+                        InstallPath = entry.Directory,
+                        Source = "Lutris",
+                        ExecutablePath = exe,
+                        // The launcher is what Launch starts; the game exe stays the patch target.
+                        LaunchExecutablePath = launcher.LaunchExecutablePath,
+                        PrefixPath = launcher.PrefixPath,
+                        Runner = launcher.Runner,
+                        CompatibilityTool = launcher.CompatibilityTool,
+                        CompatibilityLayerType = launcher.CompatibilityLayerType,
+                        WineBinaryPath = launcher.WineBinaryPath,
+                        WineServerPath = launcher.WineServerPath,
+                        LaunchCommand = launcher.LaunchCommand,
+                        ParentLauncherName = launcher.Name
+                    });
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { }
+        }
+        return found;
+    }
+
+    private static string? ReadScalar(string text, string key)
+        => LauncherOwnedPrefixes.ReadScalars(text, key).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     /// <summary>
     /// Picks the game folder from the config's structured fields. A Windows exe keeps its own folder
@@ -155,7 +217,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
 
     private static string? MatchSectionValue(string text, string section, string key)
     {
-        var sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>[ \t]*){Regex.Escape(section)}\s*:\s*$");
+        // The top-level section first: installer scripts nest a `wine:` of their own above it.
+        var sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>){Regex.Escape(section)}\s*:\s*$");
+        if (!sectionMatch.Success)
+            sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>[ \t]*){Regex.Escape(section)}\s*:\s*$");
         if (!sectionMatch.Success) return null;
 
         var sectionIndent = sectionMatch.Groups["indent"].Value.Length;

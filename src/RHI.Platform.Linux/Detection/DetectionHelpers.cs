@@ -98,7 +98,9 @@ internal static partial class DetectionHelpers
         var hardIgnore = new[]
         {
             "unins", "crash", "report", "setup", "install", "redist", "vcredist",
-            "unitycrashhandler", "easyanticheat", "eac", "beservice", "vc_redist", "busybox"
+            "unitycrashhandler", "easyanticheat", "eac", "beservice", "vc_redist", "busybox",
+            // Microsoft GDK packaging stub: it starts the real game exe and is never the game itself.
+            "gamelaunchhelper"
         };
         var softPenalty = new[] { "launcher", "bootstrap", "helper", "updater", "config", "diagnostic" };
         var normalizedRoot = NormalizeToken(Path.GetFileName(root));

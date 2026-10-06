@@ -7,14 +7,6 @@ namespace RHI.Platform.Linux.Detection;
 /// <summary>Finds standalone Wine prefixes not already represented by Steam/Heroic/Lutris/umu.</summary>
 public sealed class WinePrefixDetector : IGameDetector
 {
-    // Executable-holding folders that belong to one game (besides bin*), so their parent is that
-    // game rather than a vendor folder listing several products.
-    private static readonly string[] GameInternalFolderNames =
-    [
-        "binaries", "x64", "x86", "x86_64", "win32", "win64", "32bit", "64bit", "engine", "game", "retail",
-        "support", "redist", "_commonredist", "commonredist", "directx", "tools"
-    ];
-
     private readonly string _home;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
 
@@ -56,13 +48,11 @@ public sealed class WinePrefixDetector : IGameDetector
                     continue;
 
                 var runtime = PrefixRuntime.Read(prefix);
-                foreach (var (appDir, excluded) in FindGameDirectories(Path.Combine(prefix, "drive_c")))
+                foreach (var entry in PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")))
                 {
                     ct.ThrowIfCancellationRequested();
-                    var index = GameFileIndexer.Build(appDir, 8, ct);
-                    if (excluded is not null)
-                        index = index.Where(file => !file.StartsWith(excluded + "/", StringComparison.Ordinal)).ToArray();
-                    var exe = DetectionHelpers.FindLikelyExecutable(appDir, index, ct);
+                    var appDir = entry.Directory;
+                    var exe = PrefixGameFolders.FindExecutable(entry, ct);
                     if (exe is null) continue;
                     games.Add(new DetectedGame
                     {
@@ -94,87 +84,6 @@ public sealed class WinePrefixDetector : IGameDetector
         if (runtime.IsProton && runtime.WineBinary is null) return null;
         return $"WINEPREFIX={Shell(prefix)} {(runtime.WineBinary is null ? "wine" : Shell(runtime.WineBinary))} {Shell(exe)}";
     }
-
-    /// <summary>
-    /// Game folders inside a prefix: each folder under Program Files* and drive_c/Games (Battle.net's
-    /// default library). A vendor folder with no executable of its own (Ubisoft, Electronic Arts) is
-    /// replaced by its product folders, and a launcher's `games` library adds one entry per game.
-    /// <c>Excluded</c> is a library subtree the launcher's own executable must not be picked from.
-    /// </summary>
-    internal static IEnumerable<(string Directory, string? Excluded)> FindGameDirectories(string driveC)
-    {
-        foreach (var baseDir in new[] { "Program Files", "Program Files (x86)" })
-            foreach (var top in Children(Path.Combine(driveC, baseDir)))
-                foreach (var entry in Expand(top, allowVendor: true))
-                    yield return entry;
-
-        foreach (var top in Children(Path.Combine(driveC, "Games")))
-            foreach (var entry in Expand(top, allowVendor: false))
-                yield return entry;
-    }
-
-    private static IEnumerable<(string Directory, string? Excluded)> Expand(string dir, bool allowVendor)
-    {
-        var library = LibraryDirectory(dir);
-        if (library is not null)
-        {
-            yield return (dir, library);
-            foreach (var game in Children(library))
-                yield return (game, null);
-            yield break;
-        }
-
-        if (allowVendor && !HasOwnExecutable(dir))
-        {
-            var products = Children(dir)
-                .Where(child => HasOwnExecutable(child) || LibraryDirectory(child) is not null)
-                .ToArray();
-            // An exe under `bin`/`Binaries` means this is one game whose exe lives deeper, not a vendor.
-            if (products.Length > 0 && !products.Any(child => IsGameInternalFolder(Path.GetFileName(child))))
-            {
-                foreach (var product in products)
-                    foreach (var entry in Expand(product, allowVendor: false))
-                        yield return entry;
-                yield break;
-            }
-        }
-
-        yield return (dir, null);
-    }
-
-    private static IEnumerable<string> Children(string dir)
-    {
-        string[] children;
-        try { children = Directory.Exists(dir) ? Directory.GetDirectories(dir) : []; }
-        catch { yield break; }
-        foreach (var child in children.Order(StringComparer.Ordinal))
-            if (!DetectionHelpers.IsKnownNonGameWineDirectory(Path.GetFileName(child)))
-                yield return child;
-    }
-
-    private static string? LibraryDirectory(string dir)
-    {
-        try
-        {
-            return Directory.EnumerateDirectories(dir)
-                .FirstOrDefault(child => Path.GetFileName(child).Equals("games", StringComparison.OrdinalIgnoreCase));
-        }
-        catch { return null; }
-    }
-
-    private static bool HasOwnExecutable(string dir)
-    {
-        try
-        {
-            return Directory.EnumerateFiles(dir, "*.exe", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
-                .Any(file => !Path.GetFileName(file).StartsWith("unins", StringComparison.OrdinalIgnoreCase));
-        }
-        catch { return false; }
-    }
-
-    private static bool IsGameInternalFolder(string name)
-        => name.StartsWith("bin", StringComparison.OrdinalIgnoreCase) ||
-           GameInternalFolderNames.Contains(name, StringComparer.OrdinalIgnoreCase);
 
     private static IEnumerable<string> FindPrefixes(string root, int maxDepth)
     {

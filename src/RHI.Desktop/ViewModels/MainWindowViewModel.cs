@@ -376,6 +376,9 @@ public partial class MainWindowViewModel : ObservableObject
     }
     public bool HasSelectedGame => SelectedGame is not null;
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
+    public string? LaunchToolTip => SelectedGame?.ParentLauncherName is { Length: > 0 } parent
+        ? LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent)
+        : null;
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
     public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
     public bool CanInstallD3DCompilerWithWinetricks
@@ -1349,7 +1352,9 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         await _launcher.LaunchAsync(SelectedGame);
-        StatusText = LF("Iniciando {0}", "Launching {0}", SelectedGame.Name);
+        StatusText = SelectedGame.ParentLauncherName is { Length: > 0 } parent
+            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, SelectedGame.Name)
+            : LF("Iniciando {0}", "Launching {0}", SelectedGame.Name);
     }
 
 
@@ -3449,6 +3454,7 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyHdrProfile();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(CanLaunch));
+        OnPropertyChanged(nameof(LaunchToolTip));
         OnPropertyChanged(nameof(CanEditSelectedGame));
         OnPropertyChanged(nameof(FavouriteActionText));
         OnPropertyChanged(nameof(HideActionText));
