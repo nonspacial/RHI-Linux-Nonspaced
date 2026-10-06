@@ -69,6 +69,66 @@ public sealed class LutrisLauncherPrefixGamesTests : IDisposable
     }
 
     [Fact]
+    public void GameConfigSortingBeforeTheLauncher_IsNotTheParent()
+    {
+        // fix-119 review major: a game in the launcher's library with its own Lutris config, whose file
+        // name sorts first, must not become the launcher every other library game is started through.
+        var prefix = Prefix("ubisoft-connect");
+        var launcherDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Ubisoft", "Ubisoft Game Launcher");
+        Pe(launcherDir, "UbisoftConnect.exe");
+        var farCry = Path.Combine(launcherDir, "games", "Far Cry 6");
+        var farCryExe = Pe(Path.Combine(farCry, "bin"), "FarCry6.exe", 4096);
+        var pop = Path.Combine(launcherDir, "games", "Prince of Persia The Lost Crown");
+        Pe(pop, "TheLostCrown.exe", 4096);
+        Config("far-cry-6-1700000000", $"game:\n  exe: {farCryExe}\n  prefix: {prefix}\nname: Far Cry 6\nwine:\n  version: ge-proton\n");
+        Config("ubisoft-connect-1763420553", $"game:\n  exe: drive_c/Program Files (x86)/Ubisoft/Ubisoft Game Launcher/UbisoftConnect.exe\n  prefix: {prefix}\nname: Ubisoft Connect\nwine:\n  version: ge-proton\n");
+
+        var games = Detect();
+
+        Assert.Equal(["Far Cry 6", "Prince of Persia The Lost Crown", "Ubisoft Connect"], games.Select(g => g.Name).Order());
+        var popCard = games.Single(g => g.Name == "Prince of Persia The Lost Crown");
+        Assert.Equal("lutris 'lutris:rungame/ubisoft-connect'", popCard.LaunchCommand);
+        Assert.Equal("Ubisoft Connect", popCard.ParentLauncherName); // what the Play tooltip names
+        // Far Cry 6 keeps its own Lutris card and command; the prefix scan does not list it again.
+        var farCryCard = Assert.Single(games, g => g.Name == "Far Cry 6");
+        Assert.Null(farCryCard.ParentLauncherName);
+        Assert.Equal("lutris 'lutris:rungame/far-cry-6'", farCryCard.LaunchCommand);
+        Assert.Equal(farCryExe, farCryCard.ExecutablePath);
+    }
+
+    [Fact]
+    public void OnlyGameConfigsShareThePrefix_NoOtherLibraryGamesAreListed()
+    {
+        var prefix = Prefix("ubisoft-connect");
+        var launcherDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Ubisoft", "Ubisoft Game Launcher");
+        Pe(launcherDir, "UbisoftConnect.exe");
+        var farCryExe = Pe(Path.Combine(launcherDir, "games", "Far Cry 6", "bin"), "FarCry6.exe", 4096);
+        Pe(Path.Combine(launcherDir, "games", "Prince of Persia The Lost Crown"), "TheLostCrown.exe", 4096);
+        Config("far-cry-6-1700000000", $"game:\n  exe: {farCryExe}\n  prefix: {prefix}\nname: Far Cry 6\n");
+
+        Assert.Equal(["Far Cry 6"], Detect().Select(g => g.Name));
+    }
+
+    [Fact]
+    public void SeveralLauncherConfigs_TheOneWhoseExeResolvesIsTheParent()
+    {
+        var prefix = Prefix("battlenet");
+        var launcherDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Battle.net");
+        Pe(launcherDir, "Battle.net Launcher.exe");
+        Pe(Path.Combine(prefix, "drive_c", "Games", "Diablo IV"), "Diablo IV.exe", 4096);
+        // Sorts first but its exe is gone: the launcher found by scanning is not what rungame starts.
+        Config("aaa-broken-1700000000", $"game:\n  exe: {launcherDir}/Old.exe\n  prefix: {prefix}\nname: Broken\n");
+        Config("battlenet-1763437958", $"game:\n  exe: drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe\n  prefix: {prefix}\nname: Battle.net\n");
+
+        var games = Detect();
+
+        Assert.Contains(games, g => g.Name == "Broken"); // listed, so it competes for the parent role
+        var game = Assert.Single(games, g => g.ParentLauncherName is not null);
+        Assert.Equal("Battle.net", game.ParentLauncherName);
+        Assert.Equal("lutris 'lutris:rungame/battlenet'", game.LaunchCommand);
+    }
+
+    [Fact]
     public async Task BattleNetPrefix_TwoConfigs_ListGamesOnceAndKeepOneLauncherCard()
     {
         var prefix = Prefix("battlenet");
@@ -111,7 +171,7 @@ public sealed class LutrisLauncherPrefixGamesTests : IDisposable
         var game = Assert.Single(raw, g => g.ParentLauncherName is not null);
         Assert.Equal(outer, game.InstallPath);
         Assert.Equal(shipping, game.ExecutablePath);
-        Assert.Equal("battle.net", game.ParentLauncherName); // the oldest config, which `rungame/<slug>` resolves to
+        Assert.Equal("battle.net", game.ParentLauncherName); // first by file name: same slug, so the older timestamp
         Assert.Equal("GE-Proton10-29", game.CompatibilityTool);
         Assert.Equal("lutris 'lutris:rungame/battlenet'", game.LaunchCommand);
 

@@ -17,10 +17,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
 
     internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct)
     {
-        var games = new List<(DetectedGame Game, string Slug, string ConfigFile)>();
+        var games = new List<(DetectedGame Game, string Slug, string ConfigFile, bool ExeResolves)>();
         foreach (var configRoot in configRoots)
         {
-            // Sorted: configs sharing a prefix list its games under the first (oldest) config.
+            // Ordinal file-name order (slug, then timestamp): a stable order for picking a prefix's launcher.
             foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")).Order(StringComparer.Ordinal))
             {
                 ct.ThrowIfCancellationRequested();
@@ -74,7 +74,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         WineServerPath = ResolveMatchingWineServer(wineBinary),
                         LaunchCommand = "lutris " + Shell($"lutris:rungame/{slug}")
                     };
-                    games.Add((game, slug, file));
+                    games.Add((game, slug, file, exeExists));
                 }
                 catch { }
             }
@@ -86,39 +86,46 @@ public sealed partial class LutrisGameDetector : IGameDetector
         foreach (var sameFolder in games.GroupBy(x => NormalisePath(x.Game.InstallPath), StringComparer.Ordinal))
         {
             if (sameFolder.Select(x => x.Slug).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 2) continue;
-            foreach (var (game, _, configFile) in sameFolder)
+            foreach (var (game, _, configFile, _) in sameFolder)
                 game.LibraryIdentityPath ??= configFile;
         }
         var listed = games.Select(x => x.Game).ToList();
-        return [.. listed, .. LauncherPrefixGames(listed, ct)];
+        return [.. listed, .. LauncherPrefixGames(games.Select(x => (x.Game, x.ExeResolves)).ToList(), ct)];
     }
 
     /// <summary>
     /// Games installed inside a listed launcher's prefix (Ubisoft Connect's <c>games</c> folder,
     /// Battle.net's <c>drive_c/Games</c>, <c>EA Games</c>): one card per game folder, with the launcher's
-    /// prefix and runner. Launch starts the launcher; the user starts the game from there. Each prefix is
-    /// read once, under its first config. A folder that is (or holds) another listed entry, such as the
-    /// launcher itself, is not listed again; neither is a folder with no game executable.
+    /// prefix and runner. Launch starts the launcher; the user starts the game from there. A folder that is
+    /// (or holds) another listed entry, such as the launcher itself or a game with its own Lutris config, is
+    /// not listed again; neither is a folder with no game executable.
     /// </summary>
-    private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<DetectedGame> listed, CancellationToken ct)
+    private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<(DetectedGame Game, bool ExeResolves)> configs, CancellationToken ct)
     {
         var found = new List<DetectedGame>();
-        var listedRoots = listed.Select(g => LauncherOwnedPrefixes.Canonicalise(g.InstallPath)).ToArray();
-        var seenPrefixes = new HashSet<string>(StringComparer.Ordinal);
+        var listedRoots = configs.Select(c => LauncherOwnedPrefixes.Canonicalise(c.Game.InstallPath)).ToArray();
         var seenFolders = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var launcher in listed)
+        var byPrefix = configs
+            .Where(c => c.Game.PrefixPath is not null)
+            .GroupBy(c => LauncherOwnedPrefixes.Canonicalise(c.Game.PrefixPath!), StringComparer.Ordinal);
+        foreach (var sharing in byPrefix)
         {
-            if (launcher.PrefixPath is null || !seenPrefixes.Add(LauncherOwnedPrefixes.Canonicalise(launcher.PrefixPath)))
-                continue;
             try
             {
-                foreach (var entry in PrefixGameFolders.Find(Path.Combine(launcher.PrefixPath, "drive_c")))
+                var prefixPath = sharing.First().Game.PrefixPath!;
+                // Only store-library game folders; a library entry that has a library of its own is a launcher.
+                var libraryGames = PrefixGameFolders.Find(Path.Combine(prefixPath, "drive_c"))
+                    .Where(entry => entry.Library is not null && entry.Excluded is null)
+                    .Select(entry => (Entry: entry, Folder: LauncherOwnedPrefixes.Canonicalise(entry.Directory)))
+                    .ToList();
+                if (libraryGames.Count == 0) continue;
+                var launcher = PickParentLauncher(sharing, libraryGames.Select(x => x.Folder).ToArray());
+                // Only games share the prefix (no launcher config): nothing to launch the others through.
+                if (launcher is null) continue;
+                foreach (var (entry, folder) in libraryGames)
                 {
                     ct.ThrowIfCancellationRequested();
-                    // Only store libraries; a library entry that has a library of its own is a launcher.
-                    if (entry.Library is null || entry.Excluded is not null) continue;
-                    var folder = LauncherOwnedPrefixes.Canonicalise(entry.Directory);
-                    if (listedRoots.Any(root => root == folder || root.StartsWith(folder + "/", StringComparison.Ordinal)))
+                    if (listedRoots.Any(root => IsSameOrUnder(root, folder)))
                         continue;
                     if (!seenFolders.Add(folder)) continue;
                     var exe = PrefixGameFolders.FindExecutable(entry, ct);
@@ -147,6 +154,23 @@ public sealed partial class LutrisGameDetector : IGameDetector
         }
         return found;
     }
+
+    /// <summary>
+    /// The launcher among the configs sharing one prefix, chosen by role: a config whose game folder is a
+    /// store-library game folder of that prefix (or inside one) is a game with its own Lutris entry, never
+    /// the parent. Of the rest, one whose configured exe resolves wins; ties keep ordinal config file-name
+    /// order (slug, then timestamp, so the oldest of one slug's duplicate configs). Null when only games
+    /// share the prefix.
+    /// </summary>
+    private static DetectedGame? PickParentLauncher(IEnumerable<(DetectedGame Game, bool ExeResolves)> sharing, IReadOnlyList<string> libraryGameFolders)
+        => sharing
+            .Where(c => !libraryGameFolders.Any(folder => IsSameOrUnder(LauncherOwnedPrefixes.Canonicalise(c.Game.InstallPath), folder)))
+            .OrderBy(c => c.ExeResolves ? 0 : 1) // stable: keeps file-name order within each group
+            .Select(c => c.Game)
+            .FirstOrDefault();
+
+    private static bool IsSameOrUnder(string path, string folder)
+        => path == folder || path.StartsWith(folder + "/", StringComparison.Ordinal);
 
     private static string? ReadScalar(string text, string key)
         => LauncherOwnedPrefixes.ReadScalars(text, key).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
