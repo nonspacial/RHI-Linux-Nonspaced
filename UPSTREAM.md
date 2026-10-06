@@ -15,4 +15,8 @@ Platform adaptations include:
 - Windows driver APIs are adapted only where a functional Linux/Wine/Proton path exists;
 - native Linux games are not targets for Windows DLL injection components.
 
+## 2.7.6–2.7.9 parity notes
+
+- **DLSS Tool (ShortFuse) ZZZ load order (2.7.9)** — ported. Per-game toggle deploys or renames the add-on to `zzz_renodx-dlss.addon64`; install, remove, probe and the DLSS5 Feeder conflict guard recognise both names. Applies under Wine/Proton because ReShade loads add-ons in directory-iteration order and Wine's ntdll sorts directory listings case-insensitively, as NTFS does. Linux deviations: the rename is refused (rather than forced) when the add-on was modified outside RHI or the other name is already taken; there is no in-place ShortFuse auto-update on Linux, so "update/version swap" means a reinstall, which honours the preference.
+
 RHI Linux remains a GPLv3 derivative of the upstream project.

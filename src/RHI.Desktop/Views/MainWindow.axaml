@@ -534,6 +534,9 @@
                             IsVisible="{Binding ShortFuseInstalled}" IsEnabled="{Binding CanInstallOrRemoveShortFuse}"
                             ToolTip.Tip="{Binding ShortFuseActionHint}" Padding="12,6"/>
                   </Grid>
+                  <CheckBox Content="{DynamicResource Ui.ShortFuseZzzLoadOrder}" IsChecked="{Binding ShortFuseZzzLoadOrder}"
+                            IsEnabled="{Binding CanConfigureShortFuseZzzLoadOrder}"
+                            ToolTip.Tip="{DynamicResource Ui.ShortFuseZzzTip}"/>
                   <TextBlock Text="{Binding ShortFuseLatestVersionText}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{DynamicResource Ui.LinuxPolicyNote}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{DynamicResource Ui.UalPolicyNote}"

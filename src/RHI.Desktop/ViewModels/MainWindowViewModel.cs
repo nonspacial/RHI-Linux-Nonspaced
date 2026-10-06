@@ -146,6 +146,8 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty] private string selectedUalProxyName = "";
     [ObservableProperty] private string ualLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
     [ObservableProperty] private bool shortFuseAutoConfigEnabled = false;
+    [ObservableProperty] private bool shortFuseZzzLoadOrder;
+    private bool _loadingShortFuseZzzLoadOrder;
     [ObservableProperty] private string shortFuseLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
 
     private static string LibraryFilterDisplay(string value) => value switch
@@ -2940,6 +2942,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void ResetShortFuseState()
     {
         ShortFuseAutoConfigEnabled = false;
+        SetShortFuseZzzLoadOrderSilently(false);
         ShortFuseLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
         NotifyShortFuse();
     }
@@ -2947,6 +2950,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void RefreshShortFuseState(DetectedGame game)
     {
         ShortFuseAutoConfigEnabled = _managedComponents.GetShortFuseAutoConfigEnabled(game);
+        SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderEnabled(game));
         var record = _managedComponents.GetShortFuseRecord(game);
         ShortFuseLatestVersionText = FormatLatestVersionSummary(record?.Version, _shortFuseLatestVersionCache);
         NotifyShortFuse();
@@ -2962,9 +2966,48 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanInstallOrRemoveShortFuse));
         OnPropertyChanged(nameof(ShortFuseActionHint));
         OnPropertyChanged(nameof(CanConfigureShortFuse));
+        OnPropertyChanged(nameof(CanConfigureShortFuseZzzLoadOrder));
         OnPropertyChanged(nameof(OrchestratedDlssStackManaged));
         CheckShortFuseUpdateCommand.NotifyCanExecuteChanged();
         InstallOrRemoveShortFuseCommand.NotifyCanExecuteChanged();
+    }
+
+    // Upstream 2.7.9 ZZZ load order: unlike Auto Config it stays live while ShortFuse is
+    // installed, because toggling renames the owned add-on in place.
+    public bool CanConfigureShortFuseZzzLoadOrder => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
+
+    private void SetShortFuseZzzLoadOrderSilently(bool value)
+    {
+        _loadingShortFuseZzzLoadOrder = true;
+        try { ShortFuseZzzLoadOrder = value; }
+        finally { _loadingShortFuseZzzLoadOrder = false; }
+    }
+
+    partial void OnShortFuseZzzLoadOrderChanged(bool value)
+    {
+        if (_loadingShortFuseZzzLoadOrder || SelectedGame is null) return;
+        _ = ApplyShortFuseZzzLoadOrderAsync(SelectedGame, value);
+    }
+
+    private async Task ApplyShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled)
+    {
+        IsBusy = true;
+        try
+        {
+            var result = await _managedComponents.SetShortFuseZzzLoadOrderAsync(game, enabled);
+            StatusText = !result.Success
+                ? UiLocalizationService.Present(result.Message)
+                : enabled
+                    ? L("ShortFuse carregará por último (zzz_renodx-dlss.addon64).", "ShortFuse will load last (zzz_renodx-dlss.addon64).")
+                    : L("ShortFuse usa o nome padrão (renodx-dlss.addon64).", "ShortFuse uses the default name (renodx-dlss.addon64).");
+        }
+        catch (Exception ex) { StatusText = LF("ShortFuse: {0}", "ShortFuse: {0}", ex.Message); }
+        finally
+        {
+            IsBusy = false;
+            if (ReferenceEquals(SelectedGame, game))
+                SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderEnabled(game));
+        }
     }
 
     private void ResetUalState()

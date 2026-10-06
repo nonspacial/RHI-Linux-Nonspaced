@@ -269,6 +269,11 @@ public sealed class Dlss5FeederFullDeploymentService
                 Path.Combine(addonDir, AlexToolkitAddonName),
                 Path.Combine(addonDir, Dlss5BridgeAddonName),
                 Path.Combine(addonDir, Dlss5Dx11BridgeAddonName)
+            }).Concat(new[]
+            {
+                // ShortFuse deployed under the upstream ZZZ load-order name is the same consumer.
+                Path.Combine(binaryDir, ShortFuseDeploymentService.ZzzAddonFileName),
+                Path.Combine(addonDir, ShortFuseDeploymentService.ZzzAddonFileName)
             }).Distinct(StringComparer.Ordinal);
         foreach (var conflict in conflictPaths)
             if (ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(conflict)!, Path.GetFileName(conflict)) is { } existingConflict)

@@ -338,6 +338,148 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
     }
 
+    // ── ZZZ load order (upstream 2.7.9) ──────────────────────────────────────
+
+    [Fact]
+    public void Settings_ZzzLoadOrderDefaultsOffAndPersistsIndependentlyOfAutoConfig()
+    {
+        using var fixture = CreateGame("zzz-settings");
+        var path = Path.Combine(fixture.Root, "sf-settings.json");
+        var store = new ShortFuseSettingsStore(path);
+        Assert.False(store.IsZzzLoadOrderEnabled(fixture.Game));
+
+        store.SetZzzLoadOrderEnabled(fixture.Game, true);
+        store.SetAutoConfigEnabled(fixture.Game, true);
+        store.SetAutoConfigEnabled(fixture.Game, false);
+
+        var reloaded = new ShortFuseSettingsStore(path);
+        Assert.True(reloaded.IsZzzLoadOrderEnabled(fixture.Game));
+        Assert.False(reloaded.IsAutoConfigEnabled(fixture.Game));
+        reloaded.SetZzzLoadOrderEnabled(fixture.Game, false);
+        Assert.False(new ShortFuseSettingsStore(path).IsZzzLoadOrderEnabled(fixture.Game));
+    }
+
+    [Fact]
+    public void ComponentProbe_RecognisesZzzShortFuseName()
+    {
+        using var fixture = CreateGame("zzz-probe");
+        var sf = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ZzzAddonFileName);
+        File.WriteAllBytes(sf, new byte[16]);
+        var components = ComponentProbe.Probe(fixture.Game, new[] { sf, fixture.Game.ExecutablePath! });
+        Assert.Equal(ComponentAvailability.Installed, components.Single(c => c.Kind == ManagedComponentKind.ShortFuse).Availability);
+    }
+
+    [Fact]
+    public async Task Install_WithZzzPreference_DeploysOnlyZzzNameAndRemoveLeavesNeither()
+    {
+        using var fixture = CreateGame("zzz-install");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true)).Success);
+
+        var install = await ctx.ShortFuse.InstallAsync(fixture.Game);
+        Assert.True(install.Success, install.Message);
+        var (normal, zzz) = AddonPaths(fixture);
+        Assert.False(File.Exists(normal));
+        Assert.True(File.Exists(zzz));
+        Assert.Contains(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Files, f => f.Path == zzz);
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+        Assert.True(remove.Success, remove.Message);
+        Assert.False(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+    }
+
+    [Fact]
+    public async Task ToggleOnInstalledShortFuse_RenamesFileAndRecordInBothDirections()
+    {
+        using var fixture = CreateGame("zzz-toggle");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        var hash = Sha256(normal);
+
+        var on = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+        Assert.True(on.Success, on.Message);
+        Assert.False(File.Exists(normal));
+        Assert.Equal(hash, Sha256(zzz));
+        var entry = ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Files.Single(f => ShortFuseDeploymentService.IsAddonFileName(Path.GetFileName(f.Path)));
+        Assert.Equal(zzz, entry.Path);
+        Assert.Equal(hash, entry.Sha256);
+        Assert.True(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+
+        var off = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false);
+        Assert.True(off.Success, off.Message);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.Contains(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Files, f => f.Path == normal);
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+    }
+
+    [Fact]
+    public async Task Toggle_ModifiedAddon_IsBlockedAndLeavesFileRecordAndPreference()
+    {
+        using var fixture = CreateGame("zzz-modified");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.AppendAllText(normal, "external-change");
+
+        var result = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+
+        Assert.False(result.Success);
+        Assert.Contains("modified outside RHI", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+        Assert.False(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+    }
+
+    [Fact]
+    public async Task ExternalAddonUnderOtherName_BlocksInstallAndRename()
+    {
+        using var fixture = CreateGame("zzz-external");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.WriteAllText(zzz, "external-zzz");
+        var install = await ctx.ShortFuse.InstallAsync(fixture.Game);
+        Assert.False(install.Success);
+        Assert.Contains("external or stale", install.Message, StringComparison.OrdinalIgnoreCase);
+
+        File.Delete(zzz);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        File.WriteAllText(zzz, "external-zzz");
+        var rename = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true);
+        Assert.False(rename.Success);
+        Assert.True(File.Exists(normal));
+        Assert.Equal("external-zzz", File.ReadAllText(zzz));
+    }
+
+    [Fact]
+    public async Task Remove_FollowsAddonWhenRecordMissedTheRename()
+    {
+        using var fixture = CreateGame("zzz-stale-record");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+        File.Move(normal, zzz); // crash between rename and record write
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.False(File.Exists(normal));
+        Assert.False(File.Exists(zzz));
+    }
+
+    private static (string Normal, string Zzz) AddonPaths(GameFixture fixture)
+    {
+        var dir = RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin);
+        return (Path.Combine(dir, ShortFuseDeploymentService.AddonFileName), Path.Combine(dir, ShortFuseDeploymentService.ZzzAddonFileName));
+    }
+
     private Context CreateContext(GameFixture fixture, bool fullNetwork = false)
     {
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));

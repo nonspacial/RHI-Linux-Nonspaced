@@ -16,6 +16,12 @@ public sealed class ShortFuseDeploymentService
 {
     public const string ReleasesApiUrl = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     public const string AddonFileName = "renodx-dlss.addon64";
+    /// <summary>
+    /// Upstream 2.7.9 "ZZZ load order" name. ReShade loads add-ons in directory-iteration order;
+    /// Wine/Proton's NtQueryDirectoryFile sorts entries case-insensitively (ntdll init_cached_dir_data),
+    /// so this name loads after the other add-ons exactly as it does on NTFS.
+    /// </summary>
+    public const string ZzzAddonFileName = "zzz_renodx-dlss.addon64";
     public const string ReleaseTagPrefix = "renodx-dlss-SF-";
     public const string ArchiveAssetPrefix = "renodx-dlss";
     public const string ReShadeAsiName = "ReShade64.asi";
@@ -73,6 +79,83 @@ public sealed class ShortFuseDeploymentService
 
     public void SetAutoConfigEnabled(DetectedGame game, bool enabled)
         => _settings.SetAutoConfigEnabled(game, enabled);
+
+    public static bool IsAddonFileName(string fileName)
+        => fileName.Equals(AddonFileName, StringComparison.OrdinalIgnoreCase)
+           || fileName.Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase);
+
+    public bool GetZzzLoadOrderEnabled(DetectedGame game) => _settings.IsZzzLoadOrderEnabled(game);
+
+    /// <summary>
+    /// Persists the per-game ZZZ load-order preference. When ShortFuse is managed, the owned add-on is
+    /// renamed in place (one atomic rename) and its ownership record follows; a modified, missing or
+    /// externally occupied add-on blocks the change and leaves preference, file and record untouched.
+    /// </summary>
+    public async Task<ComponentOperationResult> SetZzzLoadOrderAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
+    {
+        var targetName = enabled ? ZzzAddonFileName : AddonFileName;
+        var record = GetRecord(game);
+        if (record is null)
+        {
+            _settings.SetZzzLoadOrderEnabled(game, enabled);
+            return ComponentOperationResult.Ok($"ShortFuse will be deployed as {targetName} on the next install.");
+        }
+
+        var entry = record.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path)));
+        if (entry is null)
+            return ComponentOperationResult.Fail("The ShortFuse ownership record has no add-on entry; the load-order rename is blocked.");
+        var resolved = await ResolveOwnedAddonAsync(entry, cancellationToken).ConfigureAwait(false);
+        if (!resolved.Success) return resolved;
+
+        var current = entry.Path;
+        var target = Path.Combine(Path.GetDirectoryName(current)!, targetName);
+        if (!Path.GetFileName(current).Equals(targetName, StringComparison.Ordinal))
+        {
+            if (ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(target)!, targetName) is { } occupied)
+                return ComponentOperationResult.Fail($"{occupied} already exists and is not owned by this ShortFuse record; the load-order rename is blocked.");
+            // overwrite:true maps to rename(2), which is atomic. overwrite:false links then unlinks on
+            // Unix, briefly leaving both names, and a crash there would make ReShade load the add-on twice.
+            try { File.Move(current, target, overwrite: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return ComponentOperationResult.Fail($"Could not rename the ShortFuse add-on to {targetName}: {ex.Message}");
+            }
+            try
+            {
+                entry.Path = target;
+                _records.Upsert(record);
+            }
+            catch (Exception ex)
+            {
+                try { File.Move(target, current, overwrite: true); } catch { }
+                return ComponentOperationResult.Fail($"Could not record the ShortFuse rename; the add-on name was restored: {ex.Message}");
+            }
+        }
+
+        _settings.SetZzzLoadOrderEnabled(game, enabled);
+        return ComponentOperationResult.Ok($"ShortFuse add-on is now {targetName}.", target);
+    }
+
+    /// <summary>
+    /// Points the record's add-on entry at whichever ShortFuse name is on disk (an interrupted rename can
+    /// leave the record one name behind) and applies the hash guard to that file.
+    /// </summary>
+    private async Task<ComponentOperationResult> ResolveOwnedAddonAsync(LinuxDeployedFile entry, CancellationToken ct)
+    {
+        var dir = Path.GetDirectoryName(entry.Path)!;
+        var onDisk = new[] { entry.Path, Path.Combine(dir, AddonFileName), Path.Combine(dir, ZzzAddonFileName) }
+            .Distinct(StringComparer.Ordinal).Where(File.Exists).ToArray();
+        if (onDisk.Length == 0)
+            return ComponentOperationResult.Fail($"The ShortFuse add-on is missing from {dir}.");
+        if (onDisk.Length > 1)
+            return ComponentOperationResult.Fail($"Both {AddonFileName} and {ZzzAddonFileName} exist in {dir}; ReShade would load ShortFuse twice. Remove the one RHI does not own first.");
+        if (string.IsNullOrWhiteSpace(entry.Sha256))
+            return ComponentOperationResult.Fail($"ShortFuse ownership record has no SHA-256 for {entry.Path}.");
+        if (!string.Equals(await Sha256Async(onDisk[0], ct).ConfigureAwait(false), entry.Sha256, StringComparison.OrdinalIgnoreCase))
+            return ComponentOperationResult.Fail($"ShortFuse-owned file was modified outside RHI: {onDisk[0]}.");
+        entry.Path = onDisk[0];
+        return ComponentOperationResult.Ok("ShortFuse add-on ownership verified.");
+    }
 
     public Task<ShortFuseUpdateStatus> CheckLatestAsync(DetectedGame game, CancellationToken cancellationToken = default)
         => CheckLatestAsync(game, releaseTag: null, cancellationToken);
@@ -149,9 +232,11 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail($"{ReShadeAsiName} already exists but is not owned by this ShortFuse transaction. External/stale files are protected from overwrite.");
 
         var addonDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
-        var addonTarget = Path.Combine(addonDir, AddonFileName);
-        if (File.Exists(addonTarget))
-            return ComponentOperationResult.Fail($"{AddonFileName} already exists without an RHI ShortFuse deployment record. It may be an external or stale ShortFuse install; RHI will not overwrite it implicitly.");
+        var addonTarget = Path.Combine(addonDir, _settings.IsZzzLoadOrderEnabled(game) ? ZzzAddonFileName : AddonFileName);
+        // Either name loads under Wine (case-insensitive lookup), so both block an unowned install.
+        foreach (var name in new[] { AddonFileName, ZzzAddonFileName })
+            if (ReShadeDeploymentService.FindFileCaseInsensitive(addonDir, name) is { } existingAddon)
+                return ComponentOperationResult.Fail($"{Path.GetFileName(existingAddon)} already exists without an RHI ShortFuse deployment record. It may be an external or stale ShortFuse install; RHI will not overwrite it implicitly.");
 
         // Refuse to stack over direct RHI DLL swaps. Their .original files represent a separate ownership cycle.
         var detection = _dlss.Detect(game.InstallPath, game.ExecutablePath, cancellationToken: cancellationToken);
@@ -310,6 +395,15 @@ public sealed class ShortFuseDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux. External/stale ShortFuse files are protected from implicit removal.");
+
+        // An interrupted ZZZ load-order rename can leave the record one name behind; follow the
+        // owned add-on to its other name so the hash guard and teardown below still apply to it.
+        if (record.Files.FirstOrDefault(f => IsAddonFileName(Path.GetFileName(f.Path))) is { } addonEntry && !File.Exists(addonEntry.Path))
+        {
+            var otherName = Path.GetFileName(addonEntry.Path).Equals(ZzzAddonFileName, StringComparison.OrdinalIgnoreCase) ? AddonFileName : ZzzAddonFileName;
+            var other = Path.Combine(Path.GetDirectoryName(addonEntry.Path)!, otherName);
+            if (File.Exists(other)) addonEntry.Path = other;
+        }
 
         // Hash guard every non-user-editable ShortFuse-owned file before destructive teardown.
         foreach (var file in record.Files.Where(f => !f.AllowUserChanges))
