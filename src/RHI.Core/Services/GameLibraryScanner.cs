@@ -88,7 +88,8 @@ public sealed class GameLibraryScanner
         return games
             .Where(g => !string.IsNullOrWhiteSpace(g.Name) && Directory.Exists(g.InstallPath))
             .GroupBy(GameKey, StringComparer.OrdinalIgnoreCase)
-            .Select(g => Merge(g.ToArray()))
+            .SelectMany(SplitDistinctLauncherEntries)
+            .Select(Merge)
             .OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
@@ -104,6 +105,34 @@ public sealed class GameLibraryScanner
             return $"steam:{id}";
         }
         return $"path:{Path.GetFullPath(g.InstallPath)}";
+    }
+
+    /// <summary>
+    /// One folder seen by two launchers is one game, so a path group normally merges across sources.
+    /// One launcher listing two entries with different library identities at that folder is two games
+    /// (e.g. two Lutris wrappers): then the group splits per source + identity and nothing merges.
+    /// </summary>
+    private static IEnumerable<DetectedGame[]> SplitDistinctLauncherEntries(IGrouping<string, DetectedGame> group)
+    {
+        var entries = group.ToArray();
+        if (entries.Length < 2 || group.Key.StartsWith("steam:", StringComparison.Ordinal))
+            return [entries];
+
+        var conflict = entries
+            .GroupBy(g => g.Source ?? "", StringComparer.OrdinalIgnoreCase)
+            .Any(s => s.Select(IdentityOf).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any());
+        if (!conflict) return [entries];
+
+        return entries
+            .GroupBy(g => (g.Source ?? "") + "|" + IdentityOf(g), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.ToArray());
+    }
+
+    private static string IdentityOf(DetectedGame g)
+    {
+        var identity = string.IsNullOrWhiteSpace(g.LibraryIdentityPath) ? g.InstallPath : g.LibraryIdentityPath;
+        try { return Path.GetFullPath(identity).TrimEnd(Path.DirectorySeparatorChar); }
+        catch { return identity.Trim(); }
     }
 
     private static DetectedGame Merge(DetectedGame[] games)
