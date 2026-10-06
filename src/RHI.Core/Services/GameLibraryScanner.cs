@@ -147,7 +147,12 @@ public sealed class GameLibraryScanner
             first.LibraryProvider ??= candidate.LibraryProvider;
             first.LaunchProvider ??= candidate.LaunchProvider;
             first.Runner ??= candidate.Runner;
-            first.LaunchCommand ??= candidate.LaunchCommand;
+            // The "Launch opens the launcher" hint belongs to the command it describes.
+            if (first.LaunchCommand is null)
+            {
+                first.LaunchCommand = candidate.LaunchCommand;
+                first.ParentLauncherName = candidate.ParentLauncherName;
+            }
             first.CompatibilityTool ??= candidate.CompatibilityTool;
             first.CompatibilityLayerType ??= candidate.CompatibilityLayerType;
             first.WineBinaryPath ??= candidate.WineBinaryPath;

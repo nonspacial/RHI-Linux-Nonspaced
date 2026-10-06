@@ -66,6 +66,11 @@ public sealed class DetectedGame
 
     public string? Runner { get; set; }
     public string? LaunchCommand { get; set; }
+    /// <summary>
+    /// Set when Launch starts this launcher rather than the game (a game installed inside a launcher's
+    /// prefix, e.g. Ubisoft Connect or Battle.net); the user starts the game from the launcher.
+    /// </summary>
+    public string? ParentLauncherName { get; set; }
     public string? CompatibilityTool { get; set; }
     /// <summary>Compatibility-layer family selected by the launcher (for example wine or proton).</summary>
     public string? CompatibilityLayerType { get; set; }
