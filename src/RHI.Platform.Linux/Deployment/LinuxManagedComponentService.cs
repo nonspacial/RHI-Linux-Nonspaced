@@ -28,6 +28,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private readonly LumaFrameworkDeploymentService _lumaFramework;
     private readonly LumaPolicyService _lumaPolicy;
     private readonly NeuralAddonVersionPreferenceStore _neuralVersionPins;
+    private readonly ComponentUpdateRecorder? _history;
 
     public LinuxManagedComponentService(
         LinuxDeploymentRecordStore records,
@@ -51,7 +52,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         REFrameworkDeploymentService reFramework,
         LumaFrameworkDeploymentService lumaFramework,
         LumaPolicyService lumaPolicy,
-        NeuralAddonVersionPreferenceStore? neuralVersionPins = null)
+        NeuralAddonVersionPreferenceStore? neuralVersionPins = null,
+        ComponentUpdateLogStore? updateLog = null)
     {
         _records = records;
         _reshade = reshade;
@@ -75,7 +77,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _lumaFramework = lumaFramework;
         _lumaPolicy = lumaPolicy;
         _neuralVersionPins = neuralVersionPins ?? new NeuralAddonVersionPreferenceStore();
+        _history = updateLog is null ? null : new ComponentUpdateRecorder(records, updateLog);
     }
+
+    // Records the operation in the update history (when configured); refusals made before
+    // anything is attempted (patch-target guards, dependency locks) are deliberately not wrapped.
+    private Task<ComponentOperationResult> Track(
+        DetectedGame game,
+        ManagedComponentKind component,
+        ComponentUpdateAction intent,
+        Func<Task<ComponentOperationResult>> operation)
+        => _history is null ? operation() : _history.TrackAsync(game, component, intent, operation);
 
     public async Task PrepareGameAsync(
         DetectedGame game,
@@ -1069,7 +1081,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return null;
     }
 
-    private static string DisplayDependencyName(ManagedComponentKind kind) => kind switch
+    internal static string DisplayDependencyName(ManagedComponentKind kind) => kind switch
     {
         ManagedComponentKind.ReShade => "ReShade",
         ManagedComponentKind.REFramework => "RE Framework",
@@ -1083,6 +1095,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.ShortFuse => "ShortFuse",
         ManagedComponentKind.DofFix => "Universal UE DOF Fix",
         ManagedComponentKind.LumaFramework => "Luma Framework",
+        ManagedComponentKind.OptiScaler => "OptiScaler",
+        ManagedComponentKind.UltimateAsiLoader => "Ultimate ASI Loader",
+        ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
+        ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
+        ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
         _ => kind.ToString()
     };
 
@@ -1141,7 +1158,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         if (guard is not null) return guard;
-        return await InstallWithManagedDependenciesAsync(
+        return await Track(game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.ReShade,
             indexedFiles: null,
@@ -1158,7 +1175,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 }
                 return await _reshade.InstallAsync(game, options, cancellationToken).ConfigureAwait(false);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
     }
 
     public Task<ReShadeUpdateStatus> CheckReShadeUpdateAsync(
@@ -1236,7 +1253,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             !Dlss5FeederFullDeploymentService.IsSupportedDeepFriedChickenArchive(deepFriedChickenPackagePath!))
             return ComponentOperationResult.Fail("O pacote consumidor do Deep Fried Chicken deve ser um arquivo oficial .zip ou .7z.");
 
-        return await InstallWithManagedDependenciesAsync(
+        return await Track(game, ManagedComponentKind.Dlss5Feeder, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.Dlss5Feeder,
             indexedFiles: null,
@@ -1250,7 +1267,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 var pin = _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder);
                 return await _dlss5Feeder.InstallAsync(game, consumer, deepFriedChickenPackagePath, d3dCompiler47Path, pin, cancellationToken).ConfigureAwait(false);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
     }
 
     public Task<ComponentOperationResult> InstallDlss5FeederAsync(
@@ -1284,12 +1301,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         if (guard is not null) return guard;
-        return await InstallWithManagedDependenciesAsync(
+        return await Track(game, ManagedComponentKind.LumaFramework, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.LumaFramework,
             indexedFiles: null,
             () => _lumaFramework.InstallLocalPackageAsync(game, packagePath, cancellationToken),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
     }
 
     public LinuxDeploymentRecord? GetShortFuseRecord(DetectedGame game) => _shortFuse.GetRecord(game);
@@ -1310,7 +1327,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         if (guard is not null) return guard;
-        return await InstallWithManagedDependenciesAsync(
+        return await Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.ShortFuse,
             indexedFiles: null,
@@ -1320,13 +1337,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 if (cleanup is not null) return cleanup;
                 return await _shortFuse.InstallAsync(game, autoConfigEnabled, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
     }
 
     public Task<ComponentOperationResult> RemoveShortFuseAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
-        return guard is null ? _shortFuse.RemoveAsync(game, cancellationToken) : Task.FromResult(guard);
+        return guard is null
+            ? Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Remove, () => _shortFuse.RemoveAsync(game, cancellationToken))
+            : Task.FromResult(guard);
     }
 
     public LinuxDeploymentRecord? GetUltimateAsiLoaderRecord(DetectedGame game)
@@ -1347,7 +1366,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public Task<ComponentOperationResult> UpdateDlssg2030Async(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
-        return guard is null ? _dlssg2030.UpdateAsync(game, cancellationToken) : Task.FromResult(guard);
+        return guard is null
+            ? Track(game, ManagedComponentKind.Dlssg2030Unlock, ComponentUpdateAction.Update, () => _dlssg2030.UpdateAsync(game, cancellationToken))
+            : Task.FromResult(guard);
     }
 
     public LinuxDeploymentRecord? GetStandaloneDlssEnablerRecord(DetectedGame game)
@@ -1371,7 +1392,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public Task<ComponentOperationResult> UpdateRtx40MfgAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
-        return guard is null ? _rtx40Mfg.UpdateAsync(game, cancellationToken) : Task.FromResult(guard);
+        return guard is null
+            ? Track(game, ManagedComponentKind.Rtx40MfgStandalone, ComponentUpdateAction.Update, () => _rtx40Mfg.UpdateAsync(game, cancellationToken))
+            : Task.FromResult(guard);
     }
 
     public StandaloneDlssEnablerPreferences GetStandaloneDlssEnablerPreferences(DetectedGame game)
@@ -1386,7 +1409,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public Task<ComponentOperationResult> UpdateStandaloneDlssEnablerAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
-        return guard is null ? _dlssEnablerStandalone.UpdateAsync(game, cancellationToken) : Task.FromResult(guard);
+        return guard is null
+            ? Track(game, ManagedComponentKind.DlssEnablerStandalone, ComponentUpdateAction.Update, () => _dlssEnablerStandalone.UpdateAsync(game, cancellationToken))
+            : Task.FromResult(guard);
     }
 
     public Task<RenoDxCompatibilitySnapshot> GetRenoDxCompatibilitySettingsAsync(
@@ -1431,7 +1456,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         return guard is null
-            ? _ultimateAsiLoader.InstallAsync(game, dllName, cancellationToken)
+            ? Track(game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Install, () => _ultimateAsiLoader.InstallAsync(game, dllName, cancellationToken))
             : Task.FromResult(guard);
     }
 
@@ -1441,7 +1466,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         return guard is null
-            ? _ultimateAsiLoader.UpdateAsync(game, cancellationToken)
+            ? Track(game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Update, () => _ultimateAsiLoader.UpdateAsync(game, cancellationToken))
             : Task.FromResult(guard);
     }
 
@@ -1453,7 +1478,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (guard is not null) return Task.FromResult(guard);
         return IsShortFuseManaged(game)
             ? Task.FromResult(ComponentOperationResult.Fail("Remove ShortFuse first. UAL teardown is locked while ShortFuse depends on the ASI loader chain."))
-            : _ultimateAsiLoader.RemoveAsync(game, cancellationToken);
+            : Track(game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Remove, () => _ultimateAsiLoader.RemoveAsync(game, cancellationToken));
     }
 
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(
@@ -1500,7 +1525,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = PatchTargetGuard(game);
         if (guard is not null) return Task.FromResult(guard);
 
-        return component switch
+        return Track(game, component, ComponentUpdateAction.Update, () => component switch
         {
             ManagedComponentKind.ReShade => _reshade.InstallAsync(game, _reshade.GetInstalledOptions(game), cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.UpdateAsync(game, indexedFiles, cancellationToken),
@@ -1514,7 +1539,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.UpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
-        };
+        });
     }
 
     public OptiScalerVariant? GetInstalledOptiScalerVariant(DetectedGame game)
@@ -1531,7 +1556,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = PatchTargetGuard(game);
         return guard is not null
             ? Task.FromResult(guard)
-            : _optiscaler.InstallAsync(game, variant, cancellationToken);
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, cancellationToken));
     }
 
     public async Task<ComponentOperationResult> InstallAsync(
@@ -1543,12 +1568,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = PatchTargetGuard(game);
         if (guard is not null) return guard;
 
-        return await InstallWithManagedDependenciesAsync(
+        return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             component,
             indexedFiles,
             () => InstallCoreAsync(game, component, indexedFiles, cancellationToken),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
     }
 
     private Task<ComponentOperationResult> InstallCoreAsync(
@@ -1744,7 +1769,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             }
         }
 
-        return component switch
+        return Track(game, component, ComponentUpdateAction.Remove, () => component switch
         {
             ManagedComponentKind.ReShade => _reshade.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.RemoveAsync(game, cancellationToken),
@@ -1763,7 +1788,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.REFramework => _reFramework.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.LumaFramework => _lumaFramework.RemoveAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
-        };
+        });
     }
 
     public LumaPolicySnapshot GetLumaPolicy(DetectedGame game)
