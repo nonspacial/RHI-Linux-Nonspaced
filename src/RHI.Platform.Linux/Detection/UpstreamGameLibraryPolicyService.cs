@@ -280,6 +280,7 @@ public sealed class UpstreamGameLibraryPolicyService(
             PrefixPath = game.PrefixPath,
             ExecutablePath = game.ExecutablePath,
             LibraryIdentityPath = game.LibraryIdentityPath,
+            MergedAliases = game.MergedAliases,
             LibraryProvider = game.LibraryProvider,
             LaunchExecutablePath = game.LaunchExecutablePath,
             LaunchProvider = game.LaunchProvider,
