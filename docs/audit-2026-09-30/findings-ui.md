@@ -149,6 +149,7 @@
   - Route every `async void` handler through one `RunUiSafeAsync(Func<Task>)` wrapper.
   - Wrap all store writes behind a `TrySave` that reports to `StatusText`.
 - **Verification:** point `XDG_CONFIG_HOME` at a read-only directory and invoke `SaveLinuxSettings` and `ToggleFavouriteCommand` from a test. Assert that there is no throw and that the status is set.
+- **Status:** fixed in `41e8005` and `da6e9b0` (#73). `UiExceptionGuard` registers AppDomain/TaskScheduler/Dispatcher handlers (log + localised status line, dispatcher exceptions marked handled); errors go to a size-rotated `$XDG_STATE_HOME/rhi-linux/logs/errors.log`. Every `async void` handler and async event lambda runs through `RunUiSafe`, VM fire-and-forget tasks through `UiExceptionGuard.Forget`, and store writes report failure (`TryPersist`) instead of throwing; a failed settings save or manual-game removal changes nothing. Tests: `UiExceptionHandlingTests` (read-only config/data dirs through the real VM).
 
 ---
 
@@ -220,6 +221,7 @@
 - **Why it matters:** broken primary flow for the default locale of the original author.
 - **Minimal seam:** return a result record (`Success`, `Message`) from `AddManualGameAsync` and `SaveSelectedGameEditAsync`, and branch on `Success`.
 - **Verification:** a unit test with `UiLocalizationService.Apply("pt-BR")` asserting that `AddManualGameAsync` reports success structurally.
+- **Status:** Add dialog fixed in `5d431b8`; Edit dialog fixed in `f94effe` (#78): `SaveSelectedGameEditAsync`/`ResetSelectedGameEditAsync` return a `(flag, message)` result and the dialog closes on the flag; a refused reset now stays open with its reason. Tests: `GameEditDialogResultTests` (PT-BR and EN).
 
 ### UI-11 — Localisation is split across two mechanisms, and several user-facing strings are single-language
 
@@ -247,6 +249,7 @@
   - Add a Roslyn/grep test that fails on string literals with non-ASCII PT diacritics outside `L(`/the dictionary.
   - Have backends return message keys plus arguments instead of prose.
 - **Verification:** a test enumerating a whitelist, plus a grep test for `"[^"]*[ãõçé][^"]*"` outside localisation calls. Assert the count does not grow.
+- **Status:** fixed in `a6a36e0` and `1aaf21e` (#79, #143). One mechanism: all inline `L()`/`LF()` pairs moved to the `UiStrings` key table (`tools/l10n-migrate.py` re-runs the move); the single-language strings listed above are keyed; `Format` uses the chosen language's culture; Portuguese-only platform messages get English through `PlatformMessageTranslations` at the `PresentFor` boundary, and text that still falls back to the generic message is logged once. Deviation: backends still return prose (keys + arguments would touch every service and collide with other lanes); the guard is a table test (parity, placeholders, no Portuguese in English, every PT-only template) rather than a source grep.
 
 ### UI-12 — A pinned neural version is saved but the ComboBox shows blank
 
@@ -280,6 +283,7 @@
 - **Why it matters:** refactoring the god VM (see Structure) without compiled bindings is high-risk. Compiled bindings are the safety net for that split.
 - **Minimal seam:** add `x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"` to `MainWindow.axaml` first and fix any build errors, then flip the project default. There are no `$parent`/`ElementName` bindings to complicate the move.
 - **Verification:** `dotnet build` succeeds with compiled bindings on; a deliberately misspelt path then fails the build.
+- **Status:** fixed in `d995716` (#88). `AvaloniaUseCompiledBindingsByDefault=true`, `MainWindow.axaml` typed `x:DataType="vm:MainWindowViewModel"`; a misspelt path fails with AVLN2000 (checked by hand). Test: `CompiledBindingsTests`.
 
 ---
 
