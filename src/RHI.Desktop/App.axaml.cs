@@ -40,12 +40,12 @@ public sealed class App : Application
             githubToken.TokenRejected += (_, _) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenRejected());
             var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
             var upstreamManifest = new UpstreamRhiManifestService(http);
-            var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
+            var pcgwData = new PcgwCentralDataService(http);
+            var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest, pcgwData);
             var scanner = new GameLibraryScanner(detectors, [libraryPolicy]);
             var launcher = new LinuxGameLauncher();
             var deployment = new TransactionalFileDeploymentService();
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
-            var pcgwData = new PcgwCentralDataService(http);
             var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
             var records = new LinuxDeploymentRecordStore();
             var wineOverrides = new WineDllOverrideService();

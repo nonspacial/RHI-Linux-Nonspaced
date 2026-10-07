@@ -9,14 +9,23 @@ namespace RHI.Platform.Linux.Detection;
 /// Only filesystem-safe, cross-platform semantics are enacted here. Windows-only driver/admin
 /// settings remain metadata for future platform support.
 /// </summary>
-public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService manifest) : IGameLibraryPolicy
+public sealed class UpstreamGameLibraryPolicyService(
+    UpstreamRhiManifestService manifest,
+    PcgwCentralDataService? pcgwData = null) : IGameLibraryPolicy
 {
     /// <summary>
-    /// An explicit full library refresh is the user-visible policy refresh point: the manifest is
-    /// revalidated (ETag) once and every other consumer in the session reuses it. Partial refreshes
-    /// never touch the network for policy (Refs #61).
+    /// An explicit full library refresh is the user-visible refresh point for upstream data: the
+    /// manifest and pcgw_data.json are revalidated (ETag) once and every other consumer in the session
+    /// reuses them. pcgw_data.json starts loading in the background during the scan. Partial
+    /// refreshes never touch the network for either (Refs #61, #104).
     /// </summary>
-    public void RefreshSources() => manifest.InvalidateProcessCache();
+    public void RefreshSources()
+    {
+        manifest.InvalidateProcessCache();
+        if (pcgwData is null) return;
+        pcgwData.Invalidate();
+        pcgwData.Prefetch();
+    }
 
     /// <summary>Stable name; the Desktop status line localises it.</summary>
     public const string PolicyName = "Upstream RHI manifest";
