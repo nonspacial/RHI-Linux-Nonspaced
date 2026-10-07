@@ -212,7 +212,19 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
     /// </summary>
     private async Task<Outcome> RunAsync(string description, Func<OwnedFileSet, Task<FileDeploymentResult[]>> body)
     {
-        var operation = _journal is null ? null : await _journal.BeginAsync(description).ConfigureAwait(false);
+        DeploymentOperation? operation = null;
+        if (_journal is not null)
+        {
+            try
+            {
+                operation = await _journal.BeginAsync(description).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Without a write-ahead entry a crash could not be undone: refuse before changing anything.
+                return new([], $"The deployment journal could not be written ({ex.Message}); nothing was changed.", false);
+            }
+        }
         var set = operation?.Files ?? new OwnedFileSet();
         try
         {
