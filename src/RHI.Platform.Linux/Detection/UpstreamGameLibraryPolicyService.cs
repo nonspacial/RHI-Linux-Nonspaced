@@ -243,33 +243,36 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
         return null;
     }
 
+    /// <summary>
+    /// Resolves a manifest sub-path (installPathOverrides, splitGames) below <paramref name="root"/>.
+    /// A candidate that leaves the game root (<c>..</c>, an absolute path, or a symlink pointing out) is
+    /// rejected: upstream entries such as <c>"Hades II": "Ship|..\\.."</c> would otherwise make a Steam
+    /// <c>steamapps/</c> folder or a whole library the install path and the patch/indexing root.
+    /// </summary>
     private static string? ResolveExistingRelativePath(string root, string relative)
     {
-        try
-        {
-            var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-            var path = Path.GetFullPath(Path.Combine(root, normalized));
-            return Directory.Exists(path) ? path : null;
-        }
-        catch { return null; }
+        var path = CombineManifestPath(root, relative);
+        return path is not null && Directory.Exists(path) && PathIdentity.IsSameOrInside(path, root) ? path : null;
     }
 
+    /// <summary>launchExeOverrides: the executable must exist inside the game root, as for sub-paths.</summary>
     private static string? ResolveExistingFile(string root, string relative)
     {
-        try
-        {
-            var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-            var path = Path.IsPathRooted(normalized) ? Path.GetFullPath(normalized) : Path.GetFullPath(Path.Combine(root, normalized));
-            return File.Exists(path) ? path : null;
-        }
-        catch { return null; }
+        var path = CombineManifestPath(root, relative);
+        return path is not null && File.Exists(path) && PathIdentity.IsSameOrInside(path, root) ? path : null;
     }
 
-    private static bool PathsEqual(string a, string b)
+    private static string? CombineManifestPath(string root, string relative)
     {
-        try { return Path.GetFullPath(a).Equals(Path.GetFullPath(b), StringComparison.Ordinal); }
-        catch { return a.Equals(b, StringComparison.Ordinal); }
+        var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        try { return Path.GetFullPath(Path.Combine(root, normalized)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // malformed manifest path: no override, the detected root stays
+        }
     }
+
+    private static bool PathsEqual(string a, string b) => PathIdentity.AreSame(a, b);
 
     private static bool TryGet<T>(IReadOnlyDictionary<string, T> values, string key, out T value)
         => values.TryGetValue(key, out value!);
