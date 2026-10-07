@@ -571,6 +571,8 @@ public static class UiLocalizationService
         ("Download refused: GitHub links must be HTTPS on a trusted host (GitHub). Refused link: ",
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
+        // Remote/UI [renodx] pair that is not a plain INI entry (#122). The key follows the fragment.
+        ("RenoDX setting refused: not a plain INI key and value: ", "Configuração do RenoDX recusada: chave e valor não são uma entrada INI simples: "),
         // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.
         ("RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: ",
             "Instalação do RenoDX recusada: um arquivo que o RHI Linux não gerencia já tem o nome deste add-on. Mova ou remova-o e instale novamente: "),

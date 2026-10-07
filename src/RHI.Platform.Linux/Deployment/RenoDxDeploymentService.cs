@@ -557,6 +557,8 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("O diretório de binários do jogo ainda não é conhecido.");
         if (string.IsNullOrWhiteSpace(key))
             return ComponentOperationResult.Fail("A chave da configuração de compatibilidade do RenoDX está vazia.");
+        if (!RenoDxIniGrammar.IsSafePair(key.Trim(), value?.Trim() ?? ""))
+            return ComponentOperationResult.Fail($"RenoDX setting refused: not a plain INI key and value: {key}");
 
         try
         {

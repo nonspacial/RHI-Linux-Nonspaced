@@ -28,7 +28,7 @@ public sealed class RenoDxUnityDbEntry
             var value = "";
             if (i < tokens.Count && IsValueToken(tokens[i]))
                 value = MapValue(tokens[i++]);
-            if (IsSafeKey(key)) result.Add(new(key, value));
+            if (RenoDxIniGrammar.IsSafePair(key, value)) result.Add(new(key, value));
         }
         return result;
     }
@@ -46,9 +46,6 @@ public sealed class RenoDxUnityDbEntry
         "any size" => "3",
         _ => token
     };
-
-    private static bool IsSafeKey(string key)
-        => key.Length is > 0 and <= 128 && key.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
 
     private static List<string> BacktickTokens(string? input)
     {

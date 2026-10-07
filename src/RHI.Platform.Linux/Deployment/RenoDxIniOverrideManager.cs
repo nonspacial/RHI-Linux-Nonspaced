@@ -21,6 +21,26 @@ internal sealed record RenoDxIniOverrideApplyResult(
     int PreservedUserEdits);
 
 /// <summary>
+/// The one grammar every remote [renodx] key/value must meet before it reaches a ReShade.ini (#122): the RHI
+/// Unity database, manifest <c>renodxIniOverrides</c> and <c>renodxExtraSettings</c>. Keys are plain INI names;
+/// values are printable ASCII without brackets, so neither can start a new line or a section. Upstream data only
+/// uses digits; an unsafe pair is dropped whole.
+/// </summary>
+internal static class RenoDxIniGrammar
+{
+    public const int MaxKeyLength = 128;
+    public const int MaxValueLength = 256;
+
+    public static bool IsSafeKey(string? key)
+        => key is { Length: > 0 and <= MaxKeyLength } && key.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
+
+    public static bool IsSafeValue(string? value)
+        => value is { Length: <= MaxValueLength } && value.All(c => c is >= ' ' and <= '~' and not '[' and not ']');
+
+    public static bool IsSafePair(string? key, string? value) => IsSafeKey(key) && IsSafeValue(value);
+}
+
+/// <summary>
 /// Conservative [renodx] manifest override editor. The upstream manifest is allowed to
 /// provide per-game compatibility values, but Linux teardown must remain reversible: original
 /// values are remembered, keys created by RHI are removed on teardown, and user edits made after
@@ -61,8 +81,9 @@ internal static class RenoDxIniOverrideManager
         foreach (var pair in requested.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
         {
             var key = pair.Key.Trim();
-            if (string.IsNullOrWhiteSpace(key)) continue;
             var requestedValue = pair.Value?.Trim() ?? "";
+            // Last line of defence for both remote sources: never write a pair that could add lines or sections.
+            if (!RenoDxIniGrammar.IsSafePair(key, requestedValue)) continue;
 
             // Re-evaluate the section boundary because prior insertions may have shifted it.
             var (sectionStart, sectionEnd) = FindSection(lines, SectionName);
@@ -202,6 +223,8 @@ internal static class RenoDxIniOverrideManager
     public static bool SetUserValue(string binaryDirectory, string key, string value, out string? iniPath)
     {
         iniPath = ResolveIniPath(binaryDirectory);
+        if (!RenoDxIniGrammar.IsSafePair(key?.Trim(), value?.Trim() ?? ""))
+            throw new ArgumentException($"RenoDX setting refused: not a plain INI key and value: {key}");
         if (iniPath is null || !File.Exists(iniPath) || string.IsNullOrWhiteSpace(key)) return false;
 
         var lines = File.ReadAllLines(iniPath).ToList();
