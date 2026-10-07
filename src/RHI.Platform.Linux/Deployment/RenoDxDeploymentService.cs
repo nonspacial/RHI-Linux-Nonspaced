@@ -573,16 +573,18 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("O diretório de binários do jogo ainda não é conhecido.");
         if (string.IsNullOrWhiteSpace(key))
             return ComponentOperationResult.Fail("A chave da configuração de compatibilidade do RenoDX está vazia.");
-        if (!RenoDxIniGrammar.IsSafePair(key.Trim(), value?.Trim() ?? ""))
+        var normalizedKey = key.Trim();
+        var normalizedValue = value?.Trim() ?? "";
+        if (!RenoDxIniGrammar.IsSafePair(normalizedKey, normalizedValue))
             return ComponentOperationResult.Fail($"RenoDX setting refused: not a plain INI key and value: {key}");
 
         try
         {
-            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, key, value, out var iniPath))
+            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, normalizedKey, normalizedValue, out var iniPath))
                 return ComponentOperationResult.Fail("O ReShade.ini ainda não contém uma seção [renodx]. Execute o jogo uma vez com o RenoDX instalado.");
             if (string.IsNullOrWhiteSpace(iniPath))
                 return ComponentOperationResult.Fail("O caminho do ReShade.ini não pôde ser resolvido após salvar a configuração do RenoDX.");
-            return ComponentOperationResult.Ok($"Configuração do RenoDX salva: {key}={value} → {iniPath}", iniPath);
+            return ComponentOperationResult.Ok($"Configuração do RenoDX salva: {normalizedKey}={normalizedValue} → {iniPath}", iniPath);
         }
         catch (Exception ex)
         {

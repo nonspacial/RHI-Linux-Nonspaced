@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using System.Net;
 using System.Text;
 using RHI.Core.Models;
@@ -107,6 +108,7 @@ public sealed class RenoDxInstallTests : IDisposable
     // #121: when removal fails after the [renodx] keys were taken out, ReShade.ini goes back to the installed state,
     // so the record still describes the disk and a retry finishes the job.
     [Fact]
+    [SupportedOSPlatform("linux")]
     public async Task Remove_AddonDeleteFails_PutsReShadeIniBackAndKeepsTheRecord()
     {
         var bin = Path.Combine(_root, "remove-fail-bin");

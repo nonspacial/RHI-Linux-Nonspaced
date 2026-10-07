@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using RHI.Platform.Linux.Deployment;
 using RHI.Core.Services.RenoDxSafety;
 
@@ -159,6 +160,7 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
     }
 
     [Fact]
+    [SupportedOSPlatform("linux")]
     public void Apply_KeepsFileModeAndWritesThroughASymlinkedIni()
     {
         var shared = Path.Combine(_root, "shared");
@@ -179,6 +181,7 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
     }
 
     [Fact]
+    [SupportedOSPlatform("linux")]
     public void RestoreSnapshots_RestoresAtomicallyAndKeepsWhatItCannotRestore()
     {
         var writable = Path.Combine(_root, "writable.ini");
