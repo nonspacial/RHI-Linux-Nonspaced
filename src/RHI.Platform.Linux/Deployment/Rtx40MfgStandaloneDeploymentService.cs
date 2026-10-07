@@ -666,13 +666,23 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
     private static bool HasStreamlineFrameGeneration(string root, int maxDepth)
     {
+        // The RHI-managed OptiScaler stack (OptiScaler/Streamline, incl. nvngx_dlssg.dll since #135)
+        // is not the game's own integration; it counts only through HasManagedOptiScalerFrameGeneration.
         var names = GameFileIndexer.Build(root, maxDepth)
+            .Where(path => !IsUnderOptiScalerFolder(root, path))
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var hasDlssg = names.Contains("nvngx_dlssg.dll");
         var hasStreamline = names.Contains("sl.interposer.dll") || names.Contains("sl.common.dll") || names.Contains("sl.dlss_g.dll");
         return hasDlssg && hasStreamline;
+    }
+
+    private static bool IsUnderOptiScalerFolder(string root, string path)
+    {
+        var directory = Path.GetDirectoryName(Path.GetRelativePath(root, path));
+        return !string.IsNullOrEmpty(directory)
+               && directory.Split(Path.DirectorySeparatorChar).Any(segment => segment.Equals("OptiScaler", StringComparison.OrdinalIgnoreCase));
     }
 
     internal static string? TryFindChecksum(string text, string assetName)

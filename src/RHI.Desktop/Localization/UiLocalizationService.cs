@@ -455,7 +455,16 @@ public static class UiLocalizationService
         ("Enabler", "Enabler"),
         ("FSR 3/4 FG", "FSR 3/4 FG"),
         ("Combo", "Combo"),
-        ("Matches upstream Windows RHI: deploys Streamline DLLs to OptiScaler/Streamline and dlss-enabler-headless.dll to OptiScaler/.", "Replica o RHI Windows upstream: implanta as DLLs Streamline em OptiScaler/Streamline e dlss-enabler-headless.dll em OptiScaler/."),
+        ("Matches upstream Windows RHI: deploys the Streamline DLLs and the newest nvngx_dlssg.dll to OptiScaler/Streamline and dlss-enabler-headless.dll to OptiScaler/.", "Replica o RHI Windows upstream: implanta as DLLs Streamline e a nvngx_dlssg.dll mais recente em OptiScaler/Streamline e dlss-enabler-headless.dll em OptiScaler/."),
+        // #135 (upstream 2.8.1): Reflex keys in the Nightly/DLSS NR FG settings.
+        ("Force Reflex", "Forçar Reflex"),
+        ("Use game's Reflex markers", "Usar marcadores Reflex do jogo"),
+        ("Follow in-game (0)", "Seguir o jogo (0)"),
+        ("Force Disable (1)", "Forçar desativado (1)"),
+        ("Force Enable (2)", "Forçar ativado (2)"),
+        ("[fakenvapi] ForceReflex: 0 follows the in-game Reflex setting, 1 forces Reflex off, 2 forces it on. Auto leaves it to OptiScaler. Only used when OptiScaler runs its bundled fakenvapi; Proton's own NVAPI is not changed.", "[fakenvapi] ForceReflex: 0 segue a opção Reflex do jogo, 1 força o Reflex desativado, 2 força ativado. Auto deixa a escolha ao OptiScaler. Só tem efeito quando o OptiScaler usa o fakenvapi incluído; o NVAPI do próprio Proton não é alterado."),
+        ("[DLSSG] UseGamesReflexMarkers: time DLSS Frame Generation from the game's own Reflex markers. Auto is On.", "[DLSSG] UseGamesReflexMarkers: sincroniza a Geração de Quadros DLSS pelos marcadores Reflex do próprio jogo. Auto equivale a Ativado."),
+        ("OptiScaler Streamline/DLSS Enabler deployment removed. The selected Streamline version preference was preserved.", "Implantação Streamline/DLSS Enabler do OptiScaler removida. A versão do Streamline escolhida foi mantida."),
         ("Version used by the OptiScaler-managed Streamline stack. Upstream Windows RHI defaults to 2.12.0 when available.", "Versão usada pela pilha Streamline gerenciada pelo OptiScaler. O RHI Windows upstream usa 2.12.0 como padrão quando disponível."),
         ("Only relevant when FG Output = DLSSG. Enabler uses dlss-enabler-headless.dll from the managed OptiScaler Streamline stack. Combo needs the FSR 3/4 FG and Enabler files: FSR FG renders the middle frames, Enabler the rest.", "Só é relevante quando a saída FG = DLSSG. Enabler usa dlss-enabler-headless.dll da pilha Streamline gerenciada pelo OptiScaler. Combo exige os arquivos de FSR 3/4 FG e do Enabler: o FSR FG gera os quadros intermediários e o Enabler os demais."),
         ("The RHI-managed OptiScaler record exists, but OptiScaler.ini is missing.", "O registro do OptiScaler gerenciado pelo RHI existe, mas o OptiScaler.ini está ausente."),
@@ -519,6 +528,12 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] PresentationPairs =
     [
+        // #135 OptiScaler FG stack deploy result. Fragments compose around versions and file names.
+        (" deployed to OptiScaler/.", " implantados em OptiScaler/."),
+        (" deployed to OptiScaler/; ", " implantados em OptiScaler/; "),
+        (" was not deployed: ", " não foi implantada: "),
+        ("the DLSS manifest lists no FG build.", "o manifesto DLSS não lista nenhuma versão de FG."),
+        (" Existing files kept as .original and restored on removal: ", " Arquivos existentes guardados como .original e restaurados na remoção: "),
         // Control UE RR post-install (upstream 2.7.9). Fragments compose around DLL names, versions and paths.
         ("Control UE restore incomplete; RenoDX was kept:", "Restauração do Control UE incompleta; o RenoDX foi mantido:"),
         ("renderer.ini not found in the game folder; launch the game once, then reinstall RenoDX to set the HDR preset.", "renderer.ini não encontrado na pasta do jogo; abra o jogo uma vez e reinstale o RenoDX para definir o preset HDR."),

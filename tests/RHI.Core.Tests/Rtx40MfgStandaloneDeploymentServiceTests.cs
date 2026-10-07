@@ -105,6 +105,8 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(streamlineDir);
         File.WriteAllText(Path.Combine(streamlineDir, "sl.common.dll"), "managed-streamline");
         File.WriteAllText(Path.Combine(optiDir, OptiScalerDeploymentService.DlssEnablerHeadlessFileName), "managed-enabler");
+        // Since #135 the managed stack also carries nvngx_dlssg.dll; that must not pass as a native integration.
+        File.WriteAllBytes(Path.Combine(streamlineDir, "nvngx_dlssg.dll"), [1, 2, 3, 4]);
         File.WriteAllText(Path.Combine(fixture.Bin, "OptiScaler.ini"), "[FrameGen]\nFGOutput=dlssg\nFGNvngxReplacement=None\n");
         var record = ManagedOptiScalerRecord(fixture, OptiScalerVariant.Nightly);
 

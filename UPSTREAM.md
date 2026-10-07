@@ -75,3 +75,15 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #135 — OptiScaler FG: nvngx_dlssg.dll in the Streamline stack; Reflex settings (2.8.1)
+
+- Enabling Streamline / DLSS Enabler (OptiScaler Nightly/DLSS NR) also deploys the newest DLSS manifest `nvngx_dlssg.dll` to `OptiScaler/Streamline/`, from the existing DLSS cache. As upstream, it is best effort: when the manifest has no FG build or its download fails, Streamline and DLSS Enabler still deploy and the status line says `nvngx_dlssg.dll` was not deployed. Unlike upstream's fire-and-forget copy, the DLL joins the transactional, record-owned FG stack (hash, `OptiScaler.DlssgVersion`), so disabling the stack or removing OptiScaler deletes it.
+- A foreign file already at any FG stack target is no longer refused: it is kept as `<name>.original`, marked pre-existing in the record and restored on disable or OptiScaler removal (an identical file is left alone and unowned; an existing `.original` blocks the deploy). A failed deploy restores it before reporting.
+- Stacks deployed before this change get `nvngx_dlssg.dll` the next time the stack is redeployed (toggle it or change the Streamline version); Update All does not add it.
+- The managed stack's `OptiScaler/Streamline/nvngx_dlssg.dll` does not count as the game's own Streamline FG integration for Universal MFG eligibility; the managed stack still qualifies only through FG Output = DLSSG + Enabler.
+- Advanced settings (Nightly/DLSS NR only, after FG Nvngx Replacement, as upstream's Nightly FG cog): **Force Reflex** writes `[fakenvapi] ForceReflex` and **Use game's Reflex markers** writes `[DLSSG] UseGamesReflexMarkers`. Linux keeps OptiScaler's own `auto` as a choice next to upstream's 0/1/2 and true/false: an explicit 0 would defeat OptiScaler forcing Reflex off for DLSSG `OverrideForceDMFG`. Force Reflex only acts through OptiScaler's bundled fakenvapi; Proton's own NVAPI is not touched.
+- Upstream's new "FG Enabled" row already existed on Linux (`FrameGenEnabled`). The 2.8.3 OptiScaler presets carrying these keys are not ported (Linux has no OptiScaler presets).
+- The setting ids are public constants (`DeployStreamlineDlssEnablerSettingId`, `ForceReflexSettingId`, `UseGamesReflexMarkersSettingId`) for the Control UE one-click FG setup (#136).
