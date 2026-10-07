@@ -1,7 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -694,39 +696,25 @@ public sealed partial class UpstreamRhiManifestService
     internal async Task PersistLastKnownGoodAsync(byte[] raw, CancellationToken cancellationToken, string? etag = null)
     {
         if (string.IsNullOrWhiteSpace(_cachePath)) return;
-        string? temp = null;
         var etagPath = EtagPath!;
         try
         {
             // The validator goes first: a stale ETag next to a new body would make a later 304 reuse the wrong copy.
-            if (File.Exists(etagPath)) File.Delete(etagPath);
+            AtomicFile.Delete(etagPath);
             var directory = Path.GetDirectoryName(_cachePath);
-            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-            temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-            {
-                await stream.WriteAsync(raw, cancellationToken).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(temp, _cachePath, true);
-            temp = null;
+            if (!string.IsNullOrWhiteSpace(directory)) AtomicFile.CreateDirectoryDurable(directory);
+            // Unique temp, fsync, verify, rename, directory fsync. A cancelled or failed write (e.g. the
+            // Donate dialog closed mid-write) leaves no temp file behind.
+            await AtomicFile.WriteAllBytesAsync(_cachePath, raw, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(etag))
-                await File.WriteAllTextAsync(etagPath, etag, CancellationToken.None).ConfigureAwait(false);
+                await AtomicFile.WriteAllTextAsync(etagPath, etag, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Cache persistence is optional; a valid live manifest stays usable this session and the next
             // session fetches unconditionally (no ETag was left behind).
             LastPersistError = ex.Message;
-        }
-        finally
-        {
-            // A cancelled or failed write (e.g. the Donate dialog closed mid-write) leaves no manifest.json.tmp-* behind.
-            if (temp is not null)
-            {
-                try { File.Delete(temp); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { LastPersistError = ex.Message; }
-            }
+            AppLog.Warn("upstream-manifest", $"Manifest cache not saved: {_cachePath}", ex);
         }
     }
 

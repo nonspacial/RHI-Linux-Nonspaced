@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
+using RHI.Core.Deployment;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
@@ -410,37 +411,22 @@ public sealed class PcgwCentralDataService
 
     private async Task PersistAsync(byte[] raw, string? etag, CancellationToken cancellationToken)
     {
-        string? temp = null;
         try
         {
             var directory = Path.GetDirectoryName(_cachePath);
-            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            if (!string.IsNullOrWhiteSpace(directory)) AtomicFile.CreateDirectoryDurable(directory);
             // The validator goes first, so a stale ETag never sits next to a new body.
-            if (File.Exists(_etagPath)) File.Delete(_etagPath);
-            temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-            {
-                await stream.WriteAsync(raw, cancellationToken).ConfigureAwait(false);
-                stream.Flush(flushToDisk: true);
-            }
-            File.Move(temp, _cachePath, true);
-            temp = null;
+            AtomicFile.Delete(_etagPath);
+            // Unique temp, fsync, verify, rename, directory fsync; a cancelled write leaves no temp behind.
+            await AtomicFile.WriteAllBytesAsync(_cachePath, raw, cancellationToken).ConfigureAwait(false);
             File.SetLastWriteTimeUtc(_cachePath, _time.GetUtcNow().UtcDateTime);
             if (!string.IsNullOrWhiteSpace(etag))
-                await File.WriteAllTextAsync(_etagPath, etag, CancellationToken.None).ConfigureAwait(false);
+                await AtomicFile.WriteAllTextAsync(_etagPath, etag, CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Persistence is optional; the loaded data stays usable this session.
             AppLog.Warn("pcgw-data", $"Cache not saved: {_cachePath}", ex);
-        }
-        finally
-        {
-            if (temp is not null)
-            {
-                try { File.Delete(temp); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("pcgw-data", $"Temp file left behind: {temp}", ex); }
-            }
         }
     }
 }
