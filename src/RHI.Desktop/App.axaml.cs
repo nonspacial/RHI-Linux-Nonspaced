@@ -39,6 +39,7 @@ public sealed class App : Application
             // Subscribed before any service can send; the post runs once this method returns.
             MainWindowViewModel? tokenNoticeTarget = null;
             githubToken.TokenRejected += (_, _) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenRejected());
+            githubToken.TokenFileExposed += (_, e) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenFileExposed(e.Restricted));
             var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
             var upstreamManifest = new UpstreamRhiManifestService(http);
             var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
@@ -145,6 +146,7 @@ public sealed class App : Application
             tokenNoticeTarget = vm;
             if (recovery.NeedsNotice)
                 Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
+            desktop.Exit += (_, _) => vm.Dispose();
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

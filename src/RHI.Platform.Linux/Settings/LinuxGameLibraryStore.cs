@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Settings;
 
@@ -78,7 +79,7 @@ public sealed class LinuxGameLibraryState
         FavouriteGames = new HashSet<string>(FavouriteGames ?? [], StringComparer.OrdinalIgnoreCase);
         HiddenGames = new HashSet<string>(HiddenGames ?? [], StringComparer.OrdinalIgnoreCase);
         ManualGames ??= [];
-        GameEdits = new Dictionary<string, LinuxGameEditOverride>(GameEdits ?? new(), StringComparer.OrdinalIgnoreCase);
+        GameEdits = JsonStoreMaps.CaseInsensitive(GameEdits);
         foreach (var key in GameEdits.Keys.ToArray())
         {
             var normalized = (GameEdits[key] ?? new LinuxGameEditOverride()).Normalize();
@@ -87,7 +88,7 @@ public sealed class LinuxGameLibraryState
             else
                 GameEdits[key] = normalized;
         }
-        HdrProfiles = new Dictionary<string, LinuxHdrGameProfile>(HdrProfiles ?? new(), StringComparer.OrdinalIgnoreCase);
+        HdrProfiles = JsonStoreMaps.CaseInsensitive(HdrProfiles);
         foreach (var key in HdrProfiles.Keys.ToArray()) HdrProfiles[key] = (HdrProfiles[key] ?? new LinuxHdrGameProfile()).Normalize();
         ManualGames = ManualGames
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Name) && !string.IsNullOrWhiteSpace(entry.InstallPath))
@@ -125,7 +126,7 @@ public sealed class LinuxGameLibraryState
 /// XDG-native persisted library state. This deliberately stays separate from settings.json:
 /// settings are global preferences, while this file owns library membership and per-game visibility state.
 /// </summary>
-public sealed class LinuxGameLibraryStore
+public sealed class LinuxGameLibraryStore : IGameStateStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -133,43 +134,65 @@ public sealed class LinuxGameLibraryStore
         Converters = { new JsonStringEnumConverter() }
     };
 
+    private readonly JsonFileStore<LinuxGameLibraryState> _file;
+
     public string LibraryPath { get; }
 
     public LinuxGameLibraryStore(string? libraryPath = null)
     {
         LibraryPath = libraryPath ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "game-library.json");
+        // Normalising is part of reading: content it cannot handle (e.g. a null entry) is unreadable.
+        _file = new JsonFileStore<LinuxGameLibraryState>(LibraryPath, JsonOptions,
+            parse: text => JsonSerializer.Deserialize<LinuxGameLibraryState>(text, JsonOptions)?.Normalize());
     }
 
-    public LinuxGameLibraryState Load()
-    {
-        try
-        {
-            if (!File.Exists(LibraryPath)) return new LinuxGameLibraryState();
-            return (JsonSerializer.Deserialize<LinuxGameLibraryState>(File.ReadAllText(LibraryPath), JsonOptions)
-                    ?? new LinuxGameLibraryState()).Normalize();
-        }
-        catch
-        {
-            return new LinuxGameLibraryState();
-        }
-    }
+    /// <summary>
+    /// Never throws: a missing or unreadable library yields an empty state. An unreadable file is
+    /// copied aside and <see cref="Save"/> refuses to replace it until it reads again.
+    /// </summary>
+    public LinuxGameLibraryState Load() => _file.Load().Value ?? new LinuxGameLibraryState();
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable library file is on disk.</summary>
     public void Save(LinuxGameLibraryState state)
     {
         ArgumentNullException.ThrowIfNull(state);
         state.Normalize();
-        Directory.CreateDirectory(Path.GetDirectoryName(LibraryPath)!);
-        var temp = LibraryPath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, JsonOptions));
-        File.Move(temp, LibraryPath, overwrite: true);
+        _file.Save(state);
     }
 
+    /// <summary>
+    /// "Repair after move" (Refs #38): favourite, hidden, edits (their paths rebased onto the new
+    /// folder) and HDR settings stored under the game's old library key follow it.
+    /// </summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        return _file.Stage(state =>
+        {
+            if (state is null) return null;
+            var changed = move.MoveLibraryFlag(state.FavouriteGames);
+            changed |= move.MoveLibraryFlag(state.HiddenGames);
+            changed |= move.MoveLibraryEntries(state.GameEdits, edit => new LinuxGameEditOverride
+            {
+                LaunchProvider = edit.LaunchProvider,
+                PatchExecutablePath = MapOptional(move, edit.PatchExecutablePath),
+                GameRootPath = MapOptional(move, edit.GameRootPath),
+                BinaryDirectory = MapOptional(move, edit.BinaryDirectory)
+            });
+            changed |= move.MoveLibraryEntries(state.HdrProfiles);
+            return changed ? state.Normalize() : null;
+        });
+    }
+
+    private static string? MapOptional(GameStateMove move, string? path) => path is null ? null : move.MapPath(path);
+
     public static string GameKey(DetectedGame game)
+        => GameKey(game, string.IsNullOrWhiteSpace(game.LibraryIdentityPath) ? game.InstallPath : game.LibraryIdentityPath);
+
+    /// <summary>The key <paramref name="game"/> would have with <paramref name="identityPath"/> as its library folder.</summary>
+    public static string GameKey(DetectedGame game, string identityPath)
     {
         var source = (game.Source ?? "").Trim().ToLowerInvariant();
-        var identityPath = string.IsNullOrWhiteSpace(game.LibraryIdentityPath)
-            ? game.InstallPath
-            : game.LibraryIdentityPath;
         string path;
         try { path = Path.GetFullPath(identityPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant(); }
         catch { path = (identityPath ?? "").Trim().ToLowerInvariant(); }

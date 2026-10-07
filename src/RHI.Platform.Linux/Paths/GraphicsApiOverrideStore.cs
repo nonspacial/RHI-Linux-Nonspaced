@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -9,9 +11,10 @@ namespace RHI.Platform.Linux.Paths;
 /// Persists explicit per-game graphics API authority separately from runtime detection.
 /// This mirrors upstream RHI's per-game API override concept without rewriting detector evidence.
 /// </summary>
-public sealed class GraphicsApiOverrideStore
+public sealed class GraphicsApiOverrideStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, GraphicsApi>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -20,14 +23,17 @@ public sealed class GraphicsApiOverrideStore
     };
 
     public GraphicsApiOverrideStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "game-api-overrides.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "game-api-overrides.json");
+        _file = new JsonFileStore<Dictionary<string, GraphicsApi>>(_path, JsonOptions);
+    }
 
     public GraphicsApi? Get(DetectedGame game)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var api) ? api : null;
+            return GameRecordIdentity.TryGet(entries, game, out var api) ? api : null;
         }
     }
 
@@ -37,36 +43,28 @@ public sealed class GraphicsApiOverrideStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
             if (!api.HasValue || api.Value == GraphicsApi.Unknown)
-                entries.Remove(key);
+                GameRecordIdentity.Remove(entries, game);
             else
-                entries[key] = api.Value;
+                GameRecordIdentity.Set(entries, game, api.Value);
             SaveUnsafe(entries);
         }
     }
 
-    private Dictionary<string, GraphicsApi> LoadUnsafe()
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, GraphicsApi>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, GraphicsApi>();
-            return new Dictionary<string, GraphicsApi>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
-    private void SaveUnsafe(Dictionary<string, GraphicsApi> entries)
-    {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private Dictionary<string, GraphicsApi> LoadUnsafe()
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+
+    private void SaveUnsafe(Dictionary<string, GraphicsApi> entries) => _file.Save(entries);
 }

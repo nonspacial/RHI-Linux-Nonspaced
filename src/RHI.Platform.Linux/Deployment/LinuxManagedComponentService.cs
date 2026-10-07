@@ -1,12 +1,14 @@
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
 public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 {
     private readonly LinuxDeploymentRecordStore _records;
+    private readonly DeploymentRelocation _relocation;
     private readonly ReShadeDeploymentService _reshade;
     private readonly ReShadeAddonManagerService _addonManager;
     private readonly RenoDxDeploymentService _renodx;
@@ -29,6 +31,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private readonly LumaPolicyService _lumaPolicy;
     private readonly NeuralAddonVersionPreferenceStore _neuralVersionPins;
     private readonly ComponentUpdateRecorder? _history;
+    private readonly ComponentUpdateLogStore? _updateLog;
 
     public LinuxManagedComponentService(
         LinuxDeploymentRecordStore records,
@@ -56,6 +59,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ComponentUpdateLogStore? updateLog = null)
     {
         _records = records;
+        _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
         _renodx = renodx;
@@ -77,6 +81,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _lumaFramework = lumaFramework;
         _lumaPolicy = lumaPolicy;
         _neuralVersionPins = neuralVersionPins ?? new NeuralAddonVersionPreferenceStore();
+        _updateLog = updateLog;
         _history = updateLog is null ? null : new ComponentUpdateRecorder(records, updateLog);
     }
 
@@ -819,18 +824,48 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         }
     }
 
-    private static ComponentOperationResult? PatchTargetGuard(DetectedGame game)
+    // Every mutating entry point goes through this: an unconfirmed patch target, or records left
+    // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
+    private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
         => game.HasConfirmedPatchTarget
-            ? null
+            ? _relocation.Guard(game)
             : ComponentOperationResult.Fail(
                 "Alvo de modificações não definido. Use Editar jogo para selecionar o executável real do jogo; o executável do launcher nunca é usado como destino de patches.");
 
-    private static ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
-        => game.HasConfirmedPatchTarget
-            ? null
-            : new ManagedUpdateCheck(true, false,
+    private ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
+    {
+        if (!game.HasConfirmedPatchTarget)
+            return new ManagedUpdateCheck(true, false,
                 "Alvo de modificações não definido. Atualizações locais estão bloqueadas até Editar jogo confirmar o executável real do jogo.",
                 Blocked: true);
+        return _relocation.Guard(game) is { } moved
+            ? new ManagedUpdateCheck(true, false, moved.Message, Blocked: true)
+            : null;
+    }
+
+    /// <summary>True when the game was moved and "Repair after move" has records to update.</summary>
+    public bool NeedsRelocationRepair(DetectedGame game) => _relocation.NeedsRepair(game);
+
+    /// <summary>The records "Repair after move" would update, for the confirmation shown before adopting.</summary>
+    public IReadOnlyList<RelocatedRecord> RelocationPreview(DetectedGame game) => _relocation.Preview(game);
+
+    /// <summary>
+    /// Explicit repair after a move: re-points the game's records at its current folder once every
+    /// owned file is verified there and carries its per-game state with them (Addon Manager files,
+    /// preferences, opt-ins, update history, plus <paramref name="libraryStores"/> from the UI:
+    /// favourites/hidden/edits/HDR and the preference stores it owns). All or nothing.
+    /// </summary>
+    public RelocationRepairResult RepairAfterMove(DetectedGame game, IReadOnlyList<IGameStateStore>? libraryStores = null)
+    {
+        IGameStateStore?[] owned =
+        [
+            _addonManager, _neuralVersionPins, _updateLog,
+            _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
+            _shortFuse?.GameState, _lumaPolicy?.GameState
+        ];
+        var stores = owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
+        return _relocation.Repair(game, stores, out _);
+    }
 
     private IReadOnlyList<string> BuildDependencyIndex(DetectedGame game, IReadOnlyList<string>? indexedFiles = null)
     {

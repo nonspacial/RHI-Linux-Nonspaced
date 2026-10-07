@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -47,26 +49,24 @@ public sealed class LinuxDeploymentRecordStore
 
     public LinuxDeploymentRecord? Find(DetectedGame game, ManagedComponentKind component)
     {
-        var key = GameKey(game);
         lock (_gate)
         {
             LookupsForTesting++;
-            var record = ReadUnsafe().FirstOrDefault(r => r.GameKey == key && r.Component == component);
+            var record = ForGame(ReadUnsafe(), game).FirstOrDefault(r => r.Component == component);
             return record is null ? null : Clone(record);
         }
     }
 
     public IReadOnlyList<LinuxDeploymentRecord> FindAll(DetectedGame game)
     {
-        var key = GameKey(game);
         lock (_gate)
         {
             LookupsForTesting++;
-            return ReadUnsafe().Where(r => r.GameKey == key).Select(Clone).ToArray();
+            return ForGame(ReadUnsafe(), game).Select(Clone).ToArray();
         }
     }
 
-    /// <summary>Copies of every record in the ledger (all games).</summary>
+    /// <summary>Copies of every record in the ledger (all games): crash recovery and relocation repair.</summary>
     public IReadOnlyList<LinuxDeploymentRecord> All()
     {
         lock (_gate)
@@ -74,6 +74,86 @@ public sealed class LinuxDeploymentRecordStore
             LookupsForTesting++;
             return ReadUnsafe().Select(Clone).ToArray();
         }
+    }
+
+    /// <summary>
+    /// Re-keys records written under a key an older build used for a game (Heroic games were keyed by
+    /// install path) to the game's current, relocation-tolerant key, so they keep matching after the
+    /// game is moved. Run after each library scan. A component that already has a record under the
+    /// current key keeps both untouched. Returns the number of records migrated (Refs #38).
+    /// </summary>
+    public int MigrateGameKeys(IEnumerable<DetectedGame> games)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+        lock (_gate)
+        {
+            // Copy: ReadUnsafe hands out the private cache, which must never be mutated in place.
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            if (_corruptQuarantinePath is not null) return 0;
+            var migrated = 0;
+            foreach (var game in games)
+            {
+                var legacy = GameRecordIdentity.LegacyKeys(game);
+                if (legacy.Count == 0) continue;
+                var key = GameKey(game);
+                for (var i = 0; i < records.Count; i++)
+                {
+                    var record = records[i];
+                    if (!legacy.Contains(record.GameKey, StringComparer.Ordinal)) continue;
+                    if (records.Any(r => r.GameKey == key && r.Component == record.Component)) continue;
+                    var copy = Clone(record);
+                    copy.GameKey = key;
+                    records[i] = copy;
+                    migrated++;
+                }
+            }
+            if (migrated > 0) SaveUnsafe(records);
+            return migrated;
+        }
+    }
+
+    /// <summary>
+    /// Prepares the relocation repair's ledger change for <see cref="StagedFileCommit"/> (written
+    /// together with the game's other stores): <paramref name="remove"/> is matched by key,
+    /// component and binary directory. Writes nothing; call <see cref="InvalidateCache"/> after the
+    /// commit. Throws when the ledger is unreadable or changes while it is read.
+    /// </summary>
+    internal StagedFileWrite StageReplace(IReadOnlyList<LinuxDeploymentRecord> remove, IReadOnlyList<LinuxDeploymentRecord> add)
+    {
+        lock (_gate)
+        {
+            var before = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            var after = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
+            if (!(before ?? []).AsSpan().SequenceEqual(after ?? []) || (before is null) != (after is null))
+                throw new IOException($"{_path} changed while it was being read. Nothing was changed; try again.");
+            records.RemoveAll(r => remove.Any(x => x.GameKey == r.GameKey && x.Component == r.Component
+                                                   && string.Equals(x.BinaryDirectory, r.BinaryDirectory, StringComparison.Ordinal)));
+            records.AddRange(add.Select(Clone));
+            return new StagedFileWrite(Path.GetFullPath(_path), before, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
+        }
+    }
+
+    /// <summary>Drops the read cache (the file was rewritten outside <see cref="SaveUnsafe"/>).</summary>
+    internal void InvalidateCache()
+    {
+        lock (_gate)
+        {
+            _cached = null;
+            _cachedStamp = null;
+        }
+    }
+
+    // Records under the current key first, so a legacy duplicate (left by a failed migration) never wins.
+    private static IEnumerable<LinuxDeploymentRecord> ForGame(IReadOnlyList<LinuxDeploymentRecord> records, DetectedGame game)
+    {
+        var key = GameKey(game);
+        var current = records.Where(r => r.GameKey == key).ToList();
+        var legacy = GameRecordIdentity.LegacyKeys(game);
+        if (legacy.Count == 0) return current;
+        return current.Concat(records.Where(r => legacy.Contains(r.GameKey, StringComparer.Ordinal)
+                                                 && current.All(c => c.Component != r.Component)));
     }
 
     public void Upsert(LinuxDeploymentRecord record)
@@ -95,7 +175,7 @@ public sealed class LinuxDeploymentRecordStore
         {
             var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
             EnsureWritable();
-            records.RemoveAll(r => r.GameKey == GameKey(game) && r.Component == component);
+            records.RemoveAll(r => GameRecordIdentity.Matches(r.GameKey, game) && r.Component == component);
             SaveUnsafe(records);
         }
     }
@@ -111,8 +191,8 @@ public sealed class LinuxDeploymentRecordStore
         return copy;
     }
 
-    public static string GameKey(DetectedGame game)
-        => game.SteamAppId is int id ? $"steam:{id}" : Path.GetFullPath(game.InstallPath);
+    /// <summary>The game's relocation-tolerant key (<see cref="GameRecordIdentity.Key"/>).</summary>
+    public static string GameKey(DetectedGame game) => GameRecordIdentity.Key(game);
 
     private void EnsureWritable()
     {
@@ -150,7 +230,7 @@ public sealed class LinuxDeploymentRecordStore
             {
                 record.Metadata = record.Metadata is null
                     ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, string>(record.Metadata, StringComparer.OrdinalIgnoreCase);
+                    : JsonStoreMaps.CaseInsensitive(record.Metadata);
             }
             _cached = records;
             _cachedStamp = stamp;

@@ -151,6 +151,10 @@
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding RemoveManualGameCommand}" IsEnabled="{Binding CanRemoveManualGame}"
                       IsVisible="{Binding SelectedGame.IsManuallyAdded, FallbackValue=False, TargetNullValue=False}"
                       ToolTip.Tip="{DynamicResource Ui.RemoveManualTip}"/>
+              <!-- Only shown when RHI's records still point to the folder the game was moved from. -->
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RepairMove}" Command="{Binding RepairAfterMoveCommand}"
+                      IsVisible="{Binding ShowRepairAfterMove}"
+                      ToolTip.Tip="{DynamicResource Ui.RepairMoveTip}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button views:DetailHeaderPanel.Role="Action" Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"

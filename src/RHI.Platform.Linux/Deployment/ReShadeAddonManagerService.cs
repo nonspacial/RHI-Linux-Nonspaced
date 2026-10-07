@@ -5,6 +5,8 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -43,7 +45,7 @@ internal sealed record ReShadeAddonDefinition(
 /// It consumes crosire's Addons.ini plus upstream RHI manifest overrides and supports local custom addons.
 /// First-class RHI components remain protected from duplicate management.
 /// </summary>
-public sealed class ReShadeAddonManagerService
+public sealed class ReShadeAddonManagerService : IGameStateStore
 {
     public const string AddonsIniUrl = "https://raw.githubusercontent.com/crosire/reshade-shaders/list/Addons.ini";
     private static readonly HashSet<string> ExcludedSections = new(StringComparer.OrdinalIgnoreCase) { "00", "21", "26" };
@@ -65,6 +67,7 @@ public sealed class ReShadeAddonManagerService
     private readonly string _cacheDir;
     private readonly string _addonsIniCache;
     private readonly string _statePath;
+    private readonly JsonFileStore<StateDocument> _stateFile;
     private readonly string _customRoot;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -100,6 +103,7 @@ public sealed class ReShadeAddonManagerService
         _addonsIniCache = Path.Combine(_cacheDir, "Addons.ini");
         _customRoot = customRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "Custom", "Addons");
         _statePath = statePath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "addon-manager.json");
+        _stateFile = new JsonFileStore<StateDocument>(_statePath);
         Directory.CreateDirectory(_customRoot);
     }
 
@@ -179,8 +183,7 @@ public sealed class ReShadeAddonManagerService
     {
         var catalog = await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
         var state = LoadState();
-        var key = LinuxDeploymentRecordStore.GameKey(game);
-        var selected = state.Games.TryGetValue(key, out var gs)
+        var selected = GameRecordIdentity.TryGet(state.Games, game, out var gs)
             ? gs.SelectedIds.ToArray()
             : Array.Empty<string>();
         return new(catalog.Select(ToCatalogItem).ToArray(), selected, _customRoot);
@@ -230,9 +233,10 @@ public sealed class ReShadeAddonManagerService
             if (blocked.Length > 0)
                 return ComponentOperationResult.Fail($"These addons are managed by dedicated RHI component rows and cannot be duplicated here: {string.Join(", ", blocked)}");
 
-            var key = LinuxDeploymentRecordStore.GameKey(game);
+            // Refuse before touching the game: the final ledger save would be refused anyway.
+            _stateFile.EnsureWritable();
             var state = LoadState();
-            var old = state.Games.TryGetValue(key, out var existing) ? existing : new GameState();
+            var old = GameRecordIdentity.TryGet(state.Games, game, out var existing) ? existing : new GameState();
 
             foreach (var file in old.Files)
             {
@@ -330,9 +334,9 @@ public sealed class ReShadeAddonManagerService
                 }
 
                 if (normalized.Length == 0)
-                    state.Games.Remove(key);
+                    GameRecordIdentity.Remove(state.Games, game);
                 else
-                    state.Games[key] = newState;
+                    GameRecordIdentity.Set(state.Games, game, newState);
                 SaveState(state);
 
                 return ComponentOperationResult.Ok(
@@ -349,6 +353,58 @@ public sealed class ReShadeAddonManagerService
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             return ComponentOperationResult.Fail($"ReShade Addon Manager failed: {ex.Message}");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// "Repair after move" (Refs #38): moves this game's selection to its current key and re-points
+    /// each owned add-on at its new location when the file is there with the recorded hash; a file
+    /// that is not keeps its old path (it is then simply not found). Writes nothing.
+    /// </summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        _gate.Wait();
+        try
+        {
+            return _stateFile.Stage(state =>
+            {
+                if (state is null) return null;
+                state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
+                var game = move.Game;
+                var entryKey = state.Games.Keys.FirstOrDefault(k => GameRecordIdentity.Matches(k, game))
+                               ?? state.Games.Keys.FirstOrDefault(k => move.MovedRecordKey(k) is not null);
+                if (entryKey is null) return null;
+                var entry = state.Games[entryKey];
+                var changed = false;
+                var deployDir = string.IsNullOrWhiteSpace(game.BinaryDirectory)
+                    ? null
+                    : RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+                foreach (var file in entry.Files)
+                {
+                    var targets = new[] { move.MapPath(file.Path), deployDir is null ? null : Path.Combine(deployDir, Path.GetFileName(file.Path)) };
+                    foreach (var target in targets.OfType<string>().Distinct(StringComparer.Ordinal))
+                    {
+                        if (string.Equals(target, file.Path, StringComparison.Ordinal) || !File.Exists(target)
+                            || !string.Equals(Sha256(target), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        file.Path = target;
+                        changed = true;
+                        break;
+                    }
+                }
+                if (!string.Equals(entryKey, move.NewRecordKey, StringComparison.Ordinal))
+                {
+                    state.Games.Remove(entryKey);
+                    state.Games.TryAdd(move.NewRecordKey, entry);
+                    changed = true;
+                }
+                return changed ? state : null;
+            });
         }
         finally
         {
@@ -745,28 +801,16 @@ public sealed class ReShadeAddonManagerService
             definition.IsCustom ? !string.IsNullOrWhiteSpace(definition.CustomPath64) :
                 !string.IsNullOrWhiteSpace(definition.DownloadUrl64) || !string.IsNullOrWhiteSpace(definition.DownloadUrl) || !string.IsNullOrWhiteSpace(definition.ReleaseApiUrl));
 
+    // An unreadable ledger is copied aside and never replaced: losing it would orphan every
+    // game's owned add-on files (they could no longer be told apart from the user's own).
     private StateDocument LoadState()
     {
-        try
-        {
-            if (!File.Exists(_statePath)) return new StateDocument();
-            var state = JsonSerializer.Deserialize<StateDocument>(File.ReadAllText(_statePath)) ?? new StateDocument();
-            state.Games = new Dictionary<string, GameState>(state.Games, StringComparer.OrdinalIgnoreCase);
-            return state;
-        }
-        catch
-        {
-            return new StateDocument();
-        }
+        var state = _stateFile.Load().Value ?? new StateDocument();
+        state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
+        return state;
     }
 
-    private void SaveState(StateDocument state)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-        var temp = _statePath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, _statePath, overwrite: true);
-    }
+    private void SaveState(StateDocument state) => _stateFile.Save(state);
 
     private static string Sha256(string path)
     {

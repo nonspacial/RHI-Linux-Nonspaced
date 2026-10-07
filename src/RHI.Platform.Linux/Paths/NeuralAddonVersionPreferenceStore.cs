@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -9,14 +11,18 @@ namespace RHI.Platform.Linux.Paths;
 /// Stores optional GitHub release-tag pins for Neural Rendering add-ons.
 /// A missing value means Latest and preserves the upstream auto-update behaviour.
 /// </summary>
-public sealed class NeuralAddonVersionPreferenceStore
+public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, string>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public NeuralAddonVersionPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "neural-addon-version-pins.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "neural-addon-version-pins.json");
+        _file = new JsonFileStore<Dictionary<string, string>>(_path, JsonOptions);
+    }
 
     public string? Get(DetectedGame game, ManagedComponentKind kind)
     {
@@ -24,7 +30,7 @@ public sealed class NeuralAddonVersionPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(Key(game, kind), out var tag) && IsSafeTag(tag) ? tag : null;
+            return GameRecordIdentity.TryGet(entries, game, out var tag, KindSuffix(kind)) && IsSafeTag(tag) ? tag : null;
         }
     }
 
@@ -38,9 +44,8 @@ public sealed class NeuralAddonVersionPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var key = Key(game, kind);
-            if (normalized is null) entries.Remove(key);
-            else entries[key] = normalized;
+            if (normalized is null) GameRecordIdentity.Remove(entries, game, KindSuffix(kind));
+            else GameRecordIdentity.Set(entries, game, normalized, KindSuffix(kind));
             SaveUnsafe(entries);
         }
     }
@@ -52,7 +57,7 @@ public sealed class NeuralAddonVersionPreferenceStore
     public string? GetNeuralRenderingDllVersion(DetectedGame game)
     {
         lock (_gate)
-            return LoadUnsafe().TryGetValue(DllKey(game), out var version) && IsSafeDllVersion(version) ? version : null;
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out var version, DllSuffix) && IsSafeDllVersion(version) ? version : null;
     }
 
     public void SetNeuralRenderingDllVersion(DetectedGame game, string? version)
@@ -63,20 +68,19 @@ public sealed class NeuralAddonVersionPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            if (normalized is null) entries.Remove(DllKey(game));
-            else entries[DllKey(game)] = normalized;
+            if (normalized is null) GameRecordIdentity.Remove(entries, game, DllSuffix);
+            else GameRecordIdentity.Set(entries, game, normalized, DllSuffix);
             SaveUnsafe(entries);
         }
     }
 
-    private static string DllKey(DetectedGame game) => $"{LinuxDeploymentRecordStore.GameKey(game)}|NeuralRenderingDll";
+    private const string DllSuffix = "|NeuralRenderingDll";
 
     // Manifest labels carry spaces and brackets, e.g. "310.8.2 (20/30/40/50)"; only control characters are refused.
     private static bool IsSafeDllVersion(string value)
         => value.Length is > 0 and <= 128 && !value.Any(char.IsControl);
 
-    private static string Key(DetectedGame game, ManagedComponentKind kind)
-        => $"{LinuxDeploymentRecordStore.GameKey(game)}|{kind}";
+    private static string KindSuffix(ManagedComponentKind kind) => $"|{kind}";
 
     private static void EnsureSupported(ManagedComponentKind kind)
     {
@@ -88,26 +92,20 @@ public sealed class NeuralAddonVersionPreferenceStore
         => value.Length is > 0 and <= 128
            && Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._+-]*$", RegexOptions.CultureInvariant);
 
-    private Dictionary<string, string> LoadUnsafe()
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, string>();
-            return new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
-    private void SaveUnsafe(Dictionary<string, string> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private Dictionary<string, string> LoadUnsafe()
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+
+    private void SaveUnsafe(Dictionary<string, string> entries) => _file.Save(entries);
 }

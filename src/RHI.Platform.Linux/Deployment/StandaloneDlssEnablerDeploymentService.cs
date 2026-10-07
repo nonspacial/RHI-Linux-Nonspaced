@@ -5,6 +5,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -39,6 +40,9 @@ public sealed class StandaloneDlssEnablerDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
     private readonly StandaloneDlssEnablerPreferenceStore _preferences;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _preferences;
     private readonly string _cacheRoot;
 
     public StandaloneDlssEnablerDeploymentService(
@@ -80,7 +84,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (!ProxyNames.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"DLL proxy não suportada pelo DLSS Enabler Standalone: {proxyName}.");
 
-        _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = normalized });
+        try { _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = normalized }); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"DLSS Enabler Standalone: proxy {normalized}.");
     }
 
@@ -128,6 +133,11 @@ public sealed class StandaloneDlssEnablerDeploymentService
         var selectedProxy = NormalizeProxyName(proxyName ?? GetPreferences(game).ProxyName);
         if (!ProxyNames.Contains(selectedProxy, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Proxy não suportado: {selectedProxy}.");
+
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
 
         var binaryDir = ResolveBinaryDirectory(game)!;
         var targetPath = Path.Combine(binaryDir, selectedProxy);

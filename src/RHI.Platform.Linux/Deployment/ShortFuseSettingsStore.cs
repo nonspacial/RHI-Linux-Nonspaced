@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -12,7 +14,7 @@ namespace RHI.Platform.Linux.Deployment;
 /// cannot distinguish "explicitly re-enabled" from "never configured", it migrates safely
 /// to OFF rather than silently renaming ReShade/installing UAL on the next ShortFuse install.
 /// </summary>
-public sealed class ShortFuseSettingsStore
+public sealed class ShortFuseSettingsStore : IGameStateStore
 {
     private sealed class SettingsDocument
     {
@@ -28,14 +30,19 @@ public sealed class ShortFuseSettingsStore
     }
 
     private readonly string _path;
+    private readonly JsonFileStore<SettingsDocument> _file;
     private readonly object _gate = new();
 
     public ShortFuseSettingsStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "shortfuse-settings.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "shortfuse-settings.json");
+        // An unreadable file is copied aside and never overwritten; until then every opt-in reads OFF.
+        _file = new JsonFileStore<SettingsDocument>(_path, parse: Parse);
+    }
 
     public bool IsAutoConfigEnabled(DetectedGame game)
     {
-        lock (_gate) return LoadUnsafe().EnabledGames.Contains(LinuxDeploymentRecordStore.GameKey(game));
+        lock (_gate) return LoadUnsafe().EnabledGames.Any(key => GameRecordIdentity.Matches(key, game));
     }
 
     public void SetAutoConfigEnabled(DetectedGame game, bool enabled)
@@ -43,7 +50,7 @@ public sealed class ShortFuseSettingsStore
         lock (_gate)
         {
             var document = LoadUnsafe();
-            document.EnabledGames = Toggle(document.EnabledGames, LinuxDeploymentRecordStore.GameKey(game), enabled);
+            document.EnabledGames = Toggle(document.EnabledGames, game, enabled);
             SaveUnsafe(document);
         }
     }
@@ -51,7 +58,7 @@ public sealed class ShortFuseSettingsStore
     /// <summary>True when the ShortFuse add-on should be deployed as <c>zzz_renodx-dlss.addon64</c>.</summary>
     public bool IsZzzLoadOrderEnabled(DetectedGame game)
     {
-        lock (_gate) return (LoadUnsafe().ZzzLoadOrderGames ?? []).Contains(LinuxDeploymentRecordStore.GameKey(game));
+        lock (_gate) return (LoadUnsafe().ZzzLoadOrderGames ?? []).Any(key => GameRecordIdentity.Matches(key, game));
     }
 
     public void SetZzzLoadOrderEnabled(DetectedGame game, bool enabled)
@@ -59,48 +66,62 @@ public sealed class ShortFuseSettingsStore
         lock (_gate)
         {
             var document = LoadUnsafe();
-            document.ZzzLoadOrderGames = Toggle(document.ZzzLoadOrderGames ?? [], LinuxDeploymentRecordStore.GameKey(game), enabled);
+            document.ZzzLoadOrderGames = Toggle(document.ZzzLoadOrderGames ?? [], game, enabled);
             SaveUnsafe(document);
         }
     }
 
-    private static string[] Toggle(IEnumerable<string> keys, string key, bool enabled)
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable settings file is on disk.</summary>
+    public void EnsureWritable()
     {
-        var set = new HashSet<string>(keys, StringComparer.Ordinal);
-        if (enabled) set.Add(key); else set.Remove(key);
+        lock (_gate) _file.EnsureWritable();
+    }
+
+    // Legacy keys for the game are dropped on every write, so an older entry migrates to the current key.
+    private static string[] Toggle(IEnumerable<string> keys, DetectedGame game, bool enabled)
+    {
+        var set = new HashSet<string>(keys.Where(key => !GameRecordIdentity.Matches(key, game)), StringComparer.Ordinal);
+        if (enabled) set.Add(LinuxDeploymentRecordStore.GameKey(game));
         return set.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
-    private void SaveUnsafe(SettingsDocument document)
+    /// <summary>"Repair after move" (Refs #38): opt-ins stored under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, _path, overwrite: true);
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(document =>
+            {
+                if (document is null) return null;
+                var enabled = move.MoveRecordKeyList(document.EnabledGames);
+                var zzz = move.MoveRecordKeyList(document.ZzzLoadOrderGames);
+                if (enabled is null && zzz is null) return null;
+                if (enabled is not null) document.EnabledGames = enabled;
+                if (zzz is not null) document.ZzzLoadOrderGames = zzz;
+                return document;
+            });
     }
 
-    private SettingsDocument LoadUnsafe()
+    private void SaveUnsafe(SettingsDocument document) => _file.Save(document);
+
+    private SettingsDocument LoadUnsafe() => _file.Load().Value ?? new SettingsDocument();
+
+    private static SettingsDocument? Parse(string text)
     {
-        try
-        {
-            if (!File.Exists(_path)) return new();
-            var text = File.ReadAllText(_path);
-            using var doc = JsonDocument.Parse(text);
+        using var doc = JsonDocument.Parse(text);
 
-            // Legacy settings format: ["disabled-game-key", ...].
-            // The new upstream default is OFF, so no old array entry can grant opt-in authority.
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                return new();
+        // Legacy settings format: ["disabled-game-key", ...].
+        // The new upstream default is OFF, so no old array entry can grant opt-in authority.
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            return new SettingsDocument();
 
-            var value = JsonSerializer.Deserialize<SettingsDocument>(text);
-            if (value?.Version != 2) return new();
-            value.EnabledGames ??= [];
-            return value;
-        }
-        catch
-        {
-            // Corrupt/malformed preferences fail closed: every opt-in remains OFF.
-            return new();
-        }
+        var value = JsonSerializer.Deserialize<SettingsDocument>(text);
+        if (value is null) return null;
+        // A newer format is someone's settings this build cannot read: unreadable, never overwritten.
+        if (value.Version > 2) return null;
+        // Older object formats carried no opt-in authority either: every opt-in stays OFF.
+        if (value.Version < 2) return new SettingsDocument();
+        value.EnabledGames ??= [];
+        return value;
     }
 }

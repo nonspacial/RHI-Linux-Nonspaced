@@ -1,6 +1,8 @@
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -22,21 +24,25 @@ public sealed class Dlssg2030Preferences
 /// Preferences are deliberately separate from deployment ownership so uninstalling the
 /// component does not forget the user's preferred GPU route/proxy for a later field test.
 /// </summary>
-public sealed class Dlssg2030PreferenceStore
+public sealed class Dlssg2030PreferenceStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, Dlssg2030Preferences>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public Dlssg2030PreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlssg2030-preferences.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlssg2030-preferences.json");
+        _file = new JsonFileStore<Dictionary<string, Dlssg2030Preferences>>(_path, JsonOptions);
+    }
 
     public Dlssg2030Preferences Get(DetectedGame game)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            if (!entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var preferences))
+            if (!GameRecordIdentity.TryGet(entries, game, out var preferences))
                 return new Dlssg2030Preferences();
 
             var normalized = (preferences ?? new Dlssg2030Preferences()).Normalize();
@@ -54,31 +60,31 @@ public sealed class Dlssg2030PreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            entries[LinuxDeploymentRecordStore.GameKey(game)] = preferences.Normalize();
+            GameRecordIdentity.Set(entries, game, preferences.Normalize());
             SaveUnsafe(entries);
         }
     }
 
-    private Dictionary<string, Dlssg2030Preferences> LoadUnsafe()
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file is unreadable, so an install can refuse before touching the game.</summary>
+    public void EnsureWritable()
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, Dlssg2030Preferences>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, Dlssg2030Preferences>();
-            return new Dictionary<string, Dlssg2030Preferences>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        lock (_gate) _file.EnsureWritable();
     }
 
-    private void SaveUnsafe(Dictionary<string, Dlssg2030Preferences> entries)
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
+
+    private Dictionary<string, Dlssg2030Preferences> LoadUnsafe()
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+
+    private void SaveUnsafe(Dictionary<string, Dlssg2030Preferences> entries) => _file.Save(entries);
 }

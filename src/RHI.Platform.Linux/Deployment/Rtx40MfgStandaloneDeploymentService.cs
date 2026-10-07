@@ -6,6 +6,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -61,6 +62,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
     private readonly Rtx40MfgPreferenceStore _preferences;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _preferences;
     private readonly string _cacheRoot;
 
     public Rtx40MfgStandaloneDeploymentService(
@@ -114,7 +118,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (IsBinkProxy(requested))
             return ComponentOperationResult.Fail("Os proxies Bink exigem chaining da DLL original (*Hooked.dll). Esse fluxo ainda não é automatizado no RHI-Linux; escolha outro proxy.");
 
-        _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = normalizedGpu, ProxyName = requested });
+        try { _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = normalizedGpu, ProxyName = requested }); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"Universal MFG: {normalizedGpu}, proxy {requested}.");
     }
 
@@ -202,6 +207,11 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail($"Proxy não suportado pelo Universal MFG: {requested}.");
         if (IsBinkProxy(selectedProxy))
             return ComponentOperationResult.Fail("Proxy Bink requer preservar/renomear a DLL original para *Hooked.dll. O RHI-Linux ainda não automatiza esse chaining; escolha outro proxy.");
+
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
 
         var binaryDir = ResolveBinaryDirectory(game)!;
         var targetPath = Path.Combine(binaryDir, selectedProxy);

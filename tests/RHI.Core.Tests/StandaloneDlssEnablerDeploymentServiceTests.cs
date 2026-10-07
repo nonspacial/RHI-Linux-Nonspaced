@@ -100,6 +100,29 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Install_UnreadablePreferenceFile_RefusesBeforeDownloadOrOverride()
+    {
+        // Refs #57: the preference save comes last; an unreadable file must stop the install up front.
+        using var fixture = CreateGame("unreadable-prefs", 0x8664, GraphicsApi.DirectX12);
+        File.WriteAllText(Path.Combine(fixture.Root, "prefs.json"), "{ not json");
+        using var handler = DlssEnablerHandler.WithVersions(
+            ("4.10.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x53)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var result = await service.InstallAsync(fixture.Game, "version.dll");
+
+        Assert.False(result.Success);
+        Assert.Contains("prefs.json", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.Equal("{ not json", File.ReadAllText(Path.Combine(fixture.Root, "prefs.json")));
+    }
+
+    [Fact]
     public async Task Install_BlocksExternalProxyBeforeNetwork()
     {
         using var fixture = CreateGame("foreign", 0x8664, GraphicsApi.DirectX12);

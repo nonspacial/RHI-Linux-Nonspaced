@@ -1,9 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Ux;
 
@@ -22,13 +22,17 @@ public sealed partial class LinuxMotdService
     }
 
     private readonly HttpClient _http;
-    private readonly string _statePath;
+    private readonly JsonFileStore<StateDocument> _state;
     private readonly string _url;
 
     public LinuxMotdService(HttpClient http, string? statePath = null, string? url = null)
     {
         _http = http;
-        _statePath = statePath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "motd-state.json");
+        // Only the last-seen hash: losing it shows the message once more, so it is a cache
+        // (an unreadable file is copied aside and replaced).
+        _state = new JsonFileStore<StateDocument>(
+            statePath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "motd-state.json"),
+            kind: JsonStoreKind.Cache);
         _url = url ?? RhiProductInfo.MotdUrl;
     }
 
@@ -55,28 +59,14 @@ public sealed partial class LinuxMotdService
         }
     }
 
+    /// <summary>Remembers the message as seen (atomic, durable write). Throws <see cref="IOException"/> when it cannot be saved.</summary>
     public void MarkSeen(LinuxMotdMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
-        var directory = Path.GetDirectoryName(_statePath);
-        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-        var temp = _statePath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(new StateDocument { LastSeenSha256 = message.Sha256 }, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, _statePath, true);
+        _state.Save(new StateDocument { LastSeenSha256 = message.Sha256 });
     }
 
-    private StateDocument LoadState()
-    {
-        try
-        {
-            if (!File.Exists(_statePath)) return new StateDocument();
-            return JsonSerializer.Deserialize<StateDocument>(File.ReadAllText(_statePath)) ?? new StateDocument();
-        }
-        catch
-        {
-            return new StateDocument();
-        }
-    }
+    private StateDocument LoadState() => _state.LoadOr(() => new StateDocument());
 
     [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
     private static partial Regex HtmlComment();

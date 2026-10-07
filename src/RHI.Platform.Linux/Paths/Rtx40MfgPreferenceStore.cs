@@ -1,6 +1,8 @@
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -22,21 +24,25 @@ public sealed class Rtx40MfgPreferences
 /// The preference is intentionally separate from deployment ownership so uninstalling
 /// the component does not forget the user's selected proxy for a later reinstall.
 /// </summary>
-public sealed class Rtx40MfgPreferenceStore
+public sealed class Rtx40MfgPreferenceStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, Rtx40MfgPreferences>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public Rtx40MfgPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "rtx40-mfg-standalone-preferences.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "rtx40-mfg-standalone-preferences.json");
+        _file = new JsonFileStore<Dictionary<string, Rtx40MfgPreferences>>(_path, JsonOptions);
+    }
 
     public Rtx40MfgPreferences Get(DetectedGame game)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var preferences)
+            return GameRecordIdentity.TryGet(entries, game, out var preferences)
                 ? (preferences ?? new Rtx40MfgPreferences()).Normalize()
                 : new Rtx40MfgPreferences();
         }
@@ -48,31 +54,31 @@ public sealed class Rtx40MfgPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            entries[LinuxDeploymentRecordStore.GameKey(game)] = preferences.Normalize();
+            GameRecordIdentity.Set(entries, game, preferences.Normalize());
             SaveUnsafe(entries);
         }
     }
 
-    private Dictionary<string, Rtx40MfgPreferences> LoadUnsafe()
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file is unreadable, so an install can refuse before touching the game.</summary>
+    public void EnsureWritable()
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, Rtx40MfgPreferences>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, Rtx40MfgPreferences>();
-            return new Dictionary<string, Rtx40MfgPreferences>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        lock (_gate) _file.EnsureWritable();
     }
 
-    private void SaveUnsafe(Dictionary<string, Rtx40MfgPreferences> entries)
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
+
+    private Dictionary<string, Rtx40MfgPreferences> LoadUnsafe()
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+
+    private void SaveUnsafe(Dictionary<string, Rtx40MfgPreferences> entries) => _file.Save(entries);
 }

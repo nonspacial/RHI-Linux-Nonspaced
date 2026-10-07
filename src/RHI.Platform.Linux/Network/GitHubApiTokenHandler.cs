@@ -9,7 +9,9 @@ namespace RHI.Platform.Linux.Network;
 /// unrelated services that share the application's HttpClient.
 /// A token GitHub answers with 401 (revoked/expired) is dropped for the rest of the session,
 /// and the request is replayed anonymously when that is safe, until the token file is
-/// rewritten. The file itself is never modified and the token is never logged.
+/// rewritten. The token file must be private to the user (mode 0600): a file other users can
+/// read or write is restricted to 0600 before the token is used, and when that is impossible
+/// the token is not used at all. The file's contents are never modified and the token is never logged.
 /// </summary>
 public sealed class GitHubApiTokenHandler : DelegatingHandler
 {
@@ -19,6 +21,12 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
     private string? _cachedToken;
     private bool _loaded;
     private bool _rejected;
+    private DateTime _exposureReportedFor = DateTime.MinValue;
+
+    /// <summary>Group/other permission bits; any of them set exposes the token to other local users.</summary>
+    internal const UnixFileMode ExposingBits =
+        UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute |
+        UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
 
     public GitHubApiTokenHandler(string tokenPath, HttpMessageHandler? innerHandler = null)
         : base(innerHandler ?? new HttpClientHandler())
@@ -32,6 +40,12 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
     /// May be raised on any thread; carries no token data.
     /// </summary>
     public event EventHandler? TokenRejected;
+
+    /// <summary>
+    /// Raised once per token file version when other users could access it. <see cref="GitHubTokenFileExposedEventArgs.Restricted"/>
+    /// says whether RHI set it to 0600 (token used) or could not (token ignored). May be raised on any thread; carries no token data.
+    /// </summary>
+    public event EventHandler<GitHubTokenFileExposedEventArgs>? TokenFileExposed;
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -66,6 +80,45 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
         request.Headers.Authorization = null;
         request.RequestUri = originalUri; // the inner handler rewrites it on redirects
         return await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
+    // Seam so tests can make the chmod fail (as for a file owned by another user); production always uses chmod(2).
+    // Never called on Windows (EnsurePrivate returns first); the guard keeps the call site analysable.
+    internal Action<string, UnixFileMode> SetUnixFileMode { get; set; } = static (path, mode) =>
+    {
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, mode);
+    };
+
+    /// <summary>
+    /// True when the token file is private to the user, restricting it to 0600 first when other
+    /// users could access it. False (token must not be used) when it stays exposed.
+    /// </summary>
+    private bool EnsurePrivate(DateTime writeUtc)
+    {
+        if (OperatingSystem.IsWindows()) return true;
+        var mode = File.GetUnixFileMode(_tokenPath);
+        if ((mode & ExposingBits) == 0) return true;
+
+        var restricted = false;
+        try
+        {
+            SetUnixFileMode(_tokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            restricted = (File.GetUnixFileMode(_tokenPath) & ExposingBits) == 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not ours to change (e.g. owned by another user): reported below, token not used.
+        }
+
+        bool report;
+        lock (_gate)
+        {
+            report = _exposureReportedFor != writeUtc;
+            _exposureReportedFor = writeUtc;
+        }
+        if (report)
+            TokenFileExposed?.Invoke(this, new GitHubTokenFileExposedEventArgs(restricted));
+        return restricted;
     }
 
     private static bool IsReplayable(HttpRequestMessage request) =>
@@ -103,6 +156,11 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
             }
 
             var writeUtc = File.GetLastWriteTimeUtc(_tokenPath);
+            // Checked on every use, not only on reload: a chmod after loading must not keep
+            // handing out a token other users can now read.
+            if (!EnsurePrivate(writeUtc))
+                return null;
+
             lock (_gate)
             {
                 if (_loaded && writeUtc == _lastWriteUtc)
@@ -132,4 +190,11 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
             return null;
         }
     }
+}
+
+/// <summary>The GitHub token file could be accessed by other users.</summary>
+/// <param name="restricted">True when RHI set it to 0600 and uses the token; false when it could not, and ignores the token.</param>
+public sealed class GitHubTokenFileExposedEventArgs(bool restricted) : EventArgs
+{
+    public bool Restricted { get; } = restricted;
 }

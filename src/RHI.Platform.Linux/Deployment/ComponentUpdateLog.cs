@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -35,7 +37,7 @@ public sealed record ComponentUpdateLogGroup(DateTime LocalDate, IReadOnlyList<C
 /// (temp file, fsync, rename). An unreadable file is copied aside and the store then refuses
 /// to record until the user clears it, so a parse error never silently drops the history.
 /// </summary>
-public sealed class ComponentUpdateLogStore
+public sealed class ComponentUpdateLogStore : IGameStateStore
 {
     public const int MaxEntries = 200;
 
@@ -104,6 +106,40 @@ public sealed class ComponentUpdateLogStore
             _corruptQuarantinePath = null;
         }
     }
+
+    /// <summary>
+    /// "Repair after move" (Refs #38): the history of a folder-keyed game follows it to its new key.
+    /// Writes nothing. Throws <see cref="IOException"/> when the history is unreadable (clear it
+    /// first) or changes while it is read.
+    /// </summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        if (move.OldRecordKeys.Count == 0) return null;
+        lock (_gate)
+        {
+            if (!File.Exists(_path)) return null;
+            var before = File.ReadAllBytes(_path);
+            var entries = LoadUnsafe();
+            if (_corruptQuarantinePath is not null)
+                throw new IOException($"{UnreadablePrefix}{_path}{UnreadableSuffix}");
+            if (!File.ReadAllBytes(_path).AsSpan().SequenceEqual(before))
+                throw new IOException($"{_path} changed while it was being read. Nothing was changed; try again.");
+            var changed = false;
+            for (var i = 0; i < entries.Count; i++)
+            {
+                if (move.MovedRecordKey(entries[i].GameKey) is not { } key) continue;
+                entries[i] = entries[i] with { GameKey = key };
+                changed = true;
+            }
+            return changed
+                ? new StagedFileWrite(Path.GetFullPath(_path), before, JsonSerializer.SerializeToUtf8Bytes(entries, JsonOptions))
+                : null;
+        }
+    }
+
+    public const string UnreadablePrefix = "The update history cannot be read: ";
+    public const string UnreadableSuffix = ". Clear the history (a copy of it is kept), then try again.";
 
     public static IReadOnlyList<ComponentUpdateLogGroup> GroupByLocalDate(IEnumerable<ComponentUpdateLogEntry> entries)
         => entries

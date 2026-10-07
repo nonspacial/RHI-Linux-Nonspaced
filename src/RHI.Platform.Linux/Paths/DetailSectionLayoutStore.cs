@@ -1,4 +1,4 @@
-using System.Text.Json;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -27,45 +27,21 @@ public sealed class DetailSectionLayoutStore
         new(DefaultSectionOrder, StringComparer.OrdinalIgnoreCase);
 
     private readonly string _path;
+    private readonly JsonFileStore<DetailSectionLayoutSettings> _file;
 
     public DetailSectionLayoutStore(string? path = null)
     {
         _path = path ?? System.IO.Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "ui-settings.json");
+        _file = new JsonFileStore<DetailSectionLayoutSettings>(_path);
     }
 
     public string Path => _path;
 
-    public DetailSectionLayoutSettings Load()
-    {
-        try
-        {
-            if (!File.Exists(_path))
-                return Normalize(new DetailSectionLayoutSettings());
+    /// <summary>Never throws: a missing or unreadable file yields the default layout (an unreadable one is copied aside).</summary>
+    public DetailSectionLayoutSettings Load() => Normalize(_file.Load().Value);
 
-            var json = File.ReadAllText(_path);
-            var settings = JsonSerializer.Deserialize<DetailSectionLayoutSettings>(json)
-                           ?? new DetailSectionLayoutSettings();
-            return Normalize(settings);
-        }
-        catch
-        {
-            // A corrupt view-state file must never prevent the app from launching.
-            return Normalize(new DetailSectionLayoutSettings());
-        }
-    }
-
-    public void Save(DetailSectionLayoutSettings settings)
-    {
-        var normalized = Normalize(settings);
-        var directory = System.IO.Path.GetDirectoryName(_path)
-                        ?? throw new InvalidOperationException("UI settings path has no parent directory.");
-        Directory.CreateDirectory(directory);
-
-        var tempPath = _path + ".tmp";
-        var json = JsonSerializer.Serialize(normalized, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _path, overwrite: true);
-    }
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable file is on disk.</summary>
+    public void Save(DetailSectionLayoutSettings settings) => _file.Save(Normalize(settings));
 
     public static DetailSectionLayoutSettings Normalize(DetailSectionLayoutSettings? settings)
     {

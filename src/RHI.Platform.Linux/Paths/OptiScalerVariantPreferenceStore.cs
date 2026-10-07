@@ -2,13 +2,16 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
 /// <summary>Persists the preferred OptiScaler release channel per game before installation.</summary>
-public sealed class OptiScalerVariantPreferenceStore
+public sealed class OptiScalerVariantPreferenceStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, OptiScalerVariant>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,14 +20,17 @@ public sealed class OptiScalerVariantPreferenceStore
     };
 
     public OptiScalerVariantPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "optiscaler-variants.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "optiscaler-variants.json");
+        _file = new JsonFileStore<Dictionary<string, OptiScalerVariant>>(_path, JsonOptions);
+    }
 
     public OptiScalerVariant Get(DetectedGame game)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var variant)
+            return GameRecordIdentity.TryGet(entries, game, out var variant)
                 ? variant
                 : OptiScalerVariant.Stable;
         }
@@ -35,34 +41,26 @@ public sealed class OptiScalerVariantPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
-            if (variant == OptiScalerVariant.Stable) entries.Remove(key);
-            else entries[key] = variant;
+            if (variant == OptiScalerVariant.Stable) GameRecordIdentity.Remove(entries, game);
+            else GameRecordIdentity.Set(entries, game, variant);
             SaveUnsafe(entries);
         }
     }
 
-    private Dictionary<string, OptiScalerVariant> LoadUnsafe()
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, OptiScalerVariant>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, OptiScalerVariant>();
-            return new Dictionary<string, OptiScalerVariant>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
-    private void SaveUnsafe(Dictionary<string, OptiScalerVariant> entries)
-    {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private Dictionary<string, OptiScalerVariant> LoadUnsafe()
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
+
+    private void SaveUnsafe(Dictionary<string, OptiScalerVariant> entries) => _file.Save(entries);
 }

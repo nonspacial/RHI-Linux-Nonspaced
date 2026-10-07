@@ -295,6 +295,28 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Install_UnreadablePreferenceFile_RefusesBeforeDownloadOrOverride()
+    {
+        // Refs #57: the preference save comes last; an unreadable file must stop the install up front.
+        using var fixture = CreateGame("unreadable-prefs", 0x8664, GraphicsApi.DirectX12);
+        File.WriteAllText(Path.Combine(fixture.Root, "prefs.json"), "{ not json");
+        using var handler = Rtx40Handler.WithVersions(("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x43)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var result = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.False(result.Success);
+        Assert.Contains("prefs.json", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "winmm", "Game.exe"));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.Equal("{ not json", File.ReadAllText(Path.Combine(fixture.Root, "prefs.json")));
+    }
+
+    [Fact]
     public async Task Install_BlocksExternalProxyBeforeNetwork()
     {
         using var fixture = CreateGame("foreign", 0x8664, GraphicsApi.DirectX12);

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -48,6 +49,9 @@ public sealed class ShortFuseDeploymentService
     private readonly UltimateAsiLoaderDeploymentService _ual;
     private readonly DlssManagerService _dlss;
     private readonly ShortFuseSettingsStore _settings;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _settings;
     private readonly string _cacheRoot;
 
     public ShortFuseDeploymentService(
@@ -121,6 +125,9 @@ public sealed class ShortFuseDeploymentService
         // one path that can leave the file and the record disagreeing.
         if (_records.CorruptLedgerPath is { } quarantined)
             return ComponentOperationResult.Fail($"{LedgerUnreadableMessage} {quarantined}");
+        // Same for the preference file: it is written last, after the rename.
+        try { _settings.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
 
         var stored = GetRecord(game);
         if (stored is null)

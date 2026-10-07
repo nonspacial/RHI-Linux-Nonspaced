@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
 using RHI.Core.Models;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Detection;
 
@@ -22,6 +23,7 @@ public sealed partial class PcGamingWikiGraphicsApiService
 
     private readonly HttpClient _http;
     private readonly string _cachePath;
+    private readonly JsonFileStore<Dictionary<string, string[]>> _cacheFile;
     private readonly TimeProvider _time;
     private readonly TimeSpan _minRequestGap;
     private readonly SemaphoreSlim _cacheGate = new(1, 1);
@@ -39,6 +41,8 @@ public sealed partial class PcGamingWikiGraphicsApiService
         _cachePath = cachePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "RHI", "pcgw_graphics_api_cache.json");
+        _cacheFile = new JsonFileStore<Dictionary<string, string[]>>(
+            _cachePath, new JsonSerializerOptions { WriteIndented = false }, JsonStoreKind.Cache);
         _time = timeProvider ?? TimeProvider.System;
         _minRequestGap = minRequestGap ?? DefaultMinRequestGap;
     }
@@ -241,21 +245,9 @@ public sealed partial class PcGamingWikiGraphicsApiService
             if (_cache is not null)
                 return _cache;
 
-            if (!File.Exists(_cachePath))
-                return _cache = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-
-            try
-            {
-                var json = await File.ReadAllTextAsync(_cachePath, cancellationToken).ConfigureAwait(false);
-                var parsed = JsonSerializer.Deserialize<Dictionary<string, string[]>>(json);
-                _cache = parsed is null
-                    ? new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, string[]>(parsed, StringComparer.OrdinalIgnoreCase);
-            }
-            catch (JsonException)
-            {
-                _cache = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-            }
+            // A cache only: an unreadable file is copied aside and rebuilt by the next store.
+            var parsed = _cacheFile.Load().Value;
+            _cache = JsonStoreMaps.CaseInsensitive(parsed);
 
             return _cache;
         }
@@ -272,14 +264,7 @@ public sealed partial class PcGamingWikiGraphicsApiService
         try
         {
             _cache![pageUrl] = names;
-            var parent = Path.GetDirectoryName(_cachePath);
-            if (!string.IsNullOrWhiteSpace(parent))
-                Directory.CreateDirectory(parent);
-
-            var temp = _cachePath + ".tmp";
-            var json = JsonSerializer.Serialize(_cache, new JsonSerializerOptions { WriteIndented = false });
-            await File.WriteAllTextAsync(temp, json, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, _cachePath, overwrite: true);
+            _cacheFile.Save(_cache);
         }
         finally
         {

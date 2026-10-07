@@ -6,6 +6,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -45,6 +46,9 @@ public sealed class Dlssg2030UnlockDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
     private readonly Dlssg2030PreferenceStore _preferences;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _preferences;
     private readonly string _cacheRoot;
 
     public Dlssg2030UnlockDeploymentService(
@@ -93,11 +97,15 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (!ProxyNames.Contains(normalizedProxy, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Nome de proxy não suportado pelo RTX 20 FG Unlock legado: {proxyName}.");
 
-        _preferences.Set(game, new Dlssg2030Preferences
+        try
         {
-            GpuGeneration = normalizedGpu,
-            ProxyName = normalizedProxy
-        });
+            _preferences.Set(game, new Dlssg2030Preferences
+            {
+                GpuGeneration = normalizedGpu,
+                ProxyName = normalizedProxy
+            });
+        }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado: {normalizedGpu}, proxy {normalizedProxy}.");
     }
 
@@ -186,6 +194,11 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail($"{selectedProxy} já existe e não pertence ao RTX 20 FG Unlock legado gerenciado pelo RHI. Escolha outro proxy; o RHI não sobrescreve uma DLL externa.");
         if (File.Exists(iniPath))
             return ComponentOperationResult.Fail($"{IniFileName} já existe e não é gerenciado pelo RHI. A instalação foi bloqueada para não adotar/sobrescrever uma configuração externa.");
+
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
 
         Dlssg2030SnapshotInfo snapshot;
         Dlssg2030CachedPayload payload;

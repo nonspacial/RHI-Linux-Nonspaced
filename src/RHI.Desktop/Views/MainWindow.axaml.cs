@@ -11,6 +11,7 @@ using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.Views;
@@ -990,7 +991,11 @@ public sealed partial class MainWindow : Window
         save.Click += (_, _) =>
         {
             var excluded = checks.Where(x => x.Box.IsChecked != true).Select(x => x.File.Selector).ToArray();
-            vm.SetShaderPackExcludedFiles(pack.Id, excluded);
+            if (vm.SetShaderPackExcludedFiles(pack.Id, excluded) is { } notSaved)
+            {
+                status.Text = notSaved; // keep the dialog open: nothing was saved
+                return;
+            }
             status.Text = LF("Seleção salva: {0}/{1} arquivo(s) ativos.", "Selection saved: {0}/{1} active file(s).", checks.Count - excluded.Length, checks.Count);
             dialog?.Close();
         };
@@ -1891,7 +1896,9 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             if (DataContext is MainWindowViewModel vm)
-                vm.StatusText = LF("Não foi possível salvar o layout das seções: {0}", "Could not save section layout: {0}", ex.Message);
+                vm.StatusText = ex is JsonStoreUnavailableException
+                    ? MainWindowViewModel.StoreSaveFailedText(ex)
+                    : LF("Não foi possível salvar o layout das seções: {0}", "Could not save section layout: {0}", ex.Message);
         }
     }
 

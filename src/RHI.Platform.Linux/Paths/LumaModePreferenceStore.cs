@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -17,9 +19,10 @@ public enum LumaModePreference
 /// Auto means "follow the upstream manifest/default policy". Enabled/Disabled are
 /// user authority and survive refresh/restart.
 /// </summary>
-public sealed class LumaModePreferenceStore
+public sealed class LumaModePreferenceStore : IGameStateStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, LumaModePreference>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -30,6 +33,7 @@ public sealed class LumaModePreferenceStore
     public LumaModePreferenceStore(string? path = null)
     {
         _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "luma-mode.json");
+        _file = new JsonFileStore<Dictionary<string, LumaModePreference>>(_path, JsonOptions);
     }
 
     public LumaModePreference Get(DetectedGame game)
@@ -38,7 +42,7 @@ public sealed class LumaModePreferenceStore
         lock (_gate)
         {
             var map = LoadUnsafe();
-            return map.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var value)
+            return GameRecordIdentity.TryGet(map, game, out var value)
                 ? value
                 : LumaModePreference.Auto;
         }
@@ -50,34 +54,26 @@ public sealed class LumaModePreferenceStore
         lock (_gate)
         {
             var map = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
-            if (preference == LumaModePreference.Auto) map.Remove(key);
-            else map[key] = preference;
+            if (preference == LumaModePreference.Auto) GameRecordIdentity.Remove(map, game);
+            else GameRecordIdentity.Set(map, game, preference);
             SaveUnsafe(map);
         }
     }
 
-    private Dictionary<string, LumaModePreference> LoadUnsafe()
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.Ordinal);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, LumaModePreference>>(
-                File.ReadAllText(_path), JsonOptions) ?? new();
-            return new Dictionary<string, LumaModePreference>(parsed, StringComparer.Ordinal);
-        }
-        catch
-        {
-            return new(StringComparer.Ordinal);
-        }
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = new Dictionary<string, LumaModePreference>(current ?? new(), StringComparer.Ordinal);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
-    private void SaveUnsafe(Dictionary<string, LumaModePreference> map)
-    {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(map, JsonOptions));
-        File.Move(tmp, _path, overwrite: true);
-    }
+    private Dictionary<string, LumaModePreference> LoadUnsafe()
+        => new(_file.Load().Value ?? new Dictionary<string, LumaModePreference>(), StringComparer.Ordinal);
+
+    private void SaveUnsafe(Dictionary<string, LumaModePreference> map) => _file.Save(map);
 }

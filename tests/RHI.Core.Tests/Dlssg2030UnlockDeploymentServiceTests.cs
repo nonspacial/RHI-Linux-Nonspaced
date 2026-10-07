@@ -132,6 +132,28 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Install_UnreadablePreferenceFile_RefusesBeforeDownloadOrOverride()
+    {
+        // Refs #57: the preference save comes last; an unreadable file must stop the install up front.
+        using var fixture = CreateGame("unreadable-prefs", 0x8664, GraphicsApi.DirectX12);
+        File.WriteAllText(Path.Combine(fixture.Root, "prefs.json"), "{ not json");
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x32), UpstreamIni("SM75"));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var result = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "version.dll");
+
+        Assert.False(result.Success);
+        Assert.Contains("prefs.json", result.Message, StringComparison.Ordinal);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+        Assert.Equal("{ not json", File.ReadAllText(Path.Combine(fixture.Root, "prefs.json")));
+    }
+
+    [Fact]
     public async Task Install_Rtx20_WritesSm75RouterAndMetadata()
     {
         using var fixture = CreateGame("rtx20", 0x8664, GraphicsApi.DirectX12);
