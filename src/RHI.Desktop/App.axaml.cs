@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
@@ -43,14 +44,17 @@ public sealed class App : Application
             var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
             var scanner = new GameLibraryScanner(detectors, [libraryPolicy]);
             var launcher = new LinuxGameLauncher();
-            var deployment = new TransactionalFileDeploymentService();
+            var records = new LinuxDeploymentRecordStore();
+            var wineOverrides = new WineDllOverrideService();
+            // Roll back deployments a crash interrupted (#23) before any service can deploy again.
+            var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides);
+            var recovery = RecoverInterruptedDeployments(journal, records);
+            var deployment = new TransactionalFileDeploymentService(journal);
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
             var pcgwData = new PcgwCentralDataService(http);
             var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
-            var records = new LinuxDeploymentRecordStore();
-            var wineOverrides = new WineDllOverrideService();
             var reshadeExtractor = new ReShadeArchiveExtractor();
-            var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest);
+            var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest, journal: journal);
             var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
             var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
             var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
@@ -138,6 +142,7 @@ public sealed class App : Application
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
             tokenNoticeTarget = vm;
+            ReportRecoveryWhenSwept(vm, journal, records, recovery);
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,
@@ -147,5 +152,44 @@ public sealed class App : Application
             };
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static (JournalRecoveryReport? Report, int Deferred, string? Error) RecoverInterruptedDeployments(
+        DeploymentJournal journal, LinuxDeploymentRecordStore records)
+    {
+        try
+        {
+            // Normally an empty directory listing; runs off the UI thread's context (no deadlock).
+            var report = Task.Run(() => LinuxDeploymentRecovery.RecoverAsync(journal, records)).GetAwaiter().GetResult();
+            return (report, report is null ? journal.ReferencedOperationIds().Count : 0, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, journal.ReferencedOperationIds().Count, ex.Message);
+        }
+    }
+
+    /// <summary>Sweeps transaction leftovers in the background, logs everything, then tells the user once.</summary>
+    private static void ReportRecoveryWhenSwept(
+        MainWindowViewModel vm,
+        DeploymentJournal journal,
+        LinuxDeploymentRecordStore records,
+        (JournalRecoveryReport? Report, int Deferred, string? Error) recovery)
+    {
+        _ = Task.Run(() =>
+        {
+            LeftoverSweepReport? sweep = null;
+            try
+            {
+                sweep = LinuxDeploymentRecovery.Sweep(journal, records);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                sweep = new LeftoverSweepReport([], [], [ex.Message]);
+            }
+            var summary = LinuxDeploymentRecovery.Record(recovery.Report, recovery.Deferred, sweep);
+            if (summary.NeedsNotice)
+                Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(summary));
+        });
     }
 }

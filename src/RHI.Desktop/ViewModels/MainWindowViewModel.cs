@@ -912,6 +912,29 @@ public partial class MainWindowViewModel : ObservableObject
         "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."),
         StatusText);
 
+    /// <summary>
+    /// Start-up deployment recovery (#23) undid, could not undo, or deferred interrupted installs, or
+    /// moved leftover copies aside: say so once in the status line. Must run on the UI thread.
+    /// </summary>
+    public void ReportDeploymentRecovery(DeploymentRecoverySummary summary)
+    {
+        var parts = new List<string>();
+        if (summary.RolledBack > 0)
+            parts.Add(L($"RHI desfez {summary.RolledBack} instalação(ões) interrompida(s) por um encerramento inesperado; os arquivos voltaram ao estado anterior.",
+                $"RHI undid {summary.RolledBack} install(s) interrupted by an unexpected shutdown; the files are back as they were."));
+        if (summary.RollbackFailed > 0)
+            parts.Add(L($"RHI não conseguiu desfazer {summary.RollbackFailed} instalação(ões) interrompida(s) e tentará de novo na próxima abertura. Detalhes: {summary.LogPath}",
+                $"RHI could not undo {summary.RollbackFailed} interrupted install(s) and will try again at the next start. Details: {summary.LogPath}"));
+        if (summary.Deferred > 0)
+            parts.Add(L($"{summary.Deferred} instalação(ões) interrompida(s) serão desfeitas quando o registro de implantações estiver legível. Detalhes: {summary.LogPath}",
+                $"{summary.Deferred} interrupted install(s) will be undone once the deployment ledger is readable. Details: {summary.LogPath}"));
+        if (summary.Quarantined > 0)
+            parts.Add(L($"RHI guardou {summary.Quarantined} cópia(s) antiga(s) que não pôde provar redundantes. Detalhes: {summary.LogPath}",
+                $"RHI set aside {summary.Quarantined} old copy(ies) it could not prove redundant. Details: {summary.LogPath}"));
+        if (parts.Count > 0)
+            StatusText = _statusNotice.Raise(string.Join(" ", parts), StatusText);
+    }
+
     partial void OnStatusTextChanged(string value)
     {
         var decorated = _statusNotice.Decorate(value);

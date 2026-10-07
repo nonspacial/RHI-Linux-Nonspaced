@@ -221,7 +221,7 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
             else set.Release();
             return new(results, null, false);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not SimulatedCrashException)
         {
             var rollback = operation is not null
                 ? await operation.RollbackAsync().ConfigureAwait(false)

@@ -54,6 +54,13 @@ public sealed class LinuxDeploymentRecordStore
             return LoadUnsafe().Where(r => r.GameKey == GameKey(game)).Select(Clone).ToArray();
     }
 
+    /// <summary>Copies of every record in the ledger (all games).</summary>
+    public IReadOnlyList<LinuxDeploymentRecord> All()
+    {
+        lock (_gate)
+            return LoadUnsafe().Select(Clone).ToArray();
+    }
+
     public void Upsert(LinuxDeploymentRecord record)
     {
         lock (_gate)

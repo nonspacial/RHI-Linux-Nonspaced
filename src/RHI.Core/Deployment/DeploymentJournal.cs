@@ -40,6 +40,12 @@ public sealed class DeploymentJournal
 
     public string Directory { get; }
 
+    /// <summary>Test seam: every operation of this journal "crashes" when it reaches its commit (see <see cref="SimulatedCrashException"/>).</summary>
+    internal bool CrashAtCommitForTesting { get; set; }
+
+    /// <summary>Test seam: observes each operation as it starts.</summary>
+    internal Action<DeploymentOperation>? OperationStartedForTesting { get; set; }
+
     /// <summary>Starts an operation: takes its lock and writes an empty pending entry.</summary>
     /// <param name="commitProbe">Opaque marker handed to the recovery's <c>isCommitted</c> check (e.g. the record that commits it).</param>
     public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default)
@@ -58,6 +64,7 @@ public sealed class DeploymentJournal
             FileCleanup.TryDelete(LockPath(id));
             throw;
         }
+        OperationStartedForTesting?.Invoke(operation);
         return operation;
     }
 
@@ -220,6 +227,11 @@ public sealed class DeploymentOperation : IAsyncDisposable
     public async Task<IReadOnlyList<string>> CommitAsync()
     {
         if (_completed) return [];
+        if (_journal.CrashAtCommitForTesting)
+        {
+            AbandonAsIfCrashed();
+            throw new SimulatedCrashException();
+        }
         _completed = true;
         _committed = true;
         var problems = new List<string>();
@@ -292,6 +304,12 @@ public sealed class DeploymentOperation : IAsyncDisposable
         _lock = null;
         if (deleteLockFile) FileCleanup.TryDelete(_journal.LockPath(Id));
     }
+}
+
+/// <summary>Test-only: thrown where a fault-injection test makes the process "die"; no rollback may run for it.</summary>
+internal sealed class SimulatedCrashException : Exception
+{
+    public SimulatedCrashException() : base("Simulated crash (test fault injection).") { }
 }
 
 public sealed class JournalCompensation
