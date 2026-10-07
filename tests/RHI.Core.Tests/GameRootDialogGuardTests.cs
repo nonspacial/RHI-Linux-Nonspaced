@@ -67,6 +67,61 @@ public sealed class GameRootDialogGuardTests
         Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Guarded");
     }
 
+    [Fact]
+    public async Task AddManualGame_ASymlinkSpellingOfAListedFolder_IsRefusedAsADuplicate()
+    {
+        // The scan merges cards by PathIdentity; the Add check must agree (integration w1 detect review 7).
+        using var fixture = await ViewModelFixture.StartAsync([]);
+        var tunic = fixture.Game("Tunic");
+        var (first, firstMessage) = await fixture.Vm.TryAddManualGameAsync(new LinuxManualGameEntry { Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath });
+        Assert.True(first, firstMessage);
+        var link = Path.Combine(fixture.Root, "games-link");
+        Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
+
+        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+            new LinuxManualGameEntry { Name = "Tunic again", InstallPath = Path.Combine(link, "Tunic") + "/" });
+
+        Assert.False(added);
+        Assert.Equal("That game directory is already in the library.", message);
+        Assert.Equal(["Tunic"], fixture.Library.Load().ManualGames.Select(g => g.Name));
+    }
+
+    [Fact]
+    public async Task AddManualGame_ASymlinkSpellingOfASavedEntry_IsRefusedAsAlreadySaved()
+    {
+        using var fixture = await ViewModelFixture.StartAsync([]);
+        var hades = fixture.Game("Hades");
+        var state = fixture.Library.Load();
+        state.ManualGames.Add(new LinuxManualGameEntry { Name = "Hades", InstallPath = hades.InstallPath });
+        fixture.Library.Save(state); // saved by another window; not listed until the next scan
+        var link = Path.Combine(fixture.Root, "games-link");
+        Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
+
+        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+            new LinuxManualGameEntry { Name = "Hades again", InstallPath = Path.Combine(link, "Hades") });
+
+        Assert.False(added);
+        Assert.Equal("That manual game is already saved.", message);
+        Assert.Single(fixture.Library.Load().ManualGames);
+    }
+
+    [Fact]
+    public async Task AddManualGame_ThroughASymlinkedFolder_SelectsTheNewCard()
+    {
+        using var fixture = await ViewModelFixture.StartAsync([]);
+        var celeste = fixture.Game("Celeste");
+        var link = Path.Combine(fixture.Root, "games-link");
+        Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
+
+        var (added, message) = await fixture.Vm.TryAddManualGameAsync(new LinuxManualGameEntry
+        {
+            Name = "Celeste", InstallPath = Path.Combine(link, "Celeste"), ExecutablePath = Path.Combine(link, "Celeste", "Celeste.exe")
+        });
+
+        Assert.True(added, message);
+        Assert.Equal("Celeste", fixture.Vm.SelectedGame?.Name);
+    }
+
     [Theory]
     [MemberData(nameof(RefusedRoots))]
     public async Task EditGame_RefusesTheFolder_AndSavesNoOverride(string kind)

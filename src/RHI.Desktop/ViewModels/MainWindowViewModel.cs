@@ -3064,14 +3064,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
             return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
 
-        var normalizedPath = Path.GetFullPath(entry.InstallPath);
-        if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
+        // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a
+        // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+        var identity = PathIdentity.Canonicalize(entry.InstallPath);
+        bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
+        if (_allGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
             return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
         var state = _libraryStore.Load();
-        if (state.ManualGames.Any(existing =>
-                Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
+        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
             return (false, T("Vm.ManualGameAlreadySaved"));
 
         state.ManualGames.Add(entry);
@@ -3083,8 +3085,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         string message;
         if (!await RefreshWhenIdleAsync(ManualOnly))
             message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);
-        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded &&
-                     Path.GetFullPath(game.LibraryIdentityPath ?? game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)) is { } added)
+        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded && SameFolder(game.LibraryIdentityPath ?? game.InstallPath)) is { } added)
         {
             SelectedGame = added;
             message = TF("Vm.AddedManualLibrary", entry.Name);
