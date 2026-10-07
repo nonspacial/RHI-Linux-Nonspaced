@@ -128,4 +128,34 @@ public sealed class OneShotStatusNoticeTests
         Assert.Equal("Ready · New notice", notice.Decorate("Ready"));
         Assert.Equal("Done", notice.Decorate("Done"));
     }
+
+    // w1-policy review finding 4: the DLSS manifest failure lands after the scan; it must not replace the
+    // scan's problems notice, whichever of the two is raised first.
+    [Fact]
+    public void SecondNotice_IsAddedToTheFirst_NotPutInItsPlace()
+    {
+        var notice = Create();
+        notice.SetBusy(true);
+        notice.Raise("DLSS manifest unavailable", "Scanning");
+
+        var line = notice.Raise("Scan problems: Steam failed", "Scan complete");
+
+        Assert.Equal("Scan complete · DLSS manifest unavailable · Scan problems: Steam failed", line);
+        notice.SetBusy(false);
+        RunDeferred();
+        Assert.Equal("Ready", notice.Decorate("Ready"));
+    }
+
+    [Fact]
+    public void NoticeRaisedAfterTheScanSettled_IsAppendedToTheProblemsLine()
+    {
+        var notice = Create();
+        notice.SetBusy(true);
+        var scanLine = notice.Raise("Scan problems: Steam failed", "Scan complete");
+        notice.SetBusy(false);
+        RunDeferred();
+
+        Assert.Equal("Scan complete · Scan problems: Steam failed · DLSS manifest unavailable",
+            notice.Raise("DLSS manifest unavailable", scanLine));
+    }
 }

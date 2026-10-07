@@ -881,7 +881,9 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message);
+            // Appended as a notice: this can land after the scan, whose problems notice or the selected
+            // game's Ready line must stay on screen (Refs #43).
+            StatusText = _statusNotice.Raise(LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message), StatusText);
         }
     }
 

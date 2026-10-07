@@ -50,6 +50,55 @@ public sealed class StartupScanTests : IDisposable
         Assert.True(timer.ElapsedMilliseconds < 2000, $"scan started after {timer.ElapsedMilliseconds} ms");
     }
 
+    // w1-policy review finding 4: the manifest failure lands after the scan and must not replace its
+    // problems notice.
+    [Fact]
+    public async Task DlssManifestFailureAfterTheScan_IsAppendedToTheScanProblemsLine()
+    {
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(1500)
+        };
+        var vm = CreateViewModel(dlss, new FailingDetector());
+
+        var timer = Stopwatch.StartNew();
+        while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.Contains("DLSS", StringComparison.Ordinal))
+            await Task.Delay(50);
+
+        // The scan's line stays in front with its problems notice; the failure is appended, not put in its
+        // place (tests have no UI dispatcher, so the notice's settle never runs and only the order shows it).
+        var line = vm.StatusText;
+        Assert.Contains("DLSS", line);
+        Assert.Contains("BrokenLauncher", line);
+        Assert.StartsWith(LibraryScanStatusText.Done(0), line);
+    }
+
+    private MainWindowViewModel CreateViewModel(DlssManagerService dlss, IGameDetector detector)
+    {
+        var settings = new LinuxSettingsStore(Path.Combine(_root, "settings.json"), Path.Combine(_root, "cache"), Path.Combine(_root, "data"));
+        var current = settings.Load();
+        current.AutoUpdateComponents = false;
+        settings.Save(current);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var managed = new LinuxManagedComponentService(records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
+        return new MainWindowViewModel(
+            new GameLibraryScanner([detector]),
+            new LinuxGameLauncher(),
+            new NoProbe(),
+            dlss,
+            managed,
+            new GraphicsApiOverrideStore(Path.Combine(_root, "api.json")),
+            new OptiScalerVariantPreferenceStore(Path.Combine(_root, "opti.json")),
+            settings,
+            new LinuxUpdateAllService(records, managed),
+            new LinuxDlssDefaultsService(dlss, records),
+            new LinuxGameLibraryStore(Path.Combine(_root, "library.json")),
+            records);
+    }
+
     [Fact]
     public async Task HangingManifestRequest_FallsBackToTheCachedCopyWithinItsDeadline()
     {
@@ -103,6 +152,13 @@ public sealed class StartupScanTests : IDisposable
             started.TrySetResult();
             return Task.FromResult<IReadOnlyList<DetectedGame>>([]);
         }
+    }
+
+    private sealed class FailingDetector : IGameDetector
+    {
+        public string Name => "BrokenLauncher";
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+            => throw new IOException("library unreadable");
     }
 
     private sealed class NoProbe : IGameRuntimeProbe
