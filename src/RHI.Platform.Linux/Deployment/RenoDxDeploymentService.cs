@@ -52,6 +52,9 @@ public sealed class RenoDxDeploymentService
         _engineIniFiles = new UpstreamEngineIniFileManager(http, Path.Combine(_cacheDir, "engine-files"));
     }
 
+    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="TrustedDownloadPolicy.RenoDxAddons"/>).</summary>
+    public static TrustedDownloadPolicy DownloadPolicy => TrustedDownloadPolicy.RenoDxAddons;
+
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
     public Task<RenoDxModEntry?> PrepareCompatibilityAsync(
@@ -82,6 +85,8 @@ public sealed class RenoDxDeploymentService
             var latestUrl = mod.UrlFor(architecture);
             if (string.IsNullOrWhiteSpace(latestUrl))
                 return new ManagedUpdateCheck(true, false, "Current RenoDX catalog match has no compatible payload for this architecture.", record.Version, CouldNotCheck: true);
+            if (!DownloadPolicy.IsTrusted(latestUrl))
+                return new ManagedUpdateCheck(true, false, new UntrustedDownloadException(latestUrl, DownloadPolicy).Message, record.Version, CouldNotCheck: true);
             if (!string.Equals(record.SourceUrl, latestUrl, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(record.Version, mod.Name, StringComparison.OrdinalIgnoreCase))
                 return new ManagedUpdateCheck(true, true,
@@ -224,6 +229,9 @@ public sealed class RenoDxDeploymentService
         var url = mod.UrlFor(architecture);
         if (string.IsNullOrWhiteSpace(url))
             return ComponentOperationResult.Fail($"{mod.Name} does not publish a compatible {(architecture == PeArchitecture.X86 ? "32-bit" : "64-bit")} add-on.");
+        // DEP-06: wiki, database, manifest and Unity links alike must be HTTPS on a trusted host; checked before any download.
+        if (!DownloadPolicy.IsTrusted(url))
+            return ComponentOperationResult.Fail(new UntrustedDownloadException(url, DownloadPolicy).Message);
         var fileName = Path.GetFileName(new Uri(url).LocalPath);
         var extension = Path.GetExtension(fileName);
         if (!extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
@@ -765,6 +773,7 @@ public sealed class RenoDxDeploymentService
     // CacheStamp = provenance proving the cached bytes are the ones RHI downloaded (#142).
     internal async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
     {
+        DownloadPolicy.Validate(url);
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
         var source = cache + ".source";
@@ -777,6 +786,7 @@ public sealed class RenoDxDeploymentService
         using (var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
             response.EnsureSuccessStatusCode();
+            DownloadPolicy.ValidateFinal(response, url);
             remote = RenoDxRemoteStamp.FromResponse(response);
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
@@ -828,8 +838,9 @@ public sealed class RenoDxDeploymentService
         {
             using var headCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             headCts.CancelAfter(TimeSpan.FromSeconds(10));
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var request = new HttpRequestMessage(HttpMethod.Head, DownloadPolicy.Validate(url));
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headCts.Token).ConfigureAwait(false);
+            DownloadPolicy.ValidateFinal(response, url);
             return response.IsSuccessStatusCode
                 ? (RenoDxRemoteStamp.FromResponse(response), null)
                 : (null, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");

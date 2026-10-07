@@ -217,7 +217,7 @@ public sealed class RenoDxUnityDatabaseTests : IDisposable
                 return Task.FromResult(Text(Fixture));
             }
             if (namedCatalogue && url == RenoDxCatalogService.StructuredDbUrl)
-                return Task.FromResult(Text("""[ { "name": "Outer Wilds", "snapshotUrl": "https://cdn.test/renodx-outerwilds.addon64" } ]"""));
+                return Task.FromResult(Text("""[ { "name": "Outer Wilds", "snapshotUrl": "https://clshortfuse.github.io/renodx/renodx-outerwilds.addon64" } ]"""));
             if (!url.EndsWith(".addon64", StringComparison.Ordinal))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             var bytes = new byte[120 * 1024];

@@ -163,7 +163,7 @@ public sealed class RenoDxInstallTests : IDisposable
                 {
                   "version": 3,
                   "snapshotOverrides": {
-                    "Engine Template Game": "https://cdn.test/renodx-engine-template.addon64"
+                    "Engine Template Game": "https://clshortfuse.github.io/renodx/renodx-engine-template.addon64"
                   },
                   "engineIniFiles": {
                     "Engine Template Game": "engine-template.ini"
@@ -182,7 +182,7 @@ public sealed class RenoDxInstallTests : IDisposable
                     Content = new StringContent("[SystemSettings]\nr.HDR.EnableHDROutput=1\n", Encoding.UTF8, "text/plain")
                 });
             }
-            if (url == "https://cdn.test/renodx-engine-template.addon64")
+            if (url == "https://clshortfuse.github.io/renodx/renodx-engine-template.addon64")
             {
                 var bytes = new byte[120 * 1024];
                 bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
@@ -215,7 +215,7 @@ public sealed class RenoDxInstallTests : IDisposable
             }
             if (url == RenoDxCatalogService.WikiUrl)
             {
-                const string html = "<table><tr><td>Manifest Game</td><td><a href=\"https://cdn.test/renodx-manifest.addon64\">snapshot</a></td></tr></table>";
+                const string html = "<table><tr><td>Manifest Game</td><td><a href=\"https://clshortfuse.github.io/renodx/renodx-manifest.addon64\">snapshot</a></td></tr></table>";
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
             }
 
@@ -232,7 +232,7 @@ public sealed class RenoDxInstallTests : IDisposable
         {
             if (request.RequestUri?.AbsoluteUri == RenoDxCatalogService.WikiUrl)
             {
-                const string html = "<table><tr><th>Name</th><th>Links</th><th>Status</th></tr><tr><td>Street Fighter 6</td><td><a href=\"https://cdn.test/renodx-sf6.addon64\">snapshot</a></td><td>✅</td></tr></table>";
+                const string html = "<table><tr><th>Name</th><th>Links</th><th>Status</th></tr><tr><td>Street Fighter 6</td><td><a href=\"https://clshortfuse.github.io/renodx/renodx-sf6.addon64\">snapshot</a></td><td>✅</td></tr></table>";
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
             }
             var bytes = new byte[120 * 1024];

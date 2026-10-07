@@ -194,8 +194,8 @@ public sealed class ControlUePostInstallTests : IDisposable
             if (request.RequestUri?.AbsoluteUri == RenoDxCatalogService.WikiUrl)
             {
                 const string html = "<table><tr><th>Name</th><th>Links</th><th>Status</th></tr>" +
-                                    "<tr><td>Control Ultimate Edition</td><td><a href=\"https://cdn.test/renodx-control-rr.addon64\">snapshot</a></td><td>✅</td></tr>" +
-                                    "<tr><td>Other Remedy Game</td><td><a href=\"https://cdn.test/renodx-control-rr.addon64\">snapshot</a></td><td>✅</td></tr></table>";
+                                    "<tr><td>Control Ultimate Edition</td><td><a href=\"https://clshortfuse.github.io/renodx/renodx-control-rr.addon64\">snapshot</a></td><td>✅</td></tr>" +
+                                    "<tr><td>Other Remedy Game</td><td><a href=\"https://clshortfuse.github.io/renodx/renodx-control-rr.addon64\">snapshot</a></td><td>✅</td></tr></table>";
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
             }
             var bytes = new byte[120 * 1024];

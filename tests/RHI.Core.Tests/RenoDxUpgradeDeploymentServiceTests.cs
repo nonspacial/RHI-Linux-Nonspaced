@@ -37,7 +37,7 @@ public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
             requested.Add(req.RequestUri!.AbsoluteUri);
             if (req.RequestUri.AbsoluteUri.EndsWith("manifest.json", StringComparison.Ordinal))
                 return JsonResponse(ManifestJson());
-            if (req.RequestUri.AbsoluteUri == "https://example.test/renodx-upgrade.addon64")
+            if (req.RequestUri.AbsoluteUri == "https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-upgrade.addon64")
                 return BytesResponse(payload);
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
@@ -49,7 +49,7 @@ public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
         Assert.True(result.Success, result.Message);
         var target = Path.Combine(game.BinaryDirectory!, "addons", RenoDxUpgradeDeploymentService.AddonFileName64);
         Assert.True(File.Exists(target));
-        Assert.Contains("https://example.test/renodx-upgrade.addon64", requested);
+        Assert.Contains("https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-upgrade.addon64", requested);
         var record = store.Find(game, ManagedComponentKind.RenoDXUpgrade);
         Assert.NotNull(record);
         Assert.Equal(target, record!.Files.Single().Path);
@@ -79,7 +79,7 @@ public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
         var result = await service.InstallAsync(game);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal("https://example.test/renodx-upgrade.addon32", download);
+        Assert.Equal("https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-upgrade.addon32", download);
         Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, RenoDxUpgradeDeploymentService.AddonFileName32)));
     }
 
@@ -244,8 +244,8 @@ public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
         "renodx-upgrade": {
           "packageName": "RenoDX Upgrade",
           "description": "ITM/resource upgrades",
-          "downloadUrl32": "https://example.test/renodx-upgrade.addon32",
-          "downloadUrl64": "https://example.test/renodx-upgrade.addon64",
+          "downloadUrl32": "https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-upgrade.addon32",
+          "downloadUrl64": "https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-upgrade.addon64",
           "repositoryUrl": "https://github.com/OopyDoopy/renodx",
           "disabled": {{disabled.ToString().ToLowerInvariant()}}
         }

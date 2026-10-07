@@ -61,15 +61,15 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         [
           {
             "tag_name": "ue-dof-fix-1.0.1",
-            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://example.test/1.0.1" } ]
+            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://github.com/test/1.0.1" } ]
           },
           {
             "tag_name": "ue-dof-fix-1.0.3",
-            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://example.test/1.0.3", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } ]
+            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://github.com/test/1.0.3", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } ]
           },
           {
             "tag_name": "ue-dof-fix-1.0.2",
-            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://example.test/1.0.2" } ]
+            "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://github.com/test/1.0.2" } ]
           }
         ]
         """;
@@ -77,7 +77,7 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         {
           "version": 2,
           "componentUrls": {
-            "ueDofFix": "https://cdn.example.test/dof/{version}/renodx-universal_ue-dof-fix.addon64"
+            "ueDofFix": "https://github.com/test/dof/{version}/renodx-universal_ue-dof-fix.addon64"
           }
         }
         """;
@@ -93,7 +93,7 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         var release = await service.ResolveLatestReleaseAsync();
 
         Assert.Equal("1.0.3", release.Version);
-        Assert.Equal("https://cdn.example.test/dof/1.0.3/renodx-universal_ue-dof-fix.addon64", release.AssetUrl);
+        Assert.Equal("https://github.com/test/dof/1.0.3/renodx-universal_ue-dof-fix.addon64", release.AssetUrl);
         Assert.Null(release.Sha256); // Override payload is not assumed byte-identical to the GitHub asset.
     }
 
@@ -108,7 +108,7 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
             "assets": [
               {
                 "name": "renodx-universal_ue-dof-fix.addon64",
-                "browser_download_url": "https://example.test/fix",
+                "browser_download_url": "https://github.com/test/fix",
                 "digest": "sha256:{{digest}}"
               }
             ]
@@ -124,7 +124,7 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         var release = await service.ResolveLatestReleaseAsync();
 
         Assert.Equal("1.2.0", release.Version);
-        Assert.Equal("https://example.test/fix", release.AssetUrl);
+        Assert.Equal("https://github.com/test/fix", release.AssetUrl);
         Assert.Equal(digest, release.Sha256);
     }
 
@@ -152,13 +152,13 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         game.DofFixForcedByManifest = true;
         var payload = MakePePayload(256 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var releases = ReleaseListJson("1.0.2", "https://example.test/fix", digest);
+        var releases = ReleaseListJson("1.0.2", "https://github.com/test/fix", digest);
         using var http = new HttpClient(new FakeHandler(req =>
         {
             var url = req.RequestUri!.AbsoluteUri;
             if (url.Contains("rhi-repo/releases", StringComparison.OrdinalIgnoreCase)) return JsonResponse(releases);
             if (url == "https://manifest.test/manifest.json") return JsonResponse("{\"version\":2}");
-            if (url == "https://example.test/fix") return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+            if (url == "https://github.com/test/fix") return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
             throw new InvalidOperationException("Unexpected URL: " + url);
         }));
         var recordsPath = Path.Combine(_root, "lifecycle-records.json");

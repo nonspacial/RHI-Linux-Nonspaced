@@ -375,6 +375,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.";
                     }
+                    else if (preparedRenoDx is not null && UntrustedRenoDxLink(preparedRenoDx) is { } refused)
+                    {
+                        // DEP-06: never offer a download RHI would refuse; say why instead.
+                        component.ActionAllowed = false;
+                        component.Note = refused;
+                    }
                     else if (!reShadePresent && !(managedLumaFramework is not null && !_lumaPolicy.GetCachedOrDefault(game).RenoDxCompatible))
                     {
                         component.Note = "RenoDX HDR exige ReShade com suporte completo a add-ons; o RHI instalará ReShade automaticamente antes do RenoDX.";
@@ -811,6 +817,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 ? ModAuthorCredit.ForRenoDx(_renodx.TryGetPreparedCompatibility(game, out var entry) ? entry : null, game)
                 : ModAuthorCredit.ForLuma(record, _lumaFramework.GetCachedNamedMatch(game));
         }
+    }
+
+    // The refusal text when every link of the entry is outside the RenoDX host allow-list; null when one is usable.
+    internal static string? UntrustedRenoDxLink(RenoDxModEntry entry)
+    {
+        var urls = new[] { entry.UrlFor(PeArchitecture.X64), entry.UrlFor(PeArchitecture.X86) }
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (urls.Length == 0 || urls.Any(RenoDxDeploymentService.DownloadPolicy.IsTrusted)) return null;
+        return new UntrustedDownloadException(urls[0], RenoDxDeploymentService.DownloadPolicy).Message;
     }
 
     private static ComponentOperationResult? PatchTargetGuard(DetectedGame game)

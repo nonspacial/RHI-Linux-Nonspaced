@@ -651,8 +651,10 @@ public sealed class ReShadeAddonManagerService
         var temp = destination + $".tmp-{Guid.NewGuid():N}";
         try
         {
-            using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            // DEP-06: add-on DLLs only over HTTPS from GitHub / GitHub Pages; checked before the request and after redirects.
+            using var response = await _http.GetAsync(TrustedDownloadPolicy.ReShadeAddons.Validate(url), HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
+            TrustedDownloadPolicy.ReShadeAddons.ValidateFinal(response, url);
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
             await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
