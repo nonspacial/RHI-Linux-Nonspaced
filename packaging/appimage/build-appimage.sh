@@ -4,7 +4,7 @@
 #   packaging/appimage/build-appimage.sh [--out DIR]
 #
 # Layout (the same as the published AppImage):
-#   AppRun                        sets PATH/LD_LIBRARY_PATH and runs usr/bin/RHI
+#   AppRun                        runs usr/bin/RHI (no PATH/LD_LIBRARY_PATH changes)
 #   rhi-linux.desktop, rhi-linux.png, .DirIcon
 #   usr/bin/                      self-contained linux-x64 publish (no .pdb); needs no host .NET
 #   usr/share/applications/rhi-linux.desktop

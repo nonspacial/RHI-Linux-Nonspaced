@@ -1,6 +1,7 @@
 #!/bin/sh
+# Runs the self-contained publish by absolute path. No PATH or LD_LIBRARY_PATH changes: the .NET
+# host finds its native libraries next to the executable, and anything exported here would be
+# inherited by every game, Wine and Steam process RHI starts.
 set -eu
 HERE="${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}"
-export PATH="$HERE/usr/bin${PATH:+:$PATH}"
-export LD_LIBRARY_PATH="$HERE/usr/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 exec "$HERE/usr/bin/RHI" "$@"
