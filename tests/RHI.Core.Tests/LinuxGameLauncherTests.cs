@@ -4,6 +4,7 @@ using RHI.Platform.Linux.Launch;
 
 namespace RHI.Core.Tests;
 
+[System.Runtime.Versioning.SupportedOSPlatform("linux")]
 public sealed class LinuxGameLauncherTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-launch-test-" + Guid.NewGuid().ToString("N"));

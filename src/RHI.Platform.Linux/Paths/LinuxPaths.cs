@@ -9,6 +9,8 @@ public static class LinuxPaths
         ?? Path.Combine(Home, ".local", "share");
     public static string CacheHome => Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
         ?? Path.Combine(Home, ".cache");
+    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME")
+        ?? Path.Combine(Home, ".local", "state");
 
     public static IEnumerable<string> SteamRoots()
         => DistinctExisting(SteamRootCandidates(Home, DataHome));

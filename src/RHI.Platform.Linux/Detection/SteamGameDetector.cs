@@ -108,12 +108,14 @@ public sealed partial class SteamGameDetector : IGameDetector
     /// <summary>
     /// How to ask the Steam client that owns <paramref name="steamRoot"/> to start an app: Flatpak Steam
     /// through <c>flatpak run</c> (there is no host <c>steam</c> binary), host Steam through its binary,
-    /// else the <c>steam://</c> URL handler.
+    /// else the <c>steam://</c> URL handler. The root is judged by its spelling and by its real path, so a
+    /// host symlink into <c>~/.var/app/com.valvesoftware.Steam</c> still reaches the Flatpak client.
     /// </summary>
     internal static string LaunchCommandFor(int appId, string steamRoot, bool hostSteamOnPath)
     {
-        var normalised = steamRoot.Replace('\\', '/');
-        if (normalised.Contains("/.var/app/com.valvesoftware.Steam/", StringComparison.Ordinal))
+        static bool IsFlatpak(string root)
+            => (root.Replace('\\', '/').TrimEnd('/') + "/").Contains("/.var/app/com.valvesoftware.Steam/", StringComparison.Ordinal);
+        if (IsFlatpak(steamRoot) || IsFlatpak(LinuxPaths.Canonicalise(steamRoot)))
             return $"flatpak run com.valvesoftware.Steam -applaunch {appId}";
         return hostSteamOnPath ? $"steam -applaunch {appId}" : $"xdg-open steam://rungameid/{appId}";
     }

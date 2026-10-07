@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Launch;
 
@@ -12,11 +14,22 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <summary>How long a launch is watched for an immediate failure before it is left to run.</summary>
     public static readonly TimeSpan DefaultEarlyExitWindow = TimeSpan.FromSeconds(3);
 
+    /// <summary>Per-launch stderr logs kept in the log folder; older ones are deleted when a launch starts.</summary>
+    internal const int KeptLaunchLogs = 20;
+
     private readonly TimeSpan _earlyExitWindow;
+    private readonly string _logDirectory;
 
     public LinuxGameLauncher() : this(DefaultEarlyExitWindow) { }
 
-    internal LinuxGameLauncher(TimeSpan earlyExitWindow) => _earlyExitWindow = earlyExitWindow;
+    internal LinuxGameLauncher(TimeSpan earlyExitWindow, string? logDirectory = null)
+    {
+        _earlyExitWindow = earlyExitWindow;
+        _logDirectory = logDirectory ?? DefaultLogDirectory;
+    }
+
+    /// <summary><c>$XDG_STATE_HOME/rhi-linux/logs/launch</c>: one stderr file per launch.</summary>
+    internal static string DefaultLogDirectory => Path.Combine(LinuxPaths.StateHome, "rhi-linux", "logs", "launch");
 
     public bool CanLaunch(DetectedGame game) => !string.IsNullOrWhiteSpace(game.LaunchCommand);
 
@@ -26,31 +39,22 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <summary>
     /// Starts the launch command and watches it briefly: a command that ends at once with a failure exit
     /// code (program missing, store client refused) throws <see cref="GameLaunchFailedException"/> with its
-    /// last stderr line. A command still running after the window is left to run; its stderr keeps being
-    /// drained (so a full pipe never blocks it) and the process handle is released when it ends.
+    /// last stderr line. The command's stderr goes to a per-launch file under
+    /// <see cref="DefaultLogDirectory"/>, never to a pipe: a pipe would tie the game to RHI's lifetime
+    /// (every stderr write fails once RHI exits, and a <c>set -e</c> wrapper that logs to stderr aborts).
+    /// A command still running after the window is left to run and its process handle is released when
+    /// it ends.
     /// </summary>
     public async Task LaunchAsync(DetectedGame game, GameLaunchOptions options, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
 
-        var startInfo = BuildStartInfo(game, options);
-        startInfo.RedirectStandardError = true;
-        var process = new Process { StartInfo = startInfo };
-        var errors = new Queue<string>();
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (string.IsNullOrWhiteSpace(e.Data)) return;
-            lock (errors)
-            {
-                errors.Enqueue(e.Data.Trim());
-                while (errors.Count > 20) errors.Dequeue();
-            }
-        };
+        var stderrLog = CreateLaunchLog(game);
+        var process = new Process { StartInfo = BuildStartInfo(game, options, stderrLog) };
         try
         {
             process.Start();
-            process.BeginErrorReadLine();
         }
         catch
         {
@@ -66,17 +70,15 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
 
         int exitCode;
-        string? detail;
         using (process)
         {
-            await exited.ConfigureAwait(false); // also waits for stderr to be read to the end
+            await exited.ConfigureAwait(false);
             exitCode = process.ExitCode;
-            lock (errors) detail = errors.LastOrDefault();
         }
-        if (exitCode != 0) throw new GameLaunchFailedException(exitCode, detail);
+        if (exitCode != 0) throw new GameLaunchFailedException(exitCode, LastLine(stderrLog));
     }
 
-    internal static ProcessStartInfo BuildStartInfo(DetectedGame game, GameLaunchOptions options)
+    internal static ProcessStartInfo BuildStartInfo(DetectedGame game, GameLaunchOptions options, string? stderrLog = null)
     {
         var psi = new ProcessStartInfo("/bin/sh")
         {
@@ -91,11 +93,45 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
             foreach (var pair in options.Environment)
                 psi.Environment[pair.Key] = pair.Value;
         }
-        // Not a login shell: the desktop session already has the user's environment, and sourcing the
-        // login profiles on every launch is slow and can print into (or change) the launch.
-        psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add(BuildShellCommand(game.LaunchCommand!, options.CommandPrefix));
+
+        // Commands RHI builds (store hand-offs, direct Wine launches) name absolute paths or programs in
+        // the session PATH, so they skip the login profiles: sourcing them on every launch is slow and can
+        // print into (or change) the launch. A command the user typed runs the way their terminal runs it:
+        // a login shell keeps what ~/.profile sets up (PATH additions, exported variables), which a session
+        // started from the desktop menu often lacks, and ~/.local/bin and ~/bin are on PATH even when the
+        // profile does not add them.
+        var userCommand = IsUserCommand(game);
+        if (userCommand) AddUserBinDirectories(psi);
+        psi.ArgumentList.Add(userCommand ? "-lc" : "-c");
+        var command = BuildShellCommand(game.LaunchCommand!, options.CommandPrefix);
+        psi.ArgumentList.Add(stderrLog is null ? command : $"exec 2>>{ShellQuote(stderrLog)}\n{command}");
         return psi;
+    }
+
+    /// <summary>A launch command the user typed (Add game dialog), as opposed to one a detector built.</summary>
+    internal static bool IsUserCommand(DetectedGame game)
+        => game.IsManuallyAdded || string.Equals(game.Source, "Manual", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Puts <c>~/.local/bin</c> and <c>~/bin</c> (when they exist) in front of PATH unless PATH already
+    /// has them, so a wrapper script the user installed there runs by its bare name even when their
+    /// ~/.profile does not add it (several distributions' default profiles do not).
+    /// </summary>
+    private static void AddUserBinDirectories(ProcessStartInfo psi)
+    {
+        var home = psi.Environment.TryGetValue("HOME", out var configured) && !string.IsNullOrWhiteSpace(configured)
+            ? configured
+            : LinuxPaths.Home;
+        if (string.IsNullOrWhiteSpace(home)) return;
+        var path = psi.Environment.TryGetValue("PATH", out var current) ? current ?? string.Empty : string.Empty;
+        var entries = path.Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Select(entry => entry.TrimEnd('/'))
+            .ToHashSet(StringComparer.Ordinal);
+        var missing = new[] { Path.Combine(home, ".local", "bin"), Path.Combine(home, "bin") }
+            .Where(dir => Directory.Exists(dir) && !entries.Contains(dir.TrimEnd('/')))
+            .ToArray();
+        if (missing.Length == 0) return;
+        psi.Environment["PATH"] = string.Join(':', missing) + (path.Length > 0 ? ":" + path : string.Empty);
     }
 
     /// <summary>
@@ -142,6 +178,61 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         // such as `WINEPREFIX=... wine game.exe`: placing Gamescope directly before the assignment
         // would make the assignment look like an executable after `--`.
         return $"exec {commandPrefix.Trim()} /bin/sh -c {ShellQuote(launchCommand)}";
+    }
+
+    /// <summary>
+    /// A fresh, empty stderr file for this launch (the oldest logs beyond <see cref="KeptLaunchLogs"/> are
+    /// deleted first); null when the log folder cannot be written, and the launch then keeps RHI's own
+    /// stderr (still no pipe) and a failure is reported without its last line.
+    /// </summary>
+    private string? CreateLaunchLog(DetectedGame game)
+    {
+        try
+        {
+            Directory.CreateDirectory(_logDirectory);
+            foreach (var old in Directory.EnumerateFiles(_logDirectory, "*.log")
+                         .OrderByDescending(Path.GetFileName, StringComparer.Ordinal)
+                         .Skip(KeptLaunchLogs - 1))
+                File.Delete(old);
+            var path = Path.Combine(_logDirectory, $"{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{FileSafe(game.Name)}-{Guid.NewGuid():N}.log");
+            using (new FileStream(path, FileMode.CreateNew, FileAccess.Write)) { }
+            return path;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"[RHI launch] no stderr log in {_logDirectory} ({ex.Message}); a failed launch is reported without its stderr");
+            return null;
+        }
+    }
+
+    private static string FileSafe(string? name)
+    {
+        var builder = new StringBuilder();
+        foreach (var ch in name ?? string.Empty)
+            builder.Append(char.IsAsciiLetterOrDigit(ch) ? ch : '_');
+        var text = builder.ToString().Trim('_');
+        return text.Length == 0 ? "game" : text.Length > 60 ? text[..60] : text;
+    }
+
+    /// <summary>Last non-empty line of the launch's stderr file (its final 64 KiB).</summary>
+    private static string? LastLine(string? stderrLog)
+    {
+        if (stderrLog is null) return null;
+        try
+        {
+            using var stream = new FileStream(stderrLog, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            stream.Position = Math.Max(0, stream.Length - 64 * 1024);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            return reader.ReadToEnd()
+                .Split('\n')
+                .Select(line => line.Trim())
+                .LastOrDefault(line => line.Length > 0);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"[RHI launch] stderr log {stderrLog} unreadable ({ex.Message})");
+            return null;
+        }
     }
 
     private static string ShellQuote(string value)
