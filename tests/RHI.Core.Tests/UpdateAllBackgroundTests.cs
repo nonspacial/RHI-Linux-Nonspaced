@@ -51,6 +51,27 @@ public sealed class UpdateAllBackgroundTests
     }
 
     [Fact]
+    public async Task ManualRun_ChecksRenoDxFirst_UpdatesOnlyWhenFlagged()
+    {
+        using var fixture = new Fixture();
+        var current = fixture.Game("renodx-current");
+        var rebuilt = fixture.Game("renodx-rebuilt");
+        var offline = fixture.Game("renodx-offline");
+        foreach (var game in new[] { current, rebuilt, offline }) fixture.Record(game, ManagedComponentKind.RenoDX);
+        var backend = new FakeBackend();
+        backend.GameChecks[rebuilt.Name] = new(true, true, "rebuilt");
+        backend.GameChecks[offline.Name] = new(true, false, "offline", CouldNotCheck: true);
+        var service = fixture.Service(backend);
+
+        var result = await service.RunAsync([current, rebuilt, offline], _ => [], LinuxUpdateRunMode.Manual);
+
+        Assert.Equal(3, backend.CheckCalls.Count);
+        Assert.Equal([ManagedComponentKind.RenoDX], backend.UpdateCalls);
+        Assert.Equal((1, 1, 1), (result.ChangedCount, result.CurrentCount, result.UncheckedCount));
+        Assert.EndsWith("· 1 could not be checked.", result.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BackgroundRun_ChecksAndSkipsCurrentComponent()
     {
         using var fixture = new Fixture();
@@ -204,6 +225,7 @@ public sealed class UpdateAllBackgroundTests
     private sealed class FakeBackend : ILinuxManagedUpdateBackend
     {
         public Dictionary<ManagedComponentKind, ManagedUpdateCheck> Checks { get; } = new();
+        public Dictionary<string, ManagedUpdateCheck> GameChecks { get; } = new();
         public Dictionary<ManagedComponentKind, ComponentOperationResult> UpdateResults { get; } = new();
         public List<ManagedComponentKind> CheckCalls { get; } = [];
         public List<ManagedComponentKind> UpdateCalls { get; } = [];
@@ -216,7 +238,8 @@ public sealed class UpdateAllBackgroundTests
         {
             CheckCalls.Add(component);
             LastIndexedFiles[component] = indexedFiles;
-            return Task.FromResult(Checks.TryGetValue(component, out var value) ? value : new ManagedUpdateCheck(true, false, "current"));
+            return Task.FromResult(GameChecks.TryGetValue(game.Name, out var byGame) ? byGame
+                : Checks.TryGetValue(component, out var value) ? value : new ManagedUpdateCheck(true, false, "current"));
         }
 
         public async Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)

@@ -14,7 +14,9 @@ public sealed record ManagedUpdateCheck(
     bool UpdateAvailable,
     string Message,
     string? InstalledVersion = null,
-    string? LatestVersion = null);
+    string? LatestVersion = null,
+    // The check could not tell (remote unreachable, no validators, game files missing): no update.
+    bool CouldNotCheck = false);
 
 public sealed record LinuxUpdateItemResult(
     string GameName,
@@ -22,18 +24,21 @@ public sealed record LinuxUpdateItemResult(
     bool Success,
     bool Changed,
     bool Deferred,
-    string Message);
+    string Message,
+    bool Unchecked = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
     public int ChangedCount => Items.Count(item => item.Changed);
     public int FailedCount => Items.Count(item => !item.Success && !item.Deferred);
     public int DeferredCount => Items.Count(item => item.Deferred);
-    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred);
+    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked);
+    public int UncheckedCount => Items.Count(item => item.Unchecked);
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
-        : $"Update All: {ChangedCount} updated · {CurrentCount} current · {DeferredCount} deferred · {FailedCount} failed.";
+        : $"Update All: {ChangedCount} updated · {CurrentCount} current · {DeferredCount} deferred · {FailedCount} failed"
+          + (UncheckedCount > 0 ? $" · {UncheckedCount} could not be checked." : ".");
 }
 
 public interface ILinuxManagedUpdateBackend
@@ -101,9 +106,10 @@ public sealed class LinuxGameRunningProbe : IGameRunningProbe
 
 /// <summary>
 /// Linux-native Update All coordinator. Only the component families explicitly accepted for
-/// the supported managed-component set participate. Manual mode refreshes every managed component to the latest
-/// compatible payload; background mode first performs a version/identity check and mutates only
-/// components with an actual pending update. A failure is isolated to one game/component.
+/// the supported managed-component set participate. Background mode first performs a version/identity
+/// check and mutates only components with an actual pending update. Manual mode does the same for
+/// the families in <see cref="CheckedInManualMode"/> (upstream 2.8.0: RenoDX only when flagged) and
+/// refreshes the rest to the latest compatible payload (#113). A failure is isolated to one game/component.
 /// </summary>
 public sealed class LinuxUpdateAllService
 {
@@ -127,6 +133,9 @@ public sealed class LinuxUpdateAllService
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
+
+    // Families whose check is reliable enough to skip a manual reinstall when nothing changed.
+    private static readonly ManagedComponentKind[] CheckedInManualMode = [ManagedComponentKind.RenoDX];
 
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ILinuxManagedUpdateBackend _backend;
@@ -188,19 +197,13 @@ public sealed class LinuxUpdateAllService
                     cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
-                        if (mode == LinuxUpdateRunMode.Background)
+                        if (mode == LinuxUpdateRunMode.Background || CheckedInManualMode.Contains(component))
                         {
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
-                            if (!check.Managed)
+                            if (!check.Managed || !check.UpdateAvailable)
                             {
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
-                                    check.Message));
-                                continue;
-                            }
-                            if (!check.UpdateAvailable)
-                            {
-                                results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
-                                    check.Message));
+                                    check.Message, Unchecked: check.Managed && check.CouldNotCheck));
                                 continue;
                             }
                         }

@@ -44,7 +44,7 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 
 ### #14 — RenoDX Unity add-on URL and download cache (2.7.6)
 
-- 2.7.6 RenoDX Unity add-on: any `renodx-unityengine.addon64/32` URL (manifest, RHI database or wiki, including the old `notvoosh.github.io` Pages links) is resolved to the `NotVoosh/renodx-unity` GitHub Releases snapshot. Downloads are cached in `~/.cache/rhi-linux/renodx/` and reused unless the remote `Content-Length` explicitly differs (upstream 2.7.9 rule: a failed HEAD or missing length keeps the cache). Linux addition: a `.source` sidecar ties each cached file to its URL so a same-named add-on from another repository is never served from cache. Host allow-listing for catalogue URLs remains DEP-06.
+- 2.7.6 RenoDX Unity add-on: any `renodx-unityengine.addon64/32` URL (manifest, RHI database or wiki, including the old `notvoosh.github.io` Pages links) is resolved to the `NotVoosh/renodx-unity` GitHub Releases snapshot. Downloads are cached in `~/.cache/rhi-linux/renodx/` and reused while the remote matches (upstream 2.7.9 rule: a failed HEAD or a server sending no validators keeps the cache). Linux addition: a `.source` sidecar ties each cached file to its URL and to the ETag/Last-Modified/size it was served with, so a same-named add-on from another repository, or a same-size snapshot rebuild, is never served from cache (#107; upstream compares size only). A URL-only sidecar from an older build is refreshed once. Host allow-listing for catalogue URLs remains DEP-06.
 
 ### #15 — Unity per-game INI settings from the RHI database (2.7.9)
 
@@ -75,3 +75,12 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #129 — RenoDX updates: rebuilt snapshots, Update All only installs real updates (2.8.0)
+
+- Update All (manual and background) checks each RHI-managed RenoDX mod before touching it and reinstalls only when the remote add-on changed; an unchanged mod is reported as current with no download, no file write and no history entry. Other families keep the manual refresh until #113 (`LinuxUpdateAllService.CheckedInManualMode`).
+- Detection: upstream flags a rebuilt snapshot from its size (HEAD `Content-Length`) or, for `/snapshot/` and `*.github.io` URLs, by downloading the file and comparing hashes. Linux records the ETag, Last-Modified and size the add-on was served with in the RenoDX record and compares them with a HEAD of the same URL (ETag first, then Last-Modified, then size). Both hosts (GitHub Releases and GitHub Pages/renodx.com) send ETag and Last-Modified, so same-size rebuilds are seen without a download. A changed catalogue URL or mod name still counts as an update.
+- A failed or refused HEAD, or a server sending no validators, is never an update: the item is counted as "could not be checked" in the Update All summary. A managed add-on modified outside RHI is still never overwritten (the update fails and the file is kept).
+- Records installed before this change carry no stamp: a remote Last-Modified newer than the install time counts as an update, otherwise the remote size is compared with the installed file (upstream's legacy rule). A same-size rebuild that was served from the old size-only cache before installing is therefore missed once; the next install records a stamp.
