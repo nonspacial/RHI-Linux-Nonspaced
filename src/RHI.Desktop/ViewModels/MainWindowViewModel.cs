@@ -1015,11 +1015,18 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
-        SelectedGame.UserGraphicsApiOverride = api;
         var game = SelectedGame;
-        var saved = TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences");
+        // The store is the authority (it is re-read on every refresh): a refused write reverts the dropdown to the
+        // saved value instead of claiming the choice holds for the session (review m4).
+        if (!TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences", sessionOnly: false))
+        {
+            var failure = _lastPersistFailure;
+            LoadGraphicsApiOverride(game);
+            StatusText = failure;
+            return;
+        }
+        game.UserGraphicsApiOverride = api;
         ReevaluateCurrentGameForApiOverride(game);
-        if (!saved) StatusText = _lastPersistFailure;
     }
 
     partial void OnSelectedOptiScalerVariantChanged(string value)
@@ -1035,7 +1042,11 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
         var game = SelectedGame;
-        if (!TryPersist(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value)), "Ui.WhatGamePreferences")) return;
+        if (!TryPersist(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value)), "Ui.WhatGamePreferences", sessionOnly: false))
+        {
+            LoadOptiScalerVariant(game);
+            return;
+        }
         StatusText = TF("Vm.OptiScalerVariantSelected", value, game.Name);
     }
 
@@ -1044,9 +1055,14 @@ public partial class MainWindowViewModel : ObservableObject
         if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
         var game = SelectedGame;
-        var saved = TryPersist(() => _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences");
+        if (!TryPersist(() => _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences", sessionOnly: false))
+        {
+            var failure = _lastPersistFailure;
+            LoadLumaModePreference(game);
+            StatusText = failure;
+            return;
+        }
         ReevaluateCurrentGameForLumaPolicy(game);
-        if (!saved) StatusText = _lastPersistFailure;
     }
 
     partial void OnSelectedHdrModeChanged(string value)
@@ -2677,7 +2693,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>
     /// Runs a store write; on failure logs it and reports in the status line instead of letting the exception reach
-    /// the dispatcher (UI-05). <paramref name="sessionOnly"/> says the in-memory change stays for this session.
+    /// the dispatcher (UI-05). <paramref name="sessionOnly"/> says the in-memory change stays for this session; pass
+    /// false where the store is the authority and the caller reverts (dropdowns, edit/add/remove of library entries).
+    /// Every exception is caught on purpose (review nit 8): this is the UI boundary, so even a programming error in a
+    /// store reads as "Could not save …" rather than ending the session — the full stack goes to the error log.
     /// </summary>
     private bool TryPersist(Action save, string whatKey, bool sessionOnly = true)
     {
@@ -2734,16 +2753,20 @@ public partial class MainWindowViewModel : ObservableObject
                 return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
         }
 
-        _libraryState = _libraryStore.Load();
+        // Mutate a fresh copy and adopt it only once it is on disk (review m2): a refused save must not stay in
+        // _libraryState, or the next unrelated library save would persist it.
+        var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        _libraryState.GameEdits[key] = new LinuxGameEditOverride
+        state.GameEdits[key] = new LinuxGameEditOverride
         {
             LaunchProvider = launchProvider,
             PatchExecutablePath = executable,
             GameRootPath = root,
             BinaryDirectory = binaries
         }.Normalize();
-        _libraryStore.Save(_libraryState);
+        if (!TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false))
+            return (false, _lastPersistFailure);
+        _libraryState = state;
 
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
@@ -2757,10 +2780,12 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
         if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
             return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
-        _libraryState = _libraryStore.Load();
+        var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        var removed = _libraryState.GameEdits.Remove(key);
-        _libraryStore.Save(_libraryState);
+        var removed = state.GameEdits.Remove(key);
+        if (!TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false))
+            return (false, _lastPersistFailure);
+        _libraryState = state;
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         await RefreshAsync(NoDetectors);
@@ -2787,14 +2812,16 @@ public partial class MainWindowViewModel : ObservableObject
         if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
             return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
-        _libraryState = _libraryStore.Load();
-        if (_libraryState.ManualGames.Any(existing =>
+        var state = _libraryStore.Load();
+        if (state.ManualGames.Any(existing =>
                 Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
             return (false, T("Vm.ManualGameAlreadySaved"));
 
-        _libraryState.ManualGames.Add(entry);
-        _libraryState.FilterMode = "All Games";
-        _libraryStore.Save(_libraryState);
+        state.ManualGames.Add(entry);
+        state.FilterMode = "All Games";
+        if (!TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false))
+            return (false, _lastPersistFailure);
+        _libraryState = state;
         LibraryFilterMode = "All Games";
         await RefreshAsync(ManualOnly);
         SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
@@ -2807,17 +2834,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
         var installPath = Path.GetFullPath(selected.InstallPath);
-        _libraryState = _libraryStore.Load();
-        _libraryState.ManualGames.RemoveAll(entry =>
+        var state = _libraryStore.Load();
+        state.ManualGames.RemoveAll(entry =>
         {
             try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
             catch { return false; }
         });
-        if (!TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary", sessionOnly: false))
-        {
-            _libraryState = _libraryStore.Load();
-            return;
-        }
+        if (!TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false)) return;
+        _libraryState = state;
         await RefreshAsync(ManualOnly);
         StatusText = TF("Vm.RemovedFromManualLibraryGameFiles", selected.Name);
     }

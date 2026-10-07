@@ -14,10 +14,12 @@ public sealed class UiExceptionHandlingTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"rhi-errors-{Guid.NewGuid():N}");
     private readonly List<string> _reports = [];
+    private readonly ManualClock _clock = new();
 
     public UiExceptionHandlingTests()
     {
         UiLocalizationService.Apply("en-US");
+        UiExceptionGuard.ResetThrottle(_clock);
         UiExceptionGuard.UseLog(new UiErrorLog(Path.Combine(_root, "logs")));
         UiExceptionGuard.SetReporter(_reports.Add);
     }
@@ -26,6 +28,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         UiExceptionGuard.SetReporter(null);
         UiExceptionGuard.UseLog(UiErrorLog.CreateDefault());
+        UiExceptionGuard.ResetThrottle();
         UnlockAll(_root);
         try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
     }
@@ -111,6 +114,66 @@ public sealed class UiExceptionHandlingTests : IDisposable
         Assert.Equal("Something went wrong: boom. RHI is still running, but the details could not be written to the log.", Assert.Single(_reports));
     }
 
+    /// <summary>Review m1: a failure on every frame is logged once per minute and shown once, not per pass.</summary>
+    [Fact]
+    public void RepeatedIdenticalException_IsLoggedOncePerMinute_AndShownOnce()
+    {
+        for (var i = 0; i < 10; i++) FailOnLayoutPass();
+
+        Assert.Single(_reports);
+        Assert.Equal(1, LogEntries("[ui-thread]"));
+
+        _clock.Advance(UiExceptionGuard.RepeatWindow + TimeSpan.FromSeconds(1));
+        FailOnLayoutPass();
+
+        Assert.Equal(2, _reports.Count);
+        Assert.Equal(2, LogEntries("[ui-thread]"));
+        Assert.Contains("(repeated 9 more time(s) after its previous entry)", File.ReadAllText(UiExceptionGuard.Log.CurrentPath));
+    }
+
+    /// <summary>A user retrying the same failing action a few seconds later still sees why; the log is not repeated.</summary>
+    [Fact]
+    public void SameFailureRetriedLater_IsShownAgain_ButNotLoggedAgain()
+    {
+        FailOnLayoutPass();
+        _clock.Advance(UiExceptionGuard.StatusRepeatInterval);
+        FailOnLayoutPass();
+
+        Assert.Equal(2, _reports.Count);
+        Assert.Equal(1, LogEntries("[ui-thread]"));
+    }
+
+    /// <summary>Review m1: a burst of failures says once that RHI should be restarted, then stops reporting.</summary>
+    [Fact]
+    public void FailureBurst_SaysOnceToRestart_ThenStopsReporting()
+    {
+        for (var i = 0; i < UiExceptionGuard.BurstLimit + 5; i++) FailOnLayoutPass();
+        UiExceptionGuard.HandleBackgroundException(new InvalidOperationException("a different failure"));
+
+        Assert.Equal(2, _reports.Count);
+        Assert.StartsWith("RHI hit repeated errors and stopped showing them; the details are in ", _reports[1]);
+        Assert.Equal(1, LogEntries("[repeated-errors]"));
+        Assert.Equal(1, LogEntries("[background-task]"));
+    }
+
+    private static void FailOnLayoutPass()
+    {
+        try { ThrowLayoutFailure(); }
+        catch (InvalidOperationException ex) { Assert.True(UiExceptionGuard.HandleUiThreadException(ex)); }
+    }
+
+    private static void ThrowLayoutFailure() => throw new InvalidOperationException("Measure failed");
+
+    private static int LogEntries(string marker)
+        => File.ReadAllText(UiExceptionGuard.Log.CurrentPath).Split(marker).Length - 1;
+
+    private sealed class ManualClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 10, 7, 12, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now += by;
+    }
+
     [Fact]
     public async Task ToggleFavourite_WithReadOnlyLibrary_DoesNotThrow_AndSaysTheChangeWasNotSaved()
     {
@@ -159,19 +222,122 @@ public sealed class UiExceptionHandlingTests : IDisposable
         Assert.Contains(fx.Vm.Games, g => g.Name == "Tunic");
     }
 
+    /// <summary>Review m4: the preference store is the authority, so a refused write reverts the dropdown.</summary>
     [Fact]
-    public async Task GameOverride_WithReadOnlyPreferences_DoesNotThrow_AndSaysTheChangeWasNotSaved()
+    public async Task GameOverride_WithReadOnlyPreferences_RevertsTheDropdown_AndSaysNothingChanged()
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var prefs = Path.Combine(fx.ConfigDir, "prefs");
-        Directory.CreateDirectory(prefs);
-        File.SetUnixFileMode(prefs, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != fx.Vm.SelectedGraphicsApiOverride);
+        var before = fx.Vm.SelectedGraphicsApiOverride;
+        LockPreferences(fx);
+        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
 
         fx.Vm.SelectedGraphicsApiOverride = other;
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
+        Assert.EndsWith("Nothing was changed.", fx.Vm.StatusText);
+        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
+    }
+
+    [Fact]
+    public async Task LumaMode_WithReadOnlyPreferences_RevertsTheDropdown_AndSaysNothingChanged()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        var before = fx.Vm.SelectedLumaModePreference;
+        LockPreferences(fx);
+
+        fx.Vm.SelectedLumaModePreference = fx.Vm.LumaModeOptions.Last(option => option != before);
+
+        Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
+        Assert.EndsWith("Nothing was changed.", fx.Vm.StatusText);
+        Assert.Equal(before, fx.Vm.SelectedLumaModePreference);
+    }
+
+    [Fact]
+    public async Task OptiScalerVariant_WithReadOnlyPreferences_RevertsTheDropdown_AndSaysNothingChanged()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        var before = fx.Vm.SelectedOptiScalerVariant;
+        LockPreferences(fx);
+
+        fx.Vm.SelectedOptiScalerVariant = fx.Vm.OptiScalerVariantOptions.Last(option => option != before);
+
+        Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
+        Assert.EndsWith("Nothing was changed.", fx.Vm.StatusText);
+        Assert.Equal(before, fx.Vm.SelectedOptiScalerVariant);
+    }
+
+    /// <summary>Review m2: a refused edit must not linger in memory and ride along with the next successful save.</summary>
+    [Fact]
+    public async Task RefusedGameEdit_IsNotPersisted_ByALaterSuccessfulSave()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = fx.Game("Tunic");
+        await AddAndSelectAsync(fx, game);
+        LockLibrary(fx);
+
+        var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+
+        Assert.False(saved);
+        Assert.StartsWith("Could not save the game library:", message);
+        Assert.EndsWith("Nothing was changed.", message);
+        UnlockAll(fx.DataDir);
+        fx.Vm.ToggleFavouriteCommand.Execute(null);
+        Assert.Empty(fx.Library.Load().GameEdits);
+        Assert.Single(fx.Library.Load().FavouriteGames);
+    }
+
+    [Fact]
+    public async Task RefusedReset_IsNotPersisted_ByALaterSuccessfulSave()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = fx.Game("Tunic");
+        await AddAndSelectAsync(fx, game);
+        var (saved, saveMessage) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+        Assert.True(saved, saveMessage);
+        LockLibrary(fx);
+
+        var (reset, message) = await fx.Vm.ResetSelectedGameEditAsync();
+
+        Assert.False(reset);
+        Assert.EndsWith("Nothing was changed.", message);
+        UnlockAll(fx.DataDir);
+        fx.Vm.ToggleFavouriteCommand.Execute(null);
+        Assert.Single(fx.Library.Load().GameEdits);
+    }
+
+    [Fact]
+    public async Task RefusedManualAdd_IsNotPersisted_ByALaterSuccessfulSave()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        var other = fx.Game("Hades");
+        LockLibrary(fx);
+
+        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        {
+            Name = other.Name, InstallPath = other.InstallPath, ExecutablePath = other.ExecutablePath, Runner = "Manual Windows"
+        });
+
+        Assert.False(added);
+        Assert.EndsWith("Nothing was changed.", message);
+        Assert.DoesNotContain(fx.Vm.Games, g => g.Name == "Hades");
+        UnlockAll(fx.DataDir);
+        fx.Vm.ToggleFavouriteCommand.Execute(null);
+        Assert.Equal(["Tunic"], fx.Library.Load().ManualGames.Select(g => g.Name));
+    }
+
+    private static void LockLibrary(ViewModelFixture fx)
+        => File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+
+    private static void LockPreferences(ViewModelFixture fx)
+    {
+        var prefs = Path.Combine(fx.ConfigDir, "prefs");
+        Directory.CreateDirectory(prefs);
+        File.SetUnixFileMode(prefs, UnixFileMode.UserRead | UnixFileMode.UserExecute);
     }
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, DetectedGame game)
