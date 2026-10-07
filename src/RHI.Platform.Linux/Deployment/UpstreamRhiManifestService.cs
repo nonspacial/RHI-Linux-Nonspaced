@@ -237,15 +237,24 @@ public sealed partial class UpstreamRhiManifestService
     private readonly string? _fallbackManifestUrl;
     private readonly string? _cachePath;
     private readonly SemaphoreSlim _manifestGate = new(1, 1);
+    private readonly TimeProvider _time;
+    private readonly TimeSpan _fetchTimeout;
     private UpstreamManifestDocument? _manifestCache;
+    private volatile FetchFailure? _lastFailure;
+
+    private sealed record FetchFailure(DateTimeOffset Until, InvalidDataException Error);
 
     public UpstreamRhiManifestService(
         HttpClient http,
         string? manifestUrl = null,
         string? fallbackManifestUrl = null,
-        string? cachePath = null)
+        string? cachePath = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? fetchTimeout = null)
     {
         _http = http;
+        _time = timeProvider ?? TimeProvider.System;
+        _fetchTimeout = fetchTimeout ?? TimeSpan.FromSeconds(15);
         _manifestUrl = manifestUrl ?? LiveManifestUrl;
         _fallbackManifestUrl = manifestUrl is null ? fallbackManifestUrl ?? PinnedManifestUrl : fallbackManifestUrl;
         _cachePath = manifestUrl is null
@@ -530,24 +539,45 @@ public sealed partial class UpstreamRhiManifestService
         return pathMatches.Length == 1 ? pathMatches[0] : null;
     }
 
+    /// <summary>
+    /// Returns the manifest for this process. The live copy is fetched once; later reads reuse it until
+    /// <see cref="InvalidateProcessCache"/> (explicit full library refresh, Donate refresh). A refetch
+    /// revalidates the last-known-good copy with its ETag, so an unchanged manifest costs one 304. When
+    /// every source failed, the failure is remembered for <see cref="FailureRetryDelay"/> so partial
+    /// refreshes and per-game reads do not each wait out another network timeout (Refs #61).
+    /// </summary>
     private async Task<UpstreamManifestDocument> FetchDocumentAsync(CancellationToken cancellationToken)
     {
         if (_manifestCache is not null) return _manifestCache;
+        ThrowIfRecentFailure();
 
         await _manifestGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_manifestCache is not null) return _manifestCache;
+            ThrowIfRecentFailure();
 
             Exception? remoteFailure = null;
             try
             {
-                var (document, raw) = await DownloadDocumentAsync(_manifestUrl, cancellationToken).ConfigureAwait(false);
-                _manifestCache = document;
-                await PersistLastKnownGoodAsync(raw, cancellationToken).ConfigureAwait(false);
-                return document;
+                var etag = ReadEtag();
+                var live = await DownloadDocumentAsync(_manifestUrl, etag, cancellationToken).ConfigureAwait(false);
+                if (live.NotModified)
+                {
+                    var unchanged = await TryReadLastKnownGoodAsync(cancellationToken).ConfigureAwait(false);
+                    if (unchanged is not null)
+                    {
+                        _manifestCache = unchanged;
+                        return unchanged;
+                    }
+                    // 304 against a vanished/corrupt cache: fetch unconditionally once.
+                    live = await DownloadDocumentAsync(_manifestUrl, null, cancellationToken).ConfigureAwait(false);
+                }
+                _manifestCache = live.Document!;
+                await PersistLastKnownGoodAsync(live.Raw!, cancellationToken, live.ETag).ConfigureAwait(false);
+                return _manifestCache;
             }
-            catch (OperationCanceledException) { throw; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 remoteFailure = ex;
@@ -565,22 +595,23 @@ public sealed partial class UpstreamRhiManifestService
             {
                 try
                 {
-                    var (fallback, fallbackRaw) = await DownloadDocumentAsync(_fallbackManifestUrl!, cancellationToken).ConfigureAwait(false);
-                    _manifestCache = fallback;
-                    await PersistLastKnownGoodAsync(fallbackRaw, cancellationToken).ConfigureAwait(false);
-                    return fallback;
+                    var fallback = await DownloadDocumentAsync(_fallbackManifestUrl!, null, cancellationToken).ConfigureAwait(false);
+                    _manifestCache = fallback.Document!;
+                    // No ETag: the pinned snapshot must not validate a later request for the live file.
+                    await PersistLastKnownGoodAsync(fallback.Raw!, cancellationToken, etag: null).ConfigureAwait(false);
+                    return _manifestCache;
                 }
-                catch (OperationCanceledException) { throw; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception fallbackFailure)
                 {
-                    throw new InvalidDataException(
+                    throw RememberFailure(new InvalidDataException(
                         $"Upstream RHI manifest unavailable. Live fetch failed: {remoteFailure?.Message}. " +
                         $"Pinned fallback failed: {fallbackFailure.Message}",
-                        fallbackFailure);
+                        fallbackFailure));
                 }
             }
 
-            throw new InvalidDataException($"Upstream RHI manifest unavailable: {remoteFailure?.Message}", remoteFailure);
+            throw RememberFailure(new InvalidDataException($"Upstream RHI manifest unavailable: {remoteFailure?.Message}", remoteFailure));
         }
         finally
         {
@@ -588,29 +619,58 @@ public sealed partial class UpstreamRhiManifestService
         }
     }
 
-    public void InvalidateProcessCache() => _manifestCache = null;
+    /// <summary>
+    /// Drops the process copy (and any remembered failure) so the next read revalidates with upstream.
+    /// Only explicit refreshes call this; partial library refreshes keep the copy (Refs #61).
+    /// </summary>
+    public void InvalidateProcessCache()
+    {
+        _manifestCache = null;
+        _lastFailure = null;
+    }
 
-    private async Task<(UpstreamManifestDocument Document, byte[] Raw)> DownloadDocumentAsync(
+    /// <summary>How long a total fetch failure is reused before the network is tried again.</summary>
+    internal static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(2);
+
+    private void ThrowIfRecentFailure()
+    {
+        var failure = _lastFailure;
+        if (failure is not null && _time.GetUtcNow() < failure.Until)
+            throw new InvalidDataException(failure.Error.Message, failure.Error);
+    }
+
+    private InvalidDataException RememberFailure(InvalidDataException error)
+    {
+        _lastFailure = new FetchFailure(_time.GetUtcNow() + FailureRetryDelay, error);
+        return error;
+    }
+
+    private async Task<(UpstreamManifestDocument? Document, byte[]? Raw, string? ETag, bool NotModified)> DownloadDocumentAsync(
         string url,
+        string? etag,
         CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
+        if (!string.IsNullOrWhiteSpace(etag))
+            request.Headers.TryAddWithoutValidation("If-None-Match", etag);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        timeout.CancelAfter(_fetchTimeout);
         try
         {
             using var response = await _http.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 timeout.Token).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && !string.IsNullOrWhiteSpace(etag))
+                return (null, null, etag, true);
             response.EnsureSuccessStatusCode();
             var raw = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
             var document = JsonSerializer.Deserialize<UpstreamManifestDocument>(raw)
                 ?? throw new InvalidDataException("Upstream RHI manifest is empty or invalid.");
             if (document.Version <= 0)
                 throw new InvalidDataException("Upstream RHI manifest has no valid version.");
-            return (document, raw);
+            return (document, raw, response.Headers.ETag?.Tag, false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -618,34 +678,60 @@ public sealed partial class UpstreamRhiManifestService
         }
     }
 
-    internal async Task PersistLastKnownGoodAsync(byte[] raw, CancellationToken cancellationToken)
+    private string? EtagPath => string.IsNullOrWhiteSpace(_cachePath) ? null : _cachePath + ".etag";
+
+    private string? ReadEtag()
+    {
+        var path = EtagPath;
+        if (path is null || !File.Exists(path) || !File.Exists(_cachePath)) return null;
+        try { return File.ReadAllText(path).Trim() is { Length: > 0 } tag ? tag : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null; // no validator: the next fetch is unconditional, which is always correct
+        }
+    }
+
+    internal async Task PersistLastKnownGoodAsync(byte[] raw, CancellationToken cancellationToken, string? etag = null)
     {
         if (string.IsNullOrWhiteSpace(_cachePath)) return;
         string? temp = null;
+        var etagPath = EtagPath!;
         try
         {
+            // The validator goes first: a stale ETag next to a new body would make a later 304 reuse the wrong copy.
+            if (File.Exists(etagPath)) File.Delete(etagPath);
             var directory = Path.GetDirectoryName(_cachePath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
             temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
             await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
                 await stream.WriteAsync(raw, cancellationToken).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, _cachePath, true);
             temp = null;
+            if (!string.IsNullOrWhiteSpace(etag))
+                await File.WriteAllTextAsync(etagPath, etag, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { throw; }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Cache persistence is optional; a valid live manifest must remain usable.
+            // Cache persistence is optional; a valid live manifest stays usable this session and the next
+            // session fetches unconditionally (no ETag was left behind).
+            LastPersistError = ex.Message;
         }
         finally
         {
             // A cancelled or failed write (e.g. the Donate dialog closed mid-write) leaves no manifest.json.tmp-* behind.
             if (temp is not null)
             {
-                try { File.Delete(temp); } catch { /* best effort: the cache directory is RHI's own */ }
+                try { File.Delete(temp); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { LastPersistError = ex.Message; }
             }
         }
     }
+
+    /// <summary>Last cache-persistence failure, for diagnostics; null when every write succeeded.</summary>
+    public string? LastPersistError { get; private set; }
 
     private async Task<UpstreamManifestDocument?> TryReadLastKnownGoodAsync(CancellationToken cancellationToken)
     {
@@ -657,10 +743,8 @@ public sealed partial class UpstreamRhiManifestService
             return document is { Version: > 0 } ? document : null;
         }
         catch (OperationCanceledException) { throw; }
-        catch { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException) { return null; }
     }
-
-
 
     internal static GraphicsApi? ParseGraphicsApi(string? value)
     {

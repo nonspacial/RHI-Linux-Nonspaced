@@ -11,13 +11,17 @@ namespace RHI.Platform.Linux.Detection;
 /// </summary>
 public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService manifest) : IGameLibraryPolicy
 {
+    /// <summary>
+    /// An explicit full library refresh is the user-visible policy refresh point: the manifest is
+    /// revalidated (ETag) once and every other consumer in the session reuses it. Partial refreshes
+    /// never touch the network for policy (Refs #61).
+    /// </summary>
+    public void RefreshSources() => manifest.InvalidateProcessCache();
+
     public async Task<IReadOnlyList<DetectedGame>> ApplyAsync(
         IReadOnlyList<DetectedGame> games,
         CancellationToken cancellationToken = default)
     {
-        // A library refresh is the explicit user-visible policy refresh point until the later
-        // background-update support exists. Other consumers in the same scan reuse this process cache.
-        manifest.InvalidateProcessCache();
         var policy = await manifest.FetchLibraryPolicyAsync(cancellationToken).ConfigureAwait(false);
         var knownNames = policy.KnownGameNames;
         var result = new List<DetectedGame>(games.Count);

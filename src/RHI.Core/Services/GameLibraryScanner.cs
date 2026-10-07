@@ -71,6 +71,12 @@ public sealed class GameLibraryScanner
             .SelectMany(x => x.raw.Select(g => g.ShallowClone()))
             .ToArray();
 
+        if (onlyDetectors is null)
+        {
+            foreach (var policy in _policies)
+                policy.RefreshSources();
+        }
+
         foreach (var policy in _policies)
         {
             try
