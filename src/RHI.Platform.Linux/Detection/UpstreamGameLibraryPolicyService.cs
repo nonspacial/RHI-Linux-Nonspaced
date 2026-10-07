@@ -18,6 +18,11 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
     /// </summary>
     public void RefreshSources() => manifest.InvalidateProcessCache();
 
+    /// <summary>Stable name; the Desktop status line localises it.</summary>
+    public const string PolicyName = "Upstream RHI manifest";
+
+    public string Name => PolicyName;
+
     public async Task<IReadOnlyList<DetectedGame>> ApplyAsync(
         IReadOnlyList<DetectedGame> games,
         CancellationToken cancellationToken = default)

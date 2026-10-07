@@ -7,6 +7,7 @@ public sealed class GameLibraryScanner
     private readonly IGameDetector[] _detectors;
     private readonly IGameLibraryPolicy[] _policies;
     private readonly Dictionary<string, IReadOnlyList<DetectedGame>> _lastRawResults = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DetectorScanStatus> _lastStatuses = new(StringComparer.Ordinal);
     private readonly object _rawLock = new();
 
     public GameLibraryScanner(
@@ -20,14 +21,22 @@ public sealed class GameLibraryScanner
     public Task<IReadOnlyList<DetectedGame>> ScanAsync(CancellationToken cancellationToken = default)
         => ScanAsync(null, cancellationToken);
 
+    /// <summary>Games only; see <see cref="ScanWithReportAsync"/> for per-detector status.</summary>
+    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(
+        IReadOnlySet<string>? onlyDetectors,
+        CancellationToken cancellationToken = default)
+        => (await ScanWithReportAsync(onlyDetectors, cancellationToken).ConfigureAwait(false)).Games;
+
     /// <summary>
     /// Runs the library scan. When <paramref name="onlyDetectors"/> is given, only those detectors
     /// (by <see cref="IGameDetector.Name"/>) are re-run; every other detector reuses its result from
     /// the previous scan. This keeps cheap library edits (adding/removing a manual game) from
     /// re-walking every Steam/Heroic/Lutris/Wine install on disk. Falls back to a full scan when
     /// no previous result exists for a detector that was not requested.
+    /// A detector that throws, or reports skipped entries, no longer looks like "no games": its status
+    /// says so, and the failure is written to <see cref="AppLog"/> (Refs #56).
     /// </summary>
-    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(
+    public async Task<GameLibraryScanResult> ScanWithReportAsync(
         IReadOnlySet<string>? onlyDetectors,
         CancellationToken cancellationToken = default)
     {
@@ -40,32 +49,43 @@ public sealed class GameLibraryScanner
 
         var tasks = _detectors.Select(async detector =>
         {
-            IReadOnlyList<DetectedGame> raw;
             if (partial && !onlyDetectors!.Contains(detector.Name))
             {
-                lock (_rawLock) raw = _lastRawResults[detector.Name];
+                lock (_rawLock)
+                {
+                    var previous = _lastStatuses.TryGetValue(detector.Name, out var status)
+                        ? status with { Reused = true }
+                        : new DetectorScanStatus(detector.Name, _lastRawResults[detector.Name].Count, null, [], Reused: true);
+                    return (detector.Name, raw: _lastRawResults[detector.Name], status: previous);
+                }
             }
-            else
+
+            try
             {
-                try
-                {
-                    raw = await detector.DetectAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) { throw; }
-                catch
-                {
-                    raw = Array.Empty<DetectedGame>();
-                }
+                var (raw, warnings) = await DetectorDiagnostics
+                    .CollectAsync(() => detector.DetectAsync(cancellationToken))
+                    .ConfigureAwait(false);
+                return (detector.Name, raw, status: new DetectorScanStatus(detector.Name, raw.Count, null, warnings));
             }
-            return (detector.Name, raw);
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                // One detector failing must not empty the whole library; it must not pass for "no games" either.
+                AppLog.Warn("scan", $"{detector.Name} detector failed", ex);
+                return (detector.Name, raw: (IReadOnlyList<DetectedGame>)Array.Empty<DetectedGame>(),
+                    status: new DetectorScanStatus(detector.Name, 0, ex.Message, []));
+            }
         });
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
         lock (_rawLock)
         {
             // Keep pristine snapshots: downstream stages mutate the instances they receive.
-            foreach (var (name, list) in results)
+            foreach (var (name, list, status) in results)
+            {
                 _lastRawResults[name] = list.Select(g => g.ShallowClone()).ToArray();
+                _lastStatuses[name] = status with { Reused = false };
+            }
         }
         IReadOnlyList<DetectedGame> games = results
             .SelectMany(x => x.raw.Select(g => g.ShallowClone()))
@@ -77,27 +97,31 @@ public sealed class GameLibraryScanner
                 policy.RefreshSources();
         }
 
+        var policyFailures = new List<PolicyScanStatus>();
         foreach (var policy in _policies)
         {
             try
             {
                 games = await policy.ApplyAsync(games, cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { throw; }
-            catch
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
             {
                 // Policies are metadata/enrichment layers. If an upstream policy source is
-                // unavailable, keep the locally detected library exactly as it was.
+                // unavailable, keep the locally detected library exactly as it was, and say so.
+                AppLog.Warn("scan", $"{policy.Name} not applied", ex);
+                policyFailures.Add(new PolicyScanStatus(policy.Name, ex.Message));
             }
         }
 
-        return games
+        var merged = games
             .Where(g => !string.IsNullOrWhiteSpace(g.Name) && Directory.Exists(g.InstallPath))
             .GroupBy(GameKey, StringComparer.Ordinal)
             .SelectMany(SplitDistinctLauncherEntries)
             .Select(Merge)
             .OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+        return new GameLibraryScanResult(merged, results.Select(r => r.status).ToArray(), policyFailures);
     }
 
     private static string GameKey(DetectedGame g)

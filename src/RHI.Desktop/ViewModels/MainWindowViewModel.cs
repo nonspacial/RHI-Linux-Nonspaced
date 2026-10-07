@@ -1193,7 +1193,8 @@ public partial class MainWindowViewModel : ObservableObject
             }
             SelectedGame = null;
 
-            var found = await _scanner.ScanAsync(onlyDetectors);
+            var scan = await _scanner.ScanWithReportAsync(onlyDetectors);
+            var found = scan.Games;
             _libraryState = _libraryStore.Load();
             LibraryFilterMode = _libraryState.FilterMode;
 
@@ -1230,7 +1231,7 @@ public partial class MainWindowViewModel : ObservableObject
                 ? Games.FirstOrDefault()
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
-            StatusText = LF("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", _allGames.Count);
+            StatusText = LibraryScanStatusText.Format(scan, _allGames.Count, AppLog.Current?.FilePath);
         }
         catch (Exception ex)
         {

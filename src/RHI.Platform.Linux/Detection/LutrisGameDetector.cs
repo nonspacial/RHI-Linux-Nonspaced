@@ -76,7 +76,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     };
                     games.Add((game, slug, file, exeExists));
                 }
-                catch { }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    DetectorDiagnostics.Warn($"Lutris entry skipped: {Path.GetFileName(file)}", ex);
+                }
             }
         }
 
