@@ -845,10 +845,18 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task InitializeAsync()
     {
         var neuralVersionCatalogTask = EnsureNeuralVersionCatalogAsync();
-        IsBusy = true;
+        // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
+        var dlssManifestTask = LoadDlssManifestAsync();
+        await RefreshAsync();
+        await dlssManifestTask;
+        await neuralVersionCatalogTask;
+        RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
+    }
+
+    private async Task LoadDlssManifestAsync()
+    {
         try
         {
-            StatusText = L("Carregando o manifesto de DLSS…", "Loading DLSS manifest…");
             var manifest = await _dlss.FetchManifestAsync();
             FillVersions(DlssSrVersions, manifest.Dlss.Select(x => x.Version));
             FillVersions(DlssRrVersions, manifest.Dlssd.Select(x => x.Version));
@@ -869,16 +877,12 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedDlssFgVersion = DlssFgVersions.FirstOrDefault();
             SelectedDlssNrVersion = DlssNrVersions.FirstOrDefault();
             SelectedStreamlineVersion = StreamlineVersions.FirstOrDefault();
+            NotifyDlss();
         }
         catch (Exception ex)
         {
             StatusText = LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message);
         }
-        finally { IsBusy = false; }
-
-        await RefreshAsync();
-        await neuralVersionCatalogTask;
-        RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
     // Computed action properties in Extras depend on IsBusy, but the initial full-library

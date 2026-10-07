@@ -37,31 +37,57 @@ public sealed class DlssManagerService
 
     public DlssManifestData? Manifest => _manifest;
 
+    /// <summary>
+    /// Per-request deadline for the manifest. The shared HttpClient allows 5 minutes, which on a
+    /// black-holed network (VPN kill-switch, captive portal) would stall every caller; the cached copy
+    /// is used instead (Refs #43).
+    /// </summary>
+    public TimeSpan ManifestFetchTimeout { get; set; } = TimeSpan.FromSeconds(15);
+
     public async Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
     {
         var cachePath = Path.Combine(_cacheRoot, "dlss_manifest.json");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ManifestFetchTimeout);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ManifestUrl);
             request.Headers.UserAgent.Add(new ProductInfoHeaderValue("RHI-Linux", RhiProductInfo.Version));
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var json = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
             var parsed = JsonSerializer.Deserialize<DlssManifestData>(json, JsonOptions())
                          ?? throw new InvalidDataException("DLSS manifest was empty or invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
-            await File.WriteAllTextAsync(cachePath, json, cancellationToken).ConfigureAwait(false);
+            // Atomic: a cancelled write must not leave a truncated cache that breaks the offline fallback.
+            var temp = cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
+            try
+            {
+                await File.WriteAllTextAsync(temp, json, CancellationToken.None).ConfigureAwait(false);
+                File.Move(temp, cachePath, overwrite: true);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("dlss", $"DLSS manifest cache not saved: {cachePath}", ex);
+                if (File.Exists(temp)) File.Delete(temp);
+            }
             return parsed;
         }
-        catch when (File.Exists(cachePath))
+        catch (Exception ex) when (File.Exists(cachePath))
         {
+            if (!cancellationToken.IsCancellationRequested)
+                AppLog.Warn("dlss", "DLSS manifest download failed; using the cached copy", ex);
             var json = await File.ReadAllTextAsync(cachePath, cancellationToken).ConfigureAwait(false);
             var parsed = JsonSerializer.Deserialize<DlssManifestData>(json, JsonOptions())
                          ?? throw new InvalidDataException("Cached DLSS manifest is invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
             return parsed;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"DLSS manifest did not answer within {ManifestFetchTimeout.TotalSeconds:0} s and no cached copy exists.");
         }
     }
 
