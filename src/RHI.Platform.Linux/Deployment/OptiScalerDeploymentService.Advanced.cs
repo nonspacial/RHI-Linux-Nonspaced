@@ -20,6 +20,11 @@ public sealed record OptiScalerAdvancedSnapshot(
 
 public sealed partial class OptiScalerDeploymentService
 {
+    /// <summary>Advanced-setting id for <c>[fakenvapi] ForceReflex</c> (auto/0/1/2).</summary>
+    public const string ForceReflexSettingId = "ForceReflex";
+    /// <summary>Advanced-setting id for <c>[DLSSG] UseGamesReflexMarkers</c> (auto/true/false).</summary>
+    public const string UseGamesReflexMarkersSettingId = "UseGamesReflexMarkers";
+
     private static readonly OptiScalerAdvancedOption[] AutoBoolOptions =
     [
         new("auto", "Auto"),
@@ -54,6 +59,12 @@ public sealed partial class OptiScalerDeploymentService
     private static readonly OptiScalerAdvancedOption[] FgNvngxOptions = Options(
         ("None", "None (Real DLSSG)"), ("Nukems", "Nukem's"),
         ("Arturs", "Enabler"), ("FFX", "FSR 3/4 FG"), ("Combo", "Combo"));
+
+    // [fakenvapi] ForceReflex: OptiScaler documents 0 = follow the game, 1 = force off, 2 = force on.
+    // "auto" (the shipped value) is kept as its own choice: OptiScaler then forces Reflex off for
+    // DLSSG OverrideForceDMFG, which an explicit 0 would defeat.
+    private static readonly OptiScalerAdvancedOption[] ForceReflexOptions = Options(
+        ("auto", "Auto"), ("0", "Follow in-game (0)"), ("1", "Force Disable (1)"), ("2", "Force Enable (2)"));
 
     private static readonly OptiScalerAdvancedOption[] SrPresetOptions = BuildPresetOptions(15);
     // OptiScaler's [DLSSD] ordering is 0 = Default, 1 = A ... so Preset F is 6. Upstream 2.7.6 writes 5
@@ -136,12 +147,12 @@ public sealed partial class OptiScalerDeploymentService
             var insertAt = rows.FindIndex(setting => setting.Id == "FGInput");
             if (insertAt < 0) insertAt = 0;
             rows.Insert(insertAt, new OptiScalerAdvancedSetting(
-                "DeployStreamlineDlssEnabler",
+                DeployStreamlineDlssEnablerSettingId,
                 "Frame Generation",
                 "Streamline / DLSS Enabler",
                 fgStackEnabled ? "true" : "false",
                 YesNoOptions,
-                "Matches upstream Windows RHI: deploys Streamline DLLs to OptiScaler/Streamline and dlss-enabler-headless.dll to OptiScaler/."));
+                "Matches upstream Windows RHI: deploys the Streamline DLLs and the newest nvngx_dlssg.dll to OptiScaler/Streamline and dlss-enabler-headless.dll to OptiScaler/."));
             rows.Insert(insertAt + 1, new OptiScalerAdvancedSetting(
                 "StreamlineVersion",
                 "Frame Generation",
@@ -149,6 +160,26 @@ public sealed partial class OptiScalerDeploymentService
                 streamlineVersion,
                 GetStreamlineVersionOptions(record),
                 "Version used by the OptiScaler-managed Streamline stack. Upstream Windows RHI defaults to 2.12.0 when available."));
+
+            // Upstream shows the Reflex keys only in the Nightly FG settings, after FG Output / Nvngx.
+            var reflexAt = rows.FindIndex(setting => setting.Id == "FGNvngxReplacement") + 1;
+            if (reflexAt <= 0) reflexAt = rows.Count;
+            var forceReflex = Read("fakenvapi", "ForceReflex");
+            var reflexMarkers = Read("DLSSG", "UseGamesReflexMarkers");
+            rows.Insert(reflexAt, new OptiScalerAdvancedSetting(
+                ForceReflexSettingId,
+                "Frame Generation",
+                "Force Reflex",
+                forceReflex,
+                EnsureCurrent(ForceReflexOptions, forceReflex),
+                "[fakenvapi] ForceReflex: 0 follows the in-game Reflex setting, 1 forces Reflex off, 2 forces it on. Auto leaves it to OptiScaler. Only used when OptiScaler runs its bundled fakenvapi; Proton's own NVAPI is not changed."));
+            rows.Insert(reflexAt + 1, new OptiScalerAdvancedSetting(
+                UseGamesReflexMarkersSettingId,
+                "Frame Generation",
+                "Use game's Reflex markers",
+                reflexMarkers,
+                EnsureCurrent(AutoBoolOptions, reflexMarkers),
+                "[DLSSG] UseGamesReflexMarkers: time DLSS Frame Generation from the game's own Reflex markers. Auto is On."));
         }
 
         return new(iniPath, true, rows,
@@ -196,6 +227,10 @@ public sealed partial class OptiScalerDeploymentService
                     WriteChoice(binaryDirectory, "NvApi", "DisableFlipMetering", value, AutoBoolOptions); break;
                 case "FramerateLimit":
                     WriteChoice(binaryDirectory, "Framerate", "FramerateLimit", value, FramerateOptions); break;
+                case ForceReflexSettingId:
+                    WriteChoice(binaryDirectory, "fakenvapi", "ForceReflex", value, ForceReflexOptions); break;
+                case UseGamesReflexMarkersSettingId:
+                    WriteChoice(binaryDirectory, "DLSSG", "UseGamesReflexMarkers", value, AutoBoolOptions); break;
                 case "MenuShortcutKey":
                     WriteChoice(binaryDirectory, "Menu", "ShortcutKey", value, ShortcutOptions); break;
                 case "SrPreset":

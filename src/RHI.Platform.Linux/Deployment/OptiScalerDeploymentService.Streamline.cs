@@ -10,7 +10,12 @@ public sealed partial class OptiScalerDeploymentService
     internal const string FgStackStreamlineVersionMetadataKey = "OptiScaler.StreamlineVersion";
     internal const string FgStackDlssEnablerVersionMetadataKey = "OptiScaler.DlssEnablerVersion";
     internal const string FgStackFilesMetadataKey = "OptiScaler.FgStackFiles";
+    internal const string FgStackDlssgVersionMetadataKey = "OptiScaler.DlssgVersion";
     internal const string DlssEnablerHeadlessFileName = "dlss-enabler-headless.dll";
+    internal const string DlssgFileName = "nvngx_dlssg.dll";
+
+    /// <summary>Advanced-setting id that deploys/removes the managed Streamline + DLSS Enabler FG stack.</summary>
+    public const string DeployStreamlineDlssEnablerSettingId = "DeployStreamlineDlssEnabler";
 
     private static readonly OptiScalerAdvancedOption[] YesNoOptions =
     [
@@ -60,7 +65,7 @@ public sealed partial class OptiScalerDeploymentService
         CancellationToken cancellationToken = default)
     {
         var normalizedId = id?.Trim() ?? "";
-        if (normalizedId.Equals("DeployStreamlineDlssEnabler", StringComparison.Ordinal))
+        if (normalizedId.Equals(DeployStreamlineDlssEnablerSettingId, StringComparison.Ordinal))
         {
             var enabled = value.Equals("true", StringComparison.OrdinalIgnoreCase);
             if (!enabled && !value.Equals("false", StringComparison.OrdinalIgnoreCase))
@@ -161,6 +166,7 @@ public sealed partial class OptiScalerDeploymentService
         var (enablerRelease, enablerPayload) = await _dlssEnabler
             .EnsureLatestPayloadForOptiScalerAsync(cancellationToken)
             .ConfigureAwait(false);
+        var dlssg = await StageNewestDlssgAsync(cancellationToken).ConfigureAwait(false);
 
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
         var optiScalerDirectory = Path.Combine(binaryDirectory, "OptiScaler");
@@ -170,6 +176,8 @@ public sealed partial class OptiScalerDeploymentService
             .Where(item => File.Exists(item.Source))
             .ToList();
         requested.Add((enablerPayload, Path.Combine(optiScalerDirectory, DlssEnablerHeadlessFileName)));
+        if (dlssg.Path is not null)
+            requested.Add((dlssg.Path, Path.Combine(streamlineDirectory, DlssgFileName)));
 
         if (!requested.Any(item => Path.GetFileName(item.Target).Equals("sl.interposer.dll", StringComparison.OrdinalIgnoreCase)
                                    || Path.GetFileName(item.Target).Equals("sl.common.dll", StringComparison.OrdinalIgnoreCase)))
@@ -182,19 +190,41 @@ public sealed partial class OptiScalerDeploymentService
         var backups = new Dictionary<string, string>(StringComparer.Ordinal);
         var newFiles = new List<string>();
         var createdDirectories = new List<string>();
+        // Foreign files found at a stack target: kept as <name>.original and restored on disable/remove.
+        var foreign = new HashSet<string>(StringComparer.Ordinal);
+        var preserved = new List<string>();
+        var leftUnowned = new HashSet<string>(StringComparer.Ordinal);
 
         try
         {
             // Preflight all destinations before touching any file.
-            foreach (var (_, targetRaw) in requested)
+            foreach (var (sourceRaw, targetRaw) in requested)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var target = Path.GetFullPath(targetRaw);
                 var relative = RelativeToBinary(binaryDirectory, target);
                 if (!File.Exists(target)) continue;
 
-                if (!previousOwned.Contains(relative) || !fileByPath.TryGetValue(target, out var ownedFile))
-                    throw new InvalidOperationException($"OptiScaler FG stack target already exists outside this managed Streamline deployment: {target}");
+                if (!previousOwned.Contains(relative))
+                {
+                    if (fileByPath.ContainsKey(target))
+                        throw new InvalidOperationException($"OptiScaler FG stack target belongs to the OptiScaler package itself and will not be replaced: {target}");
+                    // A foreign file already identical to the payload is what the stack needs: it is left
+                    // untouched and unowned, so an existing .original next to it does not matter.
+                    if (string.Equals(await Sha256Async(target, cancellationToken).ConfigureAwait(false),
+                            await Sha256Async(sourceRaw, cancellationToken).ConfigureAwait(false), StringComparison.OrdinalIgnoreCase))
+                    {
+                        leftUnowned.Add(target);
+                        continue;
+                    }
+                    if (File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
+                        throw new InvalidOperationException($"Backup collision protection: {target}{TransactionalFileDeploymentService.BackupExtension} already exists. RHI will not guess which previous tool owns that backup.");
+                    foreign.Add(target);
+                    continue;
+                }
+
+                if (!fileByPath.TryGetValue(target, out var ownedFile))
+                    throw new InvalidOperationException($"OptiScaler FG stack ownership record is missing for {target}; nothing was changed.");
                 if (ownedFile.AllowUserChanges)
                     throw new InvalidOperationException($"OptiScaler FG stack target is unexpectedly user-editable and will not be overwritten: {target}");
                 if (!string.IsNullOrWhiteSpace(ownedFile.Sha256))
@@ -209,6 +239,18 @@ public sealed partial class OptiScalerDeploymentService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var target = Path.GetFullPath(targetRaw);
+                if (leftUnowned.Contains(target)) continue;
+                if (foreign.Contains(target))
+                {
+                    var replaced = await _files.ReplaceAsync(source, target, cancellationToken).ConfigureAwait(false);
+                    if (!replaced.Success)
+                        throw new IOException(replaced.Error ?? $"Could not replace {target} while keeping its original.");
+                    // An identical file is already what the stack needs; it stays the user's, not RHI's.
+                    if (replaced.Changed) preserved.Add(target);
+                    else leftUnowned.Add(target);
+                    continue;
+                }
+
                 EnsureTargetDirectory(binaryDirectory, target, createdDirectories);
                 if (File.Exists(target))
                 {
@@ -227,6 +269,7 @@ public sealed partial class OptiScalerDeploymentService
             foreach (var (_, targetRaw) in requested)
             {
                 var target = Path.GetFullPath(targetRaw);
+                if (leftUnowned.Contains(target)) continue;
                 var relative = RelativeToBinary(binaryDirectory, target);
                 ownedRelative.Add(relative);
                 var hash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
@@ -240,7 +283,7 @@ public sealed partial class OptiScalerDeploymentService
                     file = new LinuxDeployedFile
                     {
                         Path = target,
-                        ExistedBeforeInstall = false,
+                        ExistedBeforeInstall = preserved.Contains(target, StringComparer.Ordinal),
                         Sha256 = hash,
                         AllowUserChanges = false
                     };
@@ -252,31 +295,70 @@ public sealed partial class OptiScalerDeploymentService
             record.Metadata[FgStackEnabledMetadataKey] = "1";
             record.Metadata[FgStackStreamlineVersionMetadataKey] = streamlineVersion;
             record.Metadata[FgStackDlssEnablerVersionMetadataKey] = enablerRelease.Version;
+            if (dlssg.Version is not null && !leftUnowned.Contains(Path.GetFullPath(Path.Combine(streamlineDirectory, DlssgFileName))))
+                record.Metadata[FgStackDlssgVersionMetadataKey] = dlssg.Version;
             record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(ownedRelative.OrderBy(path => path, StringComparer.Ordinal).ToArray());
             foreach (var directory in createdDirectories)
                 if (!record.DirectoriesCreatedByRhi.Contains(directory, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(directory);
             _records.Upsert(record);
 
-            return ComponentOperationResult.Ok(
-                $"OptiScaler Streamline {streamlineVersion} + DLSS Enabler {enablerRelease.Version} deployed to OptiScaler/ exactly like the upstream Windows flow.",
-                requested.Select(item => item.Target).ToArray());
+            var message = dlssg.Version is not null
+                ? $"OptiScaler Streamline {streamlineVersion} + DLSS Enabler {enablerRelease.Version} + {DlssgFileName} {dlssg.Version} deployed to OptiScaler/."
+                : $"OptiScaler Streamline {streamlineVersion} + DLSS Enabler {enablerRelease.Version} deployed to OptiScaler/; {DlssgFileName} was not deployed: {dlssg.Problem}";
+            if (preserved.Count > 0)
+                message += $" Existing files kept as {TransactionalFileDeploymentService.BackupExtension} and restored on removal: {string.Join(", ", preserved.Select(Path.GetFileName))}.";
+            return ComponentOperationResult.Ok(message, requested
+                .Select(item => item.Target)
+                .Where(target => !leftUnowned.Contains(Path.GetFullPath(target)))
+                .ToArray());
         }
         catch (Exception ex)
         {
+            // Compensation must run even when the failure is a cancellation.
+            var problems = new List<string>();
             foreach (var pair in backups)
             {
-                try { if (File.Exists(pair.Value)) File.Copy(pair.Value, pair.Key, overwrite: true); } catch { }
+                try { if (File.Exists(pair.Value)) File.Copy(pair.Value, pair.Key, overwrite: true); }
+                catch (Exception restoreError) { problems.Add($"{pair.Key}: {restoreError.Message}"); }
             }
             foreach (var target in newFiles.AsEnumerable().Reverse())
             {
-                try { if (File.Exists(target)) File.Delete(target); } catch { }
+                try { if (File.Exists(target)) File.Delete(target); }
+                catch (Exception deleteError) { problems.Add($"{target}: {deleteError.Message}"); }
+            }
+            foreach (var target in preserved.AsEnumerable().Reverse())
+            {
+                var restored = await _files.RestoreAsync(target, CancellationToken.None).ConfigureAwait(false);
+                if (!restored.Success)
+                    problems.Add($"{target}: {restored.Error ?? "restore failed"}; its {TransactionalFileDeploymentService.BackupExtension} copy was kept");
             }
             CleanupDirectories(createdDirectories);
-            return ComponentOperationResult.Fail($"OptiScaler Streamline/DLSS Enabler deployment rolled back: {ex.Message}");
+            return ComponentOperationResult.Fail(problems.Count == 0
+                ? $"OptiScaler Streamline/DLSS Enabler deployment rolled back: {ex.Message}"
+                : $"OptiScaler Streamline/DLSS Enabler deployment failed ({ex.Message}) and the rollback is incomplete: {string.Join("; ", problems)}");
         }
         finally
         {
             try { Directory.Delete(backupRoot, recursive: true); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Stages the newest manifest nvngx_dlssg.dll for the FG stack. Best effort, as upstream RHI:
+    /// Streamline + DLSS Enabler still deploy when the manifest lists no DLSSG or its download fails.
+    /// </summary>
+    private async Task<(string? Path, string? Version, string? Problem)> StageNewestDlssgAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var cached = await _dlss!.EnsureCachedVersionAsync(DlssComponentKind.FrameGeneration, null, cancellationToken).ConfigureAwait(false);
+            return cached is { } staged && File.Exists(staged.Path)
+                ? (staged.Path, staged.Version, null)
+                : (null, null, "the DLSS manifest lists no FG build.");
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (null, null, ex.Message);
         }
     }
 
@@ -292,30 +374,45 @@ public sealed partial class OptiScalerDeploymentService
 
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
         var ownedRelative = ReadFgStackRelativePaths(record);
-        string[] targets;
+        List<(string Relative, string Target)> targets;
         try
         {
-            targets = ownedRelative.Select(relative => ResolveManagedRelativePath(binaryDirectory, relative)).ToArray();
+            targets = ownedRelative.Select(relative => (relative, ResolveManagedRelativePath(binaryDirectory, relative))).ToList();
         }
         catch (Exception ex)
         {
             return ComponentOperationResult.Fail($"OptiScaler FG stack ownership metadata is unsafe; removal is blocked: {ex.Message}");
         }
 
-        var ownedFiles = new List<LinuxDeployedFile>(targets.Length);
-        foreach (var target in targets)
+        var ownedFiles = new List<(string Relative, LinuxDeployedFile File)>(targets.Count);
+        foreach (var (relative, target) in targets)
         {
             var owned = record.Files.FirstOrDefault(file => Path.GetFullPath(file.Path).Equals(target, StringComparison.Ordinal));
             if (owned is null)
                 return ComponentOperationResult.Fail($"OptiScaler FG stack ownership record is missing for {target}; removal is blocked.");
-            ownedFiles.Add(owned);
+            ownedFiles.Add((relative, owned));
+        }
+
+        var remaining = new HashSet<string>(ownedRelative, StringComparer.Ordinal);
+        var changed = false;
+        ComponentOperationResult FailKeepingProgress(string message)
+        {
+            // Files already removed/restored must leave the ownership record, or the next attempt is blocked.
+            if (changed)
+            {
+                record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(remaining.OrderBy(path => path, StringComparer.Ordinal).ToArray());
+                _records.Upsert(record);
+            }
+            return ComponentOperationResult.Fail(message);
         }
 
         try
         {
-            foreach (var file in ownedFiles)
+            foreach (var (_, file) in ownedFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
+                    return ComponentOperationResult.Fail($"Cannot safely remove the OptiScaler FG stack: preserved original is missing for {file.Path}.");
                 if (!File.Exists(file.Path)) continue;
                 if (string.IsNullOrWhiteSpace(file.Sha256))
                     return ComponentOperationResult.Fail($"OptiScaler FG stack ownership hash is missing for {file.Path}; removal is blocked.");
@@ -324,16 +421,28 @@ public sealed partial class OptiScalerDeploymentService
                     return ComponentOperationResult.Fail($"OptiScaler FG stack file was modified outside RHI and will not be removed: {file.Path}");
             }
 
-            foreach (var file in ownedFiles.OrderByDescending(file => file.Path.Length))
+            foreach (var (relative, file) in ownedFiles.OrderByDescending(item => item.File.Path.Length))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                try { if (File.Exists(file.Path)) File.Delete(file.Path); }
-                catch (Exception ex) { return ComponentOperationResult.Fail($"Could not remove {file.Path}: {ex.Message}"); }
+                if (file.ExistedBeforeInstall)
+                {
+                    var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                    if (!restored.Success)
+                        return FailKeepingProgress($"Could not restore the original {file.Path}: {restored.Error}");
+                }
+                else
+                {
+                    try { if (File.Exists(file.Path)) File.Delete(file.Path); }
+                    catch (Exception ex) { return FailKeepingProgress($"Could not remove {file.Path}: {ex.Message}"); }
+                }
                 record.Files.Remove(file);
+                remaining.Remove(relative);
+                changed = true;
             }
 
             record.Metadata[FgStackEnabledMetadataKey] = "0";
             record.Metadata.Remove(FgStackDlssEnablerVersionMetadataKey);
+            record.Metadata.Remove(FgStackDlssgVersionMetadataKey);
             record.Metadata.Remove(FgStackFilesMetadataKey);
             var streamlineDirectory = Path.Combine(binaryDirectory, "OptiScaler", "Streamline");
             try { if (Directory.Exists(streamlineDirectory) && !Directory.EnumerateFileSystemEntries(streamlineDirectory).Any()) Directory.Delete(streamlineDirectory); } catch { }
@@ -343,7 +452,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"Could not remove OptiScaler Streamline/DLSS Enabler deployment: {ex.Message}");
+            return FailKeepingProgress($"Could not remove OptiScaler Streamline/DLSS Enabler deployment: {ex.Message}");
         }
     }
 
@@ -358,6 +467,23 @@ public sealed partial class OptiScalerDeploymentService
                             || File.Exists(Path.Combine(streamlineDirectory, "sl.dlss_g.dll"));
         var hasEnabler = File.Exists(Path.Combine(binaryDirectory, "OptiScaler", DlssEnablerHeadlessFileName));
         return hasStreamline && hasEnabler;
+    }
+
+    /// <summary>Drops FG-stack ownership entries whose file record is gone (removed in a partly failed removal).</summary>
+    private static void PruneFgStackOwnership(LinuxDeploymentRecord record)
+    {
+        if (!record.Metadata.ContainsKey(FgStackFilesMetadataKey)) return;
+        var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
+        var recorded = record.Files.Select(file => Path.GetFullPath(file.Path)).ToHashSet(StringComparer.Ordinal);
+        var kept = ReadFgStackRelativePaths(record)
+            .Where(relative =>
+            {
+                try { return recorded.Contains(ResolveManagedRelativePath(binaryDirectory, relative)); }
+                catch { return true; } // unsafe entries stay so the disable path keeps refusing them
+            })
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(kept);
     }
 
     private static HashSet<string> ReadFgStackRelativePaths(LinuxDeploymentRecord record)

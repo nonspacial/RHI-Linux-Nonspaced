@@ -666,7 +666,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
     private static bool HasStreamlineFrameGeneration(string root, int maxDepth)
     {
+        // The RHI-managed OptiScaler stack (OptiScaler/Streamline, incl. nvngx_dlssg.dll since #135)
+        // is not the game's own integration; it counts only through HasManagedOptiScalerFrameGeneration.
         var names = GameFileIndexer.Build(root, maxDepth)
+            .Where(path => !DlssManagerService.IsUnderOptiScalerFolder(root, path))
             .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
