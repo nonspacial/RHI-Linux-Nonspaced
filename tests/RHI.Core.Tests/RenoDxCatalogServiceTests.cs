@@ -129,6 +129,30 @@ public sealed class RenoDxCatalogServiceTests
         Assert.Equal(expectedAuthor, ModAuthorCredit.ForRenoDx(found, game));
     }
 
+    // up-139 re-review minor 1: a named snapshot override on a title with no database entry and no authorOverrides keeps
+    // the generic engine fallback's maintainer (upstream: the card's fallback mod carries ShortFuse / Voosh).
+    [Theory]
+    [InlineData("/tmp/Far Cry 2/Engine/Binaries/Win64/FarCry2.exe", "ShortFuse")]
+    [InlineData("/tmp/Far Cry 2/UnityPlayer.dll", "Voosh")]
+    [InlineData("/tmp/Far Cry 2/bin/FarCry2.exe", null)]
+    public async Task Resolve_SnapshotOverrideOnAnUnnamedTitleKeepsTheGenericEngineAuthor(string indexedFile, string? expectedAuthor)
+    {
+        using var manifestHttp = new HttpClient(new StaticHandler(Manifest285));
+        var manifest = new UpstreamRhiManifestService(manifestHttp, "https://example.test/manifest.json");
+        using var dbHttp = new HttpClient(new RoutedCatalogHandler(Db285));
+        var service = new RenoDxCatalogService(dbHttp, manifest);
+        var game = new DetectedGame { Name = "Far Cry 2", InstallPath = "/tmp/Far Cry 2" };
+
+        var found = await service.ResolveAsync(game, [indexedFile]);
+
+        Assert.NotNull(found);
+        // The download is still the override (Dunia engine build), never the generic engine add-on.
+        Assert.Equal("https://clshortfuse.github.io/renodx/renodx-duniaengine.addon32", found!.SnapshotUrl32);
+        Assert.Null(found.SnapshotUrl64);
+        Assert.Equal(expectedAuthor, found.Author);
+        Assert.Equal(expectedAuthor, ModAuthorCredit.ForRenoDx(found, game));
+    }
+
     [Fact]
     public void ParseStructuredAuthors_KeepsAuthorsOfEntriesWithoutADownload()
     {
