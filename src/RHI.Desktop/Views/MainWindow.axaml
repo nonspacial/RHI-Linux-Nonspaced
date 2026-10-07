@@ -4,6 +4,7 @@
         xmlns:vm="using:RHI.Desktop.ViewModels"
         xmlns:views="using:RHI.Desktop.Views"
         x:Class="RHI.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
         Width="1450" Height="900" MinWidth="640" MinHeight="480"
         Title="{DynamicResource Ui.WindowTitle}"
         Background="#121518"
