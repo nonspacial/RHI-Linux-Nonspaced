@@ -571,6 +571,10 @@ public static class UiLocalizationService
         ("Download refused: GitHub links must be HTTPS on a trusted host (GitHub). Refused link: ",
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
+        // wikiUnlinks title kept installable by a manifest snapshot override (#141). The URL follows the fragment.
+        ("Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: ",
+            "O wikiUnlinks do upstream remove este jogo da correspondência RenoDX pela wiki e genérica; em vez disso é instalado o snapshot indicado pelo manifesto do upstream: "),
+        ("Upstream wikiUnlinks explicitly removes this title from RenoDX deployment.", "O wikiUnlinks do upstream remove explicitamente este jogo da instalação RenoDX."),
         // Remote/UI [renodx] pair that is not a plain INI entry (#122). The key follows the fragment.
         ("RenoDX setting refused: not a plain INI key and value: ", "Configuração do RenoDX recusada: chave e valor não são uma entrada INI simples: "),
         // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.

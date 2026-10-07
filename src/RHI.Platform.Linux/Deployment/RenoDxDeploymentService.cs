@@ -205,7 +205,8 @@ public sealed class RenoDxDeploymentService
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.");
-        if (game.WikiUnlinkedByManifest)
+        // #141: an unlinked title is still installable from a manifest snapshot override, and only from that.
+        if (game.WikiUnlinkedByManifest && !await HasSnapshotOverrideAsync(game, cancellationToken).ConfigureAwait(false))
             return ComponentOperationResult.Fail("Upstream wikiUnlinks explicitly removes this title from RenoDX deployment.");
         if (!string.IsNullOrWhiteSpace(game.ExternalModUrl))
             return ComponentOperationResult.Fail($"Upstream forceExternalOnly requires external installation ({game.ExternalModLabel ?? "Open external mod"}): {game.ExternalModUrl}");
@@ -456,6 +457,20 @@ public sealed class RenoDxDeploymentService
         }
     }
 
+
+    private async Task<bool> HasSnapshotOverrideAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (_upstreamManifest is null) return false;
+        try
+        {
+            var gameOverride = await _upstreamManifest.ResolveGameOverrideAsync(game, cancellationToken).ConfigureAwait(false);
+            return !string.IsNullOrWhiteSpace(gameOverride?.SnapshotUrl);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or TimeoutException or System.Text.Json.JsonException)
+        {
+            return false; // manifest unreachable: the unlink stands
+        }
+    }
 
     // Upstream 2.7.9+ (InstallModAsync / UpdateOrchestrationService): for a Unity-engine game, the
     // RHI Unity database's per-game [renodx] keys are written on install and update. Upstream keys

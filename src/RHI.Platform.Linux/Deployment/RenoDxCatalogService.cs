@@ -140,9 +140,6 @@ public sealed class RenoDxCatalogService
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        // Upstream wikiUnlinks is a hard sever from RenoDX matching, including generic fallbacks.
-        if (game.WikiUnlinkedByManifest) return null;
-
         // Upstream RHI manifest snapshot overrides are authoritative over wiki/generic matching for the download.
         // This is what links titles such as Hogwarts Legacy to Marat's UE-Extended build.
         string? overrideUrl = null;
@@ -163,6 +160,15 @@ public sealed class RenoDxCatalogService
                 // Manifest metadata is an enrichment layer; fall back to the RenoDX wiki/generic path offline.
             }
         }
+
+        // Upstream wikiUnlinks severs the wiki/database match and the generic fallbacks, but a manifest snapshot override
+        // still gives the card a mod (MainViewModel.BuildCards.cs / Install.cs 2.8.5: effectiveMod = new GameMod { Name,
+        // SnapshotUrl } with no maintainer), e.g. Death's Door, Outer Wilds, Haste (#141). No override: no RenoDX at all.
+        if (game.WikiUnlinkedByManifest)
+            return overrideUrl is null
+                ? null
+                : SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint,
+                    ModAuthorCredit.IsUeExtendedUrl(overrideUrl) ? ModAuthorCredit.UeExtendedAuthor : null);
 
         // UE-Extended is always Marat's build: no catalogue lookup needed for its credit.
         if (overrideUrl is not null && ModAuthorCredit.IsUeExtendedUrl(overrideUrl))

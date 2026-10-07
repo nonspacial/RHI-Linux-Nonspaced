@@ -358,7 +358,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
                 if (component.Kind == ManagedComponentKind.RenoDX && component.Availability == ComponentAvailability.Available)
                 {
-                    if (game.WikiUnlinkedByManifest)
+                    var renoDxPrepared = _renodx.TryGetPreparedCompatibility(game, out var preparedRenoDx);
+                    // #141: an unlinked title keeps RenoDX only through a manifest snapshot override (the catalogue
+                    // returns nothing else for it); without a prepared match it stays unsupported.
+                    var unlinkedOverride = game.WikiUnlinkedByManifest && renoDxPrepared && preparedRenoDx is not null;
+                    if (game.WikiUnlinkedByManifest && !unlinkedOverride)
                     {
                         component.Availability = ComponentAvailability.Unsupported;
                         component.ActionAllowed = false;
@@ -369,7 +373,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = $"Upstream forceExternalOnly requires external installation ({game.ExternalModLabel ?? "Open external mod"}): {game.ExternalModUrl}";
                     }
-                    else if (_renodx.TryGetPreparedCompatibility(game, out var preparedRenoDx) && preparedRenoDx is null)
+                    else if (renoDxPrepared && preparedRenoDx is null)
                     {
                         component.Availability = ComponentAvailability.Unsupported;
                         component.ActionAllowed = false;
@@ -393,6 +397,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     else if (managedLumaFramework is not null)
                     {
                         component.Note = "Upstream compatibility data allows RenoDX HDR and Luma Framework to coexist for this title. Existing file-protection and dependency checks still apply.";
+                    }
+                    else if (unlinkedOverride)
+                    {
+                        component.Note = "Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: "
+                            + (preparedRenoDx!.SnapshotUrl64 ?? preparedRenoDx.SnapshotUrl32);
                     }
                 }
 
