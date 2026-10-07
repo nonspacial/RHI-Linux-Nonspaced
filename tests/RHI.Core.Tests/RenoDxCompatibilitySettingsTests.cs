@@ -252,7 +252,7 @@ public sealed class RenoDxCompatibilitySettingsTests : IDisposable
             }
             if (url == RenoDxCatalogService.WikiUrl)
             {
-                const string html = "<table><tr><td>Compat Game</td><td><a href=\"https://cdn.test/renodx-compat.addon64\">snapshot</a></td></tr></table>";
+                const string html = "<table><tr><td>Compat Game</td><td><a href=\"https://clshortfuse.github.io/renodx/renodx-compat.addon64\">snapshot</a></td></tr></table>";
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
             }
 

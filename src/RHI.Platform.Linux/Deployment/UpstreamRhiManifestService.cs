@@ -330,10 +330,11 @@ public sealed partial class UpstreamRhiManifestService
         foreach (var raw in manifest.RenoDxExtraSettings)
         {
             var key = raw.Key?.Trim();
-            if (string.IsNullOrWhiteSpace(key) || !seen.Add(key)) continue;
+            if (!RenoDxIniGrammar.IsSafeKey(key) || !seen.Add(key!)) continue;
 
+            // Option values are written to ReShade.ini when picked: same grammar as the override keys (#122).
             var options = (raw.Options ?? [])
-                .Where(x => !string.IsNullOrWhiteSpace(x.Value))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Value) && RenoDxIniGrammar.IsSafeValue(x.Value.Trim()))
                 .Select(x => new UpstreamRenoDxExtraOptionDefinition(
                     x.Value!.Trim(),
                     string.IsNullOrWhiteSpace(x.Name) ? x.Value!.Trim() : x.Name!.Trim()))
@@ -345,9 +346,9 @@ public sealed partial class UpstreamRhiManifestService
             }
 
             result.Add(new UpstreamRenoDxExtraSettingDefinition(
-                key,
-                string.IsNullOrWhiteSpace(raw.Label) ? key : raw.Label!.Trim(),
-                string.IsNullOrWhiteSpace(raw.DefaultValue) ? "0" : raw.DefaultValue!.Trim(),
+                key!,
+                string.IsNullOrWhiteSpace(raw.Label) ? key! : raw.Label!.Trim(),
+                string.IsNullOrWhiteSpace(raw.DefaultValue) || !RenoDxIniGrammar.IsSafeValue(raw.DefaultValue.Trim()) ? "0" : raw.DefaultValue!.Trim(),
                 options));
         }
 
@@ -790,8 +791,12 @@ public sealed partial class UpstreamRhiManifestService
         if (values is null) return result;
         foreach (var (key, value) in values)
         {
-            if (string.IsNullOrWhiteSpace(key) || value is null) continue;
-            result[key.Trim()] = value.Trim();
+            // Same grammar as the RHI Unity database keys (#122): a remote pair that could inject lines or
+            // sections into ReShade.ini is dropped whole.
+            var trimmedKey = key?.Trim();
+            var trimmedValue = value?.Trim();
+            if (!RenoDxIniGrammar.IsSafePair(trimmedKey, trimmedValue)) continue;
+            result[trimmedKey!] = trimmedValue!;
         }
         return result;
     }

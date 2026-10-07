@@ -179,7 +179,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "RenoDx":
             {
-                var url = "https://example.test/renodx/renodx-test.addon64";
+                var url = "https://github.com/test/renodx/renodx-test.addon64";
                 http.Serve(url, Pe(0x8664, 150 * 1024, 0x91));
                 var svc = new RenoDxDeploymentService(client, records, new RenoDxCatalogService(client), cache);
                 return new(async () => entry = (await svc.DownloadAsync(url, "renodx-test.addon64", CancellationToken.None)).Path, () => entry!, () => http.Count(url));

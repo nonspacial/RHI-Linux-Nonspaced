@@ -600,6 +600,33 @@ public static class UiLocalizationService
         ("RenoDX snapshot is current: ", "O snapshot do RenoDX está atualizado: "),
         ("RenoDX update check could not compare the snapshot: the server sent no ETag, Last-Modified or size.", "A verificação de atualização do RenoDX não conseguiu comparar o snapshot: o servidor não enviou ETag, Last-Modified nem tamanho."),
         ("RenoDX update check failed: ", "A verificação de atualização do RenoDX falhou: "),
+        // Download host allow-list (DEP-06, #25). The refused link follows the fragment.
+        ("Download refused: RenoDX add-on links must be HTTPS on a trusted host (GitHub, GitHub Pages or renodx.com). Refused link: ",
+            "Download recusado: links de add-on RenoDX devem ser HTTPS em um host confiável (GitHub, GitHub Pages ou renodx.com). Link recusado: "),
+        ("Download refused: ReShade add-on links must be HTTPS on a trusted host (GitHub or GitHub Pages). Refused link: ",
+            "Download recusado: links de add-on ReShade devem ser HTTPS em um host confiável (GitHub ou GitHub Pages). Link recusado: "),
+        ("Download refused: GitHub links must be HTTPS on a trusted host (GitHub). Refused link: ",
+            "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
+        // wikiUnlinks title kept installable by a manifest snapshot override (#141). The URL follows the fragment.
+        ("Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: ",
+            "O wikiUnlinks do upstream remove este jogo da correspondência RenoDX pela wiki e genérica; em vez disso é instalado o snapshot indicado pelo manifesto do upstream: "),
+        ("Upstream wikiUnlinks explicitly removes this title from RenoDX deployment.", "O wikiUnlinks do upstream remove explicitamente este jogo da instalação RenoDX."),
+        // Remote/UI [renodx] pair that is not a plain INI entry (#122). The key follows the fragment.
+        ("RenoDX setting refused: not a plain INI key and value: ", "Configuração do RenoDX recusada: chave e valor não são uma entrada INI simples: "),
+        // ReShade.ini writes (review w1-renodx-p0 findings 3-6). The path (or "link -> target") follows each fragment.
+        ("Read-only file not replaced (RHI never overwrites a file you locked; make it writable to let RHI change it): ",
+            "Arquivo somente leitura não substituído (o RHI nunca sobrescreve um arquivo que você bloqueou; torne-o gravável para o RHI poder alterá-lo): "),
+        ("Symbolic link not followed (RHI does not write through this link): ",
+            "Link simbólico não seguido (o RHI não grava através deste link): "),
+        ("ReShade.ini link not followed: its target must be a file named reshade.ini inside the game folder or the ReShade folder in your config directory. Link: ",
+            "Link do ReShade.ini não seguido: o destino deve ser um arquivo chamado reshade.ini dentro da pasta do jogo ou da pasta ReShade no seu diretório de configuração. Link: "),
+        ("Written content did not verify; the original file was kept: ", "O conteúdo gravado não pôde ser verificado; o arquivo original foi mantido: "),
+        (" A temporary file could not be removed: ", " Um arquivo temporário não pôde ser removido: "),
+        // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.
+        ("RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: ",
+            "Instalação do RenoDX recusada: um arquivo que o RHI Linux não gerencia já tem o nome deste add-on. Mova ou remova-o e instale novamente: "),
+        ("Managed RenoDX file was modified outside RHI and will not be replaced: ", "O arquivo RenoDX gerenciado foi modificado fora do RHI e não será substituído: "),
         // ReShade during a reshade.me outage (#132, upstream 2.8.3). Fragments compose around versions, HTTP codes and causes;
         // the apply message is covered too, otherwise its cached-copy note collapses to the generic unlocalised text.
         ("ReShade source preparation failed: ", "Falha ao preparar a origem do ReShade: "),

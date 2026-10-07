@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -52,6 +53,9 @@ public sealed class RenoDxDeploymentService
         _engineIniFiles = new UpstreamEngineIniFileManager(http, Path.Combine(_cacheDir, "engine-files"));
     }
 
+    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="AddonHostPolicy.RenoDxAddons"/>).</summary>
+    public static AddonHostPolicy DownloadPolicy => AddonHostPolicy.RenoDxAddons;
+
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
     public Task<RenoDxModEntry?> PrepareCompatibilityAsync(
@@ -82,6 +86,8 @@ public sealed class RenoDxDeploymentService
             var latestUrl = mod.UrlFor(architecture);
             if (string.IsNullOrWhiteSpace(latestUrl))
                 return new ManagedUpdateCheck(true, false, "Current RenoDX catalog match has no compatible payload for this architecture.", record.Version, CouldNotCheck: true);
+            if (!DownloadPolicy.IsTrusted(latestUrl))
+                return new ManagedUpdateCheck(true, false, new UntrustedDownloadException(latestUrl, DownloadPolicy).Message, record.Version, CouldNotCheck: true);
             if (!string.Equals(record.SourceUrl, latestUrl, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(record.Version, mod.Name, StringComparison.OrdinalIgnoreCase))
                 return new ManagedUpdateCheck(true, true,
@@ -200,7 +206,8 @@ public sealed class RenoDxDeploymentService
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.");
-        if (game.WikiUnlinkedByManifest)
+        // #141: an unlinked title is still installable from a manifest snapshot override, and only from that.
+        if (game.WikiUnlinkedByManifest && !await HasSnapshotOverrideAsync(game, cancellationToken).ConfigureAwait(false))
             return ComponentOperationResult.Fail("Upstream wikiUnlinks explicitly removes this title from RenoDX deployment.");
         if (!string.IsNullOrWhiteSpace(game.ExternalModUrl))
             return ComponentOperationResult.Fail($"Upstream forceExternalOnly requires external installation ({game.ExternalModLabel ?? "Open external mod"}): {game.ExternalModUrl}");
@@ -224,9 +231,13 @@ public sealed class RenoDxDeploymentService
         var url = mod.UrlFor(architecture);
         if (string.IsNullOrWhiteSpace(url))
             return ComponentOperationResult.Fail($"{mod.Name} does not publish a compatible {(architecture == PeArchitecture.X86 ? "32-bit" : "64-bit")} add-on.");
+        // DEP-06: wiki, database, manifest and Unity links alike must be HTTPS on a trusted host; checked before any download.
+        if (!DownloadPolicy.IsTrusted(url))
+            return ComponentOperationResult.Fail(new UntrustedDownloadException(url, DownloadPolicy).Message);
         var fileName = Path.GetFileName(new Uri(url).LocalPath);
         var extension = Path.GetExtension(fileName);
-        if (!extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
+        if ((!extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
+            || fileName.IndexOfAny(['*', '?', '\\', ':']) >= 0 || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             return ComponentOperationResult.Fail("RenoDX catalog returned an unsupported file type.");
 
         IReadOnlyDictionary<string, string> manifestIniOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -254,13 +265,27 @@ public sealed class RenoDxDeploymentService
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
         var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
 
-        foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", SearchOption.TopDirectoryOnly))
+        foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
         {
             var existingName = Path.GetFileName(existing);
             if (IsAuxiliaryRenoDxAddon(existingName)) continue;
             if (managedOldPath is not null && Path.GetFullPath(existing) == Path.GetFullPath(managedOldPath)) continue;
             if (Path.GetFullPath(existing) == Path.GetFullPath(target) && existingRecord is not null) continue;
             return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
+        }
+
+        // DEP-10: whatever the name (manifest overrides need not start with "renodx"), a file at the target that the
+        // RenoDX record does not own, or that changed since RHI wrote it, is never overwritten — and so never deleted on
+        // remove. Matched case-insensitively: Wine and ReShade would load a case variant alongside it.
+        foreach (var sameName in Directory.EnumerateFiles(deployDir, "*", CaseInsensitiveTopLevel)
+                     .Where(path => Path.GetFileName(path).Equals(fileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var owned = existingRecord?.Files.FirstOrDefault(file => PathsEqual(file.Path, sameName));
+            if (owned is null)
+                return ComponentOperationResult.Fail($"RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: {sameName}");
+            if (string.IsNullOrWhiteSpace(owned.Sha256)
+                || !string.Equals(await Sha256Async(sameName, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {sameName}");
         }
 
         try
@@ -316,7 +341,7 @@ public sealed class RenoDxDeploymentService
                     existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
                     ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
                     : null;
-                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState);
+                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
 
                 if (!string.IsNullOrWhiteSpace(game.EngineIniFileOverride))
                 {
@@ -329,30 +354,17 @@ public sealed class RenoDxDeploymentService
                     engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
                 }
             }
-            catch
+            catch (Exception failure)
             {
-                try
-                {
-                    if (targetExistedBeforeCopy && targetBeforeCopy is not null)
-                        await File.WriteAllBytesAsync(target, targetBeforeCopy, CancellationToken.None).ConfigureAwait(false);
-                    else if (!targetExistedBeforeCopy && File.Exists(target))
-                        File.Delete(target);
-                    if (iniPathBeforeApply is not null && iniBeforeApply is not null)
-                        await File.WriteAllBytesAsync(iniPathBeforeApply, iniBeforeApply, CancellationToken.None).ConfigureAwait(false);
-                    if (engineIniSnapshotPath is not null)
-                    {
-                        if (engineIniBeforeExisted && engineIniBeforeApply is not null)
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                            await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniBeforeApply, CancellationToken.None).ConfigureAwait(false);
-                        }
-                        else if (File.Exists(engineIniSnapshotPath))
-                        {
-                            File.Delete(engineIniSnapshotPath);
-                        }
-                    }
-                }
-                catch { }
+                // Put every file back as it was; one that cannot be restored keeps its snapshot and is reported (#121).
+                var snapshots = new List<FileSnapshot> { new(target, targetBeforeCopy) };
+                if (iniPathBeforeApply is not null && iniBeforeApply is not null)
+                    snapshots.Add(new(iniPathBeforeApply, iniBeforeApply, RenoDxIniOverrideManager.LinkPolicy(game.BinaryDirectory, game.InstallPath)));
+                if (engineIniSnapshotPath is not null)
+                    snapshots.Add(new(engineIniSnapshotPath, engineIniBeforeApply));
+                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
+                if (notes.Count > 0)
+                    throw new IOException($"{failure.Message} Rollback incomplete: {string.Join(" ", notes)}", failure);
                 throw;
             }
 
@@ -412,11 +424,17 @@ public sealed class RenoDxDeploymentService
             {
                 _records.Upsert(record);
             }
-            catch
+            catch (Exception saveFailure)
             {
-                // Nothing would own the Control UE changes; undo them rather than orphan them.
+                // Nothing would own the Control UE changes; undo them rather than orphan them, and say so if that fails.
                 if (controlApplied is not null)
-                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); } catch { }
+                {
+                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); }
+                    catch (Exception restoreFailure)
+                    {
+                        throw new IOException($"{saveFailure.Message} Control UE changes could not be undone: {restoreFailure.Message}", saveFailure);
+                    }
+                }
                 throw;
             }
             var iniSummary = iniApply.AppliedCount > 0
@@ -440,6 +458,20 @@ public sealed class RenoDxDeploymentService
         }
     }
 
+
+    private async Task<bool> HasSnapshotOverrideAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (_upstreamManifest is null) return false;
+        try
+        {
+            var gameOverride = await _upstreamManifest.ResolveGameOverrideAsync(game, cancellationToken).ConfigureAwait(false);
+            return !string.IsNullOrWhiteSpace(gameOverride?.SnapshotUrl);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidDataException or TimeoutException or System.Text.Json.JsonException)
+        {
+            return false; // manifest unreachable: the unlink stands
+        }
+    }
 
     // Upstream 2.7.9+ (InstallModAsync / UpdateOrchestrationService): for a Unity-engine game, the
     // RHI Unity database's per-game [renodx] keys are written on install and update. Upstream keys
@@ -541,14 +573,18 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("O diretório de binários do jogo ainda não é conhecido.");
         if (string.IsNullOrWhiteSpace(key))
             return ComponentOperationResult.Fail("A chave da configuração de compatibilidade do RenoDX está vazia.");
+        var normalizedKey = key.Trim();
+        var normalizedValue = value?.Trim() ?? "";
+        if (!RenoDxIniGrammar.IsSafePair(normalizedKey, normalizedValue))
+            return ComponentOperationResult.Fail($"RenoDX setting refused: not a plain INI key and value: {key}");
 
         try
         {
-            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, key, value, out var iniPath))
+            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, normalizedKey, normalizedValue, out var iniPath, game.InstallPath))
                 return ComponentOperationResult.Fail("O ReShade.ini ainda não contém uma seção [renodx]. Execute o jogo uma vez com o RenoDX instalado.");
             if (string.IsNullOrWhiteSpace(iniPath))
                 return ComponentOperationResult.Fail("O caminho do ReShade.ini não pôde ser resolvido após salvar a configuração do RenoDX.");
-            return ComponentOperationResult.Ok($"Configuração do RenoDX salva: {key}={value} → {iniPath}", iniPath);
+            return ComponentOperationResult.Ok($"Configuração do RenoDX salva: {normalizedKey}={normalizedValue} → {iniPath}", iniPath);
         }
         catch (Exception ex)
         {
@@ -673,21 +709,22 @@ public sealed class RenoDxDeploymentService
 
             try
             {
-                RenoDxIniOverrideManager.Cleanup(iniState);
+                RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
                 UpstreamEngineIniFileManager.Cleanup(engineIniState);
                 foreach (var file in record.Files)
                     if (File.Exists(file.Path)) File.Delete(file.Path);
             }
-            catch
+            catch (Exception failure)
             {
-                try
-                {
-                    if (iniSnapshotPath is not null && iniSnapshot is not null)
-                        await File.WriteAllBytesAsync(iniSnapshotPath, iniSnapshot, CancellationToken.None).ConfigureAwait(false);
-                    if (engineIniSnapshotPath is not null && engineIniSnapshot is not null)
-                        await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniSnapshot, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch { }
+                // Only files that existed are put back: a removal never recreates something that was absent.
+                var snapshots = new List<FileSnapshot>();
+                if (iniSnapshotPath is not null && iniSnapshot is not null)
+                    snapshots.Add(new(iniSnapshotPath, iniSnapshot,
+                        RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(iniSnapshotPath) ?? iniSnapshotPath, game.InstallPath)));
+                if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(new(engineIniSnapshotPath, engineIniSnapshot));
+                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
+                if (notes.Count > 0)
+                    throw new IOException($"{failure.Message} Restore incomplete: {string.Join(" ", notes)}", failure);
                 throw;
             }
 
@@ -698,6 +735,84 @@ public sealed class RenoDxDeploymentService
         {
             return ComponentOperationResult.Fail($"RenoDX removal failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// A file's bytes before an operation; null bytes = the file did not exist. <paramref name="LinkPolicy"/> says which
+    /// symlink the restore may write through (null: none).
+    /// </summary>
+    internal sealed record FileSnapshot(string Path, byte[]? Bytes, UserFileLinkPolicy? LinkPolicy = null);
+
+    private string SnapshotFallbackDirectory => System.IO.Path.Combine(_cacheDir, "restore-snapshots");
+
+    /// <summary>
+    /// Puts each snapshot back atomically (or deletes a file that did not exist). A file that cannot be restored
+    /// keeps its previous bytes in a sidecar next to it, else under <paramref name="fallbackDirectory"/>, and the
+    /// returned notes say where; nothing is dropped silently. A file that still holds its snapshot bytes is left alone.
+    /// Runs to completion whatever the caller's token, and whatever one snapshot throws.
+    /// </summary>
+    internal static IReadOnlyList<string> RestoreSnapshots(IEnumerable<FileSnapshot> snapshots, string fallbackDirectory)
+    {
+        var notes = new List<string>();
+        foreach (var snapshot in snapshots)
+        {
+            try
+            {
+                if (snapshot.Bytes is not null)
+                {
+                    if (File.Exists(snapshot.Path) && File.ReadAllBytes(snapshot.Path).AsSpan().SequenceEqual(snapshot.Bytes))
+                        continue;
+                    var directory = System.IO.Path.GetDirectoryName(snapshot.Path);
+                    if (string.IsNullOrEmpty(directory))
+                        throw new IOException($"Cannot resolve the folder of {snapshot.Path}.");
+                    Directory.CreateDirectory(directory);
+                    UserFileWriter.WriteAllBytes(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
+                }
+                else if (File.Exists(snapshot.Path))
+                {
+                    File.Delete(snapshot.Path);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Rollback must finish: any fault (bad recorded path, refused link, I/O) keeps the bytes and is reported.
+                notes.Add(KeepSnapshot(snapshot, ex, fallbackDirectory));
+            }
+        }
+        return notes;
+    }
+
+    private static string KeepSnapshot(FileSnapshot snapshot, Exception failure, string fallbackDirectory)
+    {
+        if (snapshot.Bytes is null)
+            return $"Could not remove {snapshot.Path}: {failure.Message}";
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        var candidates = new List<string>();
+        if (System.IO.Path.IsPathFullyQualified(snapshot.Path))
+            candidates.Add($"{snapshot.Path}.rhi-snapshot-{stamp}");
+        candidates.Add(System.IO.Path.Combine(fallbackDirectory, $"{stamp}-{SafeFileName(System.IO.Path.GetFileName(snapshot.Path))}"));
+        var errors = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(candidate)!);
+                UserFileWriter.WriteAllBytes(candidate, snapshot.Bytes);
+                return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
+            }
+            catch (Exception ex)
+            {
+                errors.Add(ex.Message);
+            }
+        }
+        return $"Could not restore {snapshot.Path} ({failure.Message}) nor keep a copy of its previous contents ({string.Join("; ", errors)})";
+    }
+
+    private static string SafeFileName(string name)
+    {
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "snapshot" : safe;
     }
 
     public static string ResolveAddonDeployPath(string binaryDirectory)
@@ -755,6 +870,17 @@ public sealed class RenoDxDeploymentService
         }
     }
 
+    private static readonly EnumerationOptions CaseInsensitiveTopLevel = new()
+    {
+        MatchCasing = MatchCasing.CaseInsensitive,
+        RecurseSubdirectories = false,
+        IgnoreInaccessible = false,
+        AttributesToSkip = 0
+    };
+
+    private static bool PathsEqual(string left, string right)
+        => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.Ordinal);
+
     private static bool IsAuxiliaryRenoDxAddon(string fileName)
         => fileName.Contains("dlss5", StringComparison.OrdinalIgnoreCase) ||
            fileName.Contains("upgrade", StringComparison.OrdinalIgnoreCase) ||
@@ -765,6 +891,7 @@ public sealed class RenoDxDeploymentService
     // CacheStamp = provenance proving the cached bytes are the ones RHI downloaded (#142).
     internal async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
     {
+        DownloadPolicy.Validate(url);
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
         var source = cache + ".source";
@@ -777,6 +904,7 @@ public sealed class RenoDxDeploymentService
         using (var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
             response.EnsureSuccessStatusCode();
+            DownloadPolicy.ValidateFinal(response, url);
             remote = RenoDxRemoteStamp.FromResponse(response);
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
@@ -828,15 +956,17 @@ public sealed class RenoDxDeploymentService
         {
             using var headCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             headCts.CancelAfter(TimeSpan.FromSeconds(10));
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var request = new HttpRequestMessage(HttpMethod.Head, DownloadPolicy.Validate(url));
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headCts.Token).ConfigureAwait(false);
+            DownloadPolicy.ValidateFinal(response, url);
             return response.IsSuccessStatusCode
                 ? (RenoDxRemoteStamp.FromResponse(response), null)
                 : (null, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        // Only network failures and the 10 s timeout mean "could not ask" (#108); anything else is a fault and propagates.
         catch (OperationCanceledException) { return (null, "the request timed out"); }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or NotSupportedException or UriFormatException) { return (null, ex.Message); }
+        catch (HttpRequestException ex) { return (null, ex.Message); }
     }
 
     private static bool HasReShade(string binaryDirectory)

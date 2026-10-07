@@ -2,6 +2,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -369,7 +370,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
                 if (component.Kind == ManagedComponentKind.RenoDX && component.Availability == ComponentAvailability.Available)
                 {
-                    if (game.WikiUnlinkedByManifest)
+                    var renoDxPrepared = _renodx.TryGetPreparedCompatibility(game, out var preparedRenoDx);
+                    // #141: an unlinked title keeps RenoDX only through a manifest snapshot override (the catalogue
+                    // returns nothing else for it); without a prepared match it stays unsupported.
+                    var unlinkedOverride = game.WikiUnlinkedByManifest && renoDxPrepared && preparedRenoDx is not null;
+                    if (game.WikiUnlinkedByManifest && !unlinkedOverride)
                     {
                         component.Availability = ComponentAvailability.Unsupported;
                         component.ActionAllowed = false;
@@ -380,11 +385,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = $"Upstream forceExternalOnly requires external installation ({game.ExternalModLabel ?? "Open external mod"}): {game.ExternalModUrl}";
                     }
-                    else if (_renodx.TryGetPreparedCompatibility(game, out var preparedRenoDx) && preparedRenoDx is null)
+                    else if (renoDxPrepared && preparedRenoDx is null)
                     {
                         component.Availability = ComponentAvailability.Unsupported;
                         component.ActionAllowed = false;
                         component.Note = "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.";
+                    }
+                    else if (preparedRenoDx is not null && UntrustedRenoDxLink(preparedRenoDx) is { } refused)
+                    {
+                        // DEP-06: never offer a download RHI would refuse; say why instead.
+                        component.ActionAllowed = false;
+                        component.Note = refused;
                     }
                     else if (!reShadePresent && !(managedLumaFramework is not null && !_lumaPolicy.GetCachedOrDefault(game).RenoDxCompatible))
                     {
@@ -398,6 +409,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     else if (managedLumaFramework is not null)
                     {
                         component.Note = "Upstream compatibility data allows RenoDX HDR and Luma Framework to coexist for this title. Existing file-protection and dependency checks still apply.";
+                    }
+                    else if (unlinkedOverride)
+                    {
+                        component.Note = "Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: "
+                            + (preparedRenoDx!.SnapshotUrl64 ?? preparedRenoDx.SnapshotUrl32);
                     }
                 }
 
@@ -822,6 +838,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 ? ModAuthorCredit.ForRenoDx(_renodx.TryGetPreparedCompatibility(game, out var entry) ? entry : null, game)
                 : ModAuthorCredit.ForLuma(record, _lumaFramework.GetCachedNamedMatch(game));
         }
+    }
+
+    // The refusal text when every link of the entry is outside the RenoDX host allow-list; null when one is usable.
+    internal static string? UntrustedRenoDxLink(RenoDxModEntry entry)
+    {
+        var urls = new[] { entry.UrlFor(PeArchitecture.X64), entry.UrlFor(PeArchitecture.X86) }
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (urls.Length == 0 || urls.Any(RenoDxDeploymentService.DownloadPolicy.IsTrusted)) return null;
+        return new UntrustedDownloadException(urls[0], RenoDxDeploymentService.DownloadPolicy).Message;
     }
 
     // Every mutating entry point goes through this: an unconfirmed patch target, or records left

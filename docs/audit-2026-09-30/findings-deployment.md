@@ -73,6 +73,7 @@
 - **Verification:** Integration test with a fake `IGameRunningProbe` returning true: install must refuse. Unit test: make ShortFuse remove throw after the registry snapshot and assert that `user.reg` is replaced atomically (inode changes; never zero length).
 
 ### DEP-06 — RenoDX add-on download: no scheme or host allow-list and no integrity check
+- **Status:** fixed on `w1/renodx-p0` in `3a3e4be` (#25): shared allow-list (HTTPS, host allow-list derived from upstream 2.8.5 data, final URI checked after redirects) in RenoDX, RenoDX Upgrade, ReShade Addon Manager and DOF Fix. No digest exists upstream for RenoDX snapshots; integrity stays with DEP-07. Lane-local type renamed `RHI.Core.Services.RenoDxSafety.AddonHostPolicy` so it compiles beside w1/core; the integrator folds it into `RHI.Core.Deployment.TrustedDownloadPolicy`.
 - **Where:**
   - Wiki scraping accepts any `http…` link: `RenoDxCatalogService.cs:307-311` (`MakeAbsolute`: `href.StartsWith("http")` passes `http://` and any host), `:303-305` (only the `.addon64` / `.addon32` suffix is checked).
   - The manifest `SnapshotOverrides` URL is taken verbatim: `UpstreamRhiManifestService.cs:466` → `RenoDxCatalogService.cs:143-154`.
@@ -120,6 +121,7 @@
 - **Verification:** Test `ApplySelectionAsync` with a fake payload source that fails on the second add-on, and make the rollback copy of the first fail. Assert the backup survives on disk.
 
 ### DEP-10 — RenoDX can overwrite and later delete a foreign file without a backup
+- **Status:** fixed on `w1/renodx-p0` in `f7ad841` (#29): any same-named file (case-insensitive) not owned by the RenoDX record with an unchanged hash refuses the install; nothing is overwritten, so nothing foreign is deleted on remove.
 - **Where:** `RenoDxDeploymentService.cs:166-173` (foreign-file guard matches only `renodx*.addon*`), `:162,215` (`CopyAtomicAsync` overwrites `target`), `:280` (`ExistedBeforeInstall = false` hard-coded), `:489-490` (remove deletes the target).
 - **What happens:** When the resolved file name does not start with `renodx` (possible for manifest `SnapshotOverrides` URLs such as third-party UE-Extended builds), a pre-existing file of that name is overwritten without a `.original`. On remove it is deleted. The pre-copy snapshot (`:190-193`) is used only for rollback of a failed install.
 - **Why it matters:** A user-installed add-on is destroyed silently.
