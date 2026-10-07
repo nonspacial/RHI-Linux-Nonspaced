@@ -1,4 +1,3 @@
-using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
@@ -126,7 +125,7 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
         if (TryGet(policy.AuthorOverrides, canonical, out var author))
             game.AuthorOverride = author;
         // Upstream matches install warnings on the card's own title. Like the blacklist, they are a title policy here:
-        // a canonical name recovered only from path evidence (a folder that contains another manifest title) must not
+        // a canonical name recovered only from path evidence (a game folder named after another manifest title) must not
         // attach that game's warning to this one.
         if (IsTitleMatch(game.Name, canonical) && TryGet(policy.InstallWarnings, canonical, out var warnings))
             game.ManifestInstallWarnings = warnings;
@@ -182,55 +181,25 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
 
         if (!string.IsNullOrWhiteSpace(game.Name))
         {
-            var normalizedTitle = NormalizeIdentity(game.Name);
+            var normalizedTitle = GamePathIdentity.Normalize(game.Name);
             var titleMatches = knownNames
-                .Where(name => NormalizeIdentity(name) == normalizedTitle)
+                .Where(name => GamePathIdentity.Normalize(name) == normalizedTitle)
                 .Take(2)
                 .ToArray();
             if (titleMatches.Length == 1) return titleMatches[0];
         }
 
-        var evidence = new[] { game.InstallPath, game.BinaryDirectory, game.ExecutablePath }
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => NormalizeIdentity(x!))
-            .Where(x => x.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (evidence.Length == 0) return null;
+        var evidence = GamePathIdentity.Of(game);
+        if (evidence.IsEmpty) return null;
 
         var matches = knownNames
-            .Where(name =>
-            {
-                var canonical = NormalizeIdentity(name);
-                return canonical.Length > 0 && evidence.Any(item => ContainsIdentityPhrase(item, canonical));
-            })
+            .Where(name => GamePathIdentity.Matches(evidence, name))
             .Take(2)
             .ToArray();
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private static string NormalizeIdentity(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        var separator = true;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                separator = false;
-            }
-            else if (!separator)
-            {
-                builder.Append(' ');
-                separator = true;
-            }
-        }
-        return builder.ToString().Trim();
-    }
-
-    private static bool ContainsIdentityPhrase(string evidence, string canonical)
-        => (" " + evidence + " ").Contains(" " + canonical + " ", StringComparison.Ordinal);
+    private static string NormalizeIdentity(string value) => GamePathIdentity.Normalize(value);
 
     private static string? ResolveFirstExistingCandidate(string root, string raw)
     {

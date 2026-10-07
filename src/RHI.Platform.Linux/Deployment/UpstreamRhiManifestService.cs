@@ -369,9 +369,9 @@ public sealed partial class UpstreamRhiManifestService
 
     /// <summary>
     /// Resolves the upstream lumaNameOverrides mapping for a Linux-discovered game.
-    /// Exact launcher title wins; when launcher naming differs, a unique manifest title present
-    /// in the install/binary/executable path is accepted using the same authority rule as other
-    /// per-game manifest overrides.
+    /// Exact launcher title wins; when launcher naming differs, a unique manifest title equal to one
+    /// of the game's own folder names or its executable stem is accepted, as for other per-game
+    /// manifest overrides.
     /// </summary>
     public async Task<string?> ResolveLumaNameOverrideAsync(
         DetectedGame game,
@@ -385,20 +385,11 @@ public sealed partial class UpstreamRhiManifestService
         if (!string.IsNullOrWhiteSpace(game.Name) && values.TryGetValue(game.Name.Trim(), out var exact))
             return exact;
 
-        var evidence = new[] { game.InstallPath, game.BinaryDirectory, game.ExecutablePath }
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Select(value => NormalizeGameIdentity(value!))
-            .Where(value => value.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (evidence.Length == 0) return null;
+        var evidence = RHI.Platform.Linux.Detection.GamePathIdentity.Of(game);
+        if (evidence.IsEmpty) return null;
 
         var matches = values
-            .Where(pair =>
-            {
-                var canonical = NormalizeGameIdentity(pair.Key);
-                return canonical.Length > 0 && evidence.Any(item => ContainsIdentityPhrase(item, canonical));
-            })
+            .Where(pair => RHI.Platform.Linux.Detection.GamePathIdentity.Matches(evidence, pair.Key))
             .Take(2)
             .ToArray();
         return matches.Length == 1 ? matches[0].Value : null;
@@ -508,8 +499,8 @@ public sealed partial class UpstreamRhiManifestService
     /// Resolves upstream metadata for a Linux-discovered game. Launcher/sideload names are
     /// not always the canonical Windows RHI title (for example Heroic may expose "Expedition 33"
     /// while the manifest key is "Clair Obscur: Expedition 33"). Exact title identity remains
-    /// authoritative; when that fails, a unique canonical manifest title embedded in the game's
-    /// install/binary/executable path is accepted as Linux launcher identity evidence.
+    /// authoritative; when that fails, a unique canonical manifest title equal to one of the game's
+    /// own folder names or its executable stem is accepted as Linux launcher identity evidence.
     /// </summary>
     public async Task<UpstreamGameOverrideDefinition?> ResolveGameOverrideAsync(
         DetectedGame game,
@@ -525,57 +516,19 @@ public sealed partial class UpstreamRhiManifestService
             && overrides.TryGetValue(game.Name.Trim(), out var exact))
             return exact;
 
-        var identityEvidence = new[]
-        {
-            game.InstallPath,
-            game.BinaryDirectory,
-            game.ExecutablePath
-        }
-        .Where(value => !string.IsNullOrWhiteSpace(value))
-        .Select(value => NormalizeGameIdentity(value!))
-        .Where(value => value.Length > 0)
-        .Distinct(StringComparer.Ordinal)
-        .ToArray();
-
-        if (identityEvidence.Length == 0) return null;
+        // Path evidence: the game's own folder names or executable stem, or a parent folder that
+        // carries the whole title the card's own name is part of; never any phrase in the full path (Refs #62).
+        var evidence = RHI.Platform.Linux.Detection.GamePathIdentity.Of(game);
+        if (evidence.IsEmpty) return null;
 
         var pathMatches = overrides.Values
-            .Where(definition =>
-            {
-                var canonical = NormalizeGameIdentity(definition.GameName);
-                return canonical.Length > 0
-                       && identityEvidence.Any(evidence => ContainsIdentityPhrase(evidence, canonical));
-            })
+            .Where(definition => RHI.Platform.Linux.Detection.GamePathIdentity.Matches(evidence, definition.GameName))
             .DistinctBy(definition => definition.GameName, StringComparer.OrdinalIgnoreCase)
             .Take(2)
             .ToArray();
 
         return pathMatches.Length == 1 ? pathMatches[0] : null;
     }
-
-    private static string NormalizeGameIdentity(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        var previousWasSeparator = true;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                previousWasSeparator = false;
-            }
-            else if (!previousWasSeparator)
-            {
-                builder.Append(' ');
-                previousWasSeparator = true;
-            }
-        }
-
-        return builder.ToString().Trim();
-    }
-
-    private static bool ContainsIdentityPhrase(string evidence, string canonical)
-        => (" " + evidence + " ").Contains(" " + canonical + " ", StringComparison.Ordinal);
 
     private async Task<UpstreamManifestDocument> FetchDocumentAsync(CancellationToken cancellationToken)
     {
