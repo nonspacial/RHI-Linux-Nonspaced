@@ -79,11 +79,10 @@ public sealed class PcgwCentralDataLoadTests : IDisposable
         var service = new PcgwCentralDataService(new HttpClient(handler), Path.Combine(_root, "pcgw_data.json"),
             "https://example.test/live.json", "https://example.test/pinned.json");
 
-        var previous = AppLog.Current;
-        AppLog.Current = log;
+        var flowLog = AppLog.UseInThisFlow(log);
         PcgwCentralData? data;
         try { data = await service.GetAsync(); }
-        finally { AppLog.Current = previous; }
+        finally { flowLog.Dispose(); }
 
         Assert.Null(data);
         Assert.Contains("pinned download failed", service.LastError);

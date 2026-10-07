@@ -14,7 +14,35 @@ public sealed class AppLog
 
     public AppLog(string path) => FilePath = path;
 
-    public static AppLog? Current { get; set; }
+    private static readonly AsyncLocal<AppLog?> FlowLog = new();
+    private static AppLog? s_current;
+
+    /// <summary>
+    /// The process log, set once at start-up. A log attached with <see cref="UseInThisFlow"/> takes
+    /// precedence inside that async flow.
+    /// </summary>
+    public static AppLog? Current
+    {
+        get => FlowLog.Value ?? s_current;
+        set => s_current = value;
+    }
+
+    /// <summary>
+    /// Sends <see cref="Warn"/> from this async flow (and the tasks it starts) to <paramref name="log"/>
+    /// until the result is disposed. Lets parallel tests each read their own log without swapping the
+    /// process-wide <see cref="Current"/> under one another.
+    /// </summary>
+    public static IDisposable UseInThisFlow(AppLog log)
+    {
+        var previous = FlowLog.Value;
+        FlowLog.Value = log;
+        return new FlowRestore(previous);
+    }
+
+    private sealed class FlowRestore(AppLog? previous) : IDisposable
+    {
+        public void Dispose() => FlowLog.Value = previous;
+    }
 
     public string FilePath { get; }
 

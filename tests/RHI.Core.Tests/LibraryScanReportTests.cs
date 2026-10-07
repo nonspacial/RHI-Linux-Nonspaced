@@ -95,15 +95,14 @@ public sealed class LibraryScanReportTests : IDisposable
     public async Task Failures_AreWrittenToTheAppLog_WhichRotates()
     {
         var log = new AppLog(Path.Combine(_root, "state", "rhi-linux", "rhi.log"));
-        var previous = AppLog.Current;
-        AppLog.Current = log;
+        var flowLog = AppLog.UseInThisFlow(log);
         try
         {
             await new GameLibraryScanner([new Throwing("Lutris")]).ScanWithReportAsync(null);
         }
         finally
         {
-            AppLog.Current = previous;
+            flowLog.Dispose();
         }
 
         var text = await File.ReadAllTextAsync(log.FilePath);

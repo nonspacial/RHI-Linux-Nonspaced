@@ -468,8 +468,7 @@ public sealed class DeploymentCrashSafetyTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(log)!);
         File.WriteAllText(log, new string('x', 1024 * 1024 + 1));
         var appLog = new AppLog(P("state", "rhi.log"));
-        var previous = AppLog.Current;
-        AppLog.Current = appLog;
+        var flowLog = AppLog.UseInThisFlow(appLog);
         try
         {
             var failed = new JournalRecoveryReport([new("id", "ReShade install: Game", JournalRecoveryOutcome.RollbackFailed, ["no surviving copy"], [])]);
@@ -477,7 +476,7 @@ public sealed class DeploymentCrashSafetyTests : IDisposable
         }
         finally
         {
-            AppLog.Current = previous;
+            flowLog.Dispose();
         }
 
         Assert.True(File.Exists(log + ".1"));

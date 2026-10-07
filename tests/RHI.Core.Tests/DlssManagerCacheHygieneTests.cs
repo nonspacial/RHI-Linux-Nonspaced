@@ -127,8 +127,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         var cache = Path.Combine(_root, "cache-unwritable");
         Directory.CreateDirectory(Path.Combine(cache, "dlss_manifest.json")); // a folder where the file goes: the write fails
         var log = new AppLog(Path.Combine(_root, "state", "rhi.log"));
-        var previous = AppLog.Current;
-        AppLog.Current = log;
+        var flowLog = AppLog.UseInThisFlow(log);
         DlssManifestData manifest;
         DlssManagerService service;
         try
@@ -138,7 +137,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         }
         finally
         {
-            AppLog.Current = previous;
+            flowLog.Dispose();
         }
 
         Assert.Equal("9.1", Assert.Single(manifest.Dlss).Version);
