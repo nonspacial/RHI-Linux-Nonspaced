@@ -25,7 +25,9 @@ public sealed partial class SteamGameDetector : IGameDetector
         var seenLibraries = new HashSet<string>(StringComparer.Ordinal);
         foreach (var steamRoot in LinuxPaths.DistinctExisting(steamRoots))
         {
-            foreach (var library in FindLibraries(steamRoot))
+            var libraries = FindLibraries(steamRoot).ToList();
+            var classifier = SteamAppClassifier.Load(steamRoot, libraries);
+            foreach (var library in libraries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!seenLibraries.Add(LinuxPaths.Canonicalise(library))) continue;
@@ -39,15 +41,21 @@ public sealed partial class SteamGameDetector : IGameDetector
                         var fields = DetectionHelpers.ParseFlatVdf(File.ReadAllText(acf));
                         if (!fields.TryGetValue("name", out var name) || !fields.TryGetValue("installdir", out var installDir))
                             continue;
-                        if (DetectionHelpers.IsKnownSteamTool(name, installDir))
+                        var appId = ExtractAppIdFromAcfFilename(Path.GetFileName(acf));
+                        if (!SteamAppClassifier.IsFullyInstalled(fields.GetValueOrDefault("StateFlags")))
+                            continue;
+                        if (classifier.IsNotAGame(appId, name, installDir))
                             continue;
                         var gameRoot = Path.Combine(steamapps, "common", installDir);
                         if (!Directory.Exists(gameRoot)) continue;
-                        var appId = ExtractAppIdFromAcfFilename(Path.GetFileName(acf));
                         var prefix = appId is int id ? Path.Combine(steamapps, "compatdata", id.ToString(), "pfx") : null;
                         if (prefix is not null && !Directory.Exists(prefix)) prefix = null;
+                        // What Steam will actually run: the per-app compatibility tool, else the native build when
+                        // the app ships one, else the global default tool. Unknown falls back to the prefix test.
+                        var platform = classifier.Platform(appId);
+                        if (platform == SteamAppClassifier.LaunchPlatform.Native) prefix = null;
                         var index = GameFileIndexer.Build(gameRoot, 8, cancellationToken);
-                        var nativeExecutable = prefix is null
+                        var nativeExecutable = platform != SteamAppClassifier.LaunchPlatform.Windows && prefix is null
                             ? DetectionHelpers.FindLikelyNativeExecutable(gameRoot, index, cancellationToken)
                             : null;
                         var windowsExecutable = DetectionHelpers.FindLikelyExecutable(gameRoot, index, cancellationToken);
@@ -79,11 +87,16 @@ public sealed partial class SteamGameDetector : IGameDetector
                             ExecutablePath = executable,
                             LaunchExecutablePath = executable,
                             Runner = runner,
+                            CompatibilityTool = nativeExecutable is null ? classifier.CompatTool(appId) : null,
                             LaunchCommand = appId is int launchId ? $"steam -applaunch {launchId}" : null
                         };
                         games.Add(game);
                     }
-                    catch { }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One unreadable manifest or game folder skips that app, not the whole Steam scan.
+                        System.Diagnostics.Debug.WriteLine($"[RHI] Steam manifest skipped: {acf}: {ex.Message}");
+                    }
                 }
             }
         }
