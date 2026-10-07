@@ -11,6 +11,12 @@ namespace RHI.Core.Deployment;
 /// (fsync), re-read and compared in full against what was meant to be written (never length only),
 /// renamed over the target in one step and followed by an fsync of the directory so the rename
 /// itself survives a power loss. A failure removes the temporary file and leaves the target as it was.
+/// <para>
+/// What the re-read verifies: it runs straight after the fsync, so it is normally served from the
+/// page cache. It catches software faults (short or misdirected writes, a FUSE or network file
+/// system returning other bytes, a concurrent writer), not media corruption that only shows once
+/// the cached pages are evicted. The cost is one extra SHA-256 pass per write.
+/// </para>
 /// </summary>
 public static class AtomicFile
 {
@@ -277,6 +283,87 @@ public static class AtomicFile
             FsyncDirectory(fromDir);
     }
 
+    /// <summary>
+    /// Moves a file without ever holding it only in unflushed memory. Within one file system this is
+    /// a rename (never replacing an existing <paramref name="to"/>) plus an fsync of both directories.
+    /// Across file systems (EXDEV), where <see cref="File.Move(string, string)"/> would copy without
+    /// fsync and unlink the source, it writes a verified, fsynced copy and deletes the source only
+    /// after that copy is in place; a failed copy leaves the source untouched.
+    /// </summary>
+    public static void MoveDurable(string from, string to)
+    {
+        if (File.Exists(to) || Directory.Exists(to))
+            throw new IOException($"Refusing to move {from}: {to} already exists.");
+        if (!SimulateCrossDeviceForTesting.Value && TryRenameNoCopy(from, to))
+        {
+            FsyncDirectoryOf(to);
+            FsyncDirectoryOf(from);
+            return;
+        }
+        Copy(from, to);
+        CopyCompletedForTesting.Value?.Invoke(to);
+        Delete(from);
+    }
+
+    /// <summary>Test seam: makes <see cref="MoveDurable"/> take its cross-file-system path.</summary>
+    internal static readonly AsyncLocal<bool> SimulateCrossDeviceForTesting = new();
+
+    /// <summary>Test seam: runs after the cross-file-system copy is placed, before the source is deleted.</summary>
+    internal static readonly AsyncLocal<Action<string>?> CopyCompletedForTesting = new();
+
+    /// <summary>
+    /// rename(2) that reports EXDEV as false instead of falling back to a copy. Off Linux (or with
+    /// no C library to call) it uses <see cref="File.Move(string, string)"/> only when both paths are
+    /// in the same directory, where a rename cannot cross a file system.
+    /// </summary>
+    private static bool TryRenameNoCopy(string from, string to)
+    {
+        const int exdev = 18;
+        if (OperatingSystem.IsLinux())
+        {
+            int result, errno;
+            try
+            {
+                result = Libc.rename(from, to);
+                errno = Marshal.GetLastPInvokeError();
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+                try
+                {
+                    result = Glibc.rename(from, to);
+                    errno = Marshal.GetLastPInvokeError();
+                }
+                catch (Exception inner) when (inner is DllNotFoundException or EntryPointNotFoundException)
+                {
+                    return false; // no C library: take the verified-copy path
+                }
+            }
+            if (result == 0) return true;
+            if (errno == exdev) return false;
+            throw new IOException($"Could not move {from} to {to} (errno {errno}).");
+        }
+        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(from)), Path.GetDirectoryName(Path.GetFullPath(to)), StringComparison.Ordinal))
+            return false;
+        File.Move(from, to, overwrite: false);
+        return true;
+    }
+
+    /// <summary>
+    /// <see cref="Directory.CreateDirectory(string)"/> that also fsyncs the parent of every directory
+    /// it had to create, so the new folders survive a power loss together with what is put in them.
+    /// </summary>
+    public static void CreateDirectoryDurable(string directory)
+    {
+        var full = Path.GetFullPath(directory);
+        var missing = new Stack<string>();
+        for (var current = full; !string.IsNullOrEmpty(current) && !Directory.Exists(current); current = Path.GetDirectoryName(current)!)
+            missing.Push(current);
+        if (missing.Count == 0) return;
+        Directory.CreateDirectory(full);
+        foreach (var created in missing) FsyncDirectoryOf(created);
+    }
+
     /// <summary>Deletes a file and makes the removal durable.</summary>
     public static void Delete(string path)
     {
@@ -338,6 +425,9 @@ public static class AtomicFile
 
         [DllImport("libc", SetLastError = true)]
         public static extern int close(int fd);
+
+        [DllImport("libc", SetLastError = true)]
+        public static extern int rename([MarshalAs(UnmanagedType.LPUTF8Str)] string from, [MarshalAs(UnmanagedType.LPUTF8Str)] string to);
     }
 
     private static class Glibc
@@ -350,6 +440,9 @@ public static class AtomicFile
 
         [DllImport("libc.so.6", SetLastError = true)]
         public static extern int close(int fd);
+
+        [DllImport("libc.so.6", SetLastError = true)]
+        public static extern int rename([MarshalAs(UnmanagedType.LPUTF8Str)] string from, [MarshalAs(UnmanagedType.LPUTF8Str)] string to);
     }
 }
 

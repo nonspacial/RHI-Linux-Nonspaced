@@ -13,9 +13,12 @@ public sealed record TrustedDownloadPolicy(IReadOnlyCollection<string> AllowedHo
     public static readonly TrustedDownloadPolicy GitHubReleases = new(
         ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
 
+    /// <summary>HTTPS on the default port, no user-info, and a host on the list.</summary>
     public bool Allows(Uri uri)
         => uri.IsAbsoluteUri
            && uri.Scheme == Uri.UriSchemeHttps
+           && uri.IsDefaultPort
+           && string.IsNullOrEmpty(uri.UserInfo)
            && AllowedHosts.Any(host => string.Equals(host, uri.Host, StringComparison.OrdinalIgnoreCase));
 }
 
