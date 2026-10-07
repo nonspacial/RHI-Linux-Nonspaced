@@ -42,10 +42,9 @@ public sealed class HeroicGameDetector : IGameDetector
         }
 
         // Prefer exact prefix data from per-game Heroic settings when available, then fall
-        // back to the long-standing ~/Games/Heroic/Prefixes name match.
+        // back to a conservative ~/Games/Heroic/Prefixes name match.
         AttachConfiguredPrefixes(result.Values);
-        foreach (var prefixRoot in LinuxPaths.HeroicPrefixRoots())
-            AttachPrefixes(result.Values.Where(g => string.IsNullOrWhiteSpace(g.PrefixPath)), prefixRoot);
+        AttachFallbackPrefixes(result.Values.ToList(), LinuxPaths.HeroicPrefixRoots());
 
         return result.Values.ToArray();
     }
@@ -155,6 +154,8 @@ public sealed class HeroicGameDetector : IGameDetector
 
             var name = StringValue(merged, "title", "name", "app_title", "appTitle");
             var isInstalled = BoolValue(merged, "is_installed", "isInstalled");
+            // GOG and sideloaded games can be native Linux builds: they never run in a Wine prefix.
+            var nativeLinux = string.Equals(StringValue(merged, "platform", "install_platform")?.Trim(), "linux", StringComparison.OrdinalIgnoreCase);
 
             if (!string.IsNullOrWhiteSpace(install)
                 && !string.IsNullOrWhiteSpace(name)
@@ -176,7 +177,7 @@ public sealed class HeroicGameDetector : IGameDetector
                     HeroicAppName = appName,
                     ExecutablePath = executablePath,
                     LaunchExecutablePath = executablePath,
-                    Runner = "Wine/Proton (Heroic)",
+                    Runner = nativeLinux ? NativeRunner : "Wine/Proton (Heroic)",
                     LaunchCommand = !string.IsNullOrWhiteSpace(appName)
                         ? $"xdg-open {EscapeShell(BuildHeroicUri(appName, runner))}"
                         : null
@@ -255,7 +256,8 @@ public sealed class HeroicGameDetector : IGameDetector
         foreach (var property in element.EnumerateObject())
         {
             if (property.Value.ValueKind != JsonValueKind.Object
-                || !byApp.TryGetValue(property.Name, out var game))
+                || !byApp.TryGetValue(property.Name, out var game)
+                || IsNative(game)) // a native Linux build never runs in a Wine prefix
                 continue;
 
             var props = property.Value.EnumerateObject()
@@ -344,19 +346,56 @@ public sealed class HeroicGameDetector : IGameDetector
         return Environment.ExpandEnvironmentVariables(value);
     }
 
-    private static void AttachPrefixes(IEnumerable<DetectedGame> games, string prefixRoot)
+    private const string NativeRunner = "Native Linux";
+
+    private static bool IsNative(DetectedGame game) => string.Equals(game.Runner, NativeRunner, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Name fallback for games without a configured prefix. A prefix's settings drive registry writes
+    /// (DLL overrides), so a wrong match damages another game: the folder name must equal the title once
+    /// normalised, or be within a 0.9 edit-distance ratio of it; a tie between folders, or two games
+    /// claiming one folder equally, attaches nothing; a folder already in use is never reused; native
+    /// Linux games get none.
+    /// </summary>
+    internal static void AttachFallbackPrefixes(IReadOnlyList<DetectedGame> games, IEnumerable<string> prefixRoots)
     {
-        string[] dirs;
-        try { dirs = Directory.GetDirectories(prefixRoot); } catch { return; }
-        foreach (var game in games)
+        var taken = new HashSet<string>(
+            games.Where(g => !string.IsNullOrWhiteSpace(g.PrefixPath)).Select(g => LauncherOwnedPrefixes.Canonicalise(g.PrefixPath!)),
+            StringComparer.Ordinal);
+        var folders = new List<(string Prefix, string Name)>();
+        foreach (var root in prefixRoots)
         {
-            var normalized = Normalize(game.Name);
-            var best = dirs
-                .Select(d => (path: d, score: Similarity(normalized, Normalize(Path.GetFileName(d)))))
-                .OrderByDescending(x => x.score)
-                .FirstOrDefault();
-            if (best.score >= 0.70)
-                game.PrefixPath = FindWinePrefix(best.path);
+            string[] dirs;
+            try { dirs = Directory.GetDirectories(root); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var dir in dirs)
+            {
+                var prefix = FindWinePrefix(dir);
+                if (!Directory.Exists(Path.Combine(prefix, "drive_c")) || taken.Contains(LauncherOwnedPrefixes.Canonicalise(prefix)))
+                    continue;
+                folders.Add((prefix, Normalize(Path.GetFileName(dir))));
+            }
+        }
+
+        var claims = new List<(DetectedGame Game, string Prefix, double Score)>();
+        foreach (var game in games.Where(g => string.IsNullOrWhiteSpace(g.PrefixPath) && !IsNative(g)))
+        {
+            var title = Normalize(game.Name);
+            var scored = folders
+                .Select(folder => (folder.Prefix, Score: Similarity(title, folder.Name)))
+                .Where(x => x.Score >= 0.9)
+                .OrderByDescending(x => x.Score)
+                .ToList();
+            if (scored.Count == 0) continue;
+            if (scored.Count > 1 && scored[1].Score == scored[0].Score) continue; // two folders fit equally well
+            claims.Add((game, scored[0].Prefix, scored[0].Score));
+        }
+
+        foreach (var contested in claims.GroupBy(c => LauncherOwnedPrefixes.Canonicalise(c.Prefix), StringComparer.Ordinal))
+        {
+            var ranked = contested.OrderByDescending(c => c.Score).ToList();
+            if (ranked.Count > 1 && ranked[1].Score == ranked[0].Score) continue; // two games fit equally well
+            ranked[0].Game.PrefixPath = ranked[0].Prefix;
         }
     }
 
@@ -388,13 +427,22 @@ public sealed class HeroicGameDetector : IGameDetector
     };
 
     private static string Normalize(string value) => new(value.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
-    private static double Similarity(string a, string b)
+    /// <summary>1 − Levenshtein distance / longer length, on normalised names ("hades" vs "heads" = 0.6).</summary>
+    internal static double Similarity(string a, string b)
     {
         if (a.Length == 0 || b.Length == 0) return 0;
         if (a == b) return 1;
-        if (a.Contains(b) || b.Contains(a)) return (double)Math.Min(a.Length, b.Length) / Math.Max(a.Length, b.Length);
-        var common = a.Intersect(b).Count();
-        return (double)common / Math.Max(a.Length, b.Length);
+        var previous = new int[b.Length + 1];
+        var current = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) previous[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            current[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+                current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            (previous, current) = (current, previous);
+        }
+        return 1.0 - (double)previous[b.Length] / Math.Max(a.Length, b.Length);
     }
 
     private static string BuildHeroicUri(string appName, string runner)
