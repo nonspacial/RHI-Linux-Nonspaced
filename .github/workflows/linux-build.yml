@@ -2,21 +2,100 @@ name: Linux build
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
+
+# Least privilege: jobs read the repository; only the release job may write (to create a draft release).
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      # SDK from global.json; the 8.0 entry provides the runtime the net8.0 tests run on.
+      # The NuGet cache is keyed on the committed packages.lock.json files.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
           dotnet-version: '8.0.x'
-      - name: Validate release tree
-        run: bash ./validate.sh
-      - name: Publish linux-x64
-        run: dotnet publish src/RHI.Desktop/RHI.Desktop.csproj -c Release -r linux-x64 --self-contained false -o artifacts/linux-x64
-      - uses: actions/upload-artifact@v4
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Validate (locked restore, warnings as errors, tests)
+        run: ./validate.sh
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: RHI-Linux-x64
-          path: artifacts/linux-x64/
+          name: test-results
+          path: artifacts/test-results/
+          if-no-files-found: warn
+
+  appimage:
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - name: Build AppImage
+        run: packaging/appimage/build-appimage.sh --out artifacts/appimage
+      - name: Tag matches the product version
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          test -f "artifacts/appimage/RHI-Linux-${TAG}-x86_64.AppImage" \
+            || { echo "Tag $TAG does not match <Version> in Directory.Build.props" >&2; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: RHI-Linux-AppImage
+          path: |
+            artifacts/appimage/*.AppImage
+            artifacts/appimage/*.AppImage.sha256
+          if-no-files-found: error
+
+  release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: appimage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: RHI-Linux-AppImage
+          path: dist
+      # A draft: the maintainer reviews the notes and publishes it by hand.
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          (cd dist && sha256sum --check ./*.sha256)
+          prerelease=()
+          [[ "$TAG" == *-* ]] && prerelease=(--prerelease)
+          gh release create "$TAG" dist/*.AppImage dist/*.sha256 \
+            --draft --verify-tag "${prerelease[@]}" --title "RHI Linux $TAG" --generate-notes

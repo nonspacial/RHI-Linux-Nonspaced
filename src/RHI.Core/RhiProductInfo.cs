@@ -1,10 +1,33 @@
+using System.Reflection;
+
 namespace RHI.Core;
 
-/// <summary>Single source of truth for the RHI Linux product version used by UI and HTTP clients.</summary>
+/// <summary>
+/// Product identity used by the UI and HTTP clients. The version has one source of truth:
+/// &lt;Version&gt; in Directory.Build.props, compiled into the assembly's informational version.
+/// </summary>
 public static class RhiProductInfo
 {
-    public const string Version = "0.9.23.4-beta.1";
-    public const string UserAgent = "RHI-Linux/0.9.23.4-beta.1";
+    public static string Version { get; } = NormalizeVersion(
+        typeof(RhiProductInfo).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+
+    public static string UserAgent { get; } = "RHI-Linux/" + Version;
+
+    /// <summary>Credits the Linux port's origin (About/Donate links); deliberately not this fork.</summary>
     public const string RepositoryUrl = "https://github.com/wizardkof/RHI-Linux";
-    public const string MotdUrl = "https://raw.githubusercontent.com/wizardkof/RHI-Linux/main/motd.md";
+    /// <summary>
+    /// motd.md at the root of this fork's main branch: the owner's fork hosts the in-app message
+    /// (owner decision; the two URLs differ on purpose). Until it is published there the fetch 404s
+    /// and no message is shown.
+    /// </summary>
+    public const string MotdUrl = "https://raw.githubusercontent.com/nonspacial/RHI-Linux-Nonspaced/main/motd.md";
+
+    /// <summary>Drops SemVer build metadata ("+commit") so the version stays stable across builds.</summary>
+    internal static string NormalizeVersion(string? informationalVersion)
+    {
+        if (string.IsNullOrWhiteSpace(informationalVersion))
+            throw new InvalidOperationException("RHI.Core was built without a product version; set <Version> in Directory.Build.props.");
+        var plus = informationalVersion.IndexOf('+');
+        return (plus >= 0 ? informationalVersion[..plus] : informationalVersion).Trim();
+    }
 }

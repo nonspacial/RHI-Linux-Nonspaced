@@ -5,6 +5,7 @@ using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
@@ -213,6 +214,41 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
             [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes(json),
             ["https://example.invalid/rc10"] = rc10Addon
         }));
+    }
+
+    [Fact]
+    public async Task ShortFuseLatestReleaseCheck_IgnoresThePerGamePin_WhileUpdateCheckHonoursIt()
+    {
+        var game = Game(Directory.CreateDirectory(Path.Combine(_root, "sf-pin", "game")).FullName);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "sf-pin-deployments.json"));
+        const string pinned = "renodx-dlss-SF-8.5.0-rc5";
+        using var http = new HttpClient(new MapHandler(new()
+        {
+            [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes("""
+                [
+                  { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
+                  { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+                ]
+                """),
+            [GitHubReleaseAssetResolver.BuildReleaseTagApiUrl(ShortFuseDeploymentService.ReleasesApiUrl, pinned)] = Encoding.UTF8.GetBytes(
+                """{ "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] }""")
+        }));
+        var pins = new NeuralAddonVersionPreferenceStore(Path.Combine(_root, "sf-pin-pins.json"));
+        pins.Set(game, ManagedComponentKind.ShortFuse, pinned);
+        var service = new LinuxManagedComponentService(
+            records: records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!,
+            relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!,
+            rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!, ultimateAsiLoader: null!,
+            shortFuse: ShortFuse(http, records, "sf-pin"), dofFix: null!, reFramework: null!, lumaFramework: null!,
+            lumaPolicy: null!, neuralVersionPins: pins);
+
+        var latest = await service.CheckShortFuseLatestReleaseAsync(game);
+        var pinnedCheck = await service.CheckShortFuseUpdateAsync(game);
+
+        Assert.True(latest.Success, latest.Message);
+        Assert.Equal("8.5.0-rc10", latest.LatestVersion);
+        Assert.True(pinnedCheck.Success, pinnedCheck.Message);
+        Assert.Equal("8.5.0-rc5", pinnedCheck.LatestVersion);
     }
 
     private ShortFuseDeploymentService ShortFuse(HttpClient http, LinuxDeploymentRecordStore records, string tag)

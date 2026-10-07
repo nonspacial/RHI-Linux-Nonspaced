@@ -154,6 +154,30 @@ public sealed class LinuxNativeUxTests : IDisposable
     }
 
     [Fact]
+    public async Task Motd_MissingFileIsNoMessage_EvenForAManualOpen()
+    {
+        using var http = new HttpClient(new StaticHandler(HttpStatusCode.NotFound, "404: Not Found"));
+        var service = new LinuxMotdService(http, Path.Combine(_root, "motd-404.json"), "https://example.test/motd.md");
+        Assert.Null(await service.FetchAsync(includeSeen: true));
+    }
+
+    [Fact]
+    public async Task Motd_FileWithOnlyMaintainerCommentsShowsNothing()
+    {
+        using var http = new HttpClient(new StaticHandler(HttpStatusCode.OK, "<!--\nNotes for maintainers.\n-->\n\n<!-- second -->\n"));
+        var service = new LinuxMotdService(http, Path.Combine(_root, "motd-comment.json"), "https://example.test/motd.md");
+        Assert.Null(await service.FetchAsync(includeSeen: true));
+    }
+
+    [Fact]
+    public async Task Motd_CommentsAreStrippedFromTheShownText()
+    {
+        using var http = new HttpClient(new StaticHandler(HttpStatusCode.OK, "<!-- how to edit -->\nHello from RHI Linux.\n"));
+        var service = new LinuxMotdService(http, Path.Combine(_root, "motd-text.json"), "https://example.test/motd.md");
+        Assert.Equal("Hello from RHI Linux.", Assert.IsType<LinuxMotdMessage>(await service.FetchAsync()).Text);
+    }
+
+    [Fact]
     public void DesktopOpener_UriCandidatesKeepWholeUrlAsOneArgument()
     {
         var uri = new Uri("https://example.test/path%20with%20space?q=a%20b");

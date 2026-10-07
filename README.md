@@ -115,8 +115,10 @@ The game executable and Wine prefix can be configured independently when necessa
 Install the required packages:
 
 ```fish
-sudo pacman -S --needed dotnet-sdk-8.0 7zip git
+sudo pacman -S --needed dotnet-sdk dotnet-runtime-8.0 7zip git
 ```
+
+Building from source needs a .NET 10 SDK (any 10.0 feature band, pinned by `global.json`) and the .NET 8 runtime the app targets. NuGet restores are locked by the committed `packages.lock.json` files; after changing a package reference, run `dotnet restore --force-evaluate` and commit the updated lock files.
 
 Clone RHI Linux:
 
@@ -138,6 +140,40 @@ Run:
 ```
 
 The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
+
+## Installing for the current user
+
+```bash
+./build.sh && ./install-user.sh
+```
+
+This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.local/opt/rhi-linux.prev`), links `~/.local/bin/rhi-linux`, adds a menu entry and icon, and refreshes the desktop and icon caches when `update-desktop-database` / `gtk-update-icon-cache` are installed. It warns when `~/.local/bin` is not on `PATH`; the menu entry uses the full path and works either way.
+
+## Runtime requirements
+
+* The AppImage bundles the .NET runtime; nothing else from .NET is needed on the host.
+* ReShade is extracted from its official setup by RHI Linux itself; no archive tool is needed.
+* OptiScaler releases, `.7z` shader packs and Deep Fried Chicken packages are 7-Zip archives and need a host `7z`/`7zz`/`7za` (package `7zip` on Arch/CachyOS, `7zip` or `p7zip-full` elsewhere); `bsdtar` also works except for encrypted packages. RHI Linux names the missing tool when one is needed.
+
+## Building the AppImage
+
+```bash
+./build.sh --appimage                          # tests, then the AppImage
+packaging/appimage/build-appimage.sh [--out DIR]   # the AppImage only
+```
+
+The script publishes a self-contained `linux-x64` build (it runs on hosts without .NET) into an AppDir with `AppRun`, the desktop entry and the icon, then packs it with `appimagetool`. The result is `artifacts/appimage/RHI-Linux-v<version>-x86_64.AppImage` plus a `.sha256` file that holds only the file name. The version comes from `<Version>` in `Directory.Build.props`.
+
+`appimagetool` and the AppImage runtime are downloaded over HTTPS from the AppImage project's GitHub releases at pinned versions and used only when their SHA-256 matches; they are cached in `artifacts/appimage-tools/`. Building needs `curl` and `sha256sum` but no FUSE.
+
+## Validating a change
+
+```bash
+./validate.sh            # locked restore, Release build (warnings are errors), full test suite
+./validate.sh --clean    # same, after deleting bin/, obj/ and artifacts/ first
+```
+
+`validate.sh` keeps existing build outputs unless `--clean` is given. Test results are written to `artifacts/test-results/`.
 
 ---
 

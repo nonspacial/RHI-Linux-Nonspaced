@@ -1,0 +1,76 @@
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Runtime.Versioning;
+using System.Windows.Input;
+using RHI.Core.Models;
+using RHI.Desktop.ViewModels;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Core.Tests;
+
+/// <summary>Release contracts formerly grepped from source by validate.sh, kept as behaviour checks.</summary>
+public sealed class ReleaseContractTests
+{
+    [Fact]
+    public void ProductVersion_IsTheBuiltVersion_WithoutBuildMetadata()
+    {
+        var informational = typeof(RhiProductInfo).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        Assert.False(string.IsNullOrWhiteSpace(RhiProductInfo.Version));
+        Assert.DoesNotContain('+', RhiProductInfo.Version);
+        Assert.StartsWith(RhiProductInfo.Version, informational);
+        Assert.Equal("RHI-Linux/" + RhiProductInfo.Version, RhiProductInfo.UserAgent);
+        Assert.True(ProductInfoHeaderValue.TryParse(RhiProductInfo.UserAgent, out var parsed));
+        Assert.Equal(RhiProductInfo.Version, parsed!.Product!.Version);
+    }
+
+    [Theory]
+    [InlineData("1.2.3-beta.1+0ece748", "1.2.3-beta.1")]
+    [InlineData("1.2.3", "1.2.3")]
+    public void NormalizeVersion_DropsBuildMetadata(string informational, string expected)
+        => Assert.Equal(expected, RhiProductInfo.NormalizeVersion(informational));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void NormalizeVersion_RefusesAMissingVersion(string? informational)
+        => Assert.Throws<InvalidOperationException>(() => RhiProductInfo.NormalizeVersion(informational));
+
+    [Fact]
+    public void UpstreamFallbackManifest_IsPinnedToTheFullCommit()
+    {
+        Assert.Matches("^[0-9a-f]{40}$", UpstreamRhiManifestService.PinnedManifestCommit);
+        Assert.Equal(
+            $"https://raw.githubusercontent.com/RankFTW/RHI/{UpstreamRhiManifestService.PinnedManifestCommit}/manifest.json",
+            UpstreamRhiManifestService.PinnedManifestUrl);
+    }
+
+    [Theory]
+    [InlineData(ManagedComponentKind.Dlss)]
+    [InlineData(ManagedComponentKind.Streamline)]
+    public void DlssAndStreamlineRows_HaveNoInstallAction(ManagedComponentKind kind)
+    {
+        var row = new ComponentRowViewModel(new ManagedComponent { Kind = kind, DisplayName = kind.ToString() }, new NoOpCommand());
+
+        Assert.False(row.HasAction);
+        Assert.Equal(string.Empty, row.Action);
+    }
+
+    [Fact]
+    public void InstallableRows_KeepTheirAction()
+        => Assert.True(new ComponentRowViewModel(new ManagedComponent { Kind = ManagedComponentKind.ReShade, DisplayName = "ReShade" }, new NoOpCommand()).HasAction);
+
+    [Fact]
+    public void LinuxOnlyAssemblies_DeclareLinux_SoCa1416CannotBreakTheWarningGate()
+    {
+        foreach (var assembly in new[] { typeof(ReShadeArchiveExtractor).Assembly, typeof(ComponentRowViewModel).Assembly, typeof(ReleaseContractTests).Assembly })
+            Assert.Contains(assembly.GetCustomAttributes<SupportedOSPlatformAttribute>(), a => a.PlatformName == "linux");
+    }
+
+    private sealed class NoOpCommand : ICommand
+    {
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter) { }
+    }
+}
