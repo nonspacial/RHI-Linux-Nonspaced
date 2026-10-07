@@ -175,7 +175,7 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
     public void LinuxLauncher_PreservesDirectWineCommandInsideWrapper_AndStoreLaunchersAreMediated()
     {
         var command = LinuxGameLauncher.BuildShellCommand("WINEPREFIX='/tmp/My Prefix' wine '/tmp/game.exe'", "gamescope --hdr-enabled --");
-        Assert.StartsWith("exec gamescope --hdr-enabled -- /bin/sh -lc ", command, StringComparison.Ordinal);
+        Assert.StartsWith("exec gamescope --hdr-enabled -- /bin/sh -c ", command, StringComparison.Ordinal);
         Assert.Contains("WINEPREFIX=", command, StringComparison.Ordinal);
         Assert.Contains("/tmp/My Prefix", command, StringComparison.Ordinal);
         Assert.Contains("/tmp/game.exe", command, StringComparison.Ordinal);

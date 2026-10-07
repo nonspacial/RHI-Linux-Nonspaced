@@ -1383,15 +1383,41 @@ public partial class MainWindowViewModel : ObservableObject
                 StatusText = L("O perfil de inicialização HDR está ativado, mas este launcher não consegue aplicar opções de inicialização do Linux.", "The HDR launch profile is enabled, but this launcher cannot apply Linux launch options.");
                 return;
             }
-            await profiledLauncher.LaunchAsync(SelectedGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
-            StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", SelectedGame.Name, SelectedHdrMode);
+            var hdrGame = SelectedGame;
+            StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
+            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
+                StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
             return;
         }
 
-        await _launcher.LaunchAsync(SelectedGame);
-        StatusText = SelectedGame.ParentLauncherName is { Length: > 0 } parent
-            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, SelectedGame.Name)
-            : LF("Iniciando {0}", "Launching {0}", SelectedGame.Name);
+        var game = SelectedGame;
+        var started = game.ParentLauncherName is { Length: > 0 } parent
+            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, game.Name)
+            : LF("Iniciando {0}", "Launching {0}", game.Name);
+        StatusText = started;
+        if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
+            StatusText = started;
+    }
+
+    /// <summary>Runs a launch and reports a failure in the status line; true when the launch went ahead.</summary>
+    private async Task<bool> TryLaunchAsync(DetectedGame game, Func<Task> launch)
+    {
+        try
+        {
+            await launch();
+            return true;
+        }
+        catch (GameLaunchFailedException ex)
+        {
+            StatusText = string.IsNullOrWhiteSpace(ex.Detail)
+                ? LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1}.", "Could not launch {0}: the launch command exited with code {1}.", game.Name, ex.ExitCode)
+                : LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1} ({2}).", "Could not launch {0}: the launch command exited with code {1} ({2}).", game.Name, ex.ExitCode, ex.Detail);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            StatusText = LF("Não foi possível iniciar {0}: {1}", "Could not launch {0}: {1}", game.Name, ex.Message);
+        }
+        return false;
     }
 
 

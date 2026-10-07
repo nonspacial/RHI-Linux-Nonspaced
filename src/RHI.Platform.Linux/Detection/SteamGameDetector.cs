@@ -23,6 +23,7 @@ public sealed partial class SteamGameDetector : IGameDetector
     {
         var games = new List<DetectedGame>();
         var seenLibraries = new HashSet<string>(StringComparer.Ordinal);
+        var hostSteam = IsOnPath("steam");
         foreach (var steamRoot in LinuxPaths.DistinctExisting(steamRoots))
         {
             var libraries = FindLibraries(steamRoot).ToList();
@@ -89,7 +90,7 @@ public sealed partial class SteamGameDetector : IGameDetector
                             LaunchExecutablePath = executable,
                             Runner = runner,
                             CompatibilityTool = nativeExecutable is null ? classifier.CompatTool(appId) : null,
-                            LaunchCommand = appId is int launchId ? $"steam -applaunch {launchId}" : null
+                            LaunchCommand = appId is int launchId ? LaunchCommandFor(launchId, steamRoot, hostSteam) : null
                         };
                         games.Add(game);
                     }
@@ -103,6 +104,24 @@ public sealed partial class SteamGameDetector : IGameDetector
         }
         return games;
     }
+
+    /// <summary>
+    /// How to ask the Steam client that owns <paramref name="steamRoot"/> to start an app: Flatpak Steam
+    /// through <c>flatpak run</c> (there is no host <c>steam</c> binary), host Steam through its binary,
+    /// else the <c>steam://</c> URL handler.
+    /// </summary>
+    internal static string LaunchCommandFor(int appId, string steamRoot, bool hostSteamOnPath)
+    {
+        var normalised = steamRoot.Replace('\\', '/');
+        if (normalised.Contains("/.var/app/com.valvesoftware.Steam/", StringComparison.Ordinal))
+            return $"flatpak run com.valvesoftware.Steam -applaunch {appId}";
+        return hostSteamOnPath ? $"steam -applaunch {appId}" : $"xdg-open steam://rungameid/{appId}";
+    }
+
+    private static bool IsOnPath(string program)
+        => (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(dir => File.Exists(Path.Combine(dir, program)));
 
     public static int? ExtractAppIdFromAcfFilename(string filename)
     {
