@@ -9,6 +9,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
@@ -245,6 +246,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string PatchTargetStatusText => SelectedGame switch
     {
         null => L("Nenhum jogo selecionado", "No game selected"),
+        { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
             => L("Alvo de modificações: Manual ⚠ executável ausente", "Modification target: Manual ⚠ executable missing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)
@@ -259,6 +261,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string SelectedInstallPath => SelectedGame switch
     {
         null => "",
+        { GameRootNotAllowed: true } game => LF("{0} — pasta não permitida", "{0} — folder not allowed", game.InstallPath),
         { HasConfirmedPatchTarget: false } => L("Não definido — selecione o executável real do jogo em Editar jogo", "Not defined — select the real game executable in Edit game"),
         _ => SelectedGame.InstallPath
     };
@@ -422,9 +425,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
     public bool HasSelectedGame => SelectedGame is not null;
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
-    public string? LaunchToolTip => SelectedGame?.ParentLauncherName is { Length: > 0 } parent
-        ? LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent)
-        : null;
+    public string? LaunchToolTip => SelectedGame switch
+    {
+        { ParentLauncherName: { Length: > 0 } parent } => LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent),
+        { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game)
+            => LF("Indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton e atualize a biblioteca.",
+                  "Unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton and refresh the library.",
+                  game.CompatibilityTool ?? "?"),
+        _ => null
+    };
+
+    private static string OrphanedProtonText(DetectedGame game)
+        => LF("Winetricks indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca.",
+              "Winetricks unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library.",
+              game.CompatibilityTool ?? game.Runner ?? "?");
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
     public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
     public bool CanInstallD3DCompilerWithWinetricks
@@ -439,6 +453,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             null => L("Selecione um jogo para determinar o auxiliar D3DCompiler correto.", "Select a game to determine the correct D3DCompiler helper."),
             { UsesProton: true } => L("Alvo Steam/Proton: Protontricks é usado com o Steam AppID.", "Steam/Proton target: Protontricks is used with the Steam AppID."),
+            { } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game) => OrphanedProtonText(game),
             { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
                 => LF("Alvo {0}: Winetricks usa o {1} ativo e o prefixo correspondente; executores Proton são normalizados para o Wine embutido em vez do Wine do sistema.", "{0} target: Winetricks uses the active {1} and matching prefix; Proton runners are normalized to their embedded Wine instead of system Wine.", game.Source, game.CompatibilityTool ?? game.Runner ?? L("executor do launcher", "launcher runner")),
             { SteamAppId: null, PrefixPath: not null } => L("Alvo Wine independente/do sistema: Winetricks é executado contra o WINEPREFIX detectado.", "Standalone/system Wine target: Winetricks runs against the detected WINEPREFIX."),
@@ -705,7 +720,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
         ReShadeManageIni = _settings.ReShadeManageIni;
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
-        _ = InitializeAsync();
+        Initialization = InitializeAsync();
     }
 
     private readonly IDisposable _quarantineSubscription;
@@ -723,6 +738,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _backgroundUpdateCts = null;
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
+    internal Task Initialization { get; }
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -969,6 +987,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     // those computed states on every busy transition so both surfaces converge automatically.
     partial void OnIsBusyChanged(bool value)
     {
+        _busyGate.SetBusy(value);
         _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
@@ -1282,6 +1301,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             if (!game.HasConfirmedPatchTarget)
             {
+                // No patch target: nothing is indexed (a refused manual folder may be $HOME or /).
                 var emptyFiles = Array.Empty<string>();
                 var components = ComponentProbe.Probe(game, emptyFiles, cancellationToken);
                 _managedComponents.Decorate(game, components);
@@ -1292,7 +1312,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
                 _probeCache[Key(game)] = pending;
                 ApplyProbeResult(pending);
-                StatusText = LF("{0}: inicialização preservada, mas o alvo de modificações ainda não foi definido. Use Editar jogo.", "{0}: launch configuration was preserved, but the modification target is not defined yet. Use Edit game.", game.Name);
+                StatusText = game.GameRootNotAllowed
+                    ? GameRootNotAllowedText(game)
+                    : LF("{0}: inicialização preservada, mas o alvo de modificações ainda não foi definido. Use Editar jogo.", "{0}: launch configuration was preserved, but the modification target is not defined yet. Use Edit game.", game.Name);
                 return;
             }
 
@@ -1320,7 +1342,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _probeCache[Key(game)] = derived;
             ApplyProbeResult(derived);
             timer.Stop();
-            StatusText = LF("Pronto — {0}: {1} arquivos indexados em {2} ms", "Ready — {0}: {1} files indexed in {2} ms", game.Name, files.Count, timer.ElapsedMilliseconds);
+            StatusText = GameFileIndexer.IsTruncated(files)
+                ? LF("{0}: a indexação parou em {1} arquivos, então alguns arquivos do jogo podem não ser vistos. A pasta do jogo parece conter mais que o jogo; confira a raiz em Editar jogo.",
+                     "{0}: indexing stopped at {1} files, so some game files may not be seen. The game folder seems to hold more than the game; check the root in Edit game.",
+                     game.Name, files.Count)
+                : LF("Pronto — {0}: {1} arquivos indexados em {2} ms", "Ready — {0}: {1} files indexed in {2} ms", game.Name, files.Count, timer.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -1366,6 +1392,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifySelected();
     }
 
+    private readonly BusyGate _busyGate = new();
     private static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
     private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
 
@@ -1373,12 +1400,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private Task RefreshAsync() => RefreshAsync(null);
 
     /// <summary>
-    /// Full library refresh when <paramref name="onlyDetectors"/> is null; otherwise only the named
-    /// detectors are re-run and the rest of the library is reused from the previous scan.
+    /// Refresh that waits for the current busy operation (startup DLSS fetch, Update All…) instead of
+    /// being skipped, for changes the user just saved. True when the refresh ran and succeeded.
     /// </summary>
-    private async Task RefreshAsync(IReadOnlySet<string>? onlyDetectors)
+    private async Task<bool> RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors)
     {
-        if (IsBusy) return;
+        if (IsBusy)
+            StatusText = L("Aguardando a operação atual terminar para atualizar a biblioteca…", "Waiting for the current operation to finish before updating the library…");
+        await _busyGate.WhenIdleAsync();
+        return await RefreshAsync(onlyDetectors);
+    }
+
+    /// <summary>
+    /// Full library refresh when <paramref name="onlyDetectors"/> is null; otherwise only the named
+    /// detectors are re-run and the rest of the library is reused from the previous scan. False when it
+    /// did not run (busy) or failed.
+    /// </summary>
+    private async Task<bool> RefreshAsync(IReadOnlySet<string>? onlyDetectors)
+    {
+        if (IsBusy) return false;
         IsBusy = true;
         StatusText = onlyDetectors is null
             ? L("Verificando Steam, Heroic, Lutris e prefixos Wine…", "Scanning Steam, Heroic, Lutris and Wine prefixes…")
@@ -1446,10 +1486,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var scanProblems = LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath);
             var scanDone = LibraryScanStatusText.Done(_allGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
+            return true;
         }
         catch (Exception ex)
         {
             StatusText = LF("Falha na verificação: {0}", "Scan failed: {0}", ex.Message);
+            return false;
         }
         finally
         {
@@ -1593,15 +1635,41 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 StatusText = L("O perfil de inicialização HDR está ativado, mas este launcher não consegue aplicar opções de inicialização do Linux.", "The HDR launch profile is enabled, but this launcher cannot apply Linux launch options.");
                 return;
             }
-            await profiledLauncher.LaunchAsync(SelectedGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
-            StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", SelectedGame.Name, SelectedHdrMode);
+            var hdrGame = SelectedGame;
+            StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
+            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
+                StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
             return;
         }
 
-        await _launcher.LaunchAsync(SelectedGame);
-        StatusText = SelectedGame.ParentLauncherName is { Length: > 0 } parent
-            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, SelectedGame.Name)
-            : LF("Iniciando {0}", "Launching {0}", SelectedGame.Name);
+        var game = SelectedGame;
+        var started = game.ParentLauncherName is { Length: > 0 } parent
+            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, game.Name)
+            : LF("Iniciando {0}", "Launching {0}", game.Name);
+        StatusText = started;
+        if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
+            StatusText = started;
+    }
+
+    /// <summary>Runs a launch and reports a failure in the status line; true when the launch went ahead.</summary>
+    private async Task<bool> TryLaunchAsync(DetectedGame game, Func<Task> launch)
+    {
+        try
+        {
+            await launch();
+            return true;
+        }
+        catch (GameLaunchFailedException ex)
+        {
+            StatusText = string.IsNullOrWhiteSpace(ex.Detail)
+                ? LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1}.", "Could not launch {0}: the launch command exited with code {1}.", game.Name, ex.ExitCode)
+                : LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1} ({2}).", "Could not launch {0}: the launch command exited with code {1} ({2}).", game.Name, ex.ExitCode, ex.Detail);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            StatusText = LF("Não foi possível iniciar {0}: {1}", "Could not launch {0}: {1}", game.Name, ex.Message);
+        }
+        return false;
     }
 
 
@@ -2883,15 +2951,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         string gameRootPath,
         string binaryDirectory,
         string? launchProvider)
+        => (await TrySaveSelectedGameEditAsync(patchExecutablePath, gameRootPath, binaryDirectory, launchProvider)).Message;
+
+    /// <summary>
+    /// Saves the Edit game target; <c>Saved</c> is the structural success flag (the message is localised).
+    /// <paramref name="saved"/> runs as soon as the edit is on disk, before the library refresh waits for a
+    /// running operation, so the dialog can close instead of sitting disabled with no message.
+    /// </summary>
+    public async Task<(bool Saved, string Message)> TrySaveSelectedGameEditAsync(
+        string patchExecutablePath,
+        string gameRootPath,
+        string binaryDirectory,
+        string? launchProvider,
+        Action? saved = null)
     {
-        if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
+        if (SelectedGame is null) return (false, L("Selecione um jogo primeiro.", "Select a game first."));
 
         if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
-            return L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications.");
+            return (false, L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications."));
         if (string.IsNullOrWhiteSpace(gameRootPath) || !Directory.Exists(gameRootPath))
-            return L("A raiz do jogo selecionada não existe.", "The selected game root does not exist.");
+            return (false, L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."));
+        if (GameRootRefusal(gameRootPath) is { } rootRefusal) return (false, rootRefusal);
         if (string.IsNullOrWhiteSpace(binaryDirectory) || !Directory.Exists(binaryDirectory))
-            return L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist.");
+            return (false, L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist."));
 
         var executable = Path.GetFullPath(patchExecutablePath);
         var root = Path.GetFullPath(gameRootPath);
@@ -2899,11 +2981,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         var executableDirectory = Path.GetDirectoryName(executable);
         if (string.IsNullOrWhiteSpace(executableDirectory))
-            return L("Não foi possível determinar o diretório do executável alvo.", "Could not determine the target executable directory.");
+            return (false, L("Não foi possível determinar o diretório do executável alvo.", "Could not determine the target executable directory."));
         if (!IsPathWithin(root, executable))
-            return L("O executável alvo precisa estar dentro da raiz do jogo selecionada.", "The target executable must be inside the selected game root.");
+            return (false, L("O executável alvo precisa estar dentro da raiz do jogo selecionada.", "The target executable must be inside the selected game root."));
         if (!IsPathWithin(root, binaries))
-            return L("O diretório de binários/patches precisa estar dentro da raiz do jogo selecionada.", "The binaries/patches directory must be inside the selected game root.");
+            return (false, L("O diretório de binários/patches precisa estar dentro da raiz do jogo selecionada.", "The binaries/patches directory must be inside the selected game root."));
 
         var managedRecords = _deploymentRecords.FindAll(SelectedGame);
         if (managedRecords.Count > 0)
@@ -2912,52 +2994,90 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                 || !PathEquals(SelectedGame.InstallPath, root)
                                 || !PathEquals(SelectedGame.BinaryDirectory, binaries);
             if (targetChanged)
-                return L("Remova primeiro os componentes gerenciados pelo RHI antes de trocar o alvo do jogo. Isso evita deixar arquivos e estado gerenciado no destino anterior.", "Remove RHI-managed components before changing the game target. This avoids leaving files and managed state at the previous target.");
+                return (false, L("Remova primeiro os componentes gerenciados pelo RHI antes de trocar o alvo do jogo. Isso evita deixar arquivos e estado gerenciado no destino anterior.", "Remove RHI-managed components before changing the game target. This avoids leaving files and managed state at the previous target."));
         }
 
-        _libraryState = _libraryStore.Load();
+        // Mutate a copy; the live state changes only once the save succeeded.
+        var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        _libraryState.GameEdits[key] = new LinuxGameEditOverride
+        state.GameEdits[key] = new LinuxGameEditOverride
         {
             LaunchProvider = launchProvider,
             PatchExecutablePath = executable,
             GameRootPath = root,
             BinaryDirectory = binaries
         }.Normalize();
-        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return notSaved;
+        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return (false, notSaved);
+        _libraryState = state;
+        saved?.Invoke();
 
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
-        await RefreshAsync(NoDetectors);
-        return LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name);
+        var message = await RefreshWhenIdleAsync(NoDetectors)
+            ? LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name)
+            : LF("{0}: alvo de modificações salvo, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: modification target saved, but the library was not updated. Use Refresh.", name);
+        StatusText = message;
+        return (true, message);
     }
 
-    public async Task<string> ResetSelectedGameEditAsync()
+    /// <param name="saved">Runs once the change is on disk, before the refresh waits for a running operation.</param>
+    public async Task<string> ResetSelectedGameEditAsync(Action? saved = null)
     {
         if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
         if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
             return L("Remova primeiro os componentes gerenciados pelo RHI antes de restaurar a detecção automática do alvo.", "Remove RHI-managed components before restoring automatic target detection.");
-        _libraryState = _libraryStore.Load();
+        var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        var removed = _libraryState.GameEdits.Remove(key);
-        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return notSaved;
+        var removed = state.GameEdits.Remove(key);
+        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return notSaved;
+        _libraryState = state;
+        saved?.Invoke();
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
-        await RefreshAsync(NoDetectors);
-        return removed
-            ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
-            : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
+        var message = !await RefreshWhenIdleAsync(NoDetectors)
+            ? LF("{0}: alterações salvas, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: changes saved, but the library was not updated. Use Refresh.", name)
+            : removed
+                ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
+                : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
+        StatusText = message;
+        return message;
     }
+
+    /// <summary>Why a folder cannot be a game root (shared rule with every detector), or null when it can.</summary>
+    public static string? GameRootRefusal(string path, string? home = null) => GameRootGuard.Check(path, home) switch
+    {
+        GameRootProblem.None => null,
+        GameRootProblem.Missing => L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."),
+        GameRootProblem.FilesystemRoot => L("A raiz do sistema (/) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "The filesystem root (/) cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.HomeFolder => L("A pasta pessoal (ou uma pasta acima dela) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "Your home folder (or a folder above it) cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.SystemFolder => L("Pastas do sistema e raízes de discos não podem ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "System folders and drive roots cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.SharedFolder => L("Esta pasta guarda vários programas ou jogos. Escolha a pasta do próprio jogo.", "This folder holds many programs or games. Choose the game's own folder."),
+        GameRootProblem.WinePrefix => L("Este é um prefixo Wine inteiro (ou uma pasta de sistema dele). Escolha a pasta do jogo dentro de drive_c.", "This is a whole Wine prefix (or one of its system folders). Choose the game's folder inside drive_c."),
+        GameRootProblem.SteamLibraryFolder => L("Esta é uma pasta da biblioteca Steam. Escolha a pasta do jogo em steamapps/common.", "This is a Steam library folder. Choose the game's folder inside steamapps/common."),
+        _ => L("Esta pasta não pode ser a pasta de um jogo.", "This folder cannot be a game folder.")
+    };
+
+    /// <summary>Plain state of a saved manual entry whose folder the guard refuses (listed, never patched).</summary>
+    private static string GameRootNotAllowedText(DetectedGame game)
+        => LF("{0}: pasta não permitida. {1} Remova a entrada manual ou use Editar jogo; nada foi indexado nem alterado nessa pasta.",
+            "{0}: folder not allowed. {1} Remove the manual entry or use Edit game; nothing in that folder was indexed or changed.",
+            game.Name, GameRootRefusal(game.LibraryIdentityPath ?? game.InstallPath) ?? string.Empty);
 
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
         => (await TryAddManualGameAsync(entry)).Message;
 
-    /// <summary>Adds a manual game; <c>Added</c> is the structural success flag (the message is localised).</summary>
-    public async Task<(bool Added, string Message)> TryAddManualGameAsync(LinuxManualGameEntry entry)
+    /// <summary>
+    /// Adds a manual game; <c>Added</c> is the structural success flag (the message is localised).
+    /// <paramref name="saved"/> runs as soon as the entry is on disk, before the library refresh waits for
+    /// a running operation (Update All…), so the dialog can close instead of sitting disabled with no message;
+    /// the outcome then goes to the main status line.
+    /// </summary>
+    public async Task<(bool Added, string Message)> TryAddManualGameAsync(LinuxManualGameEntry entry, Action? saved = null)
     {
         if (string.IsNullOrWhiteSpace(entry.Name)) return (false, L("Digite um nome para o jogo.", "Enter a name for the game."));
         if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
             return (false, L("O diretório do jogo não existe.", "The game directory does not exist."));
+        if (GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
         if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
             return (false, L("O executável selecionado não existe.", "The selected executable does not exist."));
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
@@ -2967,19 +3087,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
             return (false, L("Esse diretório de jogo já está presente na biblioteca.", "That game directory is already in the library."));
 
-        _libraryState = _libraryStore.Load();
-        if (_libraryState.ManualGames.Any(existing =>
+        // Mutate a copy; the live state changes only once the save succeeded.
+        var state = _libraryStore.Load();
+        if (state.ManualGames.Any(existing =>
                 Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
             return (false, L("Esse jogo manual já está salvo.", "That manual game is already saved."));
 
-        _libraryState.ManualGames.Add(entry);
-        _libraryState.FilterMode = "All Games";
-        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return (false, notSaved);
+        state.ManualGames.Add(entry);
+        state.FilterMode = "All Games";
+        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return (false, notSaved);
+        _libraryState = state;
         LibraryFilterMode = "All Games";
-        await RefreshAsync(ManualOnly);
-        SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
-            Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
-        return (true, LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name));
+        saved?.Invoke();
+        string message;
+        if (!await RefreshWhenIdleAsync(ManualOnly))
+            message = LF("{0} foi salvo na biblioteca manual, mas a biblioteca não foi atualizada. Use Atualizar.", "{0} was saved to the manual library, but the library was not updated. Use Refresh.", entry.Name);
+        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded &&
+                     Path.GetFullPath(game.LibraryIdentityPath ?? game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)) is { } added)
+        {
+            SelectedGame = added;
+            message = LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name);
+        }
+        else
+            message = LF("{0} foi salvo na biblioteca manual, mas não apareceu na lista. Confira a pasta do jogo.", "{0} was saved to the manual library but did not appear in the list. Check the game folder.", entry.Name);
+        StatusText = message;
+        return (true, message);
     }
 
     /// <summary>
@@ -3053,13 +3185,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task RemoveManualGameAsync()
     {
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
-        // Mutate a copy; the live state changes only once the save succeeded.
+        // Mutate a copy; the live state changes only once the save succeeded. Matched by every folder the
+        // entry may have been saved with (an edit or the manifest may have moved InstallPath).
         var state = _libraryStore.Load();
-        state.RemoveManualEntriesFor(selected);
+        if (state.RemoveManualEntriesFor(selected) == 0)
+        {
+            StatusText = LF("{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed.", selected.Name);
+            return;
+        }
         if (TrySaveStore(() => _libraryStore.Save(state)) is not null) return;
         _libraryState = state;
-        await RefreshAsync(ManualOnly);
-        StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
+        StatusText = await RefreshWhenIdleAsync(ManualOnly)
+            ? LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name)
+            : LF("{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh.", selected.Name);
     }
 
     public async Task<ComponentOperationResult> InstallLocalLumaPackageAsync(

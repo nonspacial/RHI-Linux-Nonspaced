@@ -13,12 +13,23 @@ public sealed partial class LutrisGameDetector : IGameDetector
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
     private static IReadOnlyList<DetectedGame> Detect(CancellationToken ct)
-        => DetectIn(LinuxPaths.LutrisConfigRoots(), LinuxPaths.Home, ct);
+    {
+        var roots = LinuxPaths.LutrisConfigRoots().ToList();
+        return DetectIn(roots, LinuxPaths.Home, ct, LutrisPga.Candidates(roots, LinuxPaths.Home, LinuxPaths.DataHome));
+    }
 
-    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct)
+    /// <param name="pgaDatabases">Lutris <c>pga.db</c> files to read names from; defaults to the ones beside the roots and under <paramref name="home"/>.</param>
+    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct, IEnumerable<string>? pgaDatabases = null)
+    {
+        var rootList = configRoots.ToList();
+        return DetectWith(rootList, home, LutrisPga.Load(pgaDatabases ?? LutrisPga.Candidates(rootList, home)), ct);
+    }
+
+    /// <summary>Test seam: detection against already-read <c>pga.db</c> rows keyed by config stem.</summary>
+    internal static IReadOnlyList<DetectedGame> DetectWith(IReadOnlyList<string> rootList, string home, IReadOnlyDictionary<string, LutrisPgaGame> library, CancellationToken ct)
     {
         var games = new List<(DetectedGame Game, string Slug, string ConfigFile, bool ExeResolves)>();
-        foreach (var configRoot in configRoots)
+        foreach (var configRoot in rootList)
         {
             // Ordinal file-name order (slug, then timestamp): a stable order for picking a prefix's launcher.
             foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")).Order(StringComparer.Ordinal))
@@ -26,24 +37,26 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var text = File.ReadAllText(file);
-                    var name = MatchValue(text, "name") ?? Path.GetFileNameWithoutExtension(file).Replace('-', ' ');
-                    // Same reader as LauncherOwnedPrefixes (folded long lines joined), so a prefix the
-                    // Wine detector skips as Lutris-owned is read here in full, never truncated.
-                    var exe = ReadScalar(text, "exe");
-                    var prefix = ReadScalar(text, "prefix");
-                    var workingDir = ReadScalar(text, "working_dir");
-                    exe = Expand(exe);
-                    prefix = Expand(prefix);
-                    workingDir = Expand(workingDir);
+                    var stem = Path.GetFileNameWithoutExtension(file);
+                    library.TryGetValue(stem, out var pga);
+                    // Lutris keeps a removed game's config file; pga.db says it is no longer installed.
+                    if (pga?.Installed == false) continue;
+                    var config = LutrisConfigFile.Parse(File.ReadAllText(file));
+                    var gameDir = string.IsNullOrWhiteSpace(pga?.Directory) ? null : pga!.Directory;
+                    // Only the top-level game: mapping; an installer script: repeats game/exe/prefix keys.
+                    var exe = LutrisPathExpander.Expand(config.Section("game", "exe"), home, gameDir);
+                    var prefix = LutrisPathExpander.Expand(config.Section("game", "prefix"), home, gameDir);
+                    var workingDir = LutrisPathExpander.Expand(config.Section("game", "working_dir"), home, gameDir);
                     exe = ResolveRelativeExe(exe, prefix, workingDir);
                     var install = ResolveInstallRoot(exe, workingDir, prefix, home);
                     // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix,
                     // such as an application installed through Lutris): not a game, not listed.
                     if (install is null) continue;
-                    var slug = ResolveLutrisSlug(Path.GetFileNameWithoutExtension(file));
-                    var configuredRunner = MatchValue(text, "runner");
-                    var wineVersion = MatchSectionValue(text, "wine", "version");
+                    var slug = pga?.Slug ?? ResolveLutrisSlug(stem);
+                    // Lutris shows (and lets the user rename) the pga.db name; the config's own name: is an installer copy.
+                    var name = pga?.Name ?? config.Top("name") ?? ResolveLutrisSlug(stem).Replace('-', ' ');
+                    var configuredRunner = config.Top("runner");
+                    var wineVersion = config.Section("wine", "version");
                     var hasWineRuntime = string.Equals(configuredRunner, "wine", StringComparison.OrdinalIgnoreCase)
                         || !string.IsNullOrWhiteSpace(wineVersion)
                         || !string.IsNullOrWhiteSpace(prefix);
@@ -79,7 +92,8 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception ex)
                 {
-                    DetectorDiagnostics.Warn($"Lutris entry skipped: {Path.GetFileName(file)}", ex);
+                    // One unreadable config skips that entry, not the whole Lutris scan.
+                    DetectorDiagnostics.Warn($"Lutris config {file} skipped", ex);
                 }
             }
         }
@@ -154,7 +168,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 }
             }
             catch (OperationCanceledException) { throw; }
-            catch { }
+            catch (Exception ex)
+            {
+                DetectorDiagnostics.Warn($"Games inside the Lutris launcher prefix {sharing.Key} not listed", ex);
+            }
         }
         return found;
     }
@@ -176,9 +193,6 @@ public sealed partial class LutrisGameDetector : IGameDetector
     private static bool IsSameOrUnder(string path, string folder)
         => path == folder || path.StartsWith(folder + "/", StringComparison.Ordinal);
 
-    private static string? ReadScalar(string text, string key)
-        => LauncherOwnedPrefixes.ReadScalars(text, key).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
     /// <summary>
     /// Picks the game folder from the config's structured fields. A Windows exe keeps its own folder
     /// (launchers such as Battle.net set <c>working_dir</c> to an unrelated library folder). A native
@@ -192,35 +206,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
         var candidates = nativeLauncher
             ? new[] { workingDir, exeDir, prefix }
             : new[] { exeDir, prefix };
-        return candidates.FirstOrDefault(dir =>
-            !string.IsNullOrWhiteSpace(dir) &&
-            Directory.Exists(dir) &&
-            !IsSharedDirectory(dir, home) &&
-            // A whole Wine prefix is not a game directory. Indexing it walks the entire
-            // Windows image and (through dosdevices symlinks) every mounted drive.
-            !IsWinePrefixRoot(dir));
-    }
-
-    /// <summary>
-    /// Folders that hold executables for many programs (or everything): a wrapper living there says
-    /// nothing about where the game is, and deploying DLLs there would pollute PATH.
-    /// </summary>
-    internal static bool IsSharedDirectory(string path, string home)
-    {
-        var normalised = NormalisePath(path);
-        string[] shared =
-        [
-            "/", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
-            "/usr/games", "/usr/local/games",
-            NormalisePath(home), NormalisePath(Path.Combine(home, "bin")), NormalisePath(Path.Combine(home, ".local", "bin"))
-        ];
-        if (shared.Contains(normalised, StringComparer.Ordinal)) return true;
-        try
-        {
-            var target = new DirectoryInfo(normalised).ResolveLinkTarget(returnFinalTarget: true);
-            return target is not null && shared.Contains(NormalisePath(target.FullName), StringComparer.Ordinal);
-        }
-        catch { return false; }
+        // Shared executable folders, $HOME, / and a whole Wine prefix are not game directories: indexing a
+        // prefix walks the entire Windows image and (through dosdevices symlinks) every mounted drive.
+        return candidates.FirstOrDefault(dir => GameRootGuard.IsAcceptable(dir, home));
     }
 
     private static bool IsWindowsExecutable(string path)
@@ -230,7 +218,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
             using var stream = File.OpenRead(path);
             return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
         }
-        catch { return false; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DetectorDiagnostics.Warn($"Lutris exe {path} unreadable; treated as a native launcher", ex);
+            return false;
+        }
     }
 
     private static bool IsWithin(string root, string path)
@@ -242,29 +234,6 @@ public sealed partial class LutrisGameDetector : IGameDetector
         return full.Length > 1 ? full.TrimEnd(Path.DirectorySeparatorChar) : full;
     }
 
-
-    private static string? MatchSectionValue(string text, string section, string key)
-    {
-        // The top-level section first: installer scripts nest a `wine:` of their own above it.
-        var sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>){Regex.Escape(section)}\s*:\s*$");
-        if (!sectionMatch.Success)
-            sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>[ \t]*){Regex.Escape(section)}\s*:\s*$");
-        if (!sectionMatch.Success) return null;
-
-        var sectionIndent = sectionMatch.Groups["indent"].Value.Length;
-        var tailStart = sectionMatch.Index + sectionMatch.Length;
-        var tail = text.Substring(tailStart);
-        foreach (var rawLine in tail.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n'))
-        {
-            if (string.IsNullOrWhiteSpace(rawLine)) continue;
-            var indent = rawLine.TakeWhile(char.IsWhiteSpace).Count();
-            if (indent <= sectionIndent) break;
-            var trimmed = rawLine.Trim();
-            var match = Regex.Match(trimmed, $"^{Regex.Escape(key)}\\s*:\\s*(?<v>.+)$");
-            if (match.Success) return match.Groups["v"].Value.Trim().Trim('"', '\'');
-        }
-        return null;
-    }
 
     private static bool LooksLikeProton(string? version)
         => !string.IsNullOrWhiteSpace(version)
@@ -324,21 +293,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
         return null;
     }
 
-    private static string? MatchValue(string text, string key)
-    {
-        var pattern = $@"(?m)^\s*{Regex.Escape(key)}\s*:\s*[""']?(?<v>[^\r\n""']+)";
-        var m = Regex.Match(text, pattern);
-        return m.Success ? m.Groups["v"].Value.Trim() : null;
-    }
-
     private static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
-    private static string? Expand(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (value.StartsWith("~/")) return Path.Combine(LinuxPaths.Home, value[2..]);
-        return Environment.ExpandEnvironmentVariables(value);
-    }
+    private static string? Expand(string? value) => LutrisPathExpander.Expand(value, LinuxPaths.Home);
 
     /// <summary>
     /// Lutris stores installer-created games with an exe path relative to the prefix
@@ -350,8 +307,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
     {
         if (string.IsNullOrWhiteSpace(exe)) return null;
         if (exe.Contains("_xXx_", StringComparison.Ordinal)) return null; // Lutris auto-detect placeholder
-        if (exe.StartsWith("$GAMEDIR/", StringComparison.Ordinal))
-            exe = exe["$GAMEDIR/".Length..];
+        // $GAMEDIR left unexpanded (no pga.db directory): the rest is relative to the working dir or prefix.
+        foreach (var token in new[] { "$GAMEDIR/", "${GAMEDIR}/" })
+            if (exe.StartsWith(token, StringComparison.Ordinal))
+                exe = exe[token.Length..];
         if (Path.IsPathRooted(exe)) return exe;
 
         foreach (var baseDir in new[] { workingDir, prefix })
@@ -380,7 +339,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
 
     internal static (string? Version, string? LayerType) ParseWineRuntimeForTests(string text)
     {
-        var version = MatchSectionValue(text, "wine", "version");
+        var version = LutrisConfigFile.Parse(text).Section("wine", "version");
         return (version, string.IsNullOrWhiteSpace(version) ? null : (LooksLikeProton(version) ? "proton" : "wine"));
     }
 }

@@ -18,13 +18,24 @@ public static partial class ManualGamePathInference
              dirName.Equals("Win32", StringComparison.OrdinalIgnoreCase) ||
              dirName.Equals("WinGDK", StringComparison.OrdinalIgnoreCase)))
         {
-            return Path.GetDirectoryName(parent) ?? exeDir;
+            var project = Path.GetDirectoryName(parent);
+            if (project is null) return exeDir;
+            // Unreal ships <Game>/<Project>/Binaries/Win64 beside <Game>/Engine, where nvngx_dlss.dll and
+            // Streamline usually live: the game root is <Game> so those are indexed too. An exe under
+            // Engine/Binaries itself also belongs to <Game>.
+            var game = Path.GetDirectoryName(project);
+            var projectIsEngine = Path.GetFileName(project).Equals("Engine", StringComparison.OrdinalIgnoreCase);
+            if (game is not null &&
+                (projectIsEngine || Directory.Exists(Path.Combine(game, "Engine"))) &&
+                GameRootGuard.IsAcceptable(game))
+                return game;
+            return project;
         }
 
         var current = exeDir;
         for (var level = 0; level < 3 && current is not null; level++)
         {
-            if (LooksLikeGameRoot(current)) return current;
+            if (LooksLikeGameRoot(current) && GameRootGuard.IsAcceptable(current)) return current;
             current = Path.GetDirectoryName(current);
         }
         return exeDir;

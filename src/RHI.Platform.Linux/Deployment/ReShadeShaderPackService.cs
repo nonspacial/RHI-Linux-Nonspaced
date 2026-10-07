@@ -335,7 +335,7 @@ public sealed class ReShadeShaderPackService
             {
                 var targetShaders = Path.Combine(targetPackRoot, "Shaders");
                 CopyTree(stagedShaders, targetShaders, root, outputManifest, cancellationToken, exclusionsById[id], "Shaders");
-                if (Directory.Exists(targetShaders) && Directory.EnumerateFiles(targetShaders, "*", SearchOption.AllDirectories).Any())
+                if (Directory.Exists(targetShaders) && SafeFileEnumeration.Files(targetShaders).Any())
                     effectPaths.Add($@".\reshade-shaders\RHI\{safeId}\Shaders\**");
             }
 
@@ -343,7 +343,7 @@ public sealed class ReShadeShaderPackService
             {
                 var targetTextures = Path.Combine(targetPackRoot, "Textures");
                 CopyTree(stagedTextures, targetTextures, root, outputManifest, cancellationToken, exclusionsById[id], "Textures");
-                if (Directory.Exists(targetTextures) && Directory.EnumerateFiles(targetTextures, "*", SearchOption.AllDirectories).Any())
+                if (Directory.Exists(targetTextures) && SafeFileEnumeration.Files(targetTextures).Any())
                     texturePaths.Add($@".\reshade-shaders\RHI\{safeId}\Textures\**");
             }
         }
@@ -500,7 +500,7 @@ public sealed class ReShadeShaderPackService
             : (pack.Url, pack.Url);
 
         if (File.Exists(marker) && File.Exists(sourceMarker) && Directory.Exists(extracted) &&
-            Directory.EnumerateFiles(extracted, "*", SearchOption.AllDirectories).Any() &&
+            SafeFileEnumeration.Files(extracted).Any() &&
             string.Equals(File.ReadAllText(sourceMarker), sourceIdentity, StringComparison.Ordinal) &&
             // The markers name the source; the stamp proves the tree is still what this service
             // extracted from it (#142).
@@ -569,7 +569,31 @@ public sealed class ReShadeShaderPackService
     private string EnsureCustomPack()
     {
         EnsureCustomDirectories();
+        foreach (var link in LinkedFoldersNotDeployed(_customRoot))
+            Trace.TraceWarning($"[RHI shaders] {link} is a folder symlink in the custom shader folder; its files are not deployed (links are never followed into a game). Copy the files in instead.");
         return _customRoot;
+    }
+
+    /// <summary>
+    /// Folder symlinks inside the custom shader folder. Deployment never walks a directory link (it could
+    /// lead anywhere, / included), so the shaders behind one are not copied; the user is told which.
+    /// </summary>
+    internal static IReadOnlyList<string> LinkedFoldersNotDeployed(string customRoot)
+    {
+        if (!Directory.Exists(customRoot)) return [];
+        try
+        {
+            return SafeFileEnumeration.Entries(customRoot, ignoreInaccessible: true)
+                .Where(entry => entry.LinkTarget is not null && Directory.Exists(entry.FullName))
+                .Select(entry => entry.FullName)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"[RHI shaders] custom shader folder {customRoot} not fully readable ({ex.Message})");
+            return [];
+        }
     }
 
     private void EnsureCustomDirectories()
@@ -713,7 +737,7 @@ public sealed class ReShadeShaderPackService
     private static int NormalizeExtractedShaderTree(string rawRoot, string outputRoot)
     {
         var count = 0;
-        foreach (var file in Directory.EnumerateFiles(rawRoot, "*", SearchOption.AllDirectories))
+        foreach (var file in SafeFileEnumeration.Files(rawRoot))
         {
             var segments = Path.GetRelativePath(rawRoot, file)
                 .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -821,7 +845,7 @@ public sealed class ReShadeShaderPackService
         string category)
     {
         if (!Directory.Exists(sourceRoot)) return;
-        foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        foreach (var source in SafeFileEnumeration.Files(sourceRoot))
         {
             if (IsExcluded(excludedFileNames, category, sourceRoot, source)) continue;
             var relative = Path.GetRelativePath(sourceRoot, source);
@@ -843,7 +867,7 @@ public sealed class ReShadeShaderPackService
         IReadOnlySet<string>? excludedFileNames,
         string category)
     {
-        foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories))
+        foreach (var source in SafeFileEnumeration.Files(sourceRoot))
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (IsExcluded(excludedFileNames, category, sourceRoot, source)) continue;
@@ -874,7 +898,7 @@ public sealed class ReShadeShaderPackService
     {
         var root = Path.Combine(stagedRoot, category);
         if (!Directory.Exists(root)) return;
-        foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        foreach (var file in SafeFileEnumeration.Files(root))
         {
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
             var selector = $"{category}/{relative}";
@@ -964,7 +988,7 @@ public sealed class ReShadeShaderPackService
 
         if (Directory.Exists(root))
         {
-            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length))
+            foreach (var dir in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
             {
                 try { if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); } catch { }
             }
@@ -976,7 +1000,7 @@ public sealed class ReShadeShaderPackService
         try
         {
             if (!Directory.Exists(root)) return;
-            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length))
+            foreach (var dir in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
                 if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
             if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
             else if (!keepRootIfFilesRemain) Directory.Delete(root, true);

@@ -940,7 +940,11 @@ internal static class GraphicsApiDetector
                 if (File.Exists(candidate)) result.Add(candidate);
                 if (depth >= maxDepth) continue;
                 foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    // Never follow a directory symlink (a prefix's dosdevices/z: -> / among them).
+                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0) continue;
                     stack.Push((sub, depth + 1));
+                }
             }
             catch { }
         }

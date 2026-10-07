@@ -49,7 +49,12 @@ public static class SafeFileEnumeration
     private static bool IsLink(string path)
     {
         try { return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Unknown is treated as a link: the walk never enters a folder it cannot vouch for.
+            DetectorDiagnostics.Warn($"{path} not walked (attributes unreadable)", ex);
+            return true;
+        }
     }
 
     // The settings the SearchOption overloads use (nothing skipped, Win32 wildcards, errors thrown).

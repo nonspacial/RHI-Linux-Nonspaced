@@ -105,6 +105,7 @@ public sealed class WinePrefixDetectorTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(wine)!);
         File.WriteAllText(wine, "");
         File.WriteAllText(Path.Combine(dist, "bin", "wineserver"), "");
+        File.WriteAllText(Path.Combine(_root, "GE-Proton10-32", "proton"), ""); // a real build has its proton script
 
         var proton = Prefix(Path.Combine(_home, "Games", "proton"));
         Exe(proton, "Program Files/A/A.exe");

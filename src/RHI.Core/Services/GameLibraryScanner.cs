@@ -223,6 +223,7 @@ public sealed class GameLibraryScanner
             first.IsManifestSplitChild |= candidate.IsManifestSplitChild;
             // A fail-closed patch-target verdict from any source survives the merge.
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
+            first.GameRootNotAllowed |= candidate.GameRootNotAllowed;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
             first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);

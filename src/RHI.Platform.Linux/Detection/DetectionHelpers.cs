@@ -95,13 +95,6 @@ internal static partial class DetectionHelpers
         PeArchitecture? preferredArchitecture = null)
     {
         if (!Directory.Exists(root)) return null;
-        var hardIgnore = new[]
-        {
-            "unins", "crash", "report", "setup", "install", "redist", "vcredist",
-            "unitycrashhandler", "easyanticheat", "eac", "beservice", "vc_redist", "busybox",
-            // Microsoft GDK packaging stub: it starts the real game exe and is never the game itself.
-            "gamelaunchhelper"
-        };
         var softPenalty = new[] { "launcher", "bootstrap", "helper", "updater", "config", "diagnostic" };
         var normalizedRoot = NormalizeToken(Path.GetFileName(root));
         indexedFiles ??= RHI.Core.Services.GameFileIndexer.Build(root, 8, cancellationToken);
@@ -113,7 +106,7 @@ internal static partial class DetectionHelpers
             cancellationToken.ThrowIfCancellationRequested();
             if (!file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
             var name = Path.GetFileName(file);
-            if (hardIgnore.Any(x => name.Contains(x, StringComparison.OrdinalIgnoreCase))) continue;
+            if (IsSupportExecutableName(Path.GetFileNameWithoutExtension(file))) continue;
 
             long size = 0;
             try { size = new FileInfo(file).Length; } catch { }
@@ -187,9 +180,7 @@ internal static partial class DetectionHelpers
                 (normalizedName.Contains(normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
                  normalizedRoot.Contains(normalizedName, StringComparison.OrdinalIgnoreCase));
             if (!isElf && !nameMatchesRoot) continue;
-            if (lower.Contains("busybox") || lower.Contains("crash") || lower.Contains("report") ||
-                lower.Contains("uninstall") || lower.Contains("setup") || lower.Contains("redist") ||
-                lower.Contains("server"))
+            if (IsSupportExecutableName(stem) || NameWords(stem).Contains("server"))
                 continue;
 
             long size = 0;
@@ -216,6 +207,65 @@ internal static partial class DetectionHelpers
             .ThenBy(x => x.depth)
             .Select(x => x.path)
             .FirstOrDefault();
+    }
+
+    // Installers, uninstallers, crash reporters, redistributables, anti-cheat services and packaging
+    // stubs. Matched as whole words (or adjacent words joined), never as substrings: Beacon.exe,
+    // PeaceKeeper.exe, CrashBandicoot.exe, Reporter.exe and Observer are games.
+    private static readonly HashSet<string> SupportExecutableWords = new(StringComparer.Ordinal)
+    {
+        "unins", "uninstall", "uninstaller", "setup", "install", "installer", "redist", "vcredist", "dxsetup",
+        "crashhandler", "crashreport", "crashreporter", "crashreportclient", "crashpad", "crashsender",
+        "crashuploader", "bugreport", "bugreporter", "easyanticheat", "eac", "beservice", "busybox",
+        // Microsoft GDK packaging stub: it starts the real game exe and is never the game itself.
+        "gamelaunchhelper"
+    };
+
+    internal static bool IsSupportExecutableName(string stem)
+    {
+        var words = NameWords(stem);
+        for (var start = 0; start < words.Count; start++)
+        {
+            var joined = string.Empty;
+            for (var length = 1; length <= 3 && start + length <= words.Count; length++)
+            {
+                joined += words[start + length - 1];
+                if (SupportExecutableWords.Contains(joined)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Lower-case words of a file stem, split at separators, camelCase humps (keeping acronyms such as
+    /// BE in BEService together) and letter/digit changes: UnityCrashHandler64 → unity crash handler 64.
+    /// </summary>
+    internal static IReadOnlyList<string> NameWords(string stem)
+    {
+        var words = new List<string>();
+        var current = new System.Text.StringBuilder();
+        void Flush()
+        {
+            if (current.Length > 0) words.Add(current.ToString().ToLowerInvariant());
+            current.Clear();
+        }
+        for (var i = 0; i < stem.Length; i++)
+        {
+            var c = stem[i];
+            if (!char.IsLetterOrDigit(c)) { Flush(); continue; }
+            if (current.Length > 0)
+            {
+                var previous = stem[i - 1];
+                var nextIsLower = i + 1 < stem.Length && char.IsLower(stem[i + 1]);
+                var boundary = (char.IsDigit(c) != char.IsDigit(previous))
+                               || (char.IsUpper(c) && char.IsLower(previous))
+                               || (char.IsUpper(c) && char.IsUpper(previous) && nextIsLower);
+                if (boundary) Flush();
+            }
+            current.Append(c);
+        }
+        Flush();
+        return words;
     }
 
     private static bool LooksLikeNativeLaunchTarget(string path)

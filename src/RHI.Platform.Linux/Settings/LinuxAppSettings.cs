@@ -1,5 +1,6 @@
-using System.Text.Json;
 using System.Globalization;
+using System.Text.Json;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 
@@ -124,7 +125,8 @@ public sealed class LinuxSettingsStore
     public int PurgeCache()
     {
         if (!Directory.Exists(CacheRoot)) return 0;
-        var count = Directory.EnumerateFiles(CacheRoot, "*", SearchOption.AllDirectories).Count();
+        // Recursive delete unlinks symlinks without following them; the count must not follow them either.
+        var count = SafeFileEnumeration.Files(CacheRoot, ignoreInaccessible: true).Count();
         Directory.Delete(CacheRoot, recursive: true);
         return count;
     }

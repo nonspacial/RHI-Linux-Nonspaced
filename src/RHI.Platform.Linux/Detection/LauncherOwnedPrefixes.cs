@@ -18,21 +18,39 @@ internal sealed partial class LauncherOwnedPrefixes
         _umuRoot = umuRoot;
     }
 
-    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots)
+    /// <param name="dataHome">
+    /// <c>$XDG_DATA_HOME</c>, where Lutris keeps <c>pga.db</c>; without it a custom data home plus legacy
+    /// <c>~/.config/lutris/games</c> configs leave <c>$GAMEDIR</c> prefixes unresolved (the Lutris detector
+    /// passes the same value, so both agree on which prefixes Lutris owns).
+    /// </param>
+    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
     {
         var prefixes = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var root in lutrisConfigRoots.Where(Directory.Exists))
+        var roots = lutrisConfigRoots.Where(Directory.Exists).ToList();
+        var library = LutrisPga.Load(LutrisPga.Candidates(roots, home, dataHome));
+        foreach (var root in roots)
         {
             IEnumerable<string> files;
             try { files = Directory.EnumerateFiles(root, "*.yml").Concat(Directory.EnumerateFiles(root, "*.yaml")).ToArray(); }
-            catch { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RHI.Core.Services.DetectorDiagnostics.Warn($"Lutris config folder {root} unreadable; its prefixes are not known to be Lutris-owned", ex);
+                continue;
+            }
             foreach (var file in files)
             {
                 string text;
-                try { text = File.ReadAllText(file); } catch { continue; }
+                try { text = File.ReadAllText(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    RHI.Core.Services.DetectorDiagnostics.Warn($"Lutris config {file} unreadable; its prefix is not known to be Lutris-owned", ex);
+                    continue;
+                }
+                library.TryGetValue(Path.GetFileNameWithoutExtension(file), out var pga);
+                var gameDir = string.IsNullOrWhiteSpace(pga?.Directory) ? null : pga!.Directory;
                 foreach (var value in ReadScalars(text, "prefix"))
                 {
-                    var expanded = Expand(value, home);
+                    var expanded = Expand(value, home, gameDir);
                     if (expanded is not null) prefixes.Add(Canonicalise(expanded));
                 }
             }
@@ -50,7 +68,9 @@ internal sealed partial class LauncherOwnedPrefixes
 
     /// <summary>
     /// Every `key:` scalar in a Lutris YAML file (game.prefix and installer task prefixes alike), with
-    /// Lutris' folded continuation lines joined back. A full YAML parser is not needed for this.
+    /// Lutris' folded continuation lines joined back. A key with an inline value owns no children, so
+    /// every following line indented deeper than the key continues the value, even one that contains
+    /// `: ` (a wrapped path such as `…/Games: The Collection/x.exe`).
     /// </summary>
     internal static IEnumerable<string> ReadScalars(string text, string key)
     {
@@ -60,10 +80,10 @@ internal sealed partial class LauncherOwnedPrefixes
             var match = Regex.Match(lines[i], $@"^(?<indent>[ \t]*){Regex.Escape(key)}\s*:\s*(?<v>\S.*)$");
             if (!match.Success) continue;
             var value = match.Groups["v"].Value.Trim();
-            var indent = match.Groups["indent"].Value.Length;
+            var keyColumn = match.Groups["indent"].Value.Length;
             while (i + 1 < lines.Length &&
-                   lines[i + 1].Length - lines[i + 1].TrimStart().Length > indent &&
-                   !YamlKeyLine().IsMatch(lines[i + 1]))
+                   !string.IsNullOrWhiteSpace(lines[i + 1]) &&
+                   lines[i + 1].Length - lines[i + 1].TrimStart().Length > keyColumn)
             {
                 value += " " + lines[++i].Trim();
             }
@@ -71,12 +91,11 @@ internal sealed partial class LauncherOwnedPrefixes
         }
     }
 
-    private static string? Expand(string value, string home)
+    private static string? Expand(string value, string home, string? gameDir)
     {
-        if (value.StartsWith("~/", StringComparison.Ordinal)) value = Path.Combine(home, value[2..]);
-        value = Environment.ExpandEnvironmentVariables(value);
-        // Unresolved placeholders such as $GAMEDIR name no real directory.
-        return Path.IsPathRooted(value) && !value.Contains('$') ? value : null;
+        var expanded = LutrisPathExpander.Expand(value, home, gameDir);
+        // Unresolved placeholders such as $GAMEDIR (no pga.db directory) name no real directory.
+        return expanded is not null && Path.IsPathRooted(expanded) && !expanded.Contains('$') ? expanded : null;
     }
 
     /// <summary>
@@ -115,7 +134,4 @@ internal sealed partial class LauncherOwnedPrefixes
         }
         return null;
     }
-
-    [GeneratedRegex(@"^\s*(-\s+)?[\w.-]+\s*:(\s|$)")]
-    private static partial Regex YamlKeyLine();
 }

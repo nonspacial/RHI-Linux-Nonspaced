@@ -183,7 +183,8 @@ public sealed class LutrisWrapperDetectionTests : IDisposable
     public void SharedDirectories_AreNeverGameRoots(string path, bool shared)
     {
         var expanded = path.StartsWith('~') ? Home + path[1..] : path;
-        Assert.Equal(shared, LutrisGameDetector.IsSharedDirectory(expanded, Home));
+        if (expanded.StartsWith(Home, StringComparison.Ordinal)) Directory.CreateDirectory(expanded);
+        Assert.Equal(shared, !GameRootGuard.IsAcceptable(expanded, Home));
     }
 
     private static bool PathEq(string a, string b)

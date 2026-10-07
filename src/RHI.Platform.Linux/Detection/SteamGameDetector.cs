@@ -15,15 +15,23 @@ public sealed partial class SteamGameDetector : IGameDetector
     private IReadOnlyList<DetectedGame> Detect(CancellationToken cancellationToken)
         => DetectIn(LinuxPaths.SteamRoots(), cancellationToken);
 
-    /// <summary>Test seam: scans the given Steam roots instead of the user's.</summary>
+    /// <summary>
+    /// Test seam: every library of the given Steam roots, each real library folder walked once however
+    /// many roots or <c>libraryfolders.vdf</c> entries (symlinked or not) point at it.
+    /// </summary>
     internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> steamRoots, CancellationToken cancellationToken)
     {
         var games = new List<DetectedGame>();
-        foreach (var steamRoot in steamRoots)
+        var seenLibraries = new HashSet<string>(StringComparer.Ordinal);
+        var hostSteam = IsOnPath("steam");
+        foreach (var steamRoot in LinuxPaths.DistinctExisting(steamRoots))
         {
-            foreach (var library in FindLibraries(steamRoot))
+            var libraries = FindLibraries(steamRoot).ToList();
+            var classifier = SteamAppClassifier.Load(steamRoot, libraries);
+            foreach (var library in libraries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (!seenLibraries.Add(LinuxPaths.Canonicalise(library))) continue;
                 var steamapps = Path.Combine(library, "steamapps");
                 if (!Directory.Exists(steamapps)) continue;
                 string[] manifests;
@@ -42,15 +50,22 @@ public sealed partial class SteamGameDetector : IGameDetector
                         var fields = DetectionHelpers.ParseFlatVdf(File.ReadAllText(acf));
                         if (!fields.TryGetValue("name", out var name) || !fields.TryGetValue("installdir", out var installDir))
                             continue;
-                        if (DetectionHelpers.IsKnownSteamTool(name, installDir))
+                        var appId = ExtractAppIdFromAcfFilename(Path.GetFileName(acf));
+                        if (!SteamAppClassifier.IsFullyInstalled(fields.GetValueOrDefault("StateFlags")))
+                            continue;
+                        if (classifier.IsNotAGame(appId, name, installDir))
                             continue;
                         var gameRoot = Path.Combine(steamapps, "common", installDir);
-                        if (!Directory.Exists(gameRoot)) continue;
-                        var appId = ExtractAppIdFromAcfFilename(Path.GetFileName(acf));
+                        // An empty installdir names steamapps/common itself.
+                        if (!GameRootGuard.IsAcceptable(gameRoot)) continue;
                         var prefix = appId is int id ? Path.Combine(steamapps, "compatdata", id.ToString(), "pfx") : null;
                         if (prefix is not null && !Directory.Exists(prefix)) prefix = null;
+                        // What Steam will actually run: the per-app compatibility tool, else the native build when
+                        // the app ships one, else the global default tool. Unknown falls back to the prefix test.
+                        var platform = classifier.Platform(appId);
+                        if (platform == SteamAppClassifier.LaunchPlatform.Native) prefix = null;
                         var index = GameFileIndexer.Build(gameRoot, 8, cancellationToken);
-                        var nativeExecutable = prefix is null
+                        var nativeExecutable = platform != SteamAppClassifier.LaunchPlatform.Windows && prefix is null
                             ? DetectionHelpers.FindLikelyNativeExecutable(gameRoot, index, cancellationToken)
                             : null;
                         var windowsExecutable = DetectionHelpers.FindLikelyExecutable(gameRoot, index, cancellationToken);
@@ -82,20 +97,42 @@ public sealed partial class SteamGameDetector : IGameDetector
                             ExecutablePath = executable,
                             LaunchExecutablePath = executable,
                             Runner = runner,
-                            LaunchCommand = appId is int launchId ? $"steam -applaunch {launchId}" : null
+                            CompatibilityTool = nativeExecutable is null ? classifier.CompatTool(appId) : null,
+                            LaunchCommand = appId is int launchId ? LaunchCommandFor(launchId, steamRoot, hostSteam) : null
                         };
                         games.Add(game);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                     catch (Exception ex)
                     {
-                        DetectorDiagnostics.Warn($"Steam entry skipped: {Path.GetFileName(acf)} in {library}", ex);
+                        // One unreadable manifest or game folder skips that app, not the whole Steam scan.
+                        DetectorDiagnostics.Warn($"Steam manifest {acf} skipped", ex);
                     }
                 }
             }
         }
         return games;
     }
+
+    /// <summary>
+    /// How to ask the Steam client that owns <paramref name="steamRoot"/> to start an app: Flatpak Steam
+    /// through <c>flatpak run</c> (there is no host <c>steam</c> binary), host Steam through its binary,
+    /// else the <c>steam://</c> URL handler. The root is judged by its spelling and by its real path, so a
+    /// host symlink into <c>~/.var/app/com.valvesoftware.Steam</c> still reaches the Flatpak client.
+    /// </summary>
+    internal static string LaunchCommandFor(int appId, string steamRoot, bool hostSteamOnPath)
+    {
+        static bool IsFlatpak(string root)
+            => (root.Replace('\\', '/').TrimEnd('/') + "/").Contains("/.var/app/com.valvesoftware.Steam/", StringComparison.Ordinal);
+        if (IsFlatpak(steamRoot) || IsFlatpak(LinuxPaths.Canonicalise(steamRoot)))
+            return $"flatpak run com.valvesoftware.Steam -applaunch {appId}";
+        return hostSteamOnPath ? $"steam -applaunch {appId}" : $"xdg-open steam://rungameid/{appId}";
+    }
+
+    private static bool IsOnPath(string program)
+        => (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Any(dir => File.Exists(Path.Combine(dir, program)));
 
     public static int? ExtractAppIdFromAcfFilename(string filename)
     {
@@ -106,7 +143,7 @@ public sealed partial class SteamGameDetector : IGameDetector
 
     private static IEnumerable<string> FindLibraries(string steamRoot)
     {
-        var roots = new HashSet<string>(StringComparer.Ordinal) { steamRoot };
+        var roots = new List<string> { steamRoot };
         var vdf = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
         if (File.Exists(vdf))
         {
@@ -118,12 +155,10 @@ public sealed partial class SteamGameDetector : IGameDetector
                 return roots;
             }
             foreach (Match match in LibraryPathRegex().Matches(text))
-            {
-                var path = match.Groups[1].Value.Replace("\\\\", "\\");
-                if (Directory.Exists(path)) roots.Add(path);
-            }
+                roots.Add(match.Groups[1].Value.Replace("\\\\", "\\"));
         }
-        return roots;
+        // The vdf names the root's own library too, often by another spelling of the same folder.
+        return LinuxPaths.DistinctExisting(roots);
     }
 
     [GeneratedRegex("\\\"path\\\"\\s+\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase)]

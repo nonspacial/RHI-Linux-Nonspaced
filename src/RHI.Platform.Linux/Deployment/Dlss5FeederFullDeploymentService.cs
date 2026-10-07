@@ -1398,7 +1398,7 @@ public sealed class Dlss5FeederFullDeploymentService
     }
 
     private static string? FindExtractedFileByLeaf(string root, string name)
-        => Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        => SafeFileEnumeration.Files(root)
             .FirstOrDefault(path => Path.GetFileName(path).Equals(name, StringComparison.OrdinalIgnoreCase));
 
     private static async Task ExtractExternalArchiveAsync(
@@ -1580,7 +1580,7 @@ public sealed class Dlss5FeederFullDeploymentService
     private static void EnsureLumeniteLayout(string stage)
     {
         var shaderRoot = Path.Combine(stage, "Shaders");
-        if (!Directory.Exists(shaderRoot) || !Directory.EnumerateFiles(shaderRoot, "lumenite_Kernel.fx", SearchOption.AllDirectories).Any())
+        if (!Directory.Exists(shaderRoot) || !SafeFileEnumeration.Files(shaderRoot, "lumenite_Kernel.fx").Any())
             throw new InvalidDataException("LumeniteFX mainline archive does not contain lumenite_Kernel.fx.");
     }
 
@@ -1592,7 +1592,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (!File.Exists(direct))
             {
                 var found = Directory.Exists(stage)
-                    ? Directory.EnumerateFiles(stage, name, SearchOption.AllDirectories).FirstOrDefault()
+                    ? SafeFileEnumeration.Files(stage, name).FirstOrDefault()
                     : null;
                 if (found is null) throw new InvalidDataException($"ReShade shader framework header is missing: {name}");
                 Directory.CreateDirectory(Path.Combine(stage, "Shaders"));
@@ -1625,14 +1625,14 @@ public sealed class Dlss5FeederFullDeploymentService
         if (!Directory.Exists(sourceRoot))
             throw new InvalidDataException("LumeniteFX shader directory is missing.");
 
-        var kernel = Directory.EnumerateFiles(sourceRoot, "lumenite_Kernel.fx", SearchOption.AllDirectories).FirstOrDefault()
+        var kernel = SafeFileEnumeration.Files(sourceRoot, "lumenite_Kernel.fx").FirstOrDefault()
             ?? throw new InvalidDataException("LumeniteFX kernel shader is missing.");
         CopyShaderFile(kernel, Path.Combine(targetRoot, "lumenite_Kernel.fx"), copied);
 
         var includeRoot = Path.Combine(sourceRoot, "include");
         if (!Directory.Exists(includeRoot))
             throw new InvalidDataException("LumeniteFX include directory is missing.");
-        foreach (var source in Directory.EnumerateFiles(includeRoot, "*.fxh", SearchOption.AllDirectories))
+        foreach (var source in SafeFileEnumeration.Files(includeRoot, "*.fxh"))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(sourceRoot, source);
@@ -1643,7 +1643,7 @@ public sealed class Dlss5FeederFullDeploymentService
     private static void CopyLumeniteTextures(string sourceRoot, string targetRoot, List<string> copied, CancellationToken cancellationToken)
     {
         if (!Directory.Exists(sourceRoot)) return;
-        foreach (var source in Directory.EnumerateFiles(sourceRoot, "lumenite_*", SearchOption.AllDirectories))
+        foreach (var source in SafeFileEnumeration.Files(sourceRoot, "lumenite_*"))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(sourceRoot, source);
@@ -1727,7 +1727,7 @@ public sealed class Dlss5FeederFullDeploymentService
         try
         {
             if (!Directory.Exists(root)) return;
-            foreach (var directory in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories).OrderByDescending(x => x.Length))
+            foreach (var directory in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
                 if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
             if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
         }

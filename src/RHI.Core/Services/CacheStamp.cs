@@ -126,8 +126,7 @@ public static class CacheStamp
         // Tree hash: every regular file's relative path and content hash, in ordinal path order.
         // Symlinks are refused rather than followed so a stamped directory cannot point elsewhere.
         using var tree = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var root = new DirectoryInfo(entry);
-        foreach (var info in root.EnumerateFileSystemInfos("*", SearchOption.AllDirectories)
+        foreach (var info in SafeFileEnumeration.Entries(entry)
                      .OrderBy(info => Path.GetRelativePath(entry, info.FullName), StringComparer.Ordinal))
         {
             if (info.LinkTarget is not null)

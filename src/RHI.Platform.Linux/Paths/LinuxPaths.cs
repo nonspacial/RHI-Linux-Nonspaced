@@ -16,21 +16,37 @@ public static class LinuxPaths
     public static string AppLogPath => Path.Combine(StateHome, "rhi-linux", "rhi.log");
 
     public static IEnumerable<string> SteamRoots()
+        => DistinctExisting(SteamRootCandidates(Home, DataHome));
+
+    internal static IEnumerable<string> SteamRootCandidates(string home, string dataHome)
     {
-        var candidates = new[]
-        {
-            Path.Combine(DataHome, "Steam"),
-            Path.Combine(Home, ".steam", "steam"),
-            Path.Combine(Home, ".local", "share", "Steam"),
-            Path.Combine(Home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam")
-        };
-        return candidates.Distinct(StringComparer.Ordinal).Where(Directory.Exists);
+        yield return Path.Combine(dataHome, "Steam");
+        yield return Path.Combine(home, ".steam", "steam");
+        yield return Path.Combine(home, ".local", "share", "Steam");
+        yield return Path.Combine(home, ".var", "app", "com.valvesoftware.Steam", ".local", "share", "Steam");
     }
 
+    /// <summary>
+    /// Existing directories, one per real location: <c>~/.steam/steam</c> is normally a symlink to
+    /// <c>~/.local/share/Steam</c>, and string de-duplication walks both. The first spelling seen is kept,
+    /// so library keys built from it do not change.
+    /// </summary>
+    internal static IEnumerable<string> DistinctExisting(IEnumerable<string> candidates)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(candidate) || !Directory.Exists(candidate)) continue;
+            if (seen.Add(Canonicalise(candidate))) yield return candidate;
+        }
+    }
+
+    /// <summary>Absolute path with every symlink resolved and no trailing slash (missing parts kept as written).</summary>
+    internal static string Canonicalise(string path)
+        => Detection.LauncherOwnedPrefixes.Canonicalise(path);
+
     public static IEnumerable<string> HeroicRoots()
-        => HeroicRootCandidates(Home, ConfigHome)
-            .Distinct(StringComparer.Ordinal)
-            .Where(Directory.Exists);
+        => DistinctExisting(HeroicRootCandidates(Home, ConfigHome));
 
     /// <summary>
     /// Legendary's installed.json is not guaranteed to live under ~/.config/heroic.
@@ -39,9 +55,7 @@ public static class LinuxPaths
     /// existed in both sibling-config and bundled-config layouts as well.
     /// </summary>
     public static IEnumerable<string> HeroicLegendaryRoots()
-        => HeroicLegendaryRootCandidates(Home, ConfigHome)
-            .Distinct(StringComparer.Ordinal)
-            .Where(Directory.Exists);
+        => DistinctExisting(HeroicLegendaryRootCandidates(Home, ConfigHome));
 
     public static IEnumerable<string> HeroicPrefixRoots()
     {
@@ -52,7 +66,7 @@ public static class LinuxPaths
                 Path.Combine(Home, "Games", "Heroic", "Prefixes")
             });
 
-        return candidates.Distinct(StringComparer.Ordinal).Where(Directory.Exists);
+        return DistinctExisting(candidates);
     }
 
     internal static IEnumerable<string> HeroicRootCandidates(string home, string configHome)
@@ -77,9 +91,7 @@ public static class LinuxPaths
     }
 
     public static IEnumerable<string> LutrisConfigRoots()
-        => LutrisConfigRootCandidates(Home, ConfigHome, DataHome)
-            .Distinct(StringComparer.Ordinal)
-            .Where(Directory.Exists);
+        => DistinctExisting(LutrisConfigRootCandidates(Home, ConfigHome, DataHome));
 
     /// <summary>
     /// Lutris game configs. The Wine detector skips every prefix these reference, so a root missing

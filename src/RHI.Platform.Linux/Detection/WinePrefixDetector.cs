@@ -8,16 +8,18 @@ namespace RHI.Platform.Linux.Detection;
 public sealed class WinePrefixDetector : IGameDetector
 {
     private readonly string _home;
+    private readonly string? _dataHome;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
 
-    public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots) { }
+    public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome) { }
 
-    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots)
-        : this(home, () => lutrisConfigRoots) { }
+    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
+        : this(home, () => lutrisConfigRoots, dataHome) { }
 
-    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots)
+    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots, string? dataHome)
     {
         _home = home;
+        _dataHome = dataHome;
         _lutrisConfigRoots = lutrisConfigRoots;
     }
 
@@ -34,7 +36,7 @@ public sealed class WinePrefixDetector : IGameDetector
             Path.Combine(_home, "Games"),
             Path.Combine(_home, ".local", "share", "bottles", "bottles")
         };
-        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots());
+        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome);
         var games = new List<DetectedGame>();
         foreach (var root in roots.Where(Directory.Exists))
         {
@@ -87,7 +89,7 @@ public sealed class WinePrefixDetector : IGameDetector
 
     private static IEnumerable<string> FindPrefixes(string root, int maxDepth)
     {
-        if (Directory.Exists(Path.Combine(root, "drive_c")) && File.Exists(Path.Combine(root, "system.reg")))
+        if (IsPrefix(root))
         {
             yield return root;
             yield break;
@@ -98,17 +100,33 @@ public sealed class WinePrefixDetector : IGameDetector
         while (pending.Count > 0)
         {
             var dir = pending.Pop();
-            if (Directory.Exists(Path.Combine(dir, "drive_c")) && File.Exists(Path.Combine(dir, "system.reg")))
+            if (IsPrefix(dir))
             {
                 yield return dir;
                 continue;
             }
             var depth = dir.Count(c => c == Path.DirectorySeparatorChar) - startDepth;
             if (depth >= maxDepth) continue;
-            try { foreach (var sub in Directory.EnumerateDirectories(dir)) pending.Push(sub); }
-            catch { }
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    // A symlinked folder is followed only when it is itself a prefix (a prefix kept on
+                    // another disk); any other link could lead anywhere, / included.
+                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0 && !IsPrefix(sub)) continue;
+                    pending.Push(sub);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // An unreadable folder is skipped.
+                DetectorDiagnostics.Warn($"Wine prefix search skipped {dir}", ex);
+            }
         }
     }
+
+    private static bool IsPrefix(string dir)
+        => Directory.Exists(Path.Combine(dir, "drive_c")) && File.Exists(Path.Combine(dir, "system.reg"));
 
     private static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
@@ -118,7 +136,10 @@ public sealed class WinePrefixDetector : IGameDetector
     /// </summary>
     internal sealed record PrefixRuntime(bool IsProton, string? Version, string? WineBinary, string? WineServer)
     {
-        public static PrefixRuntime Read(string prefix)
+        public static PrefixRuntime Read(string prefix) => Read(prefix, FindOnPath);
+
+        /// <param name="onPath">Resolves a program name on PATH (host Wine), injectable for tests.</param>
+        internal static PrefixRuntime Read(string prefix, Func<string, string?> onPath)
         {
             // Steam-style layout keeps the markers beside `pfx/`.
             var dirs = Path.GetFileName(prefix) == "pfx" ? new[] { prefix, Path.GetDirectoryName(prefix)! } : [prefix];
@@ -134,7 +155,12 @@ public sealed class WinePrefixDetector : IGameDetector
                 if (!string.IsNullOrEmpty(fonts) && Path.IsPathRooted(fonts))
                 {
                     var bin = Path.GetFullPath(Path.Combine(fonts.TrimEnd('/'), "..", "..", "bin"));
-                    wine = new[] { "wine", "wine64" }.Select(n => Path.Combine(bin, n)).FirstOrDefault(File.Exists);
+                    if (IsProtonDistBin(bin))
+                    {
+                        wine = new[] { "wine", "wine64" }.Select(n => Path.Combine(bin, n)).FirstOrDefault(File.Exists);
+                        // Never the host's Wine, whatever the path says: it would run wineboot over the prefix.
+                        if (wine is not null && IsHostWine(wine, onPath)) wine = null;
+                    }
                     var serverPath = Path.Combine(bin, "wineserver");
                     server = wine is not null && File.Exists(serverPath) ? serverPath : null;
                 }
@@ -142,6 +168,35 @@ public sealed class WinePrefixDetector : IGameDetector
             }
             return new PrefixRuntime(false, null, null, null);
         }
+
+        /// <summary>
+        /// A Proton build keeps its Wine in <c>&lt;dist&gt;/files/bin</c> (or <c>dist/bin</c> in older builds)
+        /// beside a <c>proton</c> script or <c>version</c> file. Anything else (a stale or hand-edited
+        /// config_info pointing at /usr/share/fonts, say) is not that Proton's Wine.
+        /// </summary>
+        internal static bool IsProtonDistBin(string bin)
+        {
+            var files = Path.GetDirectoryName(bin.TrimEnd('/'));
+            if (files is null || Path.GetFileName(bin.TrimEnd('/')) != "bin") return false;
+            if (Path.GetFileName(files) is not ("files" or "dist")) return false;
+            var dist = Path.GetDirectoryName(files);
+            return dist is not null &&
+                   (File.Exists(Path.Combine(dist, "proton")) || File.Exists(Path.Combine(dist, "version")));
+        }
+
+        private static bool IsHostWine(string wine, Func<string, string?> onPath)
+        {
+            var canonical = LauncherOwnedPrefixes.Canonicalise(wine);
+            return new[] { "wine", "wine64" }
+                .Select(onPath)
+                .Any(host => host is not null && LauncherOwnedPrefixes.Canonicalise(host) == canonical);
+        }
+
+        private static string? FindOnPath(string program)
+            => (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                .Select(dir => Path.Combine(dir, program))
+                .FirstOrDefault(File.Exists);
 
         private static string[]? ReadLines(string path)
         {
