@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using RHI.Core;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Core.Services;
@@ -33,9 +34,22 @@ public sealed class DlssManagerService
         _cacheRoot = cacheRoot;
         Directory.CreateDirectory(_cacheRoot);
         RepairLegacyCachePermissions();
+        SweepCacheLeftovers();
     }
 
     public DlssManifestData? Manifest => _manifest;
+
+    /// <summary>Why the last downloaded manifest could not be cached (the fresh copy was still used); null when it was.</summary>
+    public string? ManifestCacheWriteError { get; private set; }
+
+    /// <summary>Manifest download URLs and their redirect targets (GitHub release hosts only, HTTPS only).</summary>
+    internal static readonly TrustedDownloadPolicy DownloadPolicy = TrustedDownloadPolicy.GitHubReleases with { MaxBytes = 1024L * 1024 * 1024 };
+
+    /// <summary>Upper bound for one extracted DLL.</summary>
+    private const long MaxDllBytes = 512L * 1024 * 1024;
+
+    /// <summary>Crash leftovers in the cache older than this are removed at start-up.</summary>
+    private static readonly TimeSpan CacheLeftoverAge = TimeSpan.FromHours(1);
 
     public async Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
     {
@@ -51,7 +65,16 @@ public sealed class DlssManagerService
                          ?? throw new InvalidDataException("DLSS manifest was empty or invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
-            await File.WriteAllTextAsync(cachePath, json, cancellationToken).ConfigureAwait(false);
+            // Durable and atomic (#39): a crash never leaves a truncated fallback manifest, and a
+            // cache that cannot be written does not discard the manifest just downloaded.
+            try
+            {
+                await AtomicFile.WriteAllTextAsync(cachePath, json, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ManifestCacheWriteError = ex.Message;
+            }
             return parsed;
         }
         catch when (File.Exists(cachePath))
@@ -406,40 +429,58 @@ public sealed class DlssManagerService
             // can materialize as execute-only files (for example mode 0010). Repair older
             // cache entries in place before deciding whether the cached payload is reusable.
             NormalizeCacheDllPermissions(cachedDll);
-            // Reuse only a DLL stamped at download time for this manifest entry (#142); a file that
-            // reached the cache any other way is downloaded again, never deployed.
-            if (IsReadableCachedDll(cachedDll) && CacheStamp.IsValid(cachedDll, entry.Url, entry.Version)) return cachedDll;
-            TryDeleteCacheFile(cachedDll);
+            // Reuse only a DLL stamped at download time for this manifest entry (#142) and, when the
+            // manifest publishes a digest, for that digest (#39); anything else is downloaded again.
+            if (IsReadableCachedDll(cachedDll) && CacheStamp.IsValid(cachedDll, entry.Url, entry.Version, entry.Sha256)) return cachedDll;
+            FileCleanup.TryDelete(cachedDll);
         }
 
         Directory.CreateDirectory(cacheDir);
         CacheStamp.Invalidate(cachedDll);
-        var zipPath = Path.Combine(cacheDir, $"download-{Guid.NewGuid():N}.zip.part");
-        var temp = cachedDll + $".tmp-{Guid.NewGuid():N}";
-        try
+        using (var download = await DownloadArchiveAsync(entry, cacheDir, cancellationToken).ConfigureAwait(false))
+        using (var zip = ZipFile.OpenRead(download.Path))
         {
-            await DownloadFileAsync(entry.Url, zipPath, cancellationToken).ConfigureAwait(false);
-            using (var zip = ZipFile.OpenRead(zipPath))
-            {
-                var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), expectedDll, StringComparison.OrdinalIgnoreCase))
-                            ?? throw new InvalidDataException($"Downloaded archive does not contain {expectedDll}.");
-                match.ExtractToFile(temp, overwrite: true);
-                NormalizeCacheDllPermissions(temp);
-                if (!IsReadableCachedDll(temp))
-                    throw new InvalidDataException($"Extracted {expectedDll} is unreadable or unexpectedly small.");
-                File.Move(temp, cachedDll, overwrite: true);
-                NormalizeCacheDllPermissions(cachedDll);
-            }
-        }
-        finally
-        {
-            TryDeleteCacheFile(temp);
-            TryDeleteCacheFile(zipPath);
+            var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), expectedDll, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidDataException($"Downloaded archive does not contain {expectedDll}.");
+            await ExtractVerifiedAsync(match, cachedDll, cancellationToken).ConfigureAwait(false);
         }
         if (!IsReadableCachedDll(cachedDll))
             throw new IOException($"Cached {expectedDll} is not readable after extraction: {cachedDll}");
-        CacheStamp.Write(cachedDll, entry.Url, entry.Version);
+        CacheStamp.Write(cachedDll, entry.Url, entry.Version, entry.Sha256);
         return cachedDll;
+    }
+
+    /// <summary>
+    /// Downloads a manifest archive through <see cref="TrustedDownload"/> (HTTPS, GitHub release hosts
+    /// including the redirect target, size cap, the manifest's sha256 when it publishes one) to a
+    /// uniquely named temporary file that is deleted when the result is disposed, whatever happens.
+    /// </summary>
+    private Task<TempDownload> DownloadArchiveAsync(DlssManifestEntry entry, string cacheDir, CancellationToken cancellationToken)
+        => TrustedDownload.DownloadToTempAsync(_http, entry.Url, Path.Combine(cacheDir, "download.zip"), DownloadPolicy, entry.Sha256,
+            cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// Extracts one archive member to <paramref name="destination"/> through a verified, fsynced
+    /// temporary file and an atomic rename (never <c>ExtractToFile</c>, which also applies the
+    /// archive's Unix mode bits); the payload must pass the readable-DLL check before it is placed.
+    /// </summary>
+    private static async Task ExtractVerifiedAsync(ZipArchiveEntry member, string destination, CancellationToken cancellationToken)
+    {
+        StagedFile staged;
+        await using (var content = member.Open())
+            staged = await AtomicFile.StageStreamAsync(content, destination, null, null, MaxDllBytes, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            NormalizeCacheDllPermissions(staged.Path);
+            if (!IsReadableCachedDll(staged.Path))
+                throw new InvalidDataException($"Extracted {member.Name} is unreadable or unexpectedly small.");
+            AtomicFile.MoveIntoPlace(staged.Path, destination);
+        }
+        finally
+        {
+            FileCleanup.TryDelete(staged.Path);
+        }
+        NormalizeCacheDllPermissions(destination);
     }
 
     private async Task DownloadStreamlineAsync(DlssManifestEntry entry, string cacheDir, CancellationToken ct)
@@ -452,8 +493,9 @@ public sealed class DlssManagerService
         {
             foreach (var path in existing) NormalizeCacheDllPermissions(path);
             // Every Streamline DLL present here is deployed, so all of them must carry a stamp from
-            // this manifest entry's download (#142); otherwise the whole set is downloaded again.
-            if (existing.All(path => IsReadableCachedDll(path) && CacheStamp.IsValid(path, entry.Url, entry.Version))) return;
+            // this manifest entry's download (#142, and its published digest, #39); otherwise the
+            // whole set is downloaded again.
+            if (existing.All(path => IsReadableCachedDll(path) && CacheStamp.IsValid(path, entry.Url, entry.Version, entry.Sha256))) return;
         }
 
         ValidateDownloadUrl(entry.Url);
@@ -464,35 +506,58 @@ public sealed class DlssManagerService
         {
             var path = Path.Combine(cacheDir, dll);
             CacheStamp.Invalidate(path);
-            TryDeleteCacheFile(path);
+            FileCleanup.TryDelete(path);
         }
-        var zipPath = Path.Combine(cacheDir, $"download-{Guid.NewGuid():N}.zip.part");
         var extractedFiles = new List<string>();
-        try
+        using (var download = await DownloadArchiveAsync(entry, cacheDir, ct).ConfigureAwait(false))
+        using (var zip = ZipFile.OpenRead(download.Path))
         {
-            await DownloadFileAsync(entry.Url, zipPath, ct).ConfigureAwait(false);
-            using var zip = ZipFile.OpenRead(zipPath);
             foreach (var dll in KnownStreamlineDlls)
             {
                 var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), dll, StringComparison.OrdinalIgnoreCase));
                 if (match is null) continue;
                 var extracted = Path.Combine(cacheDir, dll);
-                match.ExtractToFile(extracted, overwrite: true);
-                NormalizeCacheDllPermissions(extracted);
-                if (!IsReadableCachedDll(extracted))
-                    throw new InvalidDataException($"Extracted Streamline DLL is unreadable or unexpectedly small: {dll}");
+                await ExtractVerifiedAsync(match, extracted, ct).ConfigureAwait(false);
                 extractedFiles.Add(extracted);
             }
         }
-        finally
-        {
-            TryDeleteCacheFile(zipPath);
-        }
         if (extractedFiles.Count == 0)
             throw new InvalidDataException("Streamline archive contained no readable recognized DLLs.");
-        foreach (var path in extractedFiles) CacheStamp.Write(path, entry.Url, entry.Version);
+        foreach (var path in extractedFiles) CacheStamp.Write(path, entry.Url, entry.Version, entry.Sha256);
     }
 
+    /// <summary>
+    /// Removes download/extraction temporaries a crash left in the NVIDIA cache namespaces (current
+    /// <c>*.rhi-tmp-*</c> names and the older <c>download-*.zip.part</c> / <c>*.dll.tmp-*</c> names).
+    /// Cache files only: nothing here is user data. Recent files are kept in case another RHI process
+    /// is downloading right now.
+    /// </summary>
+    private void SweepCacheLeftovers()
+    {
+        foreach (var component in new[] { "DLSS", "DLSS-D", "DLSS-G", "DLSS-NR", "Streamline" })
+        {
+            var componentRoot = Path.Combine(_cacheRoot, component);
+            if (!Directory.Exists(componentRoot)) continue;
+            IEnumerable<string> files;
+            try
+            {
+                files = Directory.EnumerateFiles(componentRoot, "*", SearchOption.AllDirectories).ToArray();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue; // unreadable cache folder: nothing can be reused from it either
+            }
+            foreach (var path in files)
+            {
+                var name = Path.GetFileName(path);
+                var leftover = name.Contains(AtomicFile.TempMarker, StringComparison.Ordinal)
+                               || (name.StartsWith("download-", StringComparison.Ordinal) && name.EndsWith(".zip.part", StringComparison.Ordinal))
+                               || name.Contains(".dll.tmp-", StringComparison.OrdinalIgnoreCase);
+                if (leftover && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) >= CacheLeftoverAge)
+                    FileCleanup.TryDelete(path);
+            }
+        }
+    }
 
     private void RepairLegacyCachePermissions()
     {
@@ -562,20 +627,6 @@ public sealed class DlssManagerService
         catch (PlatformNotSupportedException) { }
     }
 
-    private static void TryDeleteCacheFile(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
-
-    private async Task DownloadFileAsync(string url, string destination, CancellationToken ct)
-    {
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous);
-        await input.CopyToAsync(output, ct).ConfigureAwait(false);
-    }
-
     private static void ValidateManifest(DlssManifestData manifest)
     {
         var all = manifest.Dlss.Concat(manifest.Dlssd).Concat(manifest.Dlssg).Concat(manifest.Dlssnr).Concat(manifest.Streamline).ToArray();
@@ -584,17 +635,12 @@ public sealed class DlssManagerService
         {
             if (string.IsNullOrWhiteSpace(entry.Version)) throw new InvalidDataException("Manifest entry has no version.");
             ValidateDownloadUrl(entry.Url);
+            if (entry.Sha256 is { } sha && (sha.Length != 64 || !sha.All(Uri.IsHexDigit)))
+                throw new InvalidDataException($"Manifest entry {entry.Version} has a malformed sha256.");
         }
     }
 
-    private static void ValidateDownloadUrl(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-            throw new InvalidDataException("Manifest contains a non-HTTPS download URL.");
-        if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) &&
-            !uri.Host.Equals("objects.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Unexpected DLSS download host: {uri.Host}");
-    }
+    private static void ValidateDownloadUrl(string url) => TrustedDownload.Validate(url, DownloadPolicy);
 
     private static IReadOnlyList<string> PreferLikelyGamePaths(
         IEnumerable<string> paths, string gameRoot, string? binaryDirectory)
