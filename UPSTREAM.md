@@ -75,3 +75,12 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #138 — Donate dialog (2.8.2)
+
+- Toolbar **Donate** button after Links / MOTD / Updates (Linux has no Help button); like every right-end button it moves into the `…` menu at narrow widths.
+- The dialog lists every manifest `donationUrls` author with its `authorRoles` entry, sorted case-insensitively, each with a Ko-fi button (URL in a 2 s tooltip), plus upstream's intro and the "link Discord to Ko-fi before donating" warning. Data comes from the shared manifest service, so new authors show after a library Refresh or restart without an app update; offline it uses the last-known-good copy, then the pinned manifest (which predates `authorRoles`: names and links only).
+- Only absolute https links without credentials are offered; anything else is dropped. Links open through `LinuxDesktopOpener.TryOpenUri` (argument list, no shell); a failure shows in the dialog's status line.
+- Not ported: upstream's hard-coded fallback author list (the pinned manifest covers offline first runs) and the `authorDisplayNames` mapping (it maps wiki maintainer handles for card badges, not donation keys). No RHI-Linux entry: upstream's list only, pending owner choice.

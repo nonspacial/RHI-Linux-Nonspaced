@@ -136,7 +136,8 @@ public sealed class App : Application
             {
                 DataContext = vm,
                 UpdateLogStore = updateLog,
-                HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog)
+                HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog),
+                UpstreamManifest = upstreamManifest
             };
         }
         base.OnFrameworkInitializationCompleted();

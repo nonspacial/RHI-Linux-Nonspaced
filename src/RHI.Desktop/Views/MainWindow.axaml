@@ -47,6 +47,7 @@
         <Button Classes="rhi" Content="{DynamicResource Ui.Links}" Click="Links_Click"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.Motd}" Click="Motd_Click" ToolTip.Tip="{DynamicResource Ui.MotdTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.UpdateHistory}" Click="UpdateHistory_Click" ToolTip.Tip="{DynamicResource Ui.UpdateHistoryTip}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.Donate}" Click="Donate_Click" ToolTip.Tip="{DynamicResource Ui.DonateTip}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
         <Button Classes="rhi" Content="{Binding ViewToggleText}" Click="ViewMode_Click" ToolTip.Tip="{DynamicResource Ui.ViewModeTip}"/>
         <Button x:Name="ToolbarOverflowButton" views:ToolbarPanel.Slot="Overflow" Classes="rhi" Content="…"
