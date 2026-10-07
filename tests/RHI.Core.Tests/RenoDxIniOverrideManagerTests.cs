@@ -1,4 +1,5 @@
 using RHI.Platform.Linux.Deployment;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Core.Tests;
 

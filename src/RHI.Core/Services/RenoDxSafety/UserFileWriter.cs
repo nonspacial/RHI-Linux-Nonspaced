@@ -1,4 +1,4 @@
-namespace RHI.Core.Services;
+namespace RHI.Core.Services.RenoDxSafety;
 
 /// <summary>
 /// Crash-safe replacement of a user file: the new bytes go to a temp file in the same folder, are flushed to
@@ -6,7 +6,7 @@ namespace RHI.Core.Services;
 /// leaves the original bytes untouched and removes the temp file. A symlinked path is written through to its
 /// final target so the link itself survives.
 /// </summary>
-public static class AtomicFile
+public static class UserFileWriter
 {
     /// <param name="wrapOutput">Test seam: wraps the temp-file stream (e.g. to fail mid-write like a full disk).</param>
     public static void WriteAllBytes(string path, byte[] bytes, Func<Stream, Stream>? wrapOutput = null)

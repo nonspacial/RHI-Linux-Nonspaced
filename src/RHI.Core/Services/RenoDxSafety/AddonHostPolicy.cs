@@ -1,4 +1,4 @@
-namespace RHI.Core.Services;
+namespace RHI.Core.Services.RenoDxSafety;
 
 /// <summary>
 /// Raised when a download link is not HTTPS on one of the policy's hosts. Nothing has been fetched
@@ -6,7 +6,7 @@ namespace RHI.Core.Services;
 /// </summary>
 public sealed class UntrustedDownloadException : Exception
 {
-    public UntrustedDownloadException(string? url, TrustedDownloadPolicy policy)
+    public UntrustedDownloadException(string? url, AddonHostPolicy policy)
         : base($"{policy.RefusalPrefix}{url}")
     {
         Url = url;
@@ -23,13 +23,15 @@ public sealed class UntrustedDownloadException : Exception
 /// DNS label under an allowed parent domain (e.g. <c>marat569.github.io</c>, never <c>a.b.github.io</c>).
 /// Callers validate the requested link before any HTTP call and the final (post-redirect) URI before reading
 /// the body.
+/// Lane-local (w1/renodx-p0): the integrator folds this into <c>RHI.Core.Deployment.TrustedDownloadPolicy</c>
+/// (single-label subdomain parents, port/user-info/DNS checks, name and refusal prefix).
 /// </summary>
-public sealed class TrustedDownloadPolicy
+public sealed class AddonHostPolicy
 {
     private readonly HashSet<string> _hosts;
     private readonly string[] _parentDomains;
 
-    public TrustedDownloadPolicy(string name, string hostDescription, IEnumerable<string> hosts, IEnumerable<string>? singleLabelSubdomainsOf = null)
+    public AddonHostPolicy(string name, string hostDescription, IEnumerable<string> hosts, IEnumerable<string>? singleLabelSubdomainsOf = null)
     {
         Name = name;
         RefusalPrefix = $"Download refused: {name} links must be HTTPS on a trusted host ({hostDescription}). Refused link: ";
@@ -45,7 +47,7 @@ public sealed class TrustedDownloadPolicy
     public IReadOnlyList<string> SubdomainParents => _parentDomains;
 
     /// <summary>GitHub repositories, release assets and raw files (the hosts a release download redirects through).</summary>
-    public static readonly TrustedDownloadPolicy GitHub = new(
+    public static readonly AddonHostPolicy GitHub = new(
         "GitHub",
         "GitHub",
         ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "raw.githubusercontent.com"]);
@@ -57,14 +59,14 @@ public sealed class TrustedDownloadPolicy
     /// author's GitHub Pages site (<c>&lt;author&gt;.github.io</c>: clshortfuse, marat569, oopydoopy, notvoosh, …;
     /// new authors appear in the live database) or on renodx.com, where clshortfuse.github.io redirects.
     /// </summary>
-    public static readonly TrustedDownloadPolicy RenoDxAddons = new(
+    public static readonly AddonHostPolicy RenoDxAddons = new(
         "RenoDX add-on",
         "GitHub, GitHub Pages or renodx.com",
         ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "raw.githubusercontent.com", "renodx.com"],
         ["github.io"]);
 
     /// <summary>ReShade add-ons from crosire's Addons.ini and the upstream manifest: GitHub and GitHub Pages.</summary>
-    public static readonly TrustedDownloadPolicy ReShadeAddons = new(
+    public static readonly AddonHostPolicy ReShadeAddons = new(
         "ReShade add-on",
         "GitHub or GitHub Pages",
         ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com", "raw.githubusercontent.com"],

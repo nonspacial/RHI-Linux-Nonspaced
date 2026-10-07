@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -68,8 +69,8 @@ public sealed class RenoDxUpgradeDeploymentService
         sourceUrl ??= pack.DownloadUrl;
         if (string.IsNullOrWhiteSpace(sourceUrl))
             return ComponentOperationResult.Fail($"Upstream RHI manifest has no {ArchitectureLabel(architecture)} RenoDX Upgrade download URL.");
-        if (!TrustedDownloadPolicy.RenoDxAddons.IsTrusted(sourceUrl))
-            return ComponentOperationResult.Fail(new UntrustedDownloadException(sourceUrl, TrustedDownloadPolicy.RenoDxAddons).Message);
+        if (!AddonHostPolicy.RenoDxAddons.IsTrusted(sourceUrl))
+            return ComponentOperationResult.Fail(new UntrustedDownloadException(sourceUrl, AddonHostPolicy.RenoDxAddons).Message);
 
         var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
         Directory.CreateDirectory(deployDir);
@@ -222,11 +223,11 @@ public sealed class RenoDxUpgradeDeploymentService
         var temp = cache + $".tmp-{Guid.NewGuid():N}";
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, TrustedDownloadPolicy.RenoDxAddons.Validate(sourceUrl));
+            using var request = new HttpRequestMessage(HttpMethod.Get, AddonHostPolicy.RenoDxAddons.Validate(sourceUrl));
             request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
-            TrustedDownloadPolicy.RenoDxAddons.ValidateFinal(response, sourceUrl);
+            AddonHostPolicy.RenoDxAddons.ValidateFinal(response, sourceUrl);
             await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
             await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
                 await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -52,8 +53,8 @@ public sealed class RenoDxDeploymentService
         _engineIniFiles = new UpstreamEngineIniFileManager(http, Path.Combine(_cacheDir, "engine-files"));
     }
 
-    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="TrustedDownloadPolicy.RenoDxAddons"/>).</summary>
-    public static TrustedDownloadPolicy DownloadPolicy => TrustedDownloadPolicy.RenoDxAddons;
+    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="AddonHostPolicy.RenoDxAddons"/>).</summary>
+    public static AddonHostPolicy DownloadPolicy => AddonHostPolicy.RenoDxAddons;
 
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
@@ -752,7 +753,7 @@ public sealed class RenoDxDeploymentService
                 if (snapshot.Bytes is not null)
                 {
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(snapshot.Path)!);
-                    AtomicFile.WriteAllBytes(snapshot.Path, snapshot.Bytes);
+                    UserFileWriter.WriteAllBytes(snapshot.Path, snapshot.Bytes);
                 }
                 else if (File.Exists(snapshot.Path))
                 {
@@ -783,7 +784,7 @@ public sealed class RenoDxDeploymentService
             try
             {
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(candidate)!);
-                AtomicFile.WriteAllBytes(candidate, snapshot.Bytes);
+                UserFileWriter.WriteAllBytes(candidate, snapshot.Bytes);
                 return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

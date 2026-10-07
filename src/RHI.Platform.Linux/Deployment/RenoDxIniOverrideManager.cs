@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using RHI.Core.Services;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -255,7 +256,7 @@ internal static class RenoDxIniOverrideManager
     {
         var text = new StringBuilder();
         foreach (var line in lines) text.Append(line).Append('\n');
-        AtomicFile.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(text.ToString()), wrapOutput);
+        UserFileWriter.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(text.ToString()), wrapOutput);
     }
 
     public static string Serialize(RenoDxIniOverrideState state)

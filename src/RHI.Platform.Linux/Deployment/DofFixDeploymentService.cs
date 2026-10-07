@@ -3,6 +3,7 @@ using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -306,11 +307,11 @@ public sealed class DofFixDeploymentService
         var temp = cache + $".tmp-{Guid.NewGuid():N}";
 
         // DEP-06: the release asset or the manifest's ueDofFix template must be HTTPS on GitHub.
-        using var request = new HttpRequestMessage(HttpMethod.Get, TrustedDownloadPolicy.GitHub.Validate(release.AssetUrl));
+        using var request = new HttpRequestMessage(HttpMethod.Get, AddonHostPolicy.GitHub.Validate(release.AssetUrl));
         request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        TrustedDownloadPolicy.GitHub.ValidateFinal(response, release.AssetUrl);
+        AddonHostPolicy.GitHub.ValidateFinal(response, release.AssetUrl);
         await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
         await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true))
             await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
