@@ -75,3 +75,9 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #131 — Manifest install warnings (2.8.0)
+
+Ported. Before a user-initiated install of ReShade, RenoDX, Luma, OptiScaler, REFramework, ReLimiter or Display Commander, the manifest's `installWarnings[<game>][<component>]` text is shown with Continue / Cancel; Cancel stops before any file is touched. The game is matched by its canonical manifest name (the library policy pass), not the exact detected title. Covered paths: the component row's Install, applying a ReShade profile when ReShade is not yet installed, and a dropped or watched local Luma package. Update All and the background pass never prompt. The text itself is upstream English; the title and buttons are localised. Links: every http(s) URL in the text becomes a button under it (a trailing URL moves out of the text, as upstream); buttons open through the desktop handler (`LinuxDesktopOpener`, http(s) only). Linux deviations: upstream links only a trailing URL (GTA V Enhanced's inline DirectStorageFix link is clickable here too); upstream warns again on every ReShade reinstall/update click, Linux only on the first install. The `dxvk` key has no Linux component (Proton owns DXVK) and is ignored.

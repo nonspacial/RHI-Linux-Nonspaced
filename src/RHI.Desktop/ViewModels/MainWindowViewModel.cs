@@ -1554,6 +1554,20 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
     public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
 
+    /// <summary>Set by the window: shows a manifest install warning (title, warning, accept text) with its links; true to proceed.</summary>
+    public Func<string, ManifestInstallWarning, string, Task<bool>>? ConfirmInstallWarningAsync { get; set; }
+
+    // Upstream 2.8.0: user-initiated installs show the manifest's per-game warning first. Update All and the
+    // background pass go through LinuxUpdateAllService and never reach this prompt.
+    private async Task<bool> AcceptManifestInstallWarningAsync(DetectedGame game, ManagedComponentKind kind, string displayName)
+    {
+        if (ManifestInstallWarning.Find(game, kind) is not { } warning || ConfirmInstallWarningAsync is not { } confirm) return true;
+        if (await confirm(LF("⚠ Nota de instalação — {0}", "⚠ Install note — {0}", game.Name), warning, L("Continuar", "Continue")))
+            return true;
+        StatusText = LF("Instalação de {0} cancelada.", "{0} installation cancelled.", displayName);
+        return false;
+    }
+
     [RelayCommand]
     private async Task ManageComponentAsync(ManagedComponentKind kind)
     {
@@ -1581,6 +1595,8 @@ public partial class MainWindowViewModel : ObservableObject
                 StatusText = L("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial (.zip ou .7z). Selecione-o primeiro em Perfil do ReShade → Consumidor do Feeder.", "DLSS5 Feeder Full with Deep Fried Chicken requires the official package (.zip or .7z). Select it first under ReShade Profile → Feeder consumer.");
                 return;
             }
+
+            if (!removing && !await AcceptManifestInstallWarningAsync(game, kind, component.DisplayName)) return;
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
             if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
@@ -1871,6 +1887,9 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            // Applying a profile installs ReShade when it is not there yet; that is the install the manifest warns about.
+            if (component.Availability == ComponentAvailability.Available &&
+                !await AcceptManifestInstallWarningAsync(game, ManagedComponentKind.ReShade, component.DisplayName)) return;
             StatusText = LF("Aplicando perfil {0} do ReShade…", "Applying ReShade {0} profile…", channel);
             var result = await _managedComponents.ApplyReShadeAsync(game, options);
             StatusText = UiLocalizationService.Present(result.Message);
@@ -2707,6 +2726,8 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            if (!await AcceptManifestInstallWarningAsync(game, ManagedComponentKind.LumaFramework, "Luma"))
+                return ComponentOperationResult.Fail(StatusText);
             StatusText = LF("Instalando pacote Luma local em {0}…", "Installing local Luma package in {0}…", game.Name);
             var result = await _managedComponents
                 .InstallLocalLumaPackageAsync(game, sourcePath, cancellationToken)

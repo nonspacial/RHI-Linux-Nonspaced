@@ -58,7 +58,10 @@ public sealed partial class MainWindow
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (DataContext is MainWindowViewModel confirmVm)
+            {
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
+                confirmVm.ConfirmInstallWarningAsync = (title, warning, accept) => ShowConfirmationAsync(title, warning.Text, accept, height: double.NaN, links: warning.Links);
+            }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
@@ -561,20 +564,38 @@ public sealed partial class MainWindow
         vm.StatusText = vm.ImportCustomAddonFile(path);
     }
 
-    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280)
+    /// <param name="height">Fixed height, or NaN to fit the content (manifest texts vary in length).</param>
+    /// <param name="links">http(s) links shown under the message as buttons; they open through the desktop handler only.</param>
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280, IReadOnlyList<Uri>? links = null)
     {
         var accept = new Button { Content = acceptText, Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(cancel); buttons.Children.Add(accept);
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+        if (message.Length > 0)
+            panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+        foreach (var link in links ?? [])
+        {
+            var url = link.AbsoluteUri;
+            // One line, trimmed to the dialog width; the full address is in the 2 s tooltip (long Discord thread links).
+            var button = new Button
+            {
+                Content = new MiddleEllipsisText { FullText = url, WrapNonPath = false },
+                HorizontalAlignment = HorizontalAlignment.Left,
+                MaxWidth = 560,
+                Padding = new Thickness(10, 5)
+            };
+            button.Click += (_, _) => OpenProjectLink(url);
+            panel.Children.Add(button);
+        }
         panel.Children.Add(buttons);
         var dialog = new Window
         {
             Title = title,
             Width = 600,
             Height = height,
+            SizeToContent = double.IsNaN(height) ? SizeToContent.Height : SizeToContent.Manual,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = panel
