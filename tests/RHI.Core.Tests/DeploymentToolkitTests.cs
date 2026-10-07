@@ -57,6 +57,8 @@ public sealed class DeploymentToolkitTests : IDisposable
     [InlineData("http://github.com/a/b.zip")]
     [InlineData("https://example.com/a/b.zip")]
     [InlineData("not a url")]
+    [InlineData("https://github.com:8443/a/b.zip")]
+    [InlineData("https://user:secret@github.com/a/b.zip")]
     public void Validate_RefusesNonHttpsAndUnlistedHosts(string url)
         => Assert.Throws<InvalidDataException>(() => TrustedDownload.Validate(url, TrustedDownloadPolicy.GitHubReleases));
 
@@ -168,6 +170,8 @@ public sealed class DeploymentToolkitTests : IDisposable
         await operation.AddCompensationAsync(RecordingCompensator.KindName, "override:dxgi");
         File.WriteAllBytes(P("proxy.dll"), Bytes(2000, 2));
         File.WriteAllBytes(P("payload.dll"), Bytes(10, 3));
+        await operation.RecordWrittenContentAsync(P("proxy.dll"));
+        await operation.RecordWrittenContentAsync(P("payload.dll"));
         operation.AbandonAsIfCrashed();
 
         var report = await new DeploymentJournal(journalDir, [compensator]).RecoverAsync();
@@ -224,13 +228,11 @@ public sealed class DeploymentToolkitTests : IDisposable
     // ---- Sweeper -----------------------------------------------------------------------------------
 
     [Fact]
-    public void Sweep_DeletesTempsAndRedundantCopies_QuarantinesUniqueOnes_SkipsYoungAndReferenced()
+    public void Sweep_DeletesTempsAndRedundantCopies_SetsUniqueOnesAsideBesideThem_SkipsReferenced()
     {
-        var old = DateTime.UtcNow.AddDays(-2);
-        string Leftover(string name, byte[] content, DateTime? mtime = null)
+        string Leftover(string name, byte[] content)
         {
             File.WriteAllBytes(P(name), content);
-            File.SetLastWriteTimeUtc(P(name), mtime ?? old);
             return P(name);
         }
         var id = () => Guid.NewGuid().ToString("N");
@@ -239,19 +241,18 @@ public sealed class DeploymentToolkitTests : IDisposable
         var temp = Leftover("game.dll.rhi-tmp-" + id(), Bytes(7, 9));
         var redundant = Leftover("game.dll.rhi-rollback-" + id(), Bytes(100, 2));
         var unique = Leftover("game.dll.rhi-update-snapshot-" + id(), Bytes(100, 3));
-        var young = Leftover("game.dll.rhi-rollback-" + id(), Bytes(100, 4), DateTime.UtcNow);
         var referencedId = id();
         var referenced = Leftover("game.dll.rhi-rollback-" + referencedId, Bytes(100, 5));
-        var quarantine = P("recovered");
 
-        var report = DeploymentLeftoverSweeper.Sweep([_root], new HashSet<string> { referencedId }, quarantine, TimeSpan.FromHours(6));
+        // Seven hours on: every leftover's inode change is older than the six-hour minimum.
+        var report = DeploymentLeftoverSweeper.Sweep([_root], opId => opId == referencedId, TimeSpan.FromHours(6), DateTime.UtcNow.AddHours(7));
 
         Assert.Equal(new[] { redundant, temp }.Order(), report.Deleted.Order());
         var moved = Assert.Single(report.Quarantined);
         Assert.Equal(unique, moved.From);
         Assert.Equal(Bytes(100, 3), File.ReadAllBytes(moved.To));
-        Assert.StartsWith(quarantine, moved.To, StringComparison.Ordinal);
-        Assert.True(File.Exists(young));
+        // Same folder tree, so the move is a rename on the same file system.
+        Assert.StartsWith(Path.Combine(_root, RecoveredCopies.FolderName) + Path.DirectorySeparatorChar, moved.To, StringComparison.Ordinal);
         Assert.True(File.Exists(referenced));
         Assert.Equal(Bytes(100, 1), File.ReadAllBytes(P("game.dll")));
     }
@@ -266,7 +267,11 @@ public sealed class DeploymentToolkitTests : IDisposable
         public const string KindName = "test-compensation";
         public List<string> Calls { get; } = [];
         public string Kind => KindName;
-        public void Compensate(string data) => Calls.Add(data);
+        public CompensationResult Compensate(string data)
+        {
+            Calls.Add(data);
+            return CompensationResult.Done;
+        }
     }
 
     private sealed class StubHandler(Func<HttpRequestMessage, byte[]> body, Uri? redirectTo = null) : HttpMessageHandler

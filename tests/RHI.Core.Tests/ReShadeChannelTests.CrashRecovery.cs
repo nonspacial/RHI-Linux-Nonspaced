@@ -91,6 +91,45 @@ public sealed partial class ReShadeChannelTests
         Assert.DoesNotContain(Directory.GetFiles(game.BinaryDirectory!), path => path.Contains(".rhi-", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task CrashMidInstall_ThenUserCreatesReShadeIni_RecoveryUndoesRhiFilesAndKeepsTheIni()
+    {
+        var (game, store) = CreateGame("crash-user-ini");
+        var compiler = Path.Combine(_root, "crash-user-ini-native", "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        var userReg = Path.Combine(game.PrefixPath!, "user.reg");
+        var journalDir = Path.Combine(_root, "crash-user-ini-journal");
+        var overrides = new WineDllOverrideService();
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, isPrefixInUse: _ => false);
+        DeploymentOperation? started = null;
+        journal.OperationStartedForTesting = operation => started = operation;
+        var files = new HangOnSecondReplace(new TransactionalFileDeploymentService());
+        var cache = Path.Combine(_root, "crash-user-ini-cache");
+        var http = new HttpClient(new MutableHandler());
+        var service = new ReShadeDeploymentService(http, files, store, overrides, new FakeExtractor(), cache,
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")),
+            journal: journal);
+
+        _ = service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false, D3DCompiler47Path = compiler });
+        await files.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        started!.AbandonAsIfCrashed(); // the process dies here
+        // Before RHI starts again the user tunes ReShade in its overlay, which creates ReShade.ini.
+        var ini = Path.Combine(game.BinaryDirectory!, "ReShade.ini");
+        File.WriteAllText(ini, "[GENERAL]\nPreprocessorDefinitions=USER_TUNED\n");
+
+        var report = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(), journalDir, isPrefixInUse: _ => false), store);
+
+        var entry = Assert.Single(report!.Entries);
+        Assert.Equal(JournalRecoveryOutcome.KeptLaterChanges, entry.Outcome);
+        Assert.Contains(entry.Kept, kept => kept.StartsWith(ini, StringComparison.Ordinal));
+        Assert.Equal("[GENERAL]\nPreprocessorDefinitions=USER_TUNED\n", File.ReadAllText(ini));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.False(File.Exists(files.SecondTarget));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(userReg), "dxgi", "Game.exe"));
+        Assert.Empty(Directory.GetFiles(journalDir)); // final: not retried at every start
+    }
+
     private sealed class HangOnSecondReplace(IFileDeploymentService inner) : IFileDeploymentService
     {
         private int _calls;

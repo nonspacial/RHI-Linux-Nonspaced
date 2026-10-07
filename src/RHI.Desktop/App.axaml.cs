@@ -46,9 +46,10 @@ public sealed class App : Application
             var launcher = new LinuxGameLauncher();
             var records = new LinuxDeploymentRecordStore();
             var wineOverrides = new WineDllOverrideService();
-            // Roll back deployments a crash interrupted (#23) before any service can deploy again.
+            // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
+            // service exists that could deploy (installs, start-up auto-update).
             var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides);
-            var recovery = RecoverInterruptedDeployments(journal, records);
+            var recovery = RunDeploymentStartup(desktop, journal, records);
             var deployment = new TransactionalFileDeploymentService(journal);
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
             var pcgwData = new PcgwCentralDataService(http);
@@ -142,7 +143,8 @@ public sealed class App : Application
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
             tokenNoticeTarget = vm;
-            ReportRecoveryWhenSwept(vm, journal, records, recovery);
+            if (recovery.NeedsNotice)
+                Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,
@@ -154,42 +156,27 @@ public sealed class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    private static (JournalRecoveryReport? Report, int Deferred, string? Error) RecoverInterruptedDeployments(
-        DeploymentJournal journal, LinuxDeploymentRecordStore records)
+    /// <summary>This process's registration; held (flock) for the app's lifetime so other instances skip their sweep.</summary>
+    private static DeploymentInstanceGate? s_instanceGate;
+
+    /// <summary>
+    /// Start-up recovery and leftover sweep, synchronously: nothing may deploy until both are done.
+    /// Never throws; every outcome goes to the recovery log and the returned summary.
+    /// </summary>
+    private static DeploymentRecoverySummary RunDeploymentStartup(
+        IClassicDesktopStyleApplicationLifetime desktop, DeploymentJournal journal, LinuxDeploymentRecordStore records)
     {
         try
         {
-            // Normally an empty directory listing; runs off the UI thread's context (no deadlock).
-            var report = Task.Run(() => LinuxDeploymentRecovery.RecoverAsync(journal, records)).GetAwaiter().GetResult();
-            return (report, report is null ? journal.ReferencedOperationIds().Count : 0, null);
+            s_instanceGate = DeploymentInstanceGate.Register(LinuxDeploymentRecovery.InstanceDirectory);
+            desktop.Exit += (_, _) => s_instanceGate?.Dispose();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (null, journal.ReferencedOperationIds().Count, ex.Message);
+            AppLog.Warn("deployment-recovery", "Could not register this RHI instance; the leftover sweep is skipped", ex);
         }
-    }
-
-    /// <summary>Sweeps transaction leftovers in the background, logs everything, then tells the user once.</summary>
-    private static void ReportRecoveryWhenSwept(
-        MainWindowViewModel vm,
-        DeploymentJournal journal,
-        LinuxDeploymentRecordStore records,
-        (JournalRecoveryReport? Report, int Deferred, string? Error) recovery)
-    {
-        _ = Task.Run(() =>
-        {
-            LeftoverSweepReport? sweep = null;
-            try
-            {
-                sweep = LinuxDeploymentRecovery.Sweep(journal, records);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                sweep = new LeftoverSweepReport([], [], [ex.Message]);
-            }
-            var summary = LinuxDeploymentRecovery.Record(recovery.Report, recovery.Deferred, sweep);
-            if (summary.NeedsNotice)
-                Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(summary));
-        });
+        // Normally an empty directory listing; runs off the UI thread's context (no deadlock).
+        var report = Task.Run(() => LinuxDeploymentRecovery.RunAtStartupAsync(journal, records, s_instanceGate)).GetAwaiter().GetResult();
+        return LinuxDeploymentRecovery.Record(report);
     }
 }

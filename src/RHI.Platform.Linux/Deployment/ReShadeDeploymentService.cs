@@ -291,6 +291,15 @@ public sealed partial class ReShadeDeploymentService
             }
         }
         await using var operation = journaled;
+        var trackedInis = IniPathsTouchedByInstall(game, existingRecord, coexist).ToArray();
+        // Crash recovery restores a tracked file only while it holds what this install wrote, so every
+        // write is declared: DLL payloads by hash before they are placed, in-place INI edits right after.
+        async Task DeclareIniWritesAsync()
+        {
+            if (operation is null) return;
+            foreach (var ini in trackedInis)
+                await operation.RecordWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+        }
 
         try
         {
@@ -299,7 +308,7 @@ public sealed partial class ReShadeDeploymentService
                 await operation.TrackFileAsync(target, cancellationToken, includeBackup: false).ConfigureAwait(false);
                 if (d3dCompilerPlan is not null)
                     await operation.TrackFileAsync(d3dCompilerPlan.TargetPath, cancellationToken, includeBackup: false).ConfigureAwait(false);
-                foreach (var ini in IniPathsTouchedByInstall(game, existingRecord, coexist))
+                foreach (var ini in trackedInis)
                     await operation.TrackFileAsync(ini, cancellationToken, includeBackup: false).ConfigureAwait(false);
             }
 
@@ -307,6 +316,7 @@ public sealed partial class ReShadeDeploymentService
             if (existingRecord is not null)
             {
                 CleanupManagedIni(existingRecord);
+                await DeclareIniWritesAsync().ConfigureAwait(false);
                 _shaderPacks.Cleanup(game.BinaryDirectory);
             }
 
@@ -320,6 +330,8 @@ public sealed partial class ReShadeDeploymentService
                 (!previousPayload.ExistedBeforeInstall || shortFuseUpdate) && File.Exists(target))
                 File.Delete(target);
 
+            if (operation is not null)
+                await operation.RecordWriteAsync(target, await Sha256Async(staged.DllPath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
             var result = await _files.ReplaceAsync(staged.DllPath, target, cancellationToken).ConfigureAwait(false);
             if (!result.Success) throw new IOException(result.Error ?? "Failed to deploy ReShade DLL.");
             fileReplaced = true;
@@ -343,6 +355,7 @@ public sealed partial class ReShadeDeploymentService
             else
             {
                 OptiScalerIniEditor.SetLoadReShade(game.BinaryDirectory, true);
+                await DeclareIniWritesAsync().ConfigureAwait(false);
                 await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
             }
 
@@ -360,6 +373,9 @@ public sealed partial class ReShadeDeploymentService
 
                 if (d3dCompilerPlan.DeploySourcePath is not null)
                 {
+                    if (operation is not null)
+                        await operation.RecordWriteAsync(d3dCompilerPlan.TargetPath,
+                            await Sha256Async(d3dCompilerPlan.DeploySourcePath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var compilerDeploy = await _files.ReplaceAsync(
                         d3dCompilerPlan.DeploySourcePath,
                         d3dCompilerPlan.TargetPath,
@@ -400,6 +416,7 @@ public sealed partial class ReShadeDeploymentService
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
                 iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);
+            await DeclareIniWritesAsync().ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>
             {

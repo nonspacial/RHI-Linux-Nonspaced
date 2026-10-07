@@ -11,9 +11,11 @@ public sealed class OwnedFileState
     /// <summary>SHA-256 of the <c>.original</c> before the operation; null until something is about to change it.</summary>
     public string? BackupPreSha256 { get; set; }
     /// <summary>
-    /// Hashes of the content the operation itself placed at <see cref="Path"/>, when the writer declares
-    /// them. If the file then holds anything else, something outside the operation changed it and
-    /// rollback leaves it alone instead of overwriting it.
+    /// Hashes of the content the operation itself placed at <see cref="Path"/>, declared through
+    /// <see cref="OwnedFileSet.RecordWriteAsync"/> (before the write) or
+    /// <see cref="OwnedFileSet.RecordWrittenContentAsync"/> (straight after an in-place edit). In crash
+    /// recovery a file holding anything other than these or <see cref="PreSha256"/> was changed by
+    /// someone else after the crash and is left as it is (see <see cref="RollbackMode.CrashRecovery"/>).
     /// </summary>
     public List<string> WrittenSha256 { get; set; } = [];
 }
@@ -100,6 +102,19 @@ public sealed class OwnedFileSet
     }
 
     /// <summary>
+    /// Declares the content now at a tracked path as the operation's own, for writers that edit a
+    /// file in place and cannot know its hash beforehand (INI editors). Call straight after the
+    /// write. A crash between the write and this call leaves content recovery cannot attribute: it
+    /// then keeps the file as it is and sets RHI's pre-operation copy aside, losing neither.
+    /// </summary>
+    public async Task RecordWrittenContentAsync(string path, CancellationToken cancellationToken)
+    {
+        var full = System.IO.Path.GetFullPath(path);
+        if (!File.Exists(full)) return; // a removal needs no declaration: recovery restores missing files
+        await RecordWriteAsync(full, await FileHash.Sha256HexAsync(full, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// <see cref="TrackAsync"/> plus a verified copy of the file (and, when
     /// <paramref name="includeBackup"/>, of its <c>.original</c>) for callers that change the file in
     /// ways this set does not control (in-place edits, deletes, other services' writes).
@@ -140,23 +155,36 @@ public sealed class OwnedFileSet
     /// Puts every tracked path (and its <c>.original</c>) back to its pre-operation content.
     /// Always runs to completion (no cancellation); never deletes a copy before the restore it
     /// could be needed for has succeeded.
+    /// <para>
+    /// <see cref="RollbackMode.CrashRecovery"/> (a later start undoing a dead process's operation)
+    /// also protects whatever happened after the crash: a path whose content is neither its
+    /// pre-operation content nor anything the operation declared it wrote (<see cref="RecordWriteAsync"/>)
+    /// was changed by someone else (a user edit, a game update). It is left exactly as it is, and the
+    /// copy RHI holds of the pre-operation content is moved, not deleted, to
+    /// <see cref="RecoveredCopies.FolderName"/> beside it, so neither version is lost. That outcome is
+    /// final (reported in <see cref="OwnedFileSetRollback.Kept"/>), not a failure retried at every start.
+    /// </para>
     /// </summary>
-    public async Task<OwnedFileSetRollback> RollbackAsync()
+    public async Task<OwnedFileSetRollback> RollbackAsync(RollbackMode mode = RollbackMode.InProcess, DateTime? nowUtc = null)
     {
         var failures = new List<string>();
+        var kept = new List<string>();
+        var now = nowUtc ?? DateTime.UtcNow;
         foreach (var state in _files.Values.Reverse())
         {
-            var error = await RollbackOneAsync(state).ConfigureAwait(false);
+            var error = await RollbackOneAsync(state, mode, now, kept).ConfigureAwait(false);
             if (error is not null) failures.Add(error);
         }
-        return new OwnedFileSetRollback(failures);
+        return new OwnedFileSetRollback(failures, kept);
     }
 
-    private async Task<string?> RollbackOneAsync(OwnedFileState state)
+    private async Task<string?> RollbackOneAsync(OwnedFileState state, RollbackMode mode, DateTime now, List<string> kept)
     {
         var target = state.Path;
         var backup = target + BackupExtension;
-        var candidates = new[] { target, backup, SnapshotPathOf(target), SnapshotPathOf(backup) };
+        var targetSnapshot = SnapshotPathOf(target);
+        var backupSnapshot = SnapshotPathOf(backup);
+        var candidates = new[] { target, backup, targetSnapshot, backupSnapshot };
         var hashes = new Dictionary<string, string?>(StringComparer.Ordinal);
         async Task<string?> HashOf(string path)
         {
@@ -168,14 +196,25 @@ public sealed class OwnedFileSet
         var staged = new List<(string Target, StagedFile File)>();
         try
         {
+            // 0. Crash recovery only: content that is neither the pre-operation state nor a declared
+            //    write was put there by someone else after the crash. A missing file is never
+            //    "someone else's" content: restoring it loses nothing.
+            var strict = mode == RollbackMode.CrashRecovery;
+            var currentTarget = await HashOf(target).ConfigureAwait(false);
+            var foreignTarget = strict && currentTarget is not null
+                                && !(state.Existed && FileHash.HexEquals(currentTarget, state.PreSha256))
+                                && !state.WrittenSha256.Any(written => FileHash.HexEquals(currentTarget, written));
+            var backupMayHaveChanged = !state.BackupExisted || state.BackupPreSha256 is not null;
+            var currentBackup = await HashOf(backup).ConfigureAwait(false);
+            var foreignBackup = strict && backupMayHaveChanged && currentBackup is not null
+                                && !(state.BackupExisted && FileHash.HexEquals(currentBackup, state.BackupPreSha256))
+                                // the operation moves the target's old content to .original
+                                && !(state.Existed && FileHash.HexEquals(currentBackup, state.PreSha256));
+
             // 1. Stage a verified copy of the pre-operation content for every path that differs.
             var wanted = new List<(string Path, string Sha256)>();
-            if (state.Existed && state.PreSha256 is { } preTarget) wanted.Add((target, preTarget));
-            if (state.BackupExisted && state.BackupPreSha256 is { } preBackup) wanted.Add((backup, preBackup));
-            if (state.WrittenSha256.Count > 0 && await HashOf(target).ConfigureAwait(false) is { } current &&
-                !FileHash.HexEquals(current, state.PreSha256) &&
-                !state.WrittenSha256.Any(written => FileHash.HexEquals(current, written)))
-                return $"{target}: changed by something other than this operation since it was interrupted (for example a game update); it was left as is and every copy was kept.";
+            if (state.Existed && state.PreSha256 is { } preTarget && !foreignTarget) wanted.Add((target, preTarget));
+            if (state.BackupExisted && state.BackupPreSha256 is { } preBackup && !foreignBackup) wanted.Add((backup, preBackup));
 
             foreach (var (path, sha) in wanted)
             {
@@ -187,18 +226,50 @@ public sealed class OwnedFileSet
                     if (FileHash.HexEquals(await HashOf(candidate).ConfigureAwait(false), sha)) { source = candidate; break; }
                 }
                 if (source is null)
+                {
+                    if (foreignTarget && path == backup)
+                    {
+                        // The operation placed the old .original at the target, which has changed since.
+                        kept.Add($"{backup}: not put back; its content was last placed in {target}, which was changed after the interruption.");
+                        continue;
+                    }
                     return $"{path}: no surviving copy with the pre-operation content ({sha}) was found; every copy was kept.";
+                }
                 staged.Add((path, await AtomicFile.StageCopyAsync(source, path, sha, null, CancellationToken.None).ConfigureAwait(false)));
             }
             if (state.BackupExisted && state.BackupPreSha256 is null && !File.Exists(backup))
-                return $"{backup}: the backup disappeared although this operation never changed it; every copy was kept.";
+            {
+                if (!strict)
+                    return $"{backup}: the backup disappeared although this operation never changed it; every copy was kept.";
+                kept.Add($"{backup}: removed by something else after the interruption (this operation never changed it); nothing to put back.");
+            }
 
-            // 2. Place them. 3. Remove what the operation created. 4. Drop the now-redundant copies.
+            // 2. Place them.
             foreach (var (path, file) in staged) AtomicFile.MoveIntoPlace(file.Path, path);
             staged.Clear();
-            if (!state.Existed) AtomicFile.Delete(target);
-            if (!state.BackupExisted) AtomicFile.Delete(backup);
-            FileCleanup.TryDeleteAll([SnapshotPathOf(target), SnapshotPathOf(backup), TempPathOf(target), TempPathOf(backup)]);
+
+            // 3. Remove what the operation created; set aside, never delete, copies that may be the
+            //    only pre-operation version of a file someone else changed since.
+            if (!state.Existed && !foreignTarget) AtomicFile.Delete(target);
+            if (!state.BackupExisted && !foreignBackup && File.Exists(backup))
+            {
+                if (foreignTarget) kept.Add(SetAside(backup, target, now));
+                else AtomicFile.Delete(backup);
+            }
+            if (foreignTarget)
+            {
+                var copy = File.Exists(targetSnapshot) ? SetAside(targetSnapshot, target, now) : null;
+                kept.Add($"{target}: changed after the interruption (neither its earlier content nor what RHI wrote); left as it is."
+                         + (copy is not null ? $" {copy}" : state.Existed ? "" : " It did not exist before the operation."));
+            }
+            if (foreignBackup)
+            {
+                var copy = File.Exists(backupSnapshot) ? SetAside(backupSnapshot, backup, now) : null;
+                kept.Add($"{backup}: changed after the interruption; left as it is." + (copy is not null ? $" {copy}" : ""));
+            }
+
+            // 4. Drop the now-redundant copies.
+            FileCleanup.TryDeleteAll([targetSnapshot, backupSnapshot, TempPathOf(target), TempPathOf(backup)]);
             return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
@@ -211,11 +282,29 @@ public sealed class OwnedFileSet
         }
     }
 
+    private static string SetAside(string copy, string of, DateTime now)
+    {
+        var moved = RecoveredCopies.MoveAside(copy, now, Path.GetFileName(of) + RecoveredCopies.PreOperationSuffix);
+        return $"RHI's copy of its earlier content was moved to {moved}.";
+    }
+
     private Task PersistAsync(CancellationToken cancellationToken)
         => _persist is null ? Task.CompletedTask : _persist(cancellationToken);
 }
 
-public sealed record OwnedFileSetRollback(IReadOnlyList<string> Failures)
+public sealed record OwnedFileSetRollback(IReadOnlyList<string> Failures, IReadOnlyList<string>? KeptChanges = null)
 {
     public bool Success => Failures.Count == 0;
+
+    /// <summary>Paths left as someone else changed them after a crash, and where RHI's copy went.</summary>
+    public IReadOnlyList<string> Kept => KeptChanges ?? [];
+}
+
+public enum RollbackMode
+{
+    /// <summary>The operation's own process undoes it (failure or cancellation): every change is its own.</summary>
+    InProcess,
+
+    /// <summary>A later start undoes a dead process's operation: changes made after the crash are kept.</summary>
+    CrashRecovery
 }

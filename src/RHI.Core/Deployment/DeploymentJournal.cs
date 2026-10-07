@@ -11,7 +11,24 @@ namespace RHI.Core.Deployment;
 public interface IDeploymentCompensator
 {
     string Kind { get; }
-    void Compensate(string data);
+    CompensationResult Compensate(string data);
+}
+
+public enum CompensationStatus
+{
+    /// <summary>Undone, or there was nothing to undo.</summary>
+    Done,
+
+    /// <summary>Someone changed the setting after the crash; their value was left in place.</summary>
+    KeptLaterChange,
+
+    /// <summary>Cannot be undone safely right now (e.g. the Wine prefix is in use); retried at the next start.</summary>
+    Deferred
+}
+
+public sealed record CompensationResult(CompensationStatus Status, string? Note = null)
+{
+    public static readonly CompensationResult Done = new(CompensationStatus.Done);
 }
 
 /// <summary>
@@ -27,6 +44,7 @@ public sealed class DeploymentJournal
 {
     private const string EntryExtension = ".json";
     private const string LockExtension = ".lock";
+    private const string UnreadableExtension = ".unreadable";
     private const int FormatVersion = 1;
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
@@ -43,6 +61,9 @@ public sealed class DeploymentJournal
     /// <summary>Test seam: every operation of this journal "crashes" when it reaches its commit (see <see cref="SimulatedCrashException"/>).</summary>
     internal bool CrashAtCommitForTesting { get; set; }
 
+    /// <summary>Test seam: runs for each listed entry before recovery takes its lock (another process may act there).</summary>
+    internal Action<string>? BeforeEntryLockForTesting { get; set; }
+
     /// <summary>Test seam: observes each operation as it starts.</summary>
     internal Action<DeploymentOperation>? OperationStartedForTesting { get; set; }
 
@@ -50,7 +71,7 @@ public sealed class DeploymentJournal
     /// <param name="commitProbe">Opaque marker handed to the recovery's <c>isCommitted</c> check (e.g. the record that commits it).</param>
     public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default)
     {
-        System.IO.Directory.CreateDirectory(Directory);
+        AtomicFile.CreateDirectoryDurable(Directory);
         var id = Guid.NewGuid().ToString("N");
         var lockStream = new FileStream(LockPath(id), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
         var operation = new DeploymentOperation(this, id, description, commitProbe, lockStream);
@@ -68,19 +89,33 @@ public sealed class DeploymentJournal
         return operation;
     }
 
-    /// <summary>Ids of every entry still on disk (running, or kept after a failed rollback); their snapshots must survive sweeps.</summary>
+    /// <summary>
+    /// Ids of every entry still on disk (running, kept after a failed or deferred rollback, or kept
+    /// as unreadable evidence); their snapshots must survive sweeps.
+    /// </summary>
     public IReadOnlySet<string> ReferencedOperationIds()
     {
         if (!System.IO.Directory.Exists(Directory)) return new HashSet<string>();
         return System.IO.Directory.EnumerateFiles(Directory, "*" + EntryExtension)
             .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Concat(System.IO.Directory.EnumerateFiles(Directory, "*" + EntryExtension + UnreadableExtension)
+                .Select(path => Path.GetFileName(path)[..^(EntryExtension.Length + UnreadableExtension.Length)]))
             .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <summary>
-    /// Rolls back (or, when committed, cleans up) every entry left by a process that died. Entries
-    /// whose lock is held by a running operation are skipped. A failed rollback keeps its entry and
-    /// copies so the next start tries again.
+    /// Whether operation <paramref name="id"/> still has an entry (live or kept), read from disk now:
+    /// a sweep asks per file, so an operation that started after the sweep began is still seen.
+    /// </summary>
+    public bool IsReferenced(string id)
+        => File.Exists(EntryPath(id)) || File.Exists(EntryPath(id) + UnreadableExtension) || File.Exists(LockPath(id));
+
+    /// <summary>
+    /// Rolls back (or, when committed, cleans up) every entry left by a process that died, in
+    /// <see cref="RollbackMode.CrashRecovery"/>: files changed by someone else since are kept and RHI's
+    /// copies set aside (final). Entries whose lock is held by a running operation are skipped. A
+    /// failed rollback keeps its entry and copies so the next start tries again; a deferred step keeps
+    /// only itself.
     /// </summary>
     public async Task<JournalRecoveryReport> RecoverAsync(Func<JournalEntryInfo, bool>? isCommitted = null)
     {
@@ -89,6 +124,7 @@ public sealed class DeploymentJournal
         foreach (var entryPath in System.IO.Directory.EnumerateFiles(Directory, "*" + EntryExtension).Order(StringComparer.Ordinal).ToArray())
         {
             var id = Path.GetFileNameWithoutExtension(entryPath);
+            BeforeEntryLockForTesting?.Invoke(id);
             FileStream? lockStream;
             try
             {
@@ -103,7 +139,9 @@ public sealed class DeploymentJournal
             {
                 try
                 {
-                    results.Add(await RecoverEntryAsync(id, entryPath, isCommitted).ConfigureAwait(false));
+                    // Another process may have recovered it between the listing and the lock.
+                    if (File.Exists(entryPath))
+                        results.Add(await RecoverEntryAsync(id, entryPath, isCommitted).ConfigureAwait(false));
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -127,7 +165,7 @@ public sealed class DeploymentJournal
         catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException)
         {
             // Keep the evidence; never guess at what an unreadable entry owned.
-            var kept = entryPath + ".unreadable";
+            var kept = entryPath + UnreadableExtension;
             File.Move(entryPath, kept, overwrite: true);
             return new(id, "", JournalRecoveryOutcome.Unreadable, [$"Unreadable journal entry kept at {kept}: {ex.Message}"], []);
         }
@@ -142,33 +180,76 @@ public sealed class DeploymentJournal
             return new(id, document.Description, JournalRecoveryOutcome.AlreadyCommitted, [], paths);
         }
 
-        var failures = (await RollbackAsync(set, document.Compensations).ConfigureAwait(false)).ToList();
-        if (failures.Count > 0)
-            return new(id, document.Description, JournalRecoveryOutcome.RollbackFailed, failures, paths);
+        var outcome = await RollbackAsync(set, document, RollbackMode.CrashRecovery).ConfigureAwait(false);
+        if (outcome.Failures.Count > 0)
+            return new(id, document.Description, JournalRecoveryOutcome.RollbackFailed, outcome.Failures, paths, outcome.Kept);
+        if (outcome.Deferred.Count > 0)
+            return new(id, document.Description, JournalRecoveryOutcome.Deferred, outcome.Deferred, paths, outcome.Kept);
         Delete(id);
-        return new(id, document.Description, JournalRecoveryOutcome.RolledBack, [], paths);
+        return new(id, document.Description,
+            outcome.Kept.Count > 0 ? JournalRecoveryOutcome.KeptLaterChanges : JournalRecoveryOutcome.RolledBack,
+            [], paths, outcome.Kept);
     }
 
-    internal async Task<IReadOnlyList<string>> RollbackAsync(OwnedFileSet files, IReadOnlyList<JournalCompensation> compensations)
+    internal sealed record RollbackOutcome(IReadOnlyList<string> Failures, IReadOnlyList<string> Kept, IReadOnlyList<string> Deferred);
+
+    /// <summary>
+    /// Rolls back the files, then runs the compensations in reverse. When the files are back but a
+    /// compensation is deferred, the entry is rewritten to hold only the steps still to do, so the
+    /// next start neither redoes the file rollback nor mistakes a later edit for one to protect.
+    /// </summary>
+    internal async Task<RollbackOutcome> RollbackAsync(OwnedFileSet files, JournalDocument document, RollbackMode mode)
     {
-        var failures = new List<string>((await files.RollbackAsync().ConfigureAwait(false)).Failures);
-        foreach (var compensation in compensations.Reverse())
+        var fileRollback = await files.RollbackAsync(mode).ConfigureAwait(false);
+        var failures = new List<string>(fileRollback.Failures);
+        var kept = new List<string>(fileRollback.Kept);
+        var deferred = new List<string>();
+        var remaining = new List<JournalCompensation>();
+        foreach (var compensation in Enumerable.Reverse(document.Compensations))
         {
             if (!_compensators.TryGetValue(compensation.Kind, out var compensator))
             {
                 failures.Add($"No handler is registered for the '{compensation.Kind}' step; it was left for the next start.");
+                remaining.Add(compensation);
                 continue;
             }
             try
             {
-                compensator.Compensate(compensation.Data);
+                var result = compensator.Compensate(compensation.Data);
+                switch (result.Status)
+                {
+                    case CompensationStatus.KeptLaterChange:
+                        kept.Add(result.Note ?? $"'{compensation.Kind}' was changed after the interruption and left as it is.");
+                        break;
+                    case CompensationStatus.Deferred:
+                        deferred.Add(result.Note ?? $"Undoing '{compensation.Kind}' was deferred to the next start.");
+                        remaining.Add(compensation);
+                        break;
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
             {
                 failures.Add($"Undoing '{compensation.Kind}' failed: {ex.Message}");
+                remaining.Add(compensation);
             }
         }
-        return failures;
+
+        if (failures.Count == 0 && deferred.Count > 0)
+        {
+            remaining.Reverse();
+            document.Files = [];
+            document.Compensations = remaining;
+            try
+            {
+                await WriteAsync(document, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The old entry stays; redoing the (now idempotent) file rollback next time is harmless.
+                deferred.Add($"The journal entry could not be narrowed to the deferred steps ({ex.Message}).");
+            }
+        }
+        return new(failures, kept, deferred);
     }
 
     internal Task WriteAsync(JournalDocument document, CancellationToken cancellationToken)
@@ -191,6 +272,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
     private readonly DeploymentJournal _journal;
     private readonly List<JournalCompensation> _compensations = [];
     private FileStream? _lock;
+    private readonly DateTime _createdUtc = DateTime.UtcNow;
     private bool _completed;
     private bool _committed;
 
@@ -245,7 +327,8 @@ public sealed class DeploymentOperation : IAsyncDisposable
         {
             problems.Add($"Journal entry {Id} could not be finalised ({ex.Message}); it is cleaned on the next start.");
         }
-        ReleaseLock(deleteLockFile: problems.Count == 0);
+        // The lock file only matters while the entry exists; snapshots that could not be removed are swept later.
+        ReleaseLock(deleteLockFile: !File.Exists(_journal.EntryPath(Id)));
         return problems;
     }
 
@@ -257,7 +340,9 @@ public sealed class DeploymentOperation : IAsyncDisposable
     {
         if (_completed) return new([]);
         _completed = true;
-        var failures = await _journal.RollbackAsync(Files, _compensations).ConfigureAwait(false);
+        var outcome = await _journal.RollbackAsync(Files, Document(), RollbackMode.InProcess).ConfigureAwait(false);
+        // A deferred step is not done: the entry (narrowed to it) stays for the next start.
+        var failures = outcome.Failures.Concat(outcome.Deferred).ToList();
         if (failures.Count == 0)
         {
             try
@@ -270,7 +355,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
             }
         }
         ReleaseLock(deleteLockFile: failures.Count == 0);
-        return new(failures);
+        return new(failures, outcome.Kept);
     }
 
     public async ValueTask DisposeAsync()
@@ -285,18 +370,28 @@ public sealed class DeploymentOperation : IAsyncDisposable
         ReleaseLock(deleteLockFile: false);
     }
 
+    /// <summary>Tracks <paramref name="path"/> and declares the content now there as written by this operation (after an in-place edit).</summary>
+    public Task RecordWrittenContentAsync(string path, CancellationToken cancellationToken = default)
+        => Files.RecordWrittenContentAsync(path, cancellationToken);
+
+    /// <summary>Declares (and journals) content about to be placed at a tracked path, before placing it.</summary>
+    public Task RecordWriteAsync(string path, string sha256, CancellationToken cancellationToken = default)
+        => Files.RecordWriteAsync(path, sha256, cancellationToken);
+
     internal Task PersistAsync(CancellationToken cancellationToken)
-        => _journal.WriteAsync(new JournalDocument
-        {
-            Format = 1,
-            Id = Id,
-            Description = Description,
-            CommitProbe = CommitProbe,
-            CreatedUtc = DateTime.UtcNow,
-            Committed = _committed,
-            Files = Files.Files.ToList(),
-            Compensations = _compensations.ToList()
-        }, cancellationToken);
+        => _journal.WriteAsync(Document(), cancellationToken);
+
+    private JournalDocument Document() => new()
+    {
+        Format = 1,
+        Id = Id,
+        Description = Description,
+        CommitProbe = CommitProbe,
+        CreatedUtc = _createdUtc,
+        Committed = _committed,
+        Files = Files.Files.ToList(),
+        Compensations = _compensations.ToList()
+    };
 
     private void ReleaseLock(bool deleteLockFile)
     {
@@ -337,7 +432,13 @@ public enum JournalRecoveryOutcome
     RolledBack,
     AlreadyCommitted,
     RollbackFailed,
-    Unreadable
+    Unreadable,
+
+    /// <summary>Rolled back, except files (or settings) changed after the crash, which were kept; final.</summary>
+    KeptLaterChanges,
+
+    /// <summary>Files rolled back; a step that cannot run safely now (Wine prefix in use) waits for the next start.</summary>
+    Deferred
 }
 
 public sealed record JournalRecoveryEntry(
@@ -345,10 +446,17 @@ public sealed record JournalRecoveryEntry(
     string Description,
     JournalRecoveryOutcome Outcome,
     IReadOnlyList<string> Problems,
-    IReadOnlyList<string> Paths);
+    IReadOnlyList<string> Paths,
+    IReadOnlyList<string>? KeptChanges = null)
+{
+    /// <summary>What was left as someone else changed it after the crash, and where RHI's copies went.</summary>
+    public IReadOnlyList<string> Kept => KeptChanges ?? [];
+}
 
 public sealed record JournalRecoveryReport(IReadOnlyList<JournalRecoveryEntry> Entries)
 {
     public int RolledBack => Entries.Count(entry => entry.Outcome == JournalRecoveryOutcome.RolledBack);
+    public int KeptLaterChanges => Entries.Count(entry => entry.Outcome == JournalRecoveryOutcome.KeptLaterChanges);
+    public int Deferred => Entries.Count(entry => entry.Outcome == JournalRecoveryOutcome.Deferred);
     public int Failed => Entries.Count(entry => entry.Outcome is JournalRecoveryOutcome.RollbackFailed or JournalRecoveryOutcome.Unreadable);
 }

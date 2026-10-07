@@ -6,13 +6,20 @@ namespace RHI.Core.Deployment;
 /// Start-up sweep of transaction leftovers (<c>&lt;name&gt;.rhi-&lt;tag&gt;-&lt;32 hex id&gt;</c>) that a crash or an
 /// older build left in game directories. It never wipes data it cannot prove redundant:
 /// <list type="bullet">
-/// <item>leftovers younger than <c>minAge</c>, or whose id belongs to a journal entry still on disk, are skipped;</item>
+/// <item>it must run before this process can start any deployment, and only while no other RHI
+/// process runs (<see cref="DeploymentInstanceGate"/>); the checks below are a second line;</item>
+/// <item>a leftover whose inode changed (ctime, <see cref="FileChangeTime"/>) within <c>minAge</c> is
+/// skipped: a rename or a fresh copy resets ctime, unlike the modification time, which a rename and
+/// <see cref="File.Copy(string, string)"/> both keep;</item>
+/// <item>a leftover whose id belongs to a journal entry is skipped, asked again for every file so an
+/// operation that started after the sweep began is still seen;</item>
 /// <item>temporary copies (<c>.rhi-tmp-</c>, <c>.rhi-restore-tmp-</c>) are partial writes of new content and are deleted;</item>
 /// <item>any other leftover (snapshots, staged copies) is deleted only when it is byte-identical to the file
-/// it belongs to or to that file's <c>.original</c>; otherwise it is moved into <c>quarantineRoot</c>
-/// under its original absolute path, so a copy that may be the only one of a user's file survives.</item>
+/// it belongs to or to that file's <c>.original</c>; otherwise it is moved, by a durable rename on the
+/// same file system, into <see cref="RecoveredCopies.FolderName"/> beside it, so a copy that may be the
+/// only one of a user's file survives.</item>
 /// </list>
-/// Only the listed directories are read (not recursively).
+/// Only the listed directories are read (not recursively); symlinks are never followed or touched.
 /// </summary>
 public static partial class DeploymentLeftoverSweeper
 {
@@ -23,30 +30,32 @@ public static partial class DeploymentLeftoverSweeper
 
     public static bool IsLeftoverName(string fileName) => LeftoverName().IsMatch(fileName);
 
+    /// <param name="isReferenced">Whether an operation id still has a journal entry; called per file, just before acting on it.</param>
     public static LeftoverSweepReport Sweep(
         IEnumerable<string> directories,
-        IReadOnlySet<string> referencedOperationIds,
-        string quarantineRoot,
+        Func<string, bool> isReferenced,
         TimeSpan minAge,
         DateTime? nowUtc = null)
     {
-        var now = nowUtc ?? DateTime.UtcNow;
         var deleted = new List<string>();
         var quarantined = new List<(string From, string To)>();
         var problems = new List<string>();
-        string? batchRoot = null;
 
-        foreach (var directory in directories.Where(d => !string.IsNullOrWhiteSpace(d)).Select(Path.GetFullPath).Distinct(StringComparer.Ordinal))
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var listed in directories.Where(d => !string.IsNullOrWhiteSpace(d)))
         {
+            string directory;
             string[] files;
             try
             {
-                if (!Directory.Exists(directory)) continue;
+                directory = Path.GetFullPath(listed);
+                if (!seen.Add(directory) || !Directory.Exists(directory)) continue;
                 files = Directory.GetFiles(directory);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             {
-                problems.Add($"{directory}: {ex.Message}");
+                // A malformed recorded path must not stop the sweep of the others.
+                problems.Add($"{listed.Replace('\0', '?')}: {ex.Message}");
                 continue;
             }
 
@@ -54,11 +63,13 @@ public static partial class DeploymentLeftoverSweeper
             {
                 var match = LeftoverName().Match(Path.GetFileName(path));
                 if (!match.Success) continue;
-                if (referencedOperationIds.Contains(match.Groups["id"].Value)) continue;
                 try
                 {
                     var info = new FileInfo(path);
-                    if (info.LinkTarget is not null || now - info.LastWriteTimeUtc < minAge) continue;
+                    if (info.LinkTarget is not null) continue;
+                    var now = nowUtc ?? DateTime.UtcNow;
+                    if (now - FileChangeTime.LastChangeUtc(path) < minAge) continue;
+                    if (isReferenced(match.Groups["id"].Value)) continue;
 
                     if (TemporaryTags.Contains(match.Groups["tag"].Value) || IsRedundant(path, Path.Combine(directory, match.Groups["base"].Value)))
                     {
@@ -67,15 +78,9 @@ public static partial class DeploymentLeftoverSweeper
                         continue;
                     }
 
-                    batchRoot ??= Path.Combine(quarantineRoot, now.ToString("yyyyMMdd-HHmmss"));
-                    var destination = Path.Combine(batchRoot, path.TrimStart(Path.DirectorySeparatorChar));
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    File.Move(path, destination, overwrite: false);
-                    AtomicFile.FsyncDirectoryOf(destination);
-                    AtomicFile.FsyncDirectoryOf(path);
-                    quarantined.Add((path, destination));
+                    quarantined.Add((path, RecoveredCopies.MoveAside(path, now)));
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
                 {
                     problems.Add($"{path}: {ex.Message}");
                 }
@@ -105,7 +110,10 @@ public static partial class DeploymentLeftoverSweeper
 public sealed record LeftoverSweepReport(
     IReadOnlyList<string> Deleted,
     IReadOnlyList<(string From, string To)> Quarantined,
-    IReadOnlyList<string> Problems)
+    IReadOnlyList<string> Problems,
+    string? SkippedReason = null)
 {
+    public static LeftoverSweepReport Skipped(string reason) => new([], [], [], reason);
+
     public bool IsEmpty => Deleted.Count == 0 && Quarantined.Count == 0 && Problems.Count == 0;
 }

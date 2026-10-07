@@ -44,7 +44,7 @@ public sealed class DeploymentRecoveryTests : IDisposable
     }
 
     [Fact]
-    public async Task FileChangedByAGameUpdateAfterTheCrash_IsLeftAlone()
+    public async Task FileChangedByAGameUpdateAfterTheCrash_IsLeftAlone_AndRhisCopySetAside()
     {
         Directory.CreateDirectory(P("game"));
         File.WriteAllText(P("game", "nvngx_dlss.dll"), "game dlss");
@@ -56,10 +56,17 @@ public sealed class DeploymentRecoveryTests : IDisposable
 
         var report = await new DeploymentJournal(P("journal")).RecoverAsync();
 
-        Assert.Equal(1, report.Failed);
-        Assert.Contains("changed by something other than this operation", Assert.Single(report.Entries).Problems[0]);
+        // Final, not a failure retried at every start: the store's file stays, and the .original this
+        // operation created (the only copy of the old game file) is moved aside, not deleted.
+        var entry = Assert.Single(report.Entries);
+        Assert.Equal(JournalRecoveryOutcome.KeptLaterChanges, entry.Outcome);
+        Assert.Equal(0, report.Failed);
         Assert.Equal("patched by the store", File.ReadAllText(P("game", "nvngx_dlss.dll")));
-        Assert.Equal("game dlss", File.ReadAllText(P("game", "nvngx_dlss.dll.original")));
+        Assert.False(File.Exists(P("game", "nvngx_dlss.dll.original")));
+        var setAside = Assert.Single(Directory.GetFiles(P("game", RecoveredCopies.FolderName), "*", SearchOption.AllDirectories));
+        Assert.Equal("nvngx_dlss.dll" + RecoveredCopies.PreOperationSuffix, Path.GetFileName(setAside));
+        Assert.Equal("game dlss", File.ReadAllText(setAside));
+        Assert.Empty(Directory.GetFiles(P("journal")));
     }
 
     [Fact]
@@ -78,7 +85,7 @@ public sealed class DeploymentRecoveryTests : IDisposable
         Assert.Null(await LinuxDeploymentRecovery.RecoverAsync(journal, records));
         Assert.Equal("changed", File.ReadAllText(P("game", "dxgi.dll")));
         Assert.Contains(operation.Id, journal.ReferencedOperationIds());
-        Assert.NotEmpty(LinuxDeploymentRecovery.Sweep(journal, records, quarantineRoot: P("q")).Problems);
+        Assert.NotEmpty(LinuxDeploymentRecovery.Sweep(journal, records).Problems);
     }
 
     [Fact]
@@ -95,12 +102,9 @@ public sealed class DeploymentRecoveryTests : IDisposable
         });
         var leftoverName = "dxgi.dll.rhi-tmp-" + Guid.NewGuid().ToString("N");
         foreach (var dir in new[] { P("game", "bin"), P("elsewhere") })
-        {
             File.WriteAllText(Path.Combine(dir, leftoverName), "partial");
-            File.SetLastWriteTimeUtc(Path.Combine(dir, leftoverName), DateTime.UtcNow.AddDays(-1));
-        }
 
-        var report = LinuxDeploymentRecovery.Sweep(new DeploymentJournal(P("journal")), records, quarantineRoot: P("q"));
+        var report = LinuxDeploymentRecovery.Sweep(new DeploymentJournal(P("journal")), records, nowUtc: DateTime.UtcNow.AddDays(1));
 
         Assert.Equal([P("game", "bin", leftoverName)], report.Deleted);
         Assert.True(File.Exists(P("elsewhere", leftoverName)));
@@ -115,14 +119,14 @@ public sealed class DeploymentRecoveryTests : IDisposable
         File.WriteAllText(userReg, registry);
         var overrides = new WineDllOverrideService();
         var step = WineOverrideCompensator.Describe(P("pfx"), overrides.PlanNativeBuiltin(P("pfx"), "dxgi", "Game.exe"));
-        var compensator = new WineOverrideCompensator(overrides);
+        var compensator = new WineOverrideCompensator(overrides, isPrefixInUse: _ => false);
 
-        compensator.Compensate(step); // crash came before the override was written
+        Assert.Equal(CompensationStatus.Done, compensator.Compensate(step).Status); // crash came before the override was written
         Assert.Equal(registry, File.ReadAllText(userReg));
 
         overrides.EnsureNativeBuiltin(P("pfx"), "dxgi", "Game.exe");
-        compensator.Compensate(step);
-        compensator.Compensate(step); // a retried recovery runs it again
+        Assert.Equal(CompensationStatus.Done, compensator.Compensate(step).Status);
+        Assert.Equal(CompensationStatus.Done, compensator.Compensate(step).Status); // a retried recovery runs it again
         Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(userReg), "dxgi", "Game.exe"));
         Assert.Contains("\"x\"=\"y\"", File.ReadAllText(userReg));
     }
