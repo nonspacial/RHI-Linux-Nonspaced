@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using RHI.Core.Deployment;
 
 namespace RHI.Core.Services;
 
@@ -105,31 +106,14 @@ public static class CacheStamp
             WrittenAtUtc = DateTime.UtcNow
         };
 
-        var stampPath = StampPath(entry);
-        var temp = stampPath + $".tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllText(temp, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(temp, stampPath, overwrite: true);
-            return document.ContentSha256;
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
+        // Durable and verified (temp + fsync + rename + directory fsync), so a power loss never
+        // leaves a truncated stamp beside a valid entry.
+        AtomicFile.WriteAllText(StampPath(entry), JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
+        return document.ContentSha256;
     }
 
     /// <summary>Drops the stamp so the entry is treated as unverified (call before replacing the entry).</summary>
-    public static void Invalidate(string entry)
-    {
-        try
-        {
-            var stampPath = StampPath(entry);
-            if (File.Exists(stampPath)) File.Delete(stampPath);
-        }
-        catch { }
-    }
+    public static void Invalidate(string entry) => FileCleanup.TryDelete(StampPath(entry));
 
     private static string ContentSha256(string entry, bool isDirectory)
     {
