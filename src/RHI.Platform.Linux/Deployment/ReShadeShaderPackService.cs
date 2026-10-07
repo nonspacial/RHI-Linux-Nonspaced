@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using RHI.Core;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -498,8 +499,12 @@ public sealed class ReShadeShaderPackService
 
         if (File.Exists(marker) && File.Exists(sourceMarker) && Directory.Exists(extracted) &&
             Directory.EnumerateFiles(extracted, "*", SearchOption.AllDirectories).Any() &&
-            string.Equals(File.ReadAllText(sourceMarker), sourceIdentity, StringComparison.Ordinal))
+            string.Equals(File.ReadAllText(sourceMarker), sourceIdentity, StringComparison.Ordinal) &&
+            // The markers name the source; the stamp proves the tree is still what this service
+            // extracted from it (#142).
+            CacheStamp.IsValid(extracted, downloadUrl, sourceIdentity))
             return extracted;
+        CacheStamp.Invalidate(extracted);
 
         Directory.CreateDirectory(packDir);
         var extension = Path.GetExtension(new Uri(downloadUrl).AbsolutePath);
@@ -509,7 +514,7 @@ public sealed class ReShadeShaderPackService
             downloadUrl.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
             extension = ".tar.gz";
 
-        var temp = Path.Combine(packDir, "download" + (string.IsNullOrWhiteSpace(extension) ? ".tmp" : extension) + ".tmp");
+        var temp = Path.Combine(packDir, $"download-{Guid.NewGuid():N}" + (string.IsNullOrWhiteSpace(extension) ? ".tmp" : extension) + ".tmp");
         var raw = Path.Combine(packDir, "raw-" + Guid.NewGuid().ToString("N"));
 
         try
@@ -549,6 +554,7 @@ public sealed class ReShadeShaderPackService
             Directory.Move(normalized, extracted);
             File.WriteAllText(sourceMarker, sourceIdentity);
             File.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
+            CacheStamp.Write(extracted, downloadUrl, sourceIdentity);
             return extracted;
         }
         finally

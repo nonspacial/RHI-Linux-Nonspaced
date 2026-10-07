@@ -475,10 +475,14 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniPath = Path.Combine(versionDir, IniFileName);
         Directory.CreateDirectory(versionDir);
 
-        if (!File.Exists(dllPath) || !File.Exists(iniPath))
+        var dllUrl = RawUrl(snapshot.CommitSha, DefaultProxyName);
+        var iniUrl = RawUrl(snapshot.CommitSha, IniFileName);
+        // Reuse the pair only when both files were stamped by this service's download of this commit
+        // (#142); a file that reached the cache any other way is downloaded again, never deployed.
+        if (!CacheStamp.IsValid(dllPath, dllUrl, snapshot.CommitSha) || !CacheStamp.IsValid(iniPath, iniUrl, snapshot.CommitSha))
         {
-            var dllUrl = RawUrl(snapshot.CommitSha, DefaultProxyName);
-            var iniUrl = RawUrl(snapshot.CommitSha, IniFileName);
+            CacheStamp.Invalidate(dllPath);
+            CacheStamp.Invalidate(iniPath);
             var dllTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
             var iniTemp = iniPath + $".tmp-{Guid.NewGuid():N}";
             try
@@ -490,6 +494,8 @@ public sealed class Dlssg2030UnlockDeploymentService
                 ValidateIniText(iniText);
                 File.Move(dllTemp, dllPath, overwrite: true);
                 File.Move(iniTemp, iniPath, overwrite: true);
+                CacheStamp.Write(dllPath, dllUrl, snapshot.CommitSha);
+                CacheStamp.Write(iniPath, iniUrl, snapshot.CommitSha);
             }
             finally
             {

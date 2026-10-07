@@ -116,16 +116,27 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         var extractDir = Path.Combine(versionDir, "extract");
         Directory.CreateDirectory(versionDir);
 
-        if (!await IsUsableArchiveAsync(archive, expectedSize, digest, cancellationToken).ConfigureAwait(false))
+        // Reuse the archive and its extracted tree only when this provider stamped them for exactly
+        // this release asset (#142); anything else in the cache is replaced, never deployed.
+        if (!CacheStamp.IsValid(archive, sourceUrl, rawTag, digest) ||
+            !await IsUsableArchiveAsync(archive, expectedSize, digest, cancellationToken).ConfigureAwait(false))
+        {
+            CacheStamp.Invalidate(archive);
+            CacheStamp.Invalidate(extractDir);
             await DownloadAsync(sourceUrl, archive, expectedSize, digest, cancellationToken).ConfigureAwait(false);
+            CacheStamp.Write(archive, sourceUrl, rawTag, digest);
+        }
 
-        var packageRoot = FindPackageRoot(extractDir);
+        var packageRoot = CacheStamp.IsValid(extractDir, sourceUrl, rawTag) ? FindPackageRoot(extractDir) : null;
+        var freshlyExtracted = false;
         if (packageRoot is null)
         {
+            CacheStamp.Invalidate(extractDir);
             try { if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true); } catch { }
             Directory.CreateDirectory(extractDir);
             await _extractor.ExtractAllAsync(archive, extractDir, cancellationToken).ConfigureAwait(false);
             packageRoot = FindPackageRoot(extractDir);
+            freshlyExtracted = true;
         }
 
         if (packageRoot is null)
@@ -136,6 +147,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         if (variant == OptiScalerVariant.DlssNr && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
             throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
 
+        if (freshlyExtracted) CacheStamp.Write(extractDir, sourceUrl, rawTag);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant);
     }
 
@@ -169,7 +181,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
 
     private async Task DownloadAsync(string sourceUrl, string archive, long expectedSize, string? digest, CancellationToken cancellationToken)
     {
-        var temp = archive + ".tmp";
+        var temp = archive + $".tmp-{Guid.NewGuid():N}";
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, sourceUrl);

@@ -275,6 +275,12 @@ public sealed class GitHubReShadeAddonDeploymentService
         return null;
     }
 
+    /// <summary>
+    /// Returns a validated payload for <paramref name="release"/>: the cached copy when it carries a
+    /// stamp this service wrote for exactly this asset (URL, version, published digest, content hash),
+    /// otherwise a fresh download. An unstamped or mismatching cache file is never deployed — it is
+    /// replaced by the download.
+    /// </summary>
     private async Task<string> DownloadAsync(
         GitHubAddonRelease release,
         PeArchitecture architecture,
@@ -285,79 +291,106 @@ public sealed class GitHubReShadeAddonDeploymentService
         var versionPart = Regex.Replace(release.Version, "[^A-Za-z0-9._-]", "_");
         var safeAssetName = Path.GetFileName(release.AssetName);
         var cache = Path.Combine(_cacheDir, $"{versionPart}-{safeAssetName}");
-        var temp = cache + ".tmp";
+        var isArchive = safeAssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+        var payload = isArchive
+            ? Path.Combine(_cacheDir, $"{versionPart}-{Path.GetFileName(deployFileName)}")
+            : cache;
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        if (IsReusableCachedPayload(payload, release, isArchive))
+            return payload;
 
-        if (!string.IsNullOrWhiteSpace(release.Sha256))
+        // Unverified: forget any old stamp before the entry is replaced, so an interrupted
+        // download can never leave a stamp describing a different file.
+        CacheStamp.Invalidate(payload);
+        // Unique temp names: concurrent installs (or overlapping runs) must not share a .tmp file.
+        var temp = cache + $".tmp-{Guid.NewGuid():N}";
+
+        try
         {
-            var actual = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
+            using (var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl))
             {
-                TryDelete(temp);
-                throw new InvalidOperationException("Downloaded add-on failed the SHA-256 digest published by GitHub.");
-            }
-        }
-
-        if (safeAssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            if (new FileInfo(temp).Length < 512)
-            {
-                TryDelete(temp);
-                throw new InvalidOperationException("Downloaded add-on archive is unexpectedly small.");
+                request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
+                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true);
+                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
             }
 
-            File.Move(temp, cache, overwrite: true);
-            var extracted = Path.Combine(_cacheDir, $"{versionPart}-{Path.GetFileName(deployFileName)}");
-            var extractedTemp = extracted + ".tmp";
-            TryDelete(extractedTemp);
-            try
+            if (!string.IsNullOrWhiteSpace(release.Sha256))
             {
-                using var archive = ZipFile.OpenRead(cache);
-                var exact = archive.Entries.FirstOrDefault(entry =>
-                    !string.IsNullOrEmpty(entry.Name) &&
-                    Path.GetFileName(entry.FullName).Equals(deployFileName, StringComparison.OrdinalIgnoreCase));
+                var actual = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("Downloaded add-on failed the SHA-256 digest published by GitHub.");
+            }
 
-                if (exact is null)
+            if (isArchive)
+            {
+                if (new FileInfo(temp).Length < 512)
+                    throw new InvalidOperationException("Downloaded add-on archive is unexpectedly small.");
+
+                var extractedTemp = payload + $".tmp-{Guid.NewGuid():N}";
+                try
                 {
-                    var extension = architecture == PeArchitecture.X86 ? ".addon32" : ".addon64";
-                    var candidates = archive.Entries
-                        .Where(entry => !string.IsNullOrEmpty(entry.Name) &&
-                                        Path.GetFileName(entry.FullName).EndsWith(extension, StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    exact = candidates.Length == 1 ? candidates[0] : null;
+                    using (var archive = ZipFile.OpenRead(temp))
+                    {
+                        var exact = archive.Entries.FirstOrDefault(entry =>
+                            !string.IsNullOrEmpty(entry.Name) &&
+                            Path.GetFileName(entry.FullName).Equals(deployFileName, StringComparison.OrdinalIgnoreCase));
+
+                        if (exact is null)
+                        {
+                            var extension = architecture == PeArchitecture.X86 ? ".addon32" : ".addon64";
+                            var candidates = archive.Entries
+                                .Where(entry => !string.IsNullOrEmpty(entry.Name) &&
+                                                Path.GetFileName(entry.FullName).EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+                                .ToArray();
+                            exact = candidates.Length == 1 ? candidates[0] : null;
+                        }
+
+                        if (exact is null)
+                            throw new InvalidDataException($"Archive does not contain the required {deployFileName} payload.");
+
+                        exact.ExtractToFile(extractedTemp, overwrite: false);
+                    }
+                    if (!BinarySignatureInspector.HasPeSignature(extractedTemp, _definition.MinimumSize))
+                        throw new InvalidDataException("Extracted add-on is not a valid PE payload or is unexpectedly small.");
+                    File.Move(temp, cache, overwrite: true);
+                    File.Move(extractedTemp, payload, overwrite: true);
                 }
-
-                if (exact is null)
-                    throw new InvalidDataException($"Archive does not contain the required {deployFileName} payload.");
-
-                exact.ExtractToFile(extractedTemp, overwrite: true);
-                if (!BinarySignatureInspector.HasPeSignature(extractedTemp, _definition.MinimumSize))
-                    throw new InvalidDataException("Extracted add-on is not a valid PE payload or is unexpectedly small.");
-                File.Move(extractedTemp, extracted, overwrite: true);
-                return extracted;
+                finally
+                {
+                    TryDelete(extractedTemp);
+                }
             }
-            catch
+            else
             {
-                TryDelete(extractedTemp);
-                throw;
+                if (!BinarySignatureInspector.HasPeSignature(temp, _definition.MinimumSize))
+                    throw new InvalidOperationException("Downloaded add-on is not a valid PE payload or is unexpectedly small.");
+                File.Move(temp, payload, overwrite: true);
             }
         }
-
-        if (!BinarySignatureInspector.HasPeSignature(temp, _definition.MinimumSize))
+        finally
         {
             TryDelete(temp);
-            throw new InvalidOperationException("Downloaded add-on is not a valid PE payload or is unexpectedly small.");
         }
 
-        File.Move(temp, cache, overwrite: true);
-        return cache;
+        CacheStamp.Write(payload, release.AssetUrl, release.Version, release.Sha256);
+        return payload;
+    }
+
+    private bool IsReusableCachedPayload(string payload, GitHubAddonRelease release, bool isArchive)
+    {
+        if (!CacheStamp.IsValid(payload, release.AssetUrl, release.Version, release.Sha256)) return false;
+        if (!BinarySignatureInspector.HasPeSignature(payload, _definition.MinimumSize)) return false;
+        // A direct asset is the published file itself: its digest must still match what GitHub announces.
+        if (!isArchive && !string.IsNullOrWhiteSpace(release.Sha256))
+        {
+            using var stream = File.OpenRead(payload);
+            var actual = Convert.ToHexString(SHA256.HashData(stream));
+            if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return true;
     }
 
     internal static bool HasReShade(string binaryDirectory)

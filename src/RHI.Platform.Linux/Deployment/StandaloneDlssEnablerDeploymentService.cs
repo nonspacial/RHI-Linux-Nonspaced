@@ -439,11 +439,16 @@ public sealed class StandaloneDlssEnablerDeploymentService
         {
             try
             {
+                // Reuse only a DLL stamped at download time for this release asset (#142); a file
+                // that reached the cache any other way is downloaded again, never deployed.
+                if (!CacheStamp.IsValid(dllPath, release.AssetUrl, release.Version, release.AssetSha256))
+                    throw new InvalidDataException("Cached payload has no valid download stamp.");
                 ValidatePayload(dllPath);
                 return dllPath;
             }
             catch
             {
+                CacheStamp.Invalidate(dllPath);
                 TryDelete(dllPath);
             }
         }
@@ -491,6 +496,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
         }
 
         ValidatePayload(dllPath);
+        CacheStamp.Write(dllPath, release.AssetUrl, release.Version, release.AssetSha256);
         return dllPath;
     }
 

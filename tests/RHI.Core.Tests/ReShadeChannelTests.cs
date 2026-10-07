@@ -517,7 +517,7 @@ public sealed class ReShadeChannelTests : IDisposable
             new WineDllOverrideService(),
             new FakeExtractor(),
             cache,
-            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs")));
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")));
     }
 
     private static void SeedShaderCache(string cache, string packId)
@@ -537,6 +537,8 @@ public sealed class ReShadeChannelTests : IDisposable
             ? "https://github.com/crosire/reshade-shaders/archive/refs/heads/master.zip"
             : throw new InvalidOperationException($"SeedShaderCache has no source identity fixture for '{packId}'.");
         File.WriteAllText(Path.Combine(pack, ".source"), sourceIdentity);
+        // A cache entry RHI itself extracted also carries its download stamp (#142).
+        CacheStamp.Write(Path.Combine(pack, "extracted"), sourceIdentity, sourceIdentity);
     }
 
     private static void WriteNativeD3DCompiler(string path, ushort machine)

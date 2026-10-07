@@ -783,12 +783,16 @@ public sealed partial class ReShadeDeploymentService
         var staged = Path.Combine(dir, dllName);
         var marker = Path.Combine(dir, "zip-size.txt");
         var remoteSize = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
-        if (remoteSize > 0 && File.Exists(marker) && long.TryParse(File.ReadAllText(marker).Trim(), out var known) && known == remoteSize && IsValidReShadeDll(staged))
+        // The size marker alone is only a change hint; the staged DLL must also carry the stamp this
+        // service wrote when it extracted that artifact (#142).
+        if (remoteSize > 0 && File.Exists(marker) && long.TryParse(File.ReadAllText(marker).Trim(), out var known) && known == remoteSize &&
+            CacheStamp.IsValid(staged, url, $"zip-size:{remoteSize}") && IsValidReShadeDll(staged))
             return new(staged, "Nightly", url, $"zip-size:{remoteSize}", ReShadeChannel.Nightly);
 
+        CacheStamp.Invalidate(staged);
         using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var tempZip = Path.Combine(dir, "nightly.zip.tmp");
+        var tempZip = Path.Combine(dir, $"nightly-{Guid.NewGuid():N}.zip.tmp");
         try
         {
             await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
@@ -801,6 +805,7 @@ public sealed partial class ReShadeDeploymentService
             if (entry is null) throw new InvalidDataException($"{dllName} was not found in the nightly artifact.");
             entry.ExtractToFile(staged, overwrite: true);
             if (!IsValidReShadeDll(staged)) throw new InvalidDataException($"Extracted nightly {dllName} is invalid or too small.");
+            CacheStamp.Write(staged, url, $"zip-size:{actualZipSize}");
             File.WriteAllText(marker, actualZipSize.ToString());
             return new(staged, "Nightly", url, $"zip-size:{actualZipSize}", ReShadeChannel.Nightly);
         }
@@ -846,13 +851,16 @@ public sealed partial class ReShadeDeploymentService
         Directory.CreateDirectory(versionDir);
         var desiredName = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
         var staged = Path.Combine(versionDir, desiredName);
-        if (IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
+        // Reuse only files stamped at download/extraction time for this exact setup URL and version
+        // (#142); anything else in the cache is replaced, never deployed.
+        if (CacheStamp.IsValid(staged, url, version) && IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
 
         var setup = Path.Combine(versionDir, $"ReShade_Setup_{version}_Addon.exe");
-        if (!File.Exists(setup) || new FileInfo(setup).Length < 500_000 || !BinarySignatureInspector.HasPeSignature(setup, 500_000))
+        if (!CacheStamp.IsValid(setup, url, version) || new FileInfo(setup).Length < 500_000 || !BinarySignatureInspector.HasPeSignature(setup, 500_000))
         {
+            CacheStamp.Invalidate(setup);
             try { if (File.Exists(setup)) File.Delete(setup); } catch { }
-            var temp = setup + ".tmp";
+            var temp = setup + $".tmp-{Guid.NewGuid():N}";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Referrer = new Uri(HomeUrl + "/");
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -866,17 +874,31 @@ public sealed partial class ReShadeDeploymentService
                 throw new InvalidOperationException("reshade.me returned a file that is not a valid ReShade setup executable.");
             }
             File.Move(temp, setup, overwrite: true);
+            CacheStamp.Write(setup, url, version);
         }
 
         var extractDir = Path.Combine(versionDir, "extract");
         Directory.CreateDirectory(extractDir);
+        foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll" })
+        {
+            // Only DLLs extracted from the verified setup in this call may be staged.
+            foreach (var stale in new[] { Path.Combine(extractDir, name), Path.Combine(versionDir, name) })
+            {
+                CacheStamp.Invalidate(stale);
+                if (File.Exists(stale)) File.Delete(stale);
+            }
+        }
         await _extractor.ExtractDllsAsync(setup, extractDir, cancellationToken).ConfigureAwait(false);
         foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll" })
         {
             var source = Path.Combine(extractDir, name);
-            if (IsValidReShadeDll(source)) File.Copy(source, Path.Combine(versionDir, name), overwrite: true);
+            if (!IsValidReShadeDll(source)) continue;
+            var target = Path.Combine(versionDir, name);
+            File.Copy(source, target, overwrite: true);
+            CacheStamp.Write(target, url, version);
         }
-        if (!IsValidReShadeDll(staged)) throw new InvalidOperationException($"{desiredName} was not extracted from the ReShade setup.");
+        if (!CacheStamp.IsValid(staged, url, version) || !IsValidReShadeDll(staged))
+            throw new InvalidOperationException($"{desiredName} was not extracted from the ReShade setup.");
         return new(staged, version, url, identity, channel);
     }
 

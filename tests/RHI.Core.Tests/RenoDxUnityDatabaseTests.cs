@@ -92,8 +92,8 @@ public sealed class RenoDxUnityDatabaseTests : IDisposable
 
         Assert.Equal(2, pinned?.Count);
         Assert.False(File.Exists(Path.Combine(_root, "unity.json.etag")));
-        Assert.Throws<ArgumentException>(() => new RenoDxUnityDatabaseService(http, liveUrl: "http://raw.githubusercontent.com/x.json"));
-        Assert.Throws<ArgumentException>(() => new RenoDxUnityDatabaseService(http, liveUrl: "https://example.test/x.json"));
+        Assert.Throws<ArgumentException>(() => new RenoDxUnityDatabaseService(http, Path.Combine(_root, "rejected.json"), liveUrl: "http://raw.githubusercontent.com/x.json"));
+        Assert.Throws<ArgumentException>(() => new RenoDxUnityDatabaseService(http, Path.Combine(_root, "rejected.json"), liveUrl: "https://example.test/x.json"));
     }
 
     [Fact]

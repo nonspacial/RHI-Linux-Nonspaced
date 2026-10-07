@@ -76,12 +76,14 @@ public sealed class DgVoodooDeploymentService
         var versionDir = Path.Combine(_cacheDir, safeVersion);
         Directory.CreateDirectory(versionDir);
         var zipPath = Path.Combine(versionDir, assetName);
-        var needsDownload = !File.Exists(zipPath) || new FileInfo(zipPath).Length < 1024;
+        // Reuse only an archive this service stamped for this URL and version (#142).
+        var needsDownload = !CacheStamp.IsValid(zipPath, url, version, sha256) || new FileInfo(zipPath).Length < 1024;
         if (!needsDownload && !string.IsNullOrWhiteSpace(sha256))
             needsDownload = !string.Equals(await Sha256Async(zipPath, cancellationToken).ConfigureAwait(false), sha256, StringComparison.OrdinalIgnoreCase);
 
         if (needsDownload)
         {
+            CacheStamp.Invalidate(zipPath);
             var temp = zipPath + $".tmp-{Guid.NewGuid():N}";
             try
             {
@@ -102,6 +104,7 @@ public sealed class DgVoodooDeploymentService
                 }
                 using (var archive = ZipFile.OpenRead(temp)) _ = archive.Entries.Count;
                 File.Move(temp, zipPath, overwrite: true);
+                CacheStamp.Write(zipPath, url, version, sha256);
             }
             finally
             {

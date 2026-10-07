@@ -684,7 +684,8 @@ public sealed class RenoDxDeploymentService
         var source = cache + ".source";
         if (await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false))
             return cache;
-        var temp = cache + ".tmp";
+        CacheStamp.Invalidate(cache);
+        var temp = cache + $".tmp-{Guid.NewGuid():N}";
         using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
@@ -698,6 +699,7 @@ public sealed class RenoDxDeploymentService
         if (File.Exists(source)) File.Delete(source);
         File.Move(temp, cache, overwrite: true);
         await File.WriteAllTextAsync(source, url, CancellationToken.None).ConfigureAwait(false);
+        CacheStamp.Write(cache, url);
         return cache;
     }
 
@@ -709,6 +711,8 @@ public sealed class RenoDxDeploymentService
         if (!File.Exists(cache) || !File.Exists(source)) return false;
         if (!string.Equals((await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false)).Trim(), url, StringComparison.Ordinal))
             return false;
+        // The .source sidecar names the URL; the stamp proves the bytes are the ones RHI downloaded (#142).
+        if (!CacheStamp.IsValid(cache, url)) return false;
         if (!BinarySignatureInspector.HasPeSignature(cache, 100 * 1024)) return false;
 
         long? remoteSize = null;
