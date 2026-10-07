@@ -1,6 +1,7 @@
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -30,6 +31,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private readonly LumaPolicyService _lumaPolicy;
     private readonly NeuralAddonVersionPreferenceStore _neuralVersionPins;
     private readonly ComponentUpdateRecorder? _history;
+    private readonly ComponentUpdateLogStore? _updateLog;
 
     public LinuxManagedComponentService(
         LinuxDeploymentRecordStore records,
@@ -79,6 +81,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _lumaFramework = lumaFramework;
         _lumaPolicy = lumaPolicy;
         _neuralVersionPins = neuralVersionPins ?? new NeuralAddonVersionPreferenceStore();
+        _updateLog = updateLog;
         _history = updateLog is null ? null : new ComponentUpdateRecorder(records, updateLog);
     }
 
@@ -837,24 +840,25 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>True when the game was moved and "Repair after move" has records to update.</summary>
     public bool NeedsRelocationRepair(DetectedGame game) => _relocation.NeedsRepair(game);
 
+    /// <summary>The records "Repair after move" would update, for the confirmation shown before adopting.</summary>
+    public IReadOnlyList<RelocatedRecord> RelocationPreview(DetectedGame game) => _relocation.Preview(game);
+
     /// <summary>
-    /// Explicit repair after a move: re-points the game's records (and its Addon Manager files) at
-    /// its current folder once every owned file is verified there. Nothing changes on any failure.
+    /// Explicit repair after a move: re-points the game's records at its current folder once every
+    /// owned file is verified there and carries its per-game state with them (Addon Manager files,
+    /// preferences, opt-ins, update history, plus <paramref name="libraryStores"/> from the UI:
+    /// favourites/hidden/edits/HDR and the preference stores it owns). All or nothing.
     /// </summary>
-    public RelocationRepairResult RepairAfterMove(DetectedGame game)
+    public RelocationRepairResult RepairAfterMove(DetectedGame game, IReadOnlyList<IGameStateStore>? libraryStores = null)
     {
-        var result = _relocation.Repair(game, out var repaired);
-        if (!result.Success || string.IsNullOrWhiteSpace(game.BinaryDirectory) || _addonManager is null) return result;
-        try
-        {
-            _addonManager.RebaseAfterMove(game, repaired.Select(r => r.Record.GameKey).Distinct(StringComparer.Ordinal).ToArray());
-            return result;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The records are already repaired; only the Addon Manager selection kept its old paths.
-            return result with { Message = $"{result.Message}. {DeploymentRelocation.AddonStateNotMovedPrefix}{ex.Message}" };
-        }
+        IGameStateStore?[] owned =
+        [
+            _addonManager, _neuralVersionPins, _updateLog,
+            _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
+            _shortFuse?.GameState, _lumaPolicy?.GameState
+        ];
+        var stores = owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
+        return _relocation.Repair(game, stores, out _);
     }
 
     private IReadOnlyList<string> BuildDependencyIndex(DetectedGame game, IReadOnlyList<string>? indexedFiles = null)

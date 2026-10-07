@@ -11,7 +11,7 @@ namespace RHI.Platform.Linux.Paths;
 /// Stores optional GitHub release-tag pins for Neural Rendering add-ons.
 /// A missing value means Latest and preserves the upstream auto-update behaviour.
 /// </summary>
-public sealed class NeuralAddonVersionPreferenceStore
+public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
 {
     private readonly string _path;
     private readonly JsonFileStore<Dictionary<string, string>> _file;
@@ -91,6 +91,18 @@ public sealed class NeuralAddonVersionPreferenceStore
     internal static bool IsSafeTag(string value)
         => value.Length is > 0 and <= 128
            && Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._+-]*$", RegexOptions.CultureInvariant);
+
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
+    }
 
     private Dictionary<string, string> LoadUnsafe()
         => JsonStoreMaps.CaseInsensitive(_file.Load().Value);

@@ -14,7 +14,7 @@ namespace RHI.Platform.Linux.Deployment;
 /// cannot distinguish "explicitly re-enabled" from "never configured", it migrates safely
 /// to OFF rather than silently renaming ReShade/installing UAL on the next ShortFuse install.
 /// </summary>
-public sealed class ShortFuseSettingsStore
+public sealed class ShortFuseSettingsStore : IGameStateStore
 {
     private sealed class SettingsDocument
     {
@@ -83,6 +83,23 @@ public sealed class ShortFuseSettingsStore
         var set = new HashSet<string>(keys.Where(key => !GameRecordIdentity.Matches(key, game)), StringComparer.Ordinal);
         if (enabled) set.Add(LinuxDeploymentRecordStore.GameKey(game));
         return set.OrderBy(x => x, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>"Repair after move" (Refs #38): opt-ins stored under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(document =>
+            {
+                if (document is null) return null;
+                var enabled = move.MoveRecordKeyList(document.EnabledGames);
+                var zzz = move.MoveRecordKeyList(document.ZzzLoadOrderGames);
+                if (enabled is null && zzz is null) return null;
+                if (enabled is not null) document.EnabledGames = enabled;
+                if (zzz is not null) document.ZzzLoadOrderGames = zzz;
+                return document;
+            });
     }
 
     private void SaveUnsafe(SettingsDocument document) => _file.Save(document);

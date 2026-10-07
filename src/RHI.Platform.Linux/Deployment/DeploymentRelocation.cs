@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using RHI.Core.Models;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -23,11 +24,16 @@ public sealed record RelocationRepairResult(bool Success, int Repaired, string M
 /// written to, or deleted from, the old folder.</item>
 /// <item>"Repair after move" (<see cref="Repair"/>) is the explicit fix: it maps the old folder onto the
 /// new one by their common trailing path, checks every hashed file RHI owns is at its (mapped) path
-/// with the same SHA-256, and only then rewrites the record. It refuses while the old folder still exists
-/// (a copy, not a move: RHI cannot tell which one is in use).</item>
+/// with the same SHA-256, and only then rewrites the record, together with the game's per-game
+/// preferences, library entries (favourite, hidden, edits, HDR) and update history, all in one
+/// staged commit. When the old folder still exists it must no longer hold RHI's files with their
+/// recorded hashes (a leftover); otherwise it is a live copy and RHI says how to proceed.</item>
 /// <item>Games without a store id are keyed by folder, so a moved one has no record under its key;
-/// the same repair adopts a folder-keyed record with the game's name whose old folder is gone and
-/// whose hashed files verify at the new location.</item>
+/// the same repair adopts a folder-keyed record only on strong evidence: the same game name, the old
+/// install folder mapping exactly onto the current one (same folder name and layout down to the
+/// binary directory), the same game executable where the record names it, one candidate old folder
+/// only, and every owned file verifying at the new location. The UI also asks the user to confirm
+/// the old and new folders before adopting.</item>
 /// </list>
 /// </summary>
 public sealed class DeploymentRelocation
@@ -52,6 +58,9 @@ public sealed class DeploymentRelocation
     /// <summary>True when "Repair after move" has something to do for this game (cheap: no hashing).</summary>
     public bool NeedsRepair(DetectedGame game) => FindMoved(game).Count > 0 || FindAdoptable(game).Count > 0;
 
+    /// <summary>What a repair would touch (moved and adoptable records), for the confirmation the UI shows.</summary>
+    public IReadOnlyList<RelocatedRecord> Preview(DetectedGame game) => [.. FindMoved(game), .. FindAdoptable(game)];
+
     /// <summary>The game's own records that point outside its current folders.</summary>
     public IReadOnlyList<RelocatedRecord> FindMoved(DetectedGame game)
     {
@@ -69,34 +78,57 @@ public sealed class DeploymentRelocation
         return result;
     }
 
-    /// <summary>Folder-keyed records of a same-named game whose old folder is gone and whose owned files are at the new location.</summary>
+    /// <summary>
+    /// Folder-keyed records of this game left at its previous folder (see the class summary for the
+    /// evidence required). Cheap: no hashing.
+    /// </summary>
     public IReadOnlyList<RelocatedRecord> FindAdoptable(DetectedGame game)
     {
-        if (string.IsNullOrWhiteSpace(game.Name) || Anchors(game).Count == 0) return [];
+        if (string.IsNullOrWhiteSpace(game.Name) || string.IsNullOrWhiteSpace(game.InstallPath) || Anchors(game).Count == 0) return [];
+        var installPath = Trim(game.InstallPath);
+        var exeName = string.IsNullOrWhiteSpace(game.ExecutablePath) ? null : Path.GetFileName(game.ExecutablePath);
         var result = new List<RelocatedRecord>();
         foreach (var record in _records.All())
         {
             if (GameRecordIdentity.IsStoreKey(record.GameKey) || GameRecordIdentity.Matches(record.GameKey, game)) continue;
+            if (!Path.IsPathRooted(record.GameKey)) continue;
             if (!string.Equals(record.GameName, game.Name, StringComparison.OrdinalIgnoreCase)) continue;
-            if (string.IsNullOrWhiteSpace(record.BinaryDirectory) || Directory.Exists(record.BinaryDirectory)) continue;
+            if (string.IsNullOrWhiteSpace(record.BinaryDirectory)) continue;
             if (!TryMap(record, game, out var oldRoot, out var newRoot)) continue;
+            // The whole game folder moved, not just a same-named sub-folder ("bin", "Win64"): the
+            // record's old install folder lands exactly on the game's current one.
+            if (!IsUnder(record.GameKey, oldRoot) || !string.Equals(Trim(Rebase(record.GameKey, oldRoot, newRoot)), installPath, StringComparison.Ordinal))
+                continue;
+            // The Wine override names the executable RHI configured: it must be this game's.
+            var recordedExe = RecordedExecutables(record);
+            if (recordedExe.Count > 0 && (exeName is null || !recordedExe.Contains(exeName, StringComparer.OrdinalIgnoreCase)))
+                continue;
             var hashed = record.Files.Where(f => IsOwnedHashedFile(f) && IsUnder(f.Path, oldRoot)).ToArray();
-            if (hashed.Length > 0 && hashed.All(f => File.Exists(Rebase(f.Path, oldRoot, newRoot))))
-                result.Add(new RelocatedRecord(record, oldRoot, newRoot, Adopted: true));
+            if (hashed.Length == 0 || !hashed.All(f => File.Exists(Rebase(f.Path, oldRoot, newRoot)))) continue;
+            // An old folder that still holds RHI's files is another live install of this game.
+            if (Directory.Exists(record.BinaryDirectory) && hashed.Any(f => File.Exists(f.Path))) continue;
+            result.Add(new RelocatedRecord(record, oldRoot, newRoot, Adopted: true));
         }
         return result;
     }
 
     /// <summary>
     /// Rewrites the game's moved and adoptable records to its current location after checking every
-    /// owned file there. All or nothing: one failed check leaves every record untouched.
+    /// owned file there, and carries the game's entries in <paramref name="stores"/> over with them.
+    /// All or nothing: one failed check, or one store that cannot be read or written, leaves every
+    /// record and every store untouched.
     /// </summary>
-    public RelocationRepairResult Repair(DetectedGame game, out IReadOnlyList<RelocatedRecord> repaired)
+    public RelocationRepairResult Repair(DetectedGame game, IReadOnlyList<IGameStateStore> stores, out IReadOnlyList<RelocatedRecord> repaired)
     {
+        ArgumentNullException.ThrowIfNull(stores);
         repaired = [];
-        var candidates = FindMoved(game).Concat(FindAdoptable(game)).ToList();
+        var candidates = Preview(game).ToList();
         if (candidates.Count == 0)
             return new(false, 0, "Nothing to repair: RHI's records for this game already match its folder.");
+
+        var oldFolders = candidates.Where(c => c.Adopted).Select(c => c.Record.GameKey).Distinct(StringComparer.Ordinal).ToArray();
+        if (oldFolders.Length > 1)
+            return new(false, 0, RepairAmbiguousPrefix + string.Join(", ", oldFolders));
 
         var key = LinuxDeploymentRecordStore.GameKey(game);
         var current = _records.FindAll(game);
@@ -106,8 +138,6 @@ public sealed class DeploymentRelocation
             var record = candidate.Record;
             if (string.IsNullOrEmpty(candidate.NewRoot))
                 return new(false, 0, $"{RepairNoMatchPrefix}{record.BinaryDirectory}");
-            if (Directory.Exists(record.BinaryDirectory))
-                return new(false, 0, $"{RepairOldFolderExistsPrefix}{record.BinaryDirectory}");
             if (candidates.Count(c => c.Record.Component == record.Component) > 1
                 || current.Any(r => r.Component == record.Component && r.BinaryDirectory != record.BinaryDirectory))
                 return new(false, 0, $"{RepairDuplicatePrefix}{record.Component}");
@@ -123,6 +153,11 @@ public sealed class DeploymentRelocation
                     return new(false, 0, $"{RepairChangedPrefix}{mapped}");
             }
 
+            // The old folder may still exist (an emptied leftover, or a backup copy). Only one
+            // that still holds RHI's files unchanged is a live copy RHI cannot choose between.
+            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, candidate))
+                return new(false, 0, $"{RepairOldFolderExistsPrefix}{record.BinaryDirectory}{RepairOldFolderExistsSuffix}");
+
             var copy = LinuxDeploymentRecordStore.Clone(record);
             copy.GameKey = key;
             copy.BinaryDirectory = Map(copy.BinaryDirectory, candidate);
@@ -133,22 +168,62 @@ public sealed class DeploymentRelocation
             rebased.Add(copy);
         }
 
-        _records.Replace(candidates.Select(c => c.Record).ToArray(), rebased);
+        // Stage the ledger and every per-game store first: nothing is written unless all can be.
+        var move = new GameStateMove(game, candidates.Select(c => (c.OldRoot, c.NewRoot)), oldFolders);
+        var writes = new List<StagedFileWrite>();
+        try
+        {
+            writes.Add(_records.StageReplace(candidates.Select(c => c.Record).ToArray(), rebased));
+            foreach (var store in stores.Distinct())
+                if (store.StageMove(move) is { } write)
+                    writes.Add(write);
+            StagedFileCommit.Commit(writes);
+        }
+        catch (StagedFileCommitException ex) when (ex.NotRestored.Count > 0)
+        {
+            return new(false, 0, RepairPartlyWrittenPrefix + ex.Message);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return new(false, 0, RepairNotSavedPrefix + ex.Message);
+        }
+        finally
+        {
+            _records.InvalidateCache();
+        }
+
         repaired = candidates;
         return new(true, rebased.Count, $"{RepairDonePrefix}{rebased.Count}");
     }
 
     // Messages are split before the variable part so the UI can translate the fixed text.
     public const string RepairNoMatchPrefix = "Repair after move cannot tell where this folder went: ";
-    public const string RepairOldFolderExistsPrefix = "The old folder still exists, so this looks like a copy rather than a move; remove or rename it, then repair again: ";
+    public const string RepairOldFolderExistsPrefix = "Nothing was changed: the old folder still holds the files RHI installed, so RHI cannot tell which copy the game uses: ";
+    public const string RepairOldFolderExistsSuffix = ". If that copy is no longer needed, delete it; to keep it as a backup, rename or move it. Then choose Repair after move again.";
+    public const string RepairAmbiguousPrefix = "Nothing was changed: RHI records from more than one earlier folder match this game, so it cannot tell which are its own. Install the components again instead. Folders: ";
     public const string RepairDuplicatePrefix = "More than one record for the same component; remove and reinstall it instead: ";
     public const string RepairMissingPrefix = "Nothing was changed: a file RHI installed is not at the new location: ";
     public const string RepairChangedPrefix = "Nothing was changed: a file RHI installed differs at the new location: ";
+    public const string RepairNotSavedPrefix = "Nothing was changed: the game's records and settings could not all be updated. ";
+    public const string RepairPartlyWrittenPrefix = "Repair after move failed part-way: ";
     public const string RepairDonePrefix = "Records updated to the game's new folder: ";
-    public const string AddonStateNotMovedPrefix = "Addon Manager selections still point to the old folder: ";
 
     private static bool IsOwnedHashedFile(LinuxDeployedFile file)
         => !file.AllowUserChanges && !string.IsNullOrWhiteSpace(file.Sha256) && !string.IsNullOrWhiteSpace(file.Path);
+
+    /// <summary>True when any owned file is still at its old (unmapped) path with its recorded hash.</summary>
+    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, RelocatedRecord candidate)
+        => record.Files.Where(IsOwnedHashedFile)
+            .Where(f => !string.Equals(Map(f.Path, candidate), f.Path, StringComparison.Ordinal))
+            .Any(f => File.Exists(f.Path) && string.Equals(Sha256(f.Path), f.Sha256, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<string> RecordedExecutables(LinuxDeploymentRecord record)
+        => new[] { record.WineOverride }.Concat(record.AdditionalWineOverrides ?? [])
+            .Select(o => o?.ApplicationName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private static string Map(string value, RelocatedRecord candidate)
         => !string.IsNullOrWhiteSpace(value) && Path.IsPathRooted(value) && IsUnder(value, candidate.OldRoot)
@@ -160,6 +235,9 @@ public sealed class DeploymentRelocation
         var relative = Path.GetRelativePath(oldRoot, Path.GetFullPath(path));
         return relative == "." ? newRoot : Path.Combine(newRoot, relative);
     }
+
+    private static string Trim(string path)
+        => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar) is { Length: > 0 } trimmed ? trimmed : "/";
 
     /// <summary>
     /// The current folders a record may legitimately sit in: install root, binary directory, the

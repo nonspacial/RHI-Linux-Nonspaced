@@ -23,6 +23,9 @@ public sealed class LumaPolicyService
 {
     private readonly UpstreamRhiManifestService _manifest;
     private readonly LumaModePreferenceStore _preferences;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _preferences;
     private readonly object _gate = new();
     private readonly Dictionary<string, LumaPolicySnapshot> _cache = new(StringComparer.Ordinal);
 

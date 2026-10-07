@@ -11,7 +11,7 @@ namespace RHI.Platform.Linux.Paths;
 /// Persists explicit per-game graphics API authority separately from runtime detection.
 /// This mirrors upstream RHI's per-game API override concept without rewriting detector evidence.
 /// </summary>
-public sealed class GraphicsApiOverrideStore
+public sealed class GraphicsApiOverrideStore : IGameStateStore
 {
     private readonly string _path;
     private readonly JsonFileStore<Dictionary<string, GraphicsApi>> _file;
@@ -49,6 +49,18 @@ public sealed class GraphicsApiOverrideStore
                 GameRecordIdentity.Set(entries, game, api.Value);
             SaveUnsafe(entries);
         }
+    }
+
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
     private Dictionary<string, GraphicsApi> LoadUnsafe()

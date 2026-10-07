@@ -49,6 +49,9 @@ public sealed class ShortFuseDeploymentService
     private readonly UltimateAsiLoaderDeploymentService _ual;
     private readonly DlssManagerService _dlss;
     private readonly ShortFuseSettingsStore _settings;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _settings;
     private readonly string _cacheRoot;
 
     public ShortFuseDeploymentService(

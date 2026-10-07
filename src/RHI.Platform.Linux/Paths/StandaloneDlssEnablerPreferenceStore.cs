@@ -22,7 +22,7 @@ public sealed class StandaloneDlssEnablerPreferences
 /// The preference is intentionally separate from deployment ownership so uninstalling
 /// the component does not forget the user's selected proxy for a later reinstall.
 /// </summary>
-public sealed class StandaloneDlssEnablerPreferenceStore
+public sealed class StandaloneDlssEnablerPreferenceStore : IGameStateStore
 {
     private readonly string _path;
     private readonly JsonFileStore<Dictionary<string, StandaloneDlssEnablerPreferences>> _file;
@@ -61,6 +61,18 @@ public sealed class StandaloneDlssEnablerPreferenceStore
     public void EnsureWritable()
     {
         lock (_gate) _file.EnsureWritable();
+    }
+
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
     private Dictionary<string, StandaloneDlssEnablerPreferences> LoadUnsafe()

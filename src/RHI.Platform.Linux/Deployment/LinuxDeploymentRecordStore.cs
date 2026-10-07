@@ -97,17 +97,36 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
-    /// <summary>Replaces records in one atomic save (relocation repair): <paramref name="remove"/> matched by key, component and binary directory.</summary>
-    internal void Replace(IReadOnlyList<LinuxDeploymentRecord> remove, IReadOnlyList<LinuxDeploymentRecord> add)
+    /// <summary>
+    /// Prepares the relocation repair's ledger change for <see cref="StagedFileCommit"/> (written
+    /// together with the game's other stores): <paramref name="remove"/> is matched by key,
+    /// component and binary directory. Writes nothing; call <see cref="InvalidateCache"/> after the
+    /// commit. Throws when the ledger is unreadable or changes while it is read.
+    /// </summary>
+    internal StagedFileWrite StageReplace(IReadOnlyList<LinuxDeploymentRecord> remove, IReadOnlyList<LinuxDeploymentRecord> add)
     {
         lock (_gate)
         {
+            var before = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
             var records = LoadUnsafe();
             EnsureWritable();
+            var after = File.Exists(_path) ? File.ReadAllBytes(_path) : null;
+            if (!(before ?? []).AsSpan().SequenceEqual(after ?? []) || (before is null) != (after is null))
+                throw new IOException($"{_path} changed while it was being read. Nothing was changed; try again.");
             records.RemoveAll(r => remove.Any(x => x.GameKey == r.GameKey && x.Component == r.Component
                                                    && string.Equals(x.BinaryDirectory, r.BinaryDirectory, StringComparison.Ordinal)));
             records.AddRange(add.Select(Clone));
-            SaveUnsafe(records);
+            return new StagedFileWrite(Path.GetFullPath(_path), before, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
+        }
+    }
+
+    /// <summary>Drops the read cache (the file was rewritten outside <see cref="SaveUnsafe"/>).</summary>
+    internal void InvalidateCache()
+    {
+        lock (_gate)
+        {
+            _cached = null;
+            _cachedStamp = null;
         }
     }
 

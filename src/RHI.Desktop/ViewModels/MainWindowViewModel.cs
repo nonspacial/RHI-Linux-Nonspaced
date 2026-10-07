@@ -181,8 +181,45 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         : UiLocalizationService.Text("Ui.Hide");
     public bool CanRemoveManualGame => SelectedGame?.IsManuallyAdded == true && !IsBusy;
 
-    /// <summary>The selected game was moved and RHI's records still point to its old folder (Refs #38).</summary>
-    public bool ShowRepairAfterMove => SelectedGame is { } game && _managedComponents.NeedsRelocationRepair(game);
+    /// <summary>
+    /// The selected game was moved and RHI's records still point to its old folder (Refs #38).
+    /// Cached per selection and refreshed after scans and repairs: the check reads the ledger and
+    /// resolves paths, so it runs off the UI thread (<see cref="CheckRepairAfterMove"/>).
+    /// </summary>
+    public bool ShowRepairAfterMove => SelectedGame is { } game && ReferenceEquals(_repairCheckedFor, game) && _repairNeeded;
+
+    private DetectedGame? _repairCheckStartedFor;
+    private DetectedGame? _repairCheckedFor;
+    private bool _repairNeeded;
+    private int _repairCheckGeneration;
+
+    /// <summary>Re-checks, in the background, whether the selected game needs "Repair after move".</summary>
+    private void CheckRepairAfterMove(bool force)
+    {
+        var game = SelectedGame;
+        if (!force && ReferenceEquals(game, _repairCheckStartedFor)) return;
+        _repairCheckStartedFor = game;
+        var generation = ++_repairCheckGeneration;
+        _repairCheckedFor = null;
+        _repairNeeded = false;
+        OnPropertyChanged(nameof(ShowRepairAfterMove));
+        if (game is null) return;
+        _ = CheckAsync();
+
+        async Task CheckAsync()
+        {
+            bool needed;
+            try { needed = await Task.Run(() => _managedComponents.NeedsRelocationRepair(game)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                needed = false; // an unreadable ledger is reported by every operation that needs it
+            }
+            if (generation != _repairCheckGeneration) return;
+            _repairCheckedFor = game;
+            _repairNeeded = needed;
+            OnPropertyChanged(nameof(ShowRepairAfterMove));
+        }
+    }
 
     private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
     public bool CanUpdateAll => !IsBusy && _updateAll.HasManagedTargets(_allGames);
@@ -1152,6 +1189,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         Components.Clear();
         _dlssDetection = new();
         IsSelectionProbeBusy = false;
+        CheckRepairAfterMove(force: false);
 
         if (value is null)
         {
@@ -1342,6 +1380,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedGame = currentKey is null
                 ? Games.FirstOrDefault()
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
+            CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             StatusText = LF("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", _allGames.Count);
         }
@@ -2882,25 +2921,51 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only
-    /// then re-points its records there. Nothing changes when a check fails.
+    /// then re-points its records there, together with the game's preferences, favourite/hidden
+    /// flags, edits, HDR settings and update history. Nothing changes when a check fails. Records
+    /// found by name and folder (a game without a store id) are adopted only after the user
+    /// confirms the old and new folders.
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanRepairAfterMove))]
     private async Task RepairAfterMoveAsync()
     {
         if (SelectedGame is not { } game) return;
         IsBusy = true;
+        var repaired = false;
         try
         {
+            var preview = await Task.Run(() => _managedComponents.RelocationPreview(game));
+            if (preview.FirstOrDefault(r => r.Adopted) is { } adopted && ConfirmAsync is { } confirm
+                && !await confirm(
+                    L("Reparar após mover", "Repair after move"),
+                    LF("O RHI encontrou componentes que instalou para {0} na pasta {1}, que não existe mais.\n\nUsar esses registros para o jogo em {2}? Confirme somente se você moveu este jogo daquela pasta.",
+                        "RHI found components it installed for {0} in {1}, which no longer exists.\n\nUse those records for the game in {2}? Only confirm if you moved this game from that folder.",
+                        game.Name, adopted.Record.GameKey, game.InstallPath),
+                    L("Usar estes registros", "Use these records")))
+            {
+                StatusText = L("Reparar após mover cancelado; nada foi alterado.", "Repair after move cancelled; nothing was changed.");
+                return;
+            }
+
             StatusText = LF("{0}: verificando os arquivos do RHI na nova pasta…", "{0}: checking RHI's files in the new folder…", game.Name);
-            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game));
-            StatusText = result.Success
-                ? LF("{0}: registros do RHI atualizados para a nova pasta ({1}).", "{0}: RHI's records now point to the new folder ({1}).", game.Name, result.Repaired)
-                  + (result.Message.Contains(DeploymentRelocation.AddonStateNotMovedPrefix, StringComparison.Ordinal)
-                      ? " " + L("As seleções do Gerenciador de Addons continuam apontando para a pasta antiga.", "Addon Manager selections still point to the old folder.")
-                      : "")
-                : UiLocalizationService.Present(result.Message);
-            if (result.Success && ReferenceEquals(SelectedGame, game))
-                await ReprobeGameAsync(game);
+            IGameStateStore[] uiStores = [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, uiStores));
+            if (!result.Success)
+            {
+                StatusText = UiLocalizationService.Present(result.Message);
+                return;
+            }
+
+            repaired = true;
+            StatusText = LF("{0}: registros e configurações do RHI atualizados para a nova pasta ({1}).",
+                "{0}: RHI's records and settings now point to the new folder ({1}).", game.Name, result.Repaired);
+            // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
+            _libraryState = _libraryStore.Load();
+            var libraryKey = LinuxGameLibraryStore.GameKey(game);
+            game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
+            game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
+            if (_libraryState.GameEdits.TryGetValue(libraryKey, out var edit))
+                LinuxGameIdentityService.ApplyDetectedIdentity(game, edit);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2911,6 +2976,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsBusy = false;
             NotifySelected();
         }
+
+        if (repaired && ReferenceEquals(SelectedGame, game))
+        {
+            // Reload every per-game preference from the stores and probe the new folder.
+            _probeCache.Remove(Key(game));
+            OnSelectedGameChanged(game);
+        }
+        CheckRepairAfterMove(force: true);
     }
 
     [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]

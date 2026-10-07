@@ -126,7 +126,7 @@ public sealed class LinuxGameLibraryState
 /// XDG-native persisted library state. This deliberately stays separate from settings.json:
 /// settings are global preferences, while this file owns library membership and per-game visibility state.
 /// </summary>
-public sealed class LinuxGameLibraryStore
+public sealed class LinuxGameLibraryStore : IGameStateStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -160,12 +160,39 @@ public sealed class LinuxGameLibraryStore
         _file.Save(state);
     }
 
+    /// <summary>
+    /// "Repair after move" (Refs #38): favourite, hidden, edits (their paths rebased onto the new
+    /// folder) and HDR settings stored under the game's old library key follow it.
+    /// </summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        return _file.Stage(state =>
+        {
+            if (state is null) return null;
+            var changed = move.MoveLibraryFlag(state.FavouriteGames);
+            changed |= move.MoveLibraryFlag(state.HiddenGames);
+            changed |= move.MoveLibraryEntries(state.GameEdits, edit => new LinuxGameEditOverride
+            {
+                LaunchProvider = edit.LaunchProvider,
+                PatchExecutablePath = MapOptional(move, edit.PatchExecutablePath),
+                GameRootPath = MapOptional(move, edit.GameRootPath),
+                BinaryDirectory = MapOptional(move, edit.BinaryDirectory)
+            });
+            changed |= move.MoveLibraryEntries(state.HdrProfiles);
+            return changed ? state.Normalize() : null;
+        });
+    }
+
+    private static string? MapOptional(GameStateMove move, string? path) => path is null ? null : move.MapPath(path);
+
     public static string GameKey(DetectedGame game)
+        => GameKey(game, string.IsNullOrWhiteSpace(game.LibraryIdentityPath) ? game.InstallPath : game.LibraryIdentityPath);
+
+    /// <summary>The key <paramref name="game"/> would have with <paramref name="identityPath"/> as its library folder.</summary>
+    public static string GameKey(DetectedGame game, string identityPath)
     {
         var source = (game.Source ?? "").Trim().ToLowerInvariant();
-        var identityPath = string.IsNullOrWhiteSpace(game.LibraryIdentityPath)
-            ? game.InstallPath
-            : game.LibraryIdentityPath;
         string path;
         try { path = Path.GetFullPath(identityPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant(); }
         catch { path = (identityPath ?? "").Trim().ToLowerInvariant(); }

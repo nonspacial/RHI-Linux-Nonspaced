@@ -19,7 +19,7 @@ public enum LumaModePreference
 /// Auto means "follow the upstream manifest/default policy". Enabled/Disabled are
 /// user authority and survive refresh/restart.
 /// </summary>
-public sealed class LumaModePreferenceStore
+public sealed class LumaModePreferenceStore : IGameStateStore
 {
     private readonly string _path;
     private readonly JsonFileStore<Dictionary<string, LumaModePreference>> _file;
@@ -58,6 +58,18 @@ public sealed class LumaModePreferenceStore
             else GameRecordIdentity.Set(map, game, preference);
             SaveUnsafe(map);
         }
+    }
+
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = new Dictionary<string, LumaModePreference>(current ?? new(), StringComparer.Ordinal);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
     private Dictionary<string, LumaModePreference> LoadUnsafe()

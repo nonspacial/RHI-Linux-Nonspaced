@@ -24,7 +24,7 @@ public sealed class Dlssg2030Preferences
 /// Preferences are deliberately separate from deployment ownership so uninstalling the
 /// component does not forget the user's preferred GPU route/proxy for a later field test.
 /// </summary>
-public sealed class Dlssg2030PreferenceStore
+public sealed class Dlssg2030PreferenceStore : IGameStateStore
 {
     private readonly string _path;
     private readonly JsonFileStore<Dictionary<string, Dlssg2030Preferences>> _file;
@@ -69,6 +69,18 @@ public sealed class Dlssg2030PreferenceStore
     public void EnsureWritable()
     {
         lock (_gate) _file.EnsureWritable();
+    }
+
+    /// <summary>"Repair after move" (Refs #38): entries under the game's old folder key follow it.</summary>
+    public StagedFileWrite? StageMove(GameStateMove move)
+    {
+        ArgumentNullException.ThrowIfNull(move);
+        lock (_gate)
+            return _file.Stage(current =>
+            {
+                var map = JsonStoreMaps.CaseInsensitive(current);
+                return move.MoveRecordEntries(map) ? map : null;
+            });
     }
 
     private Dictionary<string, Dlssg2030Preferences> LoadUnsafe()

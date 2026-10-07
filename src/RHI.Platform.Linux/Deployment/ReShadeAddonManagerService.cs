@@ -45,7 +45,7 @@ internal sealed record ReShadeAddonDefinition(
 /// It consumes crosire's Addons.ini plus upstream RHI manifest overrides and supports local custom addons.
 /// First-class RHI components remain protected from duplicate management.
 /// </summary>
-public sealed class ReShadeAddonManagerService
+public sealed class ReShadeAddonManagerService : IGameStateStore
 {
     public const string AddonsIniUrl = "https://raw.githubusercontent.com/crosire/reshade-shaders/list/Addons.ini";
     private static readonly HashSet<string> ExcludedSections = new(StringComparer.OrdinalIgnoreCase) { "00", "21", "26" };
@@ -361,30 +361,50 @@ public sealed class ReShadeAddonManagerService
     }
 
     /// <summary>
-    /// After "Repair after move" (Refs #38): moves this game's selection to its current key and
-    /// re-points each owned add-on at the game's current add-on folder when the file is there with
-    /// the recorded hash; a file that is not keeps its old path (it is then simply not found).
+    /// "Repair after move" (Refs #38): moves this game's selection to its current key and re-points
+    /// each owned add-on at its new location when the file is there with the recorded hash; a file
+    /// that is not keeps its old path (it is then simply not found). Writes nothing.
     /// </summary>
-    internal void RebaseAfterMove(DetectedGame game, IReadOnlyCollection<string> oldKeys)
+    public StagedFileWrite? StageMove(GameStateMove move)
     {
+        ArgumentNullException.ThrowIfNull(move);
         _gate.Wait();
         try
         {
-            var state = LoadState();
-            var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
-            var entryKey = state.Games.Keys.FirstOrDefault(k => GameRecordIdentity.Matches(k, game))
-                           ?? state.Games.Keys.FirstOrDefault(oldKeys.Contains);
-            if (entryKey is null || !state.Games.TryGetValue(entryKey, out var entry)) return;
-            foreach (var file in entry.Files)
+            return _stateFile.Stage(state =>
             {
-                var moved = Path.Combine(deployDir, Path.GetFileName(file.Path));
-                if (!File.Exists(file.Path) && File.Exists(moved)
-                    && string.Equals(Sha256(moved), file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    file.Path = moved;
-            }
-            state.Games.Remove(entryKey);
-            GameRecordIdentity.Set(state.Games, game, entry);
-            SaveState(state);
+                if (state is null) return null;
+                state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
+                var game = move.Game;
+                var entryKey = state.Games.Keys.FirstOrDefault(k => GameRecordIdentity.Matches(k, game))
+                               ?? state.Games.Keys.FirstOrDefault(k => move.MovedRecordKey(k) is not null);
+                if (entryKey is null) return null;
+                var entry = state.Games[entryKey];
+                var changed = false;
+                var deployDir = string.IsNullOrWhiteSpace(game.BinaryDirectory)
+                    ? null
+                    : RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
+                foreach (var file in entry.Files)
+                {
+                    var targets = new[] { move.MapPath(file.Path), deployDir is null ? null : Path.Combine(deployDir, Path.GetFileName(file.Path)) };
+                    foreach (var target in targets.OfType<string>().Distinct(StringComparer.Ordinal))
+                    {
+                        if (string.Equals(target, file.Path, StringComparison.Ordinal) || !File.Exists(target)
+                            || !string.Equals(Sha256(target), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        file.Path = target;
+                        changed = true;
+                        break;
+                    }
+                }
+                if (!string.Equals(entryKey, move.NewRecordKey, StringComparison.Ordinal))
+                {
+                    state.Games.Remove(entryKey);
+                    state.Games.TryAdd(move.NewRecordKey, entry);
+                    changed = true;
+                }
+                return changed ? state : null;
+            });
         }
         finally
         {

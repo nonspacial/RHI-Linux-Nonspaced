@@ -46,6 +46,9 @@ public sealed class Dlssg2030UnlockDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
     private readonly Dlssg2030PreferenceStore _preferences;
+
+    /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
+    internal Settings.IGameStateStore GameState => _preferences;
     private readonly string _cacheRoot;
 
     public Dlssg2030UnlockDeploymentService(
