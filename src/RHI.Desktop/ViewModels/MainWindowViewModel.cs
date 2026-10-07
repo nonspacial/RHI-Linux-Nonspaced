@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core;
@@ -84,6 +85,8 @@ public partial class MainWindowViewModel : ObservableObject
     private Task<string?>? _shortFuseLatestVersionLoad;
     private bool _neuralVersionCatalogLoaded;
     private Task? _neuralVersionCatalogLoadTask;
+    // GitHub token notice (Refs #133); the settle check runs after queued UI work.
+    private readonly OneShotStatusNotice _statusNotice = new(action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
 
     public ObservableCollection<DetectedGame> Games { get; } = [];
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
@@ -884,6 +887,7 @@ public partial class MainWindowViewModel : ObservableObject
     // those computed states on every busy transition so both surfaces converge automatically.
     partial void OnIsBusyChanged(bool value)
     {
+        _statusNotice.SetOperationRunning(value || IsSelectionProbeBusy);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveManualGame));
@@ -897,8 +901,6 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyDlssDefaults();
         NotifyDlss();
     }
-
-    private readonly OneShotStatusNotice _statusNotice = new();
 
     /// <summary>
     /// GitHub answered 401 to the saved API token (Refs #133): say so once; the token
@@ -915,8 +917,19 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = decorated;
     }
 
+    /// <summary>
+    /// Shows <paramref name="message"/> in the status bar and returns it undecorated, for callers
+    /// that also hand it to a panel or dialog (the status bar may append a pending notice).
+    /// </summary>
+    private string ShowStatus(string message)
+    {
+        StatusText = message;
+        return message;
+    }
+
     partial void OnIsSelectionProbeBusyChanged(bool value)
     {
+        _statusNotice.SetOperationRunning(IsBusy || value);
         OnPropertyChanged(nameof(CanSelectLumaMode));
         NotifyUal();
         NotifyShortFuse();
@@ -1394,8 +1407,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Configurações do RenoDX: {0}", "RenoDX settings: {0}", ex.Message);
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), StatusText);
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(LF("Configurações do RenoDX: {0}", "RenoDX settings: {0}", ex.Message)));
         }
     }
 
@@ -1423,8 +1435,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Configurações do OptiScaler: {0}", "OptiScaler settings: {0}", ex.Message);
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), StatusText);
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(LF("Configurações do OptiScaler: {0}", "OptiScaler settings: {0}", ex.Message)));
         }
     }
 
@@ -1901,8 +1912,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha no perfil do ReShade: {0}", "ReShade profile failed: {0}", ex.Message);
-            ReShadeUpdateText = StatusText;
+            ReShadeUpdateText = ShowStatus(LF("Falha no perfil do ReShade: {0}", "ReShade profile failed: {0}", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -1922,8 +1932,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao instalar D3DCompiler com Protontricks: {0}", "Failed to install D3DCompiler with Protontricks: {0}", ex.Message);
-            ReShadeUpdateText = StatusText;
+            ReShadeUpdateText = ShowStatus(LF("Falha ao instalar D3DCompiler com Protontricks: {0}", "Failed to install D3DCompiler with Protontricks: {0}", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -1943,8 +1952,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao instalar D3DCompiler com Winetricks: {0}", "Failed to install D3DCompiler with Winetricks: {0}", ex.Message);
-            ReShadeUpdateText = StatusText;
+            ReShadeUpdateText = ShowStatus(LF("Falha ao instalar D3DCompiler com Winetricks: {0}", "Failed to install D3DCompiler with Winetricks: {0}", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2414,8 +2422,7 @@ public partial class MainWindowViewModel : ObservableObject
             var addonResult = await _managedComponents.ApplyReShadeAddonSelectionAsync(game, addonIds, cancellationToken);
             if (!addonResult.Success)
             {
-                StatusText = LF("Shaders aplicados, mas os add-ons falharam: {0}", "Shaders applied, but add-ons failed: {0}", UiLocalizationService.Present(addonResult.Message));
-                return ComponentOperationResult.Fail(StatusText);
+                return ComponentOperationResult.Fail(ShowStatus(LF("Shaders aplicados, mas os add-ons falharam: {0}", "Shaders applied, but add-ons failed: {0}", UiLocalizationService.Present(addonResult.Message))));
             }
 
             _selectedShaderPackIds.Clear();
@@ -2425,13 +2432,11 @@ public partial class MainWindowViewModel : ObservableObject
             ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
             ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
             await ReprobeGameAsync(game);
-            StatusText = LF("Shaders/Add-ons aplicados: {0} pacote(s) de shaders, {1} add-on(s).", "Shaders/Add-ons applied: {0} shader pack(s), {1} add-on(s).", options.ShaderPackIds.Count, addonIds.Count);
-            return ComponentOperationResult.Ok(StatusText);
+            return ComponentOperationResult.Ok(ShowStatus(LF("Shaders/Add-ons aplicados: {0} pacote(s) de shaders, {1} add-on(s).", "Shaders/Add-ons applied: {0} shader pack(s), {1} add-on(s).", options.ShaderPackIds.Count, addonIds.Count)));
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            StatusText = LF("Falha em Shaders/Add-ons: {0}", "Shaders/Add-ons failed: {0}", ex.Message);
-            return ComponentOperationResult.Fail(StatusText);
+            return ComponentOperationResult.Fail(ShowStatus(LF("Falha em Shaders/Add-ons: {0}", "Shaders/Add-ons failed: {0}", ex.Message)));
         }
         finally
         {
@@ -2748,8 +2753,7 @@ public partial class MainWindowViewModel : ObservableObject
     public string ImportCustomAddonFile(string sourcePath)
     {
         var result = _managedComponents.ImportCustomAddonFile(sourcePath);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return StatusText;
+        return ShowStatus(UiLocalizationService.Present(result.Message));
     }
 
     private void NotifyUxSettings()

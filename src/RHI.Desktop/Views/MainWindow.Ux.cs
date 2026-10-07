@@ -558,7 +558,7 @@ public sealed partial class MainWindow
             LF("{0}\n\nImportar este add-on independente do ReShade para o catálogo Add-ons personalizados do RHI?\n\nIsso não instala o add-on em um jogo, não sobrescreve outro add-on diferente e não apaga o arquivo de origem.", "{0}\n\nImport this standalone ReShade add-on into the RHI Custom Add-ons catalog?\n\nThis does not install the add-on into a game, does not overwrite a different add-on and does not delete the source file.", Path.GetFileName(path)),
             L("Importar", "Import"));
         if (!import) return;
-        vm.StatusText = vm.ImportCustomAddonFile(path);
+        vm.ImportCustomAddonFile(path);
     }
 
     private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280)
