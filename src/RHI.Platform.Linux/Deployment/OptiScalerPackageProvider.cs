@@ -117,17 +117,21 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         Directory.CreateDirectory(versionDir);
 
         // Reuse the archive and its extracted tree only when this provider stamped them for exactly
-        // this release asset (#142); anything else in the cache is replaced, never deployed.
-        if (!CacheStamp.IsValid(archive, sourceUrl, rawTag, digest) ||
-            !await IsUsableArchiveAsync(archive, expectedSize, digest, cancellationToken).ConfigureAwait(false))
+        // this release asset (#142); anything else in the cache is replaced, never deployed. The stamp
+        // re-verifies the archive's SHA-256 and that it recorded the published digest, so the digest is
+        // not hashed a second time here.
+        if (!CacheStamp.TryValidate(archive, sourceUrl, rawTag, digest, out var archiveSha256) ||
+            !HasPlausibleArchiveSize(archive, expectedSize))
         {
             CacheStamp.Invalidate(archive);
             CacheStamp.Invalidate(extractDir);
             await DownloadAsync(sourceUrl, archive, expectedSize, digest, cancellationToken).ConfigureAwait(false);
-            CacheStamp.Write(archive, sourceUrl, rawTag, digest);
+            archiveSha256 = CacheStamp.Write(archive, sourceUrl, rawTag, digest);
         }
 
-        var packageRoot = CacheStamp.IsValid(extractDir, sourceUrl, rawTag) ? FindPackageRoot(extractDir) : null;
+        // The extracted tree's stamp records the SHA-256 of the archive it came from, so a tree
+        // extracted from any other archive bytes is never reused, whatever order the calls ran in.
+        var packageRoot = CacheStamp.IsValid(extractDir, sourceUrl, rawTag, archiveSha256) ? FindPackageRoot(extractDir) : null;
         var freshlyExtracted = false;
         if (packageRoot is null)
         {
@@ -147,7 +151,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         if (variant == OptiScalerVariant.DlssNr && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
             throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
 
-        if (freshlyExtracted) CacheStamp.Write(extractDir, sourceUrl, rawTag);
+        if (freshlyExtracted) CacheStamp.Write(extractDir, sourceUrl, rawTag, archiveSha256);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant);
     }
 
@@ -202,11 +206,16 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         }
     }
 
-    private static async Task<bool> IsUsableArchiveAsync(string path, long expectedSize, string? digest, CancellationToken cancellationToken)
+    private static bool HasPlausibleArchiveSize(string path, long expectedSize)
     {
         if (!File.Exists(path)) return false;
         var length = new FileInfo(path).Length;
-        if (length < 1_000_000 || (expectedSize > 0 && length != expectedSize)) return false;
+        return length >= 1_000_000 && (expectedSize <= 0 || length == expectedSize);
+    }
+
+    private static async Task<bool> IsUsableArchiveAsync(string path, long expectedSize, string? digest, CancellationToken cancellationToken)
+    {
+        if (!HasPlausibleArchiveSize(path, expectedSize)) return false;
         if (string.IsNullOrWhiteSpace(digest) || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) return true;
         var expected = digest[(digest.IndexOf(':') + 1)..].Trim();
         await using var stream = File.OpenRead(path);

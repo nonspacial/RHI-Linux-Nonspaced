@@ -526,7 +526,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         return value;
     }
 
-    private async Task<string> EnsureCachedPayloadAsync(Rtx40MfgReleaseInfo release, CancellationToken cancellationToken)
+    internal async Task<string> EnsureCachedPayloadAsync(Rtx40MfgReleaseInfo release, CancellationToken cancellationToken)
     {
         var versionDir = Path.Combine(_cacheRoot, SanitizePathSegment(release.Version));
         var dllPath = Path.Combine(versionDir, InnerDllName);

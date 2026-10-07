@@ -37,6 +37,51 @@ public sealed class TestIsolationGuardTests
     }
 
     [Fact]
+    public void Redirect_RootInsideProtectedDirectory_FailsBeforeSettingOrCreatingAnything()
+    {
+        // A stand-in for the owner's real ~/.cache/rhi-linux (never the real one).
+        var scratch = Path.Combine(TestEnvironmentIsolation.Root, "redirect-guard-" + Guid.NewGuid().ToString("N"));
+        var protectedDir = Path.Combine(scratch, "real-home", ".cache", "rhi-linux");
+        Directory.CreateDirectory(protectedDir);
+        var root = Path.Combine(protectedDir, "rhi-tests-home-x");
+        var set = new List<string>();
+        var resolvedChecked = false;
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            TestEnvironmentIsolation.Redirect(root, [protectedDir], (name, _) => set.Add(name), () => resolvedChecked = true));
+
+        Assert.Contains("Test isolation failed", error.Message, StringComparison.Ordinal);
+        Assert.Empty(set);
+        Assert.False(resolvedChecked);
+        Assert.False(Directory.Exists(root), "no directory may be created inside the protected location");
+        Assert.Empty(Directory.EnumerateFileSystemEntries(protectedDir));
+    }
+
+    [Fact]
+    public void Redirect_ResolvedPathCheckFails_RemovesTheFreshRoot()
+    {
+        var root = Path.Combine(TestEnvironmentIsolation.Root, "redirect-resolved-" + Guid.NewGuid().ToString("N"));
+        var set = new Dictionary<string, string?>();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            TestEnvironmentIsolation.Redirect(root, [], (name, value) => set[name] = value,
+                () => throw new InvalidOperationException("Test isolation failed: simulated")));
+
+        Assert.Equal(5, set.Count);
+        Assert.False(Directory.Exists(root));
+    }
+
+    [Fact]
+    public void Redirect_ChecksPass_CreatesEveryRedirectedDirectory()
+    {
+        var root = Path.Combine(TestEnvironmentIsolation.Root, "redirect-ok-" + Guid.NewGuid().ToString("N"));
+        var paths = TestEnvironmentIsolation.Redirect(root, [], (_, _) => { }, () => { });
+
+        Assert.Equal(5, paths.Count);
+        Assert.All(paths.Values, path => Assert.True(Directory.Exists(path), path));
+    }
+
+    [Fact]
     public async Task DefaultPathServices_WriteOnlyUnderTestRoot()
     {
         var root = TestEnvironmentIsolation.Root;

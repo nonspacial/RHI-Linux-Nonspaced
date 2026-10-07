@@ -13,6 +13,13 @@ namespace RHI.Core.Services;
 /// re-downloaded and never deployed. The stamp lives beside the entry (<c>entry + ".rhi-stamp.json"</c>)
 /// and is written after the entry is in place; a crash in between leaves an unstamped entry, which is
 /// simply downloaded again.
+/// <para>
+/// Threat model: this protects against accidental or foreign pollution of the cache (files left by
+/// another tool, an older RHI build, a test run, a truncated download). It is not tamper-proof: the
+/// stamp is unkeyed and certifies itself, so a process running as the same user that writes both a
+/// payload and a matching stamp is accepted. Defending against a same-user attacker would need a
+/// secret key, which RHI does not have.
+/// </para>
 /// </summary>
 public static class CacheStamp
 {
@@ -25,7 +32,15 @@ public static class CacheStamp
     /// <summary>True when <paramref name="entry"/> exists, is stamped for this source/version and still matches its recorded hash.</summary>
     /// <param name="publishedSha256">When the publisher currently announces a digest, the stamp must have recorded the same one.</param>
     public static bool IsValid(string entry, string sourceUrl, string? version = null, string? publishedSha256 = null)
+        => TryValidate(entry, sourceUrl, version, publishedSha256, out _);
+
+    /// <summary>
+    /// <see cref="IsValid"/>, also handing back the content SHA-256 the stamp recorded (and that was just
+    /// re-verified), so callers can bind dependent entries to it without hashing the entry again.
+    /// </summary>
+    public static bool TryValidate(string entry, string sourceUrl, string? version, string? publishedSha256, out string contentSha256)
     {
+        contentSha256 = "";
         try
         {
             var stampPath = StampPath(entry);
@@ -43,7 +58,9 @@ public static class CacheStamp
             if (string.IsNullOrWhiteSpace(stamp.ContentSha256)) return false;
             if (!isDirectory && new FileInfo(entry).Length != stamp.Size) return false;
 
-            return string.Equals(ContentSha256(entry, isDirectory), stamp.ContentSha256, StringComparison.OrdinalIgnoreCase);
+            if (!string.Equals(ContentSha256(entry, isDirectory), stamp.ContentSha256, StringComparison.OrdinalIgnoreCase)) return false;
+            contentSha256 = stamp.ContentSha256;
+            return true;
         }
         catch
         {
@@ -52,7 +69,8 @@ public static class CacheStamp
     }
 
     /// <summary>Records provenance for an entry RHI just downloaded (and validated) into the cache.</summary>
-    public static void Write(string entry, string sourceUrl, string? version = null, string? publishedSha256 = null)
+    /// <returns>The content SHA-256 recorded in the stamp (tree hash for a directory).</returns>
+    public static string Write(string entry, string sourceUrl, string? version = null, string? publishedSha256 = null)
     {
         var isDirectory = Directory.Exists(entry);
         if (!isDirectory && !File.Exists(entry))
@@ -76,6 +94,7 @@ public static class CacheStamp
         {
             File.WriteAllText(temp, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
             File.Move(temp, stampPath, overwrite: true);
+            return document.ContentSha256;
         }
         catch
         {

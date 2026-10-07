@@ -484,7 +484,7 @@ public sealed class ReShadeShaderPackService
         _ => null
     };
 
-    private async Task<string> EnsurePackAsync(
+    internal async Task<string> EnsurePackAsync(
         ReShadeShaderPackDefinition pack,
         CancellationToken cancellationToken)
     {

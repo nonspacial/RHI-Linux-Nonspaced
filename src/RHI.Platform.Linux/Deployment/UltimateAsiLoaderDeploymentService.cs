@@ -491,7 +491,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         throw new InvalidDataException($"Latest Ultimate ASI Loader release does not contain {assetName}.");
     }
 
-    private async Task<string> EnsureCachedDllAsync(
+    internal async Task<string> EnsureCachedDllAsync(
         UalReleaseInfo release,
         PeArchitecture architecture,
         CancellationToken cancellationToken)

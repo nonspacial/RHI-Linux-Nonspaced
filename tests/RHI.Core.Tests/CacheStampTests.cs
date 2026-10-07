@@ -34,6 +34,24 @@ public sealed class CacheStampTests : IDisposable
     }
 
     [Fact]
+    public void TryValidate_HandsBackTheVerifiedHashThatWriteRecorded()
+    {
+        var file = Path.Combine(_root, "h.dll");
+        File.WriteAllBytes(file, [4, 5, 6]);
+        var expected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(new byte[] { 4, 5, 6 }));
+
+        var written = CacheStamp.Write(file, "https://example.test/h", "1.0");
+
+        Assert.Equal(expected, written, ignoreCase: true);
+        Assert.True(CacheStamp.TryValidate(file, "https://example.test/h", "1.0", null, out var verified));
+        Assert.Equal(expected, verified, ignoreCase: true);
+
+        File.WriteAllBytes(file, [4, 5, 7]);
+        Assert.False(CacheStamp.TryValidate(file, "https://example.test/h", "1.0", null, out var none));
+        Assert.Equal("", none);
+    }
+
+    [Fact]
     public void File_ReplacedAfterStamping_IsNotValid()
     {
         var file = Path.Combine(_root, "a.dll");

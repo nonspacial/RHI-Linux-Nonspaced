@@ -32,10 +32,33 @@ internal static class TestEnvironmentIsolation
         RealRhiDirectories = RealRhiDirectoriesFrom(original);
 
         var root = Path.Combine(Path.GetTempPath(), $"rhi-tests-home-{Environment.ProcessId}-{Guid.NewGuid():N}");
-        var home = Path.Combine(root, "home");
+        Redirect(root, RealRhiDirectories, Environment.SetEnvironmentVariable, () =>
+        {
+            Root = root;
+            AssertIsolated();
+        });
+
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        };
+    }
+
+    /// <summary>
+    /// Redirects HOME/XDG_* under <paramref name="root"/>. The overlap check against the real rhi-linux
+    /// directories runs on the planned paths BEFORE any directory is created, so a root that would land
+    /// in a protected location fails without leaving even an empty folder there. After the variables
+    /// are set, what LinuxPaths actually resolves is checked too; if that fails the fresh root is removed.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string> Redirect(
+        string root,
+        IReadOnlyList<string> realRhiDirectories,
+        Action<string, string?> setVariable,
+        Action assertResolved)
+    {
         var paths = new Dictionary<string, string>
         {
-            ["HOME"] = home,
+            ["HOME"] = Path.Combine(root, "home"),
             ["XDG_CACHE_HOME"] = Path.Combine(root, "cache"),
             ["XDG_DATA_HOME"] = Path.Combine(root, "data"),
             ["XDG_CONFIG_HOME"] = Path.Combine(root, "config"),
@@ -43,17 +66,30 @@ internal static class TestEnvironmentIsolation
         };
         foreach (var (name, value) in paths)
         {
-            Directory.CreateDirectory(value);
-            Environment.SetEnvironmentVariable(name, value);
+            var rhi = Path.Combine(value, "rhi-linux");
+            foreach (var real in realRhiDirectories)
+            {
+                if (IsUnder(root, real) || IsUnder(rhi, real) || IsUnder(real, rhi))
+                    throw new InvalidOperationException(
+                        $"Test isolation failed: planned {name}/rhi-linux ('{rhi}') overlaps the real directory '{real}'.");
+            }
         }
-        Root = root;
 
-        AssertIsolated();
-
-        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        // Only now, with the planned paths proven clear of every protected directory, create them.
+        // (They must exist before LinuxPaths is checked: SpecialFolder.UserProfile resolves to "" for
+        // a HOME that does not exist.)
+        foreach (var value in paths.Values) Directory.CreateDirectory(value);
+        try
+        {
+            foreach (var (name, value) in paths) setVariable(name, value);
+            assertResolved();
+        }
+        catch
         {
             try { Directory.Delete(root, recursive: true); } catch { }
-        };
+            throw;
+        }
+        return paths;
     }
 
     /// <summary>

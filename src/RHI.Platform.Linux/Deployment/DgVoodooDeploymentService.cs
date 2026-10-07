@@ -77,9 +77,10 @@ public sealed class DgVoodooDeploymentService
         Directory.CreateDirectory(versionDir);
         var zipPath = Path.Combine(versionDir, assetName);
         // Reuse only an archive this service stamped for this URL and version (#142).
-        var needsDownload = !CacheStamp.IsValid(zipPath, url, version, sha256) || new FileInfo(zipPath).Length < 1024;
-        if (!needsDownload && !string.IsNullOrWhiteSpace(sha256))
-            needsDownload = !string.Equals(await Sha256Async(zipPath, cancellationToken).ConfigureAwait(false), sha256, StringComparison.OrdinalIgnoreCase);
+        // The stamp re-hashes the archive and must have recorded the published digest, and the archive
+        // was checked against that digest before it was stamped, so it is not hashed a second time.
+        var needsDownload = !CacheStamp.TryValidate(zipPath, url, version, sha256, out var cachedSha256) || new FileInfo(zipPath).Length < 1024 ||
+                            (!string.IsNullOrWhiteSpace(sha256) && !string.Equals(cachedSha256, sha256, StringComparison.OrdinalIgnoreCase));
 
         if (needsDownload)
         {

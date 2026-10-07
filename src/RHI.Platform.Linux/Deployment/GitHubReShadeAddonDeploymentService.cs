@@ -381,15 +381,12 @@ public sealed class GitHubReShadeAddonDeploymentService
 
     private bool IsReusableCachedPayload(string payload, GitHubAddonRelease release, bool isArchive)
     {
-        if (!CacheStamp.IsValid(payload, release.AssetUrl, release.Version, release.Sha256)) return false;
+        // TryValidate has just re-hashed the payload against the stamp; reuse that hash.
+        if (!CacheStamp.TryValidate(payload, release.AssetUrl, release.Version, release.Sha256, out var contentSha256)) return false;
         if (!BinarySignatureInspector.HasPeSignature(payload, _definition.MinimumSize)) return false;
         // A direct asset is the published file itself: its digest must still match what GitHub announces.
-        if (!isArchive && !string.IsNullOrWhiteSpace(release.Sha256))
-        {
-            using var stream = File.OpenRead(payload);
-            var actual = Convert.ToHexString(SHA256.HashData(stream));
-            if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase)) return false;
-        }
+        if (!isArchive && !string.IsNullOrWhiteSpace(release.Sha256) &&
+            !string.Equals(contentSha256, release.Sha256, StringComparison.OrdinalIgnoreCase)) return false;
         return true;
     }
 

@@ -430,7 +430,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
         return (release, payload);
     }
 
-    private async Task<string> EnsureCachedPayloadAsync(DlssEnablerReleaseInfo release, CancellationToken cancellationToken)
+    internal async Task<string> EnsureCachedPayloadAsync(DlssEnablerReleaseInfo release, CancellationToken cancellationToken)
     {
         var versionDir = Path.Combine(_cacheRoot, SanitizePathSegment(release.Version));
         var dllPath = Path.Combine(versionDir, InnerDllName);

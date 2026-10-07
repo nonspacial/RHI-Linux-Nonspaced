@@ -677,7 +677,7 @@ public sealed class RenoDxDeploymentService
            fileName.Contains("mfgunlock", StringComparison.OrdinalIgnoreCase) ||
            fileName.Contains("mfg_unlock", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<string> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
+    internal async Task<string> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
