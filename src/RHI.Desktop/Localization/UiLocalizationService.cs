@@ -571,6 +571,10 @@ public static class UiLocalizationService
         ("Download refused: GitHub links must be HTTPS on a trusted host (GitHub). Refused link: ",
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
+        // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.
+        ("RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: ",
+            "Instalação do RenoDX recusada: um arquivo que o RHI Linux não gerencia já tem o nome deste add-on. Mova ou remova-o e instale novamente: "),
+        ("Managed RenoDX file was modified outside RHI and will not be replaced: ", "O arquivo RenoDX gerenciado foi modificado fora do RHI e não será substituído: "),
         // ReShade during a reshade.me outage (#132, upstream 2.8.3). Fragments compose around versions, HTTP codes and causes;
         // the apply message is covered too, otherwise its cached-copy note collapses to the generic unlocalised text.
         ("ReShade source preparation failed: ", "Falha ao preparar a origem do ReShade: "),

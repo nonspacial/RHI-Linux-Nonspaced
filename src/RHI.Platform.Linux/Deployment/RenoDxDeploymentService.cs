@@ -234,7 +234,8 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail(new UntrustedDownloadException(url, DownloadPolicy).Message);
         var fileName = Path.GetFileName(new Uri(url).LocalPath);
         var extension = Path.GetExtension(fileName);
-        if (!extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
+        if ((!extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) && !extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
+            || fileName.IndexOfAny(['*', '?', '\\', ':']) >= 0 || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             return ComponentOperationResult.Fail("RenoDX catalog returned an unsupported file type.");
 
         IReadOnlyDictionary<string, string> manifestIniOverrides = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -262,13 +263,27 @@ public sealed class RenoDxDeploymentService
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
         var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
 
-        foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", SearchOption.TopDirectoryOnly))
+        foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
         {
             var existingName = Path.GetFileName(existing);
             if (IsAuxiliaryRenoDxAddon(existingName)) continue;
             if (managedOldPath is not null && Path.GetFullPath(existing) == Path.GetFullPath(managedOldPath)) continue;
             if (Path.GetFullPath(existing) == Path.GetFullPath(target) && existingRecord is not null) continue;
             return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
+        }
+
+        // DEP-10: whatever the name (manifest overrides need not start with "renodx"), a file at the target that the
+        // RenoDX record does not own, or that changed since RHI wrote it, is never overwritten — and so never deleted on
+        // remove. Matched case-insensitively: Wine and ReShade would load a case variant alongside it.
+        foreach (var sameName in Directory.EnumerateFiles(deployDir, "*", CaseInsensitiveTopLevel)
+                     .Where(path => Path.GetFileName(path).Equals(fileName, StringComparison.OrdinalIgnoreCase)))
+        {
+            var owned = existingRecord?.Files.FirstOrDefault(file => PathsEqual(file.Path, sameName));
+            if (owned is null)
+                return ComponentOperationResult.Fail($"RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: {sameName}");
+            if (string.IsNullOrWhiteSpace(owned.Sha256)
+                || !string.Equals(await Sha256Async(sameName, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {sameName}");
         }
 
         try
@@ -762,6 +777,17 @@ public sealed class RenoDxDeploymentService
             throw;
         }
     }
+
+    private static readonly EnumerationOptions CaseInsensitiveTopLevel = new()
+    {
+        MatchCasing = MatchCasing.CaseInsensitive,
+        RecurseSubdirectories = false,
+        IgnoreInaccessible = false,
+        AttributesToSkip = 0
+    };
+
+    private static bool PathsEqual(string left, string right)
+        => string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.Ordinal);
 
     private static bool IsAuxiliaryRenoDxAddon(string fileName)
         => fileName.Contains("dlss5", StringComparison.OrdinalIgnoreCase) ||
