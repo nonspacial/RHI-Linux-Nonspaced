@@ -52,7 +52,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** On a black-holed network the app shows an empty library for up to 5 minutes with `IsBusy` set. Examples are a VPN kill-switch (this host runs Mullvad `wg0`) or a captive portal. A DNS failure fails fast; a black hole does not.
 - **Fix seam:** Start the scan in parallel with the manifest fetch, or put a `CancelAfter(10-15 s)` around it and fall back to the cached copy (the cache path already exists).
 - **Verify:** Test with a stub `HttpMessageHandler` that never completes; assert `ScanAsync` is called within about 1 s of `InitializeAsync`.
-- **Status:** fixed on `w1/policy` in `d1f1840` (#43). The startup scan and the DLSS manifest load run concurrently; `FetchManifestAsync` has a 15 s deadline and falls back to the cached copy.
+- **Status:** fixed on `w1/policy` in `d1f1840` (#43). The startup scan and the DLSS manifest load run concurrently; `FetchManifestAsync` has a 15 s deadline and falls back to the cached copy. A late manifest failure is appended to the status line as a notice (`60e3405`); it no longer replaces the scan's problems notice.
 
 ### DET-04 — Every Lutris launch command targets a non-existent slug
 - **Where:** `src/RHI.Platform.Linux/Detection/LutrisGameDetector.cs:43, 73`.
@@ -181,7 +181,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** DX12 maps to proxy `dxgi.dll` (`ReShadeDeploymentService.cs:942-948`). ReShade will not load in a Vulkan-configured RDR2.
 - **Fix seam:** Apply the same 3-or-more ambiguity rule to exe signatures (Medium confidence, keep the candidate list), and let the config and prefix settings pass decide. RDR2's `system.xml` sits in the prefix under `Documents/Rockstar Games/...`.
 - **Verify:** Detector test: exe containing all five API strings; assert confidence below High.
-- **Status:** fixed on `w1/policy` in `205c067` (#53). The PE import table decides first with upstream's rule; string-only evidence keeps every candidate at Medium (2) / Low (3+), and a config or prefix-settings selection (RDR2 `system.xml`) wins.
+- **Status:** fixed on `w1/policy` in `205c067`, `b6b99a1` (#53). The import table decides alone (High) only when exactly one renderer is imported and no other is delay-loaded or referenced. Otherwise (dxgi.dll only, delay-loads, several renderers, other renderer strings) config files and then the prefix's settings decide among the executable's candidates (RDR2 `system.xml` → Vulkan); with no selection the primary stays DirectX-first at Medium. **Decision (Robbie, wave 1):** keep DX-first. The fork has no ReShade Vulkan proxy, so a Vulkan guess would refuse installs. String-only evidence: Medium (2) / Low (3+). The prefix walk skips symlinked folders and generic exe/folder names.
 
 ### DET-15 — PCGamingWiki fallback overrides native Linux results, caches no misses, and blocks selection
 - **Where:** `src/RHI.Platform.Linux/Detection/LinuxGameRuntimeProbe.cs:58-82`; `PcGamingWikiGraphicsApiService.cs:57-79, 23-25`.
@@ -207,7 +207,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
   - `~/Games/X` and `/media/4TBssd/Games/X` are the same directory on this host, because `~/Games` is a symlink, yet they are treated as different.
 - **Fix seam:** Canonicalise the key (resolve symlinks, trim trailing separators, compare ordinally). Merge an explicit list of "sticky" fields with OR/union semantics, and let manual entries win for user-authored fields.
 - **Verify:** Scanner test: a Manual and a Heroic entry at the same path, one of them with a trailing slash; assert one card with `IsManuallyAdded` true and the manual exe kept.
-- **Status:** fixed on `w1/policy` in `1dc0731`, `56299c1` (#55). Canonical key (`PathIdentity`, ordinal); merge fills every field, manual duplicates keep exe/API override/launch command and stay removable; a fail-closed target is never confirmed by another source's guess.
+- **Status:** fixed on `w1/policy` in `1dc0731`, `56299c1`, `40b3fe5` (#55). Canonical key (`PathIdentity`, ordinal). The merge fills every field; manual duplicates keep the exe, API override and launch command, and stay removable. A fail-closed target is never confirmed by another source's guess. A merged card adopts the favourite/hidden/edit/HDR state saved under an absorbed duplicate's key. **Accepted limitation:** keys compare ordinally, so case-variant spellings of one folder on a case-insensitive mount (vfat, exfat, casefold ext4) still give two cards; ntfs3 mounts are case-sensitive by default.
 
 ### DET-17 — Detector failures are swallowed and the scan still reports success
 - **Where:**
