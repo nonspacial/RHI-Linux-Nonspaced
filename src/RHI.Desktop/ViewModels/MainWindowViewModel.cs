@@ -2302,7 +2302,7 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = L("Escolha primeiro uma versão do Streamline.", "Choose a Streamline version first.");
             return;
         }
-        var streamlineFolders = ActionTargets().StreamlineFolders;
+        var streamlineFolders = _dlssDefaults.PanelStreamlineFolders(SelectedGame, _dlssDetection);
         if (streamlineFolders.Count == 0)
         {
             StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo; nada foi alterado.", "Streamline: no local Streamline folder was detected in the game; nothing changed.");
@@ -2345,7 +2345,7 @@ public partial class MainWindowViewModel : ObservableObject
                 : L("A restauração direta do Streamline fica bloqueada enquanto o DLSS5 Feeder Full é gerenciado para este jogo.", "Direct Streamline restore is blocked while DLSS5 Feeder Full is managed for this game.");
             return;
         }
-        var streamlineFolders = ActionTargets().StreamlineFolders;
+        var streamlineFolders = _dlssDefaults.PanelStreamlineFolders(SelectedGame, _dlssDetection);
         if (streamlineFolders.Count == 0)
         {
             StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo.", "Streamline: no local Streamline folder was detected in the game.");
@@ -2513,29 +2513,22 @@ public partial class MainWindowViewModel : ObservableObject
         else packs.Remove(id);
     }
 
-    /// <summary>
-    /// Swap/restore targets for the selected game, with RHI-owned OptiScaler files excluded again at
-    /// action time (the cached probe may predate an OptiScaler install or FG-stack change).
-    /// </summary>
-    private DlssDetectionResult ActionTargets()
-        => SelectedGame is { } game ? _dlssDefaults.ExcludeOwnedTargets(game, _dlssDetection) : _dlssDetection;
-
+    // Swap/restore targets come from LinuxDlssDefaultsService (ownership exclusion re-applied at action time).
     private bool TryResolveComponent(string? component, out DlssComponentKind kind, out string? version, out IReadOnlyList<string> paths)
     {
-        var targets = ActionTargets();
-        switch (component?.ToUpperInvariant())
+        if (!_dlssDefaults.TryPanelTargets(SelectedGame, _dlssDetection, component, out kind, out paths))
         {
-            case "SR":
-                kind = DlssComponentKind.SuperResolution; version = SelectedDlssSrVersion; paths = targets.DlssPaths; return true;
-            case "RR":
-                kind = DlssComponentKind.RayReconstruction; version = SelectedDlssRrVersion; paths = targets.DlssdPaths; return true;
-            case "FG":
-                kind = DlssComponentKind.FrameGeneration; version = SelectedDlssFgVersion; paths = targets.DlssgPaths; return true;
-            case "NR":
-                kind = DlssComponentKind.NeuralRendering; version = SelectedDlssNrVersion; paths = targets.DlssnrPaths; return true;
-            default:
-                kind = default; version = null; paths = []; return false;
+            version = null;
+            return false;
         }
+        version = kind switch
+        {
+            DlssComponentKind.SuperResolution => SelectedDlssSrVersion,
+            DlssComponentKind.RayReconstruction => SelectedDlssRrVersion,
+            DlssComponentKind.FrameGeneration => SelectedDlssFgVersion,
+            _ => SelectedDlssNrVersion
+        };
+        return true;
     }
 
     private static string DlssComponentDisplayName(DlssComponentKind kind) => kind switch

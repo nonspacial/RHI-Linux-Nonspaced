@@ -50,6 +50,17 @@ public static class ComponentProbe
             return false;
         });
 
+        // RHI's own OptiScaler FG stack (OptiScaler/Streamline/sl.*) is not the game's Streamline: the DLSS panel and
+        // Universal MFG already ignore the OptiScaler/ folder, and MFG Ada Unlock needs the game's own integration.
+        var stackRoot = !string.IsNullOrWhiteSpace(game.InstallPath) ? game.InstallPath : game.BinaryDirectory;
+        var ownStreamline = indexedFiles.Any(path =>
+        {
+            var name = Path.GetFileName(path);
+            return (name.Equals("sl.interposer.dll", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("sl.common.dll", StringComparison.OrdinalIgnoreCase)) &&
+                   (string.IsNullOrWhiteSpace(stackRoot) || !DlssManagerService.IsUnderOptiScalerFolder(stackRoot, path));
+        });
+
         var result = new[]
         {
             Make(ManagedComponentKind.ReShade, "ReShade", reShadeInstalled),
@@ -60,7 +71,7 @@ public static class ComponentProbe
             Make(ManagedComponentKind.LumaFramework, "Luma Framework", files.Any(IsLumaFrameworkAddonFileName)),
             Make(ManagedComponentKind.REFramework, "RE Framework", IsReFrameworkInstalled(indexedFiles, binaryDirectory)),
             Make(ManagedComponentKind.Dlss, "DLSS", files.Contains("nvngx_dlss.dll")),
-            Make(ManagedComponentKind.Streamline, "Streamline", files.Contains("sl.interposer.dll") || files.Contains("sl.common.dll")),
+            Make(ManagedComponentKind.Streamline, "Streamline", ownStreamline),
             Make(ManagedComponentKind.ReLimiter, "ReLimiter", files.Any(IsReLimiterAddonFileName)),
             Make(ManagedComponentKind.DisplayCommander, "Display Commander", files.Any(IsDisplayCommanderAddonFileName)),
             Make(ManagedComponentKind.MfgAdaUnlock, "MFG Ada Unlock", files.Any(IsMfgAdaUnlockAddonFileName)),

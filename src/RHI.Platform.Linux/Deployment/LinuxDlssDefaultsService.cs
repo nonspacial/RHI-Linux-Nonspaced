@@ -132,6 +132,36 @@ public sealed class LinuxDlssDefaultsService
         return DlssManagerService.ExcludeProtected(detection, RhiOwnedFiles(game));
     }
 
+    /// <summary>
+    /// The per-game DLSS panel's swap/restore targets for <paramref name="component"/> (<c>SR</c>, <c>RR</c>, <c>FG</c>,
+    /// <c>NR</c>): the panel's cached detection with the ownership exclusion re-applied at action time (the cached probe
+    /// may predate an OptiScaler install or FG-stack change). False for an unknown component.
+    /// </summary>
+    public bool TryPanelTargets(
+        DetectedGame? game,
+        DlssDetectionResult cached,
+        string? component,
+        out DlssComponentKind kind,
+        out IReadOnlyList<string> paths)
+    {
+        var targets = PanelTargets(game, cached);
+        switch (component?.ToUpperInvariant())
+        {
+            case "SR": kind = DlssComponentKind.SuperResolution; paths = targets.DlssPaths; return true;
+            case "RR": kind = DlssComponentKind.RayReconstruction; paths = targets.DlssdPaths; return true;
+            case "FG": kind = DlssComponentKind.FrameGeneration; paths = targets.DlssgPaths; return true;
+            case "NR": kind = DlssComponentKind.NeuralRendering; paths = targets.DlssnrPaths; return true;
+            default: kind = default; paths = []; return false;
+        }
+    }
+
+    /// <summary>The per-game panel's Streamline swap/restore folders, with the ownership exclusion re-applied.</summary>
+    public IReadOnlyList<string> PanelStreamlineFolders(DetectedGame? game, DlssDetectionResult cached)
+        => PanelTargets(game, cached).StreamlineFolders;
+
+    private DlssDetectionResult PanelTargets(DetectedGame? game, DlssDetectionResult cached)
+        => game is null ? cached : ExcludeOwnedTargets(game, cached);
+
     private IReadOnlyList<string> RhiOwnedFiles(DetectedGame game)
         => _records.Find(game, ManagedComponentKind.OptiScaler)?.Files
                .Select(file => file.Path)
