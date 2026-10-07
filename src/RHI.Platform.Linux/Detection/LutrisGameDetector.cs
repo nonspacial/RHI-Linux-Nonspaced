@@ -13,12 +13,18 @@ public sealed partial class LutrisGameDetector : IGameDetector
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
     private static IReadOnlyList<DetectedGame> Detect(CancellationToken ct)
-        => DetectIn(LinuxPaths.LutrisConfigRoots(), LinuxPaths.Home, ct);
-
-    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct)
     {
+        var roots = LinuxPaths.LutrisConfigRoots().ToList();
+        return DetectIn(roots, LinuxPaths.Home, ct, LutrisPga.Candidates(roots, LinuxPaths.Home, LinuxPaths.DataHome));
+    }
+
+    /// <param name="pgaDatabases">Lutris <c>pga.db</c> files to read names from; defaults to the ones beside the roots and under <paramref name="home"/>.</param>
+    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct, IEnumerable<string>? pgaDatabases = null)
+    {
+        var rootList = configRoots.ToList();
+        var library = LutrisPga.Load(pgaDatabases ?? LutrisPga.Candidates(rootList, home));
         var games = new List<(DetectedGame Game, string Slug, string ConfigFile, bool ExeResolves)>();
-        foreach (var configRoot in configRoots)
+        foreach (var configRoot in rootList)
         {
             // Ordinal file-name order (slug, then timestamp): a stable order for picking a prefix's launcher.
             foreach (var file in Directory.EnumerateFiles(configRoot, "*.yml").Concat(Directory.EnumerateFiles(configRoot, "*.yaml")).Order(StringComparer.Ordinal))
@@ -26,13 +32,13 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var text = File.ReadAllText(file);
-                    var name = MatchValue(text, "name") ?? Path.GetFileNameWithoutExtension(file).Replace('-', ' ');
-                    // Same reader as LauncherOwnedPrefixes (folded long lines joined), so a prefix the
-                    // Wine detector skips as Lutris-owned is read here in full, never truncated.
-                    var exe = ReadScalar(text, "exe");
-                    var prefix = ReadScalar(text, "prefix");
-                    var workingDir = ReadScalar(text, "working_dir");
+                    var stem = Path.GetFileNameWithoutExtension(file);
+                    library.TryGetValue(stem, out var pga);
+                    var config = LutrisConfigFile.Parse(File.ReadAllText(file));
+                    // Only the top-level game: mapping; an installer script: repeats game/exe/prefix keys.
+                    var exe = config.Section("game", "exe");
+                    var prefix = config.Section("game", "prefix");
+                    var workingDir = config.Section("game", "working_dir");
                     exe = Expand(exe);
                     prefix = Expand(prefix);
                     workingDir = Expand(workingDir);
@@ -41,9 +47,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix,
                     // such as an application installed through Lutris): not a game, not listed.
                     if (install is null) continue;
-                    var slug = ResolveLutrisSlug(Path.GetFileNameWithoutExtension(file));
-                    var configuredRunner = MatchValue(text, "runner");
-                    var wineVersion = MatchSectionValue(text, "wine", "version");
+                    var slug = pga?.Slug ?? ResolveLutrisSlug(stem);
+                    // Lutris shows (and lets the user rename) the pga.db name; the config's own name: is an installer copy.
+                    var name = pga?.Name ?? config.Top("name") ?? ResolveLutrisSlug(stem).Replace('-', ' ');
+                    var configuredRunner = config.Top("runner");
+                    var wineVersion = config.Section("wine", "version");
                     var hasWineRuntime = string.Equals(configuredRunner, "wine", StringComparison.OrdinalIgnoreCase)
                         || !string.IsNullOrWhiteSpace(wineVersion)
                         || !string.IsNullOrWhiteSpace(prefix);
@@ -76,7 +84,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     };
                     games.Add((game, slug, file, exeExists));
                 }
-                catch { }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // One unreadable config skips that entry, not the whole Lutris scan.
+                    System.Diagnostics.Debug.WriteLine($"[RHI] Lutris config skipped: {file}: {ex.Message}");
+                }
             }
         }
 
@@ -172,9 +184,6 @@ public sealed partial class LutrisGameDetector : IGameDetector
     private static bool IsSameOrUnder(string path, string folder)
         => path == folder || path.StartsWith(folder + "/", StringComparison.Ordinal);
 
-    private static string? ReadScalar(string text, string key)
-        => LauncherOwnedPrefixes.ReadScalars(text, key).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-
     /// <summary>
     /// Picks the game folder from the config's structured fields. A Windows exe keeps its own folder
     /// (launchers such as Battle.net set <c>working_dir</c> to an unrelated library folder). A native
@@ -239,29 +248,6 @@ public sealed partial class LutrisGameDetector : IGameDetector
     }
 
 
-    private static string? MatchSectionValue(string text, string section, string key)
-    {
-        // The top-level section first: installer scripts nest a `wine:` of their own above it.
-        var sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>){Regex.Escape(section)}\s*:\s*$");
-        if (!sectionMatch.Success)
-            sectionMatch = Regex.Match(text, $@"(?m)^(?<indent>[ \t]*){Regex.Escape(section)}\s*:\s*$");
-        if (!sectionMatch.Success) return null;
-
-        var sectionIndent = sectionMatch.Groups["indent"].Value.Length;
-        var tailStart = sectionMatch.Index + sectionMatch.Length;
-        var tail = text.Substring(tailStart);
-        foreach (var rawLine in tail.Replace("\r", string.Empty, StringComparison.Ordinal).Split('\n'))
-        {
-            if (string.IsNullOrWhiteSpace(rawLine)) continue;
-            var indent = rawLine.TakeWhile(char.IsWhiteSpace).Count();
-            if (indent <= sectionIndent) break;
-            var trimmed = rawLine.Trim();
-            var match = Regex.Match(trimmed, $"^{Regex.Escape(key)}\\s*:\\s*(?<v>.+)$");
-            if (match.Success) return match.Groups["v"].Value.Trim().Trim('"', '\'');
-        }
-        return null;
-    }
-
     private static bool LooksLikeProton(string? version)
         => !string.IsNullOrWhiteSpace(version)
            && (version.Contains("proton", StringComparison.OrdinalIgnoreCase)
@@ -320,13 +306,6 @@ public sealed partial class LutrisGameDetector : IGameDetector
         return null;
     }
 
-    private static string? MatchValue(string text, string key)
-    {
-        var pattern = $@"(?m)^\s*{Regex.Escape(key)}\s*:\s*[""']?(?<v>[^\r\n""']+)";
-        var m = Regex.Match(text, pattern);
-        return m.Success ? m.Groups["v"].Value.Trim() : null;
-    }
-
     private static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
     private static string? Expand(string? value)
@@ -376,7 +355,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
 
     internal static (string? Version, string? LayerType) ParseWineRuntimeForTests(string text)
     {
-        var version = MatchSectionValue(text, "wine", "version");
+        var version = LutrisConfigFile.Parse(text).Section("wine", "version");
         return (version, string.IsNullOrWhiteSpace(version) ? null : (LooksLikeProton(version) ? "proton" : "wine"));
     }
 }

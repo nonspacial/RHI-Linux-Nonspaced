@@ -50,7 +50,9 @@ internal sealed partial class LauncherOwnedPrefixes
 
     /// <summary>
     /// Every `key:` scalar in a Lutris YAML file (game.prefix and installer task prefixes alike), with
-    /// Lutris' folded continuation lines joined back. A full YAML parser is not needed for this.
+    /// Lutris' folded continuation lines joined back. A key with an inline value owns no children, so
+    /// every following line indented deeper than the key continues the value, even one that contains
+    /// `: ` (a wrapped path such as `…/Games: The Collection/x.exe`).
     /// </summary>
     internal static IEnumerable<string> ReadScalars(string text, string key)
     {
@@ -60,10 +62,10 @@ internal sealed partial class LauncherOwnedPrefixes
             var match = Regex.Match(lines[i], $@"^(?<indent>[ \t]*){Regex.Escape(key)}\s*:\s*(?<v>\S.*)$");
             if (!match.Success) continue;
             var value = match.Groups["v"].Value.Trim();
-            var indent = match.Groups["indent"].Value.Length;
+            var keyColumn = match.Groups["indent"].Value.Length;
             while (i + 1 < lines.Length &&
-                   lines[i + 1].Length - lines[i + 1].TrimStart().Length > indent &&
-                   !YamlKeyLine().IsMatch(lines[i + 1]))
+                   !string.IsNullOrWhiteSpace(lines[i + 1]) &&
+                   lines[i + 1].Length - lines[i + 1].TrimStart().Length > keyColumn)
             {
                 value += " " + lines[++i].Trim();
             }
@@ -115,7 +117,4 @@ internal sealed partial class LauncherOwnedPrefixes
         }
         return null;
     }
-
-    [GeneratedRegex(@"^\s*(-\s+)?[\w.-]+\s*:(\s|$)")]
-    private static partial Regex YamlKeyLine();
 }
