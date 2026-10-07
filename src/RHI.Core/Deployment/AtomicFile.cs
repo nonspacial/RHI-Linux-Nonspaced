@@ -296,19 +296,39 @@ public static class AtomicFile
     public static bool FsyncDirectory(string directory)
     {
         if (!OperatingSystem.IsLinux()) return true;
-        var fd = NativeMethods.open(directory, 0 /* O_RDONLY */);
-        if (fd < 0) return false;
         try
         {
-            return NativeMethods.fsync(fd) == 0;
+            return FsyncDirectory(directory, Libc.open, Libc.fsync, Libc.close);
         }
-        finally
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
-            NativeMethods.close(fd);
+            // "libc" does not resolve everywhere; glibc's soname always does.
+        }
+        try
+        {
+            return FsyncDirectory(directory, Glibc.open, Glibc.fsync, Glibc.close);
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+            return false; // no C library to call: the file data itself was already flushed
         }
     }
 
-    private static class NativeMethods
+    private static bool FsyncDirectory(string directory, Func<string, int, int> open, Func<int, int> fsync, Func<int, int> close)
+    {
+        var fd = open(directory, 0 /* O_RDONLY */);
+        if (fd < 0) return false;
+        try
+        {
+            return fsync(fd) == 0;
+        }
+        finally
+        {
+            close(fd);
+        }
+    }
+
+    private static class Libc
     {
         [DllImport("libc", SetLastError = true)]
         public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
@@ -317,6 +337,18 @@ public static class AtomicFile
         public static extern int fsync(int fd);
 
         [DllImport("libc", SetLastError = true)]
+        public static extern int close(int fd);
+    }
+
+    private static class Glibc
+    {
+        [DllImport("libc.so.6", SetLastError = true)]
+        public static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+
+        [DllImport("libc.so.6", SetLastError = true)]
+        public static extern int fsync(int fd);
+
+        [DllImport("libc.so.6", SetLastError = true)]
         public static extern int close(int fd);
     }
 }
