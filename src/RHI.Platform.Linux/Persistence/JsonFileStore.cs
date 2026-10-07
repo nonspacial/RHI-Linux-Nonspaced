@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using RHI.Core.Deployment;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Persistence;
 
@@ -120,6 +121,9 @@ public static class JsonStoreQuarantine
             }
         }
 
+        AppLog.Warn("store", notice.QuarantinePath is null
+            ? $"{fullPath} could not be read or copied aside" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt")
+            : $"{fullPath} could not be read; copy kept at {notice.QuarantinePath}" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt"));
         foreach (var listener in listeners) listener(notice);
         return notice.QuarantinePath;
     }

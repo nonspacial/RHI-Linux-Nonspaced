@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -7,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using RHI.Core.Models;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
@@ -18,46 +20,70 @@ namespace RHI.Desktop.Views;
 
 public sealed partial class MainWindow : Window
 {
-    private static string L(string ptBr, string enUs) => UiLocalizationService.Choose(ptBr, enUs);
-    private static string LF(string ptBr, string enUs, params object?[] args) => UiLocalizationService.ChooseFormat(ptBr, enUs, args);
+    private static string T(string key) => UiLocalizationService.Text(key);
+    private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
     private static string ShaderCategoryDisplay(string category) => category switch
     {
-        "Essential" => L("Essencial", "Essential"),
-        "Recommended" => L("Recomendado", "Recommended"),
-        "Custom" => L("Personalizado", "Custom"),
-        _ => L("Extra", "Extra")
+        "Essential" => T("Win.Essential"),
+        "Recommended" => T("Win.Recommended"),
+        "Custom" => T("Win.Custom"),
+        _ => T("Win.Extra")
     };
 
     private static string CatalogDescription(string? description, string displayName, bool shaderPack)
     {
         if (string.IsNullOrWhiteSpace(description))
             return shaderPack
-                ? LF("Pacote de shaders ReShade: {0}.", "ReShade shader pack: {0}.", displayName)
-                : LF("Add-on do ReShade: {0}.", "ReShade add-on: {0}.", displayName);
+                ? TF("Win.ReShadeShaderPack", displayName)
+                : TF("Win.ReShadeAdd", displayName);
 
         var presented = UiLocalizationService.Present(description);
         if (UiLocalizationService.CurrentLanguage == "pt-BR" && string.Equals(presented, description, StringComparison.Ordinal))
             return shaderPack
-                ? LF("Pacote de shaders ReShade: {0}.", "ReShade shader pack: {0}.", displayName)
-                : LF("Add-on do ReShade: {0}.", "ReShade add-on: {0}.", displayName);
+                ? TF("Win.ReShadeShaderPack", displayName)
+                : TF("Win.ReShadeAdd", displayName);
         return presented;
     }
 
-    private static FilePickerFileType WindowsDllFileType => new(L("DLL do Windows", "Windows DLL"))
+    private static FilePickerFileType WindowsDllFileType => new(T("Win.WindowsDLL"))
     {
         Patterns = ["*.dll", "*.DLL"],
     };
 
-    private static FilePickerFileType WindowsExecutableFileType => new(L("Executável do Windows", "Windows executable"))
+    private static FilePickerFileType WindowsExecutableFileType => new(T("Win.WindowsExecutable"))
     {
         Patterns = ["*.exe", "*.EXE"],
     };
 
-    private static FilePickerFileType DeepFriedChickenArchiveFileType => new(L("Pacote Deep Fried Chicken (ZIP/7Z)", "Deep Fried Chicken package (ZIP/7Z)"))
+    private static FilePickerFileType DeepFriedChickenArchiveFileType => new(T("Win.DeepFriedChickenPackageZIP7Z"))
     {
         Patterns = ["*.zip", "*.ZIP", "*.7z", "*.7Z"],
     };
+
+    /// <summary>The "Do not change" version option, in either language (a dialog can outlive a language switch).</summary>
+    private static bool IsDoNotChange(string value)
+        => string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Win.DoNotChange"), StringComparison.OrdinalIgnoreCase)
+           || string.Equals(value, UiLocalizationService.TextFor("en-US", "Win.DoNotChange"), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Event-handler body runner: nothing a handler throws reaches the dispatcher unreported (UI-05).</summary>
+    private static async void RunUiSafe(Func<Task> work, [CallerMemberName] string context = "")
+        => await UiExceptionGuard.RunAsync(work, context);
+
+    /// <summary>Creates (if needed) and opens a folder; a failure to create it is reported like a failure to open it.</summary>
+    private static bool TryOpenFolder(string path, out string? error)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            error = ex.Message;
+            return false;
+        }
+        return LinuxDesktopOpener.TryOpenDirectory(path, out error);
+    }
 
     private readonly DetailSectionLayoutStore _detailLayoutStore;
     private DetailSectionLayoutSettings _detailLayout;
@@ -78,33 +104,33 @@ public sealed partial class MainWindow : Window
                     e.Cancel = !trimmed.TextLayout.TextLines.Any(line => line.HasCollapsed));
     }
 
-    private async void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e)
+    private void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var text = vm.GetSelectedHdrLaunchOptions();
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null)
         {
-            vm.StatusText = L("A área de transferência não está disponível nesta sessão.", "The clipboard is unavailable in this session.");
+            vm.StatusText = T("Win.ClipboardUnavailableSession");
             return;
         }
         await clipboard.SetTextAsync(text);
-        vm.StatusText = L("Perfil de inicialização HDR copiado. O Steam pode usar a forma %command% exibida; no Heroic/Lutris, use as variáveis ou o wrapper na configuração do inicializador, sem tratar %command% como sintaxe universal.", "HDR launch profile copied. Steam can use the displayed %command% form; in Heroic/Lutris, use the variables or wrapper in launcher settings without treating %command% as universal syntax.");
-    }
+        vm.StatusText = T("Win.HDRLaunchProfileCopiedSteamCan");
+    });
 
 
-    private async void AddGame_Click(object? sender, RoutedEventArgs e)
+    private void AddGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel) return;
         if (!StorageProvider.CanOpen)
         {
-            await ShowSimpleMessageAsync(L("Adicionar jogo", "Add game"), L("O portal desta sessão não disponibiliza um seletor de arquivos.", "This session portal does not provide a file picker."));
+            await ShowSimpleMessageAsync(T("Win.AddGame"), T("Win.SessionPortalDoesNotProvideFile"));
             return;
         }
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = L("Selecione o executável Windows do jogo", "Select the game Windows executable"),
+            Title = T("Win.SelectGameWindowsExecutable"),
             AllowMultiple = false,
             FileTypeFilter = [WindowsExecutableFileType],
         });
@@ -112,14 +138,14 @@ public sealed partial class MainWindow : Window
         var executable = files[0].TryGetLocalPath();
         if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable))
         {
-            await ShowSimpleMessageAsync(L("Adicionar jogo", "Add game"), L("O executável selecionado não está disponível como arquivo local.", "The selected executable is not available as a local file."));
+            await ShowSimpleMessageAsync(T("Win.AddGame"), T("Win.SelectedExecutableNotAvailableAsLocal"));
             return;
         }
 
         await ShowAddGameDialogForExecutableAsync(executable);
-    }
+    });
 
-    private async void BatchDlss_Click(object? sender, RoutedEventArgs e)
+    private void BatchDlss_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || !vm.CanOpenDlssBatch) return;
 
@@ -130,7 +156,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await ShowSimpleMessageAsync(L("DLSS em lote", "DLSS batch"), LF("Não foi possível analisar a biblioteca: {0}", "Could not analyze the library: {0}", ex.Message));
+            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), TF("Win.CouldNotAnalyzeLibrary", ex.Message));
             return;
         }
 
@@ -139,13 +165,13 @@ public sealed partial class MainWindow : Window
             .ToList();
         if (eligible.Count == 0)
         {
-            await ShowSimpleMessageAsync(L("DLSS em lote", "DLSS batch"), L("Nenhum jogo elegível com DLLs locais de DLSS/Streamline foi detectado.", "No eligible game with local DLSS/Streamline DLLs was detected."));
+            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), T("Win.NoEligibleGameLocalDLSSStreamline"));
             return;
         }
 
         static ComboBox VersionCombo(IEnumerable<string> versions, string current)
         {
-            var items = new List<string> { L("Não alterar", "Do not change") };
+            var items = new List<string> { T("Win.DoNotChange") };
             items.AddRange(versions.Where(version => !string.IsNullOrWhiteSpace(version)).Distinct(StringComparer.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current, StringComparer.OrdinalIgnoreCase))
                 items.Add(current); // preserve an offline/persisted default even when the manifest is temporarily unavailable
@@ -158,7 +184,7 @@ public sealed partial class MainWindow : Window
         static string SelectedVersion(ComboBox combo)
         {
             var value = combo.SelectedItem?.ToString() ?? "";
-            return string.Equals(value, "Não alterar", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "Do not change", StringComparison.OrdinalIgnoreCase) ? "" : value;
+            return IsDoNotChange(value) ? "" : value;
         }
 
         var defaults = vm.DlssVersionDefaults;
@@ -181,8 +207,8 @@ public sealed partial class MainWindow : Window
             gamesPanel.Children.Add(check);
         }
 
-        var selectAll = new Button { Content = L("Selecionar todos", "Select all"), Padding = new Avalonia.Thickness(10, 5) };
-        var clearAll = new Button { Content = L("Limpar", "Clear"), Padding = new Avalonia.Thickness(10, 5) };
+        var selectAll = new Button { Content = T("Win.SelectAll"), Padding = new Avalonia.Thickness(10, 5) };
+        var clearAll = new Button { Content = T("Win.Clear"), Padding = new Avalonia.Thickness(10, 5) };
         selectAll.Click += (_, _) => { foreach (var row in rows) row.Check.IsChecked = true; };
         clearAll.Click += (_, _) => { foreach (var row in rows) row.Check.IsChecked = false; };
         var selectRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -198,29 +224,29 @@ public sealed partial class MainWindow : Window
         }
 
         var left = new StackPanel { Spacing = 8, MinWidth = 350 };
-        left.Children.Add(new TextBlock { Text = LF("Jogos elegíveis ({0})", "Eligible games ({0})", eligible.Count), FontSize = 16, FontWeight = FontWeight.SemiBold });
+        left.Children.Add(new TextBlock { Text = TF("Win.EligibleGames", eligible.Count), FontSize = 16, FontWeight = FontWeight.SemiBold });
         left.Children.Add(selectRow);
         left.Children.Add(new ScrollViewer { Content = gamesPanel, MaxHeight = 440, VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto });
 
         var right = new StackPanel { Spacing = 11, MinWidth = 270 };
-        right.Children.Add(new TextBlock { Text = L("Versões", "Versions"), FontSize = 16, FontWeight = FontWeight.SemiBold });
+        right.Children.Add(new TextBlock { Text = T("Win.Versions"), FontSize = 16, FontWeight = FontWeight.SemiBold });
         right.Children.Add(new TextBlock
         {
-            Text = L("Preenchido a partir das Configurações. ‘Não alterar’ ignora o componente. Nenhum novo caminho de destino para DLL é criado.", "Filled from Settings. ‘Do not change’ skips the component. No new DLL target path is created."),
+            Text = T("Win.FilledFromSettingsDoNotChange"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.68,
             FontSize = 11
         });
-        right.Children.Add(LabeledCombo(L("Super-resolução", "Super Resolution"), sr));
-        right.Children.Add(LabeledCombo(L("Reconstrução de raios", "Ray Reconstruction"), rr));
-        right.Children.Add(LabeledCombo(L("Geração de quadros", "Frame Generation"), fg));
-        right.Children.Add(LabeledCombo(L("Renderização neural", "Neural Rendering"), nr));
+        right.Children.Add(LabeledCombo(T("Win.SuperResolution"), sr));
+        right.Children.Add(LabeledCombo(T("Win.RayReconstruction"), rr));
+        right.Children.Add(LabeledCombo(T("Win.FrameGeneration"), fg));
+        right.Children.Add(LabeledCombo(T("Win.NeuralRendering"), nr));
         right.Children.Add(LabeledCombo("Streamline", sl));
 
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
-        var deploy = new Button { Content = L("Aplicar", "Apply"), Padding = new Avalonia.Thickness(14, 7) };
-        var restore = new Button { Content = L("Restaurar selecionados", "Restore selected"), Padding = new Avalonia.Thickness(14, 7) };
-        var close = new Button { Content = L("Fechar", "Close"), Padding = new Avalonia.Thickness(14, 7) };
+        var deploy = new Button { Content = T("Win.Apply"), Padding = new Avalonia.Thickness(14, 7) };
+        var restore = new Button { Content = T("Win.RestoreSelected"), Padding = new Avalonia.Thickness(14, 7) };
+        var close = new Button { Content = T("Win.Close"), Padding = new Avalonia.Thickness(14, 7) };
 
         var body = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,*"), ColumnSpacing = 18, Margin = new Avalonia.Thickness(16) };
         body.Children.Add(left); Grid.SetColumn(left, 0);
@@ -256,7 +282,7 @@ public sealed partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = L("Aplicação em lote de DLSS e Streamline", "DLSS and Streamline batch operation"),
+            Title = T("Win.DLSSStreamlineBatchOperation"),
             Width = 820,
             Height = 650,
             MinWidth = 700,
@@ -277,7 +303,7 @@ public sealed partial class MainWindow : Window
             var selected = SelectedGames();
             if (selected.Count == 0)
             {
-                status.Text = L("Selecione pelo menos um jogo.", "Select at least one game.");
+                status.Text = T("Win.SelectAtLeastOneGame");
                 return;
             }
 
@@ -285,14 +311,14 @@ public sealed partial class MainWindow : Window
                 SelectedVersion(sr), SelectedVersion(rr), SelectedVersion(fg), SelectedVersion(nr), SelectedVersion(sl));
             if (!restoreMode && !chosen.HasAny)
             {
-                status.Text = L("Selecione pelo menos uma versão; usar ‘Não alterar’ em todas as opções não aplicará nenhuma alteração.", "Select at least one version; using ‘Do not change’ for every option will not apply any change.");
+                status.Text = T("Win.SelectAtLeastOneVersionUsing");
                 return;
             }
 
             deploy.IsEnabled = restore.IsEnabled = close.IsEnabled = false;
             try
             {
-                status.Text = restoreMode ? L("Restaurando jogos selecionados…", "Restoring selected games…") : L("Aplicando aos jogos selecionados…", "Applying to selected games…");
+                status.Text = restoreMode ? T("Win.RestoringSelectedGames") : T("Win.ApplyingSelectedGames");
                 var result = restoreMode
                     ? await vm.RestoreDlssBatchAsync(selected)
                     : await vm.ApplyDlssBatchAsync(selected, chosen);
@@ -300,7 +326,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                status.Text = LF("Falha na operação em lote: {0}", "Batch operation failed: {0}", ex.Message);
+                status.Text = TF("Win.BatchOperationFailed", ex.Message);
             }
             finally
             {
@@ -308,11 +334,11 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        deploy.Click += async (_, _) => await RunAsync(restoreMode: false);
-        restore.Click += async (_, _) => await RunAsync(restoreMode: true);
+        deploy.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: false));
+        restore.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: true));
         close.Click += (_, _) => dialog.Close();
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private async Task ShowSimpleMessageAsync(string title, string message)
     {
@@ -333,7 +359,7 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     }
 
-    private async void Settings_Click(object? sender, RoutedEventArgs e)
+    private void Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var snapshot = vm.GetLinuxSettingsSnapshot();
@@ -369,42 +395,42 @@ public sealed partial class MainWindow : Window
             SelectedItem = ReShadeChannelDisplay(settings.ReShadeChannel),
             Width = 230
         };
-        var manageIni = new CheckBox { Content = L("Gerenciar caminhos de busca do ReShade.ini", "Manage ReShade.ini search paths"), IsChecked = settings.ReShadeManageIni };
-        var screenshotPath = new TextBox { Text = settings.ScreenshotPath, PlaceholderText = L("Pasta opcional para capturas de tela", "Optional screenshot folder"), MinWidth = 430 };
-        var perGameScreenshots = new CheckBox { Content = L("Criar uma subpasta de capturas para cada jogo", "Create a screenshot subfolder for each game"), IsChecked = settings.PerGameScreenshotFolders };
+        var manageIni = new CheckBox { Content = T("Win.ManageReShadeIniSearchPaths"), IsChecked = settings.ReShadeManageIni };
+        var screenshotPath = new TextBox { Text = settings.ScreenshotPath, PlaceholderText = T("Win.OptionalScreenshotFolder"), MinWidth = 430 };
+        var perGameScreenshots = new CheckBox { Content = T("Win.CreateScreenshotSubfolderEachGame"), IsChecked = settings.PerGameScreenshotFolders };
         var overlayHotkey = new ReShadeHotkeyEditor(settings.OverlayHotkey, "36,0,0,0");
         var screenshotHotkey = new ReShadeHotkeyEditor(settings.ScreenshotHotkey, "44,0,0,0");
-        var addonWatchFolder = new TextBox { Text = settings.AddonWatchFolder, PlaceholderText = L("Pasta opcional monitorada (padrão: ~/Downloads)", "Optional watched folder (default: ~/Downloads)"), MinWidth = 430 };
-        var cacheAllShaders = new CheckBox { Content = L("Manter pacotes de shaders baixados em cache", "Keep downloaded shader packs cached"), IsChecked = settings.CacheAllShaders };
-        var verboseLogging = new CheckBox { Content = L("Registro detalhado", "Verbose logging"), IsChecked = settings.VerboseLogging };
+        var addonWatchFolder = new TextBox { Text = settings.AddonWatchFolder, PlaceholderText = T("Win.OptionalWatchedFolderDefaultDownloads"), MinWidth = 430 };
+        var cacheAllShaders = new CheckBox { Content = T("Win.KeepDownloadedShaderPacksCached"), IsChecked = settings.CacheAllShaders };
+        var verboseLogging = new CheckBox { Content = T("Win.VerboseLogging"), IsChecked = settings.VerboseLogging };
         var autoUpdateComponents = new CheckBox
         {
-            Content = L("Atualizar automaticamente em segundo plano os componentes gerenciados pelo RHI", "Automatically update RHI-managed components in the background"),
+            Content = T("Win.AutomaticallyUpdateRHIManagedComponentsBackgroun"),
             IsChecked = settings.AutoUpdateComponents
         };
         var addonWatcherEnabled = new CheckBox
         {
-            Content = L("Monitorar a pasta selecionada por add-ons baixados / arquivos RenoDX-Luma", "Watch the selected folder for downloaded add-ons / RenoDX-Luma files"),
+            Content = T("Win.WatchSelectedFolderDownloadedAddOns"),
             IsChecked = settings.AddonWatcherEnabled
         };
         static string ViewModeDisplay(string value) =>
-            value.Equals("Compact", StringComparison.OrdinalIgnoreCase) ? L("Compacta", "Compact") : L("Detalhada", "Detailed");
+            value.Equals("Compact", StringComparison.OrdinalIgnoreCase) ? T("Win.Compact") : T("Win.Detailed");
         static string ViewModeValue(string? display) =>
-            string.Equals(display, L("Compacta", "Compact"), StringComparison.OrdinalIgnoreCase) ? "Compact" : "Detail";
+            string.Equals(display, T("Win.Compact"), StringComparison.OrdinalIgnoreCase) ? "Compact" : "Detail";
         var viewMode = new ComboBox
         {
-            ItemsSource = new[] { L("Detalhada", "Detailed"), L("Compacta", "Compact") },
+            ItemsSource = new[] { T("Win.Detailed"), T("Win.Compact") },
             SelectedItem = ViewModeDisplay(settings.ViewMode),
             Width = 190
         };
         var trayIconEnabled = new CheckBox
         {
-            Content = L("Ativar ícone na bandeja do sistema (StatusNotifierItem/AppIndicator)", "Enable system tray icon (StatusNotifierItem/AppIndicator)"),
+            Content = T("Win.EnableSystemTrayIconStatusNotifierItemAppIndicat"),
             IsChecked = settings.TrayIconEnabled
         };
         var closeToTray = new CheckBox
         {
-            Content = L("Ocultar na bandeja ao fechar a janela principal", "Hide to tray when closing the main window"),
+            Content = T("Win.HideTrayWhenClosingMainWindow"),
             IsChecked = settings.CloseToTray,
             IsEnabled = settings.TrayIconEnabled
         };
@@ -415,13 +441,13 @@ public sealed partial class MainWindow : Window
         };
         var showMotdOnStartup = new CheckBox
         {
-            Content = L("Mostrar cada novo MOTD uma vez ao iniciar", "Show each new MOTD once at startup"),
+            Content = T("Win.ShowEachNewMOTDOnceAt"),
             IsChecked = settings.ShowMotdOnStartup
         };
 
         static ComboBox BuildDlssDefaultCombo(IEnumerable<string> versions, string current)
         {
-            var items = new List<string> { L("Não alterar", "Do not change") };
+            var items = new List<string> { T("Win.DoNotChange") };
             foreach (var version in versions.Where(version => !string.IsNullOrWhiteSpace(version)).Distinct(StringComparer.OrdinalIgnoreCase))
                 items.Add(version);
             if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current, StringComparer.OrdinalIgnoreCase))
@@ -438,18 +464,18 @@ public sealed partial class MainWindow : Window
         var defaultDlssnr = BuildDlssDefaultCombo(vm.DlssNrVersions, settings.DefaultDlssnrVersion);
         var defaultStreamline = BuildDlssDefaultCombo(vm.StreamlineVersions, settings.DefaultStreamlineVersion);
 
-        var browseScreenshots = new Button { Content = L("Procurar…", "Browse…"), Padding = new Avalonia.Thickness(12, 6) };
-        browseScreenshots.Click += async (_, _) =>
+        var browseScreenshots = new Button { Content = T("Win.Browse"), Padding = new Avalonia.Thickness(12, 6) };
+        browseScreenshots.Click += (_, _) => RunUiSafe(async () =>
         {
-            var chosen = await PickFolderAsync(L("Selecionar pasta de capturas de tela", "Select screenshot folder"));
+            var chosen = await PickFolderAsync(T("Win.SelectScreenshotFolder"));
             if (!string.IsNullOrWhiteSpace(chosen)) screenshotPath.Text = chosen;
-        };
-        var browseWatch = new Button { Content = L("Procurar…", "Browse…"), Padding = new Avalonia.Thickness(12, 6) };
-        browseWatch.Click += async (_, _) =>
+        });
+        var browseWatch = new Button { Content = T("Win.Browse"), Padding = new Avalonia.Thickness(12, 6) };
+        browseWatch.Click += (_, _) => RunUiSafe(async () =>
         {
-            var chosen = await PickFolderAsync(L("Selecionar pasta monitorada de add-ons", "Select watched add-on folder"));
+            var chosen = await PickFolderAsync(T("Win.SelectWatchedAddFolder"));
             if (!string.IsNullOrWhiteSpace(chosen)) addonWatchFolder.Text = chosen;
-        };
+        });
 
         var screenshotRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         screenshotRow.Children.Add(screenshotPath);
@@ -472,40 +498,40 @@ public sealed partial class MainWindow : Window
         }
 
         var reshadeTab = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(18) };
-        reshadeTab.Children.Add(new TextBlock { Text = L("Padrões do ReShade", "ReShade defaults"), FontSize = 20, FontWeight = FontWeight.SemiBold });
+        reshadeTab.Children.Add(new TextBlock { Text = T("Win.ReShadeDefaults"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         reshadeTab.Children.Add(new TextBlock
         {
-            Text = L("Persistência nativa no Linux para configurações compatíveis com o RHI. Escolha a tecla principal do atalho e, se quiser uma combinação, marque Ctrl, Shift e/ou Alt.", "Native Linux persistence for RHI-compatible settings. Choose the main hotkey and, if you want a combination, enable Ctrl, Shift and/or Alt."),
+            Text = T("Win.NativeLinuxPersistenceRHICompatibleSettings"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
-        reshadeTab.Children.Add(Labeled(L("Canal padrão do ReShade", "Default ReShade channel"), channel));
+        reshadeTab.Children.Add(Labeled(T("Win.DefaultReShadeChannel"), channel));
         reshadeTab.Children.Add(manageIni);
-        reshadeTab.Children.Add(Labeled(L("Pasta de capturas de tela", "Screenshot folder"), screenshotRow, L("Vazio mantém inalterado o caminho de salvamento já configurado pelo ReShade.", "Empty keeps the save path already configured by ReShade unchanged.")));
+        reshadeTab.Children.Add(Labeled(T("Win.ScreenshotFolder"), screenshotRow, T("Win.EmptyKeepsSavePathAlreadyConfigured")));
         reshadeTab.Children.Add(perGameScreenshots);
-        reshadeTab.Children.Add(Labeled(L("Atalho da sobreposição", "Overlay hotkey"), overlayHotkey.Control, L("Padrão: Home (Início). O RHI salva esse atalho no formato exigido pelo ReShade.", "Default: Home. RHI stores this hotkey in the format required by ReShade.")));
-        reshadeTab.Children.Add(Labeled(L("Atalho de captura de tela", "Screenshot hotkey"), screenshotHotkey.Control, L("Padrão: Print Screen. O RHI salva esse atalho no formato exigido pelo ReShade.", "Default: Print Screen. RHI stores this hotkey in the format required by ReShade.")));
+        reshadeTab.Children.Add(Labeled(T("Win.OverlayHotkey"), overlayHotkey.Control, T("Win.DefaultHomeRHIStoresHotkeyFormat")));
+        reshadeTab.Children.Add(Labeled(T("Win.ScreenshotHotkey"), screenshotHotkey.Control, T("Win.DefaultPrintScreenRHIStoresHotkey")));
 
         var managerTab = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(18) };
         managerTab.Children.Add(new TextBlock { Text = "Shaders / Add-ons", FontSize = 20, FontWeight = FontWeight.SemiBold });
-        managerTab.Children.Add(Labeled(L("Cache de shaders", "Shader cache"), cacheAllShaders, L("Mantém os pacotes de shaders baixados no cache XDG do RHI para reutilização.", "Keeps downloaded shader packs in the RHI XDG cache for reuse.")));
+        managerTab.Children.Add(Labeled(T("Win.ShaderCache"), cacheAllShaders, T("Win.KeepsDownloadedShaderPacksRHIXDG")));
         managerTab.Children.Add(addonWatcherEnabled);
-        managerTab.Children.Add(Labeled(L("Pasta monitorada de add-ons", "Watched add-on folder"), watchRow,
-            L("Monitor nativo do Linux. Nunca apaga os arquivos de origem nem instala diretamente em um jogo. Arquivos .addon32/.addon64 exigem confirmação e são importados apenas para Add-ons personalizados; arquivos compactados geram somente uma notificação.", "Native Linux watcher. It never deletes source files or installs directly into a game. .addon32/.addon64 files require confirmation and are imported only into Custom Add-ons; archives only generate a notification.")));
-        managerTab.Children.Add(Labeled(L("Registro detalhado", "Verbose logging"), verboseLogging, L("A preferência é persistida; os logs dos componentes permanecem nos caminhos XDG de dados/configuração do RHI.", "The preference is persisted; component logs remain under RHI XDG data/config paths.")));
+        managerTab.Children.Add(Labeled(T("Win.WatchedAddFolder"), watchRow,
+            T("Win.NativeLinuxWatcherNeverDeletesSource")));
+        managerTab.Children.Add(Labeled(T("Win.VerboseLogging"), verboseLogging, T("Win.PreferencePersistedComponentLogsRemainUnder")));
 
         var dlssTab = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(18) };
-        dlssTab.Children.Add(new TextBlock { Text = L("Padrões de DLSS / Streamline", "DLSS / Streamline defaults"), FontSize = 20, FontWeight = FontWeight.SemiBold });
+        dlssTab.Children.Add(new TextBlock { Text = T("Win.DLSSStreamlineDefaults"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         dlssTab.Children.Add(new TextBlock
         {
-            Text = L("Aplicação rápida e aplicação em lote substituem apenas DLLs locais que já existem no jogo. ‘Não alterar’ ignora o componente. Predefinições de perfil do driver NVIDIA e escala de renderização dependem de NVAPI e não são emuladas no Linux.", "Quick apply and batch apply replace only local DLLs that already exist in the game. “Do not change” skips the component. NVIDIA driver profile presets and render scaling depend on NVAPI and are not emulated on Linux."),
+            Text = T("Win.QuickApplyBatchApplyReplaceOnly"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
-        dlssTab.Children.Add(Labeled(L("Super-resolução (nvngx_dlss.dll)", "Super Resolution (nvngx_dlss.dll)"), defaultDlss));
-        dlssTab.Children.Add(Labeled(L("Reconstrução de raios (nvngx_dlssd.dll)", "Ray Reconstruction (nvngx_dlssd.dll)"), defaultDlssd));
-        dlssTab.Children.Add(Labeled(L("Geração de quadros (nvngx_dlssg.dll)", "Frame Generation (nvngx_dlssg.dll)"), defaultDlssg));
-        dlssTab.Children.Add(Labeled(L("Renderização neural (nvngx_dlssnr.dll)", "Neural Rendering (nvngx_dlssnr.dll)"), defaultDlssnr));
+        dlssTab.Children.Add(Labeled(T("Win.SuperResolutionNvngxDlssDll"), defaultDlss));
+        dlssTab.Children.Add(Labeled(T("Win.RayReconstructionNvngxDlssdDll"), defaultDlssd));
+        dlssTab.Children.Add(Labeled(T("Win.FrameGenerationNvngxDlssgDll"), defaultDlssg));
+        dlssTab.Children.Add(Labeled(T("Win.NeuralRenderingNvngxDlssnrDll"), defaultDlssnr));
         dlssTab.Children.Add(Labeled("Streamline", defaultStreamline));
 
         var pathGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto"), ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 14, RowSpacing = 8 };
@@ -517,23 +543,22 @@ public sealed partial class MainWindow : Window
             pathGrid.Children.Add(b); Grid.SetRow(b, row); Grid.SetColumn(b, 1);
         }
         AddPathRow(0, "settings.json", snapshot.SettingsPath);
-        AddPathRow(1, L("Configuração", "Configuration"), snapshot.ConfigRoot);
+        AddPathRow(1, T("Win.Configuration"), snapshot.ConfigRoot);
         AddPathRow(2, "Cache", snapshot.CacheRoot);
-        AddPathRow(3, L("Dados", "Data"), snapshot.DataRoot);
+        AddPathRow(3, T("Win.Data"), snapshot.DataRoot);
 
-        var openConfig = new Button { Content = L("Abrir configuração", "Open configuration"), Padding = new Avalonia.Thickness(12, 6) };
-        var openCache = new Button { Content = L("Abrir cache", "Open cache"), Padding = new Avalonia.Thickness(12, 6) };
-        var openData = new Button { Content = L("Abrir dados", "Open data"), Padding = new Avalonia.Thickness(12, 6) };
+        var openConfig = new Button { Content = T("Win.OpenConfiguration"), Padding = new Avalonia.Thickness(12, 6) };
+        var openCache = new Button { Content = T("Win.OpenCache"), Padding = new Avalonia.Thickness(12, 6) };
+        var openData = new Button { Content = T("Win.OpenData"), Padding = new Avalonia.Thickness(12, 6) };
         void OpenFolder(string path)
         {
-            Directory.CreateDirectory(path);
-            if (!LinuxDesktopOpener.TryOpenDirectory(path, out var error)) status.Text = LF("Não foi possível abrir a pasta: {0}", "Could not open folder: {0}", error);
+            if (!TryOpenFolder(path, out var error)) status.Text = UiLocalizationService.Format("Ui.FolderNotOpened", error);
         }
         openConfig.Click += (_, _) => OpenFolder(snapshot.ConfigRoot);
         openCache.Click += (_, _) => OpenFolder(snapshot.CacheRoot);
         openData.Click += (_, _) => OpenFolder(snapshot.DataRoot);
 
-        var purgeCache = new Button { Content = L("Limpar cache", "Clear cache"), Padding = new Avalonia.Thickness(12, 6) };
+        var purgeCache = new Button { Content = T("Win.ClearCache"), Padding = new Avalonia.Thickness(12, 6) };
         purgeCache.Click += (_, _) => status.Text = vm.PurgeLinuxCache();
         var reset = new Button { Content = UiLocalizationService.Text("Ui.ResetSettings"), Padding = new Avalonia.Thickness(12, 6) };
         reset.Click += (_, _) =>
@@ -556,11 +581,11 @@ public sealed partial class MainWindow : Window
             cacheAllShaders.IsChecked = defaults.CacheAllShaders;
             verboseLogging.IsChecked = defaults.VerboseLogging;
             autoUpdateComponents.IsChecked = defaults.AutoUpdateComponents;
-            defaultDlss.SelectedItem = L("Não alterar", "Do not change");
-            defaultDlssd.SelectedItem = L("Não alterar", "Do not change");
-            defaultDlssg.SelectedItem = L("Não alterar", "Do not change");
-            defaultDlssnr.SelectedItem = L("Não alterar", "Do not change");
-            defaultStreamline.SelectedItem = L("Não alterar", "Do not change");
+            defaultDlss.SelectedItem = T("Win.DoNotChange");
+            defaultDlssd.SelectedItem = T("Win.DoNotChange");
+            defaultDlssg.SelectedItem = T("Win.DoNotChange");
+            defaultDlssnr.SelectedItem = T("Win.DoNotChange");
+            defaultStreamline.SelectedItem = T("Win.DoNotChange");
             status.Text = vm.ResetLinuxSettings();
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -571,18 +596,18 @@ public sealed partial class MainWindow : Window
         uxTab.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ui.DesktopExperience"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         uxTab.Children.Add(new TextBlock
         {
-            Text = L("Aqui ficam apenas conveniências nativas do desktop. O RHI não instala extensões do shell nem substitui serviços de sessão do KDE/GNOME.", "Native desktop conveniences live here. RHI does not install shell extensions or replace KDE/GNOME session services."),
+            Text = T("Win.NativeDesktopConveniencesLiveHereRHI"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
         uxTab.Children.Add(Labeled(UiLocalizationService.Text("Ui.Language"), uiLanguage, UiLocalizationService.Text("Ui.LanguageNote")));
         uxTab.Children.Add(Labeled(UiLocalizationService.Text("Ui.ViewMode"), viewMode,
-            L("A visualização compacta mantém o fluxo do jogo selecionado, reduzindo barras, filtros e o espaço ocupado pela janela.", "Compact view keeps the selected-game workflow while reducing toolbars, filters and window space.")));
+            T("Win.CompactViewKeepsSelectedGameWorkflow")));
         uxTab.Children.Add(trayIconEnabled);
         uxTab.Children.Add(closeToTray);
         uxTab.Children.Add(new TextBlock
         {
-            Text = L("O suporte à bandeja depende do ambiente. O KDE oferece StatusNotifierItem nativamente; algumas sessões GNOME exigem AppIndicator. Ocultar na bandeja só é usado quando o ícone foi realmente criado.", "Tray support depends on the desktop environment. KDE provides StatusNotifierItem natively; some GNOME sessions require AppIndicator. Hide to tray is used only when the icon was actually created."),
+            Text = T("Win.TraySupportDependsDesktopEnvironmentKDE"),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11,
             Opacity = 0.65
@@ -591,8 +616,8 @@ public sealed partial class MainWindow : Window
 
         var maintenance = new StackPanel { Spacing = 14, Margin = new Avalonia.Thickness(18) };
         maintenance.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ui.Maintenance"), FontSize = 20, FontWeight = FontWeight.SemiBold });
-        maintenance.Children.Add(Labeled(L("Atualizações de componentes em segundo plano", "Background component updates"), autoUpdateComponents,
-            L("Desativado por padrão. Quando ativado, o RHI verifica as oito famílias de componentes do Atualizar tudo após iniciar e a cada 4 horas. Jogos em execução ficam para uma verificação posterior.", "Disabled by default. When enabled, RHI checks the component families used by Update all after startup and every 4 hours. Running games are deferred to a later check.")));
+        maintenance.Children.Add(Labeled(T("Win.BackgroundComponentUpdates"), autoUpdateComponents,
+            T("Win.DisabledByDefaultWhenEnabledRHI")));
         maintenance.Children.Add(pathGrid);
         var pathButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         pathButtons.Children.Add(openConfig); pathButtons.Children.Add(openCache); pathButtons.Children.Add(openData);
@@ -602,7 +627,7 @@ public sealed partial class MainWindow : Window
         maintenance.Children.Add(maintenanceButtons);
         maintenance.Children.Add(new TextBlock
         {
-            Text = L("Limpar cache remove somente os dados de cache do RHI-Linux em XDG_CACHE_HOME/rhi-linux. Arquivos dos jogos e prefixos Wine/Proton não são alterados.", "Clear cache removes only RHI-Linux cache data under XDG_CACHE_HOME/rhi-linux. Game files and Wine/Proton prefixes are not changed."),
+            Text = T("Win.ClearCacheRemovesOnlyRHILinux"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.68
         });
@@ -636,7 +661,7 @@ public sealed partial class MainWindow : Window
         static string ReadDlssDefault(ComboBox combo)
         {
             var value = combo.SelectedItem?.ToString() ?? "";
-            return string.Equals(value, "Não alterar", StringComparison.OrdinalIgnoreCase) || string.Equals(value, "Do not change", StringComparison.OrdinalIgnoreCase) ? "" : value;
+            return IsDoNotChange(value) ? "" : value;
         }
 
         var save = new Button { Content = UiLocalizationService.Text("Ui.Save"), Padding = new Avalonia.Thickness(14, 7) };
@@ -651,7 +676,7 @@ public sealed partial class MainWindow : Window
         };
         var applyGame = new Button
         {
-            Content = L("Aplicar padrões do ReShade ao jogo selecionado", "Apply ReShade defaults to selected game"),
+            Content = T("Win.ApplyReShadeDefaultsSelectedGame"),
             Padding = new Avalonia.Thickness(14, 7),
             IsEnabled = vm.HasSelectedGame
         };
@@ -666,7 +691,7 @@ public sealed partial class MainWindow : Window
                 SyncTrayIcon();
                 status.Text = vm.ApplyGlobalReShadeSettingsToSelectedGame(current);
             }
-            catch (Exception ex) { status.Text = LF("Não foi possível aplicar os padrões do ReShade: {0}", "Could not apply ReShade defaults: {0}", ex.Message); }
+            catch (Exception ex) { status.Text = TF("Win.CouldNotApplyReShadeDefaults", ex.Message); }
         };
 
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Margin = new Avalonia.Thickness(12) };
@@ -700,7 +725,7 @@ public sealed partial class MainWindow : Window
             Content = root
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private async Task<string?> PickFolderAsync(string title)
     {
@@ -712,17 +737,17 @@ public sealed partial class MainWindow : Window
         return result.Count == 0 ? null : result[0].TryGetLocalPath();
     }
 
-    private async void ShadersAddons_Click(object? sender, RoutedEventArgs e)
+    private void ShadersAddons_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null)
             return;
         if (!vm.HasConfirmedPatchTarget)
         {
-            vm.StatusText = L("Defina o executável alvo em Editar jogo antes de abrir o gerenciador de Shaders/Add-ons.", "Set the target executable in Edit game before opening the Shaders/Add-ons manager.");
+            vm.StatusText = T("Win.SetTargetExecutableEditGameBefore");
             return;
         }
 
-        vm.StatusText = L("Carregando catálogo de Shaders/Add-ons…", "Loading Shaders/Add-ons catalog…");
+        vm.StatusText = T("Win.LoadingShadersAddOnsCatalog");
         ShaderAddonManagerUiSnapshot? snapshot;
         try
         {
@@ -730,7 +755,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            vm.StatusText = LF("Não foi possível carregar o catálogo de Shaders/Add-ons: {0}", "Could not load the Shaders/Add-ons catalog: {0}", ex.Message);
+            vm.StatusText = TF("Win.CouldNotLoadShadersAddOns", ex.Message);
             return;
         }
 
@@ -761,7 +786,7 @@ public sealed partial class MainWindow : Window
                     Margin = new Avalonia.Thickness(0, 2)
                 };
                 var dependency = pack.Requires is { Count: > 0 }
-                    ? LF("\nRequer: {0}", "\nRequires: {0}", string.Join(", ", pack.Requires))
+                    ? TF("Win.Requires", string.Join(", ", pack.Requires))
                     : "";
                 ToolTip.SetTip(check, $"{CatalogDescription(pack.Description, pack.DisplayName, shaderPack: true)}{dependency}\nID: {pack.Id}");
                 shaderChecks.Add((pack.Id, check));
@@ -770,16 +795,16 @@ public sealed partial class MainWindow : Window
                 Grid.SetColumn(check, 0);
                 var filesButton = new Button
                 {
-                    Content = L("Arquivos…", "Files…"),
+                    Content = T("Win.Files"),
                     Padding = new Avalonia.Thickness(10, 4),
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                ToolTip.SetTip(filesButton, L("Selecione shaders e texturas individualmente. A seleção fica salva por pacote.", "Select shaders and textures individually. The selection is saved per pack."));
-                filesButton.Click += async (_, _) =>
+                ToolTip.SetTip(filesButton, T("Win.SelectShadersTexturesIndividuallySelectionSaved"));
+                filesButton.Click += (_, _) => RunUiSafe(async () =>
                 {
                     try { await ShowShaderPackFilesDialogAsync(vm, pack); }
-                    catch (Exception ex) { vm.StatusText = LF("Não foi possível abrir os arquivos de {0}: {1}", "Could not open files for {0}: {1}", pack.DisplayName, ex.Message); }
-                };
+                    catch (Exception ex) { vm.StatusText = TF("Win.CouldNotOpenFiles", pack.DisplayName, ex.Message); }
+                });
                 packRow.Children.Add(filesButton);
                 Grid.SetColumn(filesButton, 1);
                 shaderRoot.Children.Add(packRow);
@@ -791,9 +816,9 @@ public sealed partial class MainWindow : Window
         {
             var arch = $"{(addon.Supports32Bit ? "x86" : "")}{(addon.Supports32Bit && addon.Supports64Bit ? "/" : "")}{(addon.Supports64Bit ? "x64" : "")}";
             var label = addon.ManagedByComponent
-                ? LF("{0}  · gerenciado pelo componente", "{0}  · component-managed", addon.DisplayName)
+                ? TF("Win.ComponentManaged", addon.DisplayName)
                 : addon.IsCustom
-                    ? LF("{0}  · personalizado", "{0}  · custom", addon.DisplayName)
+                    ? TF("Win.Custom2", addon.DisplayName)
                     : addon.DisplayName;
 
             var check = new CheckBox
@@ -803,43 +828,41 @@ public sealed partial class MainWindow : Window
                 IsEnabled = !addon.ManagedByComponent,
                 Margin = new Avalonia.Thickness(0, 2)
             };
-            ToolTip.SetTip(check, LF("{0}\nArquiteturas: {1}\nID: {2}", "{0}\nArchitectures: {1}\nID: {2}", CatalogDescription(addon.Description, addon.DisplayName, shaderPack: false), arch, addon.Id));
+            ToolTip.SetTip(check, TF("Win.ArchitecturesID", CatalogDescription(addon.Description, addon.DisplayName, shaderPack: false), arch, addon.Id));
             addonChecks.Add((addon.Id, check));
             addonRoot.Children.Add(check);
         }
 
         var status = new TextBlock
         {
-            Text = LF("Catálogo: {0} pacote(s) de shaders gerenciados + Personalizados locais; {1} entrada(s) de add-ons.", "Catalog: {0} managed shader pack(s) + local Custom entries; {1} add-on entries.", snapshot.ShaderPacks.Count(x => !x.IsCustom), snapshot.Addons.Count),
+            Text = TF("Win.CatalogManagedShaderPackSLocal", snapshot.ShaderPacks.Count(x => !x.IsCustom), snapshot.Addons.Count),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.78
         };
 
         var apply = new Button
         {
-            Content = L("Aplicar ao jogo selecionado", "Apply to selected game"),
+            Content = T("Win.ApplySelectedGame"),
             Padding = new Avalonia.Thickness(14, 7),
             HorizontalAlignment = HorizontalAlignment.Right
         };
 
-        var openCustomShaders = new Button { Content = L("Abrir Shaders personalizados", "Open Custom Shaders"), Padding = new Avalonia.Thickness(12, 6) };
-        var openCustomAddons = new Button { Content = L("Abrir Add-ons personalizados", "Open Custom Add-ons"), Padding = new Avalonia.Thickness(12, 6) };
+        var openCustomShaders = new Button { Content = T("Win.OpenCustomShaders"), Padding = new Avalonia.Thickness(12, 6) };
+        var openCustomAddons = new Button { Content = T("Win.OpenCustomAddOns"), Padding = new Avalonia.Thickness(12, 6) };
 
         openCustomShaders.Click += (_, _) =>
         {
-            Directory.CreateDirectory(snapshot.CustomShaderRoot);
-            if (!LinuxDesktopOpener.TryOpenDirectory(snapshot.CustomShaderRoot, out var error))
-                status.Text = LF("Não foi possível abrir Shaders personalizados: {0}", "Could not open Custom Shaders: {0}", error);
+            if (!TryOpenFolder(snapshot.CustomShaderRoot, out var error))
+                status.Text = TF("Win.CouldNotOpenCustomShaders", error);
         };
 
         openCustomAddons.Click += (_, _) =>
         {
-            Directory.CreateDirectory(snapshot.CustomAddonRoot);
-            if (!LinuxDesktopOpener.TryOpenDirectory(snapshot.CustomAddonRoot, out var error))
-                status.Text = LF("Não foi possível abrir Add-ons personalizados: {0}", "Could not open Custom Add-ons: {0}", error);
+            if (!TryOpenFolder(snapshot.CustomAddonRoot, out var error))
+                status.Text = TF("Win.CouldNotOpenCustomAddOns", error);
         };
 
-        apply.Click += async (_, _) =>
+        apply.Click += (_, _) => RunUiSafe(async () =>
         {
             apply.IsEnabled = false;
             try
@@ -850,7 +873,7 @@ public sealed partial class MainWindow : Window
                     .Select(x => x.Id)
                     .ToArray();
 
-                status.Text = LF("Aplicando {0} pacote(s) de shaders e {1} add-on(s)…", "Applying {0} shader pack(s) and {1} add-on(s)…", shaders.Length, addons.Length);
+                status.Text = TF("Win.ApplyingShaderPackSAddS", shaders.Length, addons.Length);
                 var result = await vm.ApplyShaderAddonManagerAsync(shaders, addons);
                 status.Text = UiLocalizationService.Present(result.Message);
             }
@@ -858,7 +881,7 @@ public sealed partial class MainWindow : Window
             {
                 apply.IsEnabled = true;
             }
-        };
+        });
 
         var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), ColumnSpacing = 8 };
         bottom.Children.Add(openCustomShaders);
@@ -876,12 +899,12 @@ public sealed partial class MainWindow : Window
             {
                 new TabItem
                 {
-                    Header = L("Pacotes de shaders", "Shader packs"),
+                    Header = T("Win.ShaderPacks"),
                     Content = new ScrollViewer { Content = shaderRoot }
                 },
                 new TabItem
                 {
-                    Header = L("Add-ons do ReShade", "ReShade add-ons"),
+                    Header = T("Win.ReShadeAddOns"),
                     Content = new ScrollViewer { Content = addonRoot }
                 }
             }
@@ -909,21 +932,21 @@ public sealed partial class MainWindow : Window
         };
 
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void BrowseD3DCompiler47_Click(object? sender, RoutedEventArgs e)
+    private void BrowseD3DCompiler47_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
-        var path = await PickDllAsync("Selecionar Microsoft D3DCompiler_47.dll");
+        var path = await PickDllAsync(T("Win.PickD3DCompiler47"));
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.ReShadeD3DCompiler47Path = path;
-    }
+    });
 
-    private async void BrowseReShadeCustomDll_Click(object? sender, RoutedEventArgs e)
+    private void BrowseReShadeCustomDll_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
-        var path = await PickDllAsync("Selecionar DLL personalizada do ReShade");
+        var path = await PickDllAsync(T("Win.PickReShadeCustomDll"));
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.ReShadeCustomDllPath = path;
-    }
+    });
 
     private void ClearD3DCompiler47_Click(object? sender, RoutedEventArgs e)
     {
@@ -950,14 +973,14 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = files.Count == 0
-                ? L("Nenhum shader/textura utilizável foi encontrado neste pacote.", "No usable shader/texture was found in this package.")
-                : L("Marcado = será implantado. Desmarcado = permanece excluído nas próximas operações de instalar/atualizar. Shaders e texturas usam caminhos relativos estáveis.", "Checked = deployed. Unchecked = remains excluded on future install/refresh operations. Shaders and textures use stable relative paths."),
+                ? T("Win.NoUsableShaderTextureWasFound")
+                : T("Win.CheckedDeployedUncheckedRemainsExcludedFuture"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
 
         var checks = new List<(ReShadeShaderPackFileInfo File, CheckBox Box)>();
-        foreach (var group in files.GroupBy(x => x.IsTexture ? L("Texturas", "Textures") : "Shaders"))
+        foreach (var group in files.GroupBy(x => x.IsTexture ? T("Win.Textures") : "Shaders"))
         {
             panel.Children.Add(new TextBlock
             {
@@ -982,7 +1005,7 @@ public sealed partial class MainWindow : Window
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.72 };
         var save = new Button
         {
-            Content = L("Salvar seleção", "Save selection"),
+            Content = T("Win.SaveSelection"),
             Padding = new Avalonia.Thickness(14, 7),
             HorizontalAlignment = HorizontalAlignment.Right,
             IsEnabled = files.Count > 0
@@ -996,7 +1019,7 @@ public sealed partial class MainWindow : Window
                 status.Text = notSaved; // keep the dialog open: nothing was saved
                 return;
             }
-            status.Text = LF("Seleção salva: {0}/{1} arquivo(s) ativos.", "Selection saved: {0}/{1} active file(s).", checks.Count - excluded.Length, checks.Count);
+            status.Text = TF("Win.SelectionSavedActiveFileS", checks.Count - excluded.Length, checks.Count);
             dialog?.Close();
         };
 
@@ -1014,7 +1037,7 @@ public sealed partial class MainWindow : Window
 
         dialog = new Window
         {
-            Title = $"Shaders/Textures — {pack.DisplayName}",
+            Title = TF("Win.ShaderTexturesTitle", pack.DisplayName),
             Width = 720,
             Height = 680,
             MinWidth = 560,
@@ -1025,12 +1048,12 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     }
 
-    private async void BrowseDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e)
+    private void BrowseDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
-        var path = await PickDeepFriedChickenArchiveAsync("Selecionar pacote oficial Deep Fried Chicken");
+        var path = await PickDeepFriedChickenArchiveAsync(T("Win.PickDeepFriedChickenPackage"));
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.Dlss5FeederConsumerPackagePath = path;
-    }
+    });
 
     private void ClearDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e)
     {
@@ -1042,32 +1065,32 @@ public sealed partial class MainWindow : Window
     {
         var description = setting.Key switch
         {
-            "Upgrade_R10G10B10A2_TYPELESS" => L("Recursos RGB de 10 bits por canal + alpha de 2 bits sem interpretação fixa.", "10-bit-per-channel RGB resources with 2-bit alpha and no fixed interpretation."),
-            "Upgrade_R10G10B10A2_UNORM" => L("RGB 10-bit normalizado, comum em buffers de maior precisão.", "Normalized 10-bit RGB, commonly used in higher-precision buffers."),
-            "Upgrade_R11G11B10_FLOAT" => L("Formato RGB de ponto flutuante compacto, comum em buffers de iluminação e alta faixa dinâmica.", "Compact floating-point RGB format commonly used in lighting and high-dynamic-range buffers."),
-            "Upgrade_R16G16B16A16_TYPELESS" => L("Recursos RGBA de alta precisão cujo tipo final é definido pela view.", "High-precision RGBA resources whose final type is defined by the view."),
-            "Upgrade_R8G8B8A8_TYPELESS" => L("Recursos RGBA de 8 bits cujo tipo final é definido pela view.", "8-bit RGBA resources whose final type is defined by the view."),
-            "Upgrade_R8G8B8A8_UNORM" => L("Cor RGBA de 8 bits normalizada sem conversão sRGB.", "Normalized 8-bit RGBA color without sRGB conversion."),
-            "Upgrade_R8G8B8A8_UNORM_SRGB" => L("Cor RGBA de 8 bits com conversão sRGB.", "8-bit RGBA color with sRGB conversion."),
-            "Upgrade_CopyDestinations" => L("Permite aplicar a lógica de upgrade também a recursos usados como destino de operações de cópia.", "Allows upgrade logic to apply to resources used as copy-operation destinations."),
-            "Upgrade_UseSCRGB" => L("Controla o uso do caminho de saída scRGB pelo RenoDX.", "Controls RenoDX use of the scRGB output path."),
-            "Upgrade_SwapChainCompatibility" => L("Controla o modo de compatibilidade de upgrade da swapchain.", "Controls the swapchain upgrade compatibility mode."),
-            "Set_Path" => L("Seleciona o caminho de tratamento HDR/SDR usado pelo RenoDX.", "Selects the HDR/SDR processing path used by RenoDX."),
-            "DumpLUTShaders" => L("Controla a exportação de shaders LUT para diagnóstico.", "Controls LUT shader export for diagnostics."),
-            _ when setting.ManifestDriven => L("Configuração de compatibilidade fornecida pelo RHI.", "Compatibility setting provided by RHI."),
-            _ => L("Configuração avançada de compatibilidade do RenoDX.", "Advanced RenoDX compatibility setting.")
+            "Upgrade_R10G10B10A2_TYPELESS" => T("Win.N10BitPerChannelRGBResources"),
+            "Upgrade_R10G10B10A2_UNORM" => T("Win.Normalized10BitRGBCommonlyUsed"),
+            "Upgrade_R11G11B10_FLOAT" => T("Win.CompactFloatingPointRGBFormatCommonly"),
+            "Upgrade_R16G16B16A16_TYPELESS" => T("Win.HighPrecisionRGBAResourcesWhoseFinal"),
+            "Upgrade_R8G8B8A8_TYPELESS" => T("Win.N8BitRGBAResourcesWhoseFinal"),
+            "Upgrade_R8G8B8A8_UNORM" => T("Win.Normalized8BitRGBAColorWithout"),
+            "Upgrade_R8G8B8A8_UNORM_SRGB" => T("Win.N8BitRGBAColorSRGBConversion"),
+            "Upgrade_CopyDestinations" => T("Win.AllowsUpgradeLogicApplyResourcesUsed"),
+            "Upgrade_UseSCRGB" => T("Win.ControlsRenoDXUseScRGBOutputPath"),
+            "Upgrade_SwapChainCompatibility" => T("Win.ControlsSwapchainUpgradeCompatibilityMode"),
+            "Set_Path" => T("Win.SelectsHDRSDRProcessingPathUsed"),
+            "DumpLUTShaders" => T("Win.ControlsLUTShaderExportDiagnostics"),
+            _ when setting.ManifestDriven => T("Win.CompatibilitySettingProvidedByRHI"),
+            _ => T("Win.AdvancedRenoDXCompatibilitySetting")
         };
 
         var format = setting.Key.StartsWith("Upgrade_R", StringComparison.OrdinalIgnoreCase)
             ? setting.Key["Upgrade_".Length..]
             : null;
         var technical = format is null
-            ? LF("Chave RenoDX: {0}", "RenoDX key: {0}", setting.Key)
-            : LF("Formato DirectX: {0}\nChave RenoDX: {1}", "DirectX format: {0}\nRenoDX key: {1}", format, setting.Key);
+            ? TF("Win.RenoDXKey", setting.Key)
+            : TF("Win.DirectXFormatRenoDXKey", format, setting.Key);
         return $"{description}\n\n{technical}";
     }
 
-    private async void Dlssg2030Settings_Click(object? sender, RoutedEventArgs e)
+    private void Dlssg2030Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasDlssg2030Settings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1134,7 +1157,7 @@ public sealed partial class MainWindow : Window
             var installedProxy = record.Metadata.GetValueOrDefault("FG2030.ProxyName") ?? preferences.ProxyName;
             panel.Children.Add(new TextBlock
             {
-                Text = LF("Instalado: {0} · {1}. Para mudar geração/proxy, remova e reinstale o componente; o RHI não troca a autoridade de um slot DLL no meio de uma instalação gerenciada.", "Installed: {0} · {1}. To change generation/proxy, remove and reinstall the component; RHI does not change DLL slot authority during a managed installation.", installedGpu, installedProxy),
+                Text = TF("Win.InstalledChangeGenerationProxyRemoveReinstall", installedGpu, installedProxy),
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.74
             });
@@ -1156,7 +1179,7 @@ public sealed partial class MainWindow : Window
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Check") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Update"), IsEnabled = false };
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1166,13 +1189,13 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
-            update.Click += async (_, _) =>
+            });
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateDlssg2030Async();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
             buttons.Children.Add(check);
             buttons.Children.Add(update);
             panel.Children.Add(buttons);
@@ -1198,9 +1221,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e)
+    private void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasStandaloneDlssEnablerSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1249,7 +1272,7 @@ public sealed partial class MainWindow : Window
             var installedVersion = record.Version ?? "?";
             panel.Children.Add(new TextBlock
             {
-                Text = LF("Instalado: {0} · {1}. Para trocar o proxy, remova e reinstale; o RHI não muda a autoridade de um slot DLL durante uma instalação gerenciada.", "Installed: {0} · {1}. To change the proxy, remove and reinstall; RHI does not change DLL slot authority during a managed installation.", installedVersion, installedProxy),
+                Text = TF("Win.InstalledChangeProxyRemoveReinstallRHI", installedVersion, installedProxy),
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.74
             });
@@ -1269,7 +1292,7 @@ public sealed partial class MainWindow : Window
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneCheck") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneUpdate"), IsEnabled = false };
 
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1279,14 +1302,14 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
+            });
 
-            update.Click += async (_, _) =>
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateStandaloneDlssEnablerAsync();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
 
             buttons.Children.Add(check);
             buttons.Children.Add(update);
@@ -1314,9 +1337,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e)
+    private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtx40MfgSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1393,7 +1416,7 @@ public sealed partial class MainWindow : Window
             var installedVersion = record.Version ?? "?";
             panel.Children.Add(new TextBlock
             {
-                Text = LF("Instalado: {0} · {1} · {2}. Para trocar GPU/proxy, remova e reinstale; o RHI não troca o owner de um slot DLL durante uma instalação gerenciada.", "Installed: {0} · {1} · {2}. To change GPU/proxy, remove and reinstall; RHI does not change a DLL slot owner during a managed installation.", installedVersion, installedGpu, installedProxy),
+                Text = TF("Win.InstalledChangeGPUProxyRemoveReinstall", installedVersion, installedGpu, installedProxy),
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.74
             });
@@ -1417,7 +1440,7 @@ public sealed partial class MainWindow : Window
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgCheck") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgUpdate"), IsEnabled = false };
 
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1427,14 +1450,14 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
+            });
 
-            update.Click += async (_, _) =>
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateRtx40MfgAsync();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
 
             buttons.Children.Add(check);
             buttons.Children.Add(update);
@@ -1462,9 +1485,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void RenoDxSettings_Click(object? sender, RoutedEventArgs e)
+    private void RenoDxSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRenoDxSettings) return;
         if (DataContext is not MainWindowViewModel vm) return;
@@ -1478,13 +1501,13 @@ public sealed partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock
         {
-            Text = L("Configurações de compatibilidade", "Compatibility settings"),
+            Text = T("Win.CompatibilitySettings"),
             FontSize = 18,
             FontWeight = FontWeight.SemiBold
         });
         panel.Children.Add(new TextBlock
         {
-            Text = L("As alterações são gravadas imediatamente na seção [renodx] do jogo selecionado. Opções de compatibilidade mantêm os identificadores exigidos pelo componente e recebem nomes amigáveis na interface.", "Changes are written immediately to the selected game [renodx] section. Compatibility options keep the identifiers required by the component and receive friendly names in the UI."),
+            Text = T("Win.ChangesWrittenImmediatelySelectedGameRenodx"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
@@ -1504,13 +1527,13 @@ public sealed partial class MainWindow : Window
         if (!snapshot.HasRenoDxSection)
         {
             message.Text = string.IsNullOrWhiteSpace(snapshot.Warning)
-                ? L("Execute o jogo uma vez com o RenoDX instalado para gerar as configurações.", "Run the game once with RenoDX installed to generate the settings.")
+                ? T("Win.RunGameOnceRenoDXInstalledGenerate")
                 : UiLocalizationService.Present(snapshot.Warning);
             panel.Children.Add(message);
         }
         else if (snapshot.Settings.Count == 0)
         {
-            message.Text = L("A seção [renodx] existe, mas nenhuma configuração de compatibilidade está disponível no momento.", "The [renodx] section exists, but no compatibility setting is currently available.");
+            message.Text = T("Win.RenodxSectionExistsButNoCompatibility");
             panel.Children.Add(message);
         }
         else
@@ -1578,7 +1601,7 @@ public sealed partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = $"RenoDX — Compatibilidade — {vm.SelectedGame?.Name ?? L("Jogo", "Game")}",
+            Title = TF("Win.RenoDxCompatibilityTitle", vm.SelectedGame?.Name ?? T("Win.Game")),
             Width = 660,
             Height = 620,
             MinWidth = 560,
@@ -1587,9 +1610,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void OptiScalerSettings_Click(object? sender, RoutedEventArgs e)
+    private void OptiScalerSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasOptiScalerSettings) return;
         if (DataContext is not MainWindowViewModel vm) return;
@@ -1598,13 +1621,13 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
         panel.Children.Add(new TextBlock
         {
-            Text = L("Configurações avançadas do OptiScaler", "Advanced OptiScaler settings"),
+            Text = T("Win.AdvancedOptiScalerSettings"),
             FontSize = 18,
             FontWeight = FontWeight.SemiBold
         });
         panel.Children.Add(new TextBlock
         {
-            Text = L("Escolha o canal antes de instalar. Stable é o padrão; Nightly e DLSS NR usam caches de download separados. Depois da instalação, remova o OptiScaler antes de trocar de variante.", "Choose the channel before installing. Stable is the default; Nightly and DLSS NR use separate download caches. After installation, remove OptiScaler before changing variants."),
+            Text = T("Win.ChooseChannelBeforeInstallingStableDefault"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
@@ -1612,10 +1635,10 @@ public sealed partial class MainWindow : Window
         var variantRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
         var variantLabel = new TextBlock
         {
-            Text = L("Canal / variante", "Channel / variant"),
+            Text = T("Win.ChannelVariant"),
             VerticalAlignment = VerticalAlignment.Center
         };
-        ToolTip.SetTip(variantLabel, L("Stable usa o release oficial estável; Nightly usa OptiScaler-nightly; DLSS NR usa o fork com Renderização Neural e o runtime NR gerenciado pelo RHI.", "Stable uses the official stable release; Nightly uses OptiScaler-nightly; DLSS NR uses the Neural Rendering fork and the RHI-managed NR runtime."));
+        ToolTip.SetTip(variantLabel, T("Win.StableUsesOfficialStableReleaseNightly"));
         var variantCombo = new ComboBox
         {
             ItemsSource = vm.OptiScalerVariantOptions,
@@ -1636,8 +1659,8 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = snapshot.ManagedByRhi
-                ? L("Variante instalada: o seletor fica bloqueado até a remoção para evitar mistura de arquivos entre canais.", "Installed variant: the selector stays locked until removal to prevent mixing files between channels.")
-                : L("A variante selecionada é salva por jogo e será usada no próximo Install.", "The selected variant is saved per game and will be used on the next install."),
+                ? T("Win.InstalledVariantSelectorStaysLockedUntil")
+                : T("Win.SelectedVariantSavedPerGameWill"),
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.58
@@ -1652,7 +1675,7 @@ public sealed partial class MainWindow : Window
         });
         panel.Children.Add(new TextBlock
         {
-            Text = L("Os controles abaixo editam somente o OptiScaler.ini. As alterações são imediatas e atômicas; arquivos de proxy/encadeamento gerenciados pelo RHI não são alterados.", "The controls below edit only OptiScaler.ini. Changes are immediate and atomic; RHI-managed proxy/chaining files are not changed."),
+            Text = T("Win.ControlsBelowEditOnlyOptiScalerIni"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
@@ -1671,7 +1694,7 @@ public sealed partial class MainWindow : Window
         if (!snapshot.ManagedByRhi || snapshot.Settings.Count == 0)
         {
             message.Text = string.IsNullOrWhiteSpace(snapshot.Warning)
-                ? L("Nenhuma configuração do OptiScaler gerenciada pelo RHI está disponível para este jogo.", "No RHI-managed OptiScaler settings are available for this game.")
+                ? T("Win.NoRHIManagedOptiScalerSettingsAvailable")
                 : UiLocalizationService.Present(snapshot.Warning);
             panel.Children.Add(message);
         }
@@ -1711,15 +1734,31 @@ public sealed partial class MainWindow : Window
                 combo.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
                 var acceptedIndex = combo.SelectedIndex;
                 var reverting = false;
-                combo.SelectionChanged += async (_, _) =>
+                combo.SelectionChanged += (_, _) => RunUiSafe(async () =>
                 {
                     if (reverting || combo.SelectedIndex < 0 || combo.SelectedIndex >= options.Length) return;
                     var requestedIndex = combo.SelectedIndex;
                     var selected = options[requestedIndex];
                     combo.IsEnabled = false;
-                    var result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
-                    combo.IsEnabled = true;
-                    message.Text = UiLocalizationService.Present(result.Message);
+                    ComponentOperationResult result;
+                    string shown;
+                    try
+                    {
+                        result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
+                        shown = UiLocalizationService.Present(result.Message);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Report returns an already-localised sentence; presenting it again could swap it for the
+                        // generic text because it embeds the (English) .NET message (review nit 6).
+                        result = ComponentOperationResult.Fail(UiExceptionGuard.Report(ex, "optiscaler-advanced-setting"));
+                        shown = result.Message;
+                    }
+                    finally
+                    {
+                        combo.IsEnabled = true;
+                    }
+                    message.Text = shown;
                     if (result.Success)
                     {
                         acceptedIndex = requestedIndex;
@@ -1728,7 +1767,7 @@ public sealed partial class MainWindow : Window
                     reverting = true;
                     combo.SelectedIndex = acceptedIndex;
                     reverting = false;
-                };
+                });
 
                 Grid.SetColumn(label, 0);
                 Grid.SetColumn(combo, 1);
@@ -1752,7 +1791,7 @@ public sealed partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = $"OptiScaler — Avançado — {vm.SelectedGame?.Name ?? L("Jogo", "Game")}",
+            Title = TF("Win.OptiScalerAdvancedTitle", vm.SelectedGame?.Name ?? T("Win.Game")),
             Width = 720,
             Height = 760,
             MinWidth = 620,
@@ -1761,7 +1800,7 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private void ToggleSection_Click(object? sender, RoutedEventArgs e)
     {
@@ -1781,7 +1820,7 @@ public sealed partial class MainWindow : Window
         UpdateSectionSummaries();
     }
 
-    private async void SectionDragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
+    private void SectionDragHandle_PointerPressed(object? sender, PointerPressedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Control { Tag: string sectionKey }) return;
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
@@ -1789,7 +1828,7 @@ public sealed partial class MainWindow : Window
         var data = new DataTransfer();
         data.Add(DataTransferItem.CreateText(sectionKey));
         await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
-    }
+    });
 
     private void Section_DragOver(object? sender, DragEventArgs e)
     {
@@ -1895,10 +1934,11 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            UiExceptionGuard.Log.TryWrite("save section layout", ex);
             if (DataContext is MainWindowViewModel vm)
                 vm.StatusText = ex is JsonStoreUnavailableException
                     ? MainWindowViewModel.StoreSaveFailedText(ex)
-                    : LF("Não foi possível salvar o layout das seções: {0}", "Could not save section layout: {0}", ex.Message);
+                    : TF("Win.CouldNotSaveSectionLayout", ex.Message);
         }
     }
 

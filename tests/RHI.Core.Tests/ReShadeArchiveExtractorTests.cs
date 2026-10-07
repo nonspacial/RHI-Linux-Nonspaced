@@ -114,8 +114,20 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => NoHostTool().ExtractDllsAsync(setup, Path.Combine(_root, "cd")));
 
-        Assert.Contains("Could not read the ReShade setup archive", error.Message);
+        Assert.StartsWith(ReShadeArchiveExtractor.SetupUnreadablePrefix, error.Message);
         Assert.Equal(1, _externalLookups);
+    }
+
+    [Fact]
+    public void SetupUnreadableError_HasAPortuguesePresentation_KeepingTheReason()
+    {
+        const string reason = "no ZIP archive found in the setup";
+        var shown = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", ReShadeArchiveExtractor.SetupUnreadablePrefix + reason);
+
+        Assert.StartsWith("O instalador do ReShade não pôde ser lido", shown);
+        Assert.EndsWith(reason, shown);
+        Assert.Equal(ReShadeArchiveExtractor.SetupUnreadablePrefix + reason,
+            RHI.Desktop.Localization.UiLocalizationService.PresentFor("en-US", ReShadeArchiveExtractor.SetupUnreadablePrefix + reason));
     }
 
     [Fact]

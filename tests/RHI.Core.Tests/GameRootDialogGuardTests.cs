@@ -13,6 +13,7 @@ namespace RHI.Core.Tests;
 /// change is saved instead of waiting, disabled, for a running operation.
 /// Assertions are structural (flags and stores), never on localised text.
 /// </summary>
+[Collection(UiLanguageCollection.Name)]
 public sealed class GameRootDialogGuardTests
 {
     private static string Exe(string directory, string name = "Game.exe")
@@ -38,7 +39,7 @@ public sealed class GameRootDialogGuardTests
 
     public static TheoryData<string> RefusedRoots => new() { "prefix", "home", "root" };
 
-    private static (string Root, string Exe) Refused(string kind, DetectViewModelFixture fixture) => kind switch
+    private static (string Root, string Exe) Refused(string kind, ViewModelFixture fixture) => kind switch
     {
         "prefix" => PrefixWithGame(fixture.Root),
         "home" => (LinuxPaths.Home, HomeGameExe()),
@@ -49,7 +50,7 @@ public sealed class GameRootDialogGuardTests
     [MemberData(nameof(RefusedRoots))]
     public async Task AddManualGame_RefusesTheFolder_AndLeavesTheLibraryUnchanged(string kind)
     {
-        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        using var fixture = await ViewModelFixture.StartAsync([]);
         var (root, exe) = Refused(kind, fixture);
         Assert.NotEqual(GameRootProblem.None, GameRootGuard.Check(root));
         var before = Snapshot(fixture.Library.LibraryPath);
@@ -70,7 +71,7 @@ public sealed class GameRootDialogGuardTests
     [MemberData(nameof(RefusedRoots))]
     public async Task EditGame_RefusesTheFolder_AndSavesNoOverride(string kind)
     {
-        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        using var fixture = await ViewModelFixture.StartAsync([]);
         var listed = Exe(Path.Combine(fixture.Root, "games", "Listed"));
         var state = fixture.Library.Load();
         state.ManualGames.Add(new LinuxManualGameEntry { Name = "Listed", InstallPath = Path.GetDirectoryName(listed)!, ExecutablePath = listed });
@@ -80,7 +81,7 @@ public sealed class GameRootDialogGuardTests
         // The exe and binaries folder sit inside the refused root, so only the root guard can refuse.
         var (root, exe) = Refused(kind, fixture);
 
-        var (savedEdit, message) = await fixture.Vm.TrySaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null);
+        var (savedEdit, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null);
 
         Assert.False(savedEdit);
         Assert.False(string.IsNullOrWhiteSpace(message));
@@ -90,7 +91,7 @@ public sealed class GameRootDialogGuardTests
     [Fact]
     public async Task SavedEntriesWithARefusedFolder_StayListedAsNotAllowed_AndCanBeRemoved()
     {
-        using var fixture = await DetectViewModelFixture.StartAsync([], seed: store =>
+        using var fixture = await ViewModelFixture.StartAsync([], seed: store =>
         {
             var state = store.Load();
             state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Home", InstallPath = LinuxPaths.Home, LaunchCommand = "true" });
@@ -124,7 +125,7 @@ public sealed class GameRootDialogGuardTests
     [Fact]
     public async Task EditingARefusedEntryOntoTheGamesOwnFolder_ClearsTheState()
     {
-        using var fixture = await DetectViewModelFixture.StartAsync([], seed: store =>
+        using var fixture = await ViewModelFixture.StartAsync([], seed: store =>
         {
             var state = store.Load();
             state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Home", InstallPath = LinuxPaths.Home });
@@ -133,7 +134,7 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
         var exe = HomeGameExe();
 
-        var (saved, _) = await fixture.Vm.TrySaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
+        var (saved, _) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
 
         Assert.True(saved);
         var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
@@ -145,7 +146,7 @@ public sealed class GameRootDialogGuardTests
     [Fact]
     public async Task AddAndEdit_ReportSavedBeforeTheRefreshWaitsForARunningOperation()
     {
-        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        using var fixture = await ViewModelFixture.StartAsync([]);
         var exe = Exe(Path.Combine(fixture.Root, "games", "Busy Add"));
         var vm = fixture.Vm;
 
@@ -165,7 +166,7 @@ public sealed class GameRootDialogGuardTests
         vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add");
         vm.IsBusy = true;
         var editSaved = false;
-        var edit = vm.TrySaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
+        var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
 
         Assert.True(editSaved);
         Assert.False(edit.IsCompleted);

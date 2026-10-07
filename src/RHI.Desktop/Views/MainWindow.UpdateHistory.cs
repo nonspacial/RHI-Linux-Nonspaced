@@ -14,13 +14,13 @@ public sealed partial class MainWindow
     /// <summary>Shared with the component service by App; falls back to the default path.</summary>
     public ComponentUpdateLogStore? UpdateLogStore { get; set; }
 
-    private async void UpdateHistory_Click(object? sender, RoutedEventArgs e)
+    private void UpdateHistory_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var store = UpdateLogStore ??= new ComponentUpdateLogStore();
         var list = new StackPanel { Spacing = 0 };
         var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, FontSize = 11, Opacity = 0.6 };
-        var clear = new Button { Content = L("Limpar histórico", "Clear history"), Padding = new Thickness(14, 7) };
-        var close = new Button { Content = L("Fechar", "Close"), Padding = new Thickness(14, 7) };
+        var clear = new Button { Content = T("Win.ClearHistory"), Padding = new Thickness(14, 7) };
+        var close = new Button { Content = T("Win.Close"), Padding = new Thickness(14, 7) };
 
         void Rebuild()
         {
@@ -43,7 +43,7 @@ public sealed partial class MainWindow
             {
                 list.Children.Add(new TextBlock
                 {
-                    Text = LF("O histórico de atualizações não pôde ser lido e foi copiado para {0}. Nada novo será registrado até que você limpe o histórico.", "The update history could not be read and was copied to {0}. Nothing new is recorded until you clear the history.", corrupt),
+                    Text = TF("Win.UpdateHistoryCouldNotReadWas", corrupt),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brushes.OrangeRed,
                     Margin = new Thickness(0, 8, 0, 0)
@@ -51,16 +51,15 @@ public sealed partial class MainWindow
             }
 
             count.Text = entries.Count == 0
-                ? L("Nenhuma atualização registrada.", "No updates recorded yet.")
-                : LF("{0} registro(s)", "{0} event(s) recorded", entries.Count);
+                ? T("Win.NoUpdatesRecordedYet")
+                : TF("Win.EventSRecorded", entries.Count);
             clear.IsEnabled = entries.Count > 0 || corrupt is not null;
 
             if (entries.Count == 0 && corrupt is null)
             {
                 list.Children.Add(new TextBlock
                 {
-                    Text = L("Nenhuma atualização de componente foi registrada ainda.\n\nO RHI registra cada instalação, atualização e remoção de componentes gerenciados (ReShade, RenoDX, OptiScaler, ReLimiter, Display Commander, Luma e outros) — por ação manual, Atualizar tudo ou a verificação em segundo plano.",
-                        "No component updates have been recorded yet.\n\nRHI records every install, update and removal of managed components (ReShade, RenoDX, OptiScaler, ReLimiter, Display Commander, Luma and others) — from manual actions, Update all or the background check."),
+                    Text = T("Win.NoComponentUpdatesHaveBeenRecorded"),
                     TextWrapping = TextWrapping.Wrap,
                     Opacity = 0.7,
                     Margin = new Thickness(0, 8, 0, 0)
@@ -99,7 +98,7 @@ public sealed partial class MainWindow
 
         var dialog = new Window
         {
-            Title = L("RHI-Linux — Atualizações de componentes", "RHI-Linux — Component updates"),
+            Title = T("Win.RHILinuxComponentUpdates"),
             Width = 820,
             Height = 540,
             MinWidth = 620,
@@ -108,12 +107,12 @@ public sealed partial class MainWindow
             Content = panel
         };
         close.Click += (_, _) => dialog.Close();
-        clear.Click += async (_, _) =>
+        clear.Click += (_, _) => RunUiSafe(async () =>
         {
             var confirmed = await ShowConfirmationAsync(
-                L("Limpar histórico", "Clear history"),
-                L("Apagar todo o histórico de atualizações de componentes? Os componentes instalados não são alterados.", "Delete the whole component update history? Installed components are not changed."),
-                L("Limpar", "Clear"));
+                T("Win.ClearHistory"),
+                T("Win.DeleteWholeComponentUpdateHistoryInstalled"),
+                T("Win.Clear"));
             if (!confirmed) return;
             try
             {
@@ -125,9 +124,9 @@ public sealed partial class MainWindow
                 return;
             }
             Rebuild();
-        };
+        });
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private static Control BuildUpdateHistoryRow(ComponentUpdateLogEntry entry)
     {

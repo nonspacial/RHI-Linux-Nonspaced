@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Detection;
@@ -35,13 +36,13 @@ public sealed record LinuxSettingsUiSnapshot(
 
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
-    private static string L(string ptBr, string enUs) => UiLocalizationService.Choose(ptBr, enUs);
-    private static string LF(string ptBr, string enUs, params object?[] args) => UiLocalizationService.ChooseFormat(ptBr, enUs, args);
+    private static string T(string key) => UiLocalizationService.Text(key);
+    private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
-    private static string PresentOr(string? value, string ptBrFallback, string enUsFallback)
+    private static string PresentOr(string? value, string fallback)
     {
         var presented = UiLocalizationService.Present(value);
-        return string.IsNullOrWhiteSpace(presented) ? L(ptBrFallback, enUsFallback) : presented;
+        return string.IsNullOrWhiteSpace(presented) ? fallback : presented;
     }
 
     private sealed record ProbeCacheEntry(
@@ -236,102 +237,102 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SelectedLaunchProviderIcon is not null &&
         !string.Equals(SelectedLaunchProvider, SelectedLibraryProvider, StringComparison.OrdinalIgnoreCase);
     public string LibraryProviderToolTip => string.IsNullOrWhiteSpace(SelectedLibraryProvider)
-        ? L("Origem da biblioteca não identificada", "Library source not identified")
-        : LF("Origem da biblioteca: {0}", "Library source: {0}", SelectedLibraryProvider);
+        ? T("Vm.LibrarySourceNotIdentified")
+        : TF("Vm.LibrarySource", SelectedLibraryProvider);
     public string LaunchProviderToolTip => string.IsNullOrWhiteSpace(SelectedLaunchProvider)
-        ? L("Launcher/plataforma não identificado", "Launcher/platform not identified")
-        : LF("Launcher/plataforma: {0}", "Launcher/platform: {0}", SelectedLaunchProvider);
+        ? T("Vm.LauncherPlatformNotIdentified")
+        : TF("Vm.LauncherPlatform", SelectedLaunchProvider);
 
     public bool HasConfirmedPatchTarget => SelectedGame?.HasConfirmedPatchTarget == true;
     public string PatchTargetStatusText => SelectedGame switch
     {
-        null => L("Nenhum jogo selecionado", "No game selected"),
+        null => T("Vm.NoGameSelected"),
         { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
-            => L("Alvo de modificações: Manual ⚠ executável ausente", "Modification target: Manual ⚠ executable missing"),
+            => T("Vm.ModificationTargetManualExecutableMissing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)
-            => L("Alvo de modificações: Manifesto ⚠ executável ausente", "Modification target: Manifest ⚠ executable missing"),
-        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual" } => L("Alvo de modificações: Manual ✓", "Modification target: Manual ✓"),
-        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest" } => L("Alvo de modificações: Manifesto ✓", "Modification target: Manifest ✓"),
-        { HasConfirmedPatchTarget: true } => L("Alvo de modificações: Automático ✓", "Modification target: Automatic ✓"),
-        _ => L("Alvo de modificações não definido — use Editar jogo antes de instalar ou aplicar componentes", "Modification target is not defined — use Edit game before installing or applying components")
+            => T("Vm.ModificationTargetManifestExecutableMissing"),
+        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual" } => T("Vm.ModificationTargetManual"),
+        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest" } => T("Vm.ModificationTargetManifest"),
+        { HasConfirmedPatchTarget: true } => T("Vm.ModificationTargetAutomatic"),
+        _ => T("Vm.ModificationTargetNotDefinedUseEdit")
     };
     public string SelectedLaunchExecutable => SelectedGame?.LaunchExecutablePath ??
-        (SelectedGame is null ? "" : L("O launcher gerencia a inicialização sem expor um executável local.", "The launcher manages startup without exposing a local executable."));
+        (SelectedGame is null ? "" : T("Vm.LauncherManagesStartupWithoutExposingLocal"));
     public string SelectedInstallPath => SelectedGame switch
     {
         null => "",
-        { GameRootNotAllowed: true } game => LF("{0} — pasta não permitida", "{0} — folder not allowed", game.InstallPath),
-        { HasConfirmedPatchTarget: false } => L("Não definido — selecione o executável real do jogo em Editar jogo", "Not defined — select the real game executable in Edit game"),
+        { GameRootNotAllowed: true } game => TF("Vm.FolderNotAllowed", game.InstallPath),
+        { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedSelectRealGameExecutable"),
         _ => SelectedGame.InstallPath
     };
     public string SelectedPrefix => SelectedGame is null
-        ? L("Nenhum prefixo Wine/Proton detectado", "No Wine/Proton prefix detected")
+        ? T("Vm.NoWineProtonPrefixDetected")
         : string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
-            ? L("Jogo Linux nativo — sem prefixo Wine/Proton", "Native Linux game — no Wine/Proton prefix")
-            : SelectedGame.PrefixPath ?? L("Prefixo Wine/Proton não criado/detectado", "Wine/Proton prefix not created/detected");
+            ? T("Vm.NativeLinuxGameNoWineProton")
+            : SelectedGame.PrefixPath ?? T("Vm.WineProtonPrefixNotCreatedDetected");
     public string SelectedExecutable => SelectedGame switch
     {
-        null => L("Executável ainda não detectado", "Executable not detected yet"),
-        { HasConfirmedPatchTarget: false } => L("Não definido — não será usado o executável do launcher como alvo", "Not defined — the launcher executable will not be used as the target"),
-        _ => SelectedGame.ExecutablePath ?? L("Executável ainda não detectado", "Executable not detected yet")
+        null => T("Vm.ExecutableNotDetectedYet"),
+        { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedLauncherExecutableWillNot"),
+        _ => SelectedGame.ExecutablePath ?? T("Vm.ExecutableNotDetectedYet")
     };
     public string SelectedBinaryDirectory => SelectedGame switch
     {
         null => "",
-        { HasConfirmedPatchTarget: false } => L("Não definido — patches e add-ons estão bloqueados", "Not defined — patches and add-ons are blocked"),
+        { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedPatchesAddOnsBlocked"),
         _ => SelectedGame.BinaryDirectory ?? SelectedGame.InstallPath
     };
     public string SelectedApi
     {
         get
         {
-            if (SelectedGame is null) return L("Desconhecida", "Unknown");
+            if (SelectedGame is null) return T("Vm.Unknown");
             if (SelectedGame.UserGraphicsApiOverride is GraphicsApi explicitApi && explicitApi != GraphicsApi.Unknown)
             {
                 var detected = IsSelectionProbeBusy
-                    ? L("detector ainda em execução", "detector still running")
+                    ? T("Vm.DetectorStillRunning")
                     : SelectedGame.GraphicsApi != GraphicsApi.Unknown
-                        ? LF("detectada: {0}", "detected: {0}", FormatApi(SelectedGame.GraphicsApi))
-                        : L("API detectada desconhecida", "detected API unknown");
-                return LF("{0} · substituição explícita · {1}", "{0} · explicit override · {1}", FormatApi(explicitApi), detected);
+                        ? TF("Vm.Detected", FormatApi(SelectedGame.GraphicsApi))
+                        : T("Vm.DetectedAPIUnknown");
+                return TF("Vm.ExplicitOverride", FormatApi(explicitApi), detected);
             }
             if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown)
             {
                 var detected = IsSelectionProbeBusy
-                    ? L("detector ainda em execução", "detector still running")
+                    ? T("Vm.DetectorStillRunning")
                     : SelectedGame.GraphicsApi != GraphicsApi.Unknown
-                        ? LF("detectada: {0}", "detected: {0}", FormatApi(SelectedGame.GraphicsApi))
-                        : L("API detectada desconhecida", "detected API unknown");
+                        ? TF("Vm.Detected", FormatApi(SelectedGame.GraphicsApi))
+                        : T("Vm.DetectedAPIUnknown");
                 var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
                     ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
                     : FormatApi(manifestApi);
-                return LF("{0} · dados de compatibilidade do RHI upstream · {1}", "{0} · upstream RHI compatibility data · {1}", manifestApis, detected);
+                return TF("Vm.UpstreamRHICompatibilityData", manifestApis, detected);
             }
-            if (IsSelectionProbeBusy) return L("Detectando…", "Detecting…");
+            if (IsSelectionProbeBusy) return T("Vm.Detecting");
             if (SelectedGame.GraphicsApi != GraphicsApi.Unknown)
                 return $"{FormatApi(SelectedGame.GraphicsApi)} · {FormatGraphicsApiConfidence(SelectedGame.GraphicsApiConfidence)}";
             return SelectedGame.GraphicsApis.Count > 0
                 ? $"{string.Join(" / ", SelectedGame.GraphicsApis.Select(FormatApi))} · {FormatGraphicsApiConfidence(SelectedGame.GraphicsApiConfidence)}"
-                : L("Desconhecida", "Unknown");
+                : T("Vm.Unknown");
         }
     }
     public string SelectedApiEvidence
     {
         get
         {
-            if (SelectedGame is null) return L("Nenhuma assinatura confiável de API gráfica foi detectada", "No reliable graphics API signature was detected");
+            if (SelectedGame is null) return T("Vm.NoReliableGraphicsAPISignatureWas");
             var detected = IsSelectionProbeBusy
-                ? L("Analisando executável, configuração do motor e arquivos locais de runtime em segundo plano…", "Analyzing executable, engine configuration and local runtime files in the background…")
-                : PresentOr(SelectedGame.GraphicsApiEvidence, "Nenhuma assinatura confiável de API gráfica foi detectada", "No reliable graphics API signature was detected");
+                ? T("Vm.AnalyzingExecutableEngineConfigurationLocalRunti")
+                : PresentOr(SelectedGame.GraphicsApiEvidence, T("Vm.NoReliableGraphicsAPISignatureWas"));
             if (SelectedGame.UserGraphicsApiOverride is GraphicsApi explicitApi && explicitApi != GraphicsApi.Unknown)
-                return LF("Autoridade explícita por jogo: {0}. A evidência do detector é preservada separadamente: {1}", "Explicit per-game authority: {0}. Detector evidence is preserved separately: {1}", FormatApi(explicitApi), detected);
+                return TF("Vm.ExplicitPerGameAuthorityDetectorEvidence", FormatApi(explicitApi), detected);
             if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown)
             {
                 var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
                     ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
                     : FormatApi(manifestApi);
-                return LF("Compatibilidade informada pelo RHI upstream: {0}. A detecção local é preservada separadamente: {1}", "Upstream RHI compatibility: {0}. Local detection is preserved separately: {1}", manifestApis, detected);
+                return TF("Vm.UpstreamRHICompatibilityLocalDetectionPreserved", manifestApis, detected);
             }
             return detected;
         }
@@ -344,24 +345,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (SelectedGame is null) return L("Selecione um jogo Windows.", "Select a Windows game.");
+            if (SelectedGame is null) return T("Vm.SelectWindowsGame");
             if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-                return L("Alvos Linux nativos não usam substituições de injeção da API gráfica do Windows.", "Native Linux targets do not use Windows graphics API injection overrides.");
+                return T("Vm.NativeLinuxTargetsDoNotUse");
             if (SelectedGame.UserGraphicsApiOverride == GraphicsApi.DirectX11 &&
                 SelectedGame.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true)
                 return SelectedGame.EngineHint.Contains("Unreal Engine 5", StringComparison.OrdinalIgnoreCase)
-                    ? L("A autoridade explícita DX11 habilita a exceção upstream de Luma genérico para UE5. Use somente quando o jogo realmente oferecer um caminho de inicialização DX11.", "Explicit DX11 authority enables the upstream generic Luma exception for UE5. Use it only when the game actually offers a DX11 startup path.")
-                    : L("A autoridade explícita DX11 pode habilitar Luma genérico para jogos Unreal detectados localmente cuja geração do motor seja desconhecida. A evidência do detector continua visível acima.", "Explicit DX11 authority can enable generic Luma for locally detected Unreal games whose engine generation is unknown. Detector evidence remains visible above.");
+                    ? T("Vm.ExplicitDX11AuthorityEnablesUpstreamGeneric")
+                    : T("Vm.ExplicitDX11AuthorityCanEnableGeneric");
             if (SelectedGame.HasExplicitGraphicsApiOverride)
-                return L("A substituição explícita do usuário tem prioridade na elegibilidade dos componentes; as evidências do manifesto e do detector continuam visíveis acima.", "The explicit user override takes priority for component eligibility; manifest and detector evidence remain visible above.");
+                return T("Vm.ExplicitUserOverrideTakesPriorityComponent");
             if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi)
             {
                 var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
                     ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
                     : FormatApi(manifestApi);
-                return LF("Automático usa primeiro os dados de compatibilidade do RHI upstream ({0}) e depois a detecção local. Escolha uma substituição explícita apenas quando quiser definir a API manualmente.", "Automatic uses upstream RHI compatibility data first ({0}) and then local detection. Choose an explicit override only when you want to set the API manually.", manifestApis);
+                return TF("Vm.AutomaticUsesUpstreamRHICompatibilityData", manifestApis);
             }
-            return L("Automático usa detecção por runtime/arquivos. A autoridade explícita DX11 no estilo upstream é necessária para a exceção de Luma genérico no UE5.", "Automatic uses runtime/file detection. Upstream-style explicit DX11 authority is required for the generic Luma exception on UE5.");
+            return T("Vm.AutomaticUsesRuntimeFileDetectionUpstream");
         }
     }
     public bool CanSelectLumaMode => SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy
@@ -370,7 +371,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (SelectedGame is null) return L("Selecione um jogo Windows.", "Select a Windows game.");
+            if (SelectedGame is null) return T("Vm.SelectWindowsGame");
             var policy = _managedComponents.GetLumaPolicy(SelectedGame);
             return UiLocalizationService.Present(policy.Summary);
         }
@@ -382,14 +383,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (SelectedGame is null) return "";
             var policy = _managedComponents.GetLumaPolicy(SelectedGame);
             return policy.RenoDxCompatible
-                ? L("Os dados de compatibilidade do RHI upstream permitem RenoDX + Luma neste jogo.", "Upstream RHI compatibility data allows RenoDX + Luma for this game.")
-                : L("RenoDX + Luma permanecem mutuamente exclusivos, salvo quando lumaRenodxCompat autoriza este jogo.", "RenoDX + Luma remain mutually exclusive unless lumaRenodxCompat authorizes this game.");
+                ? T("Vm.UpstreamRHICompatibilityDataAllowsRenoDX")
+                : T("Vm.RenoDXLumaRemainMutuallyExclusiveUnless");
         }
     }
 
     public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
-        ? new LinuxHdrLaunchPlan(false, false, new Dictionary<string, string>(), null, "%command%", L("Selecione um jogo para configurar a orquestração de inicialização HDR.", "Select a game to configure HDR launch orchestration."))
+        ? new LinuxHdrLaunchPlan(false, false, new Dictionary<string, string>(), null, "%command%", T("Vm.SelectGameConfigureHDRLaunchOrchestration"))
         : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi });
     public string HdrProfileHint
     {
@@ -397,7 +398,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             var plan = SelectedHdrPlan;
             if (SelectedGame is not null && plan.Enabled && LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
-                return UiLocalizationService.Present(plan.Summary) + L(" Inicialização mediada pela loja detectada: configure este perfil no Steam/Heroic/Lutris; o RHI não envolverá o processo do launcher.", " Store-mediated launch detected: configure this profile in Steam/Heroic/Lutris; RHI will not wrap the launcher process.");
+                return UiLocalizationService.Present(plan.Summary) + T("Vm.StoreMediatedLaunchDetectedConfigureProfile");
             return UiLocalizationService.Present(plan.Summary);
         }
     }
@@ -408,16 +409,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (IsSelectionProbeBusy) return L("Carregando dados de compatibilidade do RHI upstream…", "Loading upstream RHI compatibility data…");
-            if (SelectedGame is null) return L("Nenhum jogo selecionado", "No game selected");
+            if (IsSelectionProbeBusy) return T("Vm.LoadingUpstreamRHICompatibilityData");
+            if (SelectedGame is null) return T("Vm.NoGameSelected");
 
             var engine = string.IsNullOrWhiteSpace(SelectedGame.EngineHint)
-                ? L("Sem substituição de motor pelo upstream", "No upstream engine override")
+                ? T("Vm.NoUpstreamEngineOverride")
                 : SelectedGame.EngineHint;
             var architecture = SelectedGame.ForcedArchitecture switch
             {
-                PeArchitecture.X64 => L(" · x64 forçado", " · forced x64"),
-                PeArchitecture.X86 => L(" · x86 forçado", " · forced x86"),
+                PeArchitecture.X64 => T("Vm.ForcedX64"),
+                PeArchitecture.X86 => T("Vm.ForcedX86"),
                 _ => ""
             };
             return engine + architecture;
@@ -427,17 +428,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
     public string? LaunchToolTip => SelectedGame switch
     {
-        { ParentLauncherName: { Length: > 0 } parent } => LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent),
+        { ParentLauncherName: { Length: > 0 } parent } => TF("Vm.OpensStartGameFromLauncher", parent),
         { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game)
-            => LF("Indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton e atualize a biblioteca.",
-                  "Unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton and refresh the library.",
+            => TF("Vm.UnavailablePrefixWasBuiltByProton",
                   game.CompatibilityTool ?? "?"),
         _ => null
     };
 
     private static string OrphanedProtonText(DetectedGame game)
-        => LF("Winetricks indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca.",
-              "Winetricks unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library.",
+        => TF("Vm.WinetricksUnavailablePrefixWasBuiltBy",
               game.CompatibilityTool ?? game.Runner ?? "?");
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
     public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
@@ -446,18 +445,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
            && D3DCompilerToolInstaller.CanInstallWithWinetricks(game);
     public string D3DCompilerWinetricksButtonText
         => SelectedGame is { } game && D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
-            ? LF("Instalar via Winetricks ({0})", "Install via Winetricks ({0})", game.CompatibilityTool ?? game.Runner ?? game.Source)
-            : L("Instalar via Winetricks", "Install via Winetricks");
+            ? TF("Vm.InstallViaWinetricks", game.CompatibilityTool ?? game.Runner ?? game.Source)
+            : T("Vm.InstallViaWinetricks2");
     public string D3DCompilerToolHint
         => SelectedGame switch
         {
-            null => L("Selecione um jogo para determinar o auxiliar D3DCompiler correto.", "Select a game to determine the correct D3DCompiler helper."),
-            { UsesProton: true } => L("Alvo Steam/Proton: Protontricks é usado com o Steam AppID.", "Steam/Proton target: Protontricks is used with the Steam AppID."),
+            null => T("Vm.SelectGameDetermineCorrectD3DCompilerHelper"),
+            { UsesProton: true } => T("Vm.SteamProtonTargetProtontricksUsedSteam"),
             { } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game) => OrphanedProtonText(game),
             { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
-                => LF("Alvo {0}: Winetricks usa o {1} ativo e o prefixo correspondente; executores Proton são normalizados para o Wine embutido em vez do Wine do sistema.", "{0} target: Winetricks uses the active {1} and matching prefix; Proton runners are normalized to their embedded Wine instead of system Wine.", game.Source, game.CompatibilityTool ?? game.Runner ?? L("executor do launcher", "launcher runner")),
-            { SteamAppId: null, PrefixPath: not null } => L("Alvo Wine independente/do sistema: Winetricks é executado contra o WINEPREFIX detectado.", "Standalone/system Wine target: Winetricks runs against the detected WINEPREFIX."),
-            _ => L("Nenhum prefixo Wine/Proton inicializado foi detectado para este jogo.", "No initialized Wine/Proton prefix was detected for this game.")
+                => TF("Vm.TargetWinetricksUsesActiveMatchingPrefix", game.Source, game.CompatibilityTool ?? game.Runner ?? T("Vm.LauncherRunner")),
+            { SteamAppId: null, PrefixPath: not null } => T("Vm.StandaloneSystemWineTargetWinetricksRuns"),
+            _ => T("Vm.NoInitializedWineProtonPrefixWas")
         };
     private static string ReShadeChannelDisplay(string value) => value switch
     {
@@ -494,11 +493,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         : _managedComponents.GetUltimateAsiLoaderRecord(SelectedGame)?.Version ?? "";
     public string UalStatusText => SelectedGame switch
     {
-        null => L("Nenhum jogo selecionado", "No game selected"),
-        { Runner: "Native Linux" } => L("Não compatível com alvos Linux nativos", "Unsupported for native Linux targets"),
-        _ when UalInstalled => LF("Instalado {0} como {1}", "Installed {0} as {1}", UalInstalledVersion, UalInstalledProxy),
-        _ when UalProxyNames.Count == 0 => L("Exige um executável Windows x86/x64 detectado e um prefixo Wine/Proton inicializado", "Requires a detected x86/x64 Windows executable and an initialized Wine/Proton prefix"),
-        _ => L("Pronto", "Ready")
+        null => T("Vm.NoGameSelected"),
+        { Runner: "Native Linux" } => T("Vm.UnsupportedNativeLinuxTargets"),
+        _ when UalInstalled => TF("Vm.InstalledAs", UalInstalledVersion, UalInstalledProxy),
+        _ when UalProxyNames.Count == 0 => T("Vm.RequiresDetectedX86X64WindowsExecutable"),
+        _ => T("Vm.Ready")
     };
     public bool CanInstallUal => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !UalInstalled
                                  && UalProxyNames.Count > 0 && !string.IsNullOrWhiteSpace(SelectedUalProxyName);
@@ -506,28 +505,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanInstallOrUpdateUal => UalInstalled ? CanUpdateUal : CanInstallUal;
     public bool CanRemoveUal => CanUpdateUal && !ShortFuseInstalled;
     public bool CanSelectUalProxy => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !UalInstalled && UalProxyNames.Count > 0;
-    public string UalActionText => UalInstalled ? L("Atualizar", "Update") : L("Instalar", "Install");
+    public string UalActionText => UalInstalled ? T("Vm.Update") : T("Vm.Install");
     public string UalProxyHint
     {
         get
         {
-            if (SelectedGame is null) return L("Selecione um jogo Windows.", "Select a Windows game.");
-            if (UalInstalled) return LF("O RHI gerencia {0}. Remova-o primeiro para escolher outro nome de proxy.", "RHI manages {0}. Remove it first to choose another proxy name.", UalInstalledProxy);
-            if (string.IsNullOrWhiteSpace(SelectedUalProxyName)) return L("Escolha um nome de DLL proxy para o ASI Loader.", "Choose a proxy DLL name for the ASI Loader.");
+            if (SelectedGame is null) return T("Vm.SelectWindowsGame");
+            if (UalInstalled) return TF("Vm.RHIManagesRemoveFirstChooseAnother", UalInstalledProxy);
+            if (string.IsNullOrWhiteSpace(SelectedUalProxyName)) return T("Vm.ChooseProxyDLLNameASILoader");
             var notes = new List<string>();
             if (UltimateAsiLoaderDeploymentService.RecommendedNames.Contains(SelectedUalProxyName, StringComparer.OrdinalIgnoreCase))
-                notes.Add(L("Recomendado pelo RHI", "Recommended by RHI"));
+                notes.Add(T("Vm.RecommendedByRHI"));
             if (UltimateAsiLoaderDeploymentService.RhiConflictNames.Contains(SelectedUalProxyName, StringComparer.OrdinalIgnoreCase))
-                notes.Add(L("pode conflitar com ReShade/OptiScaler", "may conflict with ReShade/OptiScaler"));
+                notes.Add(T("Vm.MayConflictReShadeOptiScaler"));
             var dir = SelectedGame.BinaryDirectory ?? Path.GetDirectoryName(SelectedGame.ExecutablePath ?? "");
             if (!string.IsNullOrWhiteSpace(dir))
             {
                 var target = Path.Combine(dir, SelectedUalProxyName);
                 if (File.Exists(target))
-                    notes.Add(LF("{0} existente será preservado como {1}, salvo se for gerenciado pelo RHI", "Existing {0} will be preserved as {1} unless it is managed by RHI", SelectedUalProxyName, UltimateAsiLoaderDeploymentService.HookedName(SelectedUalProxyName)));
+                    notes.Add(TF("Vm.ExistingWillPreservedAsUnlessManaged", SelectedUalProxyName, UltimateAsiLoaderDeploymentService.HookedName(SelectedUalProxyName)));
             }
             return notes.Count == 0
-                ? L("O override do Wine é limitado ao jogo selecionado: native,builtin.", "The Wine override is scoped to the selected game: native,builtin.")
+                ? T("Vm.WineOverrideScopedSelectedGameNative")
                 : string.Join(" · ", notes) + ".";
         }
     }
@@ -541,12 +540,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public string ShortFuseStatusText => SelectedGame switch
     {
-        null => L("Nenhum jogo selecionado", "No game selected"),
-        { Runner: "Native Linux" } => L("Não compatível com alvos Linux nativos", "Unsupported for native Linux targets"),
-        _ when ShortFuseInstalled => LF("ATIVADO · {0} · {1}", "ENABLED · {0} · {1}", ShortFuseInstalledVersion, ShortFuseAutoConfigEnabled ? L("Configuração ASI automática", "Automatic ASI configuration") : L("Configuração ASI manual", "Manual ASI configuration")),
-        _ => LF("DESATIVADO · Configuração ASI automática {0}", "DISABLED · Automatic ASI configuration {0}", ShortFuseAutoConfigEnabled ? L("ativada", "enabled") : L("opcional / desativada", "optional / disabled"))
+        null => T("Vm.NoGameSelected"),
+        { Runner: "Native Linux" } => T("Vm.UnsupportedNativeLinuxTargets"),
+        _ when ShortFuseInstalled => TF("Vm.ShortFuseEnabledSummary", ShortFuseInstalledVersion, ShortFuseAutoConfigEnabled ? T("Vm.AutomaticASIConfiguration") : T("Vm.ManualASIConfiguration")),
+        _ => TF("Vm.ShortFuseDisabledSummary", ShortFuseAutoConfigEnabled ? T("Vm.Enabled") : T("Vm.OptionalDisabled"))
     };
-    public string ShortFuseActionText => ShortFuseInstalled ? L("Remover", "Remove") : L("Instalar", "Install");
+    public string ShortFuseActionText => ShortFuseInstalled ? T("Vm.Remove") : T("Vm.Install");
     public bool ShortFuseNotInstalled => !ShortFuseInstalled;
     public bool CanInstallOrRemoveShortFuse
         => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy
@@ -554,10 +553,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                       && CurrentShortFuseComponent.ActionAllowed));
     public string ShortFuseActionHint
         => ShortFuseInstalled
-            ? L("Remove o ShortFuse e restaura transacionalmente o estado anterior de DLSS/Streamline/ReShade/UAL.", "Removes ShortFuse and transactionally restores the previous DLSS/Streamline/ReShade/UAL state.")
+            ? T("Vm.RemovesShortFuseTransactionallyRestoresPreviousD")
             : CurrentShortFuseComponent?.ActionAllowed == true
-                ? PresentOr(CurrentShortFuseComponent.Note, "ShortFuse está disponível para este jogo.", "ShortFuse is available for this game.")
-                : PresentOr(CurrentShortFuseComponent?.Note, "ShortFuse ficará disponível após a conclusão da análise do jogo.", "ShortFuse will become available after game analysis completes.");
+                ? PresentOr(CurrentShortFuseComponent.Note, T("Vm.ShortFuseAvailableGame"))
+                : PresentOr(CurrentShortFuseComponent?.Note, T("Vm.ShortFuseWillBecomeAvailableAfterGame"));
     public bool CanConfigureShortFuse => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && !ShortFuseInstalled;
     // Pins stay editable while installed: a change swaps the add-on in place (upstream 2.7.6).
     public bool CanConfigureFeederVersionPin => SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy;
@@ -578,24 +577,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (SelectedGame is null) return L("Nenhum jogo selecionado", "No game selected");
-            if (!SelectedGame.HasConfirmedPatchTarget) return L("Aguardando executável alvo — nenhuma recomendação será calculada a partir do launcher", "Waiting for target executable — no recommendation will be calculated from the launcher");
+            if (SelectedGame is null) return T("Vm.NoGameSelected");
+            if (!SelectedGame.HasConfirmedPatchTarget) return T("Vm.WaitingTargetExecutableNoRecommendationWill");
             if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-                return L("Métodos Windows de Renderização Neural não estão disponíveis para alvos Linux nativos.", "Windows Neural Rendering methods are not available for native Linux targets.");
+                return T("Vm.WindowsNeuralRenderingMethodsNotAvailable");
 
             var hasNativeDlss = _managedComponents.HasNativeDlssForNeuralRendering(
                 SelectedGame, _dlssDetection.DlssPaths.Count > 0);
             var recommended = LinuxManagedComponentService.RecommendedNeuralRenderingMethod(SelectedGame, hasNativeDlss);
             var architecture = SelectedGame.ForcedArchitecture ?? PeArchitectureDetector.Detect(SelectedGame.ExecutablePath);
             if (architecture == PeArchitecture.X86 && recommended == ManagedComponentKind.Dlss5Feeder)
-                return L("DLSS5 Feeder · 32-bit suportado via addon32 + host64 com consumidor RenoDX DLSS5", "DLSS5 Feeder · 32-bit supported via addon32 + host64 with RenoDX DLSS5 consumer");
+                return T("Vm.DLSS5Feeder32BitSupportedVia");
 
             return recommended switch
             {
-                ManagedComponentKind.ShortFuse => L("DLSS Tool (ShortFuse) · recomendado para jogos 64-bit com DLSS nativo em DX12/outros", "DLSS Tool (ShortFuse) · recommended for 64-bit games with native DLSS on DX12/other APIs"),
-                ManagedComponentKind.Dlss5Dx11Bridge => L("DLSS5 Tool + DX11 Bridge · recomendado para jogos DX11/Vulkan com DLSS nativo", "DLSS5 Tool + DX11 Bridge · recommended for DX11/Vulkan games with native DLSS"),
-                ManagedComponentKind.Dlss5Feeder => L("DLSS5 Feeder · recomendado quando o jogo não possui DLSS nativo", "DLSS5 Feeder · recommended when the game has no native DLSS"),
-                _ => L("Nenhuma recomendação de Renderização Neural", "No Neural Rendering recommendation")
+                ManagedComponentKind.ShortFuse => T("Vm.DLSSToolShortFuseRecommended64Bit"),
+                ManagedComponentKind.Dlss5Dx11Bridge => T("Vm.DLSS5ToolDX11BridgeRecommendedDX11"),
+                ManagedComponentKind.Dlss5Feeder => T("Vm.DLSS5FeederRecommendedWhenGameHas"),
+                _ => T("Vm.NoNeuralRenderingRecommendation")
             };
         }
     }
@@ -615,21 +614,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool StreamlineRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && CountStreamlineBackups() > 0;
 
     public string DlssSrDeploymentState => ShortFuseInstalled && DlssSrDetected
-        ? L("✓ ShortFuse · gerenciado", "✓ ShortFuse · managed")
-        : Dlss5FeederFullManaged && DlssSrDetected ? L("✓ Feeder Full · privado", "✓ Feeder Full · private") : DlssDeploymentState(_dlssDetection.DlssPaths);
-    public string DlssRrDeploymentState => ShortFuseInstalled && DlssRrDetected ? L("✓ ShortFuse · gerenciado", "✓ ShortFuse · managed") : DlssDeploymentState(_dlssDetection.DlssdPaths);
-    public string DlssFgDeploymentState => ShortFuseInstalled && DlssFgDetected ? L("✓ ShortFuse · gerenciado", "✓ ShortFuse · managed") : DlssDeploymentState(_dlssDetection.DlssgPaths);
+        ? T("Vm.ShortFuseManaged")
+        : Dlss5FeederFullManaged && DlssSrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssPaths);
+    public string DlssRrDeploymentState => ShortFuseInstalled && DlssRrDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssdPaths);
+    public string DlssFgDeploymentState => ShortFuseInstalled && DlssFgDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssgPaths);
     public string DlssNrDeploymentState => ShortFuseInstalled && DlssNrDetected
-        ? L("✓ ShortFuse · gerenciado", "✓ ShortFuse · managed")
-        : Dlss5FeederFullManaged && DlssNrDetected ? L("✓ Feeder Full · privado", "✓ Feeder Full · private") : DlssDeploymentState(_dlssDetection.DlssnrPaths);
+        ? T("Vm.ShortFuseManaged")
+        : Dlss5FeederFullManaged && DlssNrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssnrPaths);
     public string StreamlineDeploymentState
     {
         get
         {
-            if (_dlssDetection.StreamlineFolders.Count == 0) return L("— Ausente", "— Missing");
-            if (ShortFuseInstalled) return L("✓ ShortFuse · gerenciado", "✓ ShortFuse · managed");
+            if (_dlssDetection.StreamlineFolders.Count == 0) return T("Vm.Missing");
+            if (ShortFuseInstalled) return T("Vm.ShortFuseManaged");
             var backups = CountStreamlineBackups();
-            return backups > 0 ? LF("✓ RHI aplicado · {0} DLL(s)", "✓ RHI applied · {0} DLL(s)", backups) : L("• DLLs do jogo", "• Game DLLs");
+            return backups > 0 ? TF("Vm.RHIAppliedDLLS", backups) : T("Vm.GameDLLs");
         }
     }
 
@@ -638,16 +637,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string DlssFgPath => FirstOrNotFound(_dlssDetection.DlssgPaths, "nvngx_dlssg.dll");
     public string DlssNrPath => FirstOrNotFound(_dlssDetection.DlssnrPaths, "nvngx_dlssnr.dll");
     public string StreamlinePath => _dlssDetection.StreamlineFolders.FirstOrDefault()
-        ?? L("Streamline não detectado — atualização indisponível", "Streamline not detected — update unavailable");
+        ?? T("Vm.StreamlineNotDetectedUpdateUnavailable");
     public string DlssStatusSummary => IsSelectionProbeBusy
-        ? L("Analisando arquivos do jogo em segundo plano…", "Analyzing game files in the background…")
+        ? T("Vm.AnalyzingGameFilesBackground")
         : ShortFuseInstalled
-            ? L("ShortFuse gerenciado — a pilha DLSS/Streamline possui controle transacional; a troca direta de DLLs fica bloqueada até remover o ShortFuse", "Managed ShortFuse — the DLSS/Streamline stack is transactionally controlled; direct DLL swaps are blocked until ShortFuse is removed")
+            ? T("Vm.ManagedShortFuseDLSSStreamlineStackTransactional")
         : Dlss5FeederFullManaged
-            ? L("DLSS5 Feeder Full gerenciado — pilha privada de Super-resolução / Renderização Neural; a troca direta de DLLs fica bloqueada até remover o Feeder", "Managed DLSS5 Feeder Full — private Super Resolution / Neural Rendering stack; direct DLL swaps are blocked until Feeder is removed")
+            ? T("Vm.ManagedDLSS5FeederFullPrivateSuper")
             : _dlssDetection.HasAny
-                ? LF("Detectado — Super-resolução: {0} · Reconstrução de raios: {1} · Geração de quadros: {2} · Renderização neural: {3} · Streamline: {4}", "Detected — Super Resolution: {0} · Ray Reconstruction: {1} · Frame Generation: {2} · Neural Rendering: {3} · Streamline: {4}", _dlssDetection.DlssPaths.Count, _dlssDetection.DlssdPaths.Count, _dlssDetection.DlssgPaths.Count, _dlssDetection.DlssnrPaths.Count, _dlssDetection.StreamlineFolders.Count)
-                : L("Nenhuma DLL local de DLSS/Streamline detectada — a troca direta de DLLs está desativada para este jogo", "No local DLSS/Streamline DLL detected — direct DLL swapping is disabled for this game");
+                ? TF("Vm.DetectedSuperResolutionRayReconstructionFrame", _dlssDetection.DlssPaths.Count, _dlssDetection.DlssdPaths.Count, _dlssDetection.DlssgPaths.Count, _dlssDetection.DlssnrPaths.Count, _dlssDetection.StreamlineFolders.Count)
+                : T("Vm.NoLocalDLSSStreamlineDLLDetected");
 
     public LinuxDlssVersionDefaults DlssVersionDefaults => new(
         _settings.DefaultDlssVersion,
@@ -663,7 +662,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             static string Show(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
             var d = DlssVersionDefaults;
-            return LF("Padrões · SR {0} · RR {1} · FG {2} · NR {3} · SL {4}", "Defaults · SR {0} · RR {1} · FG {2} · NR {3} · SL {4}", Show(d.SuperResolution), Show(d.RayReconstruction), Show(d.FrameGeneration), Show(d.NeuralRendering), Show(d.Streamline));
+            return TF("Vm.DefaultsSRRRFGNRSL", Show(d.SuperResolution), Show(d.RayReconstruction), Show(d.FrameGeneration), Show(d.NeuralRendering), Show(d.Streamline));
         }
     }
 
@@ -721,6 +720,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ReShadeManageIni = _settings.ReShadeManageIni;
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         Initialization = InitializeAsync();
+        UiExceptionGuard.Forget(Initialization, "initialize");
     }
 
     private readonly IDisposable _quarantineSubscription;
@@ -776,7 +776,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var previousAutoUpdate = _settings.AutoUpdateComponents;
         var previousInterval = _settings.UpdateCheckIntervalHours;
-        if (TrySaveStore(() => _settingsStore.Save(settings)) is { } notSaved) return notSaved;
+        if (TryPersist(() => _settingsStore.Save(settings), "Ui.WhatSettings", sessionOnly: false) is { } notSaved) return notSaved;
         _settings = _settingsStore.Load();
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
@@ -786,13 +786,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (previousAutoUpdate != _settings.AutoUpdateComponents || previousInterval != _settings.UpdateCheckIntervalHours)
             RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
         NotifyDlssDefaults();
-        return UiLocalizationService.ChooseFormat("Configurações salvas em {0}.", "Settings saved to {0}.", _settingsStore.SettingsPath);
+        return UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
     }
 
     public string ResetLinuxSettings()
     {
         LinuxAppSettings? reset = null;
-        if (TrySaveStore(() => reset = _settingsStore.Reset()) is { } notReset) return notReset;
+        if (TryPersist(() => reset = _settingsStore.Reset(), "Ui.WhatSettings", sessionOnly: false) is { } notReset) return notReset;
         _settings = reset!;
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
@@ -801,13 +801,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyUxSettings();
         RestartBackgroundUpdateLoop(runImmediate: false);
         NotifyDlssDefaults();
-        return UiLocalizationService.Choose("Configurações restauradas para os padrões do Linux.", "Settings restored to Linux defaults.");
+        return UiLocalizationService.Text("Vm.SettingsRestoredLinuxDefaults");
     }
 
     public string PurgeLinuxCache()
     {
-        var removed = _settingsStore.PurgeCache();
-        return removed == 0 ? UiLocalizationService.Choose("O cache do RHI-Linux já está vazio.", "The RHI-Linux cache is already empty.") : UiLocalizationService.ChooseFormat("{0} arquivo(s) removido(s) do cache.", "{0} file(s) removed from cache.", removed);
+        int removed;
+        try
+        {
+            removed = _settingsStore.PurgeCache();
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("purge cache", ex);
+            return UiLocalizationService.Format("Ui.CacheNotCleared", ex.Message);
+        }
+        return removed == 0 ? UiLocalizationService.Text("Vm.RHILinuxCacheAlreadyEmpty") : UiLocalizationService.Format("Vm.FileSRemovedFromCache", removed);
     }
 
     private void RefreshLocalizedPresentation()
@@ -911,17 +920,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public string ApplyGlobalReShadeSettingsToSelectedGame(LinuxAppSettings settings)
     {
-        if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
+        if (SelectedGame is null) return T("Vm.SelectGameFirst");
         if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return L("Configurações Windows do ReShade não são aplicadas a alvos Linux nativos.", "Windows ReShade settings are not applied to native Linux targets.");
+            return T("Vm.WindowsReShadeSettingsNotAppliedNative");
         if (!SelectedGame.HasConfirmedPatchTarget)
-            return L("Defina o executável alvo do jogo em Editar jogo antes de aplicar configurações do ReShade.", "Set the target game executable in Edit game before applying ReShade settings.");
+            return T("Vm.SetTargetGameExecutableEditGame");
         if (!_probeCache.TryGetValue(Key(SelectedGame), out var probe) ||
             !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
                 component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))
-            return L("Instale ou detecte o ReShade no jogo selecionado antes de aplicar os padrões globais de captura/atalhos.", "Install or detect ReShade in the selected game before applying global capture/hotkey defaults.");
+            return T("Vm.InstallDetectReShadeSelectedGameBefore");
         var path = ReShadeGlobalSettingsApplier.ApplyToGame(settings, SelectedGame);
-        return LF("Padrões de captura/atalhos do ReShade aplicados em {0}.", "ReShade capture/hotkey defaults applied at {0}.", path);
+        return TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", path);
     }
 
     private async Task InitializeAsync()
@@ -976,7 +985,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             // Appended as a notice: this can land after the scan, whose problems notice or the selected
             // game's Ready line must stay on screen (Refs #43).
-            StatusText = _statusNotice.Raise(LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message), StatusText);
+            StatusText = _statusNotice.Raise(TF("Vm.DLSSManifestUnavailable", ex.Message), StatusText);
         }
     }
 
@@ -1009,9 +1018,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// current status line (an operation's result stays visible); the token handler already
     /// continues anonymously. Must run on the UI thread.
     /// </summary>
-    public void ReportGitHubTokenRejected() => StatusText = _statusNotice.Raise(L(
-        "O GitHub rejeitou o token salvo em github_api.txt (revogado ou expirado); usando acesso anônimo (60 requisições/hora) até o arquivo ser substituído.",
-        "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."),
+    public void ReportGitHubTokenRejected() => StatusText = _statusNotice.Raise(T("Vm.GitHubRejectedTokenSavedGithubApi"),
         StatusText);
 
     /// <summary>
@@ -1022,23 +1029,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         var parts = new List<string>();
         if (summary.RolledBack > 0)
-            parts.Add(L($"RHI desfez {summary.RolledBack} instalação(ões) interrompida(s) por um encerramento inesperado; os arquivos voltaram ao estado anterior.",
-                $"RHI undid {summary.RolledBack} install(s) interrupted by an unexpected shutdown; the files are back as they were."));
+            parts.Add(TF("Vm.RHIUndidInstallSInterruptedBy", summary.RolledBack));
         if (summary.KeptLaterChanges > 0)
-            parts.Add(L($"RHI desfez {summary.KeptLaterChanges} instalação(ões) interrompida(s), mas manteve arquivos ou ajustes alterados depois do encerramento; as cópias anteriores do RHI estão em .rhi-recovered ao lado deles. Detalhes: {summary.LogPath}",
-                $"RHI undid {summary.KeptLaterChanges} interrupted install(s) but kept files or settings changed after the shutdown; RHI's earlier copies are in .rhi-recovered next to them. Details: {summary.LogPath}"));
+            parts.Add(TF("Vm.RHIUndidInterruptedInstallSBut", summary.KeptLaterChanges, summary.LogPath));
         if (summary.RollbackFailed > 0)
-            parts.Add(L($"RHI não conseguiu desfazer {summary.RollbackFailed} instalação(ões) interrompida(s) e tentará de novo na próxima abertura. Detalhes: {summary.LogPath}",
-                $"RHI could not undo {summary.RollbackFailed} interrupted install(s) and will try again at the next start. Details: {summary.LogPath}"));
+            parts.Add(TF("Vm.RHICouldNotUndoInterruptedInstall", summary.RollbackFailed, summary.LogPath));
         if (summary.Deferred > 0)
-            parts.Add(L($"{summary.Deferred} instalação(ões) interrompida(s) serão concluídas numa próxima abertura (registro de implantações ilegível ou Wine em execução no prefixo). Detalhes: {summary.LogPath}",
-                $"{summary.Deferred} interrupted install(s) will be finished at a later start (deployment ledger unreadable, or Wine running in the prefix). Details: {summary.LogPath}"));
+            parts.Add(TF("Vm.InterruptedInstallSWillFinishedAt", summary.Deferred, summary.LogPath));
         if (summary.Quarantined > 0)
-            parts.Add(L($"RHI guardou {summary.Quarantined} cópia(s) antiga(s) que não pôde provar redundantes em .rhi-recovered, na mesma pasta. Detalhes: {summary.LogPath}",
-                $"RHI set aside {summary.Quarantined} old copy(ies) it could not prove redundant in .rhi-recovered in the same folder. Details: {summary.LogPath}"));
+            parts.Add(TF("Vm.RHISetAsideOldCopyIes", summary.Quarantined, summary.LogPath));
         if (parts.Count > 0)
             StatusText = _statusNotice.Raise(string.Join(" ", parts), StatusText);
     }
+
 
     /// <summary>
     /// A JSON store file could not be read and was set aside (Refs #57): say once which file and
@@ -1052,47 +1055,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var name = Path.GetFileName(notice.FilePath);
         if (!notice.WritesRefused)
             return notice.QuarantinePath is null
-                ? LF("O cache {0} não pôde ser lido e será recriado.", "The cache {0} could not be read and will be rebuilt.", name)
-                : LF("O cache {0} não pôde ser lido; uma cópia foi guardada em {1} e ele será recriado.",
-                    "The cache {0} could not be read; a copy was kept at {1} and it will be rebuilt.", name, notice.QuarantinePath);
+                ? TF("Vm.CacheCouldNotReadWillRebuilt", name)
+                : TF("Vm.CacheCouldNotReadCopyWas", name, notice.QuarantinePath);
         return notice.QuarantinePath is null
-            ? LF("{0} não pôde ser lido nem copiado ({1}). O RHI não vai salvar por cima dele: corrija ou apague o arquivo para voltar a salvar.",
-                "{0} could not be read or copied ({1}). RHI will not save over it: fix or delete the file to save again.", name, notice.FilePath)
-            : LF("{0} não pôde ser lido; o conteúdo foi copiado para {1}. O RHI não vai salvar por cima dele: corrija ou apague o arquivo para voltar a salvar.",
-                "{0} could not be read; its contents were copied to {1}. RHI will not save over it: fix or delete the file to save again.", name, notice.QuarantinePath);
+            ? TF("Vm.CouldNotReadCopiedRHIWill", name, notice.FilePath)
+            : TF("Vm.CouldNotReadItsContentsWere", name, notice.QuarantinePath);
     }
 
     /// <summary>Localised status for a store save that failed (refused unreadable file, or an I/O error).</summary>
     public static string StoreSaveFailedText(Exception error) => error switch
     {
-        JsonStoreUnavailableException refused when refused.QuarantinePath is not null => LF(
-            "Não salvo: {0} não pôde ser lido (há uma cópia em {1}). Corrija ou apague o arquivo para voltar a salvar.",
-            "Not saved: {0} could not be read (a copy is at {1}). Fix or delete the file to save again.",
+        JsonStoreUnavailableException refused when refused.QuarantinePath is not null => TF("Vm.NotSavedCouldNotReadCopy",
             Path.GetFileName(refused.FilePath), refused.QuarantinePath),
-        JsonStoreUnavailableException refused => LF(
-            "Não salvo: {0} não pôde ser lido. Corrija ou apague o arquivo para voltar a salvar.",
-            "Not saved: {0} could not be read. Fix or delete the file to save again.", refused.FilePath),
-        _ => LF("Não foi possível salvar: {0}", "Could not save: {0}", error.Message)
+        JsonStoreUnavailableException refused => TF("Vm.NotSavedCouldNotReadFix", refused.FilePath),
+        _ => TF("Win.CouldNotSave", error.Message)
     };
-
-    /// <summary>
-    /// Runs one store save. A refused (unreadable) store or an I/O failure is shown on the status
-    /// line and returned as the message; null means saved.
-    /// </summary>
-    private string? TrySaveStore(Action save)
-    {
-        try
-        {
-            save();
-            return null;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            var message = StoreSaveFailedText(ex);
-            StatusText = message;
-            return message;
-        }
-    }
 
     /// <summary>
     /// github_api.txt could be read by other users (Refs #36): say once whether RHI restricted it
@@ -1101,10 +1078,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public void ReportGitHubTokenFileExposed(bool restricted) => StatusText = _statusNotice.Raise(GitHubTokenFileExposedText(restricted), StatusText);
 
     public static string GitHubTokenFileExposedText(bool restricted) => restricted
-        ? L("O github_api.txt podia ser lido por outros usuários deste computador; o RHI restringiu o acesso só à sua conta (chmod 600).",
-            "github_api.txt could be read by other users on this computer; RHI restricted it to your account only (chmod 600).")
-        : L("O github_api.txt pode ser lido por outros usuários e o RHI não conseguiu restringi-lo; o token não será usado até você executar chmod 600 nele.",
-            "github_api.txt can be read by other users and RHI could not restrict it; the token is not used until you run chmod 600 on it.");
+        ? T("Vm.GithubApiTxtCouldReadBy")
+        : T("Vm.GithubApiTxtCanReadBy");
 
     partial void OnStatusTextChanged(string value)
     {
@@ -1141,7 +1116,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(value);
         if (!string.Equals(value, _libraryState.FilterMode, StringComparison.Ordinal))
             LibraryFilterMode = _libraryState.FilterMode;
-        TrySaveStore(() => _libraryStore.Save(_libraryState));
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
     }
 
@@ -1156,7 +1131,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsDeepFriedChickenFeederConsumer));
         OnPropertyChanged(nameof(IsRenoDxDlss5FeederConsumer));
         if (!IsDeepFriedChickenFeederConsumer)
-            StatusText = UiLocalizationService.Choose("DLSS5 Feeder: RenoDX DLSS5 selecionado como consumidor padrão. Deep Fried Chicken não será instalado.", "DLSS5 Feeder: RenoDX DLSS5 selected as the default consumer. Deep Fried Chicken will not be installed.");
+            StatusText = UiLocalizationService.Text("Vm.DLSS5FeederRenoDXDLSS5SelectedAs");
     }
 
     partial void OnSelectedDlss5FeederVersionChanged(string value)
@@ -1182,10 +1157,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
         var game = SelectedGame;
-        // Refused: the dropdown and the game go back to what is saved (the store is the authority).
-        if (TrySaveStore(() => _apiOverrideStore.Set(game, api)) is not null)
+        // The store is the authority (it is re-read on every refresh): a refused write reverts the dropdown to the
+        // saved value instead of claiming the choice holds for the session.
+        if (TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
         {
             LoadGraphicsApiOverride(game);
+            StatusText = failure;
             return;
         }
         game.UserGraphicsApiOverride = api;
@@ -1201,16 +1178,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _loadingOptiScalerVariant = true;
             try { SelectedOptiScalerVariant = FormatOptiScalerVariant(installed.Value); }
             finally { _loadingOptiScalerVariant = false; }
-            StatusText = L("Remova o OptiScaler atual antes de trocar Estável/Desenvolvimento/DLSS NR.", "Remove the current OptiScaler before switching Stable/Nightly/DLSS NR.");
+            StatusText = T("Vm.RemoveCurrentOptiScalerBeforeSwitchingStable");
             return;
         }
         var game = SelectedGame;
-        if (TrySaveStore(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value))) is not null)
+        if (TryPersist(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value)), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
         {
             LoadOptiScalerVariant(game);
             return;
         }
-        StatusText = LF("OptiScaler: variante {0} selecionada para {1}.", "OptiScaler: variant {0} selected for {1}.", value, SelectedGame.Name);
+        StatusText = TF("Vm.OptiScalerVariantSelected", value, game.Name);
     }
 
     partial void OnSelectedLumaModePreferenceChanged(string value)
@@ -1218,9 +1195,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
         var game = SelectedGame;
-        if (TrySaveStore(() => _managedComponents.SetLumaModePreference(game, preference)) is not null)
+        if (TryPersist(() => _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
         {
             LoadLumaModePreference(game);
+            StatusText = failure;
             return;
         }
         ReevaluateCurrentGameForLumaPolicy(game);
@@ -1275,12 +1253,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         RefreshUalState(value);
         RefreshShortFuseState(value);
         LoadNeuralVersionPins(value);
-        _ = RefreshSelectedLatestVersionsAsync(value);
+        UiExceptionGuard.Forget(RefreshSelectedLatestVersionsAsync(value), "RefreshSelectedLatestVersionsAsync");
 
         if (_probeCache.TryGetValue(Key(value), out var cached))
         {
             ApplyProbeResult(cached);
-            StatusText = LF("Pronto — {0} (em cache)", "Ready — {0} (cached)", value.Name);
+            StatusText = TF("Vm.ReadyCached", value.Name);
             NotifySelected();
             return;
         }
@@ -1289,7 +1267,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifySelected();
         var generation = ++_selectionGeneration;
         _selectionProbeCts = new CancellationTokenSource();
-        _ = AnalyzeSelectedGameAsync(value, generation, _selectionProbeCts.Token);
+        UiExceptionGuard.Forget(AnalyzeSelectedGameAsync(value, generation, _selectionProbeCts.Token), "AnalyzeSelectedGameAsync");
     }
 
     private async Task AnalyzeSelectedGameAsync(DetectedGame game, int generation, CancellationToken cancellationToken)
@@ -1297,7 +1275,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var timer = Stopwatch.StartNew();
         try
         {
-            StatusText = LF("Analisando {0} em segundo plano…", "Analyzing {0} in the background…", game.Name);
+            StatusText = TF("Vm.AnalyzingBackground", game.Name);
 
             if (!game.HasConfirmedPatchTarget)
             {
@@ -1314,7 +1292,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ApplyProbeResult(pending);
                 StatusText = game.GameRootNotAllowed
                     ? GameRootNotAllowedText(game)
-                    : LF("{0}: inicialização preservada, mas o alvo de modificações ainda não foi definido. Use Editar jogo.", "{0}: launch configuration was preserved, but the modification target is not defined yet. Use Edit game.", game.Name);
+                    : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
                 return;
             }
 
@@ -1343,10 +1321,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             ApplyProbeResult(derived);
             timer.Stop();
             StatusText = GameFileIndexer.IsTruncated(files)
-                ? LF("{0}: a indexação parou em {1} arquivos, então alguns arquivos do jogo podem não ser vistos. A pasta do jogo parece conter mais que o jogo; confira a raiz em Editar jogo.",
-                     "{0}: indexing stopped at {1} files, so some game files may not be seen. The game folder seems to hold more than the game; check the root in Edit game.",
+                ? TF("Vm.IndexingStoppedAtFilesSoSome",
                      game.Name, files.Count)
-                : LF("Pronto — {0}: {1} arquivos indexados em {2} ms", "Ready — {0}: {1} files indexed in {2} ms", game.Name, files.Count, timer.ElapsedMilliseconds);
+                : TF("Vm.ReadyFilesIndexedMs", game.Name, files.Count, timer.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -1355,7 +1332,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             if (generation == _selectionGeneration && ReferenceEquals(SelectedGame, game))
-                StatusText = LF("Falha ao analisar {0}: {1}", "Failed to analyze {0}: {1}", game.Name, ex.Message);
+                StatusText = TF("Vm.FailedAnalyze", game.Name, ex.Message);
         }
         finally
         {
@@ -1406,7 +1383,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task<bool> RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors)
     {
         if (IsBusy)
-            StatusText = L("Aguardando a operação atual terminar para atualizar a biblioteca…", "Waiting for the current operation to finish before updating the library…");
+            StatusText = T("Vm.WaitingCurrentOperationFinishBeforeUpdating");
         await _busyGate.WhenIdleAsync();
         return await RefreshAsync(onlyDetectors);
     }
@@ -1421,8 +1398,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (IsBusy) return false;
         IsBusy = true;
         StatusText = onlyDetectors is null
-            ? L("Verificando Steam, Heroic, Lutris e prefixos Wine…", "Scanning Steam, Heroic, Lutris and Wine prefixes…")
-            : L("Atualizando a biblioteca…", "Updating library…");
+            ? T("Vm.ScanningSteamHeroicLutrisWinePrefixes")
+            : T("Vm.UpdatingLibrary");
         try
         {
             var currentKey = SelectedGame is null ? null : Key(SelectedGame);
@@ -1441,7 +1418,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var found = scan.Games;
             // Re-key records older builds stored under a Heroic game's folder while the game is still
             // there, so they keep matching after it moves (Refs #38).
-            TrySaveStore(() => _deploymentRecords.MigrateGameKeys(found));
+            TryPersist(() => _deploymentRecords.MigrateGameKeys(found), "Ui.WhatDeploymentRecords", sessionOnly: false);
             _libraryState = _libraryStore.Load();
             LibraryFilterMode = _libraryState.FilterMode;
 
@@ -1490,7 +1467,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha na verificação: {0}", "Scan failed: {0}", ex.Message);
+            StatusText = TF("Vm.ScanFailed", ex.Message);
             return false;
         }
         finally
@@ -1509,7 +1486,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = L("Atualizar tudo: preparando jogos gerenciados pelo RHI…", "Update all: preparing RHI-managed games…");
+            StatusText = T("Vm.UpdateAllPreparingRHIManagedGames");
             var indexes = await PrepareUpdateIndexesAsync(games, CancellationToken.None);
             var result = await _updateAll.RunAsync(
                 games,
@@ -1522,7 +1499,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha em Atualizar tudo: {0}", "Update all failed: {0}", ex.Message);
+            StatusText = TF("Vm.UpdateAllFailed", ex.Message);
         }
         finally
         {
@@ -1564,7 +1541,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _backgroundUpdateCts = null;
         if (!_settings.AutoUpdateComponents) return;
         _backgroundUpdateCts = new CancellationTokenSource();
-        _ = BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate);
+        UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
     }
 
     private async Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
@@ -1582,7 +1559,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("A atualização em segundo plano foi interrompida: {0}", "Background update was interrupted: {0}", ex.Message);
+            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", ex.Message);
         }
     }
 
@@ -1603,7 +1580,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (result.ChangedCount > 0)
             {
                 _probeCache.Clear();
-                StatusText = UiLocalizationService.UpdateAllSummary(result) + L(" (segundo plano)", " (background)");
+                StatusText = UiLocalizationService.UpdateAllSummary(result) + T("Vm.Background");
             }
         }
         finally
@@ -1619,7 +1596,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var plan = SelectedHdrPlan;
         if (plan.Enabled && !plan.CanApply)
         {
-            StatusText = LF("Inicialização HDR bloqueada: {0}", "HDR launch blocked: {0}", plan.Summary);
+            StatusText = TF("Vm.HDRLaunchBlocked", UiLocalizationService.Present(plan.Summary));
             return;
         }
 
@@ -1627,25 +1604,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             if (LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
             {
-                StatusText = L("O perfil HDR está pronto, mas este jogo é iniciado pelo Steam/Heroic/Lutris. Aplique o perfil gerado nesse inicializador; o RHI não envolverá o processo do launcher nem alegará que o HDR foi aplicado.", "The HDR profile is ready, but this game is launched by Steam/Heroic/Lutris. Apply the generated profile in that launcher; RHI will not wrap the launcher process or claim HDR was applied.");
+                StatusText = T("Vm.HDRProfileReadyButGameLaunched");
                 return;
             }
             if (_launcher is not IGameLaunchOptionsLauncher profiledLauncher)
             {
-                StatusText = L("O perfil de inicialização HDR está ativado, mas este launcher não consegue aplicar opções de inicialização do Linux.", "The HDR launch profile is enabled, but this launcher cannot apply Linux launch options.");
+                StatusText = T("Vm.HDRLaunchProfileEnabledButLauncher");
                 return;
             }
             var hdrGame = SelectedGame;
-            StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
+            StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
-                StatusText = LF("Iniciando {0} com perfil HDR {1}", "Launching {0} with HDR profile {1}", hdrGame.Name, SelectedHdrMode);
+                StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
             return;
         }
 
         var game = SelectedGame;
         var started = game.ParentLauncherName is { Length: > 0 } parent
-            ? LF("Abrindo {0}. Inicie {1} a partir do launcher.", "Opening {0}. Start {1} from the launcher.", parent, game.Name)
-            : LF("Iniciando {0}", "Launching {0}", game.Name);
+            ? TF("Vm.OpeningStartFromLauncher", parent, game.Name)
+            : TF("Vm.Launching", game.Name);
         StatusText = started;
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;
@@ -1662,12 +1639,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (GameLaunchFailedException ex)
         {
             StatusText = string.IsNullOrWhiteSpace(ex.Detail)
-                ? LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1}.", "Could not launch {0}: the launch command exited with code {1}.", game.Name, ex.ExitCode)
-                : LF("Não foi possível iniciar {0}: o comando de inicialização terminou com o código {1} ({2}).", "Could not launch {0}: the launch command exited with code {1} ({2}).", game.Name, ex.ExitCode, ex.Detail);
+                ? TF("Vm.CouldNotLaunchLaunchCommandExited", game.Name, ex.ExitCode)
+                : TF("Vm.CouldNotLaunchLaunchCommandExited2", game.Name, ex.ExitCode, ex.Detail);
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
-            StatusText = LF("Não foi possível iniciar {0}: {1}", "Could not launch {0}: {1}", game.Name, ex.Message);
+            StatusText = TF("Vm.CouldNotLaunch", game.Name, ex.Message);
         }
         return false;
     }
@@ -1677,9 +1654,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), L("Selecione um jogo primeiro.", "Select a game first."));
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), T("Vm.SelectGameFirst"));
         if (!SelectedGame.HasConfirmedPatchTarget)
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), L("Defina o executável alvo em Editar jogo primeiro.", "Set the target executable in Edit game first."));
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), T("Vm.SetTargetExecutableEditGameFirst"));
 
         try
         {
@@ -1692,14 +1669,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(LF("Configurações do RenoDX: {0}", "RenoDX settings: {0}", ex.Message)));
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(TF("Vm.RenoDXSettings", ex.Message)));
         }
     }
 
     public ComponentOperationResult SetRenoDxCompatibilitySetting(string key, string value)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetRenoDxCompatibilitySetting(SelectedGame, key, value);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1708,9 +1685,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public OptiScalerAdvancedSnapshot GetOptiScalerAdvancedSettings()
     {
         if (SelectedGame is null)
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), L("Selecione um jogo primeiro.", "Select a game first."));
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), T("Vm.SelectGameFirst"));
         if (!SelectedGame.HasConfirmedPatchTarget)
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), L("Defina o executável alvo em Editar jogo primeiro.", "Set the target executable in Edit game first."));
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), T("Vm.SetTargetExecutableEditGameFirst"));
         try
         {
             var snapshot = _managedComponents.GetOptiScalerAdvancedSettings(SelectedGame);
@@ -1720,14 +1697,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(LF("Configurações do OptiScaler: {0}", "OptiScaler settings: {0}", ex.Message)));
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(TF("Vm.OptiScalerSettings", ex.Message)));
         }
     }
 
     public ComponentOperationResult SetOptiScalerAdvancedSetting(string id, string value)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetOptiScalerAdvancedSetting(SelectedGame, id, value);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1739,7 +1716,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         var result = await _managedComponents
             .SetOptiScalerAdvancedSettingAsync(game, id, value, cancellationToken)
@@ -1759,7 +1736,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ComponentOperationResult SetDlssg2030Preferences(string gpuGeneration, string proxyName)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetDlssg2030Preferences(SelectedGame, gpuGeneration, proxyName);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1768,7 +1745,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<Dlssg2030UpdateStatus> CheckDlssg2030UpdateAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return new(false, null, null, false, L("Selecione um jogo primeiro.", "Select a game first."));
+            return new(false, null, null, false, T("Vm.SelectGameFirst"));
         var status = await _managedComponents.CheckDlssg2030UpdateAsync(SelectedGame, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(status.Message);
         return status;
@@ -1777,7 +1754,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<ComponentOperationResult> UpdateDlssg2030Async(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         var result = await _managedComponents.UpdateDlssg2030Async(game, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(result.Message);
@@ -1794,7 +1771,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ComponentOperationResult SetStandaloneDlssEnablerPreferences(string proxyName)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetStandaloneDlssEnablerPreferences(SelectedGame, proxyName);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1803,7 +1780,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<DlssEnablerUpdateStatus> CheckStandaloneDlssEnablerUpdateAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return new(false, null, null, false, L("Selecione um jogo primeiro.", "Select a game first."));
+            return new(false, null, null, false, T("Vm.SelectGameFirst"));
         var status = await _managedComponents.CheckStandaloneDlssEnablerUpdateAsync(SelectedGame, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(status.Message);
         return status;
@@ -1812,7 +1789,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<ComponentOperationResult> UpdateStandaloneDlssEnablerAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         var result = await _managedComponents.UpdateStandaloneDlssEnablerAsync(game, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(result.Message);
@@ -1829,7 +1806,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ComponentOperationResult SetRtx40MfgPreferences(string proxyName)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, proxyName);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1838,7 +1815,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ComponentOperationResult SetRtx40MfgPreferences(string gpuGeneration, string proxyName)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, gpuGeneration, proxyName);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1847,7 +1824,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<Rtx40MfgUpdateStatus> CheckRtx40MfgUpdateAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return new(false, null, null, false, L("Selecione um jogo primeiro.", "Select a game first."));
+            return new(false, null, null, false, T("Vm.SelectGameFirst"));
         var status = await _managedComponents.CheckRtx40MfgUpdateAsync(SelectedGame, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(status.Message);
         return status;
@@ -1856,7 +1833,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public async Task<ComponentOperationResult> UpdateRtx40MfgAsync(CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         var result = await _managedComponents.UpdateRtx40MfgAsync(game, cancellationToken).ConfigureAwait(true);
         StatusText = UiLocalizationService.Present(result.Message);
@@ -1879,7 +1856,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (warnings is [{ AddedAutomatically: false } only]) return [new InstallWarningSection(null, only.Warning)];
         return warnings.Select(warning => new InstallWarningSection(
             warning.AddedAutomatically
-                ? LF("{0} — instalado automaticamente com {1}", "{0} — installed automatically with {1}",
+                ? TF("Vm.InstalledAutomatically",
                     LinuxManagedComponentService.DisplayDependencyName(warning.Kind), targetName)
                 : targetName,
             warning.Warning)).ToList();
@@ -1900,9 +1877,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var pending = await Task.Run(() => _managedComponents.PendingAutoDependencies(game, target, indexedFiles));
         var warnings = ManifestInstallWarning.ForInstall(game, target, installsTarget, pending);
         if (warnings.Count == 0) return true;
-        if (await confirm(LF("⚠ Nota de instalação — {0}", "⚠ Install note — {0}", game.Name), InstallWarningSections(warnings, displayName), L("Continuar", "Continue")))
+        if (await confirm(TF("Vm.InstallNote", game.Name), InstallWarningSections(warnings, displayName), T("Vm.Continue")))
             return true;
-        StatusText = LF("Instalação de {0} cancelada.", "{0} installation cancelled.", displayName);
+        StatusText = TF("Vm.InstallationCancelled", displayName);
         return false;
     }
 
@@ -1916,14 +1893,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var game = SelectedGame;
         if (!_probeCache.TryGetValue(Key(game), out var probe))
         {
-            StatusText = L("Aguarde a análise do jogo terminar antes de alterar componentes.", "Wait for game analysis to finish before changing components.");
+            StatusText = T("Vm.WaitGameAnalysisFinishBeforeChanging");
             return;
         }
 
         var component = probe.Components.FirstOrDefault(c => c.Kind == kind);
         if (component is null || !component.ActionAllowed)
         {
-            StatusText = LF("{0}: a ação está bloqueada para proteger esta instalação.", "{0}: the action is blocked to protect this installation.", kind);
+            StatusText = TF("Vm.ActionBlockedProtectInstallation", kind);
             return;
         }
 
@@ -1933,7 +1910,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var removing = component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
             if (!removing && kind == ManagedComponentKind.Dlss5Feeder && IsDeepFriedChickenFeederConsumer && string.IsNullOrWhiteSpace(Dlss5FeederConsumerPackagePath))
             {
-                StatusText = L("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial (.zip ou .7z). Selecione-o primeiro em Perfil do ReShade → Consumidor do Feeder.", "DLSS5 Feeder Full with Deep Fried Chicken requires the official package (.zip or .7z). Select it first under ReShade Profile → Feeder consumer.");
+                StatusText = T("Vm.DLSS5FeederFullDeepFriedChicken");
                 return;
             }
 
@@ -1942,36 +1919,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
             if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
                 ConfirmAsync is { } confirm &&
-                !await confirm(L("Control Ultimate Edition — mod RenoDX", "Control Ultimate Edition — RenoDX mod"), L(
-                    "⚠ Este NÃO é um mod HDR.\n\n" +
-                    "Ele corrige o ruído do RT com Ray Reconstruction. Duas estratégias (escolha uma; são mutuamente exclusivas):\n" +
-                    "• Desative o denoiser de RT do jogo e use o preset M ou L do DLSS Super Resolution\n" +
-                    "• Use Ray Reconstruction com entradas extras derivadas dos shaders do jogo (o denoiser do jogo também fica desativado — o RR exige isso)\n\n" +
-                    "DLSS, Ray Tracing e SSAO precisam estar ativados no jogo para o Ray Reconstruction funcionar corretamente.\n\n" +
-                    "Instalar também vai:\n" +
-                    "• Atualizar nvngx_dlss.dll para a versão mais recente disponível\n" +
-                    "• Instalar nvngx_dlssd.dll (runtime do DLSS Ray Reconstruction)\n" +
-                    "• Definir o preset HDR do renderer.ini (m_eHDRPreset) como 2\n\n" +
-                    "O passo do preset SR no perfil do driver NVIDIA é ignorado no Linux. Remover o RenoDX restaura as DLLs e o renderer.ini anteriores.",
-                    "⚠ This is NOT an HDR mod.\n\n" +
-                    "It fixes RT noise using Ray Reconstruction. Two strategies (pick one; they are mutually exclusive):\n" +
-                    "• Turn off the in-game RT denoiser and use DLSS Super Resolution preset M or L\n" +
-                    "• Use Ray Reconstruction with extra inputs derived from the game's shaders (the game denoiser is turned off here too — RR needs that)\n\n" +
-                    "DLSS, Ray Tracing and SSAO must all be enabled in-game for Ray Reconstruction to work correctly.\n\n" +
-                    "Installing will also:\n" +
-                    "• Upgrade nvngx_dlss.dll to the newest available version\n" +
-                    "• Deploy nvngx_dlssd.dll (DLSS Ray Reconstruction runtime)\n" +
-                    "• Set the renderer.ini HDR preset (m_eHDRPreset) to 2\n\n" +
-                    "The NVIDIA driver-profile SR preset step is skipped on Linux. Removing RenoDX restores the previous DLLs and renderer.ini."),
-                    L("Instalar", "Install")))
+                !await confirm(T("Vm.ControlUltimateEditionRenoDXMod"), T("Vm.NOTHDRModFixesRTNoise"),
+                    T("Vm.Install")))
             {
-                StatusText = L("Instalação do RenoDX cancelada.", "RenoDX installation cancelled.");
+                StatusText = T("Vm.RenoDXInstallationCancelled");
                 return;
             }
 
             StatusText = removing
-                ? LF("Removendo {0} gerenciado pelo RHI…", "Removing RHI-managed {0}…", component.DisplayName)
-                : LF("Instalando {0}…", "Installing {0}…", component.DisplayName);
+                ? TF("Vm.RemovingRHIManaged", component.DisplayName)
+                : TF("Vm.Installing", component.DisplayName);
             var result = removing
                 ? await _managedComponents.RemoveAsync(game, kind)
                 : kind == ManagedComponentKind.Dlss5Feeder
@@ -1989,7 +1946,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("{0}: {1}", "{0}: {1}", component.DisplayName, ex.Message);
+            StatusText = TF("Vm.Symbol", component.DisplayName, ex.Message);
         }
         finally { IsBusy = false; }
     }
@@ -2014,26 +1971,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            StatusText = L("Defina o executável alvo em Editar jogo antes de verificar o Ultimate ASI Loader.", "Set the target executable in Edit game before checking Ultimate ASI Loader.");
+            StatusText = T("Vm.SetTargetExecutableEditGameBefore");
             return;
         }
         IsBusy = true;
         NotifyUalCommands();
         try
         {
-            StatusText = L("Atualizando versão mais recente do Ultimate ASI Loader…", "Refreshing latest Ultimate ASI Loader version…");
+            StatusText = T("Vm.RefreshingLatestUltimateASILoaderVersion");
             var game = SelectedGame;
             var status = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game);
             if (status.Success && !string.IsNullOrWhiteSpace(status.LatestVersion) && GetUalArchitecture(game) is { } architecture)
                 _ualLatestVersionCache[architecture] = status.LatestVersion;
             UalLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetUltimateAsiLoaderRecord(game)?.Version, status.LatestVersion)
-                : LF("Versão mais recente indisponível: {0}", "Latest version unavailable: {0}", UiLocalizationService.Present(status.Message));
+                : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
             StatusText = UiLocalizationService.Present(status.Message);
         }
         catch (Exception ex)
         {
-            UalLatestVersionText = LF("Falha ao verificar atualização: {0}", "Update check failed: {0}", ex.Message);
+            UalLatestVersionText = TF("Vm.UpdateCheckFailed", ex.Message);
             StatusText = UalLatestVersionText;
         }
         finally
@@ -2055,17 +2012,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             ComponentOperationResult result;
             if (_managedComponents.GetUltimateAsiLoaderRecord(game) is not null)
             {
-                StatusText = L("Atualizando Ultimate ASI Loader…", "Updating Ultimate ASI Loader…");
+                StatusText = T("Vm.UpdatingUltimateASILoader");
                 result = await _managedComponents.UpdateUltimateAsiLoaderAsync(game);
             }
             else
             {
                 if (string.IsNullOrWhiteSpace(SelectedUalProxyName))
                 {
-                    StatusText = L("Escolha primeiro um nome de proxy para o Ultimate ASI Loader.", "Choose a proxy name for Ultimate ASI Loader first.");
+                    StatusText = T("Vm.ChooseProxyNameUltimateASILoader");
                     return;
                 }
-                StatusText = LF("Instalando Ultimate ASI Loader como {0}…", "Installing Ultimate ASI Loader as {0}…", SelectedUalProxyName);
+                StatusText = TF("Vm.InstallingUltimateASILoaderAs", SelectedUalProxyName);
                 result = await _managedComponents.InstallUltimateAsiLoaderAsync(game, SelectedUalProxyName);
             }
 
@@ -2083,7 +2040,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Ultimate ASI Loader: {0}", "Ultimate ASI Loader: {0}", ex.Message);
+            StatusText = TF("Vm.UltimateASILoader", ex.Message);
         }
         finally
         {
@@ -2101,7 +2058,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyUalCommands();
         try
         {
-            StatusText = L("Removendo Ultimate ASI Loader e restaurando DLL encadeada / override do Wine…", "Removing Ultimate ASI Loader and restoring chained DLL / Wine override…");
+            StatusText = T("Vm.RemovingUltimateASILoaderRestoringChained");
             var result = await _managedComponents.RemoveUltimateAsiLoaderAsync(game);
             StatusText = UiLocalizationService.Present(result.Message);
             if (result.Success)
@@ -2112,7 +2069,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao remover Ultimate ASI Loader: {0}", "Ultimate ASI Loader removal failed: {0}", ex.Message);
+            StatusText = TF("Vm.UltimateASILoaderRemovalFailed", ex.Message);
         }
         finally
         {
@@ -2127,7 +2084,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            StatusText = L("Defina o executável alvo em Editar jogo antes de verificar o ShortFuse.", "Set the target executable in Edit game before checking ShortFuse.");
+            StatusText = T("Vm.SetTargetExecutableEditGameBefore2");
             return;
         }
         IsBusy = true;
@@ -2139,10 +2096,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 _shortFuseLatestVersionCache = status.LatestVersion;
             ShortFuseLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetShortFuseRecord(game)?.Version, status.LatestVersion)
-                : LF("Versão mais recente indisponível: {0}", "Latest version unavailable: {0}", UiLocalizationService.Present(status.Message));
+                : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
             StatusText = UiLocalizationService.Present(status.Message);
         }
-        catch (Exception ex) { ShortFuseLatestVersionText = LF("Falha ao verificar atualização do ShortFuse: {0}", "ShortFuse update check failed: {0}", ex.Message); StatusText = ShortFuseLatestVersionText; }
+        catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", ex.Message); StatusText = ShortFuseLatestVersionText; }
         finally { IsBusy = false; NotifyShortFuse(); }
     }
 
@@ -2158,8 +2115,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // ShortFuse has no manifest key of its own, but installing it adds RHI-owned ReShade when absent.
             if (!removing && !await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ShortFuse, "ShortFuse", installsTarget: true, ProbedFiles(game))) return;
             StatusText = removing
-                ? L("Removendo ShortFuse e restaurando a pilha anterior…", "Removing ShortFuse and restoring the previous stack…")
-                : L("Instalando a orquestração de Geração de Quadros DLSS do ShortFuse…", "Installing ShortFuse DLSS Frame Generation orchestration…");
+                ? T("Vm.RemovingShortFuseRestoringPreviousStack")
+                : T("Vm.InstallingShortFuseDLSSFrameGenerationOrchestrat");
             var result = removing
                 ? await _managedComponents.RemoveShortFuseAsync(game)
                 : await _managedComponents.InstallShortFuseAsync(game, ShortFuseAutoConfigEnabled);
@@ -2170,7 +2127,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 RefreshShortFuseState(game);
             }
         }
-        catch (Exception ex) { StatusText = LF("ShortFuse: {0}", "ShortFuse: {0}", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
         finally { IsBusy = false; NotifyShortFuse(); NotifyUal(); NotifyDlss(); }
     }
 
@@ -2181,33 +2138,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var game = SelectedGame;
         if (!_probeCache.TryGetValue(Key(game), out var probe))
         {
-            StatusText = L("Aguarde a análise do jogo terminar antes de alterar o ReShade.", "Wait for game analysis to finish before changing ReShade.");
+            StatusText = T("Vm.WaitGameAnalysisFinishBeforeChanging2");
             return;
         }
 
         var component = probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade);
         if (component is null)
         {
-            StatusText = L("O estado do componente ReShade está indisponível para este jogo.", "ReShade component state is unavailable for this game.");
+            StatusText = T("Vm.ReShadeComponentStateUnavailableGame");
             return;
         }
         if ((component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable) && !component.ManagedByRhi)
         {
-            StatusText = L("ReShade externo detectado. O RHI não irá sobrescrevê-lo nem adotá-lo.", "External ReShade detected. RHI will not overwrite or adopt it.");
+            StatusText = T("Vm.ExternalReShadeDetectedRHIWillNot");
             return;
         }
         if (component.Availability == ComponentAvailability.Unsupported)
         {
             var note = UiLocalizationService.Present(component.Note);
             StatusText = string.IsNullOrWhiteSpace(note)
-                ? L("ReShade não é compatível com este alvo.", "ReShade is not compatible with this target.")
+                ? T("Vm.ReShadeNotCompatibleTarget")
                 : note;
             return;
         }
 
         if (!Enum.TryParse<ReShadeChannel>(ReShadeChannelValue(SelectedReShadeChannel), true, out var channel))
         {
-            StatusText = L("Canal do ReShade desconhecido.", "Unknown ReShade channel.");
+            StatusText = T("Vm.UnknownReShadeChannel");
             return;
         }
 
@@ -2234,7 +2191,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // RE Engine game when that is missing; those are the installs the manifest warns about.
             if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, component.DisplayName,
                     installsTarget: ManifestInstallWarning.IsFirstInstall(component.Availability), probe.Files)) return;
-            StatusText = LF("Aplicando perfil {0} do ReShade…", "Applying ReShade {0} profile…", channel);
+            StatusText = TF("Vm.ApplyingReShadeProfile", channel);
             var result = await _managedComponents.ApplyReShadeAsync(game, options);
             StatusText = UiLocalizationService.Present(result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
@@ -2247,7 +2204,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(LF("Falha no perfil do ReShade: {0}", "ReShade profile failed: {0}", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2260,14 +2217,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("Instalando D3DCompiler_47 nativo para {0} com Protontricks…", "Installing native D3DCompiler_47 for {0} with Protontricks…", game.Name);
+            StatusText = TF("Vm.InstallingNativeD3DCompiler47Protontricks", game.Name);
             var result = await _managedComponents.InstallD3DCompilerWithProtontricksAsync(game);
             StatusText = UiLocalizationService.Present(result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(LF("Falha ao instalar D3DCompiler com Protontricks: {0}", "Failed to install D3DCompiler with Protontricks: {0}", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2280,14 +2237,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("Instalando D3DCompiler_47 nativo para {0} com {1}…", "Installing native D3DCompiler_47 for {0} with {1}…", game.Name, game.CompatibilityTool ?? game.Runner ?? "Winetricks");
+            StatusText = TF("Vm.InstallingNativeD3DCompiler47", game.Name, game.CompatibilityTool ?? game.Runner ?? "Winetricks");
             var result = await _managedComponents.InstallD3DCompilerWithWinetricksAsync(game);
             StatusText = UiLocalizationService.Present(result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(LF("Falha ao instalar D3DCompiler com Winetricks: {0}", "Failed to install D3DCompiler with Winetricks: {0}", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2298,7 +2255,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null || IsBusy) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            ReShadeUpdateText = L("Defina o executável alvo em Editar jogo antes de verificar o ReShade.", "Set the target executable in Edit game before checking ReShade.");
+            ReShadeUpdateText = T("Vm.SetTargetExecutableEditGameBefore3");
             StatusText = ReShadeUpdateText;
             return;
         }
@@ -2311,7 +2268,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = LF("Falha ao verificar atualização: {0}", "Update check failed: {0}", ex.Message);
+            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", ex.Message);
             StatusText = ReShadeUpdateText;
         }
         finally { IsBusy = false; }
@@ -2325,7 +2282,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("Aplicação rápida: aplicando padrões de DLSS/Streamline em {0}…", "Quick apply: applying DLSS/Streamline defaults to {0}…", game.Name);
+            StatusText = TF("Vm.QuickApplyApplyingDLSSStreamlineDefaults", game.Name);
             IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
                 ? cached.Files
                 : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8));
@@ -2336,7 +2293,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha na aplicação rápida: {0}", "Quick apply failed: {0}", ex.Message);
+            StatusText = TF("Vm.QuickApplyFailed", ex.Message);
         }
         finally
         {
@@ -2353,7 +2310,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("Restaurando todos os originais de DLSS/Streamline do RHI em {0}…", "Restoring all RHI DLSS/Streamline originals in {0}…", game.Name);
+            StatusText = TF("Vm.RestoringAllRHIDLSSStreamlineOriginals", game.Name);
             IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
                 ? cached.Files
                 : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8));
@@ -2364,7 +2321,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha em Restaurar tudo: {0}", "Restore all failed: {0}", ex.Message);
+            StatusText = TF("Vm.RestoreAllFailed", ex.Message);
         }
         finally
         {
@@ -2406,7 +2363,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("DLSS/Streamline em lote: preparando {0} jogo(s)…", "DLSS/Streamline batch: preparing {0} game(s)…", games.Count);
+            StatusText = TF("Vm.DLSSStreamlineBatchPreparingGameS", games.Count);
             var indexes = await PrepareDlssBatchIndexesAsync(games, cancellationToken);
             var result = await _dlssDefaults.ApplyBatchAsync(
                 games, defaults,
@@ -2433,7 +2390,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = LF("Restauração DLSS/Streamline em lote: preparando {0} jogo(s)…", "DLSS/Streamline batch restore: preparing {0} game(s)…", games.Count);
+            StatusText = TF("Vm.DLSSStreamlineBatchRestorePreparingGame", games.Count);
             var indexes = await PrepareDlssBatchIndexesAsync(games, cancellationToken);
             var result = await _dlssDefaults.RestoreBatchAsync(
                 games,
@@ -2483,24 +2440,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null || !TryResolveComponent(component, out var kind, out var version, out var paths)) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            StatusText = L("Defina o executável alvo em Editar jogo antes de trocar DLLs do jogo.", "Set the target executable in Edit game before swapping game DLLs.");
+            StatusText = T("Vm.SetTargetExecutableEditGameBefore4");
             return;
         }
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
-                ? L("A troca direta de DLSS fica bloqueada enquanto o ShortFuse controla a pilha transacional DLSS/Streamline. Remova o ShortFuse primeiro.", "Direct DLSS swapping is blocked while ShortFuse controls the transactional DLSS/Streamline stack. Remove ShortFuse first.")
-                : L("A troca direta de DLSS fica bloqueada enquanto o DLSS5 Feeder Full gerenciado pelo RHI controla a pilha privada SR/NR. Remova o Feeder Full primeiro.", "Direct DLSS swapping is blocked while RHI-managed DLSS5 Feeder Full controls the private SR/NR stack. Remove Feeder Full first.");
+                ? T("Vm.DirectDLSSSwappingBlockedWhileShortFuse")
+                : T("Vm.DirectDLSSSwappingBlockedWhileRHI");
             return;
         }
         if (string.IsNullOrWhiteSpace(version))
         {
-            StatusText = L("Escolha primeiro uma versão do DLSS.", "Choose a DLSS version first.");
+            StatusText = T("Vm.ChooseDLSSVersionFirst");
             return;
         }
         if (paths.Count == 0)
         {
-            StatusText = LF("{0}: nenhuma DLL de destino existente foi encontrada; nada foi alterado.", "{0}: no existing target DLL was found; nothing changed.", DlssComponentDisplayName(kind));
+            StatusText = TF("Vm.NoExistingTargetDLLWasFound", DlssComponentDisplayName(kind));
             return;
         }
 
@@ -2508,24 +2465,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             var displayName = DlssComponentDisplayName(kind);
-            StatusText = LF("Baixando/aplicando {0} {1}…", "Downloading/applying {0} {1}…", displayName, version);
+            StatusText = TF("Vm.DownloadingApplying", displayName, version);
             var result = await _dlss.SwapAsync(kind, paths, version);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
                 StatusText = changed == 0
-                    ? LF("{0} {1} já corresponde ao arquivo do jogo; nada foi alterado e nenhum .original foi criado.", "{0} {1} already matches the game file; nothing changed and no .original was created.", displayName, version)
-                    : LF("{0} {1} aplicado a {2} arquivo(s); original preservado como .original.", "{0} {1} applied to {2} file(s); original preserved as .original.", displayName, version, changed);
+                    ? TF("Vm.AlreadyMatchesGameFileNothingChanged", displayName, version)
+                    : TF("Vm.AppliedFileSOriginalPreservedAs", displayName, version, changed);
                 NotifyDlss();
             }
             else
             {
-                StatusText = LF("Falha ao trocar {0}: {1}", "Failed to swap {0}: {1}", displayName, result.Error);
+                StatusText = TF("Vm.FailedSwap", displayName, result.Error);
             }
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao trocar {0}: {1}", "Failed to swap {0}: {1}", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), ex.Message);
         }
         finally { IsBusy = false; }
     }
@@ -2536,19 +2493,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null || !TryResolveComponent(component, out var kind, out _, out var paths)) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            StatusText = L("Defina o executável alvo em Editar jogo antes de restaurar DLLs do jogo.", "Set the target executable in Edit game before restoring game DLLs.");
+            StatusText = T("Vm.SetTargetExecutableEditGameBefore5");
             return;
         }
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
-                ? L("A restauração direta do DLSS fica bloqueada enquanto o ShortFuse controla a pilha transacional DLSS/Streamline. Remova o ShortFuse primeiro.", "Direct DLSS restore is blocked while ShortFuse controls the transactional DLSS/Streamline stack. Remove ShortFuse first.")
-                : L("A restauração direta do DLSS fica bloqueada enquanto o DLSS5 Feeder Full gerenciado pelo RHI controla a pilha privada. Remova o Feeder Full primeiro.", "Direct DLSS restore is blocked while RHI-managed DLSS5 Feeder Full controls the private stack. Remove Feeder Full first.");
+                ? T("Vm.DirectDLSSRestoreBlockedWhileShortFuse")
+                : T("Vm.DirectDLSSRestoreBlockedWhileRHI");
             return;
         }
         if (paths.Count == 0)
         {
-            StatusText = LF("{0}: nenhuma DLL de destino existente foi encontrada.", "{0}: no existing target DLL was found.", DlssComponentDisplayName(kind));
+            StatusText = TF("Vm.NoExistingTargetDLLWasFound2", DlssComponentDisplayName(kind));
             return;
         }
 
@@ -2558,13 +2515,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var displayName = DlssComponentDisplayName(kind);
             var result = await _dlss.RestoreAsync(kind, paths);
             StatusText = result.Success
-                ? LF("{0}: DLL original restaurada.", "{0}: original DLL restored.", displayName)
-                : LF("{0}: restauração indisponível — {1}", "{0}: restore unavailable — {1}", displayName, result.Error);
+                ? TF("Vm.OriginalDLLRestored", displayName)
+                : TF("Vm.RestoreUnavailable", displayName, result.Error);
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = LF("{0}: falha na restauração — {1}", "{0}: restore failed — {1}", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), ex.Message);
         }
         finally { IsBusy = false; }
     }
@@ -2576,43 +2533,43 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
-                ? L("A troca direta do Streamline fica bloqueada enquanto o ShortFuse controla a pilha transacional. Remova o ShortFuse primeiro.", "Direct Streamline swapping is blocked while ShortFuse controls the transactional stack. Remove ShortFuse first.")
-                : L("A troca direta do Streamline fica bloqueada enquanto o DLSS5 Feeder Full é gerenciado para este jogo.", "Direct Streamline swapping is blocked while DLSS5 Feeder Full is managed for this game.");
+                ? T("Vm.DirectStreamlineSwappingBlockedWhileShortFuse")
+                : T("Vm.DirectStreamlineSwappingBlockedWhileDLSS5");
             return;
         }
         if (string.IsNullOrWhiteSpace(SelectedStreamlineVersion))
         {
-            StatusText = L("Escolha primeiro uma versão do Streamline.", "Choose a Streamline version first.");
+            StatusText = T("Vm.ChooseStreamlineVersionFirst");
             return;
         }
         var streamlineFolders = _dlssDefaults.PanelStreamlineFolders(SelectedGame, _dlssDetection);
         if (streamlineFolders.Count == 0)
         {
-            StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo; nada foi alterado.", "Streamline: no local Streamline folder was detected in the game; nothing changed.");
+            StatusText = T("Vm.StreamlineNoLocalStreamlineFolderWas");
             return;
         }
 
         IsBusy = true;
         try
         {
-            StatusText = LF("Baixando/aplicando Streamline {0}…", "Downloading/applying Streamline {0}…", SelectedStreamlineVersion);
+            StatusText = TF("Vm.DownloadingApplyingStreamline", SelectedStreamlineVersion);
             var result = await _dlss.SwapStreamlineAsync(streamlineFolders, SelectedStreamlineVersion);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
                 StatusText = changed == 0
-                    ? LF("Streamline {0} já corresponde a todas as DLLs detectadas; nada foi alterado e nenhum backup .original foi criado.", "Streamline {0} already matches all detected DLLs; nothing changed and no .original backup was created.", SelectedStreamlineVersion)
-                    : LF("Streamline {0} aplicado a {1} DLL(s) existente(s); originais preservados como .original.", "Streamline {0} applied to {1} existing DLL(s); originals preserved as .original.", SelectedStreamlineVersion, changed);
+                    ? TF("Vm.StreamlineAlreadyMatchesAllDetectedDLLs", SelectedStreamlineVersion)
+                    : TF("Vm.StreamlineAppliedExistingDLLSOriginals", SelectedStreamlineVersion, changed);
                 NotifyDlss();
             }
             else
             {
-                StatusText = LF("Falha ao trocar Streamline: {0}", "Failed to swap Streamline: {0}", result.Error);
+                StatusText = TF("Vm.FailedSwapStreamline", result.Error);
             }
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao trocar Streamline: {0}", "Failed to swap Streamline: {0}", ex.Message);
+            StatusText = TF("Vm.FailedSwapStreamline", ex.Message);
         }
         finally { IsBusy = false; }
     }
@@ -2624,14 +2581,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
-                ? L("A restauração direta do Streamline fica bloqueada enquanto o ShortFuse controla a pilha transacional. Remova o ShortFuse primeiro.", "Direct Streamline restore is blocked while ShortFuse controls the transactional stack. Remove ShortFuse first.")
-                : L("A restauração direta do Streamline fica bloqueada enquanto o DLSS5 Feeder Full é gerenciado para este jogo.", "Direct Streamline restore is blocked while DLSS5 Feeder Full is managed for this game.");
+                ? T("Vm.DirectStreamlineRestoreBlockedWhileShortFuse")
+                : T("Vm.DirectStreamlineRestoreBlockedWhileDLSS5");
             return;
         }
         var streamlineFolders = _dlssDefaults.PanelStreamlineFolders(SelectedGame, _dlssDetection);
         if (streamlineFolders.Count == 0)
         {
-            StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo.", "Streamline: no local Streamline folder was detected in the game.");
+            StatusText = T("Vm.StreamlineNoLocalStreamlineFolderWas2");
             return;
         }
 
@@ -2640,13 +2597,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             var result = await _dlss.RestoreStreamlineAsync(streamlineFolders);
             StatusText = result.Success
-                ? LF("Streamline: {0} DLL(s) original(is) restaurada(s).", "Streamline: {0} original DLL(s) restored.", result.Results.Count)
-                : LF("Streamline: restauração indisponível — {0}", "Streamline: restore unavailable — {0}", result.Error);
+                ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
+                : TF("Vm.StreamlineRestoreUnavailable", result.Error);
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = LF("Streamline: falha na restauração — {0}", "Streamline: restore failed — {0}", ex.Message);
+            StatusText = TF("Vm.StreamlineRestoreFailed", ex.Message);
         }
         finally { IsBusy = false; }
     }
@@ -2657,11 +2614,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
-            StatusText = L("A raiz real do jogo ainda não foi definida. Use Editar jogo.", "The real game root is not defined yet. Use Edit game.");
+            StatusText = T("Vm.RealGameRootNotDefinedYet");
             return;
         }
         if (!LinuxDesktopOpener.TryOpenDirectory(SelectedGame.InstallPath, out var error))
-            StatusText = LF("Não foi possível abrir a pasta do jogo: {0}", "Could not open the game folder: {0}", error);
+            StatusText = TF("Vm.CouldNotOpenGameFolder", error);
     }
 
     [RelayCommand]
@@ -2669,7 +2626,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame?.PrefixPath is not { } prefix || !Directory.Exists(prefix)) return;
         if (!LinuxDesktopOpener.TryOpenDirectory(prefix, out var error))
-            StatusText = LF("Não foi possível abrir o prefixo Wine/Proton: {0}", "Could not open the Wine/Proton prefix: {0}", error);
+            StatusText = TF("Vm.CouldNotOpenWineProtonPrefix", error);
     }
 
     private void LoadReShadeProfile(DetectedGame game)
@@ -2688,7 +2645,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ShaderCrosireLegacy = packs.Contains("CrosireLegacy");
         ShaderClshortfuse = packs.Contains("ClshortfuseShaders");
         ShaderMaxG2D = packs.Contains("MaxG2DSimpleHDR");
-        ReShadeUpdateText = LF("Perfil: {0}{1}.", "Profile: {0}{1}.", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
+        ReShadeUpdateText = TF("Vm.Profile", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
     }
 
     private void ResetReShadeProfile()
@@ -2729,15 +2686,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>Saves the pack's file selection; returns the localised failure, or null when saved.</summary>
     public string? SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
-        => TrySaveStore(() => _managedComponents.SetReShadeShaderPackExcludedFiles(packId, excluded));
+        => TryPersist(() => _managedComponents.SetReShadeShaderPackExcludedFiles(packId, excluded), "Ui.WhatShaderPackSelection", sessionOnly: false);
 
     public async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
         IReadOnlyList<string> shaderIds,
         IReadOnlyList<string> addonIds,
         CancellationToken cancellationToken = default)
     {
-        if (SelectedGame is null) return ComponentOperationResult.Fail(L("Selecione um jogo primeiro.", "Select a game first."));
-        if (IsBusy) return ComponentOperationResult.Fail(L("Outra operação do RHI já está em andamento.", "Another RHI operation is already running."));
+        if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (IsBusy) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         var game = SelectedGame;
         IsBusy = true;
         try
@@ -2756,7 +2713,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
-            StatusText = L("Aplicando seleção de pacotes de shaders…", "Applying shader pack selection…");
+            StatusText = T("Vm.ApplyingShaderPackSelection");
             var shaderResult = await _managedComponents.ApplyReShadeAsync(game, options, cancellationToken);
             if (!shaderResult.Success)
             {
@@ -2764,11 +2721,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 return shaderResult;
             }
 
-            StatusText = L("Aplicando seleção de add-ons do ReShade…", "Applying ReShade add-on selection…");
+            StatusText = T("Vm.ApplyingReShadeAddSelection");
             var addonResult = await _managedComponents.ApplyReShadeAddonSelectionAsync(game, addonIds, cancellationToken);
             if (!addonResult.Success)
             {
-                return ComponentOperationResult.Fail(ShowStatus(LF("Shaders aplicados, mas os add-ons falharam: {0}", "Shaders applied, but add-ons failed: {0}", UiLocalizationService.Present(addonResult.Message))));
+                return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message))));
             }
 
             _selectedShaderPackIds.Clear();
@@ -2783,7 +2740,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return ComponentOperationResult.Fail(ShowStatus(LF("Falha em Shaders/Add-ons: {0}", "Shaders/Add-ons failed: {0}", ex.Message)));
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", ex.Message)));
         }
         finally
         {
@@ -2817,10 +2774,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private static string DlssComponentDisplayName(DlssComponentKind kind) => kind switch
     {
-        DlssComponentKind.SuperResolution => "Super Resolution",
-        DlssComponentKind.RayReconstruction => "Ray Reconstruction",
-        DlssComponentKind.FrameGeneration => "Frame Generation",
-        DlssComponentKind.NeuralRendering => "Neural Rendering",
+        DlssComponentKind.SuperResolution => UiLocalizationService.Text("Ui.SuperResolution"),
+        DlssComponentKind.RayReconstruction => UiLocalizationService.Text("Ui.RayReconstruction"),
+        DlssComponentKind.FrameGeneration => UiLocalizationService.Text("Ui.FrameGeneration"),
+        DlssComponentKind.NeuralRendering => UiLocalizationService.Text("Ui.NeuralRendering"),
         _ => "DLSS"
     };
 
@@ -2892,7 +2849,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         ViewMode = IsCompactView ? "Detail" : "Compact";
         _settings.ViewMode = ViewMode;
-        TrySaveStore(() => _settingsStore.Save(_settings));
+        TryPersist(() => _settingsStore.Save(_settings), "Ui.WhatSettings");
         NotifyUxSettings();
     }
 
@@ -2919,7 +2876,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             game.IsFavourite = true;
         }
         // Kept for this session even when the save is refused; the status line says it was not saved.
-        TrySaveStore(() => _libraryStore.Save(_libraryState));
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
         NotifySelected();
     }
@@ -2941,39 +2898,62 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             game.IsHidden = true;
         }
         // Kept for this session even when the save is refused; the status line says it was not saved.
-        TrySaveStore(() => _libraryStore.Save(_libraryState));
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
         NotifySelected();
     }
 
-    public async Task<string> SaveSelectedGameEditAsync(
-        string patchExecutablePath,
-        string gameRootPath,
-        string binaryDirectory,
-        string? launchProvider)
-        => (await TrySaveSelectedGameEditAsync(patchExecutablePath, gameRootPath, binaryDirectory, launchProvider)).Message;
+    /// <summary>
+    /// The UI's one store-write helper: runs <paramref name="save"/>; on failure writes the exception (with its stack)
+    /// to the app log, shows the localised reason on the status line and returns it. Null means saved.
+    /// A store refusing to overwrite an unreadable file (<see cref="JsonStoreUnavailableException"/>) is reported with
+    /// the file and its set-aside copy. <paramref name="sessionOnly"/> says the in-memory change stays for this session;
+    /// pass false where the store is the authority and the caller reverts (preference dropdowns go back to the saved
+    /// value) or aborts (add/edit/remove/reset of library entries, which mutate a copy and adopt it only once saved).
+    /// Every exception is caught on purpose: this is the UI boundary, so even a programming error in a store reads as
+    /// "Could not save …" rather than ending the session — the full stack is in the log.
+    /// </summary>
+    private string? TryPersist(Action save, string whatKey, bool sessionOnly = true)
+    {
+        try
+        {
+            save();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("save " + whatKey, ex);
+            var message = ex is JsonStoreUnavailableException
+                ? StoreSaveFailedText(ex)
+                : sessionOnly
+                    ? UiLocalizationService.Format("Ui.SaveFailedSessionOnly", UiLocalizationService.Text(whatKey), ex.Message)
+                    : UiLocalizationService.Format("Ui.SaveFailedNothingChanged", UiLocalizationService.Text(whatKey), ex.Message);
+            StatusText = message;
+            return message;
+        }
+    }
 
     /// <summary>
     /// Saves the Edit game target; <c>Saved</c> is the structural success flag (the message is localised).
     /// <paramref name="saved"/> runs as soon as the edit is on disk, before the library refresh waits for a
     /// running operation, so the dialog can close instead of sitting disabled with no message.
     /// </summary>
-    public async Task<(bool Saved, string Message)> TrySaveSelectedGameEditAsync(
+    public async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
         string patchExecutablePath,
         string gameRootPath,
         string binaryDirectory,
         string? launchProvider,
         Action? saved = null)
     {
-        if (SelectedGame is null) return (false, L("Selecione um jogo primeiro.", "Select a game first."));
+        if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
 
         if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
-            return (false, L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications."));
+            return (false, T("Vm.SelectRealGameExecutableShouldReceive"));
         if (string.IsNullOrWhiteSpace(gameRootPath) || !Directory.Exists(gameRootPath))
-            return (false, L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."));
+            return (false, T("Vm.SelectedGameRootDoesNotExist"));
         if (GameRootRefusal(gameRootPath) is { } rootRefusal) return (false, rootRefusal);
         if (string.IsNullOrWhiteSpace(binaryDirectory) || !Directory.Exists(binaryDirectory))
-            return (false, L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist."));
+            return (false, T("Vm.SelectedBinariesPatchesDirectoryDoesNot"));
 
         var executable = Path.GetFullPath(patchExecutablePath);
         var root = Path.GetFullPath(gameRootPath);
@@ -2981,11 +2961,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         var executableDirectory = Path.GetDirectoryName(executable);
         if (string.IsNullOrWhiteSpace(executableDirectory))
-            return (false, L("Não foi possível determinar o diretório do executável alvo.", "Could not determine the target executable directory."));
+            return (false, T("Vm.CouldNotDetermineTargetExecutableDirectory"));
         if (!IsPathWithin(root, executable))
-            return (false, L("O executável alvo precisa estar dentro da raiz do jogo selecionada.", "The target executable must be inside the selected game root."));
+            return (false, T("Vm.TargetExecutableMustInsideSelectedGame"));
         if (!IsPathWithin(root, binaries))
-            return (false, L("O diretório de binários/patches precisa estar dentro da raiz do jogo selecionada.", "The binaries/patches directory must be inside the selected game root."));
+            return (false, T("Vm.BinariesPatchesDirectoryMustInsideSelected"));
 
         var managedRecords = _deploymentRecords.FindAll(SelectedGame);
         if (managedRecords.Count > 0)
@@ -2994,10 +2974,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                 || !PathEquals(SelectedGame.InstallPath, root)
                                 || !PathEquals(SelectedGame.BinaryDirectory, binaries);
             if (targetChanged)
-                return (false, L("Remova primeiro os componentes gerenciados pelo RHI antes de trocar o alvo do jogo. Isso evita deixar arquivos e estado gerenciado no destino anterior.", "Remove RHI-managed components before changing the game target. This avoids leaving files and managed state at the previous target."));
+                return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
         }
 
-        // Mutate a copy; the live state changes only once the save succeeded.
+        // Mutate a fresh copy and adopt it only once it is on disk: a refused save must not stay in
+        // _libraryState, or the next unrelated library save would persist it.
         var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         state.GameEdits[key] = new LinuxGameEditOverride
@@ -3007,60 +2988,60 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             GameRootPath = root,
             BinaryDirectory = binaries
         }.Normalize();
-        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return (false, notSaved);
+        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
         _libraryState = state;
         saved?.Invoke();
 
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         var message = await RefreshWhenIdleAsync(NoDetectors)
-            ? LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name)
-            : LF("{0}: alvo de modificações salvo, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: modification target saved, but the library was not updated. Use Refresh.", name);
+            ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
+            : TF("Vm.ModificationTargetSavedButLibraryWas", name);
         StatusText = message;
         return (true, message);
     }
 
+    /// <summary>Drops the selected game's manual overrides; <c>Reset</c> is false only when the reset was refused.</summary>
     /// <param name="saved">Runs once the change is on disk, before the refresh waits for a running operation.</param>
-    public async Task<string> ResetSelectedGameEditAsync(Action? saved = null)
+    public async Task<(bool Reset, string Message)> ResetSelectedGameEditAsync(Action? saved = null)
     {
-        if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
+        if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
         if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
-            return L("Remova primeiro os componentes gerenciados pelo RHI antes de restaurar a detecção automática do alvo.", "Remove RHI-managed components before restoring automatic target detection.");
+            return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
         var state = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         var removed = state.GameEdits.Remove(key);
-        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return notSaved;
+        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
         _libraryState = state;
         saved?.Invoke();
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         var message = !await RefreshWhenIdleAsync(NoDetectors)
-            ? LF("{0}: alterações salvas, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: changes saved, but the library was not updated. Use Refresh.", name)
+            ? TF("Vm.ChangesSavedButLibraryWasNot", name)
             : removed
-                ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
-                : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
+                ? TF("Vm.ManualOverridesRemovedAutomaticDetectionWas", name)
+                : TF("Vm.NoManualOverridesWereSaved", name);
         StatusText = message;
-        return message;
+        return (true, message);
     }
 
     /// <summary>Why a folder cannot be a game root (shared rule with every detector), or null when it can.</summary>
     public static string? GameRootRefusal(string path, string? home = null) => GameRootGuard.Check(path, home) switch
     {
         GameRootProblem.None => null,
-        GameRootProblem.Missing => L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."),
-        GameRootProblem.FilesystemRoot => L("A raiz do sistema (/) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "The filesystem root (/) cannot be a game folder. Choose the game's own folder."),
-        GameRootProblem.HomeFolder => L("A pasta pessoal (ou uma pasta acima dela) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "Your home folder (or a folder above it) cannot be a game folder. Choose the game's own folder."),
-        GameRootProblem.SystemFolder => L("Pastas do sistema e raízes de discos não podem ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "System folders and drive roots cannot be a game folder. Choose the game's own folder."),
-        GameRootProblem.SharedFolder => L("Esta pasta guarda vários programas ou jogos. Escolha a pasta do próprio jogo.", "This folder holds many programs or games. Choose the game's own folder."),
-        GameRootProblem.WinePrefix => L("Este é um prefixo Wine inteiro (ou uma pasta de sistema dele). Escolha a pasta do jogo dentro de drive_c.", "This is a whole Wine prefix (or one of its system folders). Choose the game's folder inside drive_c."),
-        GameRootProblem.SteamLibraryFolder => L("Esta é uma pasta da biblioteca Steam. Escolha a pasta do jogo em steamapps/common.", "This is a Steam library folder. Choose the game's folder inside steamapps/common."),
-        _ => L("Esta pasta não pode ser a pasta de um jogo.", "This folder cannot be a game folder.")
+        GameRootProblem.Missing => T("Vm.SelectedGameRootDoesNotExist"),
+        GameRootProblem.FilesystemRoot => T("Vm.FilesystemRootCannotGameFolderChoose"),
+        GameRootProblem.HomeFolder => T("Vm.YourHomeFolderFolderAboveCannot"),
+        GameRootProblem.SystemFolder => T("Vm.SystemFoldersDriveRootsCannotGame"),
+        GameRootProblem.SharedFolder => T("Vm.FolderHoldsManyProgramsGamesChoose"),
+        GameRootProblem.WinePrefix => T("Vm.WholeWinePrefixOneItsSystem"),
+        GameRootProblem.SteamLibraryFolder => T("Vm.SteamLibraryFolderChooseGameS"),
+        _ => T("Vm.FolderCannotGameFolder")
     };
 
     /// <summary>Plain state of a saved manual entry whose folder the guard refuses (listed, never patched).</summary>
     private static string GameRootNotAllowedText(DetectedGame game)
-        => LF("{0}: pasta não permitida. {1} Remova a entrada manual ou use Editar jogo; nada foi indexado nem alterado nessa pasta.",
-            "{0}: folder not allowed. {1} Remove the manual entry or use Edit game; nothing in that folder was indexed or changed.",
+        => TF("Vm.FolderNotAllowedRemoveManualEntry",
             game.Name, GameRootRefusal(game.LibraryIdentityPath ?? game.InstallPath) ?? string.Empty);
 
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
@@ -3074,42 +3055,42 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task<(bool Added, string Message)> TryAddManualGameAsync(LinuxManualGameEntry entry, Action? saved = null)
     {
-        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, L("Digite um nome para o jogo.", "Enter a name for the game."));
+        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, T("Vm.EnterNameGame"));
         if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
-            return (false, L("O diretório do jogo não existe.", "The game directory does not exist."));
+            return (false, T("Vm.GameDirectoryDoesNotExist"));
         if (GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
         if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
-            return (false, L("O executável selecionado não existe.", "The selected executable does not exist."));
+            return (false, T("Vm.SelectedExecutableDoesNotExist"));
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
-            return (false, L("O prefixo Wine/Proton selecionado não existe.", "The selected Wine/Proton prefix does not exist."));
+            return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
 
         var normalizedPath = Path.GetFullPath(entry.InstallPath);
         if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
-            return (false, L("Esse diretório de jogo já está presente na biblioteca.", "That game directory is already in the library."));
+            return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
         var state = _libraryStore.Load();
         if (state.ManualGames.Any(existing =>
                 Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
-            return (false, L("Esse jogo manual já está salvo.", "That manual game is already saved."));
+            return (false, T("Vm.ManualGameAlreadySaved"));
 
         state.ManualGames.Add(entry);
         state.FilterMode = "All Games";
-        if (TrySaveStore(() => _libraryStore.Save(state)) is { } notSaved) return (false, notSaved);
+        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
         _libraryState = state;
         LibraryFilterMode = "All Games";
         saved?.Invoke();
         string message;
         if (!await RefreshWhenIdleAsync(ManualOnly))
-            message = LF("{0} foi salvo na biblioteca manual, mas a biblioteca não foi atualizada. Use Atualizar.", "{0} was saved to the manual library, but the library was not updated. Use Refresh.", entry.Name);
+            message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);
         else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded &&
                      Path.GetFullPath(game.LibraryIdentityPath ?? game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)) is { } added)
         {
             SelectedGame = added;
-            message = LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name);
+            message = TF("Vm.AddedManualLibrary", entry.Name);
         }
         else
-            message = LF("{0} foi salvo na biblioteca manual, mas não apareceu na lista. Confira a pasta do jogo.", "{0} was saved to the manual library but did not appear in the list. Check the game folder.", entry.Name);
+            message = TF("Vm.WasSavedManualLibraryButDid", entry.Name);
         StatusText = message;
         return (true, message);
     }
@@ -3132,17 +3113,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var preview = await Task.Run(() => _managedComponents.RelocationPreview(game));
             if (preview.FirstOrDefault(r => r.Adopted) is { } adopted && ConfirmAsync is { } confirm
                 && !await confirm(
-                    L("Reparar após mover", "Repair after move"),
-                    LF("O RHI encontrou componentes que instalou para {0} na pasta {1}, que não existe mais.\n\nUsar esses registros para o jogo em {2}? Confirme somente se você moveu este jogo daquela pasta.",
-                        "RHI found components it installed for {0} in {1}, which no longer exists.\n\nUse those records for the game in {2}? Only confirm if you moved this game from that folder.",
+                    T("Vm.RepairAfterMove"),
+                    TF("Vm.RHIFoundComponentsInstalledWhichNo",
                         game.Name, adopted.Record.GameKey, game.InstallPath),
-                    L("Usar estes registros", "Use these records")))
+                    T("Vm.UseTheseRecords")))
             {
-                StatusText = L("Reparar após mover cancelado; nada foi alterado.", "Repair after move cancelled; nothing was changed.");
+                StatusText = T("Vm.RepairAfterMoveCancelledNothingWas");
                 return;
             }
 
-            StatusText = LF("{0}: verificando os arquivos do RHI na nova pasta…", "{0}: checking RHI's files in the new folder…", game.Name);
+            StatusText = TF("Vm.CheckingRHISFilesNewFolder", game.Name);
             IGameStateStore[] uiStores = [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
             var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, uiStores));
             if (!result.Success)
@@ -3152,8 +3132,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             repaired = true;
-            StatusText = LF("{0}: registros e configurações do RHI atualizados para a nova pasta ({1}).",
-                "{0}: RHI's records and settings now point to the new folder ({1}).", game.Name, result.Repaired);
+            StatusText = TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load();
             var libraryKey = LinuxGameLibraryStore.GameKey(game);
@@ -3190,14 +3169,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var state = _libraryStore.Load();
         if (state.RemoveManualEntriesFor(selected) == 0)
         {
-            StatusText = LF("{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed.", selected.Name);
+            StatusText = TF("Vm.SavedManualEntryWasNotFound", selected.Name);
             return;
         }
-        if (TrySaveStore(() => _libraryStore.Save(state)) is not null) return;
+        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is not null) return;
         _libraryState = state;
         StatusText = await RefreshWhenIdleAsync(ManualOnly)
-            ? LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name)
-            : LF("{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh.", selected.Name);
+            ? TF("Vm.RemovedFromManualLibraryGameFiles", selected.Name)
+            : TF("Vm.RemovedFromManualLibraryButList", selected.Name);
     }
 
     public async Task<ComponentOperationResult> InstallLocalLumaPackageAsync(
@@ -3205,9 +3184,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(L("Selecione o jogo que receberá o add-on Luma antes de arrastar o arquivo.", "Select the game that will receive the Luma add-on before dropping the file."));
+            return ComponentOperationResult.Fail(T("Vm.SelectGameWillReceiveLumaAdd"));
         if (IsBusy || IsSelectionProbeBusy)
-            return ComponentOperationResult.Fail(L("Aguarde a operação/análise atual terminar antes de instalar o add-on Luma.", "Wait for the current operation/analysis to finish before installing the Luma add-on."));
+            return ComponentOperationResult.Fail(T("Vm.WaitCurrentOperationAnalysisFinishBefore"));
 
         var game = SelectedGame;
         IsBusy = true;
@@ -3215,7 +3194,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.LumaFramework, "Luma", installsTarget: true, ProbedFiles(game)))
                 return ComponentOperationResult.Fail(StatusText);
-            StatusText = LF("Instalando pacote Luma local em {0}…", "Installing local Luma package in {0}…", game.Name);
+            StatusText = TF("Vm.InstallingLocalLumaPackage", game.Name);
             var result = await _managedComponents
                 .InstallLocalLumaPackageAsync(game, sourcePath, cancellationToken)
                 .ConfigureAwait(true);
@@ -3226,7 +3205,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            var result = ComponentOperationResult.Fail(LF("Luma local: {0}", "Local Luma: {0}", ex.Message));
+            var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", ex.Message));
             StatusText = UiLocalizationService.Present(result.Message);
             return result;
         }
@@ -3297,13 +3276,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var previous = _managedComponents.GetNeuralAddonVersionPin(game, kind);
         // Loading a game's pins re-sets the same value; only a real change persists or swaps.
         if (string.Equals(previous, pin, StringComparison.OrdinalIgnoreCase)) return;
-        if (TrySaveStore(() => _managedComponents.SetNeuralAddonVersionPin(game, kind, pin)) is not null)
+        if (TryPersist(() => _managedComponents.SetNeuralAddonVersionPin(game, kind, pin), "Ui.WhatGamePreferences", sessionOnly: false) is not null)
         {
             LoadNeuralVersionPins(game); // the dropdown goes back to what is saved
             return;
         }
         if (_managedComponents.IsManaged(game, kind))
-            _ = SwapNeuralVersionInPlaceAsync(game, kind, previous);
+            UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
     private void SaveNeuralRenderingDllPin(string value)
@@ -3313,13 +3292,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var pin = IsLatestSelection(value) ? null : value;
         var previous = _managedComponents.GetNeuralRenderingDllVersionPin(game);
         if (string.Equals(previous, pin, StringComparison.Ordinal)) return;
-        if (TrySaveStore(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, pin)) is not null)
+        if (TryPersist(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, pin), "Ui.WhatGamePreferences", sessionOnly: false) is not null)
         {
             LoadNeuralVersionPins(game);
             return;
         }
         if (OrchestratedDlssStackManaged)
-            _ = SwapNeuralVersionInPlaceAsync(game, kind: null, previous);
+            UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind: null, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
     /// <summary>
@@ -3331,15 +3310,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         void RevertPin()
         {
-            if (kind is { } addon) TrySaveStore(() => _managedComponents.SetNeuralAddonVersionPin(game, addon, previousPin));
-            else TrySaveStore(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, previousPin));
+            if (kind is { } addon) TryPersist(() => _managedComponents.SetNeuralAddonVersionPin(game, addon, previousPin), "Ui.WhatGamePreferences", sessionOnly: false);
+            else TryPersist(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, previousPin), "Ui.WhatGamePreferences", sessionOnly: false);
             if (ReferenceEquals(SelectedGame, game)) LoadNeuralVersionPins(game);
         }
 
         IsBusy = true;
         try
         {
-            StatusText = L("Trocando a versão NR no local…", "Swapping the NR version in place…");
+            StatusText = T("Vm.SwappingNRVersionPlace");
             var result = kind is { } addon
                 ? await _managedComponents.SwapNeuralAddonVersionAsync(game, addon)
                 : await _managedComponents.SwapNeuralRenderingDllAsync(game);
@@ -3354,7 +3333,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = LF("Falha ao trocar a versão NR: {0}", "Failed to swap the NR version: {0}", ex.Message);
+            StatusText = TF("Vm.FailedSwapNRVersion", ex.Message);
             try { RevertPin(); } catch { /* the status line already reports the failure */ }
         }
         finally
@@ -3371,7 +3350,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         IsBusy = true;
         try
         {
-            StatusText = L("Atualizando catálogo de versões dos add-ons de Renderização Neural…", "Refreshing Neural Rendering add-on versions…");
+            StatusText = T("Vm.RefreshingNeuralRenderingAddVersions");
             await EnsureNeuralVersionCatalogAsync(forceRefresh: true, reportStatus: true);
         }
         finally
@@ -3392,7 +3371,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (!forceRefresh || _neuralVersionCatalogLoaded)
             {
                 if (reportStatus && _neuralVersionCatalogLoaded)
-                    StatusText = L("Versões NR atualizadas automaticamente.", "NR versions are up to date.");
+                    StatusText = T("Vm.NRVersionsUpDate");
                 return;
             }
         }
@@ -3404,12 +3383,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             await loadTask;
             _neuralVersionCatalogLoaded = true;
             if (reportStatus)
-                StatusText = L("Versões NR atualizadas. Mais recente continua sendo o padrão; selecione uma tag para fixar a versão por jogo.", "NR versions refreshed. Latest remains the default; select a tag to pin that version per game.");
+                StatusText = T("Vm.NRVersionsRefreshedLatestRemainsDefault");
         }
         catch (Exception ex)
         {
             if (reportStatus)
-                StatusText = LF("Falha ao atualizar versões NR: {0}", "Failed to refresh NR versions: {0}", ex.Message);
+                StatusText = TF("Vm.FailedRefreshNRVersions", ex.Message);
             else
                 Debug.WriteLine($"[RHI] Automatic NR version catalog refresh failed: {ex.Message}");
         }
@@ -3470,14 +3449,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(installedVersion) && !string.IsNullOrWhiteSpace(latestVersion))
         {
             if (string.Equals(installedVersion, latestVersion, StringComparison.OrdinalIgnoreCase))
-                return LF("Instalado {0} · já é a versão mais recente.", "Installed {0} · already latest.", installedVersion);
-            return LF("Instalado {0} · mais recente {1}.", "Installed {0} · latest {1}.", installedVersion, latestVersion);
+                return TF("Vm.InstalledAlreadyLatest", installedVersion);
+            return TF("Vm.InstalledLatest", installedVersion, latestVersion);
         }
         if (!string.IsNullOrWhiteSpace(latestVersion))
-            return LF("Versão mais recente: {0}.", "Latest version: {0}.", latestVersion);
+            return TF("Vm.LatestVersion", latestVersion);
         if (!string.IsNullOrWhiteSpace(installedVersion))
-            return LF("Instalado {0} · carregando versão mais recente…", "Installed {0} · loading latest version…", installedVersion);
-        return L("Carregando versão mais recente…", "Loading latest version…");
+            return TF("Vm.InstalledLoadingLatestVersion", installedVersion);
+        return T("Vm.LoadingLatestVersion");
     }
 
     private string? CachedUalLatestVersion(DetectedGame game)
@@ -3559,11 +3538,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             UalLatestVersionText = !string.IsNullOrWhiteSpace(ualTask.Result)
                 ? FormatLatestVersionSummary(_managedComponents.GetUltimateAsiLoaderRecord(game)?.Version, ualTask.Result)
                 : GetUalArchitecture(game) is null
-                    ? L("Versão mais recente indisponível — arquitetura Windows x86/x64 não detectada.", "Latest version unavailable — no x86/x64 Windows architecture detected.")
-                    : L("Versão mais recente indisponível no momento.", "Latest version is currently unavailable.");
+                    ? T("Vm.LatestVersionUnavailableNoX86X64")
+                    : T("Vm.LatestVersionCurrentlyUnavailable");
             ShortFuseLatestVersionText = !string.IsNullOrWhiteSpace(shortFuseTask.Result)
                 ? FormatLatestVersionSummary(_managedComponents.GetShortFuseRecord(game)?.Version, shortFuseTask.Result)
-                : L("Versão mais recente indisponível no momento.", "Latest version is currently unavailable.");
+                : T("Vm.LatestVersionCurrentlyUnavailable");
             NotifyUal();
             NotifyShortFuse();
         }
@@ -3620,7 +3599,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnShortFuseZzzLoadOrderChanged(bool value)
     {
         if (_loadingShortFuseZzzLoadOrder || SelectedGame is null) return;
-        _ = ApplyShortFuseZzzLoadOrderAsync(SelectedGame, value);
+        UiExceptionGuard.Forget(ApplyShortFuseZzzLoadOrderAsync(SelectedGame, value), "ApplyShortFuseZzzLoadOrderAsync");
     }
 
     private async Task ApplyShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled)
@@ -3632,10 +3611,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = !result.Success
                 ? UiLocalizationService.Present(result.Message)
                 : enabled
-                    ? L("ShortFuse carregará por último (zzz_renodx-dlss.addon64).", "ShortFuse will load last (zzz_renodx-dlss.addon64).")
-                    : L("ShortFuse usa o nome padrão (renodx-dlss.addon64).", "ShortFuse uses the default name (renodx-dlss.addon64).");
+                    ? T("Vm.ShortFuseWillLoadLastZzzRenodx")
+                    : T("Vm.ShortFuseUsesDefaultNameRenodxDlss");
         }
-        catch (Exception ex) { StatusText = LF("ShortFuse: {0}", "ShortFuse: {0}", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
         finally
         {
             IsBusy = false;
@@ -3790,8 +3769,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (string.Equals(value, UiLocalizationService.Text("Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(value, LinuxHdrModes.NativeWayland, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Native Wayland", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Wayland nativo", StringComparison.OrdinalIgnoreCase)) return LinuxHdrModes.NativeWayland;
+            string.Equals(value, UiLocalizationService.TextFor("en-US", "Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase)) return LinuxHdrModes.NativeWayland;
         if (string.Equals(value, UiLocalizationService.Text("Ui.HdrGamescope"), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(value, LinuxHdrModes.Gamescope, StringComparison.OrdinalIgnoreCase)) return LinuxHdrModes.Gamescope;
         return LinuxHdrModes.Off;
@@ -3839,7 +3818,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var profile = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
         if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);
         else _libraryState.HdrProfiles[key] = profile;
-        TrySaveStore(() => _libraryStore.Save(_libraryState));
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatHdrProfile");
         NotifyHdrProfile();
     }
 
@@ -3877,9 +3856,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         StatusText = game.UserGraphicsApiOverride is null
             ? game.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown
-                ? LF("{0}: substituição explícita da API gráfica removida; os dados do RHI upstream indicam {1}.", "{0}: explicit graphics API override removed; upstream RHI data indicates {1}.", game.Name, FormatApi(manifestApi))
-                : LF("{0}: substituição explícita da API gráfica removida; a detecção automática local é a autoridade.", "{0}: explicit graphics API override removed; local automatic detection is authoritative.", game.Name)
-            : LF("{0}: substituição explícita da API gráfica definida como {1}.", "{0}: explicit graphics API override set to {1}.", game.Name, FormatApi(game.UserGraphicsApiOverride.Value));
+                ? TF("Vm.ExplicitGraphicsAPIOverrideRemovedUpstream", game.Name, FormatApi(manifestApi))
+                : TF("Vm.ExplicitGraphicsAPIOverrideRemovedLocal", game.Name)
+            : TF("Vm.ExplicitGraphicsAPIOverrideSet", game.Name, FormatApi(game.UserGraphicsApiOverride.Value));
     }
 
     private static GraphicsApi? ParseGraphicsApiOverride(string? value) => value switch
@@ -3896,10 +3875,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private static string FormatGraphicsApiConfidence(GraphicsApiConfidence confidence) => confidence switch
     {
-        GraphicsApiConfidence.High => L("confiança alta", "high confidence"),
-        GraphicsApiConfidence.Medium => L("confiança média", "medium confidence"),
-        GraphicsApiConfidence.Low => L("confiança baixa", "low confidence"),
-        _ => L("confiança desconhecida", "unknown confidence")
+        GraphicsApiConfidence.High => T("Vm.HighConfidence"),
+        GraphicsApiConfidence.Medium => T("Vm.MediumConfidence"),
+        GraphicsApiConfidence.Low => T("Vm.LowConfidence"),
+        _ => T("Vm.UnknownConfidence")
     };
 
     private static string FormatGraphicsApiOverride(GraphicsApi? api) => api switch
@@ -3933,8 +3912,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     };
 
     private static bool IsLatestSelection(string? value)
-        => string.Equals(value, "Latest", StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(value, "Mais recente", StringComparison.OrdinalIgnoreCase) ||
+        => string.Equals(value, UiLocalizationService.TextFor("en-US", "Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase) ||
+           string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase) ||
            string.Equals(value, UiLocalizationService.Text("Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase);
 
     private static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");
@@ -4046,11 +4025,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private static string DlssDeploymentState(IReadOnlyList<string> targets)
     {
-        if (targets.Count == 0) return L("— Ausente", "— Missing");
+        if (targets.Count == 0) return T("Vm.Missing");
         var backups = targets.Count(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension));
         return backups > 0
-            ? LF("✓ RHI aplicado · {0}/{1}", "✓ RHI applied · {0}/{1}", backups, targets.Count)
-            : targets.Count == 1 ? L("• DLL do jogo", "• Game DLL") : LF("• DLLs do jogo · {0}", "• Game DLLs · {0}", targets.Count);
+            ? TF("Vm.RHIApplied", backups, targets.Count)
+            : targets.Count == 1 ? T("Vm.GameDLL") : TF("Vm.GameDLLs2", targets.Count);
     }
 
     private int CountStreamlineBackups()
@@ -4069,7 +4048,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     private static string FirstOrNotFound(IReadOnlyList<string> paths, string dll)
-        => paths.FirstOrDefault() ?? LF("{0} ausente — troca direta bloqueada", "{0} missing — direct swap blocked", dll);
+        => paths.FirstOrDefault() ?? TF("Vm.MissingDirectSwapBlocked", dll);
 
     private static string FormatApi(GraphicsApi api) => api switch
     {
@@ -4080,7 +4059,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         GraphicsApi.DirectX8 => "DirectX 8",
         GraphicsApi.Vulkan => "Vulkan",
         GraphicsApi.OpenGL => "OpenGL",
-        _ => L("Desconhecida", "Unknown")
+        _ => T("Vm.Unknown")
     };
 
     private static bool PathEquals(string? left, string? right)

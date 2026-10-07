@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Avalonia;
 
 namespace RHI.Desktop.Localization;
@@ -217,7 +219,20 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Combinação atual: {0}",
         ["Ui.UnknownExistingKey"] = "Tecla existente (não reconhecida)",
         ["Ui.ReShadeInternalFormat"] = "Formato interno do ReShade: {0}\nOrdem interna: tecla, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário."
+        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário.",
+        ["Ui.UnexpectedError"] = "Algo deu errado: {0} O RHI continua em execução; os detalhes estão em {1}.",
+        ["Ui.UnexpectedErrorNoLog"] = "Algo deu errado: {0} O RHI continua em execução, mas os detalhes não puderam ser gravados no log.",
+        ["Ui.RepeatedErrorsRestart"] = "O RHI encontrou erros repetidos e parou de exibi-los; os detalhes estão em {0}. Reinicie o RHI.",
+        ["Ui.SaveFailedSessionOnly"] = "Não foi possível salvar {0}: {1} A alteração vale só até o RHI ser fechado.",
+        ["Ui.SaveFailedNothingChanged"] = "Não foi possível salvar {0}: {1} Nada foi alterado.",
+        ["Ui.WhatGameLibrary"] = "a biblioteca de jogos",
+        ["Ui.WhatSettings"] = "as configurações",
+        ["Ui.WhatHdrProfile"] = "o perfil de inicialização HDR",
+        ["Ui.WhatGamePreferences"] = "as preferências deste jogo",
+        ["Ui.WhatDeploymentRecords"] = "os registros de componentes do RHI",
+        ["Ui.WhatShaderPackSelection"] = "a seleção de arquivos do pacote de shaders",
+        ["Ui.CacheNotCleared"] = "O cache não foi totalmente limpo: {0}",
+        ["Ui.FolderNotOpened"] = "Não foi possível abrir a pasta: {0}"
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -432,7 +447,20 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Current binding: {0}",
         ["Ui.UnknownExistingKey"] = "Existing key (unrecognized)",
         ["Ui.ReShadeInternalFormat"] = "Internal ReShade format: {0}\nInternal order: key, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed."
+        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed.",
+        ["Ui.UnexpectedError"] = "Something went wrong: {0} RHI is still running; the details are in {1}.",
+        ["Ui.UnexpectedErrorNoLog"] = "Something went wrong: {0} RHI is still running, but the details could not be written to the log.",
+        ["Ui.RepeatedErrorsRestart"] = "RHI hit repeated errors and stopped showing them; the details are in {0}. Please restart RHI.",
+        ["Ui.SaveFailedSessionOnly"] = "Could not save {0}: {1} The change only lasts until RHI is closed.",
+        ["Ui.SaveFailedNothingChanged"] = "Could not save {0}: {1} Nothing was changed.",
+        ["Ui.WhatGameLibrary"] = "the game library",
+        ["Ui.WhatSettings"] = "the settings",
+        ["Ui.WhatHdrProfile"] = "the HDR launch profile",
+        ["Ui.WhatGamePreferences"] = "this game's preferences",
+        ["Ui.WhatDeploymentRecords"] = "RHI's component records",
+        ["Ui.WhatShaderPackSelection"] = "the shader pack file selection",
+        ["Ui.CacheNotCleared"] = "The cache was not fully cleared: {0}",
+        ["Ui.FolderNotOpened"] = "Could not open the folder: {0}"
     };
 
 
@@ -556,6 +584,9 @@ public static class UiLocalizationService
     [
         ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
          "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
+        // ReShade setup without a host extractor (#3); the reader's reason follows the fragment.
+        (RHI.Platform.Linux.Deployment.ReShadeArchiveExtractor.SetupUnreadablePrefix,
+         "O instalador do ReShade não pôde ser lido, e nenhum 7z/7zz/7za ou bsdtar está instalado para tentar. Motivo: "),
         // RenoDX update check (#129). Mod names, HTTP status and exception text follow the fragments.
         ("RenoDX is not managed by RHI Linux.", "O RenoDX não é gerenciado pelo RHI Linux."),
         ("Game executable is unavailable; RenoDX update check skipped.", "Executável do jogo indisponível; a verificação de atualização do RenoDX foi ignorada."),
@@ -757,27 +788,42 @@ public static class UiLocalizationService
 
     public static string CurrentLanguage { get; private set; } = "en-US";
 
-    public static string Text(string key)
+    // Every UI string, by language: the XAML resource table above plus the code table in UiStrings. Built once; a key
+    // defined twice throws here, so a duplicate fails every test instead of silently shadowing a translation.
+    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Select(e => (e.Key, e.PtBr)));
+    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Select(e => (e.Key, e.EnUs)));
+
+    private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string> resources, IEnumerable<(string Key, string Value)> code)
     {
-        var table = CurrentLanguage == "pt-BR" ? PtBr : EnUs;
-        return table.TryGetValue(key, out var value) ? value : key;
+        var all = new Dictionary<string, string>(resources, StringComparer.Ordinal);
+        foreach (var (key, value) in code) all.Add(key, value);
+        return all;
     }
+
+    /// <summary>Every localisation key (resource and code tables).</summary>
+    public static IReadOnlyCollection<string> Keys => AllEnUs.Keys.ToArray();
+
+    /// <summary>Keys present in one language only (must be empty).</summary>
+    public static IReadOnlyList<string> KeysMissingAPair
+        => AllPtBr.Keys.Except(AllEnUs.Keys).Concat(AllEnUs.Keys.Except(AllPtBr.Keys)).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+
+    public static string Text(string key) => TextFor(CurrentLanguage, key);
 
     public static string TextFor(string? language, string key)
     {
-        var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
-        var table = normalized == "pt-BR" ? PtBr : EnUs;
+        var table = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language) == "pt-BR" ? AllPtBr : AllEnUs;
         return table.TryGetValue(key, out var value) ? value : key;
     }
 
     public static string Format(string key, params object?[] args)
-        => string.Format(CultureInfo.CurrentUICulture, Text(key), args);
+        => string.Format(Culture(CurrentLanguage), Text(key), args);
 
-    public static string Choose(string ptBr, string enUs)
-        => CurrentLanguage == "pt-BR" ? ptBr : enUs;
+    public static string FormatFor(string? language, string key, params object?[] args)
+        => string.Format(Culture(language), TextFor(language, key), args);
 
-    public static string ChooseFormat(string ptBr, string enUs, params object?[] args)
-        => string.Format(CultureInfo.CurrentUICulture, Choose(ptBr, enUs), args);
+    /// <summary>Numbers and dates follow the chosen UI language, not the system locale.</summary>
+    private static CultureInfo Culture(string? language)
+        => CultureInfo.GetCultureInfo(RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language));
 
     /// <summary>Update All status line built from the result's counts, so it never depends on parsing English text.</summary>
     public static string UpdateAllSummary(RHI.Platform.Linux.Deployment.LinuxUpdateAllResult result)
@@ -810,7 +856,7 @@ public static class UiLocalizationService
         => string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.ShaderAddonApplied"), shaderPacks, addons)
            + (reShadeFromCache ? TextFor(language, "Ui.ReShadeCachedCopyUsed") : "");
 
-    public static bool HasKeyParity => PtBr.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(EnUs.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal);
+    public static bool HasKeyParity => KeysMissingAPair.Count == 0;
 
     public static string Present(string? value)
         => PresentFor(CurrentLanguage, value);
@@ -819,6 +865,8 @@ public static class UiLocalizationService
     {
         if (string.IsNullOrWhiteSpace(value)) return value ?? string.Empty;
         var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
+        if (normalized != "pt-BR")
+            value = TranslatePortugueseOnly(value);
         foreach (var pair in ExactPresentationPairs)
         {
             if (normalized == "pt-BR" && value.Equals(pair.En, StringComparison.Ordinal)) return pair.Pt;
@@ -841,9 +889,83 @@ public static class UiLocalizationService
         // Known messages above retain their detailed translation; old/unmapped platform text
         // fails closed to a localized generic presentation instead of producing mixed UI.
         if (LooksLikeOppositeLanguage(normalized, result))
+        {
+            // The real text is not lost: it goes to the error log once, so "see the logs" is true.
+            LogUntranslatedOnce(normalized, value);
             return TextFor(normalized, "Ui.UnlocalizedPlatformMessage");
+        }
 
         return result;
+    }
+
+    private sealed record PortugueseOnlyTemplate(string Anchor, Regex Pattern, string Replacement, int LiteralLength);
+
+    // A template matches only a whole message or sentence (review m3): it starts at the start of the text, a line, or
+    // after a sentence/clause break (". ", ": ", "; ", "! ", "? ", "— "), and ends at the end of the text or before
+    // whitespace. A game name or path that merely contains a template's words ("Jogo 'Atualização disponível: …'") is
+    // therefore left alone. The input can carry exception text, so every match is time-limited.
+    private const string MessageStart = @"(?<=^|\n|[.:;!?—–]\s)";
+    private const string MessageEnd = @"(?=$|\s)";
+    internal static readonly TimeSpan TemplateMatchTimeout = TimeSpan.FromMilliseconds(200);
+
+    // Longest literal text first, so a message that embeds another (": {2}") is matched by its own row before the
+    // embedded message's row rewrites the inside.
+    private static readonly PortugueseOnlyTemplate[] PortugueseOnlyTemplates = PlatformMessageTranslations.PortugueseOnly
+        .Select(BuildTemplate)
+        .OrderByDescending(t => t.LiteralLength)
+        .ToArray();
+
+    /// <summary>Match timeouts of the PT-only templates (tests: none may run unbounded).</summary>
+    internal static IEnumerable<TimeSpan> PortugueseOnlyTemplateTimeouts => PortugueseOnlyTemplates.Select(t => t.Pattern.MatchTimeout);
+
+    private static PortugueseOnlyTemplate BuildTemplate((string PtBr, string EnUs) row)
+    {
+        var parts = Regex.Split(row.PtBr, @"\{(\d+)\}");
+        var pattern = new StringBuilder(MessageStart);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (i % 2 == 0) { pattern.Append(Regex.Escape(parts[i])); continue; }
+            var last = i == parts.Length - 2 && parts[^1].Length == 0;
+            pattern.Append("(?<g").Append(parts[i]).Append(last ? ">.+)" : ">.+?)");
+        }
+        pattern.Append(MessageEnd);
+        var literals = parts.Where((_, i) => i % 2 == 0).ToArray();
+        var replacement = Regex.Replace(row.EnUs.Replace("$", "$$"), @"\{(\d+)\}", "${g$1}");
+        return new PortugueseOnlyTemplate(literals.OrderByDescending(p => p.Length).First(),
+            new Regex(pattern.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant, TemplateMatchTimeout),
+            replacement, literals.Sum(p => p.Length));
+    }
+
+    private static string TranslatePortugueseOnly(string value)
+    {
+        // A second pass translates a message nested in a hole of the same row (one pass never re-reads its own output).
+        for (var pass = 0; pass < 3; pass++)
+        {
+            var before = value;
+            foreach (var template in PortugueseOnlyTemplates)
+            {
+                if (!value.Contains(template.Anchor, StringComparison.Ordinal)) continue;
+                try { value = template.Pattern.Replace(value, template.Replacement); }
+                catch (RegexMatchTimeoutException)
+                {
+                    // Leave the text as it is; the opposite-language check below still keeps PT prose out of the UI.
+                    RHI.Desktop.Diagnostics.UiExceptionGuard.Log.TryWrite("translation-timeout", template.Pattern.ToString());
+                }
+            }
+            if (ReferenceEquals(before, value) || before == value) break;
+        }
+        return value;
+    }
+
+    private static readonly HashSet<string> LoggedUntranslated = new(StringComparer.Ordinal);
+
+    private static void LogUntranslatedOnce(string language, string value)
+    {
+        lock (LoggedUntranslated)
+        {
+            if (LoggedUntranslated.Count >= 256 || !LoggedUntranslated.Add(value)) return;
+        }
+        RHI.Desktop.Diagnostics.UiExceptionGuard.Log.TryWrite($"untranslated-message ({language})", value);
     }
 
     private static bool LooksLikeOppositeLanguage(string language, string value)

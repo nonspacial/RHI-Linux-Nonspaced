@@ -9,12 +9,9 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // Failures the UI only summarises (detectors, upstream data, crashes) are kept for bug reports.
+        // The one app log: failures the UI only summarises (detectors, upstream data, store writes) and, through
+        // UiExceptionGuard (the only unhandled-exception hook, installed by App), every unexpected exception.
         AppLog.Current = new AppLog(LinuxPaths.AppLogPath);
-        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            AppLog.Warn("unhandled", e.ExceptionObject?.ToString() ?? "unknown exception");
-        TaskScheduler.UnobservedTaskException += (_, e) =>
-            AppLog.Warn("unobserved-task", e.Exception.ToString());
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

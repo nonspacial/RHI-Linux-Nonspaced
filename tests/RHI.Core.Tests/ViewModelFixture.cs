@@ -11,11 +11,10 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// (w1/detect copy of w1/ui-found's ViewModelFixture; fold into that one on merge.)
 /// An offline, fully wired <see cref="MainWindowViewModel"/> over a temp root: every network call fails at once, the
 /// detector returns the given games, and the settings/library/record stores live under <see cref="Root"/>.
 /// </summary>
-internal sealed class DetectViewModelFixture : IDisposable
+internal sealed class ViewModelFixture : IDisposable
 {
     public string Root { get; } = Path.Combine(Path.GetTempPath(), $"rhi-vm-{Guid.NewGuid():N}");
     public string ConfigDir => Path.Combine(Root, "config");
@@ -26,7 +25,7 @@ internal sealed class DetectViewModelFixture : IDisposable
     public MainWindowViewModel Vm { get; }
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
-    private DetectViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed)
+    private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed)
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -38,10 +37,11 @@ internal sealed class DetectViewModelFixture : IDisposable
         Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed);
     }
 
-    public static async Task<DetectViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
+    /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
+    public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
         Action<LinuxGameLibraryStore>? seed = null)
     {
-        var fixture = new DetectViewModelFixture(games, uiLanguage, seed);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed);
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }

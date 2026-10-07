@@ -106,6 +106,7 @@ internal static class TestEnvironmentIsolation
             [nameof(LinuxPaths.CacheHome)] = LinuxPaths.CacheHome,
             [nameof(LinuxPaths.DataHome)] = LinuxPaths.DataHome,
             [nameof(LinuxPaths.ConfigHome)] = LinuxPaths.ConfigHome,
+            [nameof(LinuxPaths.StateHome)] = LinuxPaths.StateHome,
         };
         foreach (var (name, value) in roots)
         {

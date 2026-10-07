@@ -9,11 +9,16 @@ public static class LinuxPaths
         ?? Path.Combine(Home, ".local", "share");
     public static string CacheHome => Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
         ?? Path.Combine(Home, ".cache");
-    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME")
-        ?? Path.Combine(Home, ".local", "state");
+    /// <summary>XDG state dir (logs and other state that is not user data); defaults to ~/.local/state.</summary>
+    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } state
+        ? state
+        : Path.Combine(Home, ".local", "state");
 
-    /// <summary>Diagnostics log (<see cref="RHI.Core.Services.AppLog"/>): <c>$XDG_STATE_HOME/rhi-linux/rhi.log</c>.</summary>
-    public static string AppLogPath => Path.Combine(StateHome, "rhi-linux", "rhi.log");
+    /// <summary>The one app log (<see cref="RHI.Core.Services.AppLog"/>): <c>$XDG_STATE_HOME/rhi-linux/logs/rhi.log</c>.</summary>
+    public static string AppLogPath => Path.Combine(LogDirectory, "rhi.log");
+
+    /// <summary>RHI's log folder: the app log, the deployment recovery log and per-launch logs live here.</summary>
+    public static string LogDirectory => Path.Combine(StateHome, "rhi-linux", "logs");
 
     public static IEnumerable<string> SteamRoots()
         => DistinctExisting(SteamRootCandidates(Home, DataHome));

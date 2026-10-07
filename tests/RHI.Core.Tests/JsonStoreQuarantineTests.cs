@@ -87,6 +87,24 @@ public sealed class JsonStoreQuarantineTests : IDisposable
     }
 
     [Fact]
+    public void Helper_GarbageFile_IsWrittenToTheAppLog_WithItsCopy()
+    {
+        var path = Path.Combine(_root, "logged.json");
+        File.WriteAllBytes(path, Garbage("log"));
+        var log = new RHI.Core.Services.AppLog(Path.Combine(_root, "state", "rhi.log"));
+
+        JsonStoreLoad<Dictionary<string, string>> load;
+        using (RHI.Core.Services.AppLog.UseInThisFlow(log))
+            load = new JsonFileStore<Dictionary<string, string>>(path).Load();
+
+        var text = File.ReadAllText(log.FilePath);
+        Assert.Contains("[store]", text);
+        Assert.Contains(Path.GetFullPath(path), text);
+        Assert.Contains(load.QuarantinePath!, text);
+        Assert.Contains("saves to it are refused", text);
+    }
+
+    [Fact]
     public void Helper_FixedFile_IsWritableAgain_AndANewCorruptionIsANewEvent()
     {
         var path = Path.Combine(_root, "fixed.json");

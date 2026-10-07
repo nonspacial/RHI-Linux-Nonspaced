@@ -20,6 +20,9 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
 {
     private static readonly string[] PayloadNames = ["ReShade64.dll", "ReShade32.dll"];
 
+    /// <summary>Fixed start of the "no way to read the setup" error (localisation key); the reason follows it.</summary>
+    public const string SetupUnreadablePrefix = "The ReShade setup could not be read, and no 7z/7zz/7za or bsdtar is installed to try instead. Reason: ";
+
     /// <summary>Largest DLL accepted from the setup (real ones are about 5 MB).</summary>
     internal const long MaxEntryBytes = 64L * 1024 * 1024;
     /// <summary>Largest total written from one setup.</summary>
@@ -41,7 +44,8 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
 
         var extractor = _findExternalExtractor();
         if (extractor is null)
-            throw new InvalidOperationException($"Could not read the ReShade setup archive ({managedFailure}), and no 7z/7zz/7za or bsdtar is installed to try instead.");
+            // The reason goes last so the PT-BR presentation pair can translate the fixed text before it.
+            throw new InvalidOperationException($"{SetupUnreadablePrefix}{managedFailure}");
 
         var (command, kind) = extractor.Value;
         var psi = new ProcessStartInfo(command)

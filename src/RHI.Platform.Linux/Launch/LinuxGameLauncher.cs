@@ -29,7 +29,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     }
 
     /// <summary><c>$XDG_STATE_HOME/rhi-linux/logs/launch</c>: one stderr file per launch.</summary>
-    internal static string DefaultLogDirectory => Path.Combine(LinuxPaths.StateHome, "rhi-linux", "logs", "launch");
+    internal static string DefaultLogDirectory => Path.Combine(LinuxPaths.LogDirectory, "launch");
 
     public bool CanLaunch(DetectedGame game) => !string.IsNullOrWhiteSpace(game.LaunchCommand);
 

@@ -139,7 +139,7 @@ public static class LinuxDeploymentRecovery
     /// </summary>
     public static string InstanceDirectory => Path.Combine(LinuxPaths.DataHome, "rhi-linux", "instances");
 
-    public static string LogPath => Path.Combine(LinuxPaths.StateHome, "rhi-linux", "logs", "recovery.log");
+    public static string LogPath => Path.Combine(LinuxPaths.LogDirectory, "recovery.log");
 
     public static DeploymentJournal CreateJournal(WineDllOverrideService overrides, string? directory = null, Func<string, bool>? isPrefixInUse = null)
         => new(directory ?? JournalDirectory, [new WineOverrideCompensator(overrides, isPrefixInUse)]);

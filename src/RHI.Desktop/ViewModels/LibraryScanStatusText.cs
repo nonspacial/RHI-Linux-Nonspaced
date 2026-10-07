@@ -12,7 +12,7 @@ namespace RHI.Desktop.ViewModels;
 public static class LibraryScanStatusText
 {
     public static string Done(int gameCount)
-        => UiLocalizationService.ChooseFormat("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", gameCount);
+        => UiLocalizationService.Format("Vm.ScanCompleteGamesDetected", gameCount);
 
     /// <summary>The problems notice, or null for a clean scan.</summary>
     public static string? Problems(GameLibraryScanResult scan, string? logPath)
@@ -23,21 +23,21 @@ public static class LibraryScanStatusText
         foreach (var detector in scan.Detectors)
         {
             if (detector.Failed)
-                problems.Add(UiLocalizationService.ChooseFormat("{0}: falhou ({1})", "{0}: failed ({1})", detector.Name, detector.Error));
+                problems.Add(UiLocalizationService.Format("Scan.DetectorFailed", detector.Name, detector.Error));
             else if (detector.Warnings.Count > 0)
-                problems.Add(UiLocalizationService.ChooseFormat("{0}: {1} item(ns) ignorado(s)", "{0}: {1} item(s) skipped", detector.Name, detector.Warnings.Count));
+                problems.Add(UiLocalizationService.Format("Scan.DetectorSkippedItems", detector.Name, detector.Warnings.Count));
         }
         foreach (var policy in scan.PolicyFailures)
         {
             var name = policy.Name == RHI.Platform.Linux.Detection.UpstreamGameLibraryPolicyService.PolicyName
-                ? UiLocalizationService.Choose("Manifesto do RHI upstream", "Upstream RHI manifest")
+                ? UiLocalizationService.Text("Scan.UpstreamManifest")
                 : policy.Name;
-            problems.Add(UiLocalizationService.ChooseFormat("{0}: não aplicado ({1})", "{0}: not applied ({1})", name, policy.Error));
+            problems.Add(UiLocalizationService.Format("Scan.PolicyNotApplied", name, policy.Error));
         }
 
-        var text = UiLocalizationService.ChooseFormat("Problemas na verificação: {0}", "Scan problems: {0}", string.Join("; ", problems));
+        var text = UiLocalizationService.Format("Scan.Problems", string.Join("; ", problems));
         return string.IsNullOrWhiteSpace(logPath)
             ? text
-            : UiLocalizationService.ChooseFormat("{0} · Detalhes em {1}", "{0} · Details in {1}", text, logPath);
+            : UiLocalizationService.Format("Scan.DetailsIn", text, logPath);
     }
 }

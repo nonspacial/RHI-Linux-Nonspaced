@@ -4,6 +4,7 @@
         xmlns:vm="using:RHI.Desktop.ViewModels"
         xmlns:views="using:RHI.Desktop.Views"
         x:Class="RHI.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel" x:CompileBindings="True"
         Width="1450" Height="900" MinWidth="640" MinHeight="480"
         Title="{DynamicResource Ui.WindowTitle}"
         Background="#121518"
@@ -270,7 +271,7 @@
                   <!-- One Grid-identical row per component; the controls wrap under the status when it would get < 220 px. -->
                   <StackPanel Spacing="7">
                     <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <TextBlock Text="{DynamicResource Ui.SuperResolution}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssSrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssSrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -280,7 +281,7 @@
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="SR" IsEnabled="{Binding DlssSrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <TextBlock Text="{DynamicResource Ui.RayReconstruction}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssRrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssRrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -290,7 +291,7 @@
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="RR" IsEnabled="{Binding DlssRrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <TextBlock Text="{DynamicResource Ui.FrameGeneration}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssFgPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssFgDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -300,7 +301,7 @@
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="FG" IsEnabled="{Binding DlssFgRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                      <TextBlock Text="{DynamicResource Ui.NeuralRendering}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding DlssNrPath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">
                         <TextBlock Text="{Binding DlssNrDeploymentState}" Foreground="#7AACDD" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Center"/>
@@ -310,7 +311,7 @@
                       <Button Grid.Column="5" Classes="rhi" Content="{DynamicResource Ui.Restore}" Command="{Binding RestoreDlssComponentCommand}" CommandParameter="NR" IsEnabled="{Binding DlssNrRestoreAvailable}"/>
                     </views:ResponsiveRow>
                     <views:ResponsiveRow Columns="170,*,145,160,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="2" MinStarWidth="220">
-                      <TextBlock Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
+                      <TextBlock Text="{DynamicResource Ui.StreamlineUpdate}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"
                                  ToolTip.Tip="{DynamicResource Ui.StreamlineUpdateNote}"/>
                       <views:MiddleEllipsisText Grid.Column="1" FullText="{Binding StreamlinePath}" Classes="muted" WrapNonPath="False" VerticalAlignment="Center"/>
                       <Border Grid.Column="2" Background="#102331" BorderBrush="#1E4858" BorderThickness="1" CornerRadius="7" Padding="8,4">

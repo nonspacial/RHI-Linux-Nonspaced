@@ -72,14 +72,28 @@ public sealed class ReleaseContractTests
     {
         // The framework's recursive search follows directory symlinks (a Wine prefix's z: -> /), so every
         // recursive walk in src/ must use SafeFileEnumeration (#64).
+        Assert.Empty(SourceFilesContaining("SearchOption.AllDirectories"));
+    }
+
+    [Fact]
+    public void UnhandledExceptionHooks_AreInstalledOnlyByUiExceptionGuard()
+    {
+        // One installer, one sink (the app log): two sets of handlers logged every crash twice to two files.
+        foreach (var hook in new[] { "UnhandledException +=", "UnobservedTaskException +=" })
+            Assert.Equal(["UiExceptionGuard.cs"], SourceFilesContaining(hook).Select(Path.GetFileName));
+    }
+
+    private static string[] SourceFilesContaining(string text)
+    {
         var root = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(root, "RHI-Linux.sln")))
             root = Path.GetDirectoryName(root) ?? throw new InvalidOperationException("repository root not found");
-        var offenders = Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", new EnumerationOptions { RecurseSubdirectories = true })
-            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .Where(file => File.ReadAllText(file).Contains("SearchOption.AllDirectories", StringComparison.Ordinal))
+        var obj = $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}";
+        return Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", new EnumerationOptions { RecurseSubdirectories = true })
+            .Where(file => !file.Contains(obj, StringComparison.Ordinal))
+            .Where(file => File.ReadAllText(file).Contains(text, StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
             .ToArray();
-        Assert.Empty(offenders);
     }
 
     private sealed class NoOpCommand : ICommand
