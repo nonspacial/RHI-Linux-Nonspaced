@@ -206,7 +206,7 @@ public sealed class ModAuthorCreditTests : IDisposable
     }
 
     [Fact]
-    public void Decorate_CreditPassNeverReadsTheGameExecutable()
+    public async Task Decorate_CreditPassNeverReadsTheGameExecutable()
     {
         // Decorate runs on the UI thread. The game executable is a FIFO with no writer: opening it to read the PE
         // header (as the old Luma eligibility re-check did) blocks, so any read of it shows up as a hang.
@@ -227,7 +227,7 @@ public sealed class ModAuthorCreditTests : IDisposable
         };
 
         var decorate = Task.Run(() => Service(records, http).Decorate(game, components));
-        var finished = decorate.Wait(TimeSpan.FromSeconds(5));
+        var finished = await Task.WhenAny(decorate, Task.Delay(TimeSpan.FromSeconds(5))) == decorate;
         if (!finished)
         {
             // Release the blocked reader so the test process can exit.

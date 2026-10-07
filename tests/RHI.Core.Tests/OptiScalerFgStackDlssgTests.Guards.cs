@@ -5,6 +5,7 @@ namespace RHI.Core.Tests;
 
 /// <summary>#135 review findings 2–5: take-over collision guard, saved progress on partial disable/removal,
 /// hash check of kept files on removal, identical foreign files left unowned.</summary>
+[System.Runtime.Versioning.UnsupportedOSPlatform("windows")] // Unix file modes (read-only folders)
 public sealed partial class OptiScalerFgStackDlssgTests
 {
     [Fact]
