@@ -141,6 +141,14 @@ Run:
 
 The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
 
+## Installing for the current user
+
+```bash
+./build.sh && ./install-user.sh
+```
+
+This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.local/opt/rhi-linux.prev`), links `~/.local/bin/rhi-linux`, adds a menu entry and icon, and refreshes the desktop and icon caches when `update-desktop-database` / `gtk-update-icon-cache` are installed. It warns when `~/.local/bin` is not on `PATH`; the menu entry uses the full path and works either way.
+
 ## Runtime requirements
 
 * The AppImage bundles the .NET runtime; nothing else from .NET is needed on the host.
