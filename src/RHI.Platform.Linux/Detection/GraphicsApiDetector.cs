@@ -69,6 +69,13 @@ internal static class GraphicsApiDetector
     private static readonly string[] ConfigExtensions =
     [".ini", ".cfg", ".conf", ".json", ".xml", ".toml", ".txt"];
 
+    /// <summary>
+    /// Upper bound of the one streamed pass over the selected executable (1 MiB chunks, cancellable).
+    /// Renderer names can sit anywhere in a large binary (RDR2's lie past 32 MiB), so the pass covers the
+    /// whole file; the bound only stops a pathological multi-GiB file.
+    /// </summary>
+    internal const long ExecutableScanBytes = 1024L * 1024 * 1024;
+
     public static GraphicsApiDetection Detect(
         string gameRoot,
         string? executablePath,
@@ -171,34 +178,37 @@ internal static class GraphicsApiDetector
 
         // 2) Selected-executable pass. The PE import table is upstream RHI's evidence: the renderer
         // DLLs the game links against. It decides on its own (High) only when exactly one renderer is
-        // imported and the executable references no other; anything else (dxgi.dll only, delay-loads,
-        // several renderers, other renderer strings) is a DirectX-first Medium guess that config files
-        // and the prefix's settings get to overrule. Most ordinary imports and strings sit near the
-        // front, so the quick string pass stays bounded (Refs #53).
+        // imported and nothing in the executable contradicts it: no other renderer delay-loaded, no
+        // renderer-specific helper imported (FSR2 DX12/Vulkan back ends, NvLowLatencyVk, dxgi.dll beside
+        // a pre-DX10 renderer) and no other renderer named anywhere in the file. Anything else is a
+        // DirectX-first Medium guess that config files and the prefix's settings get to overrule.
+        // The whole executable is streamed once (bounded by ExecutableScanBytes): RDR2 keeps its
+        // renderer names past the first 32 MiB, and a prefix-only scan let its d3d9.dll import (a
+        // helper, not the renderer) decide at High (Refs #53).
         GraphicsApiDetection? ambiguous = null;
         var importsDxgi = false;
         if (hasExecutable)
         {
-            var quickExe = ScanBinary(executablePath!, 32L * 1024 * 1024, cancellationToken);
-            if (PeImportReader.Read(executablePath!) is { } imports && FromImports(imports, quickExe) is { } imported)
+            var referenced = ScanBinary(executablePath!, ExecutableScanBytes, cancellationToken);
+            if (PeImportReader.Read(executablePath!) is { } imports && FromImports(imports, referenced) is { } imported)
             {
                 if (imported.Confidence == GraphicsApiConfidence.High) return imported;
                 ambiguous = imported;
                 importsDxgi = imports.Regular.Any(dll => dll.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase));
             }
-            else if (quickExe.Count > 0)
+            else if (referenced.Count > 0)
             {
-                var signature = FromSignatures(quickExe, "Executable signature");
-                if (quickExe.Count == 1) return signature;
+                var signature = FromSignatures(referenced, "Executable signature");
+                if (referenced.Count == 1) return signature;
                 ambiguous = signature;
             }
         }
 
         // 3) Engines such as RE Engine can LoadLibrary the renderer rather than statically
-        // importing it. A selected config key is better evidence than an expensive blind scan, and
-        // it decides between several renderers an executable imports or references (RDR2 keeps its
-        // choice in the prefix: Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml).
-        // Between candidates only a selection the executable could actually use counts.
+        // importing it. A selected config key decides between several renderers an executable
+        // imports or references (RDR2 keeps its choice in the prefix:
+        // Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml), game folder first,
+        // then the prefix. Between candidates only a selection the executable could actually use counts.
         Func<GraphicsApi, bool> selectable = api => IsSelectable(api, ambiguous, importsDxgi);
         var config = DetectFromConfigs(gameRoot, executablePath, indexedFiles, selectable, cancellationToken);
         if (config.Primary == GraphicsApi.Unknown && ambiguous is not null)
@@ -206,27 +216,13 @@ internal static class GraphicsApiDetector
         if (config.Primary != GraphicsApi.Unknown) return WithCandidates(config, ambiguous);
         if (ambiguous is not null) return ambiguous;
 
-        // 4) If no explicit config exists, perform a deeper executable scan. This remains
-        // background/cancellable and covers large binaries whose renderer strings occur late.
-        if (hasExecutable)
-        {
-            var deepExe = ScanBinary(executablePath!, 512L * 1024 * 1024, cancellationToken);
-            if (deepExe.Count > 0)
-            {
-                var signature = FromSignatures(deepExe, "Executable deep signature");
-                if (deepExe.Count == 1) return signature;
-                var settings = DetectFromPrefixSettings(prefixPath, gameRoot, executablePath, api => signature.Candidates.Contains(api), cancellationToken);
-                return settings.Primary != GraphicsApi.Unknown ? WithCandidates(settings, signature) : signature;
-            }
-        }
-
-        // 5) Unity keeps renderer implementation in UnityPlayer.dll and records broad
+        // 4) Unity keeps renderer implementation in UnityPlayer.dll and records broad
         // capabilities there. Treat one unique renderer as medium evidence, but retain an
         // ambiguous candidate list instead of inventing a primary API when several coexist.
         var unity = DetectFromUnityFiles(indexedFiles, cancellationToken);
         if (unity.Primary != GraphicsApi.Unknown || unity.Candidates.Count > 0) return unity;
 
-        // 6) Last fallback: inspect a few likely engine binaries from the already-built
+        // 5) Last fallback: inspect a few likely engine binaries from the already-built
         // file index. This avoids another recursive directory walk and stays bounded.
         var candidates = indexedFiles
             .Where(f => (f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
@@ -260,8 +256,9 @@ internal static class GraphicsApiDetector
     }
 
     /// <summary>
-    /// True when a result came only from PE import/string scanning (steps 2, 4 and 6 above), which
+    /// True when a result came only from PE import/string scanning (steps 2 and 5 above), which
     /// legacy D3D shims in NW.js/Electron runtimes can fool. Logs and config files are not included.
+    /// "Executable deep signature" is no longer produced but may sit in saved evidence.
     /// </summary>
     internal static bool IsBinarySignatureEvidence(string? evidence)
         => evidence is not null
@@ -313,41 +310,73 @@ internal static class GraphicsApiDetector
     /// the imports do not name a renderer (nothing, or OpenGL only, which Unity/Unreal link as a fallback),
     /// so string evidence and config selection take over.
     /// <list type="bullet">
-    /// <item>High only when exactly one renderer is imported, no other is delay-loaded and the executable
-    /// references no other renderer.</item>
+    /// <item>High only when exactly one renderer is imported and nothing contradicts it: no other renderer
+    /// delay-loaded, no renderer-specific helper imported for another renderer (<see cref="HelperApi"/>;
+    /// dxgi.dll beside a pre-DX10 renderer counts) and no other renderer named in the executable.</item>
     /// <item>Otherwise Medium with every candidate, and the primary stays DirectX-first: the fork has no
     /// Vulkan ReShade proxy, so a Vulkan guess would refuse installs that work when the game runs DirectX
-    /// (Robbie's #53 decision). Among DirectX renderers upstream's rule applies: the highest imported one,
-    /// dxgi.dll alone meaning DX12, and a delay-load only below an imported DX11 (UE4 delay-loads d3d12 and
-    /// runs DX11 unless started with -dx12).</item>
+    /// (Robbie's #53 decision). Among DirectX renderers upstream's order applies (DX12 first): the highest
+    /// imported one, dxgi.dll alone meaning DX12, and a delay-load, helper import or renderer name only
+    /// below an imported DX11 (UE4 imports d3d11, delay-loads d3d12 and runs DX11 unless started with
+    /// -dx12; RDR2 imports d3d9.dll beside its DX12/Vulkan helpers and runs DX12 or Vulkan).</item>
     /// </list>
     /// </summary>
     internal static GraphicsApiDetection? FromImports(PeImports imports, IReadOnlyCollection<GraphicsApi> referenced)
     {
         var regular = imports.Regular.Select(ImportedApi).Where(api => api != GraphicsApi.Unknown).Distinct().ToArray();
         var delayed = imports.Delay.Select(ImportedApi).Where(api => api != GraphicsApi.Unknown).Distinct().ToArray();
+        var helpers = imports.Regular.Concat(imports.Delay).Select(HelperApi).Where(api => api != GraphicsApi.Unknown).Distinct().ToArray();
         var importsDxgi = imports.Regular.Any(dll => dll.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase));
         if (!importsDxgi && regular.Concat(delayed).All(api => api == GraphicsApi.OpenGL)) return null;
 
         if (regular.Length == 1 && regular[0] != GraphicsApi.OpenGL
-            && delayed.All(api => api == regular[0]) && referenced.All(api => api == regular[0]))
+            && delayed.Concat(helpers).Concat(referenced).All(api => api == regular[0])
+            && (!importsDxgi || regular[0] is GraphicsApi.DirectX10 or GraphicsApi.DirectX11 or GraphicsApi.DirectX12))
         {
             return new GraphicsApiDetection(regular[0], [regular[0]], GraphicsApiConfidence.High,
                 $"Executable imports: {ApiDllName(regular[0])} (imports)");
         }
 
         var (primary, source) = DirectXChoice(regular, delayed, importsDxgi);
-        var all = regular.Concat(delayed).Concat(referenced).ToHashSet();
+        if (UpstreamPriority(primary) < UpstreamPriority(GraphicsApi.DirectX11))
+        {
+            var raised = helpers.Concat(referenced).Where(IsDirectX).OrderByDescending(UpstreamPriority).FirstOrDefault();
+            if (UpstreamPriority(raised) > UpstreamPriority(primary))
+            {
+                primary = raised;
+                source = helpers.Contains(raised) ? "renderer helper imports" : "referenced";
+            }
+        }
+        var all = regular.Concat(delayed).Concat(helpers).Concat(referenced).ToHashSet();
         if (primary == GraphicsApi.Unknown)
         {
             primary = Order(all)[0]; // a referenced DirectX renderer still comes first
-            source = regular.Contains(primary) ? "imports" : delayed.Contains(primary) ? "delay-loads" : "referenced";
+            source = regular.Contains(primary) ? "imports" : delayed.Contains(primary) ? "delay-loads"
+                : helpers.Contains(primary) ? "renderer helper imports" : "referenced";
         }
         var ordered = Order(all.Where(api => api != primary)).Prepend(primary).ToArray();
         var evidence = $"Executable imports: {ApiDllName(primary)} ({source}"
                        + (ordered.Length > 1 ? $"; also {string.Join(", ", ordered.Skip(1).Select(ApiDllName))}" : "")
                        + ")";
         return new GraphicsApiDetection(primary, ordered, GraphicsApiConfidence.Medium, evidence);
+    }
+
+    /// <summary>
+    /// The renderer an imported helper library is built for, or Unknown: vendor back ends name it
+    /// (<c>ffx_fsr2_api_dx12_x64.dll</c>, <c>ffx_fsr2_api_vk_x64.dll</c>, <c>NvLowLatencyVk.dll</c>). The
+    /// renderer DLLs themselves and dxgi.dll (handled by the caller: it serves every DX10-12 renderer) are
+    /// not helpers.
+    /// </summary>
+    internal static GraphicsApi HelperApi(string dll)
+    {
+        var stem = Path.GetFileNameWithoutExtension(dll).ToLowerInvariant();
+        if (ImportedApi(dll) != GraphicsApi.Unknown) return GraphicsApi.Unknown;
+        if (stem.EndsWith("lowlatencyvk", StringComparison.Ordinal)) return GraphicsApi.Vulkan;
+        var tokens = stem.Split(['_', '-', '.'], StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Any(t => t is "dx12" or "d3d12")) return GraphicsApi.DirectX12;
+        if (tokens.Any(t => t is "vk" or "vulkan")) return GraphicsApi.Vulkan;
+        if (tokens.Any(t => t is "dx11" or "d3d11")) return GraphicsApi.DirectX11;
+        return GraphicsApi.Unknown;
     }
 
     /// <summary>Upstream's import rule restricted to DirectX; Unknown when no DirectX renderer is imported.</summary>

@@ -118,13 +118,17 @@ public sealed class MultiApiDetectionTests : IDisposable
     }
 
     [Fact]
-    public void Rdr2_DxgiOnlyImports_PrefixSystemXmlSelectsVulkan()
+    public void Rdr2_RealImportTable_PrefixSystemXmlSelectsVulkan_ElseDx12Medium()
     {
-        // RDR2.exe links dxgi.dll only and loads its renderer itself; the strings name all four.
+        // RDR2.exe imports d3d9.dll beside its FSR2 DX12/Vulkan back ends and NvLowLatencyVk, no dxgi.dll, and
+        // names its renderers only past the first 32 MiB. A lone d3d9 import must not decide (it gave DX9 High).
         var (gameRoot, exe, prefix) = Rdr2Layout();
 
         var withoutSettings = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
         Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (withoutSettings.Primary, withoutSettings.Confidence));
+        Assert.Equal([GraphicsApi.DirectX12, GraphicsApi.DirectX11, GraphicsApi.DirectX9, GraphicsApi.Vulkan], withoutSettings.Candidates);
+        var noPrefix = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (noPrefix.Primary, noPrefix.Confidence));
 
         var settings = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "Rockstar Games", "Red Dead Redemption 2", "Settings");
         Directory.CreateDirectory(settings);
@@ -136,6 +140,63 @@ public sealed class MultiApiDetectionTests : IDisposable
         Assert.Equal(GraphicsApiConfidence.Medium, found.Confidence);
         Assert.Contains("system.xml", found.Evidence);
         Assert.Equal(4, found.Candidates.Count);
+    }
+
+    [Fact]
+    public void LoneImport_ContradictedByARendererNamePast32MiB_IsMedium()
+    {
+        // The scan covers the whole executable, not a 32 MiB prefix.
+        var exe = WritePe("LateNames.exe", ["kernel32.dll", "d3d9.dll"], [], "d3d12.dll D3D12CreateDevice", extraOffset: 40L * 1024 * 1024);
+
+        var found = GraphicsApiDetector.Detect(_root, exe);
+
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (found.Primary, found.Confidence));
+        Assert.Equal([GraphicsApi.DirectX12, GraphicsApi.DirectX9], found.Candidates);
+    }
+
+    [Fact]
+    public void LoneImport_WithNothingElseInTheFile_StaysHigh()
+    {
+        var found = GraphicsApiDetector.Detect(_root, WritePe("Dx9Game.exe", ["kernel32.dll", "d3d9.dll", "d3dx9_43.dll"], [], "", extraOffset: 40L * 1024 * 1024));
+
+        Assert.Equal((GraphicsApi.DirectX9, GraphicsApiConfidence.High), (found.Primary, found.Confidence));
+    }
+
+    [Theory]
+    [InlineData("ffx_fsr2_api_dx12_x64.dll", GraphicsApi.DirectX12)]
+    [InlineData("ffx_fsr2_api_vk_x64.dll", GraphicsApi.Vulkan)]
+    [InlineData("NvLowLatencyVk.dll", GraphicsApi.Vulkan)]
+    [InlineData("ffx_fsr2_api_dx11_x64.dll", GraphicsApi.DirectX11)]
+    [InlineData("ffx_fsr2_api_x64.dll", GraphicsApi.Unknown)]
+    [InlineData("amd_ags_x64.dll", GraphicsApi.Unknown)]
+    [InlineData("dxgi.dll", GraphicsApi.Unknown)]
+    [InlineData("d3d12.dll", GraphicsApi.Unknown)]
+    [InlineData("d3dx9_43.dll", GraphicsApi.Unknown)]
+    public void HelperApi_ReadsTheRendererFromVendorBackEndNames(string dll, GraphicsApi api)
+        => Assert.Equal(api, GraphicsApiDetector.HelperApi(dll));
+
+    [Fact]
+    public void HelperImports_ContradictALoneImport_AndRaiseItOnlyBelowAnImportedDx11()
+    {
+        var dx9 = GraphicsApiDetector.Detect(_root, WritePe("Helper9.exe", ["d3d9.dll", "ffx_fsr2_api_dx12_x64.dll"], []));
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (dx9.Primary, dx9.Confidence));
+        Assert.Contains("renderer helper imports", dx9.Evidence);
+
+        var vk = GraphicsApiDetector.Detect(_root, WritePe("HelperVk.exe", ["d3d9.dll", "NvLowLatencyVk.dll"], []));
+        Assert.Equal((GraphicsApi.DirectX9, GraphicsApiConfidence.Medium), (vk.Primary, vk.Confidence)); // DirectX first, never Vulkan
+        Assert.Equal([GraphicsApi.DirectX9, GraphicsApi.Vulkan], vk.Candidates);
+
+        // Upstream order: an imported DX11 is not outranked by a DX12 that is only a helper or delay-load.
+        var dx11 = GraphicsApiDetector.Detect(_root, WritePe("Helper11.exe", ["dxgi.dll", "d3d11.dll", "ffx_fsr2_api_dx12_x64.dll"], []));
+        Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.Medium), (dx11.Primary, dx11.Confidence));
+    }
+
+    [Fact]
+    public void Dxgi_BesideALoneDx9Import_IsMediumDx12()
+    {
+        var found = GraphicsApiDetector.Detect(_root, WritePe("Dxgi9.exe", ["dxgi.dll", "d3d9.dll"], []));
+
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (found.Primary, found.Confidence));
     }
 
     [Fact]
@@ -216,11 +277,21 @@ public sealed class MultiApiDetectionTests : IDisposable
     private const string Rdr2SystemXml =
         "<rage__fwuiSystemSettingsCollection>\n  <graphics>\n    <API>kSettingAPI_Vulkan</API>\n  </graphics>\n</rage__fwuiSystemSettingsCollection>\n";
 
+    /// <summary>The real RDR2.exe import table (Steam build, 89.6 MB; read with PeImportReader), no delay-loads.</summary>
+    private static readonly string[] Rdr2Imports =
+    [
+        "KERNEL32.dll", "USER32.dll", "IPHLPAPI.DLL", "DSOUND.dll", "WINMM.dll", "MF.dll", "MFPlat.DLL", "MFReadWrite.dll",
+        "PROPSYS.dll", "WS2_32.dll", "COMCTL32.dll", "CRYPT32.dll", "WINTRUST.dll", "IMM32.dll", "DINPUT8.dll",
+        "XINPUT9_1_0.dll", "oo2core_5_win64.dll", "amd_ags_x64.dll", "CFGMGR32.dll", "WTSAPI32.dll", "d3d9.dll",
+        "NvLowLatencyVk.dll", "ffx_fsr2_api_x64.dll", "ffx_fsr2_api_dx12_x64.dll", "ffx_fsr2_api_vk_x64.dll", "bcrypt.dll",
+        "RPCRT4.dll", "VERSION.dll", "bink2w64.dll", "GDI32.dll", "ADVAPI32.dll", "SHELL32.dll", "ole32.dll", "OLEAUT32.dll"
+    ];
+
     private (string GameRoot, string Exe, string Prefix) Rdr2Layout()
     {
         var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Red Dead Redemption 2")).FullName;
-        var exe = WritePe(Path.Combine("Red Dead Redemption 2", "RDR2.exe"), ["kernel32.dll", "dxgi.dll", "amd_ags_x64.dll"], [],
-            "d3d12.dll D3D12CreateDevice d3d11.dll d3d9.dll vulkan-1.dll vkCreateInstance");
+        var exe = WritePe(Path.Combine("Red Dead Redemption 2", "RDR2.exe"), Rdr2Imports, [],
+            "d3d12.dll D3D12CreateDevice d3d11.dll d3d9.dll vulkan-1.dll vkCreateInstance", extraOffset: 60L * 1024 * 1024);
         var prefix = Path.Combine(_root, "pfx");
         Directory.CreateDirectory(Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents"));
         return (gameRoot, exe, prefix);
@@ -234,7 +305,8 @@ public sealed class MultiApiDetectionTests : IDisposable
     }
 
     /// <summary>Minimal PE32+ with one section holding the import and delay-load descriptors and names.</summary>
-    private string WritePe(string name, string[] imports, string[] delayImports, string extraStrings = "")
+    /// <param name="extraOffset">When set, the extra strings start at this file offset (sparse hole before them).</param>
+    private string WritePe(string name, string[] imports, string[] delayImports, string extraStrings = "", long extraOffset = 0)
     {
         const int sectionRva = 0x1000, sectionRaw = 0x200, optional = 0x58, optionalSize = 240;
         var data = new List<byte>();
@@ -261,7 +333,7 @@ public sealed class MultiApiDetectionTests : IDisposable
         names.CopyTo(section, namesStart);
 
         var extra = Encoding.ASCII.GetBytes(extraStrings);
-        var file = new byte[sectionRaw + section.Length + extra.Length];
+        var file = new byte[sectionRaw + section.Length];
         file[0] = (byte)'M'; file[1] = (byte)'Z';
         BitConverter.GetBytes(0x40).CopyTo(file, 0x3C);
         Encoding.ASCII.GetBytes("PE\0\0").CopyTo(file, 0x40);
@@ -283,10 +355,18 @@ public sealed class MultiApiDetectionTests : IDisposable
         BitConverter.GetBytes(section.Length).CopyTo(file, header + 16);
         BitConverter.GetBytes(sectionRaw).CopyTo(file, header + 20);
         section.CopyTo(file, sectionRaw);
-        extra.CopyTo(file, sectionRaw + section.Length); // strings outside the import table (LoadLibrary names)
-
         var path = Path.Combine(_root, name);
-        File.WriteAllBytes(path, file);
+        using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
+        stream.Write(file);
+        // strings outside the import table (LoadLibrary names), optionally far into the file
+        if (extraOffset > 0)
+        {
+            stream.SetLength(extraOffset);
+            stream.Seek(extraOffset, SeekOrigin.Begin);
+            stream.Write(extra);
+            stream.Write(new byte[16]);
+        }
+        else stream.Write(extra);
         return path;
     }
 
