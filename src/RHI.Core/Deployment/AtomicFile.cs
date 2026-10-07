@@ -160,8 +160,11 @@ public static class AtomicFile
     /// <paramref name="target"/> (download bodies, archive members). Fails if more than
     /// <paramref name="maxBytes"/> arrive or the content does not hash to <paramref name="expectedSha256"/>.
     /// </summary>
+    /// <param name="createMode">Unix mode of the new file (less umask); null keeps the default 0666 less umask.
+    /// The content's own mode bits (e.g. an archive member's) are never applied.</param>
     public static async Task<StagedFile> StageStreamAsync(
-        Stream content, string target, string? expectedSha256, string? tempId, long maxBytes, CancellationToken cancellationToken)
+        Stream content, string target, string? expectedSha256, string? tempId, long maxBytes, CancellationToken cancellationToken,
+        UnixFileMode? createMode = null)
     {
         var temp = TempPathFor(target, tempId);
         try
@@ -171,7 +174,7 @@ public static class AtomicFile
             var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
             try
             {
-                var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, BufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var file = CreateTemp(temp, FileOptions.Asynchronous | FileOptions.SequentialScan, createMode);
                 await using (file.ConfigureAwait(false))
                 {
                     var output = IoMeter.Wrap(file);
@@ -249,6 +252,21 @@ public static class AtomicFile
             FileCleanup.TryDelete(temp);
             throw;
         }
+    }
+
+    /// <summary>Creates a new temporary file (never an existing one), optionally with a fixed Unix mode.</summary>
+    private static FileStream CreateTemp(string temp, FileOptions options, UnixFileMode? createMode)
+    {
+        var settings = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            BufferSize = BufferSize,
+            Options = options
+        };
+        if (createMode is { } mode && !OperatingSystem.IsWindows()) settings.UnixCreateMode = mode;
+        return new FileStream(temp, settings);
     }
 
     private static void CheckExpected(string target, string actual, string? expected)

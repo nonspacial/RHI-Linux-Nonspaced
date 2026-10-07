@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -134,7 +135,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     }
 
     [Fact]
-    public void EntriesTogetherAboveTheTotalCap_AreRefusedBeforeWritingAnything()
+    public async Task EntriesTogetherAboveTheTotalCap_AreRefusedBeforeWritingAnything()
     {
         var each = (uint)(ReShadeArchiveExtractor.MaxTotalBytes / 2 + 1);
         Assert.True(each <= ReShadeArchiveExtractor.MaxEntryBytes);
@@ -145,7 +146,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
         var output = Path.Combine(_root, "total");
         Directory.CreateDirectory(output);
 
-        var reason = ReShadeArchiveExtractor.TryExtractManaged(setup, output, CancellationToken.None);
+        var reason = await ReShadeArchiveExtractor.TryExtractManagedAsync(setup, output, CancellationToken.None);
 
         Assert.NotNull(reason);
         Assert.Contains("together", reason);
@@ -153,7 +154,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     }
 
     [Fact]
-    public void AlteredPayloadBytes_FailTheCrcCheck_AndLeaveNoFile()
+    public async Task AlteredPayloadBytes_FailTheCrcCheck_AndLeaveNoFile()
     {
         var dll64 = Payload(0x44, 9_000);
         var zip = Zip(CompressionLevel.NoCompression, Entry("ReShade64.dll", dll64));
@@ -164,7 +165,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
         var output = Path.Combine(_root, "crc");
         Directory.CreateDirectory(output);
 
-        var reason = ReShadeArchiveExtractor.TryExtractManaged(setup, output, CancellationToken.None);
+        var reason = await ReShadeArchiveExtractor.TryExtractManagedAsync(setup, output, CancellationToken.None);
 
         Assert.NotNull(reason);
         Assert.Contains("CRC", reason);
@@ -172,7 +173,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     }
 
     [Fact]
-    public void ShorterThanDeclared_FailsTheLengthCheck_AndLeavesNoFile()
+    public async Task ShorterThanDeclared_FailsTheLengthCheck_AndLeavesNoFile()
     {
         var zip = Zip(Entry("ReShade64.dll", Payload(0x45, 9_000)));
         SetDeclaredSize(zip, "ReShade64.dll", 9_000 + 512);
@@ -180,7 +181,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
         var output = Path.Combine(_root, "short");
         Directory.CreateDirectory(output);
 
-        var reason = ReShadeArchiveExtractor.TryExtractManaged(setup, output, CancellationToken.None);
+        var reason = await ReShadeArchiveExtractor.TryExtractManagedAsync(setup, output, CancellationToken.None);
 
         Assert.NotNull(reason);
         Assert.Contains("9000", reason);
@@ -188,7 +189,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     }
 
     [Fact]
-    public void ArchiveUnixModes_AreNeverApplied()
+    public async Task ArchiveUnixModes_AreNeverApplied()
     {
         // A write-only or executable mode in the archive must not reach the cache: files get 0644 less umask.
         var setup = Write("modes.exe", [.. PeStub(20_000), .. Zip(
@@ -197,7 +198,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
         var output = Path.Combine(_root, "modes");
         Directory.CreateDirectory(output);
 
-        Assert.Null(ReShadeArchiveExtractor.TryExtractManaged(setup, output, CancellationToken.None));
+        Assert.Null(await ReShadeArchiveExtractor.TryExtractManagedAsync(setup, output, CancellationToken.None));
 
         const UnixFileMode forbidden = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute
             | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
@@ -224,7 +225,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     }
 
     [Fact]
-    public void BitFlipsAndTruncations_EitherFailWithAReason_OrYieldTheExactPayload()
+    public async Task BitFlipsAndTruncations_EitherFailWithAReason_OrYieldTheExactPayload()
     {
         // Regression for the review fuzz: exceptions escaped from the lazy directory read, and
         // corrupted payloads "succeeded" with no CRC check.
@@ -241,7 +242,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
             var output = Path.Combine(_root, $"fuzz-{i}");
             Directory.CreateDirectory(output);
 
-            var reason = ReShadeArchiveExtractor.TryExtractManaged(setup, output, CancellationToken.None);
+            var reason = await ReShadeArchiveExtractor.TryExtractManagedAsync(setup, output, CancellationToken.None);
 
             foreach (var (name, expected) in new[] { ("ReShade64.dll", dll64), ("ReShade32.dll", dll32) })
             {
@@ -249,7 +250,7 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
                 if (File.Exists(path)) Assert.Equal(expected, File.ReadAllBytes(path));
             }
             if (reason is null) Assert.NotEmpty(Directory.GetFiles(output));
-            Assert.DoesNotContain(Directory.GetFiles(output), f => f.EndsWith(".tmp", StringComparison.Ordinal));
+            Assert.DoesNotContain(Directory.GetFiles(output), f => f.EndsWith(".tmp", StringComparison.Ordinal) || f.Contains(AtomicFile.TempMarker, StringComparison.Ordinal));
         }
     }
 

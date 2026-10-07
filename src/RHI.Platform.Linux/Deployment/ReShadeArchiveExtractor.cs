@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -35,7 +36,7 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     public async Task ExtractDllsAsync(string setupExe, string outputDirectory, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(outputDirectory);
-        var managedFailure = TryExtractManaged(setupExe, outputDirectory, cancellationToken);
+        var managedFailure = await TryExtractManagedAsync(setupExe, outputDirectory, cancellationToken).ConfigureAwait(false);
         if (managedFailure is null) return;
 
         var extractor = _findExternalExtractor();
@@ -83,12 +84,13 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     /// <summary>
     /// Extracts the payload DLLs; returns null on success, otherwise why the archive could not be
     /// read (the caller then tries a host tool). Every declared size is checked against the caps
-    /// before anything is written; each file is copied through a bounded stream into a unique temp
-    /// file with a fixed mode (never the archive's), length and CRC-32 are compared with the entry,
-    /// and only then is it renamed into place. Cancellation throws; write failures on the output
+    /// before anything is written; each file is staged through <see cref="AtomicFile.StageStreamAsync"/>
+    /// (bounded by the declared size, fixed mode — never the archive's — fsynced and verified), length
+    /// and CRC-32 are compared with the entry, and only then is it placed with
+    /// <see cref="AtomicFile.MoveIntoPlace"/>. Cancellation throws; write failures on the output
     /// (disk full, permissions) propagate as they are, since a host tool would hit them too.
     /// </summary>
-    internal static string? TryExtractManaged(string setupExe, string outputDirectory, CancellationToken cancellationToken)
+    internal static async Task<string?> TryExtractManagedAsync(string setupExe, string outputDirectory, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var file = new FileStream(setupExe, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -125,7 +127,7 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
                 return $"the ReShade DLLs together declare {total} bytes, over the {MaxTotalBytes}-byte limit";
 
             foreach (var (name, entry) in payload)
-                if (ExtractVerified(entry, Path.Combine(outputDirectory, name), cancellationToken) is { } failure)
+                if (await ExtractVerifiedAsync(entry, Path.Combine(outputDirectory, name), cancellationToken).ConfigureAwait(false) is { } failure)
                     return $"{name}: {failure}";
             return null;
         }
@@ -136,52 +138,97 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     }
 
     /// <summary>Copies one entry to <paramref name="destination"/>; returns null, or why the entry's bytes were refused.</summary>
-    private static string? ExtractVerified(ZipArchiveEntry entry, string destination, CancellationToken cancellationToken)
+    private static async Task<string?> ExtractVerifiedAsync(ZipArchiveEntry entry, string destination, CancellationToken cancellationToken)
     {
-        var temp = Path.Combine(Path.GetDirectoryName(destination)!, $".{Path.GetFileName(destination)}.{Guid.NewGuid():N}.tmp");
-        var placed = false;
+        Stream source;
+        try { source = entry.Open(); }
+        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException) { return ex.Message; }
+
+        StagedFile staged;
+        var reader = new EntryReadStream(source);
+        await using (reader.ConfigureAwait(false))
+        {
+            try
+            {
+                staged = await AtomicFile.StageStreamAsync(reader, destination, null, null, entry.Length, cancellationToken, FixedFileMode).ConfigureAwait(false);
+            }
+            catch (EntryReadException ex)
+            {
+                return ex.InnerException!.Message;
+            }
+            catch (InvalidDataException) when (reader.BytesRead > entry.Length)
+            {
+                return $"holds more than the {entry.Length} bytes it declares";
+            }
+        }
+
+        string? refusal = null;
+        if (staged.Length != entry.Length) refusal = $"holds {staged.Length} bytes but declares {entry.Length}";
+        else if (reader.Crc32 != entry.Crc32) refusal = "CRC-32 does not match the archive (corrupt download)";
+        if (refusal is not null)
+        {
+            FileCleanup.TryDelete(staged.Path);
+            return refusal;
+        }
         try
         {
-            Stream source;
-            try { source = entry.Open(); }
-            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException) { return ex.Message; }
-
-            using (source)
-            using (var target = new FileStream(temp, new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                UnixCreateMode = FixedFileMode
-            }))
-            {
-                var buffer = new byte[81920];
-                long written = 0;
-                var crc = Crc32.Seed;
-                while (true)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    int read;
-                    try { read = source.Read(buffer); }
-                    catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException) { return ex.Message; }
-                    if (read == 0) break;
-                    written += read;
-                    if (written > entry.Length) return $"holds more than the {entry.Length} bytes it declares";
-                    crc = Crc32.Append(crc, buffer.AsSpan(0, read));
-                    target.Write(buffer, 0, read);
-                }
-                if (written != entry.Length) return $"holds {written} bytes but declares {entry.Length}";
-                if (Crc32.Finish(crc) != entry.Crc32) return "CRC-32 does not match the archive (corrupt download)";
-                target.Flush(flushToDisk: true);
-            }
-            File.Move(temp, destination, overwrite: true);
-            placed = true;
-            return null;
+            AtomicFile.MoveIntoPlace(staged.Path, destination);
         }
-        finally
+        catch
         {
-            if (!placed)
-                try { File.Delete(temp); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+            FileCleanup.TryDelete(staged.Path);
+            throw;
+        }
+        return null;
+    }
+
+    /// <summary>A read failure of the archive entry (not of the output), so it is reported rather than thrown.</summary>
+    private sealed class EntryReadException(Exception inner) : Exception(inner.Message, inner);
+
+    /// <summary>Counts and CRC-32s what is read from an archive entry; marks read failures as <see cref="EntryReadException"/>.</summary>
+    private sealed class EntryReadStream(Stream inner) : Stream
+    {
+        private uint _crc = ReShadeArchiveExtractor.Crc32.Seed;
+
+        public long BytesRead { get; private set; }
+        public uint Crc32 => ReShadeArchiveExtractor.Crc32.Finish(_crc);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => BytesRead; set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            int read;
+            try { read = inner.Read(buffer); }
+            catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or IOException) { throw new EntryReadException(ex); }
+            BytesRead += read;
+            _crc = ReShadeArchiveExtractor.Crc32.Append(_crc, buffer[..read]);
+            return read;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Read(buffer.Span));
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
         }
     }
 
