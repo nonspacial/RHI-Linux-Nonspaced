@@ -95,6 +95,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 ## Medium
 
 ### DET-08 — Steam roots and libraries are de-duplicated by string, so each library is walked 2–3 times
+- **Status:** fixed in `23fcee5` (#47, branch w1/detect). Roots, Heroic/Lutris roots and `libraryfolders.vdf` libraries are de-duplicated by canonical (symlink-resolved) path, first spelling kept so library keys do not move; each library is walked once. On this host: 29 → 13 raw Steam entries, Steam scan ~1.5 s → ~0.35 s. Inode comparison (bind mounts) not added.
 - **Where:** `src/RHI.Platform.Linux/Paths/LinuxPaths.cs:13-23`; `src/RHI.Platform.Linux/Detection/SteamGameDetector.cs:18-20, 91-105`.
 - **What happens:**
   - `~/.steam/steam` is a symlink to `~/.local/share/Steam`, but `Distinct(StringComparer.Ordinal)` keeps both.
@@ -119,7 +120,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** Count `GameFileIndexer.Build` calls per full scan with an injected counter; target 0 full-depth builds.
 
 ### DET-10 — Lutris YAML parsing: folded/multi-line scalars truncate `exe`, and names fall back to a timestamped config stem
-- **Status:** partly fixed in `5bacffb` (#119): `exe`/`prefix`/`working_dir` are read with folded lines joined (`LauncherOwnedPrefixes.ReadScalars`), and `wine.version` comes from the top-level `wine:` section. Still open: names from `pga.db`, and reading only the `game:` mapping.
+- **Status:** fixed in `3d49740` (#49, branch w1/detect): only the top-level `game:`/`wine:` mappings are read (`LutrisConfigFile`), names come from `pga.db` by `configpath` (own read-only SQLite table reader, no new dependency). Earlier: partly fixed in `5bacffb` (#119): `exe`/`prefix`/`working_dir` are read with folded lines joined (`LauncherOwnedPrefixes.ReadScalars`), and `wine.version` comes from the top-level `wine:` section.
 - **Where:** `src/RHI.Platform.Linux/Detection/LutrisGameDetector.cs:26-29, 162-167`.
 - **What happens:** `MatchValue` reads one line and stops at `"` or `'`. Lutris wraps long values, for example `exe: …/Battle.net/Battle.net` followed by `    Launcher.exe` on the next line. `name` is not in the yml at all (it lives in `pga.db`).
 - **[repro]**
@@ -152,6 +153,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** Fixture prefix with `Program Files (x86)/Vendor/Launcher/games/Foo/Foo.exe` and a `lutris.json`; assert it is skipped, and that Foo is found when unmanaged.
 
 ### DET-12 — Heroic fuzzy prefix matching can attach the wrong Wine prefix
+- **Status:** fixed in `f5bc146` (#51, branch w1/detect). Exact `GamesConfig` first; fallback needs a normalised-equal name or Levenshtein ratio ≥ 0.9, each folder once, ties attach nothing, native Linux records get no prefix.
 - **Where:** `src/RHI.Platform.Linux/Detection/HeroicGameDetector.cs:47-48, 347-361, 391-398`.
 - **What happens:**
   - `Similarity` uses `a.Intersect(b).Count()`, i.e. distinct characters, with a 0.70 threshold.
@@ -222,6 +224,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** Write garbage, `Load`, `Save(new)`, then assert a `.corrupt-*` backup exists with the original bytes.
 
 ### DET-19 — Removing or adding manual games can silently do nothing
+- **Status:** fixed in `ada46a1` (#58, branch w1/detect). Removal matches the saved folder (library identity / original manifest root) and says when nothing matched; add/remove/edit wait for the busy operation (`BusyGate`) and report when the library was not updated.
 - **Where:**
   - `src/RHI.Desktop/ViewModels/MainWindowViewModel.cs:2583-2589`: remove matches `selected.InstallPath`, which edits (`LinuxGameIdentityService.cs:48`) and the manifest (`UpstreamGameLibraryPolicyService.cs:79`) rewrite.
   - `MainWindowViewModel.cs:1108`: `RefreshAsync` returns immediately when `IsBusy`, for example during the startup DLSS fetch or a background update pass.
@@ -232,6 +235,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Verify:** VM test: set an edit override on a manual game, remove it, then assert the store has no entry.
 
 ### DET-20 — Manual (and Heroic) entries accept a prefix root, `$HOME` or `/` as the game root (sibling of the HEAD fix)
+- **Status:** fixed in `3698c86` (#59, branch w1/detect). `GameRootGuard` (/, `$HOME` and ancestors, system/mount folders, home containers, whole prefixes and their system folders, Steam library folders) is used by Steam, Heroic, Lutris, manual entries and the Add/Edit dialogs; `GameFileIndexer` returns `IndexedFiles.Truncated` and the status says so.
 - **Where:** `src/RHI.Platform.Linux/Detection/ManualGameDetector.cs:21-22`; `MainWindowViewModel.cs:2553`; `HeroicGameDetector.cs:143-161`; `GameFileIndexer.cs:46`.
 - **What happens:**
   - Only `Directory.Exists` is checked. There is no `IsWinePrefixRoot` check and no home, filesystem-root or `steamapps/common` guard (HEAD added one for Lutris only).
@@ -277,17 +281,21 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
   - Bounded but still symlink-following: `GraphicsApiDetector.cs:627` (`CollectNamedFiles`) and `WinePrefixDetector.cs:89` (`FindPrefixes`, where `~/Games` is itself a symlink on this host).
   - **[repro]** `.NET EnumerateFiles(AllDirectories)` followed `t/a/root -> /` into `/lib` (`.scratch/audit/symh`).
   - Fix: use `EnumerationOptions { AttributesToSkip = ReparsePoint, RecurseSubdirectories = true }` everywhere.
+  - **Status:** fixed in `13c6140` (#64, branch w1/detect): `SafeFileEnumeration` replaces every `SearchOption.AllDirectories` walk (detection, DLSS cache sweep, cache purge, CacheStamp, OptiScaler, ReShade shader packs, DLSS 5 Feeder); `CollectNamedFiles` skips directory links; the Wine prefix search follows a link only when it is itself a prefix.
 - **DET-26 — `FindLikelyExecutable` hard-ignores by substring** (`DetectionHelpers.cs:95-111`).
   - The names `eac`, `crash`, `install`, `report` and `setup` are matched anywhere, so `Beacon.exe`, `PeaceKeeper.exe` and `CrashBandicoot*.exe` are dropped and a worse candidate or `null` wins.
   - Fix: match on token boundaries (for example `^eac` or `[_-]eac`, and `crashhandler|crashreport`).
+  - **Status:** fixed in `fd3e4e4` (#65, branch w1/detect): whole-word rules (camelCase/acronym/digit split, up to three adjacent words joined).
 - **DET-27 — Steam classification is shallow** (`SteamGameDetector.cs:31-61`).
   - `StateFlags` is ignored, so partially installed or updating apps are listed.
   - Tool-like apps with their own install dir, such as `Skyrim Script Extender (SKSE)` (appid 365720), become games.
   - The existence of `compatdata/<id>/pfx` decides "Proton" versus native: Broken Sword 1 has a stale prefix, so the native `BS1DC` script is never considered and the exe is `null`.
   - Fix: read `CompatToolMapping` from `config/config.vdf` for the real per-app tool, and honour `StateFlags & 4`.
+  - **Status:** fixed in `5b3529c` (#66, branch w1/detect): `StateFlags & 4`, app type from `appcache/appinfo.vdf` (Tool/Config/DLC/… are not games), `CompatToolMapping` (empty or `None` = no mapping) plus appinfo `oslist` decide native vs Proton. SKSE (365720) stays: Steam records it as type Game.
 - **DET-28 — Lutris path expansion is partial** (`LutrisGameDetector.cs:171-176, 188-189`).
   - `Environment.ExpandEnvironmentVariables` expands `%VAR%` only; `$HOME` and `${VAR}` stay literal (verified). A bare `~` is not handled, and `$GAMEDIR` is stripped only as a leading `$GAMEDIR/` token.
   - `pga.db` `installed=0` and `directory` are ignored, so leftover yml files for uninstalled games appear.
+  - **Status:** fixed in `6b7aabc` (#67, branch w1/detect): `LutrisPathExpander` (`~`, `~user`, `$VAR`, `${VAR}`, `$GAMEDIR` anywhere from `pga.db` `directory`); `installed=0` skipped.
 - **DET-29 — Refresh UX and cancellation** (`MainWindowViewModel.cs:1108, 1161, 1242-1260`).
   - A Refresh click while a background update pass holds `IsBusy` is silently ignored.
   - Manual Update All uses `CancellationToken.None`.
@@ -295,10 +303,12 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **DET-30 — Manual UE inference stops at `<Project>`** (`ManualGamePathInference.cs:16-22`).
   - `<Game>/<Project>/Binaries/Win64/X.exe` gives `<Game>/<Project>`, so `<Game>/Engine/**` (a common location of `nvngx_dlss.dll` and Streamline) is never indexed, and DLSS swap misses it.
   - Fix: when a sibling `Engine/` exists next to `<Project>`, return `<Game>`.
+  - **Status:** fixed in `640b699` (#69, branch w1/detect).
 - **DET-31 — Launcher assumptions** (`LinuxGameLauncher.cs:19-31`; `SteamGameDetector.cs:73`).
   - `steam -applaunch` assumes a host `steam` binary, which is wrong for Flatpak Steam.
   - The `Process` is neither awaited nor disposed, and the exit code and stderr are dropped, so launch failures always look like success.
   - `sh -lc` sources login profiles on every launch.
+  - **Status:** fixed in `aa0e166` (#70, branch w1/detect): Flatpak/host/URL Steam launch, launch watched 3 s for a failure exit (code + stderr to the status line), `sh -c` instead of `sh -lc`.
 
 ## Gaps (expected by a typical Linux gamer; lower priority)
 
