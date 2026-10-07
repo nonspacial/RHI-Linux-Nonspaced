@@ -782,29 +782,28 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     }
 
     // Upstream 2.8.1: the detail shows which RenoDX/Luma add-on file is installed and who made each mod. Credit what
-    // RHI installed or would install; an external install or an unsupported title has no trustworthy author.
+    // RHI installed, or what it would install on a confirmed patch target; an external install, a stale record or an
+    // unconfirmed target's not-installed row has no trustworthy author. Runs on the UI thread (Decorate is called
+    // synchronously from selection/re-evaluation), so it reads only in-memory state: records, catalogue caches and
+    // what the probe found — never the game's files.
     private void DecorateModCredits(DetectedGame game, IReadOnlyList<ManagedComponent> components)
     {
         foreach (var component in components)
         {
             if (component.Kind is not (ManagedComponentKind.RenoDX or ManagedComponentKind.LumaFramework)) continue;
-            var record = _records.Find(game, component.Kind);
-            component.InstalledAddonFiles = ModAuthorCredit.AddonFileNames(record);
-            if (record is null && component.Availability != ComponentAvailability.Available) continue;
+            component.InstalledAddonFiles = [];
+            component.Author = null;
+            var installed = component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
+            var record = installed ? _records.Find(game, component.Kind) : null;
+            if (installed && record is null) continue;
+            // Decorate has already turned an ineligible Luma row into Unsupported for a confirmed target, so an
+            // Available row there is installable; without a confirmed target RHI installs nothing.
+            if (!installed && !(component.Availability == ComponentAvailability.Available && game.HasConfirmedPatchTarget)) continue;
 
-            if (component.Kind == ManagedComponentKind.RenoDX)
-            {
-                component.Author = ModAuthorCredit.ForRenoDx(
-                    _renodx.TryGetPreparedCompatibility(game, out var entry) ? entry : null, game);
-                continue;
-            }
-
-            var named = _lumaFramework.GetCachedNamedMatch(game);
-            // Without a confirmed patch target Decorate skips the eligibility check, so repeat it before crediting.
-            var eligible = record is not null || (named is not null
-                ? LumaFrameworkDeploymentService.IsNamedGameEligible(game, named)
-                : LumaFrameworkDeploymentService.IsGameEligible(game, _lumaFramework.GetCachedGenericMatch(game)));
-            component.Author = eligible ? ModAuthorCredit.ForLuma(record, named) : null;
+            component.InstalledAddonFiles = ModAuthorCredit.AddonFileNames(record, component.DetectedAddonFiles);
+            component.Author = component.Kind == ManagedComponentKind.RenoDX
+                ? ModAuthorCredit.ForRenoDx(_renodx.TryGetPreparedCompatibility(game, out var entry) ? entry : null, game)
+                : ModAuthorCredit.ForLuma(record, _lumaFramework.GetCachedNamedMatch(game));
         }
     }
 

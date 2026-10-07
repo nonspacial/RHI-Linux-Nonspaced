@@ -62,8 +62,82 @@ public sealed class RenoDxCatalogServiceTests
         Assert.NotNull(found);
         Assert.Equal("https://marat569.github.io/renodx/renodx-ue-extended.addon64", found!.SnapshotUrl64);
         Assert.Contains("Unreal Engine 4.27", found.Notes);
-        Assert.Equal("Marat", found.Author); // UE-Extended build credit (upstream 2.8.1)
+        Assert.Equal("Marat", ModAuthorCredit.ForRenoDx(found, game)); // UE-Extended build credit (upstream 2.8.1)
         Assert.Equal(0, wikiHandler.RequestCount);
+    }
+
+    // Shaped like upstream RHI 2.8.5 data: docs/RenoDXdb.json entries (CODE VEIN II has no download of its own) and
+    // manifest.json snapshotOverrides / authorOverrides for the same titles.
+    private const string Db285 = """
+    [
+      { "notes": null, "name": "CODE VEIN II", "discordUrl": null, "snapshotUrl": null, "status": "Done", "nexusUrl": null, "author": "Marat", "snapshotUrl32": null, "discussionUrl": null },
+      { "notes": null, "name": "Days Gone", "discordUrl": null, "snapshotUrl": "https://oopydoopy.github.io/renodx/renodx-daysgone.addon64", "status": "WIP", "nexusUrl": null, "author": "OopyDoopy (Jon)", "snapshotUrl32": null, "discussionUrl": null },
+      { "notes": null, "name": "RoboCop: Rogue City", "discordUrl": null, "snapshotUrl": "https://mqhaji.github.io/renodx/renodx-robocop.addon64", "status": "Done", "nexusUrl": null, "author": "Musa", "snapshotUrl32": null, "discussionUrl": null },
+      { "notes": null, "name": "Routine", "discordUrl": null, "snapshotUrl": "https://github.com/mqhaji/renodx/releases/download/snapshot/renodx-routine.addon64", "status": "Done", "nexusUrl": null, "author": "Musa", "snapshotUrl32": null, "discussionUrl": null },
+      { "notes": null, "name": "GreedFall: The Dying World", "discordUrl": null, "snapshotUrl": "https://github.com/RankFTW/renodx/releases/download/snapshot/renodx-greedfall2.addon64", "status": "Done", "nexusUrl": null, "author": "RankFTW", "snapshotUrl32": null, "discussionUrl": null }
+    ]
+    """;
+
+    private const string Manifest285 = """
+    {
+      "version": 2,
+      "snapshotOverrides": {
+        "Hogwarts Legacy": "https://marat569.github.io/renodx/renodx-ue-extended.addon64",
+        "Assassin's Creed": "https://clshortfuse.github.io/renodx/renodx-asscreed1.addon32",
+        "Cities: Skylines": "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon64",
+        "CODE VEIN II": "https://marat569.github.io/renodx/renodx-codevein2.addon64",
+        "Days Gone": "https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-daysgone.addon64",
+        "Far Cry 2": "https://clshortfuse.github.io/renodx/renodx-duniaengine.addon32",
+        "RoboCop: Rogue City": "https://mqhaji.github.io/renodx/renodx-robocop.addon64",
+        "Routine": "https://github.com/mqhaji/renodx/releases/download/snapshot/renodx-routine.addon64"
+      },
+      "authorOverrides": {
+        "Assassin's Creed": "Musa",
+        "GreedFall: The Dying World": "RankFTW"
+      }
+    }
+    """;
+
+    [Theory]
+    // Review cases: a snapshot override replaces only the download; the RHI database author stays.
+    [InlineData("CODE VEIN II", "https://marat569.github.io/renodx/renodx-codevein2.addon64", "Marat")]
+    [InlineData("Days Gone", "https://github.com/OopyDoopy/renodx/releases/download/snapshot/renodx-daysgone.addon64", "Jon")]
+    [InlineData("RoboCop: Rogue City", "https://mqhaji.github.io/renodx/renodx-robocop.addon64", "Musa")]
+    [InlineData("Routine", "https://github.com/mqhaji/renodx/releases/download/snapshot/renodx-routine.addon64", "Musa")]
+    // UE-Extended build: Marat. No database entry: the manifest authorOverrides entry, else the generic engine
+    // add-on's maintainer, else nobody.
+    [InlineData("Hogwarts Legacy", "https://marat569.github.io/renodx/renodx-ue-extended.addon64", "Marat")]
+    [InlineData("Assassin's Creed", null, "Musa")]
+    [InlineData("Cities: Skylines", "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon64", "Voosh")]
+    [InlineData("Far Cry 2", null, null)]
+    public async Task Resolve_SnapshotOverrideKeepsTheDatabaseAuthor(string title, string? url64, string? expectedAuthor)
+    {
+        using var manifestHttp = new HttpClient(new StaticHandler(Manifest285));
+        var manifest = new UpstreamRhiManifestService(manifestHttp, "https://example.test/manifest.json");
+        using var dbHttp = new HttpClient(new RoutedCatalogHandler(Db285));
+        var service = new RenoDxCatalogService(dbHttp, manifest);
+        // The library policy copies manifest authorOverrides onto the game (UpstreamGameLibraryPolicyService).
+        using var manifestDoc = System.Text.Json.JsonDocument.Parse(Manifest285);
+        var authorOverride = manifestDoc.RootElement.GetProperty("authorOverrides").TryGetProperty(title, out var a) ? a.GetString() : null;
+        var game = new DetectedGame { Name = title, InstallPath = "/tmp/" + title, AuthorOverride = authorOverride };
+
+        var found = await service.ResolveAsync(game, []);
+
+        Assert.NotNull(found);
+        if (url64 is not null) Assert.Equal(url64, found!.SnapshotUrl64);
+        else Assert.NotNull(found!.SnapshotUrl32);
+        Assert.Equal(expectedAuthor, ModAuthorCredit.ForRenoDx(found, game));
+    }
+
+    [Fact]
+    public void ParseStructuredAuthors_KeepsAuthorsOfEntriesWithoutADownload()
+    {
+        var authors = RenoDxCatalogService.ParseStructuredAuthors(Db285);
+
+        Assert.Equal("Marat", authors.Single(e => e.Name == "CODE VEIN II").Author);
+        Assert.Equal(5, authors.Count);
+        // The installable catalogue still drops CODE VEIN II: it has nothing to download without the override.
+        Assert.DoesNotContain(RenoDxCatalogService.ParseStructuredDatabase(Db285), e => e.Name == "CODE VEIN II");
     }
 
     [Fact]

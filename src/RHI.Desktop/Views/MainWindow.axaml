@@ -520,8 +520,10 @@
                                     Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                     CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
                           </views:ResponsiveRow>
-                          <!-- RenoDX/Luma only: installed add-on file name(s) and mod author; wraps at narrow widths. -->
-                          <TextBlock Text="{Binding Credit}" IsVisible="{Binding HasCredit}" Classes="muted" FontSize="11" TextWrapping="Wrap"/>
+                          <!-- RenoDX/Luma only: installed add-on file name(s) and mod author on one line; a line wider than
+                               the row is shortened in the middle, full text in a 2 s tooltip. -->
+                          <views:MiddleEllipsisText FullText="{Binding Credit}" IsVisible="{Binding HasCredit}" Classes="muted" FontSize="11"
+                                                    WrapNonPath="False" MiddleNonPath="True"/>
                         </StackPanel>
                       </Border>
                     </DataTemplate>

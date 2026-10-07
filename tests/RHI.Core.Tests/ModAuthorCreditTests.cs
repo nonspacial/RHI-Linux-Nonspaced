@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Windows.Input;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
@@ -19,20 +20,54 @@ public sealed class ModAuthorCreditTests : IDisposable
     [InlineData("OopyDoopy (Jon)", "Jon")]
     [InlineData("OopyDoopy and Voosh", "Jon, Voosh")]
     [InlineData("Ritsu, & ShortFuse", "Ritsu, ShortFuse")]
-    [InlineData("Marat + Ritsu", "Marat, Ritsu")]
+    [InlineData("Forge & Fyren & Jon & Shortfuse", "Forge, Fyren, Jon, Shortfuse")]
+    [InlineData("Ritsu & OopyDoopy (Jon)", "Ritsu, Jon")]
+    // Upstream SplitAuthors only splits on "&" and "and": these stay one name, as upstream shows them.
+    [InlineData("Marat + Ritsu", "Marat + Ritsu")]
+    [InlineData("Ritsu/marat569", "Ritsu/marat569")]
+    [InlineData("Anderson", "Anderson")]
     [InlineData("theonlyames (Riha)", "theonlyames (Riha)")]
     [InlineData("  ", null)]
     public void Format_SplitsCatalogueAuthorFieldsIntoDisplayNames(string raw, string? expected)
         => Assert.Equal(expected, ModAuthorCredit.Format(raw));
 
     [Fact]
-    public void RenoDxAuthor_PrefersCatalogueEntry_ThenManifestOverride()
+    public void RenoDxAuthor_FollowsUpstreamPrecedence()
     {
-        var game = new DetectedGame { Name = "Assassin's Creed", InstallPath = "/g", AuthorOverride = "Musa" };
+        const string ueExtended = "https://marat569.github.io/renodx/renodx-ue-extended.addon64";
+        const string genericUnreal = RenoDxCatalogService.GenericUnrealUrl;
+        const string genericUnity = RenoDxCatalogService.GenericUnityUrl32;
+        var withOverride = new DetectedGame { Name = "Assassin's Creed", InstallPath = "/g", AuthorOverride = "Musa" };
+        var plain = new DetectedGame { Name = "Some Game", InstallPath = "/g" };
 
-        Assert.Equal("Ritsu", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("AC", "https://x.test/a.addon64", null, null, Author: "Ritsu"), game));
-        Assert.Equal("Musa", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("AC", "https://x.test/a.addon64", null, null), game));
-        Assert.Equal("Musa", ModAuthorCredit.ForRenoDx(null, game));
+        // 1. UE-Extended is Marat's build, whatever the database or the manifest say.
+        Assert.Equal("Marat", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("X", ueExtended, null, null, Author: "Ritsu"), withOverride));
+        // 2. The mod's maintainer: the RHI database author beats the manifest authorOverrides entry.
+        Assert.Equal("Ritsu", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("AC", "https://x.test/a.addon64", null, null, Author: "Ritsu"), withOverride));
+        // 3. No maintainer: the manifest authorOverrides entry, also over a generic engine download.
+        Assert.Equal("Musa", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("AC", "https://x.test/a.addon64", null, null), withOverride));
+        Assert.Equal("Musa", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("AC", genericUnreal, null, null), withOverride));
+        Assert.Equal("Musa", ModAuthorCredit.ForRenoDx(null, withOverride));
+        // 4. Nothing else: the generic Unreal / Unity add-on's author.
+        Assert.Equal("ShortFuse", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("X", genericUnreal, null, null), plain));
+        Assert.Equal("Voosh", ModAuthorCredit.ForRenoDx(new RenoDxModEntry("X", null, genericUnity, null), plain));
+        Assert.Null(ModAuthorCredit.ForRenoDx(new RenoDxModEntry("X", "https://x.test/a.addon64", null, null), plain));
+    }
+
+    [Fact]
+    public async Task RenoDxAuthor_GenericFallbackKeepsItsEngineMaintainer()
+    {
+        // Upstream's generic fallback mods carry Maintainer ShortFuse / Voosh, so a manifest authorOverrides entry
+        // (only applied when the maintainer is empty) never replaces it.
+        using var http = new HttpClient(new OfflineHandler());
+        var catalogue = new RenoDxCatalogService(http);
+        var game = new DetectedGame { Name = "Unlisted Unreal Game", InstallPath = "/g", AuthorOverride = "RankFTW" };
+
+        var unreal = await catalogue.ResolveAsync(game, ["/g/Engine/Binaries/Win64/Game-Win64-Shipping.exe"]);
+        var unity = await catalogue.ResolveAsync(game, ["/g/UnityPlayer.dll"]);
+
+        Assert.Equal("ShortFuse", ModAuthorCredit.ForRenoDx(unreal, game));
+        Assert.Equal("Voosh", ModAuthorCredit.ForRenoDx(unity, game));
     }
 
     [Fact]
@@ -90,11 +125,11 @@ public sealed class ModAuthorCreditTests : IDisposable
     }
 
     [Fact]
-    public void Decorate_AfterRemoval_DropsFileNames_AndCreditsOnlyWhatRhiWouldInstall()
+    public void Decorate_UnconfirmedTarget_CreditsNothingRhiHasNotInstalled()
     {
         var bin = Directory.CreateDirectory(Path.Combine(_root, "bin")).FullName;
-        // Native Linux title: generic Luma is ineligible, so it is not credited to anyone.
-        var game = new DetectedGame { Name = "Native", InstallPath = bin, Runner = "Native Linux", RequiresExplicitPatchTarget = true, AuthorOverride = "Voosh" };
+        // Explicit patch target required but not confirmed: RHI installs nothing here, so not-installed rows get no credit.
+        var game = new DetectedGame { Name = "Launcher Game", InstallPath = bin, RequiresExplicitPatchTarget = true, AuthorOverride = "Voosh" };
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
         using var http = new HttpClient(new OfflineHandler());
         var components = new List<ManagedComponent>
@@ -107,11 +142,104 @@ public sealed class ModAuthorCreditTests : IDisposable
 
         Service(records, http).Decorate(game, components);
 
+        Assert.All(components, c =>
+        {
+            Assert.Empty(c.InstalledAddonFiles);
+            Assert.Null(c.Author);
+        });
+    }
+
+    [Fact]
+    public void Decorate_ConfirmedTarget_CreditsWhatRhiWouldInstall_AndDropsNamesOfRemovedOrStaleFiles()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "bin")).FullName;
+        // Confirmed target (no explicit split required). Native Linux: Decorate makes generic Luma Unsupported.
+        var game = new DetectedGame { Name = "Native", InstallPath = bin, BinaryDirectory = bin, Runner = "Native Linux", AuthorOverride = "Voosh" };
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        // A record left behind after the add-on was deleted by hand: the probe no longer sees it, the row is Available.
+        records.Upsert(Record(game, ManagedComponentKind.RenoDX, [Path.Combine(bin, "renodx-native.addon64")]));
+        using var http = new HttpClient(new OfflineHandler());
+        var components = new List<ManagedComponent>
+        {
+            new() { Kind = ManagedComponentKind.RenoDX, DisplayName = "RenoDX HDR", Availability = ComponentAvailability.Available },
+            new() { Kind = ManagedComponentKind.LumaFramework, DisplayName = "Luma Framework", Availability = ComponentAvailability.Available }
+        };
+
+        Service(records, http).Decorate(game, components);
+
         Assert.Empty(components[0].InstalledAddonFiles);
         Assert.Equal("Voosh", components[0].Author);
+        Assert.Equal(ComponentAvailability.Unsupported, components[1].Availability);
         Assert.Null(components[1].Author);
-        Assert.Null(components[2].Author);
     }
+
+    [Fact]
+    public void Decorate_InstalledRow_ShowsOnlyRecordedFilesTheProbeFound()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "bin")).FullName;
+        var game = new DetectedGame { Name = "Prey", InstallPath = bin, RequiresExplicitPatchTarget = true };
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        records.Upsert(Record(game, ManagedComponentKind.RenoDX, [Path.Combine(bin, "renodx-prey.addon64"), Path.Combine(bin, "renodx-prey-old.addon64")]));
+        using var http = new HttpClient(new OfflineHandler());
+        var components = new List<ManagedComponent>
+        {
+            // The probe found one of the two recorded add-ons (the other was replaced or deleted).
+            new() { Kind = ManagedComponentKind.RenoDX, DisplayName = "RenoDX HDR", Availability = ComponentAvailability.Installed,
+                DetectedAddonFiles = ["RENODX-PREY.addon64", "renodx-other.addon64"] }
+        };
+
+        Service(records, http).Decorate(game, components);
+
+        Assert.Equal(["renodx-prey.addon64"], components[0].InstalledAddonFiles);
+    }
+
+    [Fact]
+    public void Probe_ReportsTheRenoDxAndLumaAddonFilesItFound()
+    {
+        var game = new DetectedGame { Name = "Prey", InstallPath = "/g", BinaryDirectory = "/g/bin" };
+        var components = RHI.Core.Services.ComponentProbe.Probe(game,
+            ["/g/bin/renodx-prey.addon64", "/g/bin/renodx-dlss.addon64", "/g/bin/Luma-Prey.addon64", "/g/bin/dxgi.dll"]);
+
+        Assert.Equal(["renodx-prey.addon64"], components.Single(c => c.Kind == ManagedComponentKind.RenoDX).DetectedAddonFiles);
+        Assert.Equal(["Luma-Prey.addon64"], components.Single(c => c.Kind == ManagedComponentKind.LumaFramework).DetectedAddonFiles);
+        Assert.Empty(components.Single(c => c.Kind == ManagedComponentKind.ReShade).DetectedAddonFiles);
+    }
+
+    [Fact]
+    public void Decorate_CreditPassNeverReadsTheGameExecutable()
+    {
+        // Decorate runs on the UI thread. The game executable is a FIFO with no writer: opening it to read the PE
+        // header (as the old Luma eligibility re-check did) blocks, so any read of it shows up as a hang.
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "bin")).FullName;
+        var fifo = Path.Combine(bin, "Launcher.exe");
+        Assert.Equal(0, mkfifo(fifo, 0x180));
+        var game = new DetectedGame
+        {
+            Name = "UE Launcher Game", InstallPath = bin, RequiresExplicitPatchTarget = true, ExecutablePath = fifo,
+            GraphicsApi = GraphicsApi.DirectX11, EngineHint = "Unreal Engine 4"
+        };
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        using var http = new HttpClient(new OfflineHandler());
+        var components = new List<ManagedComponent>
+        {
+            new() { Kind = ManagedComponentKind.RenoDX, DisplayName = "RenoDX HDR", Availability = ComponentAvailability.Available },
+            new() { Kind = ManagedComponentKind.LumaFramework, DisplayName = "Luma Framework", Availability = ComponentAvailability.Available }
+        };
+
+        var decorate = Task.Run(() => Service(records, http).Decorate(game, components));
+        var finished = decorate.Wait(TimeSpan.FromSeconds(5));
+        if (!finished)
+        {
+            // Release the blocked reader so the test process can exit.
+            using var writer = new FileStream(fifo, FileMode.Open, FileAccess.Write);
+        }
+
+        Assert.True(finished, "Decorate opened the game executable");
+        Assert.Null(components[1].Author);
+    }
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern int mkfifo(string path, uint mode);
 
     private static LinuxManagedComponentService Service(LinuxDeploymentRecordStore records, HttpClient http)
         // Only the services the credit pass reaches are real; the rest are never touched for an unconfirmed target.

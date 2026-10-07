@@ -38,6 +38,11 @@ public sealed class MiddleEllipsisText : TextBlock
     public static readonly StyledProperty<bool> WrapNonPathProperty =
         AvaloniaProperty.Register<MiddleEllipsisText, bool>(nameof(WrapNonPath), true);
 
+    /// <summary>When true and <see cref="WrapNonPath"/> is false, a value that is not a path is shortened in the
+    /// middle (start…end) instead of at the end.</summary>
+    public static readonly StyledProperty<bool> MiddleNonPathProperty =
+        AvaloniaProperty.Register<MiddleEllipsisText, bool>(nameof(MiddleNonPath));
+
     private string? _display;
     private TextRunCache? _displayRuns;
     private string? _lastText;
@@ -45,7 +50,7 @@ public sealed class MiddleEllipsisText : TextBlock
     private double _lastFontSize;
     private Typeface _lastTypeface;
 
-    static MiddleEllipsisText() => AffectsMeasure<MiddleEllipsisText>(FullTextProperty, WrapNonPathProperty);
+    static MiddleEllipsisText() => AffectsMeasure<MiddleEllipsisText>(FullTextProperty, WrapNonPathProperty, MiddleNonPathProperty);
 
     public MiddleEllipsisText() => ToolTip.SetShowDelay(this, TooltipDelay);
 
@@ -61,6 +66,12 @@ public sealed class MiddleEllipsisText : TextBlock
     {
         get => GetValue(WrapNonPathProperty);
         set => SetValue(WrapNonPathProperty, value);
+    }
+
+    public bool MiddleNonPath
+    {
+        get => GetValue(MiddleNonPathProperty);
+        set => SetValue(MiddleNonPathProperty, value);
     }
 
     /// <summary>The text currently shown (compacted, or the full value when it fits or wraps).</summary>
@@ -80,7 +91,7 @@ public sealed class MiddleEllipsisText : TextBlock
                 _displayRuns?.Invalidate();
                 break;
         }
-        if (change.Property != FullTextProperty && change.Property != WrapNonPathProperty) return;
+        if (change.Property != FullTextProperty && change.Property != WrapNonPathProperty && change.Property != MiddleNonPathProperty) return;
         var full = FullText ?? "";
         _display = null;
         _lastText = null;
@@ -120,7 +131,7 @@ public sealed class MiddleEllipsisText : TextBlock
                 // candidates. A new display string must reach the layout in this same measure: resetting the
                 // protected constraint makes TextBlock.MeasureOverride drop any layout it holds and rebuild it via
                 // CreateTextLayout. No InvalidateTextLayout, which would re-queue this control for a second measure.
-                var display = PathEllipsis.Compact(FullText, width, s => WidthEstimator.TextWidth(s, typeface, fontSize));
+                var display = PathEllipsis.Compact(FullText, width, s => WidthEstimator.TextWidth(s, typeface, fontSize), MiddleNonPath);
                 if (!string.Equals(display, _display, StringComparison.Ordinal))
                 {
                     _display = display;

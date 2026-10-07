@@ -16,16 +16,17 @@ public static class PathEllipsis
             || (text.Length > 2 && char.IsAsciiLetter(text[0]) && text[1] == ':' && (text[2] == '\\' || text[2] == '/')));
 
     /// <summary>Returns <paramref name="text"/> unchanged when it fits <paramref name="maxWidth"/>, otherwise the
-    /// widest compacted form that fits (never wider than <paramref name="maxWidth"/> unless even "…" is wider).</summary>
-    public static string Compact(string? text, double maxWidth, Func<string, double> measure)
+    /// widest compacted form that fits (never wider than <paramref name="maxWidth"/> unless even "…" is wider).
+    /// Text that is not a path is trimmed at the end, or in the middle when <paramref name="middleForText"/> is set
+    /// (one-line lists such as "renodx-x.addon64 · by Marat", where both ends matter).</summary>
+    public static string Compact(string? text, double maxWidth, Func<string, double> measure, bool middleForText = false)
     {
         ArgumentNullException.ThrowIfNull(measure);
         if (string.IsNullOrEmpty(text)) return text ?? "";
         if (double.IsNaN(maxWidth) || double.IsPositiveInfinity(maxWidth) || measure(text) <= maxWidth) return text;
         if (measure(Ellipsis) > maxWidth) return Ellipsis;
-        return LooksLikePath(text)
-            ? CompactPath(text, maxWidth, measure) ?? MiddleChars(text, maxWidth, measure)
-            : EndChars(text, maxWidth, measure);
+        if (LooksLikePath(text)) return CompactPath(text, maxWidth, measure) ?? MiddleChars(text, maxWidth, measure);
+        return middleForText ? MiddleChars(text, maxWidth, measure) : EndChars(text, maxWidth, measure);
     }
 
     // Segment-level ellipsis. Head keeps the root and the first folder; tail keeps the last segment; then they

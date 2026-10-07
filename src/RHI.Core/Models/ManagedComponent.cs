@@ -45,7 +45,10 @@ public sealed class ManagedComponent
     public string? Note { get; set; }
     public bool ManagedByRhi { get; set; }
     public bool ActionAllowed { get; set; }
-    /// <summary>Add-on file names RHI installed for this component, read from its deployment record; empty when RHI does not manage it.</summary>
+    /// <summary>Add-on file names the probe found on disk for this component (RenoDX HDR and Luma Framework only).</summary>
+    public IReadOnlyList<string> DetectedAddonFiles { get; set; } = [];
+    /// <summary>Add-on file names RHI installed for this component, read from its deployment record and limited to an
+    /// installed row (and to what the probe found, when it found any); empty when RHI does not manage it.</summary>
     public IReadOnlyList<string> InstalledAddonFiles { get; set; } = [];
     /// <summary>Display-ready mod author(s) (e.g. "Musa, ShortFuse"), or null when unknown.</summary>
     public string? Author { get; set; }
