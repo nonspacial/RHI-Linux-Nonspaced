@@ -27,7 +27,9 @@ public sealed record LinuxUpdateItemResult(
     bool Changed,
     bool Deferred,
     string Message,
-    bool Unchecked = false);
+    bool Unchecked = false,
+    // Counted as failed because updates are refused for this game (no confirmed patch target).
+    bool Blocked = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
@@ -36,6 +38,7 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     public int DeferredCount => Items.Count(item => item.Deferred);
     public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked);
     public int UncheckedCount => Items.Count(item => item.Unchecked);
+    public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
@@ -204,7 +207,7 @@ public sealed class LinuxUpdateAllService
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
                             if (check.Blocked)
                             {
-                                results.Add(new LinuxUpdateItemResult(game.Name, component, false, false, false, check.Message));
+                                results.Add(new LinuxUpdateItemResult(game.Name, component, false, false, false, check.Message, Blocked: true));
                                 continue;
                             }
                             if (!check.Managed || !check.UpdateAvailable)

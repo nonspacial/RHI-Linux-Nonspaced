@@ -89,6 +89,31 @@ public sealed class UpdateAllBackgroundTests
 
         Assert.Empty(backend.UpdateCalls);
         Assert.Equal((1, 0, 0), (result.FailedCount, result.CurrentCount, result.UncheckedCount));
+        // Re-review nit: the summary says why it failed.
+        Assert.True(Assert.Single(result.Items).Blocked);
+        Assert.EndsWith(" Failed: blocked (RenoDX HDR) — updates blocked until Edit game confirms the game executable.",
+            UiLocalizationService.UpdateAllSummaryFor("en-US", result), StringComparison.Ordinal);
+        Assert.EndsWith(" Falha: blocked (RenoDX HDR) — atualizações bloqueadas até Editar jogo confirmar o executável do jogo.",
+            UiLocalizationService.UpdateAllSummaryFor("pt-BR", result), StringComparison.Ordinal);
+    }
+
+    // Re-review nit (up-129): a failed item's own reason reaches the status line, with the count of further failures.
+    [Fact]
+    public void Summary_NamesTheFirstFailureAndItsReason()
+    {
+        var result = new LinuxUpdateAllResult([
+            new("A", ManagedComponentKind.RenoDX, true, true, false, "updated"),
+            new("Hades II", ManagedComponentKind.ReShade, false, false, false, "RenoDX update check failed: boom."),
+            new("C", ManagedComponentKind.LumaFramework, false, false, false, "other"),
+            new("D", ManagedComponentKind.RenoDX, true, false, true, "deferred")
+        ]);
+
+        Assert.Equal("Update All: 1 updated · 0 current · 1 deferred · 2 failed. Failed: Hades II (ReShade) — RenoDX update check failed: boom (+1 more).",
+            UiLocalizationService.UpdateAllSummaryFor("en-US", result));
+        Assert.Equal("Atualizar tudo: 1 atualizado(s) · 0 em dia · 1 adiado(s) · 2 com falha. Falha: Hades II (ReShade) — A verificação de atualização do RenoDX falhou: boom (+1 outra(s)).",
+            UiLocalizationService.UpdateAllSummaryFor("pt-BR", result));
+        var noFailures = new LinuxUpdateAllResult(result.Items.Where(i => i.Success).ToArray());
+        Assert.Equal(noFailures.Summary, UiLocalizationService.UpdateAllSummaryFor("en-US", noFailures));
     }
 
     // Review up-129 #4: the Update All status line is built from counts in the UI language.
@@ -105,12 +130,12 @@ public sealed class UpdateAllBackgroundTests
         var noUnchecked = new LinuxUpdateAllResult(result.Items.Take(4).ToArray());
         var empty = new LinuxUpdateAllResult([]);
 
-        Assert.Equal("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha · 1 não verificado(s).",
+        Assert.StartsWith("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha · 1 não verificado(s). Falha: D (RenoDX HDR) — ",
             UiLocalizationService.UpdateAllSummaryFor("pt-BR", result));
-        Assert.Equal("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha.",
+        Assert.StartsWith("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha. Falha: D ",
             UiLocalizationService.UpdateAllSummaryFor("pt-BR", noUnchecked));
         foreach (var r in new[] { result, noUnchecked, empty })
-            Assert.Equal(r.Summary, UiLocalizationService.UpdateAllSummaryFor("en-US", r));
+            Assert.StartsWith(r.Summary, UiLocalizationService.UpdateAllSummaryFor("en-US", r));
         Assert.NotEqual(empty.Summary, UiLocalizationService.UpdateAllSummaryFor("pt-BR", empty));
         Assert.True(UiLocalizationService.HasKeyParity);
     }

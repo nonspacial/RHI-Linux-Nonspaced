@@ -17,6 +17,9 @@ public static class UiLocalizationService
         ["Ui.UpdateAll"] = "Atualizar tudo",
         ["Ui.UpdateAllSummary"] = "Atualizar tudo: {0} atualizado(s) · {1} em dia · {2} adiado(s) · {3} com falha",
         ["Ui.UpdateAllUnchecked"] = " · {0} não verificado(s)",
+        ["Ui.UpdateAllFirstFailure"] = " Falha: {0} ({1}) — {2}",
+        ["Ui.UpdateAllMoreFailures"] = " (+{0} outra(s))",
+        ["Ui.UpdateAllBlocked"] = "atualizações bloqueadas até Editar jogo confirmar o executável do jogo",
         ["Ui.UpdateAllNone"] = "Nenhum componente gerenciado pelo RHI participa de Atualizar tudo.",
         ["Ui.BatchDlss"] = "DLSS em lote",
         ["Ui.Links"] = "Links",
@@ -225,6 +228,9 @@ public static class UiLocalizationService
         ["Ui.UpdateAll"] = "Update all",
         ["Ui.UpdateAllSummary"] = "Update All: {0} updated · {1} current · {2} deferred · {3} failed",
         ["Ui.UpdateAllUnchecked"] = " · {0} could not be checked",
+        ["Ui.UpdateAllFirstFailure"] = " Failed: {0} ({1}) — {2}",
+        ["Ui.UpdateAllMoreFailures"] = " (+{0} more)",
+        ["Ui.UpdateAllBlocked"] = "updates blocked until Edit game confirms the game executable",
         ["Ui.UpdateAllNone"] = "No RHI-managed Update All components were found.",
         ["Ui.BatchDlss"] = "Batch DLSS",
         ["Ui.Links"] = "Links",
@@ -751,6 +757,18 @@ public static class UiLocalizationService
             result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
         if (result.UncheckedCount > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
+        text += ".";
+        // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
+        var failed = result.FailedItems;
+        if (failed.Count == 0) return text;
+        var first = failed[0];
+        var reason = first.Blocked
+            ? TextFor(language, "Ui.UpdateAllBlocked")
+            : PresentFor(language, first.Message).TrimEnd().TrimEnd('.');
+        text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllFirstFailure"),
+            first.GameName, RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DisplayDependencyName(first.Component), reason);
+        if (failed.Count > 1)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllMoreFailures"), failed.Count - 1);
         return text + ".";
     }
 
