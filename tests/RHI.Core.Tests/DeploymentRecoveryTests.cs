@@ -44,6 +44,25 @@ public sealed class DeploymentRecoveryTests : IDisposable
     }
 
     [Fact]
+    public async Task FileChangedByAGameUpdateAfterTheCrash_IsLeftAlone()
+    {
+        Directory.CreateDirectory(P("game"));
+        File.WriteAllText(P("game", "nvngx_dlss.dll"), "game dlss");
+        File.WriteAllText(P("new.dll"), "new build");
+        var journal = new DeploymentJournal(P("journal")) { CrashAtCommitForTesting = true };
+        await Assert.ThrowsAsync<SimulatedCrashException>(() => new TransactionalFileDeploymentService(journal)
+            .ReplaceAsync(P("new.dll"), P("game", "nvngx_dlss.dll")));
+        File.WriteAllText(P("game", "nvngx_dlss.dll"), "patched by the store"); // e.g. Steam update before RHI restarts
+
+        var report = await new DeploymentJournal(P("journal")).RecoverAsync();
+
+        Assert.Equal(1, report.Failed);
+        Assert.Contains("changed by something other than this operation", Assert.Single(report.Entries).Problems[0]);
+        Assert.Equal("patched by the store", File.ReadAllText(P("game", "nvngx_dlss.dll")));
+        Assert.Equal("game dlss", File.ReadAllText(P("game", "nvngx_dlss.dll.original")));
+    }
+
+    [Fact]
     public async Task UnreadableLedger_DefersRecovery_AndTouchesNothing()
     {
         Directory.CreateDirectory(P("game"));

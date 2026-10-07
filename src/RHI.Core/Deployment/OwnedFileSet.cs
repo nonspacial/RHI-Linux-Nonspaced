@@ -10,6 +10,12 @@ public sealed class OwnedFileState
     public bool BackupExisted { get; set; }
     /// <summary>SHA-256 of the <c>.original</c> before the operation; null until something is about to change it.</summary>
     public string? BackupPreSha256 { get; set; }
+    /// <summary>
+    /// Hashes of the content the operation itself placed at <see cref="Path"/>, when the writer declares
+    /// them. If the file then holds anything else, something outside the operation changed it and
+    /// rollback leaves it alone instead of overwriting it.
+    /// </summary>
+    public List<string> WrittenSha256 { get; set; } = [];
 }
 
 /// <summary>
@@ -81,6 +87,15 @@ public sealed class OwnedFileSet
         var state = Find(path) ?? throw new InvalidOperationException($"Track {path} before capturing its backup.");
         if (!state.BackupExisted || state.BackupPreSha256 is not null) return;
         state.BackupPreSha256 = knownSha256 ?? await FileHash.Sha256HexAsync(state.Path + BackupExtension, cancellationToken).ConfigureAwait(false);
+        await PersistAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Declares (and journals) content about to be placed at a tracked path, before placing it.</summary>
+    public async Task RecordWriteAsync(string path, string sha256, CancellationToken cancellationToken)
+    {
+        var state = Find(path) ?? throw new InvalidOperationException($"Track {path} before writing it.");
+        if (state.WrittenSha256.Contains(sha256, StringComparer.OrdinalIgnoreCase)) return;
+        state.WrittenSha256.Add(sha256);
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -157,6 +172,11 @@ public sealed class OwnedFileSet
             var wanted = new List<(string Path, string Sha256)>();
             if (state.Existed && state.PreSha256 is { } preTarget) wanted.Add((target, preTarget));
             if (state.BackupExisted && state.BackupPreSha256 is { } preBackup) wanted.Add((backup, preBackup));
+            if (state.WrittenSha256.Count > 0 && await HashOf(target).ConfigureAwait(false) is { } current &&
+                !FileHash.HexEquals(current, state.PreSha256) &&
+                !state.WrittenSha256.Any(written => FileHash.HexEquals(current, written)))
+                return $"{target}: changed by something other than this operation since it was interrupted (for example a game update); it was left as is and every copy was kept.";
+
             foreach (var (path, sha) in wanted)
             {
                 if (FileHash.HexEquals(await HashOf(path).ConfigureAwait(false), sha)) continue;

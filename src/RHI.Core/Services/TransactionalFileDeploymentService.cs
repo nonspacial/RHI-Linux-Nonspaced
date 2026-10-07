@@ -161,6 +161,7 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
         if (sourceHashes is not null) sourceHashes[sourcePath] = staged.Sha256;
         try
         {
+            await set.RecordWriteAsync(target, staged.Sha256, cancellationToken).ConfigureAwait(false);
             if (File.Exists(target))
             {
                 if (!File.Exists(backupPath))
@@ -196,6 +197,7 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
         var backupSha = await FileHash.Sha256HexAsync(backupPath, cancellationToken).ConfigureAwait(false);
         await set.TrackAsync(target, cancellationToken).ConfigureAwait(false);
         await set.CaptureBackupAsync(target, cancellationToken, backupSha).ConfigureAwait(false);
+        await set.RecordWriteAsync(target, backupSha, cancellationToken).ConfigureAwait(false);
 
         if (File.Exists(target) && !File.Exists(set.SnapshotPathOf(target)))
             AtomicFile.Rename(target, set.SnapshotPathOf(target));
