@@ -2768,13 +2768,8 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task RemoveManualGameAsync()
     {
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
-        var installPath = Path.GetFullPath(selected.InstallPath);
         _libraryState = _libraryStore.Load();
-        _libraryState.ManualGames.RemoveAll(entry =>
-        {
-            try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
-            catch { return false; }
-        });
+        _libraryState.RemoveManualEntriesFor(selected);
         _libraryStore.Save(_libraryState);
         await RefreshAsync(ManualOnly);
         StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);

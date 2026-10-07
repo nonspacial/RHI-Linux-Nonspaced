@@ -93,7 +93,7 @@ public sealed class GameLibraryScanner
 
         return games
             .Where(g => !string.IsNullOrWhiteSpace(g.Name) && Directory.Exists(g.InstallPath))
-            .GroupBy(GameKey, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(GameKey, StringComparer.Ordinal)
             .SelectMany(SplitDistinctLauncherEntries)
             .Select(Merge)
             .OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -107,10 +107,12 @@ public sealed class GameLibraryScanner
             // Normal storefront duplicates still merge by AppID. Manifest splitGames intentionally
             // produces multiple cards from one AppID, so those children need independent keys.
             if (g.IsManifestSplitChild)
-                return $"steam:{id}:split:{g.Name}:{Path.GetFullPath(g.InstallPath)}";
+                return $"steam:{id}:split:{g.Name}:{PathIdentity.Canonicalize(g.InstallPath)}";
             return $"steam:{id}";
         }
-        return $"path:{Path.GetFullPath(g.InstallPath)}";
+        // One folder is one key however it is spelt: symlinks (~/Games -> /media/disk/Games), a
+        // trailing separator, and case (Linux paths are case-sensitive) (Refs #55).
+        return $"path:{PathIdentity.Canonicalize(g.InstallPath)}";
     }
 
     /// <summary>
@@ -126,28 +128,46 @@ public sealed class GameLibraryScanner
 
         var conflict = entries
             .GroupBy(g => g.Source ?? "", StringComparer.OrdinalIgnoreCase)
-            .Any(s => s.Select(IdentityOf).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any());
+            .Any(s => s.Select(IdentityOf).Distinct(StringComparer.Ordinal).Skip(1).Any());
         if (!conflict) return [entries];
 
         return entries
-            .GroupBy(g => (g.Source ?? "") + "|" + IdentityOf(g), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(g => (g.Source ?? "") + "|" + IdentityOf(g), StringComparer.Ordinal)
             .Select(g => g.ToArray());
     }
 
     private static string IdentityOf(DetectedGame g)
-    {
-        var identity = string.IsNullOrWhiteSpace(g.LibraryIdentityPath) ? g.InstallPath : g.LibraryIdentityPath;
-        try { return Path.GetFullPath(identity).TrimEnd(Path.DirectorySeparatorChar); }
-        catch { return identity.Trim(); }
-    }
+        => PathIdentity.Canonicalize(string.IsNullOrWhiteSpace(g.LibraryIdentityPath) ? g.InstallPath : g.LibraryIdentityPath);
 
-    private static DetectedGame Merge(DetectedGame[] games)
+    /// <summary>
+    /// Merges duplicates of one game into the first entry (detector order) without losing anything a
+    /// duplicate knows (Refs #55): every optional field the first lacks is filled, every flag is OR-ed, and
+    /// a manually added duplicate keeps its user-authored fields — the chosen executable (patch target),
+    /// the API override and the launch command — and makes the card removable as a manual entry. The
+    /// first entry keeps its name, path and source so the card's identity does not flip between scans.
+    /// </summary>
+    internal static DetectedGame Merge(DetectedGame[] games)
     {
         var first = games[0];
         foreach (var candidate in games.Skip(1))
         {
+            if (candidate.IsManuallyAdded && !first.IsManuallyAdded)
+                ApplyUserAuthoredFields(first, candidate);
+            first.IsManuallyAdded |= candidate.IsManuallyAdded;
+
+            first.SteamAppId ??= candidate.SteamAppId;
+            first.EpicCatalogNamespace ??= candidate.EpicCatalogNamespace;
+            first.EpicAppName ??= candidate.EpicAppName;
+            first.HeroicAppName ??= candidate.HeroicAppName;
+            first.XboxAumid ??= candidate.XboxAumid;
             first.PrefixPath ??= candidate.PrefixPath;
-            first.ExecutablePath ??= candidate.ExecutablePath;
+            if (first.ExecutablePath is null && candidate.ExecutablePath is not null)
+            {
+                // The binary directory belongs to the executable it was derived from.
+                first.ExecutablePath = candidate.ExecutablePath;
+                first.BinaryDirectory = candidate.BinaryDirectory ?? first.BinaryDirectory;
+            }
+            first.BinaryDirectory ??= candidate.BinaryDirectory;
             first.LaunchExecutablePath ??= candidate.LaunchExecutablePath;
             first.LibraryIdentityPath ??= candidate.LibraryIdentityPath;
             first.LibraryProvider ??= candidate.LibraryProvider;
@@ -159,10 +179,13 @@ public sealed class GameLibraryScanner
                 first.LaunchCommand = candidate.LaunchCommand;
                 first.ParentLauncherName = candidate.ParentLauncherName;
             }
+            first.ParentLauncherName ??= candidate.ParentLauncherName;
+            if (first.PatchTargetAuthority == "Automatic") first.PatchTargetAuthority = candidate.PatchTargetAuthority;
             first.CompatibilityTool ??= candidate.CompatibilityTool;
             first.CompatibilityLayerType ??= candidate.CompatibilityLayerType;
             first.WineBinaryPath ??= candidate.WineBinaryPath;
             first.WineServerPath ??= candidate.WineServerPath;
+            first.UserGraphicsApiOverride ??= candidate.UserGraphicsApiOverride;
             first.CanonicalManifestName ??= candidate.CanonicalManifestName;
             first.WikiNameOverride ??= candidate.WikiNameOverride;
             first.ManifestInstallRoot ??= candidate.ManifestInstallRoot;
@@ -171,10 +194,11 @@ public sealed class GameLibraryScanner
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
-            if (first.ManifestGraphicsApis.Count == 0) first.ManifestGraphicsApis = candidate.ManifestGraphicsApis;
+            first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);
             first.EngineHint ??= candidate.EngineHint;
             first.ForcedArchitecture ??= candidate.ForcedArchitecture;
             first.EngineIniProjectOverride ??= candidate.EngineIniProjectOverride;
+            first.EngineIniFileOverride ??= candidate.EngineIniFileOverride;
             first.WikiUnlinkedByManifest |= candidate.WikiUnlinkedByManifest;
             first.DlssScanSkippedByManifest |= candidate.DlssScanSkippedByManifest;
             first.UeExtendedByManifest |= candidate.UeExtendedByManifest;
@@ -182,6 +206,8 @@ public sealed class GameLibraryScanner
             first.UeExtendedBlockedByManifest |= candidate.UeExtendedBlockedByManifest;
             first.UeExtendedHdrByManifest ??= candidate.UeExtendedHdrByManifest;
             first.UeExtendedLutByManifest ??= candidate.UeExtendedLutByManifest;
+            first.DofFixForcedByManifest |= candidate.DofFixForcedByManifest;
+            first.DofFixSkippedByManifest |= candidate.DofFixSkippedByManifest;
             first.ReShadeDllNameOverride ??= candidate.ReShadeDllNameOverride;
             first.DisplayCommanderDllNameOverride ??= candidate.DisplayCommanderDllNameOverride;
             first.OptiScalerDllNameOverride ??= candidate.OptiScalerDllNameOverride;
@@ -199,9 +225,36 @@ public sealed class GameLibraryScanner
             first.ManifestGameNoteUrl ??= candidate.ManifestGameNoteUrl;
             first.ManifestGameNoteUrlLabel ??= candidate.ManifestGameNoteUrlLabel;
             if (first.ManifestInstallWarnings.Count == 0) first.ManifestInstallWarnings = candidate.ManifestInstallWarnings;
-            if (first.GraphicsApi == GraphicsApi.Unknown)
+            if (first.GraphicsApi == GraphicsApi.Unknown && candidate.GraphicsApi != GraphicsApi.Unknown)
+            {
+                // Confidence and evidence describe the API they came with.
                 first.GraphicsApi = candidate.GraphicsApi;
+                first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
+                first.GraphicsApiEvidence = candidate.GraphicsApiEvidence;
+            }
+            first.GraphicsApiEvidence ??= candidate.GraphicsApiEvidence;
+            if (first.GraphicsApiConfidence == GraphicsApiConfidence.Unknown) first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
+            first.GraphicsApis = Union(first.GraphicsApis, candidate.GraphicsApis);
         }
         return first;
     }
+
+    /// <summary>The user picked these for the manual entry; a launcher's automatic guess must not replace them.</summary>
+    private static void ApplyUserAuthoredFields(DetectedGame target, DetectedGame manual)
+    {
+        if (!string.IsNullOrWhiteSpace(manual.ExecutablePath))
+        {
+            target.ExecutablePath = manual.ExecutablePath;
+            target.BinaryDirectory = manual.BinaryDirectory ?? Path.GetDirectoryName(manual.ExecutablePath);
+        }
+        if (manual.UserGraphicsApiOverride is not null) target.UserGraphicsApiOverride = manual.UserGraphicsApiOverride;
+        if (!string.IsNullOrWhiteSpace(manual.LaunchCommand))
+        {
+            target.LaunchCommand = manual.LaunchCommand;
+            target.ParentLauncherName = manual.ParentLauncherName;
+        }
+    }
+
+    private static IReadOnlyList<GraphicsApi> Union(IReadOnlyList<GraphicsApi> a, IReadOnlyList<GraphicsApi> b)
+        => b.Count == 0 ? a : a.Count == 0 ? b : a.Concat(b).Distinct().ToArray();
 }

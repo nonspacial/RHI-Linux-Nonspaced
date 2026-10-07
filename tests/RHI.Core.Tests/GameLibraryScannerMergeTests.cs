@@ -67,4 +67,94 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         Assert.Equal("Wine", merged.Source);
         Assert.True(merged.RequiresExplicitPatchTarget);
     }
+
+    [Fact]
+    public async Task ManualDuplicateOfALauncherEntry_StaysRemovableAndKeepsTheChosenExe()
+    {
+        var manualExe = Path.Combine(_root, "bin", "Game.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(manualExe)!);
+        var heroic = Game("Game", "Heroic", _root);
+        heroic.ExecutablePath = Path.Combine(_root, "Launcher.exe");
+        heroic.HeroicAppName = "abc123";
+        var manual = Game("My Game", "Manual", _root + Path.DirectorySeparatorChar);
+        manual.IsManuallyAdded = true;
+        manual.ExecutablePath = manualExe;
+        manual.BinaryDirectory = Path.GetDirectoryName(manualExe);
+        manual.UserGraphicsApiOverride = GraphicsApi.Vulkan;
+
+        var merged = Assert.Single(await new GameLibraryScanner([new FixedDetector("Heroic", heroic), new FixedDetector("Manual", manual)]).ScanAsync());
+
+        Assert.True(merged.IsManuallyAdded);
+        Assert.Equal(manualExe, merged.ExecutablePath);
+        Assert.Equal(Path.GetDirectoryName(manualExe), merged.BinaryDirectory);
+        Assert.Equal(GraphicsApi.Vulkan, merged.UserGraphicsApiOverride);
+        Assert.Equal(("Game", "Heroic", "abc123"), (merged.Name, merged.Source, merged.HeroicAppName));
+    }
+
+    [Fact]
+    public async Task OneFolderThroughASymlink_IsOneCard_ButCaseVariantsAreTwoFolders()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "Games", "Game")).FullName;
+        var link = Path.Combine(_root, "home-games");
+        Directory.CreateSymbolicLink(link, Path.GetDirectoryName(real)!);
+        var lower = Directory.CreateDirectory(Path.Combine(_root, "media", "Games", "game")).FullName;
+
+        var games = await new GameLibraryScanner(
+        [
+            new FixedDetector("Heroic", Game("Game", "Heroic", Path.Combine(link, "Game"))),
+            new FixedDetector("Wine", Game("Game", "Wine", real), Game("game", "Wine", lower))
+        ]).ScanAsync();
+
+        Assert.Equal(2, games.Count);
+        Assert.Contains(games, g => g.Source == "Heroic");
+        Assert.Contains(games, g => g.InstallPath == lower);
+    }
+
+    [Fact]
+    public void Merge_FillsEverySettableFieldADuplicateKnows()
+    {
+        // Identity and per-session state are owned by the first entry or applied after the scan.
+        string[] owned = [nameof(DetectedGame.Name), nameof(DetectedGame.InstallPath), nameof(DetectedGame.Source),
+            nameof(DetectedGame.IsFavourite), nameof(DetectedGame.IsHidden)];
+        var properties = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite && !owned.Contains(p.Name)).ToArray();
+        var full = new DetectedGame();
+        foreach (var property in properties) property.SetValue(full, Sample(property.PropertyType));
+        var empty = new DetectedGame();
+
+        var merged = GameLibraryScanner.Merge([empty, full]);
+
+        var lost = properties.Where(p => Equals(p.GetValue(merged), p.GetValue(new DetectedGame()))).Select(p => p.Name).ToArray();
+        Assert.Empty(lost);
+    }
+
+    [Fact]
+    public void RemoveManualEntriesFor_MatchesTheFolderHoweverItIsSpelt()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "X")).FullName;
+        var link = Path.Combine(_root, "link");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "media"));
+        var state = new RHI.Platform.Linux.Settings.LinuxGameLibraryState
+        {
+            ManualGames = [new() { Name = "X", InstallPath = Path.Combine(link, "X") + "/" }, new() { Name = "Y", InstallPath = _root }]
+        };
+
+        var removed = state.RemoveManualEntriesFor(new DetectedGame { Name = "X", InstallPath = real, IsManuallyAdded = true });
+
+        Assert.Equal(1, removed);
+        Assert.Equal("Y", Assert.Single(state.ManualGames).Name);
+    }
+
+    private static object? Sample(Type type)
+    {
+        var t = Nullable.GetUnderlyingType(type) ?? type;
+        if (t == typeof(string)) return "x";
+        if (t == typeof(bool)) return true;
+        if (t == typeof(int)) return 7;
+        if (t == typeof(GraphicsApi)) return GraphicsApi.DirectX11;
+        if (t == typeof(GraphicsApiConfidence)) return GraphicsApiConfidence.Medium;
+        if (t == typeof(PeArchitecture)) return PeArchitecture.X64;
+        if (t == typeof(IReadOnlyList<GraphicsApi>)) return new[] { GraphicsApi.DirectX11 };
+        if (t == typeof(IReadOnlyDictionary<string, string>)) return new Dictionary<string, string> { ["k"] = "v" };
+        throw new InvalidOperationException($"Add a sample for {type}");
+    }
 }

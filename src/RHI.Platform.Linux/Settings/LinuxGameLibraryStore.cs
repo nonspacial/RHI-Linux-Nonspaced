@@ -111,6 +111,21 @@ public sealed class LinuxGameLibraryState
     private static string? NormalizeOptionalPath(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : NormalizePath(value);
 
+    /// <summary>
+    /// Removes the manual entries behind a library card. A card can be a manual entry merged with a
+    /// launcher entry for the same folder spelt differently (symlink, trailing separator) or moved by a
+    /// manifest install-path override, so every path the card stands for is compared by filesystem
+    /// identity (Refs #55). Returns how many entries were removed.
+    /// </summary>
+    public int RemoveManualEntriesFor(RHI.Core.Models.DetectedGame game)
+    {
+        var paths = new[] { game.InstallPath, game.ManifestInstallRoot, game.LibraryIdentityPath }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => RHI.Core.Services.PathIdentity.Canonicalize(path!))
+            .ToHashSet(StringComparer.Ordinal);
+        return ManualGames.RemoveAll(entry => paths.Contains(RHI.Core.Services.PathIdentity.Canonicalize(entry.InstallPath)));
+    }
+
     private static string NormalizePath(string value)
     {
         try { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim())); }
