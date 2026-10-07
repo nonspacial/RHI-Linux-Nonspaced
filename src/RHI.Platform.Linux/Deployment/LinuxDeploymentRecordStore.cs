@@ -16,6 +16,9 @@ public sealed class LinuxDeploymentRecordStore
         Converters = { new SafeManagedComponentKindConverter() }
     };
 
+    // Same converters and naming as the ledger, without indentation: Clone runs on every lookup (#118).
+    private static readonly JsonSerializerOptions CloneOptions = new(JsonOptions) { WriteIndented = false };
+
     // Read cache keyed on the file's (mtime, length). The UI evaluates dozens of record lookups
     // per selection change; without this every lookup re-read and re-parsed the file.
     // Cached instances are private: reads hand out deep copies and writes cache a copy, so a
@@ -89,7 +92,7 @@ public sealed class LinuxDeploymentRecordStore
     public static LinuxDeploymentRecord Clone(LinuxDeploymentRecord record)
     {
         var copy = JsonSerializer.Deserialize<LinuxDeploymentRecord>(
-            JsonSerializer.SerializeToUtf8Bytes(record, JsonOptions), JsonOptions)!;
+            JsonSerializer.SerializeToUtf8Bytes(record, CloneOptions), CloneOptions)!;
         copy.Metadata = record.Metadata is null
             ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, string>(record.Metadata, StringComparer.OrdinalIgnoreCase);

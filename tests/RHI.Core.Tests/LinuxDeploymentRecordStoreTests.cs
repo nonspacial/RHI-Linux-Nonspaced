@@ -168,6 +168,40 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
     }
 
+    // #118: Clone switched to dedicated non-indented options; it must still copy every property. The
+    // fixture sets every public property of the three record types, so a new field without a value
+    // here fails the first assertion instead of being silently dropped by a future hand-written copy.
+    [Fact]
+    public void Clone_CopiesEveryPropertyDeeply()
+    {
+        var original = new LinuxDeploymentRecord
+        {
+            GameKey = "steam:42", GameName = "Game", Component = ManagedComponentKind.ShortFuse, BinaryDirectory = "/g/bin",
+            SourceUrl = "https://example.invalid/a", Version = "1.2", InstalledAtUtc = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+            Files = [new LinuxDeployedFile { Path = "/g/bin/a.dll", ExistedBeforeInstall = true, Sha256 = "AB", AllowUserChanges = true }],
+            DirectoriesCreatedByRhi = ["/g/bin/d"],
+            WineOverride = new WineOverrideRecord { DllName = "dxgi", PreviousValue = "builtin", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "game.exe" },
+            AdditionalWineOverrides = [new WineOverrideRecord { DllName = "d3dcompiler_47", PreviousValue = "b", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "g.exe" }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase) { ["Key"] = "Value" }
+        };
+        foreach (var item in new object[] { original, original.Files[0], original.WineOverride })
+            foreach (var property in item.GetType().GetProperties())
+            {
+                var value = property.GetValue(item);
+                var unset = property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
+                Assert.False(Equals(value, unset) || value is System.Collections.ICollection { Count: 0 },
+                    $"{item.GetType().Name}.{property.Name} has no value in the fixture");
+            }
+
+        var copy = LinuxDeploymentRecordStore.Clone(original);
+
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(original), System.Text.Json.JsonSerializer.Serialize(copy));
+        Assert.NotSame(original.Files[0], copy.Files[0]);
+        Assert.NotSame(original.WineOverride, copy.WineOverride);
+        Assert.NotSame(original.Metadata, copy.Metadata);
+        Assert.Equal("Value", copy.Metadata["KEY"]);
+    }
+
     private static LinuxDeploymentRecord Seed() => new()
     {
         GameKey = "steam:42", GameName = "Game", Component = ManagedComponentKind.ShortFuse, BinaryDirectory = "/tmp/game",
