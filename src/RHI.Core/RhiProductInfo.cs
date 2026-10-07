@@ -13,8 +13,13 @@ public static class RhiProductInfo
 
     public static string UserAgent { get; } = "RHI-Linux/" + Version;
 
+    /// <summary>Credits the Linux port's origin (About/Donate links); deliberately not this fork.</summary>
     public const string RepositoryUrl = "https://github.com/wizardkof/RHI-Linux";
-    /// <summary>motd.md at the root of this fork's main branch; until it is published there the fetch 404s and no message is shown.</summary>
+    /// <summary>
+    /// motd.md at the root of this fork's main branch: the owner's fork hosts the in-app message
+    /// (owner decision; the two URLs differ on purpose). Until it is published there the fetch 404s
+    /// and no message is shown.
+    /// </summary>
     public const string MotdUrl = "https://raw.githubusercontent.com/nonspacial/RHI-Linux-Nonspaced/main/motd.md";
 
     /// <summary>Drops SemVer build metadata ("+commit") so the version stays stable across builds.</summary>
