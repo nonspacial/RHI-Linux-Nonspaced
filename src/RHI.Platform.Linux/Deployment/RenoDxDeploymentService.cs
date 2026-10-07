@@ -846,8 +846,9 @@ public sealed class RenoDxDeploymentService
                 : (null, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        // Only network failures and the 10 s timeout mean "could not ask" (#108); anything else is a fault and propagates.
         catch (OperationCanceledException) { return (null, "the request timed out"); }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or NotSupportedException or UriFormatException) { return (null, ex.Message); }
+        catch (HttpRequestException ex) { return (null, ex.Message); }
     }
 
     private static bool HasReShade(string binaryDirectory)
