@@ -6,19 +6,28 @@ namespace RHI.Platform.Linux.Detection;
 
 public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
 {
+    /// <summary>How long a selection waits for a live PCGamingWiki answer before it carries on without it.</summary>
+    public static readonly TimeSpan DefaultPcgwSelectionBudget = TimeSpan.FromSeconds(1);
+
     private readonly UpstreamRhiManifestService? _upstreamManifest;
     private readonly PcGamingWikiGraphicsApiService? _pcGamingWiki;
     private readonly PcgwCentralDataService? _pcgwData;
+    private readonly TimeSpan _pcgwSelectionBudget;
+    private readonly Dictionary<string, Task<GraphicsApiDetection>> _pcgwLookups = new(StringComparer.Ordinal);
 
     public LinuxGameRuntimeProbe(
         UpstreamRhiManifestService? upstreamManifest = null,
         PcGamingWikiGraphicsApiService? pcGamingWiki = null,
-        PcgwCentralDataService? pcgwData = null)
+        PcgwCentralDataService? pcgwData = null,
+        TimeSpan? pcgwSelectionBudget = null)
     {
         _upstreamManifest = upstreamManifest;
         _pcGamingWiki = pcGamingWiki;
         _pcgwData = pcgwData;
+        _pcgwSelectionBudget = pcgwSelectionBudget ?? DefaultPcgwSelectionBudget;
     }
+
+    public event Action<DetectedGame>? LateMetadataAvailable;
 
     public async Task ProbeAsync(
         DetectedGame game,
@@ -81,34 +90,73 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
         }
 
         // PCGamingWiki is a network fallback only. Strong local evidence (logs, Unity
-        // boot.config, PE/import signatures, configured Wine overrides) always wins.
+        // boot.config, PE/import signatures, configured Wine overrides) always wins, and so does a
+        // native Linux result or a local candidate list: PCGW's Windows API table must not replace a
+        // native "Vulkan or OpenGL" answer or an ambiguous local one (Refs #54).
         if (_pcGamingWiki is not null
             && !inCentralData
-            && game.GraphicsApi == GraphicsApi.Unknown)
+            && game.GraphicsApi == GraphicsApi.Unknown
+            && game.GraphicsApis.Count == 0
+            && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
-            try
-            {
-                var fallback = await _pcGamingWiki
-                    .ResolveAndFetchAsync(
-                        game.Name,
-                        game.SteamAppId ?? game.ManifestSteamAppIdOverride,
-                        game.PcgwUrlOverride,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (fallback.Primary != GraphicsApi.Unknown)
-                {
-                    game.GraphicsApi = fallback.Primary;
-                    game.GraphicsApis = fallback.Candidates.ToArray();
-                    game.GraphicsApiConfidence = fallback.Confidence;
-                    game.GraphicsApiEvidence = fallback.Evidence;
-                }
-            }
-            catch when (!cancellationToken.IsCancellationRequested)
-            {
-                // Fail open: an unavailable/changed PCGamingWiki page must not break scanning.
-            }
+            await ApplyPcgwFallbackAsync(game, cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// The live lookup runs on its own (bounded by the service's request timeouts) and the selection
+    /// waits at most <see cref="DefaultPcgwSelectionBudget"/>: a cached answer applies at once, a slow
+    /// one raises <see cref="LateMetadataAvailable"/> when it lands (it is then cached).
+    /// </summary>
+    private async Task ApplyPcgwFallbackAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        var steamAppId = game.SteamAppId ?? game.ManifestSteamAppIdOverride;
+        var key = $"{game.Name}|{steamAppId}|{game.PcgwUrlOverride}";
+        Task<GraphicsApiDetection> lookup;
+        lock (_pcgwLookups)
+        {
+            if (!_pcgwLookups.TryGetValue(key, out lookup!))
+            {
+                lookup = _pcGamingWiki!.ResolveAndFetchAsync(game.Name, steamAppId, game.PcgwUrlOverride, CancellationToken.None);
+                _pcgwLookups[key] = lookup;
+                _ = lookup.ContinueWith(_ => { lock (_pcgwLookups) _pcgwLookups.Remove(key); }, TaskScheduler.Default);
+            }
+        }
+
+        try
+        {
+            var fallback = await lookup.WaitAsync(_pcgwSelectionBudget, cancellationToken).ConfigureAwait(false);
+            ApplyPcgwResult(game, fallback);
+        }
+        catch (TimeoutException)
+        {
+            game.GraphicsApiEvidence = AppendEvidence(game.GraphicsApiEvidence, "PCGamingWiki lookup still running");
+            _ = lookup.ContinueWith(done =>
+            {
+                if (done.IsCompletedSuccessfully && done.Result.Primary != GraphicsApi.Unknown)
+                    LateMetadataAvailable?.Invoke(game);
+                else if (done.Exception is { } error)
+                    AppLog.Warn("pcgw", $"PCGamingWiki lookup failed for {game.Name}", error.GetBaseException());
+            }, TaskScheduler.Default);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Fail open: an unavailable/changed PCGamingWiki page must not break scanning.
+            AppLog.Warn("pcgw", $"PCGamingWiki lookup failed for {game.Name}", ex);
+        }
+    }
+
+    private static void ApplyPcgwResult(DetectedGame game, GraphicsApiDetection fallback)
+    {
+        if (fallback.Primary == GraphicsApi.Unknown) return;
+        game.GraphicsApi = fallback.Primary;
+        game.GraphicsApis = fallback.Candidates.ToArray();
+        game.GraphicsApiConfidence = fallback.Confidence;
+        game.GraphicsApiEvidence = fallback.Evidence;
+    }
+
+    private static string AppendEvidence(string? evidence, string note)
+        => string.IsNullOrWhiteSpace(evidence) ? note : $"{evidence}; {note}";
 
     /// <summary>
     /// Applies a pcgw_data.json entry: engine only when no local/manifest hint exists, API only

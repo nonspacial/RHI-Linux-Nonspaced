@@ -641,6 +641,7 @@ public partial class MainWindowViewModel : ObservableObject
         _scanner = scanner;
         _launcher = launcher;
         _runtimeProbe = runtimeProbe;
+        _runtimeProbe.LateMetadataAvailable += OnLateProbeMetadata;
         _dlss = dlss;
         _managedComponents = managedComponents;
         _apiOverrideStore = apiOverrideStore ?? new GraphicsApiOverrideStore();
@@ -1148,6 +1149,18 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>
+    /// A slow PCGamingWiki answer arrived after the selection finished without it (Refs #54): drop the
+    /// stale probe result and, when that game is still selected and idle, analyse it again (the answer
+    /// is cached by then, so this is quick).
+    /// </summary>
+    private void OnLateProbeMetadata(DetectedGame game) => Dispatcher.UIThread.Post(() =>
+    {
+        _probeCache.Remove(Key(game));
+        if (ReferenceEquals(SelectedGame, game) && !IsBusy && !IsSelectionProbeBusy)
+            OnSelectedGameChanged(game);
+    });
 
     private void ApplyProbeResult(ProbeCacheEntry result)
     {

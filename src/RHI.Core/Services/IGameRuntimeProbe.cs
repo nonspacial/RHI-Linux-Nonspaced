@@ -12,4 +12,11 @@ public interface IGameRuntimeProbe
         DetectedGame game,
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Raised, on a background thread, when network-only metadata for a game arrives after
+    /// <see cref="ProbeAsync"/> returned without it (a slow PCGamingWiki lookup never holds up the
+    /// selection). Probing the game again applies it from cache at once.
+    /// </summary>
+    event Action<DetectedGame>? LateMetadataAvailable { add { } remove { } }
 }

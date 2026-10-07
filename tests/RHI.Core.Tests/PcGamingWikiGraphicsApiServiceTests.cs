@@ -67,7 +67,7 @@ public sealed class PcGamingWikiGraphicsApiServiceTests : IDisposable
         {
             Content = new StringContent(html, Encoding.UTF8, "text/html")
         }));
-        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "runtime-cache.json"));
+        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "runtime-cache.json"), minRequestGap: TimeSpan.Zero);
         var probe = new LinuxGameRuntimeProbe(pcGamingWiki: pcgw);
 
         await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
@@ -105,7 +105,7 @@ public sealed class PcGamingWikiGraphicsApiServiceTests : IDisposable
                 Content = new StringContent(html, Encoding.UTF8, "text/html")
             };
         }));
-        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "steam-cache.json"));
+        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "steam-cache.json"), minRequestGap: TimeSpan.Zero);
         var probe = new LinuxGameRuntimeProbe(pcGamingWiki: pcgw);
 
         await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
@@ -151,7 +151,7 @@ public sealed class PcGamingWikiGraphicsApiServiceTests : IDisposable
                 Content = new StringContent(html, Encoding.UTF8, "text/html")
             };
         }));
-        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "search-cache.json"));
+        var pcgw = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "search-cache.json"), minRequestGap: TimeSpan.Zero);
         var probe = new LinuxGameRuntimeProbe(pcGamingWiki: pcgw);
 
         await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
