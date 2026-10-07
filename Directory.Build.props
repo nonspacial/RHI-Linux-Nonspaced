@@ -3,6 +3,9 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The product version: RhiProductInfo.Version, the AppImage name and validate.sh read it from here. -->
+    <Version>0.9.23.4-beta.1</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- Commit packages.lock.json for every project; CI and validate.sh restore with locked mode. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- The lock files also cover the linux-x64 graph used by the self-contained AppImage publish. -->
