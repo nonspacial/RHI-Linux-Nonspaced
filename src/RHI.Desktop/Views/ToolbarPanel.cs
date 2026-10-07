@@ -196,24 +196,25 @@ public sealed class ToolbarPanel : Panel
         return Desired();
     }
 
-    // Shows again what this panel hid but no longer manages (a marker changed, or the control left the panel), before
-    // the estimate reads visibility.
+    // Shows again what this panel hid but no longer manages because a marker changed, before the estimate reads
+    // visibility. A control that has left the panel is only forgotten: its new owner decides its visibility.
     private void Release(HashSet<Control> owned, Control[] collapsible)
     {
         var released = _hidden.Where(c => !owned.Contains(c) && Array.IndexOf(collapsible, c) < 0).ToList();
         if (released.Count == 0) return;
+        var wasApplying = _applying;
         _applying = true;
         try
         {
             foreach (var c in released)
             {
                 _hidden.Remove(c);
-                if (!c.IsVisible) c.IsVisible = true;
+                if (this.IsLogicalAncestorOf(c) && !c.IsVisible) c.IsVisible = true;
             }
         }
         finally
         {
-            _applying = false;
+            _applying = wasApplying;
         }
     }
 

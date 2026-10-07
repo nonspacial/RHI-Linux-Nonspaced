@@ -229,6 +229,8 @@ public sealed class DetailHeaderPanel : Panel
             .Concat(roles.Where(r => r.Role != GetRole(r.Control))).Distinct().ToList();
         if (stale.Count > 0)
         {
+            // Restore rather than clear: Roles() can run inside ApplyOnce, which owns the flag.
+            var wasApplying = _applying;
             _applying = true;
             try
             {
@@ -240,7 +242,7 @@ public sealed class DetailHeaderPanel : Panel
             }
             finally
             {
-                _applying = false;
+                _applying = wasApplying;
             }
         }
         _written = roles;
