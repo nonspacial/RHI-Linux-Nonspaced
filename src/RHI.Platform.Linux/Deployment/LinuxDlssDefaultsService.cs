@@ -103,11 +103,41 @@ public sealed class LinuxDlssDefaultsService
         if (HasOrchestratedStack(game, out var owner))
             return new(game, false, $"{owner} owns the DLSS/Streamline stack; remove it before direct Quick Apply/Batch Deploy.", new());
 
-        var detection = _dlss.Detect(game.InstallPath, game.ExecutablePath, indexedFiles, cancellationToken);
+        var detection = DetectTargets(game, indexedFiles, cancellationToken);
         return detection.HasAny
             ? new(game, true, BuildDetectionSummary(detection), detection)
             : new(game, false, "No existing game-local DLSS/Streamline DLLs were detected; RHI will not invent target paths.", detection);
     }
+
+    /// <summary>
+    /// The game's direct DLSS/Streamline swap/restore targets: every per-game, Quick Apply,
+    /// Batch Deploy and Restore All flow must take its paths from here. Files RHI-managed
+    /// OptiScaler owns (its record, incl. the FG stack) and the whole <c>OptiScaler/</c> folder
+    /// are excluded, so a swap or restore can never break OptiScaler's hash ownership or consume
+    /// an <c>.original</c> that OptiScaler restores on disable/removal.
+    /// </summary>
+    public DlssDetectionResult DetectTargets(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        return _dlss.Detect(game.InstallPath, game.ExecutablePath, indexedFiles, RhiOwnedFiles(game), cancellationToken);
+    }
+
+    /// <summary>Re-applies the ownership exclusion to a cached detection right before a swap/restore.</summary>
+    public DlssDetectionResult ExcludeOwnedTargets(DetectedGame game, DlssDetectionResult detection)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        return DlssManagerService.ExcludeProtected(detection, RhiOwnedFiles(game));
+    }
+
+    private IReadOnlyList<string> RhiOwnedFiles(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.OptiScaler)?.Files
+               .Select(file => file.Path)
+               .Where(path => !string.IsNullOrWhiteSpace(path))
+               .ToArray()
+           ?? [];
 
     public async Task<LinuxDlssBatchResult> ApplyDefaultsAsync(
         DetectedGame game,

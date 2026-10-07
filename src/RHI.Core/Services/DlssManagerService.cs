@@ -65,10 +65,27 @@ public sealed class DlssManagerService
         }
     }
 
+    /// <summary>Folder name of the OptiScaler stack; nothing below it is ever a direct DLSS swap/restore target.</summary>
+    public const string OptiScalerFolderName = "OptiScaler";
+
     public DlssDetectionResult Detect(
         string gameRoot,
         string? executablePath = null,
         IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+        => Detect(gameRoot, executablePath, indexedFiles, protectedFiles: null, cancellationToken);
+
+    /// <summary>
+    /// Finds the game's own DLSS/Streamline DLLs, i.e. the direct swap/restore targets.
+    /// Files under an <c>OptiScaler/</c> folder are never targets, and <paramref name="protectedFiles"/>
+    /// are dropped through <see cref="ExcludeProtected"/>: a swap or restore there would break the
+    /// owning component's hash ownership and consume the <c>.original</c> it restores on removal.
+    /// </summary>
+    public DlssDetectionResult Detect(
+        string gameRoot,
+        string? executablePath,
+        IReadOnlyList<string>? indexedFiles,
+        IEnumerable<string>? protectedFiles,
         CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(gameRoot)) return new();
@@ -82,6 +99,7 @@ public sealed class DlssManagerService
         foreach (var file in indexedFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (IsUnderOptiScalerFolder(gameRoot, file)) continue;
             switch (Path.GetFileName(file).ToLowerInvariant())
             {
                 case "nvngx_dlss.dll": dlss.Add(file); break;
@@ -99,7 +117,7 @@ public sealed class DlssManagerService
             ? Path.GetDirectoryName(executablePath)
             : null;
 
-        return new()
+        return ExcludeProtected(new DlssDetectionResult
         {
             DlssPaths = PreferLikelyGamePaths(dlss, gameRoot, binaryDirectory),
             DlssdPaths = PreferLikelyGamePaths(dlssd, gameRoot, binaryDirectory),
@@ -109,7 +127,56 @@ public sealed class DlssManagerService
                 .OrderBy(x => PathAffinity(x, binaryDirectory, gameRoot))
                 .ThenBy(x => RelativeDepth(gameRoot, x))
                 .ToArray()
+        }, protectedFiles);
+    }
+
+    /// <summary>
+    /// Drops <paramref name="protectedFiles"/> (files another RHI component owns) from the swap/restore
+    /// targets, and every Streamline folder holding a protected Streamline DLL (folder swaps and
+    /// restores act on all known <c>sl.*</c> names in it). Also used at action time on a cached
+    /// detection, so ownership gained after the probe is still respected.
+    /// </summary>
+    public static DlssDetectionResult ExcludeProtected(DlssDetectionResult detection, IEnumerable<string>? protectedFiles)
+    {
+        var guarded = (protectedFiles ?? [])
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(Path.GetFullPath)
+            .ToHashSet(StringComparer.Ordinal);
+        if (guarded.Count == 0) return detection;
+        var knownStreamline = new HashSet<string>(KnownStreamlineDlls, StringComparer.OrdinalIgnoreCase);
+        var guardedFolders = guarded
+            .Where(path => knownStreamline.Contains(Path.GetFileName(path)))
+            .Select(Path.GetDirectoryName)
+            .OfType<string>()
+            .ToHashSet(StringComparer.Ordinal);
+        IReadOnlyList<string> Keep(IReadOnlyList<string> paths)
+            => paths.Where(path => !guarded.Contains(Path.GetFullPath(path))).ToArray();
+        return new DlssDetectionResult
+        {
+            DlssPaths = Keep(detection.DlssPaths),
+            DlssdPaths = Keep(detection.DlssdPaths),
+            DlssgPaths = Keep(detection.DlssgPaths),
+            DlssnrPaths = Keep(detection.DlssnrPaths),
+            StreamlineFolders = detection.StreamlineFolders
+                .Where(folder => !guardedFolders.Contains(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar)))
+                .ToArray()
         };
+    }
+
+    /// <summary>
+    /// True when <paramref name="path"/> lies below a directory named <c>OptiScaler</c> inside
+    /// <paramref name="root"/> (segments relative to the root, so a library path that happens to
+    /// contain that name does not count).
+    /// </summary>
+    public static bool IsUnderOptiScalerFolder(string root, string path)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) || Path.IsPathRooted(relative))
+            return false;
+        var directory = Path.GetDirectoryName(relative);
+        return !string.IsNullOrEmpty(directory)
+               && directory.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                   .Any(segment => segment.Equals(OptiScalerFolderName, StringComparison.OrdinalIgnoreCase));
     }
 
     public IReadOnlyList<string> Versions(DlssComponentKind kind)

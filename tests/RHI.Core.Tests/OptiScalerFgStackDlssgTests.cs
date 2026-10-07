@@ -12,7 +12,7 @@ using RHI.Platform.Linux.Paths;
 namespace RHI.Core.Tests;
 
 /// <summary>#135 (upstream 2.8.1): nvngx_dlssg.dll in the OptiScaler FG stack and the Reflex INI keys.</summary>
-public sealed class OptiScalerFgStackDlssgTests : IDisposable
+public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
 {
     private const string DlssgRelative = "OptiScaler/Streamline/nvngx_dlssg.dll";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-optiscaler-fg-dlssg-tests-" + Guid.NewGuid().ToString("N"));
@@ -235,7 +235,7 @@ public sealed class OptiScalerFgStackDlssgTests : IDisposable
             new StandaloneDlssEnablerPreferenceStore(Path.Combine(root, "prefs.json")),
             Path.Combine(root, "enabler-cache"));
         var service = new OptiScalerDeploymentService(files, store, new WineDllOverrideService(), new NeverPackageProvider(), dlss, enabler);
-        return new Fixture(bin, ini, recordsPath, game, store, service);
+        return new Fixture(bin, ini, recordsPath, game, store, service, dlss);
     }
 
     private static string[] OwnedStackFiles(LinuxDeploymentRecord record)
@@ -282,7 +282,8 @@ public sealed class OptiScalerFgStackDlssgTests : IDisposable
         string RecordsPath,
         DetectedGame Game,
         LinuxDeploymentRecordStore Store,
-        OptiScalerDeploymentService Service);
+        OptiScalerDeploymentService Service,
+        DlssManagerService Dlss);
 
     private sealed class NeverPackageProvider : IOptiScalerPackageProvider
     {

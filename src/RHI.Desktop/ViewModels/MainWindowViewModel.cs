@@ -1086,7 +1086,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _managedComponents.Decorate(game, components);
                 var dlss = game.DlssScanSkippedByManifest
                     ? new DlssDetectionResult()
-                    : _dlss.Detect(game.InstallPath, game.ExecutablePath, files, cancellationToken);
+                    : _dlssDefaults.DetectTargets(game, files, cancellationToken);
                 return new ProbeCacheEntry(files, components, dlss);
             }, cancellationToken);
 
@@ -2225,7 +2225,8 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = L("Escolha primeiro uma versão do Streamline.", "Choose a Streamline version first.");
             return;
         }
-        if (_dlssDetection.StreamlineFolders.Count == 0)
+        var streamlineFolders = ActionTargets().StreamlineFolders;
+        if (streamlineFolders.Count == 0)
         {
             StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo; nada foi alterado.", "Streamline: no local Streamline folder was detected in the game; nothing changed.");
             return;
@@ -2235,7 +2236,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             StatusText = LF("Baixando/aplicando Streamline {0}…", "Downloading/applying Streamline {0}…", SelectedStreamlineVersion);
-            var result = await _dlss.SwapStreamlineAsync(_dlssDetection.StreamlineFolders, SelectedStreamlineVersion);
+            var result = await _dlss.SwapStreamlineAsync(streamlineFolders, SelectedStreamlineVersion);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
@@ -2267,7 +2268,8 @@ public partial class MainWindowViewModel : ObservableObject
                 : L("A restauração direta do Streamline fica bloqueada enquanto o DLSS5 Feeder Full é gerenciado para este jogo.", "Direct Streamline restore is blocked while DLSS5 Feeder Full is managed for this game.");
             return;
         }
-        if (_dlssDetection.StreamlineFolders.Count == 0)
+        var streamlineFolders = ActionTargets().StreamlineFolders;
+        if (streamlineFolders.Count == 0)
         {
             StatusText = L("Streamline: nenhuma pasta local do Streamline foi detectada no jogo.", "Streamline: no local Streamline folder was detected in the game.");
             return;
@@ -2276,7 +2278,7 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            var result = await _dlss.RestoreStreamlineAsync(_dlssDetection.StreamlineFolders);
+            var result = await _dlss.RestoreStreamlineAsync(streamlineFolders);
             StatusText = result.Success
                 ? LF("Streamline: {0} DLL(s) original(is) restaurada(s).", "Streamline: {0} original DLL(s) restored.", result.Results.Count)
                 : LF("Streamline: restauração indisponível — {0}", "Streamline: restore unavailable — {0}", result.Error);
@@ -2428,18 +2430,26 @@ public partial class MainWindowViewModel : ObservableObject
         else packs.Remove(id);
     }
 
+    /// <summary>
+    /// Swap/restore targets for the selected game, with RHI-owned OptiScaler files excluded again at
+    /// action time (the cached probe may predate an OptiScaler install or FG-stack change).
+    /// </summary>
+    private DlssDetectionResult ActionTargets()
+        => SelectedGame is { } game ? _dlssDefaults.ExcludeOwnedTargets(game, _dlssDetection) : _dlssDetection;
+
     private bool TryResolveComponent(string? component, out DlssComponentKind kind, out string? version, out IReadOnlyList<string> paths)
     {
+        var targets = ActionTargets();
         switch (component?.ToUpperInvariant())
         {
             case "SR":
-                kind = DlssComponentKind.SuperResolution; version = SelectedDlssSrVersion; paths = _dlssDetection.DlssPaths; return true;
+                kind = DlssComponentKind.SuperResolution; version = SelectedDlssSrVersion; paths = targets.DlssPaths; return true;
             case "RR":
-                kind = DlssComponentKind.RayReconstruction; version = SelectedDlssRrVersion; paths = _dlssDetection.DlssdPaths; return true;
+                kind = DlssComponentKind.RayReconstruction; version = SelectedDlssRrVersion; paths = targets.DlssdPaths; return true;
             case "FG":
-                kind = DlssComponentKind.FrameGeneration; version = SelectedDlssFgVersion; paths = _dlssDetection.DlssgPaths; return true;
+                kind = DlssComponentKind.FrameGeneration; version = SelectedDlssFgVersion; paths = targets.DlssgPaths; return true;
             case "NR":
-                kind = DlssComponentKind.NeuralRendering; version = SelectedDlssNrVersion; paths = _dlssDetection.DlssnrPaths; return true;
+                kind = DlssComponentKind.NeuralRendering; version = SelectedDlssNrVersion; paths = targets.DlssnrPaths; return true;
             default:
                 kind = default; version = null; paths = []; return false;
         }
