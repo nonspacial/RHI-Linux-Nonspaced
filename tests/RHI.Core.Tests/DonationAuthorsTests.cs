@@ -206,6 +206,56 @@ public sealed class DonationAuthorsTests
         return await new UpstreamRhiManifestService(http, "https://example.test/manifest.json").FetchDonationAuthorsAsync();
     }
 
+    // Re-review nit 1: pin upstream 2.8.5 AuthorDonationUrls exactly (names and links), not just the names and host.
+    [Fact]
+    public void BuiltInAuthorsAreUpstreamsNineKoFiLinksExactly()
+    {
+        var expected = new Dictionary<string, string>
+        {
+            ["ShortFuse"] = "https://ko-fi.com/shortfuse",
+            ["Jon"] = "https://ko-fi.com/kickfister",
+            ["Forge"] = "https://ko-fi.com/forge87682",
+            ["Voosh"] = "https://ko-fi.com/notvoosh",
+            ["Musa"] = "https://ko-fi.com/musaqh",
+            ["Pumbo"] = "https://ko-fi.com/pumbo",
+            ["Nukem"] = "https://ko-fi.com/nukem9",
+            ["Lilium"] = "https://ko-fi.com/endlesslyflowering",
+            ["Bit Viper"] = "https://ko-fi.com/bitviper",
+        };
+
+        Assert.Equal(expected.OrderBy(p => p.Key, StringComparer.Ordinal),
+            UpstreamRhiManifestService.BuiltInDonationUrls.OrderBy(p => p.Key, StringComparer.Ordinal));
+        Assert.Equal(expected.OrderBy(p => p.Key, StringComparer.Ordinal),
+            UpstreamRhiManifestService.BuiltInDonationAuthors
+                .Select(a => new KeyValuePair<string, string>(a.Name, a.DonationUrl.AbsoluteUri))
+                .OrderBy(p => p.Key, StringComparer.Ordinal));
+    }
+
+    // Re-review nit 2: a write cancelled after the temp file exists leaves no manifest.json.tmp-* orphan.
+    [Fact]
+    public async Task CancelledCacheWriteLeavesNoTempFile()
+    {
+        var cacheDir = Path.Combine(Path.GetTempPath(), "rhi-donate-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var http = new HttpClient(new SwappableHandler("{}"));
+            var service = new UpstreamRhiManifestService(http,
+                "https://example.test/live.json", "https://example.test/pinned.json", Path.Combine(cacheDir, "manifest.json"));
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.PersistLastKnownGoodAsync(Encoding.UTF8.GetBytes("{\"version\":3}"), cts.Token));
+
+            Assert.True(Directory.Exists(cacheDir));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(cacheDir));
+        }
+        finally
+        {
+            if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true);
+        }
+    }
+
     private sealed class SwappableHandler(string json) : HttpMessageHandler
     {
         public string Json { get; set; } = json;

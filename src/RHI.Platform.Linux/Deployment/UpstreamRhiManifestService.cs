@@ -665,21 +665,32 @@ public sealed partial class UpstreamRhiManifestService
         }
     }
 
-    private async Task PersistLastKnownGoodAsync(byte[] raw, CancellationToken cancellationToken)
+    internal async Task PersistLastKnownGoodAsync(byte[] raw, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_cachePath)) return;
+        string? temp = null;
         try
         {
             var directory = Path.GetDirectoryName(_cachePath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-            var temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await File.WriteAllBytesAsync(temp, raw, cancellationToken).ConfigureAwait(false);
+            temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
+            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+                await stream.WriteAsync(raw, cancellationToken).ConfigureAwait(false);
             File.Move(temp, _cachePath, true);
+            temp = null;
         }
         catch (OperationCanceledException) { throw; }
         catch
         {
             // Cache persistence is optional; a valid live manifest must remain usable.
+        }
+        finally
+        {
+            // A cancelled or failed write (e.g. the Donate dialog closed mid-write) leaves no manifest.json.tmp-* behind.
+            if (temp is not null)
+            {
+                try { File.Delete(temp); } catch { /* best effort: the cache directory is RHI's own */ }
+            }
         }
     }
 
