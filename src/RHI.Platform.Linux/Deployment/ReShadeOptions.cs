@@ -26,7 +26,9 @@ public sealed record ReShadeUpdateStatus(
     string Message,
     string? InstalledVersion = null,
     string? LatestVersion = null,
-    ReShadeChannel? Channel = null);
+    ReShadeChannel? Channel = null,
+    // The check could not tell (reshade.me down, nightly size unknown, custom source missing): no update.
+    bool CouldNotCheck = false);
 
 internal sealed record ReShadeStagedDll(
     string DllPath,
@@ -34,4 +36,6 @@ internal sealed record ReShadeStagedDll(
     string SourceUrl,
     string SourceIdentity,
     ReShadeChannel Channel,
-    bool FromCache = false);
+    bool FromCache = false,
+    // Why the cached copy was used (the reshade.me outage message); null for a fresh download.
+    string? FallbackReason = null);

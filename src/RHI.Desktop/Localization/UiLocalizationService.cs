@@ -519,6 +519,34 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] PresentationPairs =
     [
+        // ReShade during a reshade.me outage (#132, upstream 2.8.3). Fragments compose around versions, HTTP codes and causes;
+        // the apply message is covered too, otherwise its cached-copy note collapses to the generic unlocalised text.
+        ("ReShade source preparation failed: ", "Falha ao preparar a origem do ReShade: "),
+        ("ReShade update check failed: ", "Falha ao verificar atualização do ReShade: "),
+        ("reshade.me returned HTTP ", "o reshade.me respondeu HTTP "),
+        ("reshade.me could not be reached (", "não foi possível acessar o reshade.me ("),
+        ("reshade.me did not answer in time.", "o reshade.me não respondeu a tempo."),
+        ("reshade.me is temporarily unavailable (HTTP ", "o reshade.me está temporariamente indisponível (HTTP "),
+        (") and its page has no ReShade download link.", ") e a página dele não tem o link de download do ReShade."),
+        ("reshade.me listed a ReShade download with an invalid version: ", "o reshade.me listou um download do ReShade com versão inválida: "),
+        (" No cached ReShade copy is available yet; try again later.", " Ainda não há cópia do ReShade em cache; tente novamente mais tarde."),
+        ("ReShade server unavailable: ", "Servidor do ReShade indisponível: "),
+        (" Installed version kept (", " Versão instalada mantida ("),
+        ("); nothing was changed; try again later.", "); nada foi alterado; tente novamente mais tarde."),
+        ("); RHI will check again later.", "); o RHI verificará novamente mais tarde."),
+        (" The cached copy (", " A cópia em cache ("),
+        (") is older than the installed version (", ") é mais antiga que a versão instalada ("),
+        (" reshade.me was unavailable, so the cached copy was used.", " O reshade.me estava indisponível, então a cópia em cache foi usada."),
+        ("] applied as ", "] aplicado como "),
+        (" (OptiScaler coexistence)", " (coexistência com OptiScaler)"),
+        ("; no RHI shader packs", "; nenhum pacote de shaders do RHI"),
+        ("; shader packs: ", "; pacotes de shaders: "),
+        (". Existing ReShade.ini customizations are preserved.", ". As personalizações existentes do ReShade.ini foram preservadas."),
+        (" Native D3DCompiler_47 is active (", " O D3DCompiler_47 nativo está ativo ("),
+        (") with a per-game native,builtin override.", ") com override native,builtin por jogo."),
+        (" installed with RenoDX DLSS5 ", " instalado com RenoDX DLSS5 "),
+        (". No Deep Fried Chicken files or LoadFromDllMain token were installed.", ". Nenhum arquivo do Deep Fried Chicken nem token LoadFromDllMain foi instalado."),
+        (" The 64-bit host ReShade came from the ReShade cache because reshade.me was unavailable.", " O ReShade do host de 64 bits veio do cache do ReShade porque o reshade.me estava indisponível."),
         // Control UE RR post-install (upstream 2.7.9). Fragments compose around DLL names, versions and paths.
         ("Control UE restore incomplete; RenoDX was kept:", "Restauração do Control UE incompleta; o RenoDX foi mantido:"),
         ("renderer.ini not found in the game folder; launch the game once, then reinstall RenoDX to set the HDR preset.", "renderer.ini não encontrado na pasta do jogo; abra o jogo uma vez e reinstale o RenoDX para definir o preset HDR."),

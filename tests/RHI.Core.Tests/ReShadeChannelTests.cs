@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -125,8 +126,10 @@ public sealed class ReShadeChannelTests : IDisposable
         var result = await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
 
         Assert.False(result.Success);
+        Assert.True(result.SourceUnavailable);
         Assert.Contains("HTTP 503", result.Message);
         Assert.Contains("try again later", result.Message);
+        AssertPtBr(result.Message, "tente novamente mais tarde");
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
         Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
     }
@@ -144,7 +147,9 @@ public sealed class ReShadeChannelTests : IDisposable
         var result = await NewService(store, handler, cache).InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
 
         Assert.False(result.Success);
+        Assert.False(result.SourceUnavailable);
         Assert.Contains("HTTP 404", result.Message);
+        AssertPtBr(result.Message, "o reshade.me respondeu HTTP 404");
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
     }
 
@@ -167,14 +172,23 @@ public sealed class ReShadeChannelTests : IDisposable
         Assert.True(fresh.Success, fresh.Message);
         Assert.Contains("ReShade 9.9.9", fresh.Message);
         Assert.Contains("cached copy", fresh.Message);
+        AssertPtBr(fresh.Message, "a cópia em cache foi usada");
 
         handler.HomeUnreachable = true;
         var status = await installedService.CheckUpdateAsync(installedGame);
 
         Assert.True(status.IsInstalled);
         Assert.False(status.UpdateAvailable);
+        Assert.True(status.CouldNotCheck);
         Assert.Contains("check again later", status.Message);
+        AssertPtBr(status.Message, "o RHI verificará novamente mais tarde");
         Assert.Equal(proxyHash, Sha256(proxy));
+
+        // Update All's background check sees the same outage as "could not be checked", never "current".
+        var check = await ManagedComponents(installedStore, installedService).CheckManagedUpdateAsync(installedGame, ManagedComponentKind.ReShade, []);
+        Assert.True(check.Managed);
+        Assert.False(check.UpdateAvailable);
+        Assert.True(check.CouldNotCheck);
     }
 
     [Fact]
@@ -196,9 +210,201 @@ public sealed class ReShadeChannelTests : IDisposable
         var result = await service.InstallAsync(game, service.GetInstalledOptions(game));
 
         Assert.False(result.Success);
-        Assert.Contains("older than the installed 10.0.0", result.Message);
+        Assert.True(result.SourceUnavailable);
+        Assert.Contains("is older than the installed version (10.0.0)", result.Message);
+        AssertPtBr(result.Message, "é mais antiga que a versão instalada (10.0.0)");
         Assert.Equal("10.0.0", store.Find(game, ManagedComponentKind.ReShade)!.Version);
         Assert.Equal(proxyHash, Sha256(proxy));
+    }
+
+    // Review finding 1: during an outage an update must never "succeed" by re-applying the same cached copy.
+    [Fact]
+    public async Task Update_SiteOutage_EqualCachedCopy_FailsBeforeTouchingFiles_UpdateAllManualChangesNothing()
+    {
+        var cache = Path.Combine(_root, "update-outage-equal-cache");
+        var (game, store) = CreateGame("update-outage-equal");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var proxy = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var proxyHash = Sha256(proxy);
+        var proxyTime = File.GetLastWriteTimeUtc(proxy);
+        var installedAt = store.Find(game, ManagedComponentKind.ReShade)!.InstalledAtUtc;
+        var components = ManagedComponents(store, reshade);
+
+        handler.HomeStatus = HttpStatusCode.ServiceUnavailable;
+        handler.HomeHasLink = false;
+        var update = await components.UpdateManagedAsync(game, ManagedComponentKind.ReShade, []);
+
+        Assert.False(update.Success);
+        Assert.True(update.SourceUnavailable);
+        Assert.Contains("ReShade server unavailable", update.Message);
+        Assert.Contains("HTTP 503", update.Message);
+        Assert.Contains("Installed version kept (9.9.9)", update.Message);
+        Assert.Contains("try again later", update.Message);
+        AssertPtBr(update.Message, "Servidor do ReShade indisponível");
+        AssertPtBr(update.Message, "Versão instalada mantida (9.9.9)");
+
+        var all = await new LinuxUpdateAllService(store, components, new NotRunning())
+            .RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+
+        var item = Assert.Single(all.Items);
+        Assert.False(item.Changed);
+        Assert.False(item.Success); // up/129 integration: counted as "could not be checked" (see progress notes)
+        Assert.Equal(0, all.ChangedCount);
+        Assert.Contains("Installed version kept (9.9.9)", item.Message);
+        Assert.Equal(proxyHash, Sha256(proxy));
+        Assert.Equal(proxyTime, File.GetLastWriteTimeUtc(proxy));
+        var record = store.Find(game, ManagedComponentKind.ReShade)!;
+        Assert.Equal("9.9.9", record.Version);
+        Assert.Equal(installedAt, record.InstalledAtUtc);
+    }
+
+    [Fact]
+    public async Task Update_SiteOutage_NoCachedCopy_IsSourceUnavailable()
+    {
+        var cache = Path.Combine(_root, "update-outage-nocache-cache");
+        var (game, store) = CreateGame("update-outage-nocache");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        Directory.Delete(Path.Combine(cache, "stable"), true);
+
+        handler.HomeUnreachable = true;
+        var update = await reshade.UpdateAsync(game);
+
+        Assert.False(update.Success);
+        Assert.True(update.SourceUnavailable);
+        Assert.Contains("No cached ReShade copy", update.Message);
+        AssertPtBr(update.Message, "Ainda não há cópia do ReShade em cache");
+        Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
+    }
+
+    [Fact]
+    public async Task Update_SiteOutage_NewerCachedCopy_StillUpgrades()
+    {
+        var cache = Path.Combine(_root, "update-outage-newer-cache");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var (game, store) = CreateGame("update-outage-newer");
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        // Another game already pulled 10.0.0 into the shared cache before reshade.me went down.
+        handler.StableVersion = "10.0.0";
+        var (other, otherStore) = CreateGame("update-outage-newer-other");
+        Assert.True((await NewService(otherStore, handler, cache).InstallAsync(other, new ReShadeInstallOptions { ManageIni = false })).Success);
+
+        handler.HomeStatus = HttpStatusCode.BadGateway;
+        handler.HomeHasLink = false;
+        var update = await reshade.UpdateAsync(game);
+
+        Assert.True(update.Success, update.Message);
+        Assert.False(update.SourceUnavailable);
+        Assert.Contains("ReShade 10.0.0", update.Message);
+        Assert.Contains("cached copy", update.Message);
+        Assert.Equal("10.0.0", store.Find(game, ManagedComponentKind.ReShade)!.Version);
+    }
+
+    // Review finding 6: "9.9.9" and "9.9.9.0" are the same version, so the cached copy is not an upgrade.
+    [Fact]
+    public async Task Update_SiteOutage_SameVersionWithTrailingZero_IsNotAnUpgrade()
+    {
+        var cache = Path.Combine(_root, "update-outage-zero-cache");
+        var (game, store) = CreateGame("update-outage-zero");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        Directory.Move(Path.Combine(cache, "stable", "9.9.9"), Path.Combine(cache, "stable", "9.9.9.0"));
+
+        handler.HomeStatus = HttpStatusCode.InternalServerError;
+        handler.HomeHasLink = false;
+        var update = await reshade.UpdateAsync(game);
+
+        Assert.False(update.Success);
+        Assert.True(update.SourceUnavailable);
+        Assert.Contains("Installed version kept (9.9.9)", update.Message);
+        Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
+    }
+
+    [Theory]
+    [InlineData("6.3", "6.3.0", 0)]
+    [InlineData("6.3.0.0", "6.3", 0)]
+    [InlineData("6.3.1", "6.3", 1)]
+    [InlineData("6.2.9", "6.3.0", -1)]
+    [InlineData("..", "6.3.0", null)]
+    [InlineData("6.3.0", "nightly", null)]
+    public void CompareNumericVersions_TreatsMissingPartsAsZero(string candidate, string installed, int? expected)
+    {
+        var actual = ReShadeDeploymentService.CompareNumericVersions(candidate, installed);
+        Assert.Equal(expected, actual is null ? null : Math.Sign(actual.Value));
+    }
+
+    // Documented: an explicit profile Apply during an outage may re-use the cached copy (it applies the user's settings and says so).
+    [Fact]
+    public async Task ExplicitApply_SiteOutage_ReusesCachedCopyAndSaysSo()
+    {
+        var cache = Path.Combine(_root, "apply-outage-cache");
+        var (game, store) = CreateGame("apply-outage");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+
+        handler.HomeStatus = HttpStatusCode.ServiceUnavailable;
+        handler.HomeHasLink = false;
+        var applied = await reshade.InstallAsync(game, reshade.GetInstalledOptions(game));
+
+        Assert.True(applied.Success, applied.Message);
+        Assert.Contains("cached copy was used", applied.Message);
+    }
+
+    // Review finding 4: the captured page version names cache folders; ".." must never be accepted.
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "invalid version")]
+    [InlineData(HttpStatusCode.InternalServerError, "try again later")]
+    public async Task StableChannel_PageVersionThatIsNotNumeric_IsRejected(HttpStatusCode status, string expected)
+    {
+        var cache = Path.Combine(_root, $"bad-version-{(int)status}-cache");
+        var (game, store) = CreateGame($"bad-version-{(int)status}");
+        var handler = new MutableHandler { StableVersion = "..", HomeStatus = status };
+
+        var result = await NewService(store, handler, cache).InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Contains(expected, result.Message);
+        Assert.Equal(1, handler.RequestCount); // the setup exe was never requested
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.False(File.Exists(Path.Combine(cache, "ReShade64.dll")));
+        if (status == HttpStatusCode.OK) AssertPtBr(result.Message, "versão inválida");
+    }
+
+    // Review finding 5: the Feeder's host64 ReShade says when it came from the cache.
+    [Fact]
+    public void FeederHost64CacheNote_MentionsCacheAndIsLocalised()
+    {
+        Assert.Equal("", Dlss5FeederFullDeploymentService.Host64CacheNote(false));
+        var note = Dlss5FeederFullDeploymentService.Host64CacheNote(true);
+        Assert.Contains("reshade.me was unavailable", note);
+        var message = "DLSS5 Feeder Full 1.2 installed with RenoDX DLSS5 0.3. No Deep Fried Chicken files or LoadFromDllMain token were installed." + note;
+        AssertPtBr(message, "veio do cache do ReShade");
+    }
+
+    private static void AssertPtBr(string english, string expectedFragment)
+    {
+        var pt = UiLocalizationService.PresentFor("pt-BR", english);
+        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+        Assert.Contains(expectedFragment, pt);
+        Assert.Equal(english, UiLocalizationService.PresentFor("en-US", pt));
+    }
+
+    private static LinuxManagedComponentService ManagedComponents(LinuxDeploymentRecordStore store, ReShadeDeploymentService reshade)
+        // Only ReShade is reached on these paths; the rest are never touched.
+        => new(store, reshade: reshade, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
+
+    private sealed class NotRunning : IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game) => false;
     }
 
     [Fact]

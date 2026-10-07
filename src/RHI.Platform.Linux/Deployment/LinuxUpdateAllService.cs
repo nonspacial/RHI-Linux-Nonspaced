@@ -14,7 +14,9 @@ public sealed record ManagedUpdateCheck(
     bool UpdateAvailable,
     string Message,
     string? InstalledVersion = null,
-    string? LatestVersion = null);
+    string? LatestVersion = null,
+    // The check could not tell (remote unreachable, no validators, game files missing): no update.
+    bool CouldNotCheck = false);
 
 public sealed record LinuxUpdateItemResult(
     string GameName,

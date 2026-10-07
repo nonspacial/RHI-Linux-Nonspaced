@@ -90,10 +90,27 @@ public sealed partial class ReShadeDeploymentService
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
         => InstallAsync(game, new ReShadeInstallOptions(), cancellationToken);
 
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         ReShadeInstallOptions options,
         CancellationToken cancellationToken = default)
+        => InstallCoreAsync(game, options, isUpdate: false, cancellationToken);
+
+    /// <summary>
+    /// Update/refresh path (Update All, managed update): re-applies the installed profile. During a
+    /// reshade.me outage it never reports success by re-applying a cached copy that is not newer than
+    /// the installed version; it fails with <see cref="ComponentOperationResult.SourceUnavailable"/>
+    /// before touching any file. An explicit profile Apply (<see cref="InstallAsync(DetectedGame, ReShadeInstallOptions, CancellationToken)"/>)
+    /// may still re-use the cached copy, because it applies the user's changed settings and says so.
+    /// </summary>
+    public Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => InstallCoreAsync(game, GetInstalledOptions(game), isUpdate: true, cancellationToken);
+
+    private async Task<ComponentOperationResult> InstallCoreAsync(
+        DetectedGame game,
+        ReShadeInstallOptions options,
+        bool isUpdate,
+        CancellationToken cancellationToken)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("ReShade DLL deployment is only for Windows games running through Wine/Proton.");
@@ -175,12 +192,23 @@ public sealed partial class ReShadeDeploymentService
         {
             staged = await ResolveStagedAsync(options, architecture, cancellationToken).ConfigureAwait(false);
         }
+        catch (ReShadeSiteUnavailableException ex)
+        {
+            return ComponentOperationResult.Unavailable($"ReShade source preparation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return ComponentOperationResult.Fail($"ReShade source preparation failed: {ex.Message}");
         }
-        if (staged.FromCache && existingRecord is not null && IsOlderVersion(staged.Version, existingRecord.Version))
-            return ComponentOperationResult.Fail($"reshade.me is unavailable and the cached ReShade {staged.Version} is older than the installed {existingRecord.Version}. Nothing was changed; try again later.");
+        if (staged.FromCache && existingRecord is not null)
+        {
+            // Outage fallback: an update must bring something newer; re-applying the same cached copy is not an update.
+            var order = CompareNumericVersions(staged.Version, existingRecord.Version);
+            if (isUpdate && order is not > 0)
+                return ComponentOperationResult.Unavailable($"ReShade server unavailable: {staged.FallbackReason} Installed version kept ({existingRecord.Version}); nothing was changed; try again later.");
+            if (order < 0)
+                return ComponentOperationResult.Unavailable($"ReShade server unavailable: {staged.FallbackReason} The cached copy ({staged.Version}) is older than the installed version ({existingRecord.Version}); nothing was changed; try again later.");
+        }
 
         var previousPayload = existingRecord?.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
         var existedBefore = previousPayload?.ExistedBeforeInstall ?? File.Exists(target);
@@ -385,7 +413,7 @@ public sealed partial class ReShadeDeploymentService
             var compilerNote = d3dCompilerPlan is null
                 ? ""
                 : $" Native D3DCompiler_47 is active ({d3dCompilerPlan.Description}) with a per-game native,builtin override.";
-            var cacheNote = staged.FromCache ? " reshade.me was unavailable, so the cached copy was used." : "";
+            var cacheNote = staged.FromCache ? CachedCopyNote : "";
             return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}", target);
         }
         catch (Exception ex)
@@ -534,7 +562,7 @@ public sealed partial class ReShadeDeploymentService
                     var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
                     var url = architecture == PeArchitecture.X86 ? Nightly32Url : Nightly64Url;
                     var remote = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
-                    if (remote <= 0) return new(true, false, "Could not determine the current nightly artifact size.", record.Version, null, channel);
+                    if (remote <= 0) return new(true, false, "Could not determine the current nightly artifact size.", record.Version, null, channel, CouldNotCheck: true);
                     var identity = $"zip-size:{remote}";
                     var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.Ordinal);
                     return new(true, update, update ? "A newer/different ReShade nightly artifact is available." : "ReShade nightly is current.", record.Version, "Nightly", channel);
@@ -545,7 +573,7 @@ public sealed partial class ReShadeDeploymentService
                 {
                     var source = record.Metadata.GetValueOrDefault(MetaCustomSource);
                     if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
-                        return new(true, false, "Custom ReShade source file is unavailable; installed DLL remains untouched.", record.Version, null, channel);
+                        return new(true, false, "Custom ReShade source file is unavailable; installed DLL remains untouched.", record.Version, null, channel, CouldNotCheck: true);
                     var identity = "sha256:" + await Sha256Async(source, cancellationToken).ConfigureAwait(false);
                     var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.OrdinalIgnoreCase);
                     return new(true, update, update ? "The custom ReShade DLL changed since it was applied." : "Custom ReShade source matches the installed profile.", record.Version, update ? "custom changed" : record.Version, channel);
@@ -556,11 +584,11 @@ public sealed partial class ReShadeDeploymentService
         }
         catch (ReShadeSiteUnavailableException ex)
         {
-            return new(true, false, $"{ex.Message} ReShade {record.Version} stays installed; RHI will check again later.", record.Version, null, channel);
+            return new(true, false, $"{ex.Message} Installed version kept ({record.Version}); RHI will check again later.", record.Version, null, channel, CouldNotCheck: true);
         }
         catch (Exception ex)
         {
-            return new(true, false, $"ReShade update check failed: {ex.Message}", record.Version, null, channel);
+            return new(true, false, $"ReShade update check failed: {ex.Message}", record.Version, null, channel, CouldNotCheck: true);
         }
     }
 
@@ -776,20 +804,20 @@ public sealed partial class ReShadeDeploymentService
         catch (ReShadeSiteUnavailableException ex)
         {
             // Outage, not a bad page: fall back to the newest stable copy already staged in the cache.
-            return FindCachedStable(architecture)
-                   ?? throw new InvalidOperationException($"{ex.Message} No cached ReShade copy is available yet; try again later.", ex);
+            return FindCachedStable(architecture, ex.Message)
+                   ?? throw new ReShadeSiteUnavailableException($"{ex.Message} No cached ReShade copy is available yet; try again later.", ex);
         }
         return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
     }
 
-    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture)
+    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason)
     {
         var root = Path.Combine(_cacheDir, "stable");
         if (!Directory.Exists(root)) return null;
         var dllName = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
         var best = Directory.EnumerateDirectories(root)
             .Select(dir => (Dir: dir, Name: Path.GetFileName(dir)))
-            .Select(entry => (entry.Dir, entry.Name, Parsed: LegacyVersionRegex().IsMatch(entry.Name) && Version.TryParse(entry.Name, out var v) ? v : null))
+            .Select(entry => (entry.Dir, entry.Name, Parsed: TryParseNumericVersion(entry.Name)))
             .Where(entry => entry.Parsed is not null && IsValidReShadeDll(Path.Combine(entry.Dir, dllName)))
             .OrderByDescending(entry => entry.Parsed)
             .FirstOrDefault();
@@ -800,7 +828,8 @@ public sealed partial class ReShadeDeploymentService
             $"{HomeUrl}/downloads/ReShade_Setup_{best.Name}_Addon.exe",
             $"version:{best.Name}",
             ReShadeChannel.Stable,
-            FromCache: true);
+            FromCache: true,
+            FallbackReason: reason);
     }
 
     internal async Task<ReShadeStagedDll> EnsureLegacyStagedAsync(string? version, PeArchitecture architecture, CancellationToken cancellationToken = default)
@@ -953,6 +982,13 @@ public sealed partial class ReShadeDeploymentService
             throw new InvalidOperationException("Could not find the current full add-on ReShade download on reshade.me.");
         }
         var version = match.Groups[1].Value;
+        // The captured version names cache folders and the setup file: only a plain dotted number is accepted ("..", "9..9" are not).
+        if (TryParseNumericVersion(version) is null)
+        {
+            if ((int)status >= 500)
+                throw new ReShadeSiteUnavailableException($"reshade.me is temporarily unavailable (HTTP {(int)status}) and its page has no ReShade download link.");
+            throw new InvalidOperationException($"reshade.me listed a ReShade download with an invalid version: '{version}'.");
+        }
         var relative = match.Value;
         var url = relative.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? relative : HomeUrl + relative;
         return (version, url);
@@ -1045,8 +1081,23 @@ public sealed partial class ReShadeDeploymentService
         return Convert.ToHexString(hash);
     }
 
-    private static bool IsOlderVersion(string candidate, string? installed)
-        => Version.TryParse(candidate, out var c) && Version.TryParse(installed, out var i) && c < i;
+    internal const string CachedCopyNote = " reshade.me was unavailable, so the cached copy was used.";
+
+    // ReShade versions are dotted numbers; missing parts count as zero, so "6.3" equals "6.3.0".
+    private static Version? TryParseNumericVersion(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !LegacyVersionRegex().IsMatch(value) || !Version.TryParse(value, out var parsed))
+            return null;
+        return new Version(parsed.Major, parsed.Minor, Math.Max(parsed.Build, 0), Math.Max(parsed.Revision, 0));
+    }
+
+    /// <summary>Compares two numeric ReShade versions; null when either is not a plain dotted number.</summary>
+    internal static int? CompareNumericVersions(string? candidate, string? installed)
+    {
+        var c = TryParseNumericVersion(candidate);
+        var i = TryParseNumericVersion(installed);
+        return c is null || i is null ? null : c.CompareTo(i);
+    }
 
     private static ReShadeChannel ParseChannel(string? value)
         => Enum.TryParse<ReShadeChannel>(value, true, out var channel) ? channel : ReShadeChannel.Stable;
