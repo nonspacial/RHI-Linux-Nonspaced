@@ -131,14 +131,18 @@ public sealed class ResponsiveRow : Panel
             }
         }
 
-        // Measure every child at its placed width; line height = tallest child on the line.
+        // Measure every child at its placed width; line height = tallest child on the line. Auto columns are placed
+        // at exactly their natural width, so they keep the unbounded constraint they were just measured with (a
+        // no-op re-measure instead of re-laying-out their text at a new constraint on every resize step).
         var lines = _placements.Count == 0 ? 0 : _placements.Max(p => p.Line) + 1;
         _lineHeights = new double[lines];
         double desiredWidth = 0;
         foreach (var p in _placements)
             foreach (var c in InColumn(p.Column))
             {
-                c.Measure(new Size(double.IsInfinity(p.Width) ? double.PositiveInfinity : p.Width, double.PositiveInfinity));
+                c.Measure(defs[p.Column].Width.IsAuto || double.IsInfinity(p.Width)
+                    ? unbounded
+                    : new Size(p.Width, double.PositiveInfinity));
                 if (!c.IsVisible) continue;
                 _lineHeights[p.Line] = Math.Max(_lineHeights[p.Line], c.DesiredSize.Height);
                 desiredWidth = Math.Max(desiredWidth, p.X + (double.IsInfinity(p.Width) ? c.DesiredSize.Width : p.Width));

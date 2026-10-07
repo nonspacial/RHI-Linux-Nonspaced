@@ -47,7 +47,10 @@ public sealed class DetailHeaderPanel : Panel
 
     private const double TitleMinFontSize = 16;
     private const double BadgeMinSize = 36;
-    private const int SearchSteps = 12;
+    // The bisection finds the largest scale on a 1/64 grid that fits (title type steps of ~0.14 px). A finer grid
+    // changed the header's font sizes, and so re-shaped all its text, on almost every pixel of a resize, and kept
+    // probing scales whose widths were not cached yet; 65 grid points are cached after one pass.
+    private const int SearchSteps = 6;
     // Rounding headroom between the estimate and the real measure.
     private const double FitTolerance = 1;
     // A one-line header keeps at least this gap between the badges and the first action button.
