@@ -172,6 +172,85 @@ public sealed class PcgwCentralDataTests : IDisposable
         Assert.Equal(PcGamingWikiGraphicsApiService.MinPause, PcGamingWikiGraphicsApiService.ClampPause(TimeSpan.Zero));
     }
 
+    [Fact]
+    public async Task InFileEntryWithoutApiData_SkipsTheLivePcgwLookup()
+    {
+        // ~85 % of the real file: engine and/or appid only. The entry answers the engine; the API stays
+        // for local detection, and no per-game PCGW request is made (Refs #105).
+        const string engineOnly = """{ "version": 1, "games": { "Engine Only Game": { "steam_appid": 777, "engine": "Engine:Unreal_Engine_4" } } }""";
+        var gameDir = Path.Combine(_root, "engine-only");
+        Directory.CreateDirectory(gameDir);
+        var exe = Path.Combine(gameDir, "game.exe");
+        File.WriteAllText(exe, "MZ no renderer imports here");
+        var game = new DetectedGame { Name = "Engine Only Game", InstallPath = gameDir, ExecutablePath = exe, Runner = "Proton", SteamAppId = 777 };
+        var pcgwRequests = 0;
+        using var http = new HttpClient(new Handler(request =>
+        {
+            if (request.RequestUri!.Host.EndsWith("pcgamingwiki.com", StringComparison.Ordinal)) pcgwRequests++;
+            return Json(engineOnly);
+        }));
+        var probe = new LinuxGameRuntimeProbe(
+            pcGamingWiki: new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "api-engine.json"), minRequestGap: TimeSpan.Zero),
+            pcgwData: new PcgwCentralDataService(http, Path.Combine(_root, "pcgw_engine.json"), "https://example.test/pcgw_data.json", fallbackUrl: null));
+
+        await probe.ProbeAsync(game, GameFileIndexer.Build(gameDir));
+
+        Assert.Equal(0, pcgwRequests);
+        Assert.Equal("Unreal Engine 4", game.EngineHint);
+        Assert.Equal(GraphicsApi.Unknown, game.GraphicsApi);
+    }
+
+    [Fact]
+    public async Task LivePcgw_ServiceUnavailableWithHttpDateRetryAfter_PausesUntilThatTime()
+    {
+        var clock = new ManualClock(DateTimeOffset.Parse("2026-10-06T12:00:00Z"));
+        var requests = 0;
+        const string html = """<table id="table-api"><tr><th scope="row"><abbr title="Windows">Direct3D 11</abbr></th><td>11</td></tr></table>""";
+        using var http = new HttpClient(new Handler(_ =>
+        {
+            if (++requests == 1)
+            {
+                var busy = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                busy.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(clock.Now + TimeSpan.FromSeconds(90));
+                return busy;
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html, Encoding.UTF8, "text/html") };
+        }));
+        var service = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "api-503.json"), clock, TimeSpan.Zero);
+        const string url = "https://www.pcgamingwiki.com/wiki/Game";
+
+        await service.FetchAsync("Game", url);
+        clock.Now += TimeSpan.FromSeconds(89);
+        Assert.True(service.IsPaused);
+        await service.FetchAsync("Game", url);
+        Assert.Equal(1, requests);
+        clock.Now += TimeSpan.FromSeconds(2);
+
+        Assert.Equal(GraphicsApi.DirectX11, (await service.FetchAsync("Game", url)).Primary);
+        Assert.Equal(2, requests);
+    }
+
+    [Fact]
+    public async Task LivePcgw_TimeoutPausesFurtherRequests()
+    {
+        var clock = new ManualClock(DateTimeOffset.Parse("2026-10-06T12:00:00Z"));
+        var requests = 0;
+        using var http = new HttpClient(new Handler(_ =>
+        {
+            requests++;
+            throw new TaskCanceledException("simulated request timeout");
+        }));
+        var service = new PcGamingWikiGraphicsApiService(http, Path.Combine(_root, "api-timeout.json"), clock, TimeSpan.Zero);
+
+        await service.FetchAsync("Game", "https://www.pcgamingwiki.com/wiki/Game");
+        await service.FetchAsync("Game", "https://www.pcgamingwiki.com/wiki/Game");
+
+        Assert.True(service.IsPaused);
+        Assert.Equal(1, requests);
+        clock.Now += PcGamingWikiGraphicsApiService.DefaultPause + TimeSpan.FromSeconds(1);
+        Assert.False(service.IsPaused);
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     private static HttpResponseMessage Json(string body)
