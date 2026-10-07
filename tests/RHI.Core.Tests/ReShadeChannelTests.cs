@@ -283,6 +283,60 @@ public sealed class ReShadeChannelTests : IDisposable
         Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
     }
 
+    // up-132 re-review nit 2: the page answers, then the setup download hits an outage — the same outage handling.
+    [Theory]
+    [InlineData(HttpStatusCode.BadGateway, false)]
+    [InlineData(HttpStatusCode.OK, true)]
+    public async Task Update_SetupDownloadOutageAfterAGoodPage_IsSourceUnavailableAndChangesNothing(HttpStatusCode setupStatus, bool unreachable)
+    {
+        var cache = Path.Combine(_root, $"setup-outage-{(int)setupStatus}-{unreachable}-cache");
+        var (game, store) = CreateGame($"setup-outage-{(int)setupStatus}-{unreachable}");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var reshade = NewService(store, handler, cache);
+        Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var proxy = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var proxyHash = Sha256(proxy);
+        var components = ManagedComponents(store, reshade);
+
+        handler.StableVersion = "10.0.0";          // a newer release is listed, but its download fails
+        handler.SetupStatus = setupStatus;
+        handler.SetupUnreachable = unreachable;
+        var update = await components.UpdateManagedAsync(game, ManagedComponentKind.ReShade, []);
+
+        Assert.False(update.Success);
+        Assert.True(update.SourceUnavailable);
+        Assert.Contains("Installed version kept (9.9.9)", update.Message);
+        Assert.Contains(unreachable ? "could not be reached" : "HTTP 502 for the ReShade setup download", update.Message);
+        AssertPtBr(update.Message, "Versão instalada mantida (9.9.9)");
+        Assert.Equal(proxyHash, Sha256(proxy));
+        Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
+
+        var all = await new LinuxUpdateAllService(store, components, new NotRunning())
+            .RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+        Assert.Equal((0, 0, 1), (all.ChangedCount, all.FailedCount, all.UncheckedCount));
+    }
+
+    [Fact]
+    public async Task Install_SetupDownload5xxWithNoCache_IsSourceUnavailable_404IsAPlainFailure()
+    {
+        var (game, store) = CreateGame("setup-outage-fresh");
+        var handler = new MutableHandler { StableVersion = "9.9.9", SetupStatus = HttpStatusCode.ServiceUnavailable };
+        var reshade = NewService(store, handler, Path.Combine(_root, "setup-outage-fresh-cache"));
+
+        var outage = await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+        Assert.False(outage.Success);
+        Assert.True(outage.SourceUnavailable);
+        Assert.Contains("No cached ReShade copy is available yet", outage.Message);
+        AssertPtBr(outage.Message, "o reshade.me respondeu HTTP 503 para o download do instalador do ReShade.");
+
+        handler.SetupStatus = HttpStatusCode.NotFound;
+        var missing = await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+        Assert.False(missing.Success);
+        Assert.False(missing.SourceUnavailable);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+    }
+
     [Fact]
     public async Task Update_SiteOutage_NewerCachedCopy_StillUpgrades()
     {
@@ -357,6 +411,22 @@ public sealed class ReShadeChannelTests : IDisposable
 
         Assert.True(applied.Success, applied.Message);
         Assert.Contains("cached copy was used", applied.Message);
+        Assert.True(applied.FromCachedSource);
+
+        // up-132 re-review nit 3: the Shaders/Add-ons manager rewrites the success line; the flag survives the managed
+        // apply path and its line keeps the note.
+        var managed = await ManagedComponents(store, reshade).ApplyReShadeAsync(game, reshade.GetInstalledOptions(game));
+        Assert.True(managed.Success, managed.Message);
+        Assert.True(managed.FromCachedSource);
+        Assert.Equal("Shaders/Add-ons applied: 2 shader pack(s), 1 add-on(s). reshade.me was unavailable, so the cached ReShade copy was used.",
+            UiLocalizationService.ShaderAddonAppliedFor("en-US", 2, 1, managed.FromCachedSource));
+        Assert.Equal("Shaders/Add-ons aplicados: 2 pacote(s) de shaders, 1 add-on(s). O reshade.me estava indisponível, então a cópia do ReShade em cache foi usada.",
+            UiLocalizationService.ShaderAddonAppliedFor("pt-BR", 2, 1, managed.FromCachedSource));
+        Assert.Equal("Shaders/Add-ons applied: 2 shader pack(s), 1 add-on(s).", UiLocalizationService.ShaderAddonAppliedFor("en-US", 2, 1, false));
+
+        handler.HomeStatus = HttpStatusCode.OK;
+        handler.HomeHasLink = true;
+        Assert.False((await reshade.InstallAsync(game, reshade.GetInstalledOptions(game))).FromCachedSource);
     }
 
     // Review finding 4: the captured page version names cache folders; ".." must never be accepted.
@@ -905,6 +975,8 @@ public sealed class ReShadeChannelTests : IDisposable
         public HttpStatusCode HomeStatus { get; set; } = HttpStatusCode.OK;
         public bool HomeHasLink { get; set; } = true;
         public bool HomeUnreachable { get; set; }
+        public HttpStatusCode SetupStatus { get; set; } = HttpStatusCode.OK;
+        public bool SetupUnreachable { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -926,6 +998,9 @@ public sealed class ReShadeChannelTests : IDisposable
                 return Task.FromResult(response);
             }
 
+            if (SetupUnreachable) throw new HttpRequestException("Connection reset");
+            if (SetupStatus != HttpStatusCode.OK)
+                return Task.FromResult(new HttpResponseMessage(SetupStatus) { Content = new StringContent("error") });
             var setup = new byte[600_000];
             setup[0] = (byte)'M';
             setup[1] = (byte)'Z';

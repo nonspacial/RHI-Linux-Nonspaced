@@ -986,9 +986,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         var names = string.Join(" → ", installedThisAttempt.Select(DisplayDependencyName));
-        return ComponentOperationResult.Ok(
-            $"Dependências instaladas automaticamente ({names}). {result.Message}",
-            changed);
+        // Keep the target's structural flags (e.g. FromCachedSource) along with its message.
+        return result with
+        {
+            Message = $"Dependências instaladas automaticamente ({names}). {result.Message}",
+            ChangedFiles = changed
+        };
     }
 
     private async Task<ComponentOperationResult> EnsureManagedDependenciesAsync(

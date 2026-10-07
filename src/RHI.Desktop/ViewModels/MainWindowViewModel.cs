@@ -2493,7 +2493,8 @@ public partial class MainWindowViewModel : ObservableObject
             ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
             ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
             await ReprobeGameAsync(game);
-            return ComponentOperationResult.Ok(ShowStatus(LF("Shaders/Add-ons aplicados: {0} pacote(s) de shaders, {1} add-on(s).", "Shaders/Add-ons applied: {0} shader pack(s), {1} add-on(s).", options.ShaderPackIds.Count, addonIds.Count)));
+            return ComponentOperationResult.Ok(ShowStatus(UiLocalizationService.ShaderAddonAppliedFor(
+                UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource)));
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {

@@ -414,7 +414,8 @@ public sealed partial class ReShadeDeploymentService
                 ? ""
                 : $" Native D3DCompiler_47 is active ({d3dCompilerPlan.Description}) with a per-game native,builtin override.";
             var cacheNote = staged.FromCache ? CachedCopyNote : "";
-            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}", target);
+            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}", target)
+                with { FromCachedSource = staged.FromCache };
         }
         catch (Exception ex)
         {
@@ -807,8 +808,29 @@ public sealed partial class ReShadeDeploymentService
             return FindCachedStable(architecture, ex.Message)
                    ?? throw new ReShadeSiteUnavailableException($"{ex.Message} No cached ReShade copy is available yet; try again later.", ex);
         }
-        return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (SetupDownloadOutage(ex, cancellationToken) is { } reason)
+        {
+            // The page answered but the setup download hit an outage (5xx, unreachable, timed out): same as a page outage.
+            return FindCachedStable(architecture, reason)
+                   ?? throw new ReShadeSiteUnavailableException($"{reason} No cached ReShade copy is available yet; try again later.", ex);
+        }
     }
+
+    // A server-side or network failure of the setup download, not a bad file or a 4xx: null when it is not an outage.
+    private static string? SetupDownloadOutage(Exception ex, CancellationToken cancellationToken) => ex switch
+    {
+        HttpRequestException { StatusCode: { } status } when (int)status >= 500
+            => $"reshade.me returned HTTP {(int)status} for the ReShade setup download.",
+        HttpRequestException { StatusCode: null } or HttpIOException
+            => $"reshade.me could not be reached ({ex.Message}).",
+        TaskCanceledException when !cancellationToken.IsCancellationRequested
+            => "reshade.me did not answer in time.",
+        _ => null
+    };
 
     private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason)
     {

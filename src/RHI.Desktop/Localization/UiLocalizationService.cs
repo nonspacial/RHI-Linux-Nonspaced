@@ -20,6 +20,8 @@ public static class UiLocalizationService
         ["Ui.UpdateAllFirstFailure"] = " Falha: {0} ({1}) — {2}",
         ["Ui.UpdateAllMoreFailures"] = " (+{0} outra(s))",
         ["Ui.UpdateAllBlocked"] = "atualizações bloqueadas até Editar jogo confirmar o executável do jogo",
+        ["Ui.ShaderAddonApplied"] = "Shaders/Add-ons aplicados: {0} pacote(s) de shaders, {1} add-on(s).",
+        ["Ui.ReShadeCachedCopyUsed"] = " O reshade.me estava indisponível, então a cópia do ReShade em cache foi usada.",
         ["Ui.UpdateAllNone"] = "Nenhum componente gerenciado pelo RHI participa de Atualizar tudo.",
         ["Ui.BatchDlss"] = "DLSS em lote",
         ["Ui.Links"] = "Links",
@@ -231,6 +233,8 @@ public static class UiLocalizationService
         ["Ui.UpdateAllFirstFailure"] = " Failed: {0} ({1}) — {2}",
         ["Ui.UpdateAllMoreFailures"] = " (+{0} more)",
         ["Ui.UpdateAllBlocked"] = "updates blocked until Edit game confirms the game executable",
+        ["Ui.ShaderAddonApplied"] = "Shaders/Add-ons applied: {0} shader pack(s), {1} add-on(s).",
+        ["Ui.ReShadeCachedCopyUsed"] = " reshade.me was unavailable, so the cached ReShade copy was used.",
         ["Ui.UpdateAllNone"] = "No RHI-managed Update All components were found.",
         ["Ui.BatchDlss"] = "Batch DLSS",
         ["Ui.Links"] = "Links",
@@ -564,6 +568,7 @@ public static class UiLocalizationService
         ("ReShade source preparation failed: ", "Falha ao preparar a origem do ReShade: "),
         ("ReShade update check failed: ", "Falha ao verificar atualização do ReShade: "),
         ("reshade.me returned HTTP ", "o reshade.me respondeu HTTP "),
+        (" for the ReShade setup download.", " para o download do instalador do ReShade."),
         ("reshade.me could not be reached (", "não foi possível acessar o reshade.me ("),
         ("reshade.me did not answer in time.", "o reshade.me não respondeu a tempo."),
         ("reshade.me is temporarily unavailable (HTTP ", "o reshade.me está temporariamente indisponível (HTTP "),
@@ -771,6 +776,11 @@ public static class UiLocalizationService
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllMoreFailures"), failed.Count - 1);
         return text + ".";
     }
+
+    /// <summary>The Shaders/Add-ons manager's success line; keeps ReShade's "cached copy used" note (#132).</summary>
+    public static string ShaderAddonAppliedFor(string? language, int shaderPacks, int addons, bool reShadeFromCache)
+        => string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.ShaderAddonApplied"), shaderPacks, addons)
+           + (reShadeFromCache ? TextFor(language, "Ui.ReShadeCachedCopyUsed") : "");
 
     public static bool HasKeyParity => PtBr.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(EnUs.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal);
 
