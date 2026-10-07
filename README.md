@@ -141,6 +141,17 @@ Run:
 
 The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
 
+## Building the AppImage
+
+```bash
+./build.sh --appimage                          # tests, then the AppImage
+packaging/appimage/build-appimage.sh [--out DIR]   # the AppImage only
+```
+
+The script publishes a self-contained `linux-x64` build (it runs on hosts without .NET) into an AppDir with `AppRun`, the desktop entry and the icon, then packs it with `appimagetool`. The result is `artifacts/appimage/RHI-Linux-v<version>-x86_64.AppImage` plus a `.sha256` file that holds only the file name. The version comes from `<Version>` in `Directory.Build.props`.
+
+`appimagetool` and the AppImage runtime are downloaded over HTTPS from the AppImage project's GitHub releases at pinned versions and used only when their SHA-256 matches; they are cached in `artifacts/appimage-tools/`. Building needs `curl` and `sha256sum` but no FUSE.
+
 ## Validating a change
 
 ```bash
