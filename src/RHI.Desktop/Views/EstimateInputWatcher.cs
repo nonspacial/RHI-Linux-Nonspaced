@@ -13,12 +13,16 @@ namespace RHI.Desktop.Views;
 /// Content changes from a string to a control), rebuilds the watch set, so late-added descendants are watched too.
 /// Template-generated children (a ContentPresenter's TextBlock for string content, created on first measure) are
 /// deliberately not tracked as structure: the estimate reads the Content, not the presenter's child.
-/// Shared by <see cref="ToolbarPanel"/> and <see cref="DetailHeaderPanel"/>.
+/// A panel whose own cache also reads properties outside <see cref="WidthEstimator.Inputs"/> on its descendants
+/// (its attached layout markers: toolbar slot/separator/collapsible, header role) passes them as extra inputs; its
+/// own properties (e.g. toolbar spacings) are the panel's to watch. Shared by <see cref="ToolbarPanel"/> and
+/// <see cref="DetailHeaderPanel"/>.
 /// </summary>
 public sealed class EstimateInputWatcher
 {
     private readonly Control _root;
     private readonly Func<Control, AvaloniaPropertyChangedEventArgs, bool> _isInput;
+    private readonly HashSet<AvaloniaProperty> _extraInputs;
     private readonly Action _changed;
     private readonly List<Control> _properties = [];
     private readonly List<INotifyCollectionChanged> _collections = [];
@@ -26,13 +30,17 @@ public sealed class EstimateInputWatcher
 
     /// <param name="root">The panel; its descendants' properties and its whole subtree's children are watched.</param>
     /// <param name="isInput">Extra filter (the panel's own writes are outputs, not inputs); called only for
-    /// <see cref="WidthEstimator.Inputs"/> properties.</param>
+    /// <see cref="WidthEstimator.Inputs"/> and <paramref name="extraInputs"/> properties.</param>
     /// <param name="changed">Drops the cache and invalidates the panel's measure.</param>
-    public EstimateInputWatcher(Control root, Func<Control, AvaloniaPropertyChangedEventArgs, bool> isInput, Action changed)
+    /// <param name="extraInputs">Descendant properties the panel's own cache reads besides
+    /// <see cref="WidthEstimator.Inputs"/> (attached layout markers).</param>
+    public EstimateInputWatcher(Control root, Func<Control, AvaloniaPropertyChangedEventArgs, bool> isInput, Action changed,
+        IEnumerable<AvaloniaProperty>? extraInputs = null)
     {
         _root = root;
         _isInput = isInput;
         _changed = changed;
+        _extraInputs = extraInputs is null ? [] : [.. extraInputs];
     }
 
     /// <summary>Number of controls whose properties are watched (diagnostics, tests).</summary>
@@ -69,7 +77,8 @@ public sealed class EstimateInputWatcher
 
     private void OnPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (!WidthEstimator.Inputs.Contains(e.Property) || sender is not Control c || !_isInput(c, e)) return;
+        if (!(WidthEstimator.Inputs.Contains(e.Property) || _extraInputs.Contains(e.Property))
+            || sender is not Control c || !_isInput(c, e)) return;
         if (_watching && (e.Property == ContentControl.ContentProperty || e.Property == Border.ChildProperty)
             && (e.OldValue is Control || e.NewValue is Control))
             Watch();

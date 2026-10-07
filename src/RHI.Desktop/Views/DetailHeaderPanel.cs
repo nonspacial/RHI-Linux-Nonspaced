@@ -57,11 +57,14 @@ public sealed class DetailHeaderPanel : Panel
     private const double MinActionsGap = 12;
 
     private List<RoleEntry>? _roles;
+    // The role controls the panel last wrote to, so one that loses its role (or leaves the panel) gets its authored
+    // values back.
+    private List<RoleEntry> _written = [];
     // Authored values are captured once per control, before the panel first writes them, and survive re-attachment.
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RoleEntry> _entries = new();
     private readonly Dictionary<double, double> _oneLineWidths = [];
-    // A change to any WidthEstimator.Inputs property outside ApplyOnce, or a control added/removed anywhere below
-    // the panel (e.g. an action button added at runtime), drops the cached widths and roles and re-measures.
+    // A change to any WidthEstimator.Inputs property or Role outside ApplyOnce, or a control added/removed anywhere
+    // below the panel (e.g. an action button added at runtime), drops the cached widths and roles and re-measures.
     private readonly EstimateInputWatcher _watcher;
     private bool _applying;
     private bool _stacked;
@@ -76,8 +79,7 @@ public sealed class DetailHeaderPanel : Panel
         _roles = null;
         _oneLineWidths.Clear();
         InvalidateMeasure();
-    });
-
+    }, [RoleProperty]);
 
     public static DetailHeaderRole GetRole(Control control) => control.GetValue(RoleProperty);
     public static void SetRole(Control control, DetailHeaderRole value) => control.SetValue(RoleProperty, value);
@@ -213,12 +215,37 @@ public sealed class DetailHeaderPanel : Panel
     }
 
     // Role controls are XAML children (logical tree), not template parts; cached until the panel is re-attached or
-    // the watcher reports a structural change.
+    // the watcher reports a change (structure, an estimate input or a Role). A control whose role changed, or that
+    // lost its role or left the panel, first gets its authored values back (scale 1 under the role it had), so the
+    // old role's scaled sizes do not stick to it.
     private List<RoleEntry> Roles()
-        => _roles ??= this.GetLogicalDescendants().OfType<Control>()
+    {
+        if (_roles is not null) return _roles;
+        var roles = this.GetLogicalDescendants().OfType<Control>()
             .Where(c => GetRole(c) != DetailHeaderRole.None)
             .Select(c => _entries.GetValue(c, key => new RoleEntry(key, GetRole(key))))
             .ToList();
+        var stale = _written.Where(r => r.Role != GetRole(r.Control) || !roles.Contains(r))
+            .Concat(roles.Where(r => r.Role != GetRole(r.Control))).Distinct().ToList();
+        if (stale.Count > 0)
+        {
+            _applying = true;
+            try
+            {
+                foreach (var r in stale)
+                {
+                    if (r.Apply(1) && this.IsLogicalAncestorOf(r.Control)) InvalidateForRemeasure(r.Control);
+                    r.Role = GetRole(r.Control);
+                }
+            }
+            finally
+            {
+                _applying = false;
+            }
+        }
+        _written = roles;
+        return _roles = roles;
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -267,7 +294,7 @@ public sealed class DetailHeaderPanel : Panel
         }
 
         public Control Control { get; }
-        public DetailHeaderRole Role { get; }
+        public DetailHeaderRole Role { get; set; }
 
         public double? FontSizeAt(double scale) => Role switch
         {

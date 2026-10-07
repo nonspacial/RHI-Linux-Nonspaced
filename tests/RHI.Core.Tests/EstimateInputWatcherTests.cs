@@ -120,6 +120,38 @@ public sealed class EstimateInputWatcherTests
     }
 
     [Fact]
+    public void ExtraInputs_AreReportedLikeEstimatorInputs()
+    {
+        var item = new Button { Content = "A" };
+        var root = new StackPanel();
+        root.Children.Add(item);
+        var changes = 0;
+        var watcher = new EstimateInputWatcher(root, (_, _) => true, () => changes++,
+            [ToolbarPanel.SlotProperty, ToolbarPanel.IsSeparatorProperty, ToolbarPanel.CollapsibleProperty, DetailHeaderPanel.RoleProperty]);
+        watcher.Watch();
+
+        ToolbarPanel.SetSlot(item, ToolbarSlot.Trailing);
+        Assert.Equal(1, changes);
+        ToolbarPanel.SetIsSeparator(item, true);
+        Assert.Equal(2, changes);
+        ToolbarPanel.SetCollapsible(item, true);
+        Assert.Equal(3, changes);
+        DetailHeaderPanel.SetRole(item, DetailHeaderRole.Action);
+        Assert.Equal(4, changes);
+    }
+
+    [Fact]
+    public void PanelMarkers_AreNotReportedWithoutBeingListed()
+    {
+        var item = new Button { Content = "A" };
+        var (_, _, changes) = Watched(item);
+
+        ToolbarPanel.SetSlot(item, ToolbarSlot.Trailing);
+        DetailHeaderPanel.SetRole(item, DetailHeaderRole.Action);
+        Assert.Equal(0, changes());
+    }
+
+    [Fact]
     public void Inputs_CoverWhatTheEstimatorReads()
     {
         foreach (var p in new AvaloniaProperty[]

@@ -27,8 +27,10 @@ public sealed class WidthEstimator
     /// Every property <see cref="Estimate"/> reads, on the control or on any logical descendant it walks. Panels that
     /// cache estimates drop them when one of these changes (<see cref="EstimateInputWatcher"/>); keep this set in step
     /// with <see cref="Estimate"/> — it is the single definition both <see cref="ToolbarPanel"/> and
-    /// <see cref="DetailHeaderPanel"/> use. Structural changes (children added to or removed from a panel, content
-    /// swapped for a control) are tracked separately by the watcher (Panel.Children, Content/Child swaps).
+    /// <see cref="DetailHeaderPanel"/> use. It covers only what <see cref="Estimate"/> reads: inputs of a panel's own
+    /// cache (its attached markers and its own spacings) are watched by that panel. Structural changes (children added
+    /// to or removed from a panel, content swapped for a control) are tracked separately by the watcher
+    /// (Panel.Children, Content/Child swaps).
     /// </summary>
     public static readonly IReadOnlySet<AvaloniaProperty> Inputs = new HashSet<AvaloniaProperty>
     {
