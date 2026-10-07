@@ -567,7 +567,7 @@ public sealed partial class OptiScalerDeploymentService
             throw new InvalidOperationException("OptiScaler package root is incomplete.");
         requested.Add((optiDll, proxyTarget));
 
-        foreach (var source in Directory.EnumerateFiles(packageRoot, "*", SearchOption.AllDirectories))
+        foreach (var source in SafeFileEnumeration.Files(packageRoot))
         {
             var relative = Path.GetRelativePath(packageRoot, source);
             if (relative.Equals("OptiScaler.dll", StringComparison.OrdinalIgnoreCase)) continue;

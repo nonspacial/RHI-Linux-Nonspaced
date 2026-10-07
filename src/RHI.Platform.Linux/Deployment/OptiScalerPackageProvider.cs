@@ -227,7 +227,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
     internal static string? FindPackageRoot(string extractDirectory)
     {
         if (!Directory.Exists(extractDirectory)) return null;
-        return Directory.EnumerateFiles(extractDirectory, "OptiScaler.dll", SearchOption.AllDirectories)
+        return SafeFileEnumeration.Files(extractDirectory, "OptiScaler.dll")
             .Select(path => Path.GetDirectoryName(path))
             .OfType<string>()
             .Where(path => File.Exists(Path.Combine(path, "OptiScaler.ini")))

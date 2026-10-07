@@ -518,7 +518,7 @@ public sealed class DlssManagerService
             string[] dlls;
             try
             {
-                dlls = Directory.EnumerateFiles(componentRoot, "*.dll", SearchOption.AllDirectories).ToArray();
+                dlls = SafeFileEnumeration.Files(componentRoot, "*.dll").ToArray();
             }
             catch
             {

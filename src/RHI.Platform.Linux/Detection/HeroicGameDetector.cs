@@ -91,9 +91,9 @@ public sealed class HeroicGameDetector : IGameDetector
             var path = Path.Combine(root, key);
             if (!Directory.Exists(path)) continue;
             IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(path, "*.json", SearchOption.AllDirectories); }
-            catch { continue; }
-            foreach (var file in files.Take(500)) yield return file;
+            try { files = SafeFileEnumeration.Files(path, "*.json", ignoreInaccessible: true).Take(500).ToArray(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            foreach (var file in files) yield return file;
         }
     }
 

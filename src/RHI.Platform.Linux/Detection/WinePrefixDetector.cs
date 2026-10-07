@@ -87,7 +87,7 @@ public sealed class WinePrefixDetector : IGameDetector
 
     private static IEnumerable<string> FindPrefixes(string root, int maxDepth)
     {
-        if (Directory.Exists(Path.Combine(root, "drive_c")) && File.Exists(Path.Combine(root, "system.reg")))
+        if (IsPrefix(root))
         {
             yield return root;
             yield break;
@@ -98,17 +98,32 @@ public sealed class WinePrefixDetector : IGameDetector
         while (pending.Count > 0)
         {
             var dir = pending.Pop();
-            if (Directory.Exists(Path.Combine(dir, "drive_c")) && File.Exists(Path.Combine(dir, "system.reg")))
+            if (IsPrefix(dir))
             {
                 yield return dir;
                 continue;
             }
             var depth = dir.Count(c => c == Path.DirectorySeparatorChar) - startDepth;
             if (depth >= maxDepth) continue;
-            try { foreach (var sub in Directory.EnumerateDirectories(dir)) pending.Push(sub); }
-            catch { }
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                {
+                    // A symlinked folder is followed only when it is itself a prefix (a prefix kept on
+                    // another disk); any other link could lead anywhere, / included.
+                    if ((File.GetAttributes(sub) & FileAttributes.ReparsePoint) != 0 && !IsPrefix(sub)) continue;
+                    pending.Push(sub);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // An unreadable folder is skipped.
+            }
         }
     }
+
+    private static bool IsPrefix(string dir)
+        => Directory.Exists(Path.Combine(dir, "drive_c")) && File.Exists(Path.Combine(dir, "system.reg"));
 
     private static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
