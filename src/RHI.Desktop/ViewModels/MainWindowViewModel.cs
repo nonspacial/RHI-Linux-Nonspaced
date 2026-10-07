@@ -853,6 +853,17 @@ public partial class MainWindowViewModel : ObservableObject
         RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
+    /// <summary>A merged card took over a duplicate's favourite/hidden/edit state; persist the move.</summary>
+    private void SaveAdoptedLibraryState()
+    {
+        try { _libraryStore.Save(_libraryState); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The card already shows the adopted state; the next library-state save persists it.
+            AppLog.Warn("library", "Could not save library state adopted from merged duplicates", ex);
+        }
+    }
+
     private async Task LoadDlssManifestAsync()
     {
         try
@@ -1225,9 +1236,11 @@ public partial class MainWindowViewModel : ObservableObject
                 ? null
                 : _allGames.Where(g => _probeCache.ContainsKey(Key(g))).ToDictionary(Key, StringComparer.Ordinal);
             var merged = new List<DetectedGame>(found.Count);
+            var adoptedMergedKeys = false;
             foreach (var game in found)
             {
                 game.LibraryIdentityPath ??= game.InstallPath;
+                adoptedMergedKeys |= _libraryState.AdoptMergedKeys(game);
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
                 if (previous is not null && previous.TryGetValue(libraryKey, out var kept))
                 {
@@ -1243,6 +1256,7 @@ public partial class MainWindowViewModel : ObservableObject
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                 merged.Add(game);
             }
+            if (adoptedMergedKeys) SaveAdoptedLibraryState();
             _allGames.Clear();
             _allGames.AddRange(merged);
             ApplyFilter();

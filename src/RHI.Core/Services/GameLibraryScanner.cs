@@ -195,6 +195,11 @@ public sealed class GameLibraryScanner
                 if (!requiresExplicitTarget) first.BinaryDirectory = candidate.BinaryDirectory ?? first.BinaryDirectory;
             }
             first.LaunchExecutablePath ??= candidate.LaunchExecutablePath;
+            first.MergedAliases = first.MergedAliases.Concat(candidate.MergedAliases)
+                .Append(new LibraryEntryAlias(candidate.Source ?? "",
+                    string.IsNullOrWhiteSpace(candidate.LibraryIdentityPath) ? candidate.InstallPath : candidate.LibraryIdentityPath,
+                    candidate.SteamAppId))
+                .Distinct().ToArray();
             first.LibraryIdentityPath ??= candidate.LibraryIdentityPath;
             first.LibraryProvider ??= candidate.LibraryProvider;
             first.LaunchProvider ??= candidate.LaunchProvider;

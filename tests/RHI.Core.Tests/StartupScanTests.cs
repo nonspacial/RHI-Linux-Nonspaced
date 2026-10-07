@@ -73,7 +73,38 @@ public sealed class StartupScanTests : IDisposable
         Assert.StartsWith(LibraryScanStatusText.Done(0), line);
     }
 
-    private MainWindowViewModel CreateViewModel(DlssManagerService dlss, IGameDetector detector)
+    // w1-policy review finding 7, VM wiring: the scan moves a merged duplicate's saved state to the card.
+    [Fact]
+    public async Task Scan_MergedSymlinkDuplicate_KeepsItsFavouriteAndHidden()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "X")).FullName;
+        var link = Path.Combine(_root, "Games");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "media"));
+        var manual = new DetectedGame { Name = "X", Source = "Manual", InstallPath = Path.Combine(link, "X"), IsManuallyAdded = true };
+        manual.LibraryIdentityPath = manual.InstallPath;
+        var library = new LinuxGameLibraryStore(Path.Combine(_root, "library.json"));
+        var state = library.Load();
+        state.FavouriteGames.Add(LinuxGameLibraryStore.GameKey(manual));
+        state.HiddenGames.Add(LinuxGameLibraryStore.GameKey(manual));
+        library.Save(state);
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(100)
+        };
+
+        var vm = CreateViewModel(dlss, new FixedDetector("Heroic", new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real }),
+            new FixedDetector("Manual", manual));
+        var timer = Stopwatch.StartNew();
+        while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.StartsWith(LibraryScanStatusText.Done(1), StringComparison.Ordinal))
+            await Task.Delay(50);
+
+        // The merged card is Heroic's (detector order); a hidden card is filtered out of Games, so read the store.
+        var saved = library.Load();
+        Assert.StartsWith("heroic|", Assert.Single(saved.FavouriteGames));
+        Assert.StartsWith("heroic|", Assert.Single(saved.HiddenGames));
+    }
+
+    private MainWindowViewModel CreateViewModel(DlssManagerService dlss, params IGameDetector[] detectors)
     {
         var settings = new LinuxSettingsStore(Path.Combine(_root, "settings.json"), Path.Combine(_root, "cache"), Path.Combine(_root, "data"));
         var current = settings.Load();
@@ -85,7 +116,7 @@ public sealed class StartupScanTests : IDisposable
             dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
             ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
         return new MainWindowViewModel(
-            new GameLibraryScanner([detector]),
+            new GameLibraryScanner(detectors),
             new LinuxGameLauncher(),
             new NoProbe(),
             dlss,
@@ -152,6 +183,13 @@ public sealed class StartupScanTests : IDisposable
             started.TrySetResult();
             return Task.FromResult<IReadOnlyList<DetectedGame>>([]);
         }
+    }
+
+    private sealed class FixedDetector(string name, params DetectedGame[] games) : IGameDetector
+    {
+        public string Name => name;
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DetectedGame>>(games.Select(g => g.ShallowClone()).ToArray());
     }
 
     private sealed class FailingDetector : IGameDetector

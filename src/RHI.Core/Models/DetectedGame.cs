@@ -46,6 +46,13 @@ public sealed class DetectedGame
     /// </summary>
     public string? LibraryIdentityPath { get; set; }
 
+    /// <summary>
+    /// The library identities of duplicates merged into this card (another launcher's entry, or the same
+    /// folder spelt through a symlink). Library state (favourite, hidden, game edits, HDR profile) saved
+    /// under one of those identities before the merge is adopted by this card, not silently dropped (Refs #55).
+    /// </summary>
+    public IReadOnlyList<LibraryEntryAlias> MergedAliases { get; set; } = [];
+
     /// <summary>Human-readable library/source provider used by the header badge (Steam, Heroic, Lutris, Manual/RHI, Wine).</summary>
     public string? LibraryProvider { get; set; }
 
@@ -161,3 +168,6 @@ public sealed class DetectedGame
 
     public override string ToString() => $"{Name} ({Source})";
 }
+
+/// <summary>A library identity (source, identity folder, Steam AppID) absorbed by a merged card.</summary>
+public sealed record LibraryEntryAlias(string Source, string IdentityPath, int? SteamAppId);

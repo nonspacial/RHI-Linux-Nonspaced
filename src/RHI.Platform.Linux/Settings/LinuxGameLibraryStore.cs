@@ -126,6 +126,35 @@ public sealed class LinuxGameLibraryState
         return ManualGames.RemoveAll(entry => paths.Contains(RHI.Core.Services.PathIdentity.Canonicalize(entry.InstallPath)));
     }
 
+    /// <summary>
+    /// A card that absorbed duplicates (another launcher's entry, a symlink spelling of its folder) adopts
+    /// the library state saved under their keys: favourite and hidden are carried over, a game edit or HDR
+    /// profile moves when the card has none of its own (an existing one is never overwritten, and the
+    /// duplicate's entry then stays where it is). Returns whether anything moved (Refs #55).
+    /// </summary>
+    public bool AdoptMergedKeys(RHI.Core.Models.DetectedGame game)
+    {
+        var key = LinuxGameLibraryStore.GameKey(game);
+        var changed = false;
+        foreach (var alias in game.MergedAliases)
+        {
+            var old = LinuxGameLibraryStore.GameKey(alias);
+            if (string.Equals(old, key, StringComparison.OrdinalIgnoreCase)) continue;
+            if (FavouriteGames.Remove(old)) { FavouriteGames.Add(key); changed = true; }
+            if (HiddenGames.Remove(old)) { HiddenGames.Add(key); changed = true; }
+            changed |= Move(GameEdits, old, key);
+            changed |= Move(HdrProfiles, old, key);
+        }
+        return changed;
+    }
+
+    private static bool Move<T>(Dictionary<string, T> entries, string from, string to)
+    {
+        if (entries.ContainsKey(to) || !entries.Remove(from, out var value)) return false;
+        entries[to] = value;
+        return true;
+    }
+
     private static string NormalizePath(string value)
     {
         try { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim())); }
@@ -180,15 +209,18 @@ public sealed class LinuxGameLibraryStore
     }
 
     public static string GameKey(DetectedGame game)
+        => GameKey(game.Source, string.IsNullOrWhiteSpace(game.LibraryIdentityPath) ? game.InstallPath : game.LibraryIdentityPath, game.SteamAppId);
+
+    /// <summary>The key a card stored under before it was merged into another (see <see cref="DetectedGame.MergedAliases"/>).</summary>
+    public static string GameKey(LibraryEntryAlias alias) => GameKey(alias.Source, alias.IdentityPath, alias.SteamAppId);
+
+    private static string GameKey(string? sourceName, string identityPath, int? steamAppId)
     {
-        var source = (game.Source ?? "").Trim().ToLowerInvariant();
-        var identityPath = string.IsNullOrWhiteSpace(game.LibraryIdentityPath)
-            ? game.InstallPath
-            : game.LibraryIdentityPath;
+        var source = (sourceName ?? "").Trim().ToLowerInvariant();
         string path;
         try { path = Path.GetFullPath(identityPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant(); }
         catch { path = (identityPath ?? "").Trim().ToLowerInvariant(); }
-        var app = game.SteamAppId is int id ? $"steam:{id}" : "nosteam";
+        var app = steamAppId is int id ? $"steam:{id}" : "nosteam";
         return $"{source}|{app}|{path}";
     }
 
