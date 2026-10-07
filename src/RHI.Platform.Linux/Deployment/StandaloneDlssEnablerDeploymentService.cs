@@ -5,6 +5,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -80,7 +81,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (!ProxyNames.Contains(normalized, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"DLL proxy não suportada pelo DLSS Enabler Standalone: {proxyName}.");
 
-        _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = normalized });
+        try { _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = normalized }); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"DLSS Enabler Standalone: proxy {normalized}.");
     }
 

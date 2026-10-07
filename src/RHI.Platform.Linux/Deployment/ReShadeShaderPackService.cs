@@ -5,6 +5,7 @@ using System.Text.Json;
 using RHI.Core;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -80,6 +81,7 @@ public sealed class ReShadeShaderPackService
     private readonly UpstreamRhiManifestService? _manifest;
     private readonly string _cacheDir;
     private readonly string _settingsPath;
+    private readonly JsonFileStore<PackSettings> _settingsFile;
     private readonly string _customRoot;
     private readonly SemaphoreSlim _settingsLock = new(1, 1);
     private readonly SemaphoreSlim _catalogLock = new(1, 1);
@@ -95,6 +97,7 @@ public sealed class ReShadeShaderPackService
         _manifest = manifest;
         _cacheDir = cacheDir ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade-shaders");
         _settingsPath = Path.Combine(_cacheDir, ".pack-settings.json");
+        _settingsFile = new JsonFileStore<PackSettings>(_settingsPath);
         _customRoot = customRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "Custom", "Shaders");
         _packs = BuildDefaultCatalog(_customRoot);
         EnsureCustomDirectories();
@@ -357,8 +360,7 @@ public sealed class ReShadeShaderPackService
             effectPaths.Add(@".\reshade-shaders\RHI\_Core\Shaders\**");
         }
 
-        var json = JsonSerializer.Serialize(outputManifest, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(manifestPath, json);
+        new JsonFileStore<Manifest>(manifestPath).Save(outputManifest);
         return new(root, effectPaths, texturePaths, normalized);
     }
 
@@ -917,42 +919,33 @@ public sealed class ReShadeShaderPackService
         return segments[^1];
     }
 
+    // The exclusions are the user's choices; an unreadable file is copied aside and kept.
     private PackSettings LoadPackSettings()
     {
-        try
-        {
-            if (!File.Exists(_settingsPath)) return new PackSettings();
-            var settings = JsonSerializer.Deserialize<PackSettings>(File.ReadAllText(_settingsPath)) ?? new PackSettings();
-            settings.ExcludedFiles = new Dictionary<string, List<string>>(settings.ExcludedFiles, StringComparer.OrdinalIgnoreCase);
-            return settings;
-        }
-        catch
-        {
-            return new PackSettings();
-        }
+        var settings = _settingsFile.Load().Value ?? new PackSettings();
+        settings.ExcludedFiles = new Dictionary<string, List<string>>(settings.ExcludedFiles ?? new(), StringComparer.OrdinalIgnoreCase);
+        return settings;
     }
 
-    private void SavePackSettings(PackSettings settings)
-    {
-        Directory.CreateDirectory(_cacheDir);
-        var temp = _settingsPath + ".tmp";
-        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(temp, json);
-        File.Move(temp, _settingsPath, overwrite: true);
-    }
+    private void SavePackSettings(PackSettings settings) => _settingsFile.Save(settings);
 
+    /// <summary>
+    /// Loads a game's ownership manifest. Missing means nothing is owned yet; an unreadable one is
+    /// copied aside and throws, so no sync or cleanup can treat owned files as foreign or rewrite
+    /// the manifest without them.
+    /// </summary>
     private static Manifest LoadManifest(string path)
     {
-        try
-        {
-            if (!File.Exists(path)) return new Manifest();
-            return JsonSerializer.Deserialize<Manifest>(File.ReadAllText(path)) ?? new Manifest();
-        }
-        catch
-        {
-            return new Manifest();
-        }
+        var file = new JsonFileStore<Manifest>(path);
+        var load = file.Load();
+        if (load.IsUnreadable)
+            throw new JsonStoreUnavailableException(Path.GetFullPath(path), load.QuarantinePath);
+        return load.Value ?? new Manifest();
     }
+
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the game's shader-pack manifest is unreadable.</summary>
+    internal static void EnsureManifestReadable(string gameDirectory)
+        => LoadManifest(Path.Combine(gameDirectory, "reshade-shaders", "RHI", ".rhi-manifest.json"));
 
     private static void RemoveManifestFiles(string root, Manifest manifest)
     {

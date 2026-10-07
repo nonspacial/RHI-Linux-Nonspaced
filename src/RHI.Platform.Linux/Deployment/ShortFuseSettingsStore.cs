@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -28,10 +29,15 @@ public sealed class ShortFuseSettingsStore
     }
 
     private readonly string _path;
+    private readonly JsonFileStore<SettingsDocument> _file;
     private readonly object _gate = new();
 
     public ShortFuseSettingsStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "shortfuse-settings.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "shortfuse-settings.json");
+        // An unreadable file is copied aside and never overwritten; until then every opt-in reads OFF.
+        _file = new JsonFileStore<SettingsDocument>(_path, parse: Parse);
+    }
 
     public bool IsAutoConfigEnabled(DetectedGame game)
     {
@@ -64,6 +70,12 @@ public sealed class ShortFuseSettingsStore
         }
     }
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable settings file is on disk.</summary>
+    public void EnsureWritable()
+    {
+        lock (_gate) _file.EnsureWritable();
+    }
+
     private static string[] Toggle(IEnumerable<string> keys, string key, bool enabled)
     {
         var set = new HashSet<string>(keys, StringComparer.Ordinal);
@@ -71,36 +83,26 @@ public sealed class ShortFuseSettingsStore
         return set.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 
-    private void SaveUnsafe(SettingsDocument document)
+    private void SaveUnsafe(SettingsDocument document) => _file.Save(document);
+
+    private SettingsDocument LoadUnsafe() => _file.Load().Value ?? new SettingsDocument();
+
+    private static SettingsDocument? Parse(string text)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, _path, overwrite: true);
-    }
+        using var doc = JsonDocument.Parse(text);
 
-    private SettingsDocument LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new();
-            var text = File.ReadAllText(_path);
-            using var doc = JsonDocument.Parse(text);
+        // Legacy settings format: ["disabled-game-key", ...].
+        // The new upstream default is OFF, so no old array entry can grant opt-in authority.
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            return new SettingsDocument();
 
-            // Legacy settings format: ["disabled-game-key", ...].
-            // The new upstream default is OFF, so no old array entry can grant opt-in authority.
-            if (doc.RootElement.ValueKind == JsonValueKind.Array)
-                return new();
-
-            var value = JsonSerializer.Deserialize<SettingsDocument>(text);
-            if (value?.Version != 2) return new();
-            value.EnabledGames ??= [];
-            return value;
-        }
-        catch
-        {
-            // Corrupt/malformed preferences fail closed: every opt-in remains OFF.
-            return new();
-        }
+        var value = JsonSerializer.Deserialize<SettingsDocument>(text);
+        if (value is null) return null;
+        // A newer format is someone's settings this build cannot read: unreadable, never overwritten.
+        if (value.Version > 2) return null;
+        // Older object formats carried no opt-in authority either: every opt-in stays OFF.
+        if (value.Version < 2) return new SettingsDocument();
+        value.EnabledGames ??= [];
+        return value;
     }
 }

@@ -11,6 +11,7 @@ using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
@@ -651,6 +652,9 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryStore = libraryStore ?? new LinuxGameLibraryStore();
         _deploymentRecords = deploymentRecords ?? new LinuxDeploymentRecordStore();
         _hdrProfiles = hdrProfiles ?? new LinuxHdrLaunchProfileService();
+        // Attached before the first load, for the app's lifetime (one view model per process); it
+        // also replays any store set aside earlier (e.g. settings read at startup).
+        JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
         _settings = _settingsStore.Load();
         _libraryState = _libraryStore.Load();
         LibraryFilterMode = _libraryState.FilterMode;
@@ -695,7 +699,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var previousAutoUpdate = _settings.AutoUpdateComponents;
         var previousInterval = _settings.UpdateCheckIntervalHours;
-        _settingsStore.Save(settings);
+        if (TrySaveStore(() => _settingsStore.Save(settings)) is { } notSaved) return notSaved;
         _settings = _settingsStore.Load();
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
@@ -912,6 +916,60 @@ public partial class MainWindowViewModel : ObservableObject
         "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."),
         StatusText);
 
+    /// <summary>
+    /// A JSON store file could not be read and was set aside (Refs #57): say once which file and
+    /// where its copy is, appended to the current status line. Must run on the UI thread.
+    /// </summary>
+    public void ReportStoreQuarantined(JsonStoreQuarantineNotice notice)
+        => StatusText = _statusNotice.Raise(StoreQuarantinedText(notice), StatusText);
+
+    public static string StoreQuarantinedText(JsonStoreQuarantineNotice notice)
+    {
+        var name = Path.GetFileName(notice.FilePath);
+        if (!notice.WritesRefused)
+            return notice.QuarantinePath is null
+                ? LF("O cache {0} não pôde ser lido e será recriado.", "The cache {0} could not be read and will be rebuilt.", name)
+                : LF("O cache {0} não pôde ser lido; uma cópia foi guardada em {1} e ele será recriado.",
+                    "The cache {0} could not be read; a copy was kept at {1} and it will be rebuilt.", name, notice.QuarantinePath);
+        return notice.QuarantinePath is null
+            ? LF("{0} não pôde ser lido nem copiado ({1}). O RHI não vai salvar por cima dele: corrija ou apague o arquivo para voltar a salvar.",
+                "{0} could not be read or copied ({1}). RHI will not save over it: fix or delete the file to save again.", name, notice.FilePath)
+            : LF("{0} não pôde ser lido; o conteúdo foi copiado para {1}. O RHI não vai salvar por cima dele: corrija ou apague o arquivo para voltar a salvar.",
+                "{0} could not be read; its contents were copied to {1}. RHI will not save over it: fix or delete the file to save again.", name, notice.QuarantinePath);
+    }
+
+    /// <summary>Localised status for a store save that failed (refused unreadable file, or an I/O error).</summary>
+    public static string StoreSaveFailedText(Exception error) => error switch
+    {
+        JsonStoreUnavailableException refused when refused.QuarantinePath is not null => LF(
+            "Não salvo: {0} não pôde ser lido (há uma cópia em {1}). Corrija ou apague o arquivo para voltar a salvar.",
+            "Not saved: {0} could not be read (a copy is at {1}). Fix or delete the file to save again.",
+            Path.GetFileName(refused.FilePath), refused.QuarantinePath),
+        JsonStoreUnavailableException refused => LF(
+            "Não salvo: {0} não pôde ser lido. Corrija ou apague o arquivo para voltar a salvar.",
+            "Not saved: {0} could not be read. Fix or delete the file to save again.", refused.FilePath),
+        _ => LF("Não foi possível salvar: {0}", "Could not save: {0}", error.Message)
+    };
+
+    /// <summary>
+    /// Runs one store save. A refused (unreadable) store or an I/O failure is shown on the status
+    /// line and returned as the message; null means saved.
+    /// </summary>
+    private string? TrySaveStore(Action save)
+    {
+        try
+        {
+            save();
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            var message = StoreSaveFailedText(ex);
+            StatusText = message;
+            return message;
+        }
+    }
+
     partial void OnStatusTextChanged(string value)
     {
         var decorated = _statusNotice.Decorate(value);
@@ -947,7 +1005,7 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(value);
         if (!string.Equals(value, _libraryState.FilterMode, StringComparison.Ordinal))
             LibraryFilterMode = _libraryState.FilterMode;
-        _libraryStore.Save(_libraryState);
+        TrySaveStore(() => _libraryStore.Save(_libraryState));
         ApplyFilter();
     }
 
@@ -987,9 +1045,15 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
-        SelectedGame.UserGraphicsApiOverride = api;
-        _apiOverrideStore.Set(SelectedGame, api);
-        ReevaluateCurrentGameForApiOverride(SelectedGame);
+        var game = SelectedGame;
+        // Refused: the dropdown and the game go back to what is saved (the store is the authority).
+        if (TrySaveStore(() => _apiOverrideStore.Set(game, api)) is not null)
+        {
+            LoadGraphicsApiOverride(game);
+            return;
+        }
+        game.UserGraphicsApiOverride = api;
+        ReevaluateCurrentGameForApiOverride(game);
     }
 
     partial void OnSelectedOptiScalerVariantChanged(string value)
@@ -1004,7 +1068,12 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = L("Remova o OptiScaler atual antes de trocar Estável/Desenvolvimento/DLSS NR.", "Remove the current OptiScaler before switching Stable/Nightly/DLSS NR.");
             return;
         }
-        _optiScalerVariantStore.Set(SelectedGame, ParseOptiScalerVariant(value));
+        var game = SelectedGame;
+        if (TrySaveStore(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value))) is not null)
+        {
+            LoadOptiScalerVariant(game);
+            return;
+        }
         StatusText = LF("OptiScaler: variante {0} selecionada para {1}.", "OptiScaler: variant {0} selected for {1}.", value, SelectedGame.Name);
     }
 
@@ -1012,8 +1081,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
-        _managedComponents.SetLumaModePreference(SelectedGame, preference);
-        ReevaluateCurrentGameForLumaPolicy(SelectedGame);
+        var game = SelectedGame;
+        if (TrySaveStore(() => _managedComponents.SetLumaModePreference(game, preference)) is not null)
+        {
+            LoadLumaModePreference(game);
+            return;
+        }
+        ReevaluateCurrentGameForLumaPolicy(game);
     }
 
     partial void OnSelectedHdrModeChanged(string value)
@@ -2444,8 +2518,9 @@ public partial class MainWindowViewModel : ObservableObject
         CancellationToken cancellationToken = default)
         => _managedComponents.GetReShadeShaderPackFilesAsync(packId, cancellationToken);
 
-    public void SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
-        => _managedComponents.SetReShadeShaderPackExcludedFiles(packId, excluded);
+    /// <summary>Saves the pack's file selection; returns the localised failure, or null when saved.</summary>
+    public string? SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
+        => TrySaveStore(() => _managedComponents.SetReShadeShaderPackExcludedFiles(packId, excluded));
 
     public async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
         IReadOnlyList<string> shaderIds,
@@ -2608,7 +2683,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ViewMode = IsCompactView ? "Detail" : "Compact";
         _settings.ViewMode = ViewMode;
-        _settingsStore.Save(_settings);
+        TrySaveStore(() => _settingsStore.Save(_settings));
         NotifyUxSettings();
     }
 
@@ -2634,7 +2709,8 @@ public partial class MainWindowViewModel : ObservableObject
             _libraryState.FavouriteGames.Add(key);
             game.IsFavourite = true;
         }
-        _libraryStore.Save(_libraryState);
+        // Kept for this session even when the save is refused; the status line says it was not saved.
+        TrySaveStore(() => _libraryStore.Save(_libraryState));
         ApplyFilter();
         NotifySelected();
     }
@@ -2655,7 +2731,8 @@ public partial class MainWindowViewModel : ObservableObject
             _libraryState.HiddenGames.Add(key);
             game.IsHidden = true;
         }
-        _libraryStore.Save(_libraryState);
+        // Kept for this session even when the save is refused; the status line says it was not saved.
+        TrySaveStore(() => _libraryStore.Save(_libraryState));
         ApplyFilter();
         NotifySelected();
     }
@@ -2706,7 +2783,7 @@ public partial class MainWindowViewModel : ObservableObject
             GameRootPath = root,
             BinaryDirectory = binaries
         }.Normalize();
-        _libraryStore.Save(_libraryState);
+        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return notSaved;
 
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
@@ -2722,7 +2799,7 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryState = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         var removed = _libraryState.GameEdits.Remove(key);
-        _libraryStore.Save(_libraryState);
+        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return notSaved;
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         await RefreshAsync(NoDetectors);
@@ -2756,7 +2833,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         _libraryState.ManualGames.Add(entry);
         _libraryState.FilterMode = "All Games";
-        _libraryStore.Save(_libraryState);
+        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is { } notSaved) return (false, notSaved);
         LibraryFilterMode = "All Games";
         await RefreshAsync(ManualOnly);
         SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
@@ -2775,7 +2852,7 @@ public partial class MainWindowViewModel : ObservableObject
             try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
             catch { return false; }
         });
-        _libraryStore.Save(_libraryState);
+        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is not null) return;
         await RefreshAsync(ManualOnly);
         StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
     }
@@ -2877,7 +2954,11 @@ public partial class MainWindowViewModel : ObservableObject
         var previous = _managedComponents.GetNeuralAddonVersionPin(game, kind);
         // Loading a game's pins re-sets the same value; only a real change persists or swaps.
         if (string.Equals(previous, pin, StringComparison.OrdinalIgnoreCase)) return;
-        _managedComponents.SetNeuralAddonVersionPin(game, kind, pin);
+        if (TrySaveStore(() => _managedComponents.SetNeuralAddonVersionPin(game, kind, pin)) is not null)
+        {
+            LoadNeuralVersionPins(game); // the dropdown goes back to what is saved
+            return;
+        }
         if (_managedComponents.IsManaged(game, kind))
             _ = SwapNeuralVersionInPlaceAsync(game, kind, previous);
     }
@@ -2889,7 +2970,11 @@ public partial class MainWindowViewModel : ObservableObject
         var pin = IsLatestSelection(value) ? null : value;
         var previous = _managedComponents.GetNeuralRenderingDllVersionPin(game);
         if (string.Equals(previous, pin, StringComparison.Ordinal)) return;
-        _managedComponents.SetNeuralRenderingDllVersionPin(game, pin);
+        if (TrySaveStore(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, pin)) is not null)
+        {
+            LoadNeuralVersionPins(game);
+            return;
+        }
         if (OrchestratedDlssStackManaged)
             _ = SwapNeuralVersionInPlaceAsync(game, kind: null, previous);
     }
@@ -2903,8 +2988,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         void RevertPin()
         {
-            if (kind is { } addon) _managedComponents.SetNeuralAddonVersionPin(game, addon, previousPin);
-            else _managedComponents.SetNeuralRenderingDllVersionPin(game, previousPin);
+            if (kind is { } addon) TrySaveStore(() => _managedComponents.SetNeuralAddonVersionPin(game, addon, previousPin));
+            else TrySaveStore(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, previousPin));
             if (ReferenceEquals(SelectedGame, game)) LoadNeuralVersionPins(game);
         }
 
@@ -3411,7 +3496,7 @@ public partial class MainWindowViewModel : ObservableObject
         var profile = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
         if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);
         else _libraryState.HdrProfiles[key] = profile;
-        _libraryStore.Save(_libraryState);
+        TrySaveStore(() => _libraryStore.Save(_libraryState));
         NotifyHdrProfile();
     }
 

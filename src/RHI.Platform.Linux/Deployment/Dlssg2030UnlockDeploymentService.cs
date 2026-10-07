@@ -6,6 +6,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -93,11 +94,15 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (!ProxyNames.Contains(normalizedProxy, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Nome de proxy não suportado pelo RTX 20 FG Unlock legado: {proxyName}.");
 
-        _preferences.Set(game, new Dlssg2030Preferences
+        try
         {
-            GpuGeneration = normalizedGpu,
-            ProxyName = normalizedProxy
-        });
+            _preferences.Set(game, new Dlssg2030Preferences
+            {
+                GpuGeneration = normalizedGpu,
+                ProxyName = normalizedProxy
+            });
+        }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado: {normalizedGpu}, proxy {normalizedProxy}.");
     }
 

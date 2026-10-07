@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -12,11 +13,15 @@ namespace RHI.Platform.Linux.Paths;
 public sealed class NeuralAddonVersionPreferenceStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, string>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public NeuralAddonVersionPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "neural-addon-version-pins.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "neural-addon-version-pins.json");
+        _file = new JsonFileStore<Dictionary<string, string>>(_path, JsonOptions);
+    }
 
     public string? Get(DetectedGame game, ManagedComponentKind kind)
     {
@@ -89,25 +94,7 @@ public sealed class NeuralAddonVersionPreferenceStore
            && Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._+-]*$", RegexOptions.CultureInvariant);
 
     private Dictionary<string, string> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, string>();
-            return new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
 
-    private void SaveUnsafe(Dictionary<string, string> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, string> entries) => _file.Save(entries);
 }

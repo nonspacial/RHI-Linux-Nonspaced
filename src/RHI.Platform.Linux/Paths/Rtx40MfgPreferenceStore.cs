@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -25,11 +26,15 @@ public sealed class Rtx40MfgPreferences
 public sealed class Rtx40MfgPreferenceStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, Rtx40MfgPreferences>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public Rtx40MfgPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "rtx40-mfg-standalone-preferences.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "rtx40-mfg-standalone-preferences.json");
+        _file = new JsonFileStore<Dictionary<string, Rtx40MfgPreferences>>(_path, JsonOptions);
+    }
 
     public Rtx40MfgPreferences Get(DetectedGame game)
     {
@@ -54,25 +59,7 @@ public sealed class Rtx40MfgPreferenceStore
     }
 
     private Dictionary<string, Rtx40MfgPreferences> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, Rtx40MfgPreferences>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, Rtx40MfgPreferences>();
-            return new Dictionary<string, Rtx40MfgPreferences>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, Rtx40MfgPreferences>(), StringComparer.OrdinalIgnoreCase);
 
-    private void SaveUnsafe(Dictionary<string, Rtx40MfgPreferences> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, Rtx40MfgPreferences> entries) => _file.Save(entries);
 }

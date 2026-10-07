@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -20,6 +21,7 @@ public enum LumaModePreference
 public sealed class LumaModePreferenceStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, LumaModePreference>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -30,6 +32,7 @@ public sealed class LumaModePreferenceStore
     public LumaModePreferenceStore(string? path = null)
     {
         _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "luma-mode.json");
+        _file = new JsonFileStore<Dictionary<string, LumaModePreference>>(_path, JsonOptions);
     }
 
     public LumaModePreference Get(DetectedGame game)
@@ -58,26 +61,7 @@ public sealed class LumaModePreferenceStore
     }
 
     private Dictionary<string, LumaModePreference> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.Ordinal);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, LumaModePreference>>(
-                File.ReadAllText(_path), JsonOptions) ?? new();
-            return new Dictionary<string, LumaModePreference>(parsed, StringComparer.Ordinal);
-        }
-        catch
-        {
-            return new(StringComparer.Ordinal);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, LumaModePreference>(), StringComparer.Ordinal);
 
-    private void SaveUnsafe(Dictionary<string, LumaModePreference> map)
-    {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var tmp = _path + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(map, JsonOptions));
-        File.Move(tmp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, LumaModePreference> map) => _file.Save(map);
 }

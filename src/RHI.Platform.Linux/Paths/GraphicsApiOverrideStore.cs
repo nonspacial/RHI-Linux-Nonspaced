@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -12,6 +13,7 @@ namespace RHI.Platform.Linux.Paths;
 public sealed class GraphicsApiOverrideStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, GraphicsApi>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -20,7 +22,10 @@ public sealed class GraphicsApiOverrideStore
     };
 
     public GraphicsApiOverrideStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "game-api-overrides.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "game-api-overrides.json");
+        _file = new JsonFileStore<Dictionary<string, GraphicsApi>>(_path, JsonOptions);
+    }
 
     public GraphicsApi? Get(DetectedGame game)
     {
@@ -47,26 +52,7 @@ public sealed class GraphicsApiOverrideStore
     }
 
     private Dictionary<string, GraphicsApi> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, GraphicsApi>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, GraphicsApi>();
-            return new Dictionary<string, GraphicsApi>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, GraphicsApi>(), StringComparer.OrdinalIgnoreCase);
 
-    private void SaveUnsafe(Dictionary<string, GraphicsApi> entries)
-    {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, GraphicsApi> entries) => _file.Save(entries);
 }

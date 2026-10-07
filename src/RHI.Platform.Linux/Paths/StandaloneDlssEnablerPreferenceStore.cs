@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -23,11 +24,15 @@ public sealed class StandaloneDlssEnablerPreferences
 public sealed class StandaloneDlssEnablerPreferenceStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, StandaloneDlssEnablerPreferences>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public StandaloneDlssEnablerPreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlss-enabler-standalone-preferences.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlss-enabler-standalone-preferences.json");
+        _file = new JsonFileStore<Dictionary<string, StandaloneDlssEnablerPreferences>>(_path, JsonOptions);
+    }
 
     public StandaloneDlssEnablerPreferences Get(DetectedGame game)
     {
@@ -52,25 +57,7 @@ public sealed class StandaloneDlssEnablerPreferenceStore
     }
 
     private Dictionary<string, StandaloneDlssEnablerPreferences> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, StandaloneDlssEnablerPreferences>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, StandaloneDlssEnablerPreferences>();
-            return new Dictionary<string, StandaloneDlssEnablerPreferences>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, StandaloneDlssEnablerPreferences>(), StringComparer.OrdinalIgnoreCase);
 
-    private void SaveUnsafe(Dictionary<string, StandaloneDlssEnablerPreferences> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, StandaloneDlssEnablerPreferences> entries) => _file.Save(entries);
 }

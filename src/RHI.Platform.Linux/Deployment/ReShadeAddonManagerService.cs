@@ -5,6 +5,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -65,6 +66,7 @@ public sealed class ReShadeAddonManagerService
     private readonly string _cacheDir;
     private readonly string _addonsIniCache;
     private readonly string _statePath;
+    private readonly JsonFileStore<StateDocument> _stateFile;
     private readonly string _customRoot;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -100,6 +102,7 @@ public sealed class ReShadeAddonManagerService
         _addonsIniCache = Path.Combine(_cacheDir, "Addons.ini");
         _customRoot = customRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "Custom", "Addons");
         _statePath = statePath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "addon-manager.json");
+        _stateFile = new JsonFileStore<StateDocument>(_statePath);
         Directory.CreateDirectory(_customRoot);
     }
 
@@ -231,6 +234,8 @@ public sealed class ReShadeAddonManagerService
                 return ComponentOperationResult.Fail($"These addons are managed by dedicated RHI component rows and cannot be duplicated here: {string.Join(", ", blocked)}");
 
             var key = LinuxDeploymentRecordStore.GameKey(game);
+            // Refuse before touching the game: the final ledger save would be refused anyway.
+            _stateFile.EnsureWritable();
             var state = LoadState();
             var old = state.Games.TryGetValue(key, out var existing) ? existing : new GameState();
 
@@ -745,28 +750,16 @@ public sealed class ReShadeAddonManagerService
             definition.IsCustom ? !string.IsNullOrWhiteSpace(definition.CustomPath64) :
                 !string.IsNullOrWhiteSpace(definition.DownloadUrl64) || !string.IsNullOrWhiteSpace(definition.DownloadUrl) || !string.IsNullOrWhiteSpace(definition.ReleaseApiUrl));
 
+    // An unreadable ledger is copied aside and never replaced: losing it would orphan every
+    // game's owned add-on files (they could no longer be told apart from the user's own).
     private StateDocument LoadState()
     {
-        try
-        {
-            if (!File.Exists(_statePath)) return new StateDocument();
-            var state = JsonSerializer.Deserialize<StateDocument>(File.ReadAllText(_statePath)) ?? new StateDocument();
-            state.Games = new Dictionary<string, GameState>(state.Games, StringComparer.OrdinalIgnoreCase);
-            return state;
-        }
-        catch
-        {
-            return new StateDocument();
-        }
+        var state = _stateFile.Load().Value ?? new StateDocument();
+        state.Games = new Dictionary<string, GameState>(state.Games ?? new(), StringComparer.OrdinalIgnoreCase);
+        return state;
     }
 
-    private void SaveState(StateDocument state)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
-        var temp = _statePath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(temp, _statePath, overwrite: true);
-    }
+    private void SaveState(StateDocument state) => _stateFile.Save(state);
 
     private static string Sha256(string path)
     {

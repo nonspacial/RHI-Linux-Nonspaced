@@ -1,6 +1,7 @@
 using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -25,11 +26,15 @@ public sealed class Dlssg2030Preferences
 public sealed class Dlssg2030PreferenceStore
 {
     private readonly string _path;
+    private readonly JsonFileStore<Dictionary<string, Dlssg2030Preferences>> _file;
     private readonly object _gate = new();
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     public Dlssg2030PreferenceStore(string? path = null)
-        => _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlssg2030-preferences.json");
+    {
+        _path = path ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "dlssg2030-preferences.json");
+        _file = new JsonFileStore<Dictionary<string, Dlssg2030Preferences>>(_path, JsonOptions);
+    }
 
     public Dlssg2030Preferences Get(DetectedGame game)
     {
@@ -60,25 +65,7 @@ public sealed class Dlssg2030PreferenceStore
     }
 
     private Dictionary<string, Dlssg2030Preferences> LoadUnsafe()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return new(StringComparer.OrdinalIgnoreCase);
-            var parsed = JsonSerializer.Deserialize<Dictionary<string, Dlssg2030Preferences>>(File.ReadAllText(_path), JsonOptions)
-                         ?? new Dictionary<string, Dlssg2030Preferences>();
-            return new Dictionary<string, Dlssg2030Preferences>(parsed, StringComparer.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
-    }
+        => new(_file.Load().Value ?? new Dictionary<string, Dlssg2030Preferences>(), StringComparer.OrdinalIgnoreCase);
 
-    private void SaveUnsafe(Dictionary<string, Dlssg2030Preferences> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(entries, JsonOptions));
-        File.Move(temp, _path, overwrite: true);
-    }
+    private void SaveUnsafe(Dictionary<string, Dlssg2030Preferences> entries) => _file.Save(entries);
 }

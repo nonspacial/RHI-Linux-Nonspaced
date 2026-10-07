@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -265,6 +266,13 @@ public sealed partial class ReShadeDeploymentService
             }
             if (!LooksLikeNativeD3DCompiler(previousCompilerFile.Path, architecture))
                 return ComponentOperationResult.Fail($"The RHI-managed D3DCompiler_47.dll no longer looks like a native Microsoft shader compiler: {previousCompilerFile.Path}");
+        }
+
+        // An unreadable shader-pack manifest would make Cleanup throw after the INI was already cleaned.
+        if (existingRecord is not null)
+        {
+            try { ReShadeShaderPackService.EnsureManifestReadable(game.BinaryDirectory); }
+            catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         }
 
         try

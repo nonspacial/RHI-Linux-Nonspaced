@@ -1,6 +1,7 @@
-using System.Globalization;
 using System.Text.Json;
+using System.Globalization;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Settings;
 
@@ -82,6 +83,8 @@ public sealed class LinuxAppSettings
 
 public sealed class LinuxSettingsStore
 {
+    private readonly JsonFileStore<LinuxAppSettings> _file;
+
     public string SettingsPath { get; }
     public string CacheRoot { get; }
     public string DataRoot { get; }
@@ -92,35 +95,25 @@ public sealed class LinuxSettingsStore
         SettingsPath = settingsPath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "settings.json");
         CacheRoot = cacheRoot ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux");
         DataRoot = dataRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux");
+        _file = new JsonFileStore<LinuxAppSettings>(SettingsPath,
+            parse: text => JsonSerializer.Deserialize<LinuxAppSettings>(text)?.Normalize());
     }
 
-    public LinuxAppSettings Load()
-    {
-        try
-        {
-            if (!File.Exists(SettingsPath)) return new LinuxAppSettings();
-            var json = File.ReadAllText(SettingsPath);
-            return (JsonSerializer.Deserialize<LinuxAppSettings>(json) ?? new LinuxAppSettings()).Normalize();
-        }
-        catch
-        {
-            return new LinuxAppSettings();
-        }
-    }
+    /// <summary>Never throws: missing or unreadable settings yield defaults (an unreadable file is copied aside).</summary>
+    public LinuxAppSettings Load() => _file.Load().Value ?? new LinuxAppSettings();
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable settings file is on disk.</summary>
     public void Save(LinuxAppSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.Normalize();
-        Directory.CreateDirectory(ConfigRoot);
-        var temp = SettingsPath + ".tmp";
-        var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(temp, json);
-        File.Move(temp, SettingsPath, true);
+        _file.Save(settings);
     }
 
+    /// <summary>Explicit user reset. An unreadable file is still copied aside before it is deleted.</summary>
     public LinuxAppSettings Reset()
     {
+        _file.Load();
         if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
         return new LinuxAppSettings();
     }

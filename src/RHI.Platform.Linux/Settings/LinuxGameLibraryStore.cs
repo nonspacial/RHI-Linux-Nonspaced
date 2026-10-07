@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Settings;
 
@@ -133,35 +134,30 @@ public sealed class LinuxGameLibraryStore
         Converters = { new JsonStringEnumConverter() }
     };
 
+    private readonly JsonFileStore<LinuxGameLibraryState> _file;
+
     public string LibraryPath { get; }
 
     public LinuxGameLibraryStore(string? libraryPath = null)
     {
         LibraryPath = libraryPath ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "game-library.json");
+        // Normalising is part of reading: content it cannot handle (e.g. a null entry) is unreadable.
+        _file = new JsonFileStore<LinuxGameLibraryState>(LibraryPath, JsonOptions,
+            parse: text => JsonSerializer.Deserialize<LinuxGameLibraryState>(text, JsonOptions)?.Normalize());
     }
 
-    public LinuxGameLibraryState Load()
-    {
-        try
-        {
-            if (!File.Exists(LibraryPath)) return new LinuxGameLibraryState();
-            return (JsonSerializer.Deserialize<LinuxGameLibraryState>(File.ReadAllText(LibraryPath), JsonOptions)
-                    ?? new LinuxGameLibraryState()).Normalize();
-        }
-        catch
-        {
-            return new LinuxGameLibraryState();
-        }
-    }
+    /// <summary>
+    /// Never throws: a missing or unreadable library yields an empty state. An unreadable file is
+    /// copied aside and <see cref="Save"/> refuses to replace it until it reads again.
+    /// </summary>
+    public LinuxGameLibraryState Load() => _file.Load().Value ?? new LinuxGameLibraryState();
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable library file is on disk.</summary>
     public void Save(LinuxGameLibraryState state)
     {
         ArgumentNullException.ThrowIfNull(state);
         state.Normalize();
-        Directory.CreateDirectory(Path.GetDirectoryName(LibraryPath)!);
-        var temp = LibraryPath + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, JsonOptions));
-        File.Move(temp, LibraryPath, overwrite: true);
+        _file.Save(state);
     }
 
     public static string GameKey(DetectedGame game)

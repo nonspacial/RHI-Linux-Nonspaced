@@ -6,6 +6,7 @@ using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -114,7 +115,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (IsBinkProxy(requested))
             return ComponentOperationResult.Fail("Os proxies Bink exigem chaining da DLL original (*Hooked.dll). Esse fluxo ainda não é automatizado no RHI-Linux; escolha outro proxy.");
 
-        _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = normalizedGpu, ProxyName = requested });
+        try { _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = normalizedGpu, ProxyName = requested }); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
         return ComponentOperationResult.Ok($"Universal MFG: {normalizedGpu}, proxy {requested}.");
     }
 
