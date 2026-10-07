@@ -8,9 +8,14 @@ namespace RHI.Platform.Linux.Settings;
 /// </summary>
 public static class LinuxGameIdentityService
 {
+    /// <summary>Stored token for "infer the provider" (kept in PT-BR for existing game-library.json files).</summary>
+    public const string AutomaticLaunchProvider = "Automático";
+    /// <summary>Stored token for "none of the listed providers".</summary>
+    public const string OtherLaunchProvider = "Outro";
+
     public static readonly IReadOnlyList<string> LaunchProviderOptions =
     [
-        "Automático",
+        AutomaticLaunchProvider,
         "Battle.net",
         "EA",
         "Epic",
@@ -22,7 +27,7 @@ public static class LinuxGameIdentityService
         "Ubisoft",
         "Xbox",
         "Wine",
-        "Outro"
+        OtherLaunchProvider
     ];
 
     public static void ApplyDetectedIdentity(DetectedGame game, LinuxGameEditOverride? edit = null)

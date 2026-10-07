@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using Avalonia;
 
 namespace RHI.Desktop.Localization;
@@ -749,27 +751,42 @@ public static class UiLocalizationService
 
     public static string CurrentLanguage { get; private set; } = "en-US";
 
-    public static string Text(string key)
+    // Every UI string, by language: the XAML resource table above plus the code table in UiStrings. Built once; a key
+    // defined twice throws here, so a duplicate fails every test instead of silently shadowing a translation.
+    private static readonly IReadOnlyDictionary<string, string> AllPtBr = Merge(PtBr, UiStrings.Entries.Select(e => (e.Key, e.PtBr)));
+    private static readonly IReadOnlyDictionary<string, string> AllEnUs = Merge(EnUs, UiStrings.Entries.Select(e => (e.Key, e.EnUs)));
+
+    private static Dictionary<string, string> Merge(IReadOnlyDictionary<string, string> resources, IEnumerable<(string Key, string Value)> code)
     {
-        var table = CurrentLanguage == "pt-BR" ? PtBr : EnUs;
-        return table.TryGetValue(key, out var value) ? value : key;
+        var all = new Dictionary<string, string>(resources, StringComparer.Ordinal);
+        foreach (var (key, value) in code) all.Add(key, value);
+        return all;
     }
+
+    /// <summary>Every localisation key (resource and code tables).</summary>
+    public static IReadOnlyCollection<string> Keys => AllEnUs.Keys.ToArray();
+
+    /// <summary>Keys present in one language only (must be empty).</summary>
+    public static IReadOnlyList<string> KeysMissingAPair
+        => AllPtBr.Keys.Except(AllEnUs.Keys).Concat(AllEnUs.Keys.Except(AllPtBr.Keys)).OrderBy(k => k, StringComparer.Ordinal).ToArray();
+
+    public static string Text(string key) => TextFor(CurrentLanguage, key);
 
     public static string TextFor(string? language, string key)
     {
-        var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
-        var table = normalized == "pt-BR" ? PtBr : EnUs;
+        var table = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language) == "pt-BR" ? AllPtBr : AllEnUs;
         return table.TryGetValue(key, out var value) ? value : key;
     }
 
     public static string Format(string key, params object?[] args)
-        => string.Format(CultureInfo.CurrentUICulture, Text(key), args);
+        => string.Format(Culture(CurrentLanguage), Text(key), args);
 
-    public static string Choose(string ptBr, string enUs)
-        => CurrentLanguage == "pt-BR" ? ptBr : enUs;
+    public static string FormatFor(string? language, string key, params object?[] args)
+        => string.Format(Culture(language), TextFor(language, key), args);
 
-    public static string ChooseFormat(string ptBr, string enUs, params object?[] args)
-        => string.Format(CultureInfo.CurrentUICulture, Choose(ptBr, enUs), args);
+    /// <summary>Numbers and dates follow the chosen UI language, not the system locale.</summary>
+    private static CultureInfo Culture(string? language)
+        => CultureInfo.GetCultureInfo(RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language));
 
     /// <summary>Update All status line built from the result's counts, so it never depends on parsing English text.</summary>
     public static string UpdateAllSummary(RHI.Platform.Linux.Deployment.LinuxUpdateAllResult result)
@@ -802,7 +819,7 @@ public static class UiLocalizationService
         => string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.ShaderAddonApplied"), shaderPacks, addons)
            + (reShadeFromCache ? TextFor(language, "Ui.ReShadeCachedCopyUsed") : "");
 
-    public static bool HasKeyParity => PtBr.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(EnUs.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal);
+    public static bool HasKeyParity => KeysMissingAPair.Count == 0;
 
     public static string Present(string? value)
         => PresentFor(CurrentLanguage, value);
@@ -811,6 +828,8 @@ public static class UiLocalizationService
     {
         if (string.IsNullOrWhiteSpace(value)) return value ?? string.Empty;
         var normalized = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language);
+        if (normalized != "pt-BR")
+            value = TranslatePortugueseOnly(value);
         foreach (var pair in ExactPresentationPairs)
         {
             if (normalized == "pt-BR" && value.Equals(pair.En, StringComparison.Ordinal)) return pair.Pt;
@@ -833,9 +852,59 @@ public static class UiLocalizationService
         // Known messages above retain their detailed translation; old/unmapped platform text
         // fails closed to a localized generic presentation instead of producing mixed UI.
         if (LooksLikeOppositeLanguage(normalized, result))
+        {
+            // The real text is not lost: it goes to the error log once, so "see the logs" is true.
+            LogUntranslatedOnce(normalized, value);
             return TextFor(normalized, "Ui.UnlocalizedPlatformMessage");
+        }
 
         return result;
+    }
+
+    private sealed record PortugueseOnlyTemplate(string Anchor, Regex Pattern, string Replacement, int LiteralLength);
+
+    // Longest literal text first, so a message that embeds another (": {2}") is matched by its own row before the
+    // embedded message's row rewrites the inside.
+    private static readonly PortugueseOnlyTemplate[] PortugueseOnlyTemplates = PlatformMessageTranslations.PortugueseOnly
+        .Select(BuildTemplate)
+        .OrderByDescending(t => t.LiteralLength)
+        .ToArray();
+
+    private static PortugueseOnlyTemplate BuildTemplate((string PtBr, string EnUs) row)
+    {
+        var parts = Regex.Split(row.PtBr, @"\{(\d+)\}");
+        var pattern = new StringBuilder();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (i % 2 == 0) { pattern.Append(Regex.Escape(parts[i])); continue; }
+            var last = i == parts.Length - 2 && parts[^1].Length == 0;
+            pattern.Append("(?<g").Append(parts[i]).Append(last ? ">.+)" : ">.+?)");
+        }
+        var literals = parts.Where((_, i) => i % 2 == 0).ToArray();
+        var replacement = Regex.Replace(row.EnUs.Replace("$", "$$"), @"\{(\d+)\}", "${g$1}");
+        return new PortugueseOnlyTemplate(literals.OrderByDescending(p => p.Length).First(),
+            new Regex(pattern.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant), replacement, literals.Sum(p => p.Length));
+    }
+
+    private static string TranslatePortugueseOnly(string value)
+    {
+        foreach (var template in PortugueseOnlyTemplates)
+        {
+            if (!value.Contains(template.Anchor, StringComparison.Ordinal)) continue;
+            value = template.Pattern.Replace(value, template.Replacement);
+        }
+        return value;
+    }
+
+    private static readonly HashSet<string> LoggedUntranslated = new(StringComparer.Ordinal);
+
+    private static void LogUntranslatedOnce(string language, string value)
+    {
+        lock (LoggedUntranslated)
+        {
+            if (LoggedUntranslated.Count >= 256 || !LoggedUntranslated.Add(value)) return;
+        }
+        RHI.Desktop.Diagnostics.UiExceptionGuard.Log.TryWrite($"untranslated-message ({language})", value);
     }
 
     private static bool LooksLikeOppositeLanguage(string language, string value)

@@ -19,27 +19,25 @@ public sealed partial class MainWindow
     // authorRoles), sorted, each with a Ko-fi link. With no manifest at all the built-in list still shows.
     private void Donate_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
-        var title = L("RHI-Linux — Apoie os autores dos mods", "RHI-Linux — Support the mod authors");
+        var title = T("Win.RHILinuxSupportModAuthors");
         var manifest = UpstreamManifest;
 
         var intro = new TextBlock
         {
-            Text = L("Estas são as pessoas que criam os mods que o RHI gerencia. Se você gosta do trabalho delas, considere apoiá-las.",
-                "These are the people who make the mods RHI manages. If you enjoy their work, consider supporting them."),
+            Text = T("Win.ThesePeopleWhoMakeModsRHI"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.7,
             Margin = new Thickness(0, 0, 0, 8)
         };
         var warning = new TextBlock
         {
-            Text = L("⚠ Importante: para receber acesso antecipado aos mods RenoDX, vincule sua conta do Discord ao Ko-fi ANTES de doar. Doações feitas sem esse vínculo não podem ser creditadas depois.",
-                "⚠ Important: to receive early access to RenoDX mods, link your Discord account to Ko-fi BEFORE donating. Donations made without linking first cannot be credited afterwards."),
+            Text = T("Win.ImportantReceiveEarlyAccessRenoDXMods"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
             Margin = new Thickness(0, 0, 0, 10)
         };
-        var status = new TextBlock { FontSize = 11, Opacity = 0.6, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Text = L("Carregando…", "Loading…") };
-        var close = new Button { Content = L("Fechar", "Close"), Padding = new Thickness(14, 7) };
+        var status = new TextBlock { FontSize = 11, Opacity = 0.6, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center, Text = T("Win.Loading") };
+        var close = new Button { Content = T("Win.Close"), Padding = new Thickness(14, 7) };
 
         var top = new StackPanel();
         top.Children.Add(intro);
@@ -82,7 +80,7 @@ public sealed partial class MainWindow
             {
                 donations = manifest is null
                     ? new UpstreamDonationList(UpstreamRhiManifestService.BuiltInDonationAuthors,
-                        L("o manifesto do RHI não está disponível nesta sessão", "the RHI manifest is not available in this session"))
+                        T("Win.RHIManifestNotAvailableSession"))
                     : await manifest.FetchDonationAuthorsAsync(loadToken);
             }
             catch (OperationCanceledException) when (loadToken.IsCancellationRequested)
@@ -94,7 +92,7 @@ public sealed partial class MainWindow
                 status.Text = "";
                 list.Children.Add(new TextBlock
                 {
-                    Text = LF("Não foi possível carregar a lista de autores: {0}", "Could not load the author list: {0}", ex.Message),
+                    Text = TF("Win.CouldNotLoadAuthorList", ex.Message),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brushes.OrangeRed,
                     Margin = new Thickness(0, 8, 0, 0)
@@ -107,8 +105,7 @@ public sealed partial class MainWindow
             {
                 list.Children.Add(new TextBlock
                 {
-                    Text = LF("Não foi possível carregar a lista atual de autores ({0}). Mostrando a lista embutida do RHI.",
-                        "Could not load the current author list ({0}). Showing RHI's built-in list.", manifestError),
+                    Text = TF("Win.CouldNotLoadCurrentAuthorList", manifestError),
                     TextWrapping = TextWrapping.Wrap,
                     FontSize = 12,
                     Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
@@ -122,7 +119,7 @@ public sealed partial class MainWindow
                 status.Text = "";
                 list.Children.Add(new TextBlock
                 {
-                    Text = L("Nenhum link de doação disponível.", "No donation links available."),
+                    Text = T("Win.NoDonationLinksAvailable"),
                     TextWrapping = TextWrapping.Wrap,
                     Opacity = 0.7,
                     Margin = new Thickness(0, 8, 0, 0)
@@ -169,12 +166,12 @@ public sealed partial class MainWindow
         var kofi = new Button { Content = author.LinkLabel, FontSize = 11, Padding = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(kofi, link);
         ToolTip.SetShowDelay(kofi, MiddleEllipsisText.TooltipDelay);
-        AutomationProperties.SetName(kofi, LF("{1} de {0}", "{0} on {1}", author.Name, author.LinkLabel));
+        AutomationProperties.SetName(kofi, TF("Win.On", author.Name, author.LinkLabel));
         kofi.Click += (_, _) =>
         {
             // Same opener as the Links dialog: http(s) only, argument list, no shell.
             if (!LinuxDesktopOpener.TryOpenUri(link, out var error))
-                status.Text = error ?? LF("Não foi possível abrir {0}", "Could not open {0}", link);
+                status.Text = error ?? TF("Win.CouldNotOpen", link);
         };
 
         row.Children.Add(name);

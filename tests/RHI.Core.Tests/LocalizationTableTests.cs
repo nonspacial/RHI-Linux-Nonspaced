@@ -1,0 +1,119 @@
+using System.Text.RegularExpressions;
+using RHI.Core.Models;
+using RHI.Desktop.Localization;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// UI-11 (#79) and #143: every UI string lives in one key table with both languages, and the English UI never shows
+/// Portuguese — neither from the table nor from platform messages the Linux services still emit in Portuguese only.
+/// </summary>
+public sealed class LocalizationTableTests
+{
+    // Product names and symbols that read the same in both languages.
+    private static readonly HashSet<string> SameInBothLanguages = new(StringComparer.Ordinal)
+    {
+        "Ui.ShadersAddons", "Ui.Links", "Ui.Motd", "Ui.DlssStreamline", "Ui.Extras", "Ui.UxTab", "Ui.Rtx40MfgTitle",
+        "Ui.HdrGamescope", "Vm.Symbol", "Vm.UltimateASILoader", "Vm.ShortFuse", "Win.Extra"
+    };
+
+    private static readonly Regex PortugueseLetters = new("[ãõçáâêôíúéóàÃÕÇÁÂÊÔÍÚÉÓÀ]");
+    private static readonly Regex PortugueseWords = new(
+        @"\b(não|você|jogo|jogos|arquivo|arquivos|selecione|selecionar|configurações|está|também|pasta|instalação|remova|atualização|dependência)\b",
+        RegexOptions.IgnoreCase);
+    private static readonly Regex Placeholder = new(@"\{(\d+)[^}]*\}");
+
+    private static bool LooksPortuguese(string text) => PortugueseLetters.IsMatch(text) || PortugueseWords.IsMatch(text);
+
+    private static int[] Placeholders(string text)
+        => Placeholder.Matches(text).Select(m => int.Parse(m.Groups[1].Value)).Distinct().Order().ToArray();
+
+    [Fact]
+    public void EveryKey_HasBothLanguages()
+        => Assert.Empty(UiLocalizationService.KeysMissingAPair);
+
+    [Fact]
+    public void EveryKey_IsTranslated_WithTheSamePlaceholders_AndNoPortugueseInEnglish()
+    {
+        var problems = new List<string>();
+        foreach (var key in UiLocalizationService.Keys)
+        {
+            var pt = UiLocalizationService.TextFor("pt-BR", key);
+            var en = UiLocalizationService.TextFor("en-US", key);
+            if (string.IsNullOrWhiteSpace(pt) || string.IsNullOrWhiteSpace(en)) problems.Add($"{key}: empty");
+            if (pt == en && !SameInBothLanguages.Contains(key)) problems.Add($"{key}: PT-BR is the English text");
+            if (!Placeholders(pt).SequenceEqual(Placeholders(en))) problems.Add($"{key}: placeholders differ");
+            if (LooksPortuguese(en)) problems.Add($"{key}: English text is Portuguese: {en}");
+        }
+        Assert.Empty(problems);
+    }
+
+    [Theory]
+    [InlineData("Win.TrayShow", "Show RHI")]
+    [InlineData("Win.TrayQuit", "Quit")]
+    [InlineData("Win.PickD3DCompiler47", "Select Microsoft D3DCompiler_47.dll")]
+    [InlineData("Win.PickReShadeCustomDll", "Select a custom ReShade DLL")]
+    [InlineData("Win.PickDeepFriedChickenPackage", "Select the official Deep Fried Chicken package")]
+    [InlineData("Win.RenoDxCompatibilityTitle", "RenoDX — Compatibility — {0}")]
+    [InlineData("Win.OptiScalerAdvancedTitle", "OptiScaler — Advanced — {0}")]
+    [InlineData("Win.ShaderTexturesTitle", "Shaders/Textures — {0}")]
+    [InlineData("Ui.OptionAutomatic", "Automatic")]
+    [InlineData("Win.ProviderOther", "Other")]
+    [InlineData("Ui.SuperResolution", "Super resolution")]
+    public void ListedMessages_AreEnglishInTheEnglishUi(string key, string english)
+    {
+        Assert.Equal(english, UiLocalizationService.TextFor("en-US", key));
+        Assert.NotEqual(english, UiLocalizationService.TextFor("pt-BR", key));
+    }
+
+    [Fact]
+    public void Format_UsesTheChosenUiLanguage_NotTheSystemCulture()
+        => Assert.StartsWith("Algo deu errado: 1,5", UiLocalizationService.FormatFor("pt-BR", "Ui.UnexpectedError", 1.5, "/log"));
+
+    [Fact]
+    public void PortugueseOnlyPlatformMessages_AreEnglishInTheEnglishUi_AndUnchangedInPtBr()
+    {
+        var problems = new List<string>();
+        foreach (var (ptTemplate, enTemplate) in PlatformMessageTranslations.PortugueseOnly)
+        {
+            var holes = Placeholders(ptTemplate);
+            if (!holes.SequenceEqual(Placeholders(enTemplate))) { problems.Add($"placeholders differ: {ptTemplate}"); continue; }
+            if (LooksPortuguese(enTemplate)) problems.Add($"English is Portuguese: {enTemplate}");
+            var args = holes.Select(i => (object)$"Arg{i}x").ToArray();
+            var pt = string.Format(ptTemplate, args);
+            var en = string.Format(enTemplate, args);
+            var presented = UiLocalizationService.PresentFor("en-US", pt);
+            if (presented != en) problems.Add($"EN UI shows '{presented}' for '{pt}'");
+            if (UiLocalizationService.PresentFor("pt-BR", pt) != pt) problems.Add($"PT-BR UI changed '{pt}'");
+        }
+        Assert.Empty(problems);
+    }
+
+    [Fact]
+    public void NestedPortugueseMessages_AreTranslatedInside()
+    {
+        var pt = "Não foi possível instalar automaticamente a dependência ReShade exigida por ReLimiter: "
+                 + "dxgi.dll já existe e é externo. O RHI não sobrescreve nem adota uma DLL proxy existente; escolha outro nome.";
+        Assert.Equal("Could not automatically install the dependency ReShade required by ReLimiter: "
+                     + "dxgi.dll already exists and is external. RHI does not overwrite or adopt an existing proxy DLL; choose another name.",
+            UiLocalizationService.PresentFor("en-US", pt));
+    }
+
+    /// <summary>#143: the real dependency-failure path (ReLimiter needs ReShade; ReShade cannot be fetched offline).</summary>
+    [Fact]
+    public async Task ReLimiterDependencyFailure_IsEnglishInTheEnglishUi()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = fx.Game("Tunic");
+        game.PrefixPath = Path.Combine(fx.Root, "pfx");
+        Directory.CreateDirectory(Path.Combine(game.PrefixPath, "drive_c"));
+
+        var result = await fx.Managed.InstallAsync(game, ManagedComponentKind.ReLimiter, [game.ExecutablePath!]);
+
+        Assert.False(result.Success);
+        Assert.StartsWith("Não foi possível instalar automaticamente a dependência ReShade exigida por ReLimiter", result.Message);
+        var english = UiLocalizationService.PresentFor("en-US", result.Message);
+        Assert.StartsWith("Could not automatically install the dependency ReShade required by ReLimiter", english);
+        Assert.False(LooksPortuguese(english), english);
+    }
+}

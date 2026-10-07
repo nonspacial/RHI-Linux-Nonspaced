@@ -20,23 +20,23 @@ public sealed partial class MainWindow
     // Upstream 2.7.6 "Available HDR Mods": searchable catalogue-wide list with RenoDX/Luma columns and a link.
     private void AvailableHdrMods_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
-        var title = L("RHI-Linux — Mods HDR disponíveis", "RHI-Linux — Available HDR mods");
+        var title = T("Win.RHILinuxAvailableHDRMods");
         if (HdrModsCatalog is not { } catalog)
         {
-            await ShowSimpleMessageAsync(title, L("Os catálogos de mods não estão disponíveis nesta sessão.", "The mod catalogues are not available in this session."));
+            await ShowSimpleMessageAsync(title, T("Win.ModCataloguesNotAvailableSession"));
             return;
         }
 
-        var count = new TextBlock { FontSize = 11, Opacity = 0.6, Margin = new Thickness(0, 0, 0, 10), Text = L("Carregando catálogos…", "Loading catalogues…") };
-        var search = new TextBox { PlaceholderText = L("Pesquisar jogos…", "Search games…"), Margin = new Thickness(0, 0, 0, 10), IsEnabled = false };
+        var count = new TextBlock { FontSize = 11, Opacity = 0.6, Margin = new Thickness(0, 0, 0, 10), Text = T("Win.LoadingCatalogues") };
+        var search = new TextBox { PlaceholderText = T("Win.SearchGames"), Margin = new Thickness(0, 0, 0, 10), IsEnabled = false };
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions(HdrModsColumns), ColumnSpacing = 8, Margin = new Thickness(0, 0, 0, 4) };
-        AddHdrModsHeader(header, L("Jogo", "Game"), 0);
+        AddHdrModsHeader(header, T("Win.Game"), 0);
         AddHdrModsHeader(header, "RenoDX", 1);
         AddHdrModsHeader(header, "Luma", 2);
         AddHdrModsHeader(header, "Download", 3);
         var list = new StackPanel { Spacing = 2 };
-        var empty = new TextBlock { Text = L("Nenhum mod encontrado.", "No mods found."), Opacity = 0.6, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
-        var close = new Button { Content = L("Fechar", "Close"), HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(14, 7), Margin = new Thickness(0, 10, 0, 0) };
+        var empty = new TextBlock { Text = T("Win.NoModsFound"), Opacity = 0.6, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
+        var close = new Button { Content = T("Win.Close"), HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(14, 7), Margin = new Thickness(0, 10, 0, 0) };
 
         var top = new StackPanel();
         top.Children.Add(count);
@@ -98,12 +98,12 @@ public sealed partial class MainWindow
                 rows.Add((entry, row));
                 list.Children.Add(row);
             }
-            count.Text = LF("{0} jogos com mods HDR", "{0} games with HDR mods", snapshot.Entries.Count);
+            count.Text = TF("Win.GamesHDRMods", snapshot.Entries.Count);
             var missing = (snapshot.RenoDxUnavailable, snapshot.LumaUnavailable) switch
             {
-                (true, true) => L("Nenhum catálogo pôde ser carregado.", "Neither catalogue could be loaded."),
-                (true, false) => L("O catálogo RenoDX não pôde ser carregado; a lista mostra só o Luma.", "The RenoDX catalogue could not be loaded; the list shows Luma only."),
-                (false, true) => L("O catálogo Luma não pôde ser carregado; a lista mostra só o RenoDX.", "The Luma catalogue could not be loaded; the list shows RenoDX only."),
+                (true, true) => T("Win.NeitherCatalogueCouldLoaded"),
+                (true, false) => T("Win.RenoDXCatalogueCouldNotLoadedList"),
+                (false, true) => T("Win.LumaCatalogueCouldNotLoadedList"),
                 _ => null
             };
             if (missing is not null) count.Text += "  ·  " + missing;
@@ -174,9 +174,9 @@ public sealed partial class MainWindow
             block.Foreground = new SolidColorBrush(Color.Parse(availability == HdrModAvailability.Available ? availableColour : "#D4A856"));
         ToolTip.SetTip(block, availability switch
         {
-            HdrModAvailability.Available => L("Disponível", "Available"),
-            HdrModAvailability.WorkInProgress => L("Em desenvolvimento", "Work in progress"),
-            _ => L("Não disponível", "Not available")
+            HdrModAvailability.Available => T("Win.Available"),
+            HdrModAvailability.WorkInProgress => T("Win.WorkProgress"),
+            _ => T("Win.NotAvailable")
         });
         row.Children.Add(block);
         Grid.SetColumn(block, column);

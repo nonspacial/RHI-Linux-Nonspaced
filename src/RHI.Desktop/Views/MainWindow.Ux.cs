@@ -139,21 +139,21 @@ public sealed partial class MainWindow
         executable = Path.GetFullPath(executable);
         if (!File.Exists(executable))
         {
-            await ShowSimpleMessageAsync(L("Adicionar jogo", "Add game"), L("O executável não existe mais.", "The executable no longer exists."));
+            await ShowSimpleMessageAsync(T("Win.AddGame"), T("Win.ExecutableNoLongerExists"));
             return;
         }
 
         var installPath = ManualGamePathInference.InferInstallRoot(executable);
         var inferredName = ManualGamePathInference.InferGameName(executable, installPath);
-        var nameBox = new TextBox { Text = inferredName, PlaceholderText = L("Nome do jogo", "Game name"), MinWidth = 420 };
-        var prefixBox = new TextBox { PlaceholderText = L("Prefixo Wine/Proton opcional, ex.: /caminho/para/pfx", "Optional Wine/Proton prefix, e.g. /path/to/pfx"), MinWidth = 420 };
-        var launchBox = new TextBox { PlaceholderText = L("Comando de execução opcional", "Optional launch command"), MinWidth = 420 };
-        var browsePrefix = new Button { Content = L("Procurar prefixo…", "Browse prefix…"), Padding = new Thickness(10, 5) };
+        var nameBox = new TextBox { Text = inferredName, PlaceholderText = T("Win.GameName"), MinWidth = 420 };
+        var prefixBox = new TextBox { PlaceholderText = T("Win.OptionalWineProtonPrefixEG"), MinWidth = 420 };
+        var launchBox = new TextBox { PlaceholderText = T("Win.OptionalLaunchCommand"), MinWidth = 420 };
+        var browsePrefix = new Button { Content = T("Win.BrowsePrefix"), Padding = new Thickness(10, 5) };
         browsePrefix.Click += (_, _) => RunUiSafe(async () =>
         {
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = L("Selecionar prefixo Wine/Proton", "Select Wine/Proton prefix"),
+                Title = T("Win.SelectWineProtonPrefix"),
                 AllowMultiple = false
             });
             if (folders.Count > 0)
@@ -161,32 +161,32 @@ public sealed partial class MainWindow
         });
 
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
-        var add = new Button { Content = L("Adicionar jogo", "Add game"), Padding = new Thickness(14, 7) };
-        var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
+        var add = new Button { Content = T("Win.AddGame"), Padding = new Thickness(14, 7) };
+        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
         var form = new StackPanel { Spacing = 8, Margin = new Thickness(18) };
-        form.Children.Add(new TextBlock { Text = L("Jogo manual", "Manual game"), FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.ManualGame"), FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
-            Text = L("O RHI inferiu a raiz do jogo a partir do executável. A entrada passa a usar normalmente a detecção Linux, incluindo dados de compatibilidade remotos e inspeção do runtime.", "RHI inferred the game root from the executable. The entry now uses normal Linux detection, including remote compatibility data and runtime inspection."),
+            Text = T("Win.RHIInferredGameRootFromExecutable"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.7
         });
-        form.Children.Add(new TextBlock { Text = L("Nome", "Name"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.Name"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         form.Children.Add(nameBox);
-        form.Children.Add(new TextBlock { Text = L("Executável", "Executable"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.Executable"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         form.Children.Add(new TextBlock { Text = executable, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 });
-        form.Children.Add(new TextBlock { Text = L("Raiz do jogo inferida", "Inferred game root"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.InferredGameRoot"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         form.Children.Add(new TextBlock { Text = installPath, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 });
-        form.Children.Add(new TextBlock { Text = L("Prefixo Wine / Proton (opcional)", "Wine / Proton prefix (optional)"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.WineProtonPrefixOptional"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         var prefixRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         prefixRow.Children.Add(prefixBox); Grid.SetColumn(prefixBox, 0);
         prefixRow.Children.Add(browsePrefix); Grid.SetColumn(browsePrefix, 1);
         form.Children.Add(prefixRow);
-        form.Children.Add(new TextBlock { Text = L("Comando de execução (opcional)", "Launch command (optional)"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.LaunchCommandOptional"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
         form.Children.Add(launchBox);
         form.Children.Add(new TextBlock
         {
-            Text = L("Deixe o comando vazio se o RHI deve apenas gerenciar os arquivos do jogo. Para uma build personalizada do Wine, informe exatamente o comando que você já utiliza.", "Leave the command empty if RHI should only manage game files. For a custom Wine build, enter exactly the command you already use."),
+            Text = T("Win.LeaveCommandEmptyIfRHIShould"),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 10,
             Opacity = 0.6
@@ -199,7 +199,7 @@ public sealed partial class MainWindow
 
         var dialog = new Window
         {
-            Title = L("Adicionar jogo — RHI-Linux", "Add game — RHI-Linux"),
+            Title = T("Win.AddGameRHILinux"),
             Width = 620,
             Height = 580,
             MinWidth = 520,
@@ -233,7 +233,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = LF("Não foi possível adicionar o jogo: {0}", "Could not add the game: {0}", ex.Message);
+                status.Text = TF("Win.CouldNotAddGame", ex.Message);
             }
             finally
             {
@@ -248,31 +248,32 @@ public sealed partial class MainWindow
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
         var game = vm.SelectedGame;
 
+        // Stored provider values stay the canonical tokens; only the labels are localised.
+        var providerValues = LinuxGameIdentityService.LaunchProviderOptions;
+        var providerIndex = providerValues.ToList().FindIndex(value => string.Equals(value, game.LaunchProvider, StringComparison.OrdinalIgnoreCase));
         var provider = new ComboBox
         {
-            ItemsSource = LinuxGameIdentityService.LaunchProviderOptions,
-            SelectedItem = LinuxGameIdentityService.LaunchProviderOptions.Contains(game.LaunchProvider ?? "", StringComparer.OrdinalIgnoreCase)
-                ? game.LaunchProvider
-                : "Automático",
+            ItemsSource = providerValues.Select(LaunchProviderLabel).ToArray(),
+            SelectedIndex = providerIndex >= 0 ? providerIndex : 0,
             MinWidth = 220
         };
 
         var patchExecutable = new TextBox
         {
             Text = game.HasConfirmedPatchTarget ? game.ExecutablePath : "",
-            PlaceholderText = L("Selecione o executável real do jogo, ex.: .../Game.exe", "Select the real game executable, e.g. .../Game.exe"),
+            PlaceholderText = T("Win.SelectRealGameExecutableEG"),
             MinWidth = 200
         };
         var gameRoot = new TextBox
         {
             Text = game.HasConfirmedPatchTarget ? game.InstallPath : "",
-            PlaceholderText = L("Raiz real do jogo", "Real game root"),
+            PlaceholderText = T("Win.RealGameRoot"),
             MinWidth = 200
         };
         var binaryDirectory = new TextBox
         {
             Text = game.HasConfirmedPatchTarget ? game.BinaryDirectory : "",
-            PlaceholderText = L("Diretório onde ficam o executável e os arquivos locais dos componentes", "Directory containing the executable and local component files"),
+            PlaceholderText = T("Win.DirectoryContainingExecutableLocalComponentFiles"),
             MinWidth = 200
         };
 
@@ -285,13 +286,13 @@ public sealed partial class MainWindow
             binaryDirectory.Text = Path.GetDirectoryName(full) ?? gameRoot.Text;
         }
 
-        var browseExecutable = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
+        var browseExecutable = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
         browseExecutable.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = L("Selecionar o executável real do jogo", "Select the real game executable"),
+                Title = T("Win.SelectRealGameExecutable"),
                 AllowMultiple = false,
                 FileTypeFilter = [WindowsExecutableFileType]
             });
@@ -301,23 +302,23 @@ public sealed partial class MainWindow
             InferFromExecutable();
         });
 
-        var detectRoot = new Button { Content = L("Detectar", "Detect"), Padding = new Thickness(10, 5) };
+        var detectRoot = new Button { Content = T("Win.Detect"), Padding = new Thickness(10, 5) };
         detectRoot.Click += (_, _) => InferFromExecutable();
 
-        var browseRoot = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
+        var browseRoot = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
         browseRoot.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = L("Selecionar a raiz real do jogo", "Select the real game root"),
+                Title = T("Win.SelectRealGameRoot"),
                 AllowMultiple = false
             });
             if (folders.Count > 0)
                 gameRoot.Text = folders[0].TryGetLocalPath() ?? gameRoot.Text;
         });
 
-        var detectBinary = new Button { Content = L("Detectar", "Detect"), Padding = new Thickness(10, 5) };
+        var detectBinary = new Button { Content = T("Win.Detect"), Padding = new Thickness(10, 5) };
         detectBinary.Click += (_, _) =>
         {
             var path = patchExecutable.Text?.Trim();
@@ -325,13 +326,13 @@ public sealed partial class MainWindow
                 binaryDirectory.Text = Path.GetDirectoryName(path) ?? binaryDirectory.Text;
         };
 
-        var browseBinary = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
+        var browseBinary = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
         browseBinary.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
-                Title = L("Selecionar o diretório de binários/patches", "Select binaries/patches directory"),
+                Title = T("Win.SelectBinariesPatchesDirectory"),
                 AllowMultiple = false
             });
             if (folders.Count > 0)
@@ -354,50 +355,50 @@ public sealed partial class MainWindow
         }
 
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
-        var save = new Button { Content = L("Salvar", "Save"), Padding = new Thickness(14, 7) };
-        var reset = new Button { Content = L("Restaurar detecção automática", "Restore automatic detection"), Padding = new Thickness(14, 7) };
-        var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
+        var save = new Button { Content = T("Win.Save"), Padding = new Thickness(14, 7) };
+        var reset = new Button { Content = T("Win.RestoreAutomaticDetection"), Padding = new Thickness(14, 7) };
+        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
 
         var form = new StackPanel { Spacing = 9, Margin = new Thickness(20) };
-        form.Children.Add(new TextBlock { Text = LF("Editar — {0}", "Edit — {0}", game.Name), FontSize = 21, FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = TF("Win.Edit", game.Name), FontSize = 21, FontWeight = FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
-            Text = L("O executável/launcher usado para iniciar o jogo é independente do alvo que recebe detecção, ReShade, RenoDX, DLSS, OptiScaler e add-ons. Alterar o alvo abaixo não modifica a configuração de inicialização herdada do Steam/Heroic/Lutris.", "The executable/launcher used to start the game is independent from the target that receives detection, ReShade, RenoDX, DLSS, OptiScaler and add-ons. Changing the target below does not modify the launch configuration inherited from Steam/Heroic/Lutris."),
+            Text = T("Win.ExecutableLauncherUsedStartGameIndependent"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
 
-        form.Children.Add(new TextBlock { Text = L("INICIALIZAÇÃO", "LAUNCH"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
-        form.Children.Add(new TextBlock { Text = LF("Origem da biblioteca: {0}", "Library source: {0}", game.LibraryProvider ?? game.Source), FontSize = 11, Opacity = 0.72 });
-        form.Children.Add(new TextBlock { Text = L("Launcher / plataforma", "Launcher / platform"), FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.LaunchHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
+        form.Children.Add(new TextBlock { Text = TF("Vm.LibrarySource", game.LibraryProvider ?? game.Source), FontSize = 11, Opacity = 0.72 });
+        form.Children.Add(new TextBlock { Text = T("Win.LauncherPlatform"), FontWeight = FontWeight.SemiBold });
         form.Children.Add(provider);
-        form.Children.Add(new TextBlock { Text = L("Executável de inicialização (preservado)", "Launch executable (preserved)"), FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.LaunchExecutablePreserved"), FontWeight = FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
-            Text = game.LaunchExecutablePath ?? L("Gerenciado pelo launcher sem executável local exposto.", "Managed by the launcher without an exposed local executable."),
+            Text = game.LaunchExecutablePath ?? T("Win.ManagedByLauncherWithoutExposedLocal"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.76
         });
         if (!string.IsNullOrWhiteSpace(game.LaunchCommand))
         {
-            form.Children.Add(new TextBlock { Text = L("Comando de inicialização herdado", "Inherited launch command"), FontWeight = FontWeight.SemiBold });
+            form.Children.Add(new TextBlock { Text = T("Win.InheritedLaunchCommand"), FontWeight = FontWeight.SemiBold });
             form.Children.Add(new TextBlock { Text = game.LaunchCommand, TextWrapping = TextWrapping.Wrap, FontSize = 10, Opacity = 0.62 });
         }
 
-        form.Children.Add(new TextBlock { Text = L("ALVO DO JOGO E MODIFICAÇÕES", "GAME AND MODIFICATION TARGET"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 10, 0, 0) });
+        form.Children.Add(new TextBlock { Text = T("Win.GameModificationTargetHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 10, 0, 0) });
         form.Children.Add(new TextBlock
         {
-            Text = L("Este é o destino usado para arquitetura, API gráfica, varredura de DLLs e instalação/remoção de componentes locais. O RHI nunca usa o launcher como substituto automático deste alvo quando reconhece um cliente compartilhado.", "This target is used for architecture, graphics API, DLL scanning and local component install/removal. RHI never automatically substitutes the launcher for this target when it recognizes a shared client."),
+            Text = T("Win.TargetUsedArchitectureGraphicsAPIDLL"),
             TextWrapping = TextWrapping.Wrap,
             FontSize = 11,
             Opacity = 0.72
         });
 
-        form.Children.Add(new TextBlock { Text = L("Executável alvo", "Target executable"), FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.TargetExecutable"), FontWeight = FontWeight.SemiBold });
         form.Children.Add(FieldRow(patchExecutable, browseExecutable));
-        form.Children.Add(new TextBlock { Text = L("Raiz do jogo", "Game root"), FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.GameRoot"), FontWeight = FontWeight.SemiBold });
         form.Children.Add(FieldRow(gameRoot, detectRoot, browseRoot));
-        form.Children.Add(new TextBlock { Text = L("Diretório de binários / patches", "Binaries / patches directory"), FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = T("Win.BinariesPatchesDirectory"), FontWeight = FontWeight.SemiBold });
         form.Children.Add(FieldRow(binaryDirectory, detectBinary, browseBinary));
         form.Children.Add(status);
 
@@ -409,7 +410,7 @@ public sealed partial class MainWindow
 
         var dialog = new Window
         {
-            Title = LF("Editar jogo — {0}", "Edit game — {0}", game.Name),
+            Title = TF("Win.EditGame", game.Name),
             Width = 790,
             Height = 760,
             MinWidth = 680,
@@ -434,7 +435,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = LF("Não foi possível restaurar a detecção automática: {0}", "Could not restore automatic detection: {0}", ex.Message);
+                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", ex.Message);
             }
             finally
             {
@@ -446,7 +447,7 @@ public sealed partial class MainWindow
             reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
             try
             {
-                var chosenProvider = provider.SelectedItem?.ToString();
+                var chosenProvider = provider.SelectedIndex >= 0 ? providerValues[provider.SelectedIndex] : null;
                 var (saved, message) = await vm.SaveSelectedGameEditAsync(
                     patchExecutable.Text?.Trim() ?? "",
                     gameRoot.Text?.Trim() ?? "",
@@ -461,7 +462,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = LF("Não foi possível salvar: {0}", "Could not save: {0}", ex.Message);
+                status.Text = TF("Win.CouldNotSave", ex.Message);
             }
             finally
             {
@@ -471,6 +472,11 @@ public sealed partial class MainWindow
 
         await ShowFittedDialogAsync(dialog);
     });
+
+    private static string LaunchProviderLabel(string value)
+        => value == LinuxGameIdentityService.AutomaticLaunchProvider ? T("Ui.OptionAutomatic")
+            : value == LinuxGameIdentityService.OtherLaunchProvider ? T("Win.ProviderOther")
+            : value;
 
     private void GameFiles_DragOver(object? sender, DragEventArgs e)
     {
@@ -498,17 +504,17 @@ public sealed partial class MainWindow
                     await ShowAddGameDialogForExecutableAsync(path);
                     break;
                 case LinuxDroppedFileKind.LumaAddon:
-                    await PromptInstallLumaAddonAsync(path, L("🌙 Instalar add-on Luma", "🌙 Install Luma add-on"));
+                    await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaAdd"));
                     break;
                 case LinuxDroppedFileKind.ReShadeAddon:
-                    await PromptImportCustomAddonAsync(path, L("Add-on solto na janela", "Add-on dropped on window"));
+                    await PromptImportCustomAddonAsync(path, T("Win.AddDroppedWindow"));
                     break;
                 case LinuxDroppedFileKind.LumaArchive:
-                    await PromptInstallLumaAddonAsync(path, L("🌙 Instalar pacote Luma", "🌙 Install Luma package"));
+                    await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaPackage"));
                     break;
                 case LinuxDroppedFileKind.ModArchive:
                     if (DataContext is MainWindowViewModel vmArchive)
-                        vmArchive.StatusText = LF("Arquivo compactado detectado: {0}. O RHI-Linux não instala arquivos compactados automaticamente ao arrastar e soltar; use o instalador do componente ou o gerenciador de Shaders/Add-ons.", "Archive detected: {0}. RHI-Linux does not automatically install archives on drag-and-drop; use the component installer or the Shaders/Add-ons manager.", Path.GetFileName(path));
+                        vmArchive.StatusText = TF("Win.ArchiveDetectedRHILinuxDoesNot", Path.GetFileName(path));
                     break;
             }
         }
@@ -524,7 +530,7 @@ public sealed partial class MainWindow
         }
 
         if (!_addonWatcher.Start(vm.AddonWatchFolder))
-            vm.StatusText = LF("O monitor de add-ons não conseguiu abrir: {0}", "The add-on watcher could not open: {0}", _addonWatcher.CurrentPath ?? vm.AddonWatchFolder);
+            vm.StatusText = TF("Win.AddWatcherCouldNotOpen", _addonWatcher.CurrentPath ?? vm.AddonWatchFolder);
     }
 
     private async Task HandleWatchedCandidateAsync(LinuxWatchedFileCandidate candidate)
@@ -533,19 +539,19 @@ public sealed partial class MainWindow
         if (candidate.Kind == LinuxWatchedFileKind.Addon)
         {
             if (LinuxDroppedFileClassifier.IsLikelyLumaAddon(candidate.Path))
-                await PromptInstallLumaAddonAsync(candidate.Path, L("🌙 Add-on Luma detectado pelo monitor", "🌙 Luma add-on detected by watcher"));
+                await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaAddDetectedByWatcher"));
             else
-                await PromptImportCustomAddonAsync(candidate.Path, L("Add-on detectado pelo monitor", "Add-on detected by watcher"));
+                await PromptImportCustomAddonAsync(candidate.Path, T("Win.AddDetectedByWatcher"));
             return;
         }
 
         if (candidate.Kind == LinuxWatchedFileKind.Archive && LinuxDroppedFileClassifier.IsLikelyLumaPackage(candidate.Path))
         {
-            await PromptInstallLumaAddonAsync(candidate.Path, L("🌙 Pacote Luma detectado pelo monitor", "🌙 Luma package detected by watcher"));
+            await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaPackageDetectedByWatcher"));
             return;
         }
 
-        vm.StatusText = LF("O monitor detectou {0}. Arquivos compactados genéricos nunca são instalados nem apagados automaticamente; abra o fluxo do componente correspondente para aplicá-lo.", "The watcher detected {0}. Generic archives are never installed or deleted automatically; open the corresponding component flow to apply it.", Path.GetFileName(candidate.Path));
+        vm.StatusText = TF("Win.WatcherDetectedGenericArchivesNeverInstalled", Path.GetFileName(candidate.Path));
     }
 
     private async Task PromptInstallLumaAddonAsync(string path, string title)
@@ -553,14 +559,14 @@ public sealed partial class MainWindow
         if (DataContext is not MainWindowViewModel vm || !File.Exists(path)) return;
         if (vm.SelectedGame is null)
         {
-            vm.StatusText = L("Selecione o jogo que receberá o add-on Luma e solte o arquivo novamente.", "Select the game that will receive the Luma add-on and drop the file again.");
+            vm.StatusText = T("Win.SelectGameWillReceiveLumaAdd");
             return;
         }
 
         var install = await ShowConfirmationAsync(
             title,
-            LF("{0}\n\nInstalar este pacote Luma em {1}?\n\nO RHI aplicará o mesmo fluxo gerenciado de Luma (ReShade, proteção/restauração de arquivos e dgVoodoo2 quando o jogo DX9 exigir). O arquivo de origem será preservado.", "{0}\n\nInstall this Luma package in {1}?\n\nRHI will use the same managed Luma flow (ReShade, file protection/restore and dgVoodoo2 when required by a DX9 game). The source file will be preserved.", Path.GetFileName(path), vm.SelectedGame.Name),
-            L("Instalar Luma", "Install Luma"));
+            TF("Win.InstallLumaPackageRHIWillUse", Path.GetFileName(path), vm.SelectedGame.Name),
+            T("Win.InstallLuma"));
         if (!install) return;
         await vm.InstallLocalLumaPackageAsync(path);
     }
@@ -570,8 +576,8 @@ public sealed partial class MainWindow
         if (DataContext is not MainWindowViewModel vm || !File.Exists(path)) return;
         var import = await ShowConfirmationAsync(
             title,
-            LF("{0}\n\nImportar este add-on independente do ReShade para o catálogo Add-ons personalizados do RHI?\n\nIsso não instala o add-on em um jogo, não sobrescreve outro add-on diferente e não apaga o arquivo de origem.", "{0}\n\nImport this standalone ReShade add-on into the RHI Custom Add-ons catalog?\n\nThis does not install the add-on into a game, does not overwrite a different add-on and does not delete the source file.", Path.GetFileName(path)),
-            L("Importar", "Import"));
+            TF("Win.ImportStandaloneReShadeAddIntoRHI", Path.GetFileName(path)),
+            T("Win.Import"));
         if (!import) return;
         vm.ImportCustomAddonFile(path);
     }
@@ -582,7 +588,7 @@ public sealed partial class MainWindow
     private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280, IReadOnlyList<InstallWarningSection>? sections = null)
     {
         var accept = new Button { Content = acceptText, Padding = new Thickness(14, 7) };
-        var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
+        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(cancel); buttons.Children.Add(accept);
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
@@ -632,18 +638,8 @@ public sealed partial class MainWindow
     private void QuickStart_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         await ShowSimpleMessageAsync(
-            L("RHI-Linux — Início rápido", "RHI-Linux — Quick Start"),
-            L(
-                "1. Use Atualizar para detectar Steam, Heroic, Lutris, Wine e jogos manuais salvos.\n\n" +
-                "2. Selecione um jogo e deixe o RHI inspecionar o prefixo Wine/Proton real e os arquivos locais antes de instalar um componente.\n\n" +
-                "3. Use as linhas de componentes para ReShade, RenoDX, OptiScaler, Luma e outros componentes gerenciados pelo RHI. Alterações de DLSS/Streamline continuam locais ao jogo e preservam arquivos .original.\n\n" +
-                "4. DXVK/VKD3D-Proton, drivers, tradução Vulkan e HDR do compositor pertencem ao Wine/Proton e ao desktop — o RHI-Linux não os substitui.\n\n" +
-                "5. Arraste um .exe do Windows para qualquer área do RHI para adicioná-lo manualmente. Arquivos .addon32/.addon64 arrastados só podem ser importados para Add-ons personalizados após confirmação.",
-                "1. Use Refresh to detect Steam, Heroic, Lutris, Wine and saved manual games.\n\n" +
-                "2. Select a game and let RHI inspect the real Wine/Proton prefix and local files before installing a component.\n\n" +
-                "3. Use component rows for ReShade, RenoDX, OptiScaler, Luma and other RHI-managed components. DLSS/Streamline changes remain game-local and preserve .original files.\n\n" +
-                "4. DXVK/VKD3D-Proton, drivers, Vulkan translation and compositor HDR belong to Wine/Proton and the desktop — RHI-Linux does not replace them.\n\n" +
-                "5. Drag a Windows .exe anywhere in RHI to add it manually. Dropped .addon32/.addon64 files can only be imported into Custom Add-ons after confirmation."));
+            T("Win.RHILinuxQuickStart"),
+            T("Win.N1UseRefreshDetectSteamHeroic"));
     });
 
     private void Links_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
@@ -651,21 +647,21 @@ public sealed partial class MainWindow
         var links = new (string Label, string Url)[]
         {
             ("RHI-Linux", RhiProductInfo.RepositoryUrl),
-            ("RHI original", "https://github.com/RankFTW/RHI"),
+            (T("Win.LinkOriginalRhi"), "https://github.com/RankFTW/RHI"),
             ("RenoDX", "https://github.com/clshortfuse/renodx"),
             ("ReShade", "https://reshade.me"),
             ("OptiScaler", "https://github.com/optiscaler/OptiScaler")
         };
         var panel = new StackPanel { Spacing = 8, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = L("Links do projeto", "Project links"), FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        panel.Children.Add(new TextBlock { Text = L("Os links são abertos pelo manipulador padrão do desktop Linux (xdg-open/gio/KDE).", "Links are opened by the default Linux desktop handler (xdg-open/gio/KDE)."), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 });
+        panel.Children.Add(new TextBlock { Text = T("Win.ProjectLinks"), FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold });
+        panel.Children.Add(new TextBlock { Text = T("Win.LinksOpenedByDefaultLinuxDesktop"), TextWrapping = TextWrapping.Wrap, Opacity = 0.7 });
         foreach (var link in links)
         {
             var button = new Button { Content = link.Label, HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 7) };
             button.Click += (_, _) => OpenProjectLink(link.Url);
             panel.Children.Add(button);
         }
-        var close = new Button { Content = L("Fechar", "Close"), HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(14, 7), Margin = new Thickness(0, 8, 0, 0) };
+        var close = new Button { Content = T("Win.Close"), HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(14, 7), Margin = new Thickness(0, 8, 0, 0) };
         panel.Children.Add(close);
         var dialog = new Window { Title = "RHI-Linux — Links", Width = 460, Height = 440, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = panel };
         close.Click += (_, _) => dialog.Close();
@@ -676,7 +672,7 @@ public sealed partial class MainWindow
     {
         if (LinuxDesktopOpener.TryOpenUri(url, out var error)) return;
         if (DataContext is MainWindowViewModel vm)
-            vm.StatusText = error ?? LF("Não foi possível abrir {0}", "Could not open {0}", url);
+            vm.StatusText = error ?? TF("Win.CouldNotOpen", url);
     }
 
     private void Motd_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
@@ -684,7 +680,7 @@ public sealed partial class MainWindow
         var message = await _motdService.FetchAsync(includeSeen: true);
         if (message is null)
         {
-            await ShowSimpleMessageAsync("RHI-Linux — MOTD", L("Nenhuma mensagem do dia está disponível agora. Falhas de rede não interrompem o programa.", "No message of the day is available right now. Network failures do not interrupt the program."));
+            await ShowSimpleMessageAsync("RHI-Linux — MOTD", T("Win.NoMessageDayAvailableRightNow"));
             return;
         }
         await ShowMotdAsync(message);
@@ -708,7 +704,7 @@ public sealed partial class MainWindow
         panel.Children.Add(close); Grid.SetRow(close, 1);
         var dialog = new Window
         {
-            Title = L("RHI-Linux — Mensagem do dia", "RHI-Linux — Message of the day"),
+            Title = T("Win.RHILinuxMessageDay"),
             Width = 740,
             Height = 520,
             MinWidth = 520,
@@ -722,7 +718,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             if (DataContext is MainWindowViewModel vm)
-                vm.StatusText = LF("O MOTD foi exibido, mas não foi possível salvar o estado de visualização: {0}", "The MOTD was shown, but the seen-state could not be saved: {0}", ex.Message);
+                vm.StatusText = TF("Win.MOTDWasShownButSeenState", ex.Message);
         }
     }
 
@@ -734,15 +730,24 @@ public sealed partial class MainWindow
             RemoveTrayIcon();
             return;
         }
-        if (_trayIcon is not null) return;
+        if (_trayIcon is not null)
+        {
+            // A language change while the icon exists relabels the menu in place.
+            if (_trayIcon.Menu?.Items is [NativeMenuItem show, _, NativeMenuItem quit])
+            {
+                show.Header = T("Win.TrayShow");
+                quit.Header = T("Win.TrayQuit");
+            }
+            return;
+        }
 
         try
         {
             using var stream = AssetLoader.Open(new Uri("avares://RHI/Assets/rhi-tray.png"));
             var menu = new NativeMenu();
-            menu.Items.Add(new NativeMenuItem("Mostrar RHI") { Command = new RelayCommand(ShowMainWindowFromTray) });
+            menu.Items.Add(new NativeMenuItem(T("Win.TrayShow")) { Command = new RelayCommand(ShowMainWindowFromTray) });
             menu.Items.Add(new NativeMenuItemSeparator());
-            menu.Items.Add(new NativeMenuItem("Sair") { Command = new RelayCommand(ExitFromTray) });
+            menu.Items.Add(new NativeMenuItem(T("Win.TrayQuit")) { Command = new RelayCommand(ExitFromTray) });
             _trayIcon = new TrayIcon
             {
                 Icon = new WindowIcon(stream),
@@ -756,7 +761,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             RemoveTrayIcon();
-            vm.StatusText = LF("O ícone de bandeja não está disponível nesta sessão: {0}", "The tray icon is unavailable in this session: {0}", ex.Message);
+            vm.StatusText = TF("Win.TrayIconUnavailableSession", ex.Message);
         }
     }
 

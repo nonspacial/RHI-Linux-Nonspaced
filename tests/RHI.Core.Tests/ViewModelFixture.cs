@@ -23,6 +23,7 @@ internal sealed class ViewModelFixture : IDisposable
     public LinuxGameLibraryStore Library { get; }
     public LinuxDeploymentRecordStore Records { get; }
     public MainWindowViewModel Vm { get; }
+    public LinuxManagedComponentService Managed { get; private set; } = null!;
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage)
     {
@@ -32,7 +33,7 @@ internal sealed class ViewModelFixture : IDisposable
         Settings.Save(new LinuxAppSettings { UiLanguage = uiLanguage, AutoUpdateComponents = false });
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"));
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed);
     }
 
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US")
@@ -60,7 +61,7 @@ internal sealed class ViewModelFixture : IDisposable
     }
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
-        LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir)
+        LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built)
     {
         var http = new HttpClient(new OfflineHandler());
         var upstreamManifest = new UpstreamRhiManifestService(http);
@@ -107,6 +108,7 @@ internal sealed class ViewModelFixture : IDisposable
             new D3DCompilerToolInstaller(wineOverrides), ual, shortFuse, new DofFixDeploymentService(http, records, upstreamManifest),
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,
             new NeuralAddonVersionPreferenceStore(Path.Combine(prefs, "neural.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")));
+        built(managed);
         return new MainWindowViewModel(scanner, new LinuxGameLauncher(), new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),
             settingsStore, new LinuxUpdateAllService(records, managed), new LinuxDlssDefaultsService(dlss, records), libraryStore, records);

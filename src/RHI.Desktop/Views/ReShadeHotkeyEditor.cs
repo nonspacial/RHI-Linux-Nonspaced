@@ -116,17 +116,17 @@ internal sealed class ReShadeHotkeyEditor
     {
         var display = choice.KeyCode switch
         {
-            19 => UiLocalizationService.Choose("Pausa", "Pause"),
-            32 => UiLocalizationService.Choose("Espaço", "Space"),
-            35 => UiLocalizationService.Choose("Fim", "End"),
-            36 => UiLocalizationService.Choose("Início", "Home"),
-            37 => UiLocalizationService.Choose("Seta para a esquerda", "Left Arrow"),
-            38 => UiLocalizationService.Choose("Seta para cima", "Up Arrow"),
-            39 => UiLocalizationService.Choose("Seta para a direita", "Right Arrow"),
-            40 => UiLocalizationService.Choose("Seta para baixo", "Down Arrow"),
-            45 => UiLocalizationService.Choose("Inserir", "Insert"),
-            46 => UiLocalizationService.Choose("Excluir", "Delete"),
-            110 => UiLocalizationService.Choose("Decimal do Numpad", "Numpad decimal"),
+            19 => UiLocalizationService.Text("Key.Pause"),
+            32 => UiLocalizationService.Text("Key.Space"),
+            35 => UiLocalizationService.Text("Key.End"),
+            36 => UiLocalizationService.Text("Key.Home"),
+            37 => UiLocalizationService.Text("Key.LeftArrow"),
+            38 => UiLocalizationService.Text("Key.UpArrow"),
+            39 => UiLocalizationService.Text("Key.RightArrow"),
+            40 => UiLocalizationService.Text("Key.DownArrow"),
+            45 => UiLocalizationService.Text("Key.Insert"),
+            46 => UiLocalizationService.Text("Key.Delete"),
+            110 => UiLocalizationService.Text("Key.NumpadDecimal"),
             _ => choice.DisplayName
         };
         return new ReShadeHotkeyCodec.KeyChoice(choice.KeyCode, display);
