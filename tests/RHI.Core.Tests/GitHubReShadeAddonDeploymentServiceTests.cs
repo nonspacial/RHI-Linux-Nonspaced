@@ -515,6 +515,203 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         Assert.Equal(ComponentAvailability.Available, components.Single(c => c.Kind == kind).Availability);
     }
 
+    // ---- #142: the add-on cache is only reused when RHI stamped the file at download time ----
+
+    [Fact]
+    public async Task Install_ForeignFileInCache_IsNotDeployed_AndIsReplacedByDownload()
+    {
+        var game = CreateGame();
+        WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var genuine = MakePePayload(150 * 1024);
+        var foreign = MakeForeignPePayload(160 * 1024);
+        var cached = Path.Combine(CacheDir, "relimiter", "3.3.5-relimiter.addon64");
+        Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+        File.WriteAllBytes(cached, foreign);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", Sha(genuine).ToLowerInvariant());
+        var downloads = 0;
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)) return JsonResponse(json);
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(genuine) };
+        }));
+        var service = NewReLimiter(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "foreign-records.json")));
+
+        var result = await service.InstallAsync(game);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, downloads);
+        Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "relimiter.addon64"))));
+        Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(cached)));
+        Assert.True(CacheStamp.IsValid(cached, "https://example.test/relimiter", "3.3.5"));
+    }
+
+    [Fact]
+    public async Task Install_ForeignFileInCache_DownloadFails_NothingIsDeployed()
+    {
+        var game = CreateGame();
+        WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var foreign = MakeForeignPePayload(160 * 1024);
+        var cached = Path.Combine(CacheDir, "relimiter", "3.3.5-relimiter.addon64");
+        Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+        File.WriteAllBytes(cached, foreign);
+        // No published digest, so nothing but the stamp could vouch for the cached file.
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest: null);
+        using var http = new HttpClient(new FakeHandler(req =>
+            req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
+                ? JsonResponse(json)
+                : new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "foreign-offline-records.json"));
+        var service = NewReLimiter(http, store);
+
+        var result = await service.InstallAsync(game);
+
+        Assert.False(result.Success);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "relimiter.addon64")));
+        Assert.Null(store.Find(game, ManagedComponentKind.ReLimiter));
+    }
+
+    [Fact]
+    public async Task Install_ForgedStampOverForeignFile_IsNotTrusted()
+    {
+        var game = CreateGame();
+        WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var genuine = MakePePayload(150 * 1024);
+        var cached = Path.Combine(CacheDir, "relimiter", "3.3.5-relimiter.addon64");
+        Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
+        // A stamp for the genuine bytes, then the file swapped for a foreign one of the same size.
+        File.WriteAllBytes(cached, genuine);
+        CacheStamp.Write(cached, "https://example.test/relimiter", "3.3.5");
+        File.WriteAllBytes(cached, MakeForeignPePayload(genuine.Length));
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest: null);
+        var downloads = 0;
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)) return JsonResponse(json);
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(genuine) };
+        }));
+        var service = NewReLimiter(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "forged-records.json")));
+
+        var result = await service.InstallAsync(game);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, downloads);
+        Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "relimiter.addon64"))));
+    }
+
+    [Fact]
+    public async Task Install_StampedCachedFile_IsReusedWithoutDownloading()
+    {
+        var genuine = MakePePayload(150 * 1024);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", Sha(genuine).ToLowerInvariant());
+        var downloads = 0;
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)) return JsonResponse(json);
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(genuine) };
+        }));
+
+        var first = CreateGame();
+        WriteFakeReShade(Path.Combine(first.BinaryDirectory!, "dxgi.dll"));
+        var service = NewReLimiter(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "reuse-records.json")));
+        Assert.True((await service.InstallAsync(first)).Success);
+        Assert.Equal(1, downloads);
+        var cached = Path.Combine(CacheDir, "relimiter", "3.3.5-relimiter.addon64");
+        Assert.True(File.Exists(CacheStamp.StampPath(cached)));
+
+        var second = CreateGame();
+        WriteFakeReShade(Path.Combine(second.BinaryDirectory!, "dxgi.dll"));
+        var result = await service.InstallAsync(second);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(1, downloads);
+        Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(Path.Combine(second.BinaryDirectory!, "relimiter.addon64"))));
+    }
+
+    [Fact]
+    public async Task Install_StampedCacheForOtherRelease_IsNotReused()
+    {
+        var oldPayload = MakePePayload(150 * 1024);
+        var newPayload = MakeForeignPePayload(150 * 1024);
+        var url = "https://example.test/relimiter";
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", url, Sha(oldPayload).ToLowerInvariant());
+        var current = oldPayload;
+        var downloads = 0;
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)) return JsonResponse(json);
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(current) };
+        }));
+        var service = NewReLimiter(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "republish-records.json")));
+        var first = CreateGame();
+        WriteFakeReShade(Path.Combine(first.BinaryDirectory!, "dxgi.dll"));
+        Assert.True((await service.InstallAsync(first)).Success);
+
+        // Same tag and file name re-published with a new digest: the stamped copy is stale.
+        current = newPayload;
+        json = ReleaseJson("v3.3.5", "relimiter.addon64", url, Sha(newPayload).ToLowerInvariant());
+        var second = CreateGame();
+        WriteFakeReShade(Path.Combine(second.BinaryDirectory!, "dxgi.dll"));
+        var result = await service.InstallAsync(second);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(2, downloads);
+        Assert.Equal(Sha(newPayload), Sha(File.ReadAllBytes(Path.Combine(second.BinaryDirectory!, "relimiter.addon64"))));
+    }
+
+    [Fact]
+    public async Task Install_ZipAsset_StampsExtractedPayload_AndRejectsForeignExtractedFile()
+    {
+        var addon64 = MakePePayload(96 * 1024);
+        var zip = MakeZipPayload(("DLSS5-Feeder/addon64/dlss5-feed.addon64", addon64));
+        var json = ReleaseJson("v0.13.1", "DLSS5-Feeder-0.13.1.zip", "https://example.test/feeder.zip", Sha(zip).ToLowerInvariant());
+        var downloads = 0;
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)) return JsonResponse(json);
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
+        }));
+        var cacheDir = Path.Combine(_root, "feeder-stamp-cache");
+        var extracted = Path.Combine(cacheDir, "0.13.1-dlss5-feed.addon64");
+        Directory.CreateDirectory(cacheDir);
+        File.WriteAllBytes(extracted, MakeForeignPePayload(96 * 1024));
+        var service = new GitHubReShadeAddonDeploymentService(http,
+            new LinuxDeploymentRecordStore(Path.Combine(_root, "feeder-stamp-records.json")),
+            new GitHubReShadeAddonDefinition(
+                ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", "https://api.github.test/repos/feeder/releases/latest",
+                null, null, 64 * 1024,
+                AssetNamePattern64: @"^DLSS5-Feeder-.*\.zip$", AssetNamePattern32: @"^DLSS5-Feeder-.*\.zip$",
+                DeployFileName64: "dlss5-feed.addon64", DeployFileName32: "dlss5-feed.addon32"),
+            cacheDir);
+
+        var first = CreateGame();
+        WriteFakeReShade(Path.Combine(first.BinaryDirectory!, "dxgi.dll"));
+        Assert.True((await service.InstallAsync(first)).Success);
+        Assert.Equal(1, downloads);
+        Assert.Equal(Sha(addon64), Sha(File.ReadAllBytes(Path.Combine(first.BinaryDirectory!, "dlss5-feed.addon64"))));
+
+        var second = CreateGame();
+        WriteFakeReShade(Path.Combine(second.BinaryDirectory!, "dxgi.dll"));
+        Assert.True((await service.InstallAsync(second)).Success);
+        Assert.Equal(1, downloads);
+        Assert.Equal(Sha(addon64), Sha(File.ReadAllBytes(Path.Combine(second.BinaryDirectory!, "dlss5-feed.addon64"))));
+    }
+
+    private static string Sha(byte[] data) => Convert.ToHexString(SHA256.HashData(data));
+
+    private static byte[] MakeForeignPePayload(int size)
+    {
+        var bytes = new byte[size];
+        bytes[0] = (byte)'M';
+        bytes[1] = (byte)'Z';
+        for (var i = 2; i < bytes.Length; i++) bytes[i] = (byte)(i * 17 + 3);
+        return bytes;
+    }
+
     private static byte[] MakeZipPayload(params (string Name, byte[] Data)[] entries)
     {
         using var memory = new MemoryStream();
@@ -548,7 +745,11 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         };
     }
 
-    private static GitHubReShadeAddonDeploymentService NewReLimiter(HttpClient http, LinuxDeploymentRecordStore store)
+    // Every service gets an explicit per-test cache: the default (LinuxPaths.CacheHome) is the real
+    // user cache in production, and the add-on cache is now reused when stamped (#142).
+    private string CacheDir => Path.Combine(_root, "addon-cache");
+
+    private GitHubReShadeAddonDeploymentService NewReLimiter(HttpClient http, LinuxDeploymentRecordStore store)
         => new(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
@@ -556,9 +757,10 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
             "relimiter.addon64",
             "relimiter.addon32",
             100 * 1024,
-            ManagedComponentKind.DisplayCommander));
+            ManagedComponentKind.DisplayCommander),
+            Path.Combine(CacheDir, "relimiter"));
 
-    private static GitHubReShadeAddonDeploymentService NewDynamicReLimiter(
+    private GitHubReShadeAddonDeploymentService NewDynamicReLimiter(
         HttpClient http,
         LinuxDeploymentRecordStore store,
         string releaseApiUrl = "https://api.github.test/repos/example/releases/latest")
@@ -573,9 +775,10 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
             AssetNamePattern64: @"^relimiter-.*-win64\.addon64$",
             AssetNamePattern32: @"^relimiter-.*-win32\.addon32$",
             DeployFileName64: "relimiter.addon64",
-            DeployFileName32: "relimiter.addon32"));
+            DeployFileName32: "relimiter.addon32"),
+            Path.Combine(CacheDir, "relimiter"));
 
-    private static GitHubReShadeAddonDeploymentService NewDisplayCommander(HttpClient http, LinuxDeploymentRecordStore store)
+    private GitHubReShadeAddonDeploymentService NewDisplayCommander(HttpClient http, LinuxDeploymentRecordStore store)
         => new(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.DisplayCommander,
             "Display Commander",
@@ -584,21 +787,30 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
             "zzz_display_commander.addon32",
             500 * 1024,
             ManagedComponentKind.ReLimiter,
-            @"Version in binaries\*\*:\s*([0-9.]+)"));
+            @"Version in binaries\*\*:\s*([0-9.]+)"),
+            Path.Combine(CacheDir, "displaycommander"));
 
     private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(json, Encoding.UTF8, "application/json")
     };
 
-    private static string ReleaseJson(string tag, string assetName, string url, string digest)
-        => JsonSerializer.Serialize(new
-        {
-            tag_name = tag,
-            name = tag,
-            body = "",
-            assets = new[] { new { name = assetName, browser_download_url = url, digest = "sha256:" + digest } }
-        });
+    private static string ReleaseJson(string tag, string assetName, string url, string? digest)
+        => digest is null
+            ? JsonSerializer.Serialize(new
+            {
+                tag_name = tag,
+                name = tag,
+                body = "",
+                assets = new[] { new { name = assetName, browser_download_url = url } }
+            })
+            : JsonSerializer.Serialize(new
+            {
+                tag_name = tag,
+                name = tag,
+                body = "",
+                assets = new[] { new { name = assetName, browser_download_url = url, digest = "sha256:" + digest } }
+            });
 
     private static byte[] MakePePayload(int size)
     {

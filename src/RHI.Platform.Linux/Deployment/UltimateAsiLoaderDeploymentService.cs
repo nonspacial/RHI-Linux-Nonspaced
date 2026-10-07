@@ -491,7 +491,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         throw new InvalidDataException($"Latest Ultimate ASI Loader release does not contain {assetName}.");
     }
 
-    private async Task<string> EnsureCachedDllAsync(
+    internal async Task<string> EnsureCachedDllAsync(
         UalReleaseInfo release,
         PeArchitecture architecture,
         CancellationToken cancellationToken)
@@ -501,11 +501,15 @@ public sealed class UltimateAsiLoaderDeploymentService
         var cachedDll = Path.Combine(versionDir, DefaultInnerDllName);
         var metadataPath = Path.Combine(versionDir, "source.json");
 
-        if (File.Exists(cachedDll) && PeArchitectureDetector.Detect(cachedDll) == architecture)
+        // Reuse only a DLL this service stamped for exactly this release asset (#142): a file that
+        // reached the cache any other way is downloaded again, never deployed.
+        if (CacheStamp.IsValid(cachedDll, release.AssetUrl, release.Version, release.AssetSha256) &&
+            PeArchitectureDetector.Detect(cachedDll) == architecture)
             return cachedDll;
 
         Directory.CreateDirectory(versionDir);
-        var zipPath = Path.Combine(versionDir, release.AssetName + ".download");
+        CacheStamp.Invalidate(cachedDll);
+        var zipPath = Path.Combine(versionDir, release.AssetName + $".download-{Guid.NewGuid():N}");
         var tempDll = cachedDll + $".tmp-{Guid.NewGuid():N}";
 
         try
@@ -544,6 +548,7 @@ public sealed class UltimateAsiLoaderDeploymentService
                     $"Extracted {DefaultInnerDllName} has the wrong PE architecture for {architecture}.");
 
             File.Move(tempDll, cachedDll, overwrite: true);
+            CacheStamp.Write(cachedDll, release.AssetUrl, release.Version, release.AssetSha256);
             File.WriteAllText(metadataPath, JsonSerializer.Serialize(new
             {
                 release.Version,

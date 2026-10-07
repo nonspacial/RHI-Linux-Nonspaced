@@ -436,6 +436,9 @@ public sealed class ReShadeChannelTests : IDisposable
         var reshade = NewService(store, handler, cache);
         Assert.True((await reshade.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
         Directory.Move(Path.Combine(cache, "stable", "9.9.9"), Path.Combine(cache, "stable", "9.9.9.0"));
+        // The moved copy is only trusted with a stamp for its own folder version (#142); re-stamp it so this
+        // still tests the trailing-zero comparison rather than the stamp check.
+        CacheStamp.Write(Path.Combine(cache, "stable", "9.9.9.0", "ReShade64.dll"), ReShadeDeploymentService.StableSetupUrl("9.9.9.0"), "9.9.9.0");
 
         handler.HomeStatus = HttpStatusCode.InternalServerError;
         handler.HomeHasLink = false;
@@ -446,6 +449,53 @@ public sealed class ReShadeChannelTests : IDisposable
         Assert.Contains("Installed version kept (9.9.9)", update.Message);
         Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
     }
+
+    // #142: the outage fallback deploys only a copy this service stamped when it extracted it. A
+    // hand-placed (unstamped) ReShade64.dll, or a stamped one whose bytes were later swapped, is never
+    // deployed: the install is Unavailable and nothing is written.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StableChannel_SiteOutage_UnstampedOrSwappedCachedCopy_IsUnavailableAndDeploysNothing(bool stampedThenSwapped)
+    {
+        var cache = Path.Combine(_root, stampedThenSwapped ? "outage-swapped-cache" : "outage-unstamped-cache");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var dll = Path.Combine(cache, "stable", "9.9.9", "ReShade64.dll");
+        if (stampedThenSwapped)
+        {
+            var (seedGame, seedStore) = CreateGame("outage-swapped-seed");
+            Assert.True((await NewService(seedStore, handler, cache).InstallAsync(seedGame, new ReShadeInstallOptions { ManageIni = false })).Success);
+            Assert.True(CacheStamp.IsValid(dll, ReShadeDeploymentService.StableSetupUrl("9.9.9"), "9.9.9"));
+            // Keep the PE header, signature strings and size; only the stamp's content hash can tell.
+            var bytes = File.ReadAllBytes(dll);
+            for (var i = 1024; i < bytes.Length; i += 4096) bytes[i] ^= 0x5A;
+            File.WriteAllBytes(dll, bytes);
+        }
+        else
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(dll)!);
+            PeArchitectureDetectorTests.WritePe(dll, 0x8664, 1_100_000);
+            StampReShadeSignature(dll);
+        }
+        Assert.False(CacheStamp.IsValid(dll, ReShadeDeploymentService.StableSetupUrl("9.9.9"), "9.9.9"));
+        var foreignHash = Sha256(dll);
+
+        handler.HomeStatus = HttpStatusCode.InternalServerError;
+        handler.HomeHasLink = false;
+        var (game, store) = CreateGame(stampedThenSwapped ? "outage-swapped" : "outage-unstamped");
+        var result = await NewService(store, handler, cache).InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success, result.Message);
+        Assert.True(result.SourceUnavailable);
+        Assert.Contains("No cached ReShade copy", result.Message);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.Equal(foreignHash, Sha256(dll));
+    }
+
+    [Fact]
+    public void StableSetupUrl_IsTheExactUrlTheSetupIsStampedWith()
+        => Assert.Equal("https://reshade.me/downloads/ReShade_Setup_6.4.1_Addon.exe", ReShadeDeploymentService.StableSetupUrl("6.4.1"));
 
     [Theory]
     [InlineData("6.3", "6.3.0", 0)]
@@ -963,7 +1013,7 @@ public sealed class ReShadeChannelTests : IDisposable
             new WineDllOverrideService(),
             new FakeExtractor(),
             cache,
-            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs")));
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")));
     }
 
     private static void SeedShaderCache(string cache, string packId)
@@ -983,6 +1033,8 @@ public sealed class ReShadeChannelTests : IDisposable
             ? "https://github.com/crosire/reshade-shaders/archive/refs/heads/master.zip"
             : throw new InvalidOperationException($"SeedShaderCache has no source identity fixture for '{packId}'.");
         File.WriteAllText(Path.Combine(pack, ".source"), sourceIdentity);
+        // A cache entry RHI itself extracted also carries its download stamp (#142).
+        CacheStamp.Write(Path.Combine(pack, "extracted"), sourceIdentity, sourceIdentity);
     }
 
     private static void WriteNativeD3DCompiler(string path, ushort machine)

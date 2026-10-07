@@ -526,7 +526,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         return value;
     }
 
-    private async Task<string> EnsureCachedPayloadAsync(Rtx40MfgReleaseInfo release, CancellationToken cancellationToken)
+    internal async Task<string> EnsureCachedPayloadAsync(Rtx40MfgReleaseInfo release, CancellationToken cancellationToken)
     {
         var versionDir = Path.Combine(_cacheRoot, SanitizePathSegment(release.Version));
         var dllPath = Path.Combine(versionDir, InnerDllName);
@@ -535,11 +535,16 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         {
             try
             {
+                // Reuse only a DLL stamped at download time for this release asset (#142); a file
+                // that reached the cache any other way is downloaded again, never deployed.
+                if (!CacheStamp.IsValid(dllPath, release.AssetUrl, release.Version, release.AssetSha256))
+                    throw new InvalidDataException("Cached payload has no valid download stamp.");
                 ValidatePayload(dllPath);
                 return dllPath;
             }
             catch
             {
+                CacheStamp.Invalidate(dllPath);
                 TryDelete(dllPath);
             }
         }
@@ -588,6 +593,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         }
 
         ValidatePayload(dllPath);
+        CacheStamp.Write(dllPath, release.AssetUrl, release.Version, release.AssetSha256);
         return dllPath;
     }
 

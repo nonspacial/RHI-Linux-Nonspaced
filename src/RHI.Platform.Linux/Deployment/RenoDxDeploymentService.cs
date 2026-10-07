@@ -761,20 +761,23 @@ public sealed class RenoDxDeploymentService
            fileName.Contains("mfgunlock", StringComparison.OrdinalIgnoreCase) ||
            fileName.Contains("mfg_unlock", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
+    // RenoDxRemoteStamp (locals `remote`/`cachedRemote`) = the HTTP validators the file was served with;
+    // CacheStamp = provenance proving the cached bytes are the ones RHI downloaded (#142).
+    internal async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
         var source = cache + ".source";
-        var (current, cachedStamp) = await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false);
+        var (current, cachedRemote) = await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false);
         if (current)
-            return (cache, cachedStamp);
-        var temp = cache + ".tmp";
-        RenoDxRemoteStamp stamp;
+            return (cache, cachedRemote);
+        CacheStamp.Invalidate(cache);
+        var temp = cache + $".tmp-{Guid.NewGuid():N}";
+        RenoDxRemoteStamp remote;
         using (var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
             response.EnsureSuccessStatusCode();
-            stamp = RenoDxRemoteStamp.FromResponse(response);
+            remote = RenoDxRemoteStamp.FromResponse(response);
             await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
             await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
@@ -785,14 +788,16 @@ public sealed class RenoDxDeploymentService
             throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
         }
         // The snapshot's own time, so a version-less add-on keeps one version across re-downloads.
-        if (stamp.LastModified is { } lastModified)
+        if (remote.LastModified is { } lastModified)
             File.SetLastWriteTimeUtc(temp, lastModified.UtcDateTime);
         if (File.Exists(source)) File.Delete(source);
         File.Move(temp, cache, overwrite: true);
-        var sourceTemp = source + ".tmp";
-        await File.WriteAllTextAsync(sourceTemp, RenoDxRemoteStamp.SerializeSidecar(url, stamp), CancellationToken.None).ConfigureAwait(false);
+        var sourceTemp = source + $".tmp-{Guid.NewGuid():N}";
+        await File.WriteAllTextAsync(sourceTemp, RenoDxRemoteStamp.SerializeSidecar(url, remote), CancellationToken.None).ConfigureAwait(false);
         File.Move(sourceTemp, source, overwrite: true);
-        return (cache, stamp.HasValidator ? stamp : null);
+        // Written last: the stamp hashes the bytes now in place (it does not use mtime).
+        CacheStamp.Write(cache, url);
+        return (cache, remote.HasValidator ? remote : null);
     }
 
     // Upstream 2.7.6-2.7.9 reuses the cached add-on unless the remote size differs; a failed HEAD
@@ -802,14 +807,16 @@ public sealed class RenoDxDeploymentService
     private async Task<(bool Current, RenoDxRemoteStamp? Stamp)> IsCacheCurrentAsync(string url, string cache, string source, CancellationToken cancellationToken)
     {
         if (!File.Exists(cache) || !File.Exists(source)) return (false, null);
-        var (cachedUrl, cachedStamp) = RenoDxRemoteStamp.ReadSidecar(await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false));
+        var (cachedUrl, cachedRemote) = RenoDxRemoteStamp.ReadSidecar(await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false));
         if (!string.Equals(cachedUrl, url, StringComparison.Ordinal)) return (false, null);
+        // The .source sidecar names the URL and HTTP validators; the stamp proves the bytes are the ones RHI downloaded (#142).
+        if (!CacheStamp.IsValid(cache, url)) return (false, null);
         if (!BinarySignatureInspector.HasPeSignature(cache, 100 * 1024)) return (false, null);
-        if (cachedStamp?.Length is > 0 && cachedStamp.Length != new FileInfo(cache).Length) return (false, null);
+        if (cachedRemote?.Length is > 0 && cachedRemote.Length != new FileInfo(cache).Length) return (false, null);
 
         var (remote, _) = await HeadAsync(url, cancellationToken).ConfigureAwait(false);
-        if (remote is null || !remote.HasValidator) return (true, cachedStamp);
-        return RenoDxRemoteStamp.Compare(cachedStamp, remote) == RemoteStampComparison.Same
+        if (remote is null || !remote.HasValidator) return (true, cachedRemote);
+        return RenoDxRemoteStamp.Compare(cachedRemote, remote) == RemoteStampComparison.Same
             ? (true, remote)
             : (false, null);
     }

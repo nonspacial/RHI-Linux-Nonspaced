@@ -105,7 +105,7 @@ public sealed class ShaderAddonManagerTests : IDisposable
     public async Task ShaderSync_ExcludesKnownBrokenUpstreamShaderFiles()
     {
         using var http = new HttpClient(new StaticBytesHandler(CreateShaderZipWithBrokenFile()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "excluded-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "excluded-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "excluded-game");
         Directory.CreateDirectory(game);
 

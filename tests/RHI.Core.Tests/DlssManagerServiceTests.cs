@@ -234,6 +234,69 @@ public sealed class DlssManagerServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SwapDlss_UnstampedCachedDll_IsNotDeployed_DownloadReplacesIt()
+    {
+        // #142: a DLL that reached the cache by name only (foreign file, test leak, older build)
+        // must never be deployed; the swap downloads the real one and stamps it.
+        const string url = "https://github.com/RankFTW/rhi-repo/releases/download/test/dlssg.zip";
+        var cacheRoot = Path.Combine(_root, "cache-foreign");
+        var cacheDir = Path.Combine(cacheRoot, "DLSS-G", "310.8.0");
+        Directory.CreateDirectory(cacheDir);
+        var cached = Path.Combine(cacheDir, "nvngx_dlssg.dll");
+        await File.WriteAllBytesAsync(cached, Enumerable.Repeat((byte)0x66, 80_000).ToArray());
+        var genuine = Enumerable.Repeat((byte)0x7A, 90_000).ToArray();
+
+        var target = Path.Combine(_root, "game-foreign", "nvngx_dlssg.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        await File.WriteAllBytesAsync(target, Enumerable.Repeat((byte)0x11, 70_000).ToArray());
+
+        var manifest = "{ \"dlssg\": [{ \"version\": \"310.8.0\", \"url\": \"" + url + "\" }] }";
+        var service = new DlssManagerService(
+            new HttpClient(new FakeHandler(Encoding.UTF8.GetBytes(manifest), ZipWith("nvngx_dlssg.dll", genuine))),
+            new TransactionalFileDeploymentService(),
+            cacheRoot);
+        await service.FetchManifestAsync();
+
+        var result = await service.SwapAsync(DlssComponentKind.FrameGeneration, new[] { target }, "310.8.0");
+
+        Assert.True(result.Success);
+        Assert.Equal(genuine, await File.ReadAllBytesAsync(target));
+        Assert.True(CacheStamp.IsValid(cached, url, "310.8.0"));
+    }
+
+    [Fact]
+    public async Task SwapStreamline_UnstampedExtraDll_IsDroppedNotDeployed()
+    {
+        const string url = "https://github.com/RankFTW/rhi-repo/releases/download/test/streamline.zip";
+        var cacheRoot = Path.Combine(_root, "cache-streamline-foreign");
+        var cacheDir = Path.Combine(cacheRoot, "Streamline", "2.13.0.0");
+        Directory.CreateDirectory(cacheDir);
+        // A planted DLL the release archive does not contain.
+        await File.WriteAllBytesAsync(Path.Combine(cacheDir, "sl.reflex.dll"), Enumerable.Repeat((byte)0x66, 80_000).ToArray());
+        var common = Enumerable.Repeat((byte)0x6B, 90_000).ToArray();
+
+        var folder = Path.Combine(_root, "streamline-foreign-game");
+        Directory.CreateDirectory(folder);
+        await File.WriteAllBytesAsync(Path.Combine(folder, "sl.common.dll"), Enumerable.Repeat((byte)0x21, 70_000).ToArray());
+        var gameReflex = Enumerable.Repeat((byte)0x31, 70_000).ToArray();
+        await File.WriteAllBytesAsync(Path.Combine(folder, "sl.reflex.dll"), gameReflex);
+
+        var manifest = "{ \"streamline\": [{ \"version\": \"2.13.0.0\", \"url\": \"" + url + "\" }] }";
+        var service = new DlssManagerService(
+            new HttpClient(new FakeHandler(Encoding.UTF8.GetBytes(manifest), ZipWith("sl.common.dll", common))),
+            new TransactionalFileDeploymentService(),
+            cacheRoot);
+        await service.FetchManifestAsync();
+
+        var result = await service.SwapStreamlineAsync(new[] { folder }, "2.13.0.0");
+
+        Assert.True(result.Success);
+        Assert.Equal(common, await File.ReadAllBytesAsync(Path.Combine(folder, "sl.common.dll")));
+        Assert.Equal(gameReflex, await File.ReadAllBytesAsync(Path.Combine(folder, "sl.reflex.dll")));
+        Assert.False(File.Exists(Path.Combine(cacheDir, "sl.reflex.dll")));
+    }
+
+    [Fact]
     public async Task SwapDlss_RepairsExecuteOnlyCachedDll_OnUnix()
     {
         if (OperatingSystem.IsWindows()) return;
@@ -244,6 +307,8 @@ public sealed class DlssManagerServiceTests : IDisposable
         var cached = Path.Combine(cacheDir, "nvngx_dlssg.dll");
         var cachedBytes = Enumerable.Repeat((byte)0x7A, 80_000).ToArray();
         await File.WriteAllBytesAsync(cached, cachedBytes);
+        // An entry RHI downloaded carries its stamp (#142); its permissions were mangled afterwards.
+        CacheStamp.Write(cached, "https://github.com/RankFTW/rhi-repo/releases/download/test/dlssg.zip", "310.8.0");
         File.SetUnixFileMode(cached, UnixFileMode.GroupExecute); // reproduces an executable-only cache mode (0010) seen in legacy data
 
         var target = Path.Combine(_root, "game-fg", "nvngx_dlssg.dll");
@@ -279,6 +344,7 @@ public sealed class DlssManagerServiceTests : IDisposable
         var cached = Path.Combine(cacheDir, "sl.common.dll");
         var cachedBytes = Enumerable.Repeat((byte)0x6B, 80_000).ToArray();
         await File.WriteAllBytesAsync(cached, cachedBytes);
+        CacheStamp.Write(cached, "https://github.com/RankFTW/rhi-repo/releases/download/test/streamline.zip", "2.13.0.0");
         File.SetUnixFileMode(cached, UnixFileMode.GroupExecute);
 
         var folder = Path.Combine(_root, "streamline-permission-game");

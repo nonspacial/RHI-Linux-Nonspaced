@@ -955,31 +955,22 @@ public sealed class ShortFuseDeploymentService
             .First().Info;
     }
 
-    private async Task<string> EnsureCachedAddonAsync(ShortFuseReleaseInfo release, CancellationToken ct)
+    // Direct and archive assets alike are reused only through a CacheStamp written after RHI itself
+    // downloaded (and, for archives, extracted) the add-on: a foreign, truncated or older-build file at
+    // <cache>/<version>/renodx-dlss.addon64 is deleted and re-downloaded, never deployed (#142).
+    internal async Task<string> EnsureCachedAddonAsync(ShortFuseReleaseInfo release, CancellationToken ct)
     {
         var dir = Path.Combine(_cacheRoot, Sanitize(release.Version));
         var target = Path.Combine(dir, AddonFileName);
-        var provenancePath = target + ".source.json";
         Directory.CreateDirectory(dir);
+        // Legacy archive provenance sidecar; superseded by the CacheStamp.
+        TryDelete(target + ".source.json");
 
-        if (File.Exists(target))
-        {
-            if (!release.IsArchive)
-            {
-                if (release.AssetSha256 is null || string.Equals(await Sha256Async(target, ct).ConfigureAwait(false), release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-                    return target;
-            }
-            else if (TryReadCacheProvenance(provenancePath, out var provenance)
-                && string.Equals(provenance.AssetUrl, release.AssetUrl, StringComparison.Ordinal)
-                && string.Equals(provenance.AssetSha256 ?? "", release.AssetSha256 ?? "", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(provenance.ExtractedSha256, await Sha256Async(target, ct).ConfigureAwait(false), StringComparison.OrdinalIgnoreCase))
-            {
-                return target;
-            }
+        if (CacheStamp.IsValid(target, release.AssetUrl, release.Version, release.AssetSha256))
+            return target;
 
-            File.Delete(target);
-            TryDelete(provenancePath);
-        }
+        CacheStamp.Invalidate(target);
+        TryDelete(target);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl);
         request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
@@ -1022,17 +1013,8 @@ public sealed class ShortFuseDeploymentService
                 File.Move(tempAsset, tempAddon, overwrite: true);
             }
 
-            var extractedHash = await Sha256Async(tempAddon, ct).ConfigureAwait(false);
             File.Move(tempAddon, target, overwrite: true);
-            if (release.IsArchive)
-            {
-                var provenance = new ShortFuseCacheProvenance(release.AssetUrl, release.AssetSha256, extractedHash);
-                File.WriteAllText(provenancePath, JsonSerializer.Serialize(provenance));
-            }
-            else
-            {
-                TryDelete(provenancePath);
-            }
+            CacheStamp.Write(target, release.AssetUrl, release.Version, release.AssetSha256);
             return target;
         }
         finally
@@ -1066,20 +1048,6 @@ public sealed class ShortFuseDeploymentService
         if (fallback.Length == 0)
             throw new InvalidDataException($"ShortFuse archive '{assetName}' contains no .addon64 payload.");
         throw new InvalidDataException($"ShortFuse archive '{assetName}' contains multiple ambiguous .addon64 payloads.");
-    }
-
-    private static bool TryReadCacheProvenance(string path, out ShortFuseCacheProvenance provenance)
-    {
-        provenance = new ShortFuseCacheProvenance("", null, "");
-        if (!File.Exists(path)) return false;
-        try
-        {
-            var value = JsonSerializer.Deserialize<ShortFuseCacheProvenance>(File.ReadAllText(path));
-            if (value is null || string.IsNullOrWhiteSpace(value.AssetUrl) || string.IsNullOrWhiteSpace(value.ExtractedSha256)) return false;
-            provenance = value;
-            return true;
-        }
-        catch { return false; }
     }
 
     private static void TryDelete(string path)
@@ -1233,5 +1201,4 @@ public sealed class ShortFuseDeploymentService
 }
 
 public sealed record ShortFuseReleaseInfo(string Version, string Tag, string AssetUrl, string? AssetSha256, bool IsArchive = false, string AssetName = "");
-internal sealed record ShortFuseCacheProvenance(string AssetUrl, string? AssetSha256, string ExtractedSha256);
 public sealed record ShortFuseUpdateStatus(bool Success, string? InstalledVersion, string? LatestVersion, bool HasUpdate, string Message);

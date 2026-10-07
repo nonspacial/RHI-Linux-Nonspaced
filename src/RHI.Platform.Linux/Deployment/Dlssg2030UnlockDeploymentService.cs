@@ -466,7 +466,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         return new Dlssg2030SnapshotInfo(sha, ShortSha(sha));
     }
 
-    private async Task<Dlssg2030CachedPayload> EnsureCachedPayloadAsync(
+    internal async Task<Dlssg2030CachedPayload> EnsureCachedPayloadAsync(
         Dlssg2030SnapshotInfo snapshot,
         CancellationToken cancellationToken)
     {
@@ -475,10 +475,16 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniPath = Path.Combine(versionDir, IniFileName);
         Directory.CreateDirectory(versionDir);
 
-        if (!File.Exists(dllPath) || !File.Exists(iniPath))
+        var dllUrl = RawUrl(snapshot.CommitSha, DefaultProxyName);
+        var iniUrl = RawUrl(snapshot.CommitSha, IniFileName);
+        // Reuse the pair only when both files were stamped by this service's download of this commit
+        // (#142); a file that reached the cache any other way is downloaded again, never deployed.
+        // TryValidate hands back the hashes it just re-verified, so the pair is not hashed twice on reuse.
+        if (!CacheStamp.TryValidate(dllPath, dllUrl, snapshot.CommitSha, null, out var sourceDllHash) ||
+            !CacheStamp.TryValidate(iniPath, iniUrl, snapshot.CommitSha, null, out var sourceIniHash))
         {
-            var dllUrl = RawUrl(snapshot.CommitSha, DefaultProxyName);
-            var iniUrl = RawUrl(snapshot.CommitSha, IniFileName);
+            CacheStamp.Invalidate(dllPath);
+            CacheStamp.Invalidate(iniPath);
             var dllTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
             var iniTemp = iniPath + $".tmp-{Guid.NewGuid():N}";
             try
@@ -490,6 +496,8 @@ public sealed class Dlssg2030UnlockDeploymentService
                 ValidateIniText(iniText);
                 File.Move(dllTemp, dllPath, overwrite: true);
                 File.Move(iniTemp, iniPath, overwrite: true);
+                sourceDllHash = CacheStamp.Write(dllPath, dllUrl, snapshot.CommitSha);
+                sourceIniHash = CacheStamp.Write(iniPath, iniUrl, snapshot.CommitSha);
             }
             finally
             {
@@ -501,10 +509,8 @@ public sealed class Dlssg2030UnlockDeploymentService
         ValidateCachedDll(dllPath);
         var text = await File.ReadAllTextAsync(iniPath, cancellationToken).ConfigureAwait(false);
         ValidateIniText(text);
-        var sourceDllHash = await Sha256FileAsync(dllPath, cancellationToken).ConfigureAwait(false);
-        var sourceIniHash = await Sha256FileAsync(iniPath, cancellationToken).ConfigureAwait(false);
         var version = ParseVersionFromIni(text) ?? snapshot.Version;
-        return new Dlssg2030CachedPayload(dllPath, iniPath, text, sourceDllHash, sourceIniHash, version);
+        return new Dlssg2030CachedPayload(dllPath, iniPath, text, sourceDllHash.ToLowerInvariant(), sourceIniHash.ToLowerInvariant(), version);
     }
 
     private async Task DownloadToFileAsync(string url, string path, CancellationToken cancellationToken)

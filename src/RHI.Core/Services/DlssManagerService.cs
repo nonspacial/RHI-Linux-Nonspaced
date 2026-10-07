@@ -406,28 +406,39 @@ public sealed class DlssManagerService
             // can materialize as execute-only files (for example mode 0010). Repair older
             // cache entries in place before deciding whether the cached payload is reusable.
             NormalizeCacheDllPermissions(cachedDll);
-            if (IsReadableCachedDll(cachedDll)) return cachedDll;
+            // Reuse only a DLL stamped at download time for this manifest entry (#142); a file that
+            // reached the cache any other way is downloaded again, never deployed.
+            if (IsReadableCachedDll(cachedDll) && CacheStamp.IsValid(cachedDll, entry.Url, entry.Version)) return cachedDll;
             TryDeleteCacheFile(cachedDll);
         }
 
         Directory.CreateDirectory(cacheDir);
-        var zipPath = Path.Combine(cacheDir, "download.zip.part");
-        await DownloadFileAsync(entry.Url, zipPath, cancellationToken).ConfigureAwait(false);
-        using (var zip = ZipFile.OpenRead(zipPath))
+        CacheStamp.Invalidate(cachedDll);
+        var zipPath = Path.Combine(cacheDir, $"download-{Guid.NewGuid():N}.zip.part");
+        var temp = cachedDll + $".tmp-{Guid.NewGuid():N}";
+        try
         {
-            var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), expectedDll, StringComparison.OrdinalIgnoreCase))
-                        ?? throw new InvalidDataException($"Downloaded archive does not contain {expectedDll}.");
-            var temp = cachedDll + ".tmp";
-            match.ExtractToFile(temp, overwrite: true);
-            NormalizeCacheDllPermissions(temp);
-            if (!IsReadableCachedDll(temp))
-                throw new InvalidDataException($"Extracted {expectedDll} is unreadable or unexpectedly small.");
-            File.Move(temp, cachedDll, overwrite: true);
-            NormalizeCacheDllPermissions(cachedDll);
+            await DownloadFileAsync(entry.Url, zipPath, cancellationToken).ConfigureAwait(false);
+            using (var zip = ZipFile.OpenRead(zipPath))
+            {
+                var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), expectedDll, StringComparison.OrdinalIgnoreCase))
+                            ?? throw new InvalidDataException($"Downloaded archive does not contain {expectedDll}.");
+                match.ExtractToFile(temp, overwrite: true);
+                NormalizeCacheDllPermissions(temp);
+                if (!IsReadableCachedDll(temp))
+                    throw new InvalidDataException($"Extracted {expectedDll} is unreadable or unexpectedly small.");
+                File.Move(temp, cachedDll, overwrite: true);
+                NormalizeCacheDllPermissions(cachedDll);
+            }
         }
-        File.Delete(zipPath);
+        finally
+        {
+            TryDeleteCacheFile(temp);
+            TryDeleteCacheFile(zipPath);
+        }
         if (!IsReadableCachedDll(cachedDll))
             throw new IOException($"Cached {expectedDll} is not readable after extraction: {cachedDll}");
+        CacheStamp.Write(cachedDll, entry.Url, entry.Version);
         return cachedDll;
     }
 
@@ -440,16 +451,27 @@ public sealed class DlssManagerService
         if (existing.Length > 0)
         {
             foreach (var path in existing) NormalizeCacheDllPermissions(path);
-            if (existing.All(IsReadableCachedDll)) return;
-            foreach (var path in existing.Where(path => !IsReadableCachedDll(path))) TryDeleteCacheFile(path);
+            // Every Streamline DLL present here is deployed, so all of them must carry a stamp from
+            // this manifest entry's download (#142); otherwise the whole set is downloaded again.
+            if (existing.All(path => IsReadableCachedDll(path) && CacheStamp.IsValid(path, entry.Url, entry.Version))) return;
         }
 
         ValidateDownloadUrl(entry.Url);
         Directory.CreateDirectory(cacheDir);
-        var zipPath = Path.Combine(cacheDir, "download.zip.part");
-        await DownloadFileAsync(entry.Url, zipPath, ct).ConfigureAwait(false);
-        using (var zip = ZipFile.OpenRead(zipPath))
+        // Clear the set before extracting: a DLL the archive does not contain must not survive
+        // next to the fresh ones and be deployed with them.
+        foreach (var dll in KnownStreamlineDlls)
         {
+            var path = Path.Combine(cacheDir, dll);
+            CacheStamp.Invalidate(path);
+            TryDeleteCacheFile(path);
+        }
+        var zipPath = Path.Combine(cacheDir, $"download-{Guid.NewGuid():N}.zip.part");
+        var extractedFiles = new List<string>();
+        try
+        {
+            await DownloadFileAsync(entry.Url, zipPath, ct).ConfigureAwait(false);
+            using var zip = ZipFile.OpenRead(zipPath);
             foreach (var dll in KnownStreamlineDlls)
             {
                 var match = zip.Entries.FirstOrDefault(e => string.Equals(Path.GetFileName(e.FullName), dll, StringComparison.OrdinalIgnoreCase));
@@ -459,11 +481,16 @@ public sealed class DlssManagerService
                 NormalizeCacheDllPermissions(extracted);
                 if (!IsReadableCachedDll(extracted))
                     throw new InvalidDataException($"Extracted Streamline DLL is unreadable or unexpectedly small: {dll}");
+                extractedFiles.Add(extracted);
             }
         }
-        File.Delete(zipPath);
-        if (!KnownStreamlineDlls.Any(name => File.Exists(Path.Combine(cacheDir, name)) && IsReadableCachedDll(Path.Combine(cacheDir, name))))
+        finally
+        {
+            TryDeleteCacheFile(zipPath);
+        }
+        if (extractedFiles.Count == 0)
             throw new InvalidDataException("Streamline archive contained no readable recognized DLLs.");
+        foreach (var path in extractedFiles) CacheStamp.Write(path, entry.Url, entry.Version);
     }
 
 

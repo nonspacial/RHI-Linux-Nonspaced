@@ -71,6 +71,37 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
         Assert.Equal(0, extractor.CallCount);
     }
 
+    [Fact]
+    public async Task GetLatestAsync_ExtractedTreeFromOtherArchiveBytes_IsReExtracted()
+    {
+        // #142 review: the extracted tree's stamp is bound to the archive's SHA-256, not just URL + tag,
+        // so it cannot outlive the archive it came from even if nothing invalidated it on replacement.
+        var archiveBytes = CreateArchiveBytes();
+        var digest = Convert.ToHexString(SHA256.HashData(archiveBytes)).ToLowerInvariant();
+        var assetUrl = "https://downloads.example/Optiscaler_9.9.9.7z";
+        using var http = new HttpClient(new ReleaseHandler(archiveBytes, digest, assetUrl));
+        var extractor = new FakeExtractor();
+        var cache = Path.Combine(_root, "bound-cache");
+        var provider = new OptiScalerPackageProvider(http, extractor, cache);
+
+        await provider.GetLatestAsync();
+        Assert.Equal(1, extractor.CallCount);
+        var versionDir = Path.Combine(cache, "v9.9.9");
+        var extractStamp = File.ReadAllText(RHI.Core.Services.CacheStamp.StampPath(Path.Combine(versionDir, "extract")));
+        Assert.Contains(Convert.ToHexString(SHA256.HashData(archiveBytes)), extractStamp, StringComparison.OrdinalIgnoreCase);
+
+        // Same URL/tag/digest stamp on the archive, but a stamp whose recorded archive hash differs
+        // (as if the archive were replaced by other bytes without touching extract/).
+        var archive = Path.Combine(versionDir, "Optiscaler_9.9.9.7z");
+        var stampPath = RHI.Core.Services.CacheStamp.StampPath(Path.Combine(versionDir, "extract"));
+        var genuineHash = Convert.ToHexString(SHA256.HashData(archiveBytes));
+        File.WriteAllText(stampPath, extractStamp.Replace(genuineHash, new string('A', 64), StringComparison.OrdinalIgnoreCase));
+
+        await provider.GetLatestAsync();
+        Assert.Equal(2, extractor.CallCount);
+        Assert.True(File.Exists(archive));
+    }
+
     private static byte[] CreateArchiveBytes()
     {
         var bytes = new byte[1_200_000];

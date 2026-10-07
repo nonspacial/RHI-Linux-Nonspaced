@@ -812,6 +812,60 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
     private static string Sha256(string path) => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant();
 
     [Fact]
+    public async Task EnsureCachedAddon_ForeignDirectAddonUnderCachedName_IsReplacedNeverDeployed()
+    {
+        // #142 review: a direct .addon64 release with no published digest used to be reused by name alone.
+        var fixture = CreateGame("foreign-cache");
+        var genuine = CreatePe(0x8664, 80 * 1024, 0x5A);
+        const string url = "https://example.invalid/sf/renodx-dlss.addon64";
+        var gets = 0;
+        using var http = new HttpClient(new CountingHandler(url, genuine, () => Interlocked.Increment(ref gets)));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var overrides = new WineDllOverrideService();
+        var deployment = new TransactionalFileDeploymentService();
+        var cacheRoot = Path.Combine(fixture.Root, "cache-sf");
+        var sf = new ShortFuseDeploymentService(http, deployment, records, overrides,
+            new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache-ual")),
+            new DlssManagerService(http, deployment, Path.Combine(fixture.Root, "cache-dlss")),
+            cacheRoot, new ShortFuseSettingsStore(Path.Combine(fixture.Root, "sf-settings.json")));
+        var release = new ShortFuseReleaseInfo("2.0", "renodx-dlss-SF-2.0", url, AssetSha256: null, IsArchive: false, ShortFuseDeploymentService.AddonFileName);
+
+        // A plausible foreign add-on (PE, above the size floor) planted where the cache would put it,
+        // plus the legacy provenance sidecar name, but no stamp.
+        var planted = Path.Combine(cacheRoot, "2.0", ShortFuseDeploymentService.AddonFileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(planted)!);
+        var foreign = CreatePe(0x8664, 80 * 1024, 0x66);
+        File.WriteAllBytes(planted, foreign);
+        File.WriteAllText(planted + ".source.json", $$"""{"AssetUrl":"{{url}}","AssetSha256":null,"ExtractedSha256":"{{Sha256(planted)}}"}""");
+
+        var staged = await sf.EnsureCachedAddonAsync(release, CancellationToken.None);
+
+        Assert.Equal(planted, staged);
+        Assert.Equal(1, gets);
+        Assert.Equal(genuine, File.ReadAllBytes(staged));
+        Assert.True(CacheStamp.IsValid(staged, url, "2.0"));
+        Assert.False(File.Exists(planted + ".source.json"));
+
+        // The stamped download is reused; a foreign swap after that is caught by the content hash.
+        await sf.EnsureCachedAddonAsync(release, CancellationToken.None);
+        Assert.Equal(1, gets);
+        File.WriteAllBytes(staged, foreign);
+        await sf.EnsureCachedAddonAsync(release, CancellationToken.None);
+        Assert.Equal(2, gets);
+        Assert.Equal(genuine, File.ReadAllBytes(staged));
+    }
+
+    private sealed class CountingHandler(string url, byte[] body, Action onGet) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri!.AbsoluteUri != url) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            onGet();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(body) });
+        }
+    }
+
+    [Fact]
     public void SelectArchiveAddonEntry_SingleRenamedAddon64IsAccepted()
     {
         using var stream = new MemoryStream();

@@ -249,7 +249,9 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
             store,
             new WineDllOverrideService(),
             new NeverUsedReShadeExtractor(),
-            Path.Combine(_root, "unused-reshade-cache"));
+            Path.Combine(_root, "unused-reshade-cache"),
+            new ReShadeShaderPackService(http, Path.Combine(_root, "unused-reshade-cache", "shader-packs"),
+                customRoot: Path.Combine(_root, "custom-shaders")));
 
         var removedReShade = await reshadeService.RemoveAsync(game);
         Assert.True(removedReShade.Success, removedReShade.Message);

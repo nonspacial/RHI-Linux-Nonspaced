@@ -222,7 +222,8 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
     private ReShadeDeploymentService NewService(LinuxDeploymentRecordStore store, string cache)
     {
         var http = new HttpClient(new FakeHandler());
-        return new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(), store, new WineDllOverrideService(), new FakeExtractor(), cache);
+        return new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(), store, new WineDllOverrideService(), new FakeExtractor(), cache,
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")));
     }
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }

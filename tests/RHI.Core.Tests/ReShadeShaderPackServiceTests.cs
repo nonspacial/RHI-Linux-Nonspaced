@@ -14,7 +14,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Sync_DeploysIntoIsolatedRhiTreeAndReturnsSearchPaths()
     {
         using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "game");
         Directory.CreateDirectory(game);
 
@@ -33,7 +33,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         using var http = new HttpClient(new RoutingZipHandler(
             CreateShaderZip(),
             CreateCoreHeaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "dependency-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "dependency-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "dependency-game");
         Directory.CreateDirectory(game);
 
@@ -52,7 +52,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         using var http = new HttpClient(new RoutingZipHandler(
             CreateShaderZip(),
             CreateCoreHeaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "dependency-cleanup-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "dependency-cleanup-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "dependency-cleanup-game");
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["ClshortfuseShaders"]);
@@ -73,7 +73,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
 
         using (var http = new HttpClient(new ZipHandler(payload)))
         {
-            var service = new ReShadeShaderPackService(http, cache);
+            var service = new ReShadeShaderPackService(http, cache, customRoot: Path.Combine(_root, "custom-shaders"));
             service.SetExcludedFiles("CrosireMaster", ["Drop.fx"]);
             var first = await service.SyncAsync(game, ["CrosireMaster"]);
 
@@ -84,7 +84,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
 
         using (var http = new HttpClient(new ZipHandler(payload)))
         {
-            var restarted = new ReShadeShaderPackService(http, cache);
+            var restarted = new ReShadeShaderPackService(http, cache, customRoot: Path.Combine(_root, "custom-shaders"));
             Assert.Contains("Drop.fx", restarted.GetExcludedFiles("CrosireMaster"));
 
             await restarted.SyncAsync(game, ["CrosireMaster"]);
@@ -106,7 +106,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         var game = Path.Combine(_root, "per-file-game");
         Directory.CreateDirectory(game);
         using var http = new HttpClient(new ZipHandler(payload));
-        var service = new ReShadeShaderPackService(http, cache);
+        var service = new ReShadeShaderPackService(http, cache, customRoot: Path.Combine(_root, "custom-shaders"));
 
         service.SetExcludedFiles("CrosireMaster", ["Shaders/Sub/Drop.fx", "Textures/LUTs/Drop.png"]);
         await service.SyncAsync(game, ["CrosireMaster"]);
@@ -145,7 +145,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Cleanup_RemovesUnchangedManagedFiles()
     {
         using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "cleanup-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "cleanup-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "cleanup-game");
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["CrosireMaster"]);
@@ -160,7 +160,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Cleanup_PreservesUserModifiedManagedFile()
     {
         using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "modified-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "modified-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "modified-game");
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["CrosireMaster"]);
@@ -178,7 +178,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Sync_BlocksModifiedManagedDestinationBeforeOverwrite()
     {
         using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "collision-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "collision-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "collision-game");
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["CrosireMaster"]);
@@ -195,7 +195,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Sync_UnknownPackIdIsRejectedWithoutRemovingExistingManagedFiles()
     {
         using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "unknown-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "unknown-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "unknown-game");
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["CrosireMaster"]);
@@ -211,7 +211,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
     public async Task Sync_RejectsZipSlipEntry()
     {
         using var http = new HttpClient(new ZipHandler(CreateZipSlipArchive()));
-        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "zipslip-cache"));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "zipslip-cache"), customRoot: Path.Combine(_root, "custom-shaders"));
         var game = Path.Combine(_root, "zipslip-game");
         Directory.CreateDirectory(game);
 
