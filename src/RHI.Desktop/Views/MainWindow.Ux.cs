@@ -25,10 +25,24 @@ public sealed partial class MainWindow
     private readonly LinuxAddonFileWatcher _addonWatcher = new();
     private TrayIcon? _trayIcon;
     private bool _forceClose;
+    // Tray round trip (rule: the app never changes the user's window): the state and, for a normal window, the
+    // position it had when it went to the tray, restored exactly on the way back.
+    private bool _hiddenToTray;
+    private WindowState _trayRestoreState = WindowState.Normal;
+    private PixelPoint? _trayRestorePosition;
+    private WindowState _lastUnminimisedState = WindowState.Normal;
     private bool _startupMotdChecked;
 
     private void InitializeLinuxUx()
     {
+        // The state to come back to from a minimised window (and from the tray when it was minimised first). Changes
+        // while hidden in the tray are the window manager's, not the user's (e.g. dropping maximised on withdraw).
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == WindowStateProperty && !_hiddenToTray && e.NewValue is WindowState state && state != WindowState.Minimized)
+                _lastUnminimisedState = state;
+        };
+
         _addonWatcher.CandidateDetected += candidate =>
             Dispatcher.UIThread.Post(() => _ = HandleWatchedCandidateAsync(candidate));
 
@@ -55,7 +69,7 @@ public sealed partial class MainWindow
             if (DataContext is MainWindowViewModel vm && vm.TrayIconEnabled && vm.CloseToTray && _trayIcon is not null)
             {
                 e.Cancel = true;
-                Hide();
+                HideToTray();
             }
         };
 
@@ -700,15 +714,39 @@ public sealed partial class MainWindow
         _trayIcon = null;
     }
 
-    private void ShowMainWindowFromTray()
+    // Remembers how the window was (maximised, full screen, or normal at its position; a minimised window counts as
+    // the state it was minimised from) before hiding it.
+    private void HideToTray()
     {
-        Dispatcher.UIThread.Post(() =>
-        {
-            ShowInTaskbar = true;
-            Show();
-            WindowState = WindowState.Normal;
-            Activate();
-        });
+        _trayRestoreState = WindowState == WindowState.Minimized ? _lastUnminimisedState : WindowState;
+        _trayRestorePosition = _trayRestoreState == WindowState.Normal ? Position : null;
+        _hiddenToTray = true;
+        Hide();
+    }
+
+    private void ShowMainWindowFromTray() => Dispatcher.UIThread.Post(RestoreFromTray);
+
+    // Brings the window back exactly as it went to the tray; nothing is written that already matches. The state is
+    // applied before Show (an unmapped X11 window takes _NET_WM_STATE as its initial state) and checked again after
+    // it (a window manager may drop the state while the window is withdrawn). A visible but minimised window returns
+    // to the state it was minimised from; a visible window is only activated.
+    private void RestoreFromTray()
+    {
+        var fromTray = _hiddenToTray;
+        _hiddenToTray = false;
+        ShowInTaskbar = true;
+        if (fromTray) ApplyTrayRestoreState();
+        Show();
+        if (fromTray) ApplyTrayRestoreState();
+        else if (WindowState == WindowState.Minimized) WindowState = _lastUnminimisedState;
+        Activate();
+    }
+
+    private void ApplyTrayRestoreState()
+    {
+        if (WindowState != _trayRestoreState) WindowState = _trayRestoreState;
+        if (_trayRestoreState == WindowState.Normal && _trayRestorePosition is { } position && Position != position)
+            Position = position;
     }
 
     private void ExitFromTray()
