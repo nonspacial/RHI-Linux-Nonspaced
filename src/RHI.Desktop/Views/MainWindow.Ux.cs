@@ -411,12 +411,19 @@ public sealed partial class MainWindow
         var dialog = new Window
         {
             Title = TF("Win.EditGame", game.Name),
+            // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
+            // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically.
             Width = 790,
             Height = 760,
-            MinWidth = 680,
-            MinHeight = 620,
+            MinWidth = 460,
+            MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = form }
+            Content = new ScrollViewer
+            {
+                Content = form,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
+            }
         };
 
         cancel.Click += (_, _) => dialog.Close();
