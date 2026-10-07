@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -41,7 +42,7 @@ public sealed class LumaModePreferenceStore
         lock (_gate)
         {
             var map = LoadUnsafe();
-            return map.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var value)
+            return GameRecordIdentity.TryGet(map, game, out var value)
                 ? value
                 : LumaModePreference.Auto;
         }
@@ -53,9 +54,8 @@ public sealed class LumaModePreferenceStore
         lock (_gate)
         {
             var map = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
-            if (preference == LumaModePreference.Auto) map.Remove(key);
-            else map[key] = preference;
+            if (preference == LumaModePreference.Auto) GameRecordIdentity.Remove(map, game);
+            else GameRecordIdentity.Set(map, game, preference);
             SaveUnsafe(map);
         }
     }

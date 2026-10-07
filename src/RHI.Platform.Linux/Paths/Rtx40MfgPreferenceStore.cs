@@ -2,6 +2,7 @@ using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -41,7 +42,7 @@ public sealed class Rtx40MfgPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var preferences)
+            return GameRecordIdentity.TryGet(entries, game, out var preferences)
                 ? (preferences ?? new Rtx40MfgPreferences()).Normalize()
                 : new Rtx40MfgPreferences();
         }
@@ -53,7 +54,7 @@ public sealed class Rtx40MfgPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            entries[LinuxDeploymentRecordStore.GameKey(game)] = preferences.Normalize();
+            GameRecordIdentity.Set(entries, game, preferences.Normalize());
             SaveUnsafe(entries);
         }
     }

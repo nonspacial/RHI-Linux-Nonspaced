@@ -180,6 +180,11 @@ public partial class MainWindowViewModel : ObservableObject
         ? UiLocalizationService.Text("Ui.Show")
         : UiLocalizationService.Text("Ui.Hide");
     public bool CanRemoveManualGame => SelectedGame?.IsManuallyAdded == true && !IsBusy;
+
+    /// <summary>The selected game was moved and RHI's records still point to its old folder (Refs #38).</summary>
+    public bool ShowRepairAfterMove => SelectedGame is { } game && _managedComponents.NeedsRelocationRepair(game);
+
+    private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
     public bool CanUpdateAll => !IsBusy && _updateAll.HasManagedTargets(_allGames);
     public string SelectedTitle => SelectedGame?.Name ?? UiLocalizationService.Text("Ui.SelectGame");
     public string SelectedSource => SelectedGame is null ? "" : $"{SelectedGame.Source}  •  {SelectedGame.Runner ?? UiLocalizationService.Text("Ui.UnknownRunner")}";
@@ -896,6 +901,7 @@ public partial class MainWindowViewModel : ObservableObject
         UpdateAllCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveManualGame));
         RemoveManualGameCommand.NotifyCanExecuteChanged();
+        RepairAfterMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanEditSelectedGame));
         NotifyHdrProfile();
         OnPropertyChanged(nameof(CanSelectGraphicsApiOverride));
@@ -1280,6 +1286,9 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedGame = null;
 
             var found = await _scanner.ScanAsync(onlyDetectors);
+            // Re-key records older builds stored under a Heroic game's folder while the game is still
+            // there, so they keep matching after it moves (Refs #38).
+            TrySaveStore(() => _deploymentRecords.MigrateGameKeys(found));
             _libraryState = _libraryStore.Load();
             LibraryFilterMode = _libraryState.FilterMode;
 
@@ -2853,6 +2862,39 @@ public partial class MainWindowViewModel : ObservableObject
         return (true, LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name));
     }
 
+    /// <summary>
+    /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only
+    /// then re-points its records there. Nothing changes when a check fails.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRepairAfterMove))]
+    private async Task RepairAfterMoveAsync()
+    {
+        if (SelectedGame is not { } game) return;
+        IsBusy = true;
+        try
+        {
+            StatusText = LF("{0}: verificando os arquivos do RHI na nova pasta…", "{0}: checking RHI's files in the new folder…", game.Name);
+            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game));
+            StatusText = result.Success
+                ? LF("{0}: registros do RHI atualizados para a nova pasta ({1}).", "{0}: RHI's records now point to the new folder ({1}).", game.Name, result.Repaired)
+                  + (result.Message.Contains(DeploymentRelocation.AddonStateNotMovedPrefix, StringComparison.Ordinal)
+                      ? " " + L("As seleções do Gerenciador de Addons continuam apontando para a pasta antiga.", "Addon Manager selections still point to the old folder.")
+                      : "")
+                : UiLocalizationService.Present(result.Message);
+            if (result.Success && ReferenceEquals(SelectedGame, game))
+                await ReprobeGameAsync(game);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText = StoreSaveFailedText(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+            NotifySelected();
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]
     private async Task RemoveManualGameAsync()
     {
@@ -3644,6 +3686,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HideActionText));
         OnPropertyChanged(nameof(CanRemoveManualGame));
         RemoveManualGameCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ShowRepairAfterMove));
+        RepairAfterMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanInstallD3DCompilerWithProtontricks));
         OnPropertyChanged(nameof(CanInstallD3DCompilerWithWinetricks));
         OnPropertyChanged(nameof(D3DCompilerWinetricksButtonText));

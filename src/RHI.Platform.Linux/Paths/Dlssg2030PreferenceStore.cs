@@ -2,6 +2,7 @@ using System.Text.Json;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -41,7 +42,7 @@ public sealed class Dlssg2030PreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            if (!entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var preferences))
+            if (!GameRecordIdentity.TryGet(entries, game, out var preferences))
                 return new Dlssg2030Preferences();
 
             var normalized = (preferences ?? new Dlssg2030Preferences()).Normalize();
@@ -59,7 +60,7 @@ public sealed class Dlssg2030PreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            entries[LinuxDeploymentRecordStore.GameKey(game)] = preferences.Normalize();
+            GameRecordIdentity.Set(entries, game, preferences.Normalize());
             SaveUnsafe(entries);
         }
     }

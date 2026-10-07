@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -29,7 +30,7 @@ public sealed class OptiScalerVariantPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var variant)
+            return GameRecordIdentity.TryGet(entries, game, out var variant)
                 ? variant
                 : OptiScalerVariant.Stable;
         }
@@ -40,9 +41,8 @@ public sealed class OptiScalerVariantPreferenceStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
-            if (variant == OptiScalerVariant.Stable) entries.Remove(key);
-            else entries[key] = variant;
+            if (variant == OptiScalerVariant.Stable) GameRecordIdentity.Remove(entries, game);
+            else GameRecordIdentity.Set(entries, game, variant);
             SaveUnsafe(entries);
         }
     }

@@ -6,6 +6,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -182,8 +183,7 @@ public sealed class ReShadeAddonManagerService
     {
         var catalog = await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
         var state = LoadState();
-        var key = LinuxDeploymentRecordStore.GameKey(game);
-        var selected = state.Games.TryGetValue(key, out var gs)
+        var selected = GameRecordIdentity.TryGet(state.Games, game, out var gs)
             ? gs.SelectedIds.ToArray()
             : Array.Empty<string>();
         return new(catalog.Select(ToCatalogItem).ToArray(), selected, _customRoot);
@@ -233,11 +233,10 @@ public sealed class ReShadeAddonManagerService
             if (blocked.Length > 0)
                 return ComponentOperationResult.Fail($"These addons are managed by dedicated RHI component rows and cannot be duplicated here: {string.Join(", ", blocked)}");
 
-            var key = LinuxDeploymentRecordStore.GameKey(game);
             // Refuse before touching the game: the final ledger save would be refused anyway.
             _stateFile.EnsureWritable();
             var state = LoadState();
-            var old = state.Games.TryGetValue(key, out var existing) ? existing : new GameState();
+            var old = GameRecordIdentity.TryGet(state.Games, game, out var existing) ? existing : new GameState();
 
             foreach (var file in old.Files)
             {
@@ -335,9 +334,9 @@ public sealed class ReShadeAddonManagerService
                 }
 
                 if (normalized.Length == 0)
-                    state.Games.Remove(key);
+                    GameRecordIdentity.Remove(state.Games, game);
                 else
-                    state.Games[key] = newState;
+                    GameRecordIdentity.Set(state.Games, game, newState);
                 SaveState(state);
 
                 return ComponentOperationResult.Ok(
@@ -354,6 +353,38 @@ public sealed class ReShadeAddonManagerService
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             return ComponentOperationResult.Fail($"ReShade Addon Manager failed: {ex.Message}");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// After "Repair after move" (Refs #38): moves this game's selection to its current key and
+    /// re-points each owned add-on at the game's current add-on folder when the file is there with
+    /// the recorded hash; a file that is not keeps its old path (it is then simply not found).
+    /// </summary>
+    internal void RebaseAfterMove(DetectedGame game, IReadOnlyCollection<string> oldKeys)
+    {
+        _gate.Wait();
+        try
+        {
+            var state = LoadState();
+            var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
+            var entryKey = state.Games.Keys.FirstOrDefault(k => GameRecordIdentity.Matches(k, game))
+                           ?? state.Games.Keys.FirstOrDefault(oldKeys.Contains);
+            if (entryKey is null || !state.Games.TryGetValue(entryKey, out var entry)) return;
+            foreach (var file in entry.Files)
+            {
+                var moved = Path.Combine(deployDir, Path.GetFileName(file.Path));
+                if (!File.Exists(file.Path) && File.Exists(moved)
+                    && string.Equals(Sha256(moved), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                    file.Path = moved;
+            }
+            state.Games.Remove(entryKey);
+            GameRecordIdentity.Set(state.Games, game, entry);
+            SaveState(state);
         }
         finally
         {

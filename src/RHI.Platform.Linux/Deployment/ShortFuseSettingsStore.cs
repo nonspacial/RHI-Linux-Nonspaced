@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -41,7 +42,7 @@ public sealed class ShortFuseSettingsStore
 
     public bool IsAutoConfigEnabled(DetectedGame game)
     {
-        lock (_gate) return LoadUnsafe().EnabledGames.Contains(LinuxDeploymentRecordStore.GameKey(game));
+        lock (_gate) return LoadUnsafe().EnabledGames.Any(key => GameRecordIdentity.Matches(key, game));
     }
 
     public void SetAutoConfigEnabled(DetectedGame game, bool enabled)
@@ -49,7 +50,7 @@ public sealed class ShortFuseSettingsStore
         lock (_gate)
         {
             var document = LoadUnsafe();
-            document.EnabledGames = Toggle(document.EnabledGames, LinuxDeploymentRecordStore.GameKey(game), enabled);
+            document.EnabledGames = Toggle(document.EnabledGames, game, enabled);
             SaveUnsafe(document);
         }
     }
@@ -57,7 +58,7 @@ public sealed class ShortFuseSettingsStore
     /// <summary>True when the ShortFuse add-on should be deployed as <c>zzz_renodx-dlss.addon64</c>.</summary>
     public bool IsZzzLoadOrderEnabled(DetectedGame game)
     {
-        lock (_gate) return (LoadUnsafe().ZzzLoadOrderGames ?? []).Contains(LinuxDeploymentRecordStore.GameKey(game));
+        lock (_gate) return (LoadUnsafe().ZzzLoadOrderGames ?? []).Any(key => GameRecordIdentity.Matches(key, game));
     }
 
     public void SetZzzLoadOrderEnabled(DetectedGame game, bool enabled)
@@ -65,7 +66,7 @@ public sealed class ShortFuseSettingsStore
         lock (_gate)
         {
             var document = LoadUnsafe();
-            document.ZzzLoadOrderGames = Toggle(document.ZzzLoadOrderGames ?? [], LinuxDeploymentRecordStore.GameKey(game), enabled);
+            document.ZzzLoadOrderGames = Toggle(document.ZzzLoadOrderGames ?? [], game, enabled);
             SaveUnsafe(document);
         }
     }
@@ -76,10 +77,11 @@ public sealed class ShortFuseSettingsStore
         lock (_gate) _file.EnsureWritable();
     }
 
-    private static string[] Toggle(IEnumerable<string> keys, string key, bool enabled)
+    // Legacy keys for the game are dropped on every write, so an older entry migrates to the current key.
+    private static string[] Toggle(IEnumerable<string> keys, DetectedGame game, bool enabled)
     {
-        var set = new HashSet<string>(keys, StringComparer.Ordinal);
-        if (enabled) set.Add(key); else set.Remove(key);
+        var set = new HashSet<string>(keys.Where(key => !GameRecordIdentity.Matches(key, game)), StringComparer.Ordinal);
+        if (enabled) set.Add(LinuxDeploymentRecordStore.GameKey(game));
         return set.OrderBy(x => x, StringComparer.Ordinal).ToArray();
     }
 

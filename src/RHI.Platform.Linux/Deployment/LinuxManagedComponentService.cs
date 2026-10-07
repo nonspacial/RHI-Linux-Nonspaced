@@ -7,6 +7,7 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 {
     private readonly LinuxDeploymentRecordStore _records;
+    private readonly DeploymentRelocation _relocation;
     private readonly ReShadeDeploymentService _reshade;
     private readonly ReShadeAddonManagerService _addonManager;
     private readonly RenoDxDeploymentService _renodx;
@@ -56,6 +57,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ComponentUpdateLogStore? updateLog = null)
     {
         _records = records;
+        _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
         _renodx = renodx;
@@ -813,18 +815,47 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         }
     }
 
-    private static ComponentOperationResult? PatchTargetGuard(DetectedGame game)
+    // Every mutating entry point goes through this: an unconfirmed patch target, or records left
+    // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
+    private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
         => game.HasConfirmedPatchTarget
-            ? null
+            ? _relocation.Guard(game)
             : ComponentOperationResult.Fail(
                 "Alvo de modificações não definido. Use Editar jogo para selecionar o executável real do jogo; o executável do launcher nunca é usado como destino de patches.");
 
-    private static ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
-        => game.HasConfirmedPatchTarget
-            ? null
-            : new ManagedUpdateCheck(true, false,
+    private ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
+    {
+        if (!game.HasConfirmedPatchTarget)
+            return new ManagedUpdateCheck(true, false,
                 "Alvo de modificações não definido. Atualizações locais estão bloqueadas até Editar jogo confirmar o executável real do jogo.",
                 Blocked: true);
+        return _relocation.Guard(game) is { } moved
+            ? new ManagedUpdateCheck(true, false, moved.Message, Blocked: true)
+            : null;
+    }
+
+    /// <summary>True when the game was moved and "Repair after move" has records to update.</summary>
+    public bool NeedsRelocationRepair(DetectedGame game) => _relocation.NeedsRepair(game);
+
+    /// <summary>
+    /// Explicit repair after a move: re-points the game's records (and its Addon Manager files) at
+    /// its current folder once every owned file is verified there. Nothing changes on any failure.
+    /// </summary>
+    public RelocationRepairResult RepairAfterMove(DetectedGame game)
+    {
+        var result = _relocation.Repair(game, out var repaired);
+        if (!result.Success || string.IsNullOrWhiteSpace(game.BinaryDirectory) || _addonManager is null) return result;
+        try
+        {
+            _addonManager.RebaseAfterMove(game, repaired.Select(r => r.Record.GameKey).Distinct(StringComparer.Ordinal).ToArray());
+            return result;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The records are already repaired; only the Addon Manager selection kept its old paths.
+            return result with { Message = $"{result.Message}. {DeploymentRelocation.AddonStateNotMovedPrefix}{ex.Message}" };
+        }
+    }
 
     private IReadOnlyList<string> BuildDependencyIndex(DetectedGame game, IReadOnlyList<string>? indexedFiles = null)
     {

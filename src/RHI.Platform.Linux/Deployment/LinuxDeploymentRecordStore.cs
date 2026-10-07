@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -42,7 +43,7 @@ public sealed class LinuxDeploymentRecordStore
     {
         lock (_gate)
         {
-            var record = LoadUnsafe().FirstOrDefault(r => r.GameKey == GameKey(game) && r.Component == component);
+            var record = ForGame(LoadUnsafe(), game).FirstOrDefault(r => r.Component == component);
             return record is null ? null : Clone(record);
         }
     }
@@ -50,7 +51,74 @@ public sealed class LinuxDeploymentRecordStore
     public IReadOnlyList<LinuxDeploymentRecord> FindAll(DetectedGame game)
     {
         lock (_gate)
-            return LoadUnsafe().Where(r => r.GameKey == GameKey(game)).Select(Clone).ToArray();
+            return ForGame(LoadUnsafe(), game).Select(Clone).ToArray();
+    }
+
+    /// <summary>Every record (deep copies), for relocation repair.</summary>
+    internal IReadOnlyList<LinuxDeploymentRecord> All()
+    {
+        lock (_gate)
+            return LoadUnsafe().Select(Clone).ToArray();
+    }
+
+    /// <summary>
+    /// Re-keys records written under a key an older build used for a game (Heroic games were keyed by
+    /// install path) to the game's current, relocation-tolerant key, so they keep matching after the
+    /// game is moved. Run after each library scan. A component that already has a record under the
+    /// current key keeps both untouched. Returns the number of records migrated (Refs #38).
+    /// </summary>
+    public int MigrateGameKeys(IEnumerable<DetectedGame> games)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+        lock (_gate)
+        {
+            var records = LoadUnsafe();
+            if (_corruptQuarantinePath is not null) return 0;
+            var migrated = 0;
+            foreach (var game in games)
+            {
+                var legacy = GameRecordIdentity.LegacyKeys(game);
+                if (legacy.Count == 0) continue;
+                var key = GameKey(game);
+                for (var i = 0; i < records.Count; i++)
+                {
+                    var record = records[i];
+                    if (!legacy.Contains(record.GameKey, StringComparer.Ordinal)) continue;
+                    if (records.Any(r => r.GameKey == key && r.Component == record.Component)) continue;
+                    var copy = Clone(record);
+                    copy.GameKey = key;
+                    records[i] = copy;
+                    migrated++;
+                }
+            }
+            if (migrated > 0) SaveUnsafe(records);
+            return migrated;
+        }
+    }
+
+    /// <summary>Replaces records in one atomic save (relocation repair): <paramref name="remove"/> matched by key, component and binary directory.</summary>
+    internal void Replace(IReadOnlyList<LinuxDeploymentRecord> remove, IReadOnlyList<LinuxDeploymentRecord> add)
+    {
+        lock (_gate)
+        {
+            var records = LoadUnsafe();
+            EnsureWritable();
+            records.RemoveAll(r => remove.Any(x => x.GameKey == r.GameKey && x.Component == r.Component
+                                                   && string.Equals(x.BinaryDirectory, r.BinaryDirectory, StringComparison.Ordinal)));
+            records.AddRange(add.Select(Clone));
+            SaveUnsafe(records);
+        }
+    }
+
+    // Records under the current key first, so a legacy duplicate (left by a failed migration) never wins.
+    private static IEnumerable<LinuxDeploymentRecord> ForGame(List<LinuxDeploymentRecord> records, DetectedGame game)
+    {
+        var key = GameKey(game);
+        var current = records.Where(r => r.GameKey == key).ToList();
+        var legacy = GameRecordIdentity.LegacyKeys(game);
+        if (legacy.Count == 0) return current;
+        return current.Concat(records.Where(r => legacy.Contains(r.GameKey, StringComparer.Ordinal)
+                                                 && current.All(c => c.Component != r.Component)));
     }
 
     public void Upsert(LinuxDeploymentRecord record)
@@ -72,7 +140,7 @@ public sealed class LinuxDeploymentRecordStore
         {
             var records = LoadUnsafe();
             EnsureWritable();
-            records.RemoveAll(r => r.GameKey == GameKey(game) && r.Component == component);
+            records.RemoveAll(r => GameRecordIdentity.Matches(r.GameKey, game) && r.Component == component);
             SaveUnsafe(records);
         }
     }
@@ -88,8 +156,8 @@ public sealed class LinuxDeploymentRecordStore
         return copy;
     }
 
-    public static string GameKey(DetectedGame game)
-        => game.SteamAppId is int id ? $"steam:{id}" : Path.GetFullPath(game.InstallPath);
+    /// <summary>The game's relocation-tolerant key (<see cref="GameRecordIdentity.Key"/>).</summary>
+    public static string GameKey(DetectedGame game) => GameRecordIdentity.Key(game);
 
     private void EnsureWritable()
     {

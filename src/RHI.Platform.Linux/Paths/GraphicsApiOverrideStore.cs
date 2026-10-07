@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
@@ -32,7 +33,7 @@ public sealed class GraphicsApiOverrideStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            return entries.TryGetValue(LinuxDeploymentRecordStore.GameKey(game), out var api) ? api : null;
+            return GameRecordIdentity.TryGet(entries, game, out var api) ? api : null;
         }
     }
 
@@ -42,11 +43,10 @@ public sealed class GraphicsApiOverrideStore
         lock (_gate)
         {
             var entries = LoadUnsafe();
-            var key = LinuxDeploymentRecordStore.GameKey(game);
             if (!api.HasValue || api.Value == GraphicsApi.Unknown)
-                entries.Remove(key);
+                GameRecordIdentity.Remove(entries, game);
             else
-                entries[key] = api.Value;
+                GameRecordIdentity.Set(entries, game, api.Value);
             SaveUnsafe(entries);
         }
     }
