@@ -1736,19 +1736,24 @@ public sealed partial class MainWindow : Window
                     var selected = options[requestedIndex];
                     combo.IsEnabled = false;
                     ComponentOperationResult result;
+                    string shown;
                     try
                     {
                         result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
+                        shown = UiLocalizationService.Present(result.Message);
                     }
                     catch (Exception ex)
                     {
+                        // Report returns an already-localised sentence; presenting it again could swap it for the
+                        // generic text because it embeds the (English) .NET message (review nit 6).
                         result = ComponentOperationResult.Fail(UiExceptionGuard.Report(ex, "optiscaler-advanced-setting"));
+                        shown = result.Message;
                     }
                     finally
                     {
                         combo.IsEnabled = true;
                     }
-                    message.Text = UiLocalizationService.Present(result.Message);
+                    message.Text = shown;
                     if (result.Success)
                     {
                         acceptedIndex = requestedIndex;

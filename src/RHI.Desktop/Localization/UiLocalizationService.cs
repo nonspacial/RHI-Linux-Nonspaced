@@ -867,6 +867,14 @@ public static class UiLocalizationService
 
     private sealed record PortugueseOnlyTemplate(string Anchor, Regex Pattern, string Replacement, int LiteralLength);
 
+    // A template matches only a whole message or sentence (review m3): it starts at the start of the text, a line, or
+    // after a sentence/clause break (". ", ": ", "; ", "! ", "? ", "— "), and ends at the end of the text or before
+    // whitespace. A game name or path that merely contains a template's words ("Jogo 'Atualização disponível: …'") is
+    // therefore left alone. The input can carry exception text, so every match is time-limited.
+    private const string MessageStart = @"(?<=^|\n|[.:;!?—–]\s)";
+    private const string MessageEnd = @"(?=$|\s)";
+    internal static readonly TimeSpan TemplateMatchTimeout = TimeSpan.FromMilliseconds(200);
+
     // Longest literal text first, so a message that embeds another (": {2}") is matched by its own row before the
     // embedded message's row rewrites the inside.
     private static readonly PortugueseOnlyTemplate[] PortugueseOnlyTemplates = PlatformMessageTranslations.PortugueseOnly
@@ -874,28 +882,44 @@ public static class UiLocalizationService
         .OrderByDescending(t => t.LiteralLength)
         .ToArray();
 
+    /// <summary>Match timeouts of the PT-only templates (tests: none may run unbounded).</summary>
+    internal static IEnumerable<TimeSpan> PortugueseOnlyTemplateTimeouts => PortugueseOnlyTemplates.Select(t => t.Pattern.MatchTimeout);
+
     private static PortugueseOnlyTemplate BuildTemplate((string PtBr, string EnUs) row)
     {
         var parts = Regex.Split(row.PtBr, @"\{(\d+)\}");
-        var pattern = new StringBuilder();
+        var pattern = new StringBuilder(MessageStart);
         for (var i = 0; i < parts.Length; i++)
         {
             if (i % 2 == 0) { pattern.Append(Regex.Escape(parts[i])); continue; }
             var last = i == parts.Length - 2 && parts[^1].Length == 0;
             pattern.Append("(?<g").Append(parts[i]).Append(last ? ">.+)" : ">.+?)");
         }
+        pattern.Append(MessageEnd);
         var literals = parts.Where((_, i) => i % 2 == 0).ToArray();
         var replacement = Regex.Replace(row.EnUs.Replace("$", "$$"), @"\{(\d+)\}", "${g$1}");
         return new PortugueseOnlyTemplate(literals.OrderByDescending(p => p.Length).First(),
-            new Regex(pattern.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant), replacement, literals.Sum(p => p.Length));
+            new Regex(pattern.ToString(), RegexOptions.Singleline | RegexOptions.CultureInvariant, TemplateMatchTimeout),
+            replacement, literals.Sum(p => p.Length));
     }
 
     private static string TranslatePortugueseOnly(string value)
     {
-        foreach (var template in PortugueseOnlyTemplates)
+        // A second pass translates a message nested in a hole of the same row (one pass never re-reads its own output).
+        for (var pass = 0; pass < 3; pass++)
         {
-            if (!value.Contains(template.Anchor, StringComparison.Ordinal)) continue;
-            value = template.Pattern.Replace(value, template.Replacement);
+            var before = value;
+            foreach (var template in PortugueseOnlyTemplates)
+            {
+                if (!value.Contains(template.Anchor, StringComparison.Ordinal)) continue;
+                try { value = template.Pattern.Replace(value, template.Replacement); }
+                catch (RegexMatchTimeoutException)
+                {
+                    // Leave the text as it is; the opposite-language check below still keeps PT prose out of the UI.
+                    RHI.Desktop.Diagnostics.UiExceptionGuard.Log.TryWrite("translation-timeout", template.Pattern.ToString());
+                }
+            }
+            if (ReferenceEquals(before, value) || before == value) break;
         }
         return value;
     }

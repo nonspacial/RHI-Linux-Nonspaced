@@ -99,6 +99,37 @@ public sealed class LocalizationTableTests
             UiLocalizationService.PresentFor("en-US", pt));
     }
 
+    /// <summary>Review m3: templates match whole messages only, so a name containing a known phrase is left alone.</summary>
+    [Theory]
+    [InlineData("Installed ReShade for 'Atualização disponível: 1.0 → 2.0.'")]
+    [InlineData("Installed ReShade for 'Proxy não suportado: Remastered.'")]
+    [InlineData("Installed ReShade in /games/Proxy não suportado: x./bin")]
+    public void NameContainingAKnownPhrase_IsLeftAlone(string text)
+        => Assert.Equal(text, UiLocalizationService.PresentFor("en-US", text));
+
+    [Fact]
+    public void KnownPhraseInsideAHole_IsCarriedOverVerbatim()
+        => Assert.Equal("Invalid GPU generation: Jogo 'Atualização disponível: 1.0 → 2.0.'.",
+            UiLocalizationService.PresentFor("en-US", "Geração de GPU inválida: Jogo 'Atualização disponível: 1.0 → 2.0.'."));
+
+    [Fact]
+    public void SameRowNestedInItself_IsTranslatedAtEveryLevel()
+    {
+        var pt = "Não foi possível instalar automaticamente a dependência ReShade exigida por ReLimiter: "
+                 + "Não foi possível instalar automaticamente a dependência D3DCompiler exigida por ReShade: Proxy não suportado: dinput8.dll.";
+        Assert.Equal("Could not automatically install the dependency ReShade required by ReLimiter: "
+                     + "Could not automatically install the dependency D3DCompiler required by ReShade: Proxy not supported: dinput8.dll.",
+            UiLocalizationService.PresentFor("en-US", pt));
+    }
+
+    [Fact]
+    public void EveryTemplate_HasAMatchTimeout()
+        => Assert.All(UiLocalizationService.PortugueseOnlyTemplateTimeouts, timeout =>
+        {
+            Assert.NotEqual(Regex.InfiniteMatchTimeout, timeout);
+            Assert.True(timeout <= TimeSpan.FromSeconds(1));
+        });
+
     /// <summary>#143: the real dependency-failure path (ReLimiter needs ReShade; ReShade cannot be fetched offline).</summary>
     [Fact]
     public async Task ReLimiterDependencyFailure_IsEnglishInTheEnglishUi()
