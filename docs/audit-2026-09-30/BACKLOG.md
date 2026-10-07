@@ -9,12 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 101 |
+| `audit-remediation` | 102 |
 | `upstream-sync/2.7.9` | 14 |
 | `upstream-sync/2.8.5` | 13 |
 | `feature-parity` | 13 |
 | (none) | 1 (#101 overview) |
-| **Total** | **142** |
+| **Total** | **143** |
 
 ## upstream-sync/2.7.9
 
@@ -56,7 +56,7 @@ Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30
 
 Closed: #137 (dgVoodoo2 standalone, owner decision). #134 (GitHub sign-in) is parked under `feature-parity`.
 
-Merged into `integration/wave3` (from `integration/wave2` @ `9983d1b`; open until Robbie's GUI check and the install after #142): #133 `bc6150d`, #138 `e5554ac`, #139 `0289955`, #131 `5727d13`, #129/#130/#107 `5cc6454`, #132/#140 `44ffaf6`, #135 `f62ee1d`. Integration: a ReShade source outage in Manual Update All counts as "could not be checked" (`99a04eb`). Re-review minors/nits fixed there: #129 Update All summary names the first failure and its reason (`344b10e`); #138 built-in Ko-fi links pinned, no temp file left on a cancelled cache write (`a208bf5`); #139 snapshot-override engine-author test, Decorate's records reused (`26181da`); #133 notice appended to the current line, busy wiring extracted and tested, no dropped notice (`d7f3195`); #132 setup-download outage flagged, Shaders/Add-ons keeps the cached-copy note (`cffbe7c`); #131 one dependency plan for the warning list and the install, computed off the UI thread (`da75b2e`); #135 Streamline row ignores the OptiScaler stack, panel targets from `LinuxDlssDefaultsService` (`abe070e`), stranded legacy DLSS-swap backups given back, coexistence retry test (`76dd3cd`). Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.8.0–2.8.5)`.
+Merged into `integration/wave3` (from `integration/wave2` @ `9983d1b`; open until Robbie's GUI check and the install): #142 `48979cd` (test HOME/XDG isolation; every download cache reused only through a `CacheStamp`; the RenoDX cache keeps wave3's HTTP-validator sidecar plus the stamp; the ReShade outage fallback only offers stamped copies, one `StableSetupUrl` for stamping and lookup), derived-entry stamps reject a blank binding (`a58196c`, fix-142 re-review nit 2), #133 `bc6150d`, #138 `e5554ac`, #139 `0289955`, #131 `5727d13`, #129/#130/#107 `5cc6454`, #132/#140 `44ffaf6`, #135 `f62ee1d`. Integration: a ReShade source outage in Manual Update All counts as "could not be checked" (`99a04eb`). Re-review minors/nits fixed there: #129 Update All summary names the first failure and its reason (`344b10e`); #138 built-in Ko-fi links pinned, no temp file left on a cancelled cache write (`a208bf5`); #139 snapshot-override engine-author test, Decorate's records reused (`26181da`); #133 notice appended to the current line, busy wiring extracted and tested, no dropped notice (`d7f3195`); #132 setup-download outage flagged, Shaders/Add-ons keeps the cached-copy note (`cffbe7c`); #131 one dependency plan for the warning list and the install, computed off the UI thread (`da75b2e`); #135 Streamline row ignores the OptiScaler stack, panel targets from `LinuxDlssDefaultsService` (`abe070e`), stranded legacy DLSS-swap backups given back, coexistence retry test (`76dd3cd`). Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.8.0–2.8.5)`.
 
 ## audit-remediation
 
@@ -170,6 +170,7 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #127 | fix-header follow-up | Library overlay: dim/cover the status bar while open | audit:ui | P3 |
 | #128 | fix-responsive follow-up | Responsive panels: share invalidation list, watch late children, pin Avalonia internals; tray restore un-maximises | audit:ui, hygiene | P3 |
 | #142 | wave3 (up-129 re-review) | Tests write fake add-ons into the real ~/.cache/rhi-linux (isolate all XDG paths in tests; verify cache before reuse) | audit:data-safety | P0 |
+| #143 | wave3 harness, up-131 lane | Portuguese-only message in the English UI when an automatic ReShade dependency fails | audit:ui | P2 |
 
 Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, #44 `c4cc212`, #127/#128 `9983d1b`. Owner decisions (recorded on the tickets): a Lutris entry with no real game folder (Rekordbox) is not listed (`884c716`); games inside Lutris launcher prefixes become their own cards (#119). Integration fixes: scanner merge keeps `RequiresExplicitPatchTarget` (`963059c`, fix-44 review 1); direct-wine Proton prefixes report native-Wayland HDR as Blocked (`327ea7f`, fix-50 review 4).
 
