@@ -31,6 +31,11 @@ public sealed partial class MainWindow
     private WindowState _trayRestoreState = WindowState.Normal;
     private PixelPoint? _trayRestorePosition;
     private WindowState _lastUnminimisedState = WindowState.Normal;
+    // After a restore from the tray: the state the window must keep while the window manager maps it (TrayMapGuard).
+    private WindowState? _trayMapGuardState;
+    private DispatcherTimer? _trayMapGuardTimer;
+    /// <summary>How long after a restore from the tray a window manager change of the state is corrected.</summary>
+    internal static readonly TimeSpan TrayMapGuard = TimeSpan.FromSeconds(1);
     private bool _startupMotdChecked;
 
     private void InitializeLinuxUx()
@@ -41,7 +46,11 @@ public sealed partial class MainWindow
         {
             if (e.Property == WindowStateProperty && !_hiddenToTray && e.NewValue is WindowState state && state != WindowState.Minimized)
                 _lastUnminimisedState = state;
+            if (e.Property == WindowStateProperty && _trayMapGuardState is { } kept && e.NewValue is WindowState now
+                && now != kept && now != WindowState.Minimized)
+                Dispatcher.UIThread.Post(CorrectTrayMapState);
         };
+        Activated += (_, _) => CorrectTrayMapState();
 
         _addonWatcher.CandidateDetected += candidate =>
             Dispatcher.UIThread.Post(() => _ = HandleWatchedCandidateAsync(candidate));
@@ -720,6 +729,7 @@ public sealed partial class MainWindow
     {
         _trayRestoreState = WindowState == WindowState.Minimized ? _lastUnminimisedState : WindowState;
         _trayRestorePosition = _trayRestoreState == WindowState.Normal ? Position : null;
+        EndTrayMapGuard();
         _hiddenToTray = true;
         Hide();
     }
@@ -728,8 +738,12 @@ public sealed partial class MainWindow
 
     // Brings the window back exactly as it went to the tray; nothing is written that already matches. The state is
     // applied before Show (an unmapped X11 window takes _NET_WM_STATE as its initial state) and checked again after
-    // it (a window manager may drop the state while the window is withdrawn). A visible but minimised window returns
-    // to the state it was minimised from; a visible window is only activated.
+    // it (a window manager may drop the state while the window is withdrawn). On X11 the WindowState getter follows
+    // PropertyNotify, so the check right after Show still sees the pre-map value: a window manager that drops
+    // maximised/full screen on map is only seen later. For TrayMapGuard after Show, a state change away from the
+    // remembered one (the window manager's) or the first activation re-applies it, at most once; the guard then
+    // ends, so later changes by the user stay (a minimise is never corrected). Width/Height are never written. A
+    // visible but minimised window returns to the state it was minimised from; a visible window is only activated.
     private void RestoreFromTray()
     {
         var fromTray = _hiddenToTray;
@@ -737,9 +751,39 @@ public sealed partial class MainWindow
         ShowInTaskbar = true;
         if (fromTray) ApplyTrayRestoreState();
         Show();
-        if (fromTray) ApplyTrayRestoreState();
+        if (fromTray)
+        {
+            ApplyTrayRestoreState();
+            StartTrayMapGuard();
+        }
         else if (WindowState == WindowState.Minimized) WindowState = _lastUnminimisedState;
         Activate();
+    }
+
+    private void StartTrayMapGuard()
+    {
+        _trayMapGuardState = _trayRestoreState;
+        _trayMapGuardTimer?.Stop();
+        _trayMapGuardTimer = new DispatcherTimer { Interval = TrayMapGuard };
+        _trayMapGuardTimer.Tick += (_, _) => EndTrayMapGuard();
+        _trayMapGuardTimer.Start();
+    }
+
+    private void EndTrayMapGuard()
+    {
+        _trayMapGuardState = null;
+        _trayMapGuardTimer?.Stop();
+        _trayMapGuardTimer = null;
+    }
+
+    // Once the window is mapped (activated, or the window manager reported a different state): put the remembered
+    // state back if it was dropped. Corrects at most once per restore.
+    private void CorrectTrayMapState()
+    {
+        if (_trayMapGuardState is not { } kept || !IsVisible) return;
+        if (WindowState == kept || WindowState == WindowState.Minimized) return;
+        EndTrayMapGuard();
+        WindowState = kept;
     }
 
     private void ApplyTrayRestoreState()
