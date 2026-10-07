@@ -7,7 +7,8 @@ namespace RHI.Platform.Linux.Detection;
 /// Read-only reader for one table of a small SQLite 3 database (Lutris' <c>pga.db</c>), so the library
 /// does not need a native SQLite dependency. Supports UTF-8 databases, table b-trees (interior and leaf
 /// pages) and overflow pages. Anything unexpected (a newer format, a damaged or half-written file, a
-/// database over the size cap) yields no rows, and callers fall back to the config files alone.
+/// database over the size cap, a WAL-mode database whose <c>-wal</c> file still holds changes the main
+/// file lacks) yields no rows and a scan warning, and callers fall back to the config files alone.
 /// </summary>
 internal static class SqliteTableReader
 {
@@ -18,8 +19,15 @@ internal static class SqliteTableReader
         try
         {
             var info = new FileInfo(path);
-            if (!info.Exists || info.Length < 512 || info.Length > MaxDatabaseBytes) return [];
-            var db = new Database(File.ReadAllBytes(path));
+            if (!info.Exists) return [];
+            if (info.Length < 512 || info.Length > MaxDatabaseBytes)
+                throw new InvalidDataException($"unexpected database size {info.Length} bytes");
+            var bytes = File.ReadAllBytes(path);
+            // WAL mode (read/write versions 2): committed rows can still sit in <db>-wal, so the main
+            // file alone may be stale (an `installed = 0` row would hide a reinstalled game).
+            if (bytes.Length > 19 && (bytes[18] == 2 || bytes[19] == 2) && new FileInfo(path + "-wal") is { Exists: true, Length: > 0 })
+                throw new InvalidDataException("WAL-mode database with uncheckpointed changes in its -wal file");
+            var db = new Database(bytes);
 
             var master = db.Rows(1).FirstOrDefault(row =>
                 row.Count >= 5 && row[0] as string == "table" && string.Equals(row[1] as string, table, StringComparison.OrdinalIgnoreCase));
@@ -41,6 +49,7 @@ internal static class SqliteTableReader
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
                                        or IndexOutOfRangeException or ArgumentOutOfRangeException or ArgumentException)
         {
+            RHI.Core.Services.DetectorDiagnostics.Warn($"SQLite table '{table}' in {path} not read; using the config files alone", ex);
             return [];
         }
     }

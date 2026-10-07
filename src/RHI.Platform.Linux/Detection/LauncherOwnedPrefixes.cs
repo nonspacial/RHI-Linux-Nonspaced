@@ -18,20 +18,34 @@ internal sealed partial class LauncherOwnedPrefixes
         _umuRoot = umuRoot;
     }
 
-    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots)
+    /// <param name="dataHome">
+    /// <c>$XDG_DATA_HOME</c>, where Lutris keeps <c>pga.db</c>; without it a custom data home plus legacy
+    /// <c>~/.config/lutris/games</c> configs leave <c>$GAMEDIR</c> prefixes unresolved (the Lutris detector
+    /// passes the same value, so both agree on which prefixes Lutris owns).
+    /// </param>
+    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
     {
         var prefixes = new HashSet<string>(StringComparer.Ordinal);
         var roots = lutrisConfigRoots.Where(Directory.Exists).ToList();
-        var library = LutrisPga.Load(LutrisPga.Candidates(roots, home));
+        var library = LutrisPga.Load(LutrisPga.Candidates(roots, home, dataHome));
         foreach (var root in roots)
         {
             IEnumerable<string> files;
             try { files = Directory.EnumerateFiles(root, "*.yml").Concat(Directory.EnumerateFiles(root, "*.yaml")).ToArray(); }
-            catch { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                RHI.Core.Services.DetectorDiagnostics.Warn($"Lutris config folder {root} unreadable; its prefixes are not known to be Lutris-owned", ex);
+                continue;
+            }
             foreach (var file in files)
             {
                 string text;
-                try { text = File.ReadAllText(file); } catch { continue; }
+                try { text = File.ReadAllText(file); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    RHI.Core.Services.DetectorDiagnostics.Warn($"Lutris config {file} unreadable; its prefix is not known to be Lutris-owned", ex);
+                    continue;
+                }
                 library.TryGetValue(Path.GetFileNameWithoutExtension(file), out var pga);
                 var gameDir = string.IsNullOrWhiteSpace(pga?.Directory) ? null : pga!.Directory;
                 foreach (var value in ReadScalars(text, "prefix"))

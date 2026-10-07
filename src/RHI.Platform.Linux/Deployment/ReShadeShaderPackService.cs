@@ -567,7 +567,31 @@ public sealed class ReShadeShaderPackService
     private string EnsureCustomPack()
     {
         EnsureCustomDirectories();
+        foreach (var link in LinkedFoldersNotDeployed(_customRoot))
+            Trace.TraceWarning($"[RHI shaders] {link} is a folder symlink in the custom shader folder; its files are not deployed (links are never followed into a game). Copy the files in instead.");
         return _customRoot;
+    }
+
+    /// <summary>
+    /// Folder symlinks inside the custom shader folder. Deployment never walks a directory link (it could
+    /// lead anywhere, / included), so the shaders behind one are not copied; the user is told which.
+    /// </summary>
+    internal static IReadOnlyList<string> LinkedFoldersNotDeployed(string customRoot)
+    {
+        if (!Directory.Exists(customRoot)) return [];
+        try
+        {
+            return SafeFileEnumeration.Entries(customRoot, ignoreInaccessible: true)
+                .Where(entry => entry.LinkTarget is not null && Directory.Exists(entry.FullName))
+                .Select(entry => entry.FullName)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Trace.TraceWarning($"[RHI shaders] custom shader folder {customRoot} not fully readable ({ex.Message})");
+            return [];
+        }
     }
 
     private void EnsureCustomDirectories()

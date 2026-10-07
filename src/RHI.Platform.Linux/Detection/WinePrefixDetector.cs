@@ -8,16 +8,18 @@ namespace RHI.Platform.Linux.Detection;
 public sealed class WinePrefixDetector : IGameDetector
 {
     private readonly string _home;
+    private readonly string? _dataHome;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
 
-    public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots) { }
+    public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome) { }
 
-    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots)
-        : this(home, () => lutrisConfigRoots) { }
+    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
+        : this(home, () => lutrisConfigRoots, dataHome) { }
 
-    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots)
+    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots, string? dataHome)
     {
         _home = home;
+        _dataHome = dataHome;
         _lutrisConfigRoots = lutrisConfigRoots;
     }
 
@@ -34,7 +36,7 @@ public sealed class WinePrefixDetector : IGameDetector
             Path.Combine(_home, "Games"),
             Path.Combine(_home, ".local", "share", "bottles", "bottles")
         };
-        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots());
+        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome);
         var games = new List<DetectedGame>();
         foreach (var root in roots.Where(Directory.Exists))
         {
@@ -118,6 +120,7 @@ public sealed class WinePrefixDetector : IGameDetector
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // An unreadable folder is skipped.
+                DetectorDiagnostics.Warn($"Wine prefix search skipped {dir}", ex);
             }
         }
     }

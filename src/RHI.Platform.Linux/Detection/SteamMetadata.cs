@@ -1,4 +1,5 @@
 using System.Text;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Detection;
 
@@ -142,24 +143,35 @@ internal static class SteamAppInfo
                 if (end > stream.Length) break;
                 if (appIds.Contains((int)appId))
                 {
-                    // infoState, lastUpdated, picsToken, text SHA-1, changeNumber, binary SHA-1 (v28+).
-                    stream.Position += 4 + 4 + 8 + 20 + 4 + (magic == V27 ? 0 : 20);
-                    var root = ReadObject(reader, strings, end);
-                    var common = Find(root, "appinfo", "common");
-                    result[(int)appId] = new Entry(
-                        common?.GetValueOrDefault("type") as string,
-                        common?.GetValueOrDefault("oslist") as string);
+                    try
+                    {
+                        // infoState, lastUpdated, picsToken, text SHA-1, changeNumber, binary SHA-1 (v28+).
+                        stream.Position += 4 + 4 + 8 + 20 + 4 + (magic == V27 ? 0 : 20);
+                        var root = ReadObject(reader, strings, end, 0);
+                        var common = Find(root, "appinfo", "common");
+                        result[(int)appId] = new Entry(
+                            common?.GetValueOrDefault("type") as string,
+                            common?.GetValueOrDefault("oslist") as string);
+                    }
+                    catch (Exception ex) when (IsDamage(ex))
+                    {
+                        // The entry's bounds are known: one bad entry loses only that app's classification.
+                        DetectorDiagnostics.Warn($"Steam appinfo entry {appId} in {path} unreadable; classified by its manifest alone", ex);
+                    }
                 }
                 stream.Position = end;
             }
         }
-        catch (Exception ex) when (ex is IOException or EndOfStreamException or InvalidDataException
-                                       or IndexOutOfRangeException or ArgumentOutOfRangeException or UnauthorizedAccessException)
+        catch (Exception ex) when (IsDamage(ex) || ex is UnauthorizedAccessException)
         {
             // A damaged or newer cache only loses the extra classification; keep what was read.
+            DetectorDiagnostics.Warn($"Steam appinfo {path} not fully read ({result.Count} of {appIds.Count} apps); the rest are classified by their manifests", ex);
         }
         return result;
     }
+
+    private static bool IsDamage(Exception ex)
+        => ex is IOException or InvalidDataException or IndexOutOfRangeException or ArgumentOutOfRangeException;
 
     private static Dictionary<string, object>? Find(Dictionary<string, object> root, params string[] path)
     {
@@ -170,8 +182,12 @@ internal static class SteamAppInfo
         return current;
     }
 
-    private static Dictionary<string, object> ReadObject(BinaryReader reader, string[]? strings, long end)
+    // Real appinfo nests a handful of levels; a crafted file must not recurse until the stack overflows.
+    private const int MaxDepth = 64;
+
+    private static Dictionary<string, object> ReadObject(BinaryReader reader, string[]? strings, long end, int depth)
     {
+        if (depth > MaxDepth) throw new InvalidDataException($"appinfo nesting deeper than {MaxDepth}");
         var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         while (reader.BaseStream.Position < end)
         {
@@ -180,7 +196,7 @@ internal static class SteamAppInfo
             var key = strings is null ? ReadCString(reader) : strings[reader.ReadInt32()];
             object value = type switch
             {
-                0x00 => ReadObject(reader, strings, end),
+                0x00 => ReadObject(reader, strings, end, depth + 1),
                 0x01 => ReadCString(reader),
                 0x02 or 0x03 or 0x04 or 0x06 => reader.ReadInt32(),
                 0x07 or 0x0A => reader.ReadInt64(),

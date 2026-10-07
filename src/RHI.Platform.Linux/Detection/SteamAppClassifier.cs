@@ -1,3 +1,5 @@
+using RHI.Core.Services;
+
 namespace RHI.Platform.Linux.Detection;
 
 /// <summary>
@@ -43,6 +45,7 @@ internal sealed class SteamAppClassifier
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // The detector reports nothing for an unreadable library either.
+                DetectorDiagnostics.Warn($"Steam library {steamapps} unreadable; its apps are not classified", ex);
             }
         }
 
@@ -99,7 +102,11 @@ internal sealed class SteamAppClassifier
         if (!File.Exists(configVdf)) return (tools, null);
         SteamKeyValues root;
         try { root = SteamKeyValues.Parse(File.ReadAllText(configVdf)); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return (tools, null); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DetectorDiagnostics.Warn($"Steam {configVdf} unreadable; compatibility tools come from appinfo alone", ex);
+            return (tools, null);
+        }
 
         var mapping = root.Child("InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping");
         if (mapping is null) return (tools, null);

@@ -97,7 +97,7 @@ public sealed partial class SteamGameDetector : IGameDetector
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         // One unreadable manifest or game folder skips that app, not the whole Steam scan.
-                        System.Diagnostics.Debug.WriteLine($"[RHI] Steam manifest skipped: {acf}: {ex.Message}");
+                        DetectorDiagnostics.Warn($"Steam manifest {acf} skipped", ex);
                     }
                 }
             }

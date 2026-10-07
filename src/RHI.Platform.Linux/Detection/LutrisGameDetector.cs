@@ -92,7 +92,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     // One unreadable config skips that entry, not the whole Lutris scan.
-                    System.Diagnostics.Debug.WriteLine($"[RHI] Lutris config skipped: {file}: {ex.Message}");
+                    DetectorDiagnostics.Warn($"Lutris config {file} skipped", ex);
                 }
             }
         }
@@ -167,7 +167,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 }
             }
             catch (OperationCanceledException) { throw; }
-            catch { }
+            catch (Exception ex)
+            {
+                DetectorDiagnostics.Warn($"Games inside the Lutris launcher prefix {sharing.Key} not listed", ex);
+            }
         }
         return found;
     }
@@ -214,7 +217,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
             using var stream = File.OpenRead(path);
             return stream.ReadByte() == 'M' && stream.ReadByte() == 'Z';
         }
-        catch { return false; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            DetectorDiagnostics.Warn($"Lutris exe {path} unreadable; treated as a native launcher", ex);
+            return false;
+        }
     }
 
     private static bool IsWithin(string root, string path)

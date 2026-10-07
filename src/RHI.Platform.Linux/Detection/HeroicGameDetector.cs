@@ -92,7 +92,11 @@ public sealed class HeroicGameDetector : IGameDetector
             if (!Directory.Exists(path)) continue;
             IEnumerable<string> files;
             try { files = SafeFileEnumeration.Files(path, "*.json", ignoreInaccessible: true).Take(500).ToArray(); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"Heroic metadata folder {path} unreadable", ex);
+                continue;
+            }
             foreach (var file in files) yield return file;
         }
     }
@@ -368,7 +372,11 @@ public sealed class HeroicGameDetector : IGameDetector
         {
             string[] dirs;
             try { dirs = Directory.GetDirectories(root); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { continue; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"Heroic prefix folder {root} unreadable; no fallback prefixes from it", ex);
+                continue;
+            }
             foreach (var dir in dirs)
             {
                 var prefix = FindWinePrefix(dir);

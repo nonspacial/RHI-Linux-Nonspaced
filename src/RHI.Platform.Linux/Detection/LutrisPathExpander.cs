@@ -72,6 +72,7 @@ internal static class LutrisPathExpander
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Without the passwd file ~user stays literal.
+            RHI.Core.Services.DetectorDiagnostics.Warn($"{passwdPath} unreadable; ~{user} left unexpanded", ex);
         }
         return null;
     }
