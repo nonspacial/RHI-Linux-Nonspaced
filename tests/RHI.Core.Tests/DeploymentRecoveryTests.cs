@@ -131,6 +131,38 @@ public sealed class DeploymentRecoveryTests : IDisposable
         Assert.Contains("\"x\"=\"y\"", File.ReadAllText(userReg));
     }
 
+    [Fact]
+    public async Task CommittedHeroicInstall_ReKeyedAfterTheCrash_IsNotRolledBack()
+    {
+        // Integration w1 (core x stores): the commit probe embeds the key the game had when the install began
+        // (an older build's install-path key for Heroic); the scan-time MigrateGameKeys then re-keys the record to
+        // heroic:<app>. Recovery matches the operation id alone, so the committed install stays.
+        Directory.CreateDirectory(P("game"));
+        File.WriteAllText(P("game", "dxgi.dll"), "game file");
+        var game = new DetectedGame { Name = "Hades", Source = "Heroic", HeroicAppName = "Min", InstallPath = P("game"), BinaryDirectory = P("game") };
+        var journal = new DeploymentJournal(P("journal"));
+        var operation = await journal.BeginAsync("ReShade install: Hades", $"record|ReShade|{P("game")}");
+        await operation.TrackFileAsync(P("game", "dxgi.dll"));
+        File.WriteAllText(P("game", "dxgi.dll"), "reshade");
+        await operation.RecordWrittenContentAsync(P("game", "dxgi.dll"));
+        var records = new LinuxDeploymentRecordStore(P("records.json"));
+        var record = new LinuxDeploymentRecord
+        {
+            GameKey = P("game"), Component = ManagedComponentKind.ReShade, BinaryDirectory = P("game"),
+            Files = [new LinuxDeployedFile { Path = P("game", "dxgi.dll") }]
+        };
+        record.Metadata[LinuxDeploymentRecovery.OperationIdMetadataKey] = operation.Id;
+        records.Upsert(record);
+        operation.AbandonAsIfCrashed();
+
+        Assert.Equal(1, records.MigrateGameKeys([game]));
+        Assert.Equal("heroic:Min", Assert.Single(records.All()).GameKey);
+        var report = await LinuxDeploymentRecovery.RecoverAsync(new DeploymentJournal(P("journal")), records);
+
+        Assert.Equal(JournalRecoveryOutcome.AlreadyCommitted, Assert.Single(report!.Entries).Outcome);
+        Assert.Equal("reshade", File.ReadAllText(P("game", "dxgi.dll")));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }
