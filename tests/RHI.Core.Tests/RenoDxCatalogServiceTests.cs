@@ -32,6 +32,7 @@ public sealed class RenoDxCatalogServiceTests
         Assert.NotNull(found);
         Assert.True(found!.IsGeneric);
         Assert.Equal(RenoDxCatalogService.GenericUnityUrl64, found.SnapshotUrl64);
+        Assert.Equal("Voosh", found.Author);
     }
 
 
@@ -61,6 +62,7 @@ public sealed class RenoDxCatalogServiceTests
         Assert.NotNull(found);
         Assert.Equal("https://marat569.github.io/renodx/renodx-ue-extended.addon64", found!.SnapshotUrl64);
         Assert.Contains("Unreal Engine 4.27", found.Notes);
+        Assert.Equal("Marat", found.Author); // UE-Extended build credit (upstream 2.8.1)
         Assert.Equal(0, wikiHandler.RequestCount);
     }
 
@@ -165,7 +167,7 @@ public sealed class RenoDxCatalogServiceTests
     {
         const string json = """
         [
-          { "name":"Game 64", "snapshotUrl":"https://cdn.test/game64.addon64", "snapshotUrl32":null, "notes":"Done" },
+          { "name":"Game 64", "snapshotUrl":"https://cdn.test/game64.addon64", "snapshotUrl32":null, "notes":"Done", "author":" OopyDoopy (Jon) " },
           { "name":"Game 32", "snapshotUrl":null, "snapshotUrl32":"https://cdn.test/game32.addon32" },
           { "name":"No Payload", "snapshotUrl":null, "snapshotUrl32":null },
           { "name":"Wrong Asset", "snapshotUrl":"https://cdn.test/readme.zip", "snapshotUrl32":null }
@@ -177,6 +179,8 @@ public sealed class RenoDxCatalogServiceTests
         Assert.Equal(2, mods.Count);
         Assert.Equal("https://cdn.test/game64.addon64", mods.Single(x => x.Name == "Game 64").SnapshotUrl64);
         Assert.Equal("https://cdn.test/game32.addon32", mods.Single(x => x.Name == "Game 32").SnapshotUrl32);
+        Assert.Equal("OopyDoopy (Jon)", mods.Single(x => x.Name == "Game 64").Author);
+        Assert.Null(mods.Single(x => x.Name == "Game 32").Author);
     }
 
     [Fact]

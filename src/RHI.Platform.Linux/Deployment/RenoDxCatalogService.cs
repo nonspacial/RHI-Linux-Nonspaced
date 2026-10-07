@@ -13,7 +13,8 @@ public sealed record RenoDxModEntry(
     string? SnapshotUrl32,
     string? Notes,
     bool IsGeneric = false,
-    bool IsWorkInProgress = false)
+    bool IsWorkInProgress = false,
+    string? Author = null)
 {
     public string? UrlFor(PeArchitecture architecture)
         => RenoDxCatalogService.ResolveAddonUrl(
@@ -28,6 +29,10 @@ public sealed class RenoDxCatalogService
     public const string GenericUnrealUrl = "https://github.com/clshortfuse/renodx/releases/download/snapshot/renodx-unrealengine.addon64";
     public const string GenericUnityUrl64 = "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon64";
     public const string GenericUnityUrl32 = "https://github.com/NotVoosh/renodx-unity/releases/download/snapshot/renodx-unityengine.addon32";
+    // Upstream credits the generic engine add-ons and Marat's UE-Extended build by name.
+    public const string GenericUnrealAuthor = "ShortFuse";
+    public const string GenericUnityAuthor = "Voosh";
+    public const string UeExtendedAuthor = "Marat";
 
     private readonly HttpClient _http;
     private readonly UpstreamRhiManifestService? _upstreamManifest;
@@ -153,7 +158,8 @@ public sealed class RenoDxCatalogService
                         game.Name,
                         is32 ? null : url,
                         is32 ? url : null,
-                        notes);
+                        notes,
+                        Author: SnapshotOverrideAuthor(url));
                 }
             }
             catch when (!cancellationToken.IsCancellationRequested)
@@ -182,9 +188,20 @@ public sealed class RenoDxCatalogService
         }
 
         if (LooksLikeUnity(indexedFiles))
-            return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true);
+            return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true, Author: GenericUnityAuthor);
         if (LooksLikeUnreal(indexedFiles))
-            return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true);
+            return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true, Author: GenericUnrealAuthor);
+        return null;
+    }
+
+    // Manifest snapshot overrides carry only a URL; credit the builds whose author is known from the URL. Others fall
+    // back to the manifest authorOverrides entry (ModAuthorCredit.ForRenoDx).
+    internal static string? SnapshotOverrideAuthor(string url)
+    {
+        var file = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? Path.GetFileName(uri.AbsolutePath) : "";
+        if (file.StartsWith("renodx-ue-extended.", StringComparison.OrdinalIgnoreCase)) return UeExtendedAuthor;
+        if (file.StartsWith("renodx-unityengine.", StringComparison.OrdinalIgnoreCase)) return GenericUnityAuthor;
+        if (file.StartsWith("renodx-unrealengine.", StringComparison.OrdinalIgnoreCase)) return GenericUnrealAuthor;
         return null;
     }
 
@@ -213,7 +230,8 @@ public sealed class RenoDxCatalogService
                 prior.SnapshotUrl32 ?? entry.SnapshotUrl32,
                 prior.Notes ?? entry.Notes,
                 entry.IsGeneric || prior.IsGeneric,
-                prior.IsWorkInProgress);
+                prior.IsWorkInProgress,
+                prior.Author ?? entry.Author);
         }
 
         return merged.Values.ToArray();
@@ -240,7 +258,11 @@ public sealed class RenoDxCatalogService
             // Upstream RenoDXDbService.MapStatus: only "WIP" marks a mod as work in progress.
             var wip = item.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String
                 && string.Equals(statusEl.GetString()?.Trim(), "WIP", StringComparison.OrdinalIgnoreCase);
-            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip));
+            var author = item.TryGetProperty("author", out var authorEl) && authorEl.ValueKind == JsonValueKind.String
+                ? authorEl.GetString()?.Trim()
+                : null;
+            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip,
+                Author: string.IsNullOrWhiteSpace(author) ? null : author));
         }
 
         return result

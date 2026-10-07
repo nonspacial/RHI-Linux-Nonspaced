@@ -75,3 +75,12 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #139 — Installed RenoDX/Luma add-on file names and mod authors (2.8.1)
+
+- Ported as a secondary line under the RenoDX HDR and Luma Framework rows of Managed components, e.g. `renodx-hogwartslegacy.addon64 · by Marat` and `Luma-Prey.addon · by Ersh, Pumbo`. Upstream puts the file names in the card badge row and prefixes the author badges with `RenoDX:` / `Luma:`; on Linux the row names already say which mod is which, and the header layout is owner-defined. The line wraps at narrow widths and is hidden when there is nothing to show.
+- File names come from the deployment record (what RHI wrote, so renamed add-ons show their real names), only for RHI-managed installs. It refreshes after install/remove/update because those re-probe the game.
+- RenoDX author: the RHI database `author` field, else the manifest `authorOverrides` entry. Generic Unreal/Unity and UE-Extended snapshot overrides credit ShortFuse, Voosh and Marat, as upstream does; upstream credits Marat from its UE-Extended toggle, Linux from the UE-Extended URL it actually installs. Luma author: the author stored on the Luma record, else the named catalogue match, else Pumbo for the generic framework package. Dropped local packages, external installs and unsupported titles get no credit. Multi-author fields are split on `&`, `and`, `+` and `,`. `OopyDoopy` shows as `Jon`, upstream's built-in alias; the manifest `authorDisplayNames` list is not read (it currently holds only that entry).
+- Not ported: donation links on author badges (upstream `donationUrls`); no donate UI on Linux.

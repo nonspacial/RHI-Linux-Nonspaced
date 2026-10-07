@@ -45,6 +45,21 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
         }
     }
 
+    /// <summary>Secondary line under the row: installed add-on file name(s) and the mod author, e.g.
+    /// "renodx-hogwartslegacy.addon64 · by Marat". Empty when neither is known.</summary>
+    public string Credit
+    {
+        get
+        {
+            var parts = new List<string>(2);
+            if (component.InstalledAddonFiles.Count > 0) parts.Add(string.Join(", ", component.InstalledAddonFiles));
+            if (!string.IsNullOrWhiteSpace(component.Author)) parts.Add(UiLocalizationService.Format("Ui.ModAuthorBy", component.Author));
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public bool HasCredit => Credit.Length > 0;
+
     public bool HasAction => component.Kind is not (ManagedComponentKind.Dlss or ManagedComponentKind.Streamline);
     public string Action => !HasAction
         ? string.Empty
