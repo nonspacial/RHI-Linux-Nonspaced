@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
 
@@ -14,15 +15,12 @@ public sealed partial class MainWindow
     /// <summary>Set by App: the shared upstream manifest service, so a library Refresh also refreshes the author list.</summary>
     public UpstreamRhiManifestService? UpstreamManifest { get; set; }
 
-    // Upstream 2.8.2 "Donate": mod authors from the manifest (donationUrls + authorRoles), sorted, each with a Ko-fi link.
+    // Upstream 2.8.2 "Donate": mod authors from upstream's built-in list merged with the manifest (donationUrls +
+    // authorRoles), sorted, each with a Ko-fi link. With no manifest at all the built-in list still shows.
     private async void Donate_Click(object? sender, RoutedEventArgs e)
     {
         var title = L("RHI-Linux — Apoie os autores dos mods", "RHI-Linux — Support the mod authors");
-        if (UpstreamManifest is not { } manifest)
-        {
-            await ShowSimpleMessageAsync(title, L("O manifesto do RHI não está disponível nesta sessão.", "The RHI manifest is not available in this session."));
-            return;
-        }
+        var manifest = UpstreamManifest;
 
         var intro = new TextBlock
         {
@@ -71,13 +69,25 @@ public sealed partial class MainWindow
             Content = panel
         };
         close.Click += (_, _) => dialog.Close();
+        // Closing mid-load cancels the fetch instead of letting it finish into a closed window. Not disposed:
+        // it has no timer, and disposing it here could race the Closed handler's Cancel.
+        var loadCancel = new CancellationTokenSource();
+        var loadToken = loadCancel.Token;
+        dialog.Closed += (_, _) => loadCancel.Cancel();
 
         dialog.Opened += async (_, _) =>
         {
-            IReadOnlyList<UpstreamDonationAuthor> authors;
+            UpstreamDonationList donations;
             try
             {
-                authors = await manifest.FetchDonationAuthorsAsync();
+                donations = manifest is null
+                    ? new UpstreamDonationList(UpstreamRhiManifestService.BuiltInDonationAuthors,
+                        L("o manifesto do RHI não está disponível nesta sessão", "the RHI manifest is not available in this session"))
+                    : await manifest.FetchDonationAuthorsAsync(loadToken);
+            }
+            catch (OperationCanceledException) when (loadToken.IsCancellationRequested)
+            {
+                return;
             }
             catch (Exception ex)
             {
@@ -91,7 +101,22 @@ public sealed partial class MainWindow
                 });
                 return;
             }
+            if (loadToken.IsCancellationRequested) return;
 
+            if (donations.ManifestError is { } manifestError)
+            {
+                list.Children.Add(new TextBlock
+                {
+                    Text = LF("Não foi possível carregar a lista atual de autores ({0}). Mostrando a lista embutida do RHI.",
+                        "Could not load the current author list ({0}). Showing RHI's built-in list.", manifestError),
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
+                    Margin = new Thickness(0, 8, 0, 6)
+                });
+            }
+
+            var authors = donations.Authors;
             if (authors.Count == 0)
             {
                 status.Text = "";
@@ -110,7 +135,7 @@ public sealed partial class MainWindow
                     list.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Opacity = 0.6 });
                 list.Children.Add(BuildDonationRow(author, status));
             }
-            status.Text = LF("{0} autores", "{0} authors", authors.Count);
+            status.Text = DonateText.AuthorCount(UiLocalizationService.CurrentLanguage, authors.Count);
         };
 
         await ShowFittedDialogAsync(dialog);
@@ -140,10 +165,11 @@ public sealed partial class MainWindow
             VerticalAlignment = VerticalAlignment.Center
         };
         var link = author.DonationUrl.AbsoluteUri;
-        var kofi = new Button { Content = "Ko-fi", FontSize = 11, Padding = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
+        // "Ko-fi" for ko-fi.com links (all of upstream's), the site's host otherwise, so the label never misnames a link.
+        var kofi = new Button { Content = author.LinkLabel, FontSize = 11, Padding = new Thickness(10, 4), VerticalAlignment = VerticalAlignment.Center };
         ToolTip.SetTip(kofi, link);
         ToolTip.SetShowDelay(kofi, MiddleEllipsisText.TooltipDelay);
-        AutomationProperties.SetName(kofi, LF("Ko-fi de {0}", "{0} on Ko-fi", author.Name));
+        AutomationProperties.SetName(kofi, LF("{1} de {0}", "{0} on {1}", author.Name, author.LinkLabel));
         kofi.Click += (_, _) =>
         {
             // Same opener as the Links dialog: http(s) only, argument list, no shell.
@@ -155,5 +181,16 @@ public sealed partial class MainWindow
         row.Children.Add(role); Grid.SetColumn(role, 1);
         row.Children.Add(kofi); Grid.SetColumn(kofi, 2);
         return row;
+    }
+}
+
+/// <summary>Donate dialog wording that depends on a count (PT-BR and EN).</summary>
+public static class DonateText
+{
+    public static string AuthorCount(string? language, int count)
+    {
+        var ptBr = RHI.Platform.Linux.Settings.LinuxAppSettings.NormalizeUiLanguage(language) == "pt-BR";
+        var noun = count == 1 ? (ptBr ? "autor" : "author") : (ptBr ? "autores" : "authors");
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{count} {noun}");
     }
 }
