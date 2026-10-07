@@ -4,6 +4,7 @@ using RHI.Platform.Linux.Network;
 
 namespace RHI.Core.Tests;
 
+[System.Runtime.Versioning.UnsupportedOSPlatform("windows")] // Unix file modes on the token file
 public sealed class GitHubApiTokenHandlerTests
 {
     [Fact]
@@ -86,6 +87,39 @@ public sealed class GitHubApiTokenHandlerTests
 
             Assert.All(capture.Requests, r => Assert.Null(r.Authorization));
             Assert.Equal([false], notices);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_ChmodThatChangesNothing_TokenIsNotUsed()
+    {
+        // A filesystem that accepts chmod but ignores it (some FUSE/SMB mounts): only the re-check
+        // after chmod can tell the file is still exposed (Refs #36).
+        var root = Path.Combine(Path.GetTempPath(), "rhi-gh-token-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var tokenPath = Path.Combine(root, "github_api.txt");
+            await File.WriteAllTextAsync(tokenPath, "github...oken\n");
+            File.SetUnixFileMode(tokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+            var capture = new CaptureHandler();
+            var handler = new GitHubApiTokenHandler(tokenPath, capture)
+            {
+                SetUnixFileMode = (_, _) => { } // "succeeds" without changing the mode
+            };
+            var notices = new List<bool>();
+            handler.TokenFileExposed += (_, e) => notices.Add(e.Restricted);
+            using var http = new HttpClient(handler);
+
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+
+            Assert.Null(Assert.Single(capture.Requests).Authorization);
+            Assert.Equal([false], notices);
+            Assert.True((File.GetUnixFileMode(tokenPath) & UnixFileMode.GroupRead) != 0);
         }
         finally
         {

@@ -83,7 +83,11 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
     }
 
     // Seam so tests can make the chmod fail (as for a file owned by another user); production always uses chmod(2).
-    internal Action<string, UnixFileMode> SetUnixFileMode { get; set; } = static (path, mode) => File.SetUnixFileMode(path, mode);
+    // Never called on Windows (EnsurePrivate returns first); the guard keeps the call site analysable.
+    internal Action<string, UnixFileMode> SetUnixFileMode { get; set; } = static (path, mode) =>
+    {
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, mode);
+    };
 
     /// <summary>
     /// True when the token file is private to the user, restricting it to 0600 first when other
