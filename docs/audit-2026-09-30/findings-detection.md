@@ -220,6 +220,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** Silent loss of manual games, edits, favourites and hidden flags. For deployment records it also orphans deployed files, which RHI can then neither update nor remove. The existing test asserts the empty state but not that the original file is kept.
 - **Fix seam:** On a parse failure, move the file aside to `*.corrupt-<ts>` and refuse to overwrite it without a backup. Distinguish "missing" from "unreadable".
 - **Verify:** Write garbage, `Load`, `Save(new)`, then assert a `.corrupt-*` backup exists with the original bytes.
+- **Status:** fixed in `4838c0b` (#57). `Persistence/JsonFileStore<T>` (+ `DurableFile`: unique temp, fsync, rename, dir fsync) backs every store in the ticket plus the shader-pack exclusions: missing/blank = default; unreadable = original bytes copied to `<file>.corrupt-<utc>` once per file version and saves refused (`JsonStoreUnavailableException`) until the file reads again; the PCGW cache copies aside then rebuilds. The UI gets one PT-BR/EN notice naming the file and its copy; refused saves show on the status line. `deployments.json` keeps its own DEP-01 handling.
 
 ### DET-19 — Removing or adding manual games can silently do nothing
 - **Where:**

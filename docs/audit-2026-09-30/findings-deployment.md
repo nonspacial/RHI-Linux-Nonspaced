@@ -188,6 +188,7 @@
 - **Risk:** A world-readable file (e.g. created with the default umask 022) exposes the token to other local users.
 - **Remediation seam:** Refuse or warn when mode `& 0o077 != 0`; optionally read from libsecret.
 - **Verification:** Unit test: a token file with mode 0644 is ignored or produces a warning.
+- **Status:** fixed in `df41791` (#36). The handler checks the mode on every use: group/other bits set → `chmod 600` before the token is sent; when that fails (not the owner) the token is ignored. One PT-BR/EN status notice per file version; contents never changed, token never logged.
 
 ### DEP-18 — External extractors: no timeout and no post-extraction containment or symlink check
 - **Where:**
@@ -205,6 +206,7 @@
   - A non-Steam game that is moved loses its records entirely.
 - **Remediation seam:** Store paths relative to `BinaryDirectory` and re-base them on the current game on load. Detect `record.BinaryDirectory != game.BinaryDirectory` and require an explicit repair.
 - **Verification:** Test: a record created under `/a/game` and a game now at `/b/game`; update must refuse with a repair message rather than write to `/a`.
+- **Status:** fixed in `c72e9d4` (#38). Records and per-game stores key on `steam:<appid>`, then `heroic:<app>`, else the install path (`GameRecordIdentity`); older Heroic folder keys are read and migrated after each scan. A record outside the game's current folders blocks install/update/remove/update checks with a repair message (`DeploymentRelocation`, via `PatchTargetGuard`). "Repair after move" (header button, shown only when it applies) verifies every owned hashed file at the mapped path and then rebases the record in one atomic save; it refuses while the old folder still exists. Folder-keyed games are re-adopted by name plus verified files. Deviation: paths stay absolute (rebased by the explicit repair) rather than stored relative to `BinaryDirectory`, which would have touched every deployment service.
 
 ### DEP-20 — `DlssManagerService` cache hygiene
 - **Where:** `src/RHI.Core/Services/DlssManagerService.cs`:
