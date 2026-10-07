@@ -1,6 +1,6 @@
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
@@ -149,7 +149,7 @@ public sealed class DeploymentRelocation
                 var mapped = Map(file.Path, candidate);
                 if (!File.Exists(mapped))
                     return new(false, 0, $"{RepairMissingPrefix}{mapped}");
-                if (!string.Equals(Sha256(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return new(false, 0, $"{RepairChangedPrefix}{mapped}");
             }
 
@@ -215,7 +215,7 @@ public sealed class DeploymentRelocation
     private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, RelocatedRecord candidate)
         => record.Files.Where(IsOwnedHashedFile)
             .Where(f => !string.Equals(Map(f.Path, candidate), f.Path, StringComparison.Ordinal))
-            .Any(f => File.Exists(f.Path) && string.Equals(Sha256(f.Path), f.Sha256, StringComparison.OrdinalIgnoreCase));
+            .Any(f => File.Exists(f.Path) && string.Equals(FileHash.Sha256Hex(f.Path), f.Sha256, StringComparison.OrdinalIgnoreCase));
 
     private static IReadOnlyList<string> RecordedExecutables(LinuxDeploymentRecord record)
         => new[] { record.WineOverride }.Concat(record.AdditionalWineOverrides ?? [])
@@ -283,50 +283,5 @@ public sealed class DeploymentRelocation
     private static string Join(string[] segments) => Path.DirectorySeparatorChar + string.Join(Path.DirectorySeparatorChar, segments);
 
     /// <summary>Path containment on resolved paths, so a library reached through a symlink is not "moved".</summary>
-    internal static bool IsUnder(string path, string root)
-    {
-        var p = Canonical(path);
-        var r = Canonical(root).TrimEnd(Path.DirectorySeparatorChar);
-        return p.Equals(r, StringComparison.Ordinal)
-               || p.StartsWith(r + Path.DirectorySeparatorChar, StringComparison.Ordinal);
-    }
-
-    private static string Canonical(string path)
-    {
-        var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
-        if (full.Length == 0) return Path.DirectorySeparatorChar.ToString();
-        if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS()) return full;
-        // Resolve the deepest existing ancestor; the missing tail is appended unchanged.
-        var existing = full;
-        var tail = "";
-        while (!Directory.Exists(existing) && !File.Exists(existing))
-        {
-            var parent = Path.GetDirectoryName(existing);
-            if (string.IsNullOrEmpty(parent)) return full;
-            tail = Path.Combine(Path.GetFileName(existing), tail);
-            existing = parent;
-        }
-        var resolved = RealPath(existing) ?? existing;
-        return tail.Length == 0 ? resolved : Path.Combine(resolved, tail).TrimEnd(Path.DirectorySeparatorChar);
-    }
-
-    private static string? RealPath(string path)
-    {
-        var buffer = realpath(path, IntPtr.Zero);
-        if (buffer == IntPtr.Zero) return null;
-        try { return Marshal.PtrToStringUTF8(buffer); }
-        finally { free(buffer); }
-    }
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern IntPtr realpath([MarshalAs(UnmanagedType.LPUTF8Str)] string path, IntPtr resolved);
-
-    [DllImport("libc")]
-    private static extern void free(IntPtr pointer);
-
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
-    }
+    internal static bool IsUnder(string path, string root) => PathIdentity.IsSameOrInside(path, root);
 }
