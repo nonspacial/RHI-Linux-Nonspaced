@@ -68,6 +68,23 @@ public static class CacheStamp
         }
     }
 
+    /// <summary>
+    /// Validation for a derived entry (an extracted tree) bound to the source it came from: the stamp must
+    /// have recorded exactly <paramref name="boundSha256"/> as its published digest. Unlike
+    /// <see cref="IsValid"/>, where a blank digest means "the publisher announced none" and is skipped, a
+    /// blank binding here is rejected: a derived entry with nothing to bind to is never reused.
+    /// </summary>
+    public static bool IsValidBoundTo(string entry, string sourceUrl, string? version, string? boundSha256)
+        => !string.IsNullOrWhiteSpace(boundSha256) && IsValid(entry, sourceUrl, version, boundSha256);
+
+    /// <summary><see cref="Write"/> for a derived entry; refuses to stamp it without the source hash it is bound to.</summary>
+    public static string WriteBoundTo(string entry, string sourceUrl, string? version, string? boundSha256)
+    {
+        if (string.IsNullOrWhiteSpace(boundSha256))
+            throw new ArgumentException("A derived cache entry must be bound to its source's SHA-256.", nameof(boundSha256));
+        return Write(entry, sourceUrl, version, boundSha256);
+    }
+
     /// <summary>Records provenance for an entry RHI just downloaded (and validated) into the cache.</summary>
     /// <returns>The content SHA-256 recorded in the stamp (tree hash for a directory).</returns>
     public static string Write(string entry, string sourceUrl, string? version = null, string? publishedSha256 = null)

@@ -130,8 +130,9 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         }
 
         // The extracted tree's stamp records the SHA-256 of the archive it came from, so a tree
-        // extracted from any other archive bytes is never reused, whatever order the calls ran in.
-        var packageRoot = CacheStamp.IsValid(extractDir, sourceUrl, rawTag, archiveSha256) ? FindPackageRoot(extractDir) : null;
+        // extracted from any other archive bytes is never reused, whatever order the calls ran in. The
+        // bound form rejects a blank archive hash outright instead of skipping the comparison.
+        var packageRoot = CacheStamp.IsValidBoundTo(extractDir, sourceUrl, rawTag, archiveSha256) ? FindPackageRoot(extractDir) : null;
         var freshlyExtracted = false;
         if (packageRoot is null)
         {
@@ -151,7 +152,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         if (variant == OptiScalerVariant.DlssNr && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
             throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
 
-        if (freshlyExtracted) CacheStamp.Write(extractDir, sourceUrl, rawTag, archiveSha256);
+        if (freshlyExtracted) CacheStamp.WriteBoundTo(extractDir, sourceUrl, rawTag, archiveSha256);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant);
     }
 

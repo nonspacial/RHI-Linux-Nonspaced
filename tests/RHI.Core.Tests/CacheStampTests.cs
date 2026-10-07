@@ -51,6 +51,39 @@ public sealed class CacheStampTests : IDisposable
         Assert.Equal("", none);
     }
 
+    // Re-review nit 2 (#142): a derived entry's binding is required, so a blank expected hash is a
+    // rejection, never a skipped comparison (IsValid skips a blank published digest by design).
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BoundEntry_BlankExpectedHash_IsRejectedNotSkipped(string? blank)
+    {
+        var tree = Path.Combine(_root, "extract");
+        Directory.CreateDirectory(tree);
+        File.WriteAllBytes(Path.Combine(tree, "OptiScaler.dll"), [7, 8, 9]);
+        CacheStamp.WriteBoundTo(tree, "https://example.test/o.7z", "v1", "AA11");
+
+        Assert.True(CacheStamp.IsValid(tree, "https://example.test/o.7z", "v1", blank));
+        Assert.False(CacheStamp.IsValidBoundTo(tree, "https://example.test/o.7z", "v1", blank));
+        Assert.Throws<ArgumentException>(() => CacheStamp.WriteBoundTo(tree, "https://example.test/o.7z", "v1", blank));
+    }
+
+    [Fact]
+    public void BoundEntry_IsValidOnlyForTheHashItWasBoundTo()
+    {
+        var tree = Path.Combine(_root, "extract-b");
+        Directory.CreateDirectory(tree);
+        File.WriteAllBytes(Path.Combine(tree, "OptiScaler.dll"), [7, 8, 9]);
+
+        CacheStamp.Write(tree, "https://example.test/o.7z", "v1");
+        Assert.False(CacheStamp.IsValidBoundTo(tree, "https://example.test/o.7z", "v1", "AA11"));
+
+        CacheStamp.WriteBoundTo(tree, "https://example.test/o.7z", "v1", "AA11");
+        Assert.True(CacheStamp.IsValidBoundTo(tree, "https://example.test/o.7z", "v1", "aa11"));
+        Assert.False(CacheStamp.IsValidBoundTo(tree, "https://example.test/o.7z", "v1", "BB22"));
+    }
+
     [Fact]
     public void File_ReplacedAfterStamping_IsNotValid()
     {
