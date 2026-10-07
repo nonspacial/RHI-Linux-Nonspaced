@@ -2,7 +2,11 @@
 # Release gate for RHI Linux: tree hygiene, version identity, locked restore, a Release build
 # with every compiler/analyser warning treated as an error, and the full xUnit suite.
 #
-# Usage: ./validate.sh
+# Usage: ./validate.sh [--clean]
+#
+#   --clean   delete every bin/ and obj/ under src/ and tests/, and artifacts/, before building.
+#             Off by default so a developer tree keeps its build outputs and publishes
+#             (e.g. artifacts/sc); the build is incremental and test results are rewritten.
 #
 # Behaviour is checked by the test suite, not by grepping source text. The product version
 # lives only in Directory.Build.props (<Version>).
@@ -19,6 +23,15 @@ fail() {
     exit 1
 }
 
+clean=false
+for arg in "$@"; do
+    case "$arg" in
+        --clean) clean=true ;;
+        -h|--help) sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) fail "unknown option: $arg (see --help)" ;;
+    esac
+done
+
 command -v dotnet >/dev/null 2>&1 || fail "dotnet is not available in PATH; validation was NOT RUN"
 
 # Public-release hygiene: only user-facing Markdown belongs at the repository root.
@@ -34,9 +47,8 @@ if find . -maxdepth 1 -type f \( -name 'validate-v*.fish' -o -name 'validate-v*.
 fi
 [[ -x install-user.sh ]] || fail "universal Bash user installer missing or not executable"
 
-# Keep validation re-runnable without letting stale build output influence results.
-if find src tests -type d \( -name bin -o -name obj \) -print -quit | grep -q . || [[ -d artifacts ]]; then
-    echo "Cleaning previous build outputs..."
+if [[ "$clean" == true ]]; then
+    echo "Cleaning previous build outputs (--clean)..."
     find src tests -type d \( -name bin -o -name obj \) -prune -exec rm -rf -- {} +
     rm -rf -- artifacts
 fi

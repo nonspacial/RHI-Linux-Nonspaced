@@ -139,6 +139,15 @@ Run:
 
 The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
 
+## Validating a change
+
+```bash
+./validate.sh            # locked restore, Release build (warnings are errors), full test suite
+./validate.sh --clean    # same, after deleting bin/, obj/ and artifacts/ first
+```
+
+`validate.sh` keeps existing build outputs unless `--clean` is given. Test results are written to `artifacts/test-results/`.
+
 ---
 
 # ⚠️ Compatibility
