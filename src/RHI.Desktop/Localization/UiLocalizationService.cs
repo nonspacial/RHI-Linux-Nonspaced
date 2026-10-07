@@ -215,7 +215,17 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Combinação atual: {0}",
         ["Ui.UnknownExistingKey"] = "Tecla existente (não reconhecida)",
         ["Ui.ReShadeInternalFormat"] = "Formato interno do ReShade: {0}\nOrdem interna: tecla, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário."
+        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário.",
+        ["Ui.UnexpectedError"] = "Algo deu errado: {0} O RHI continua em execução; os detalhes estão em {1}.",
+        ["Ui.UnexpectedErrorNoLog"] = "Algo deu errado: {0} O RHI continua em execução, mas os detalhes não puderam ser gravados no log.",
+        ["Ui.SaveFailedSessionOnly"] = "Não foi possível salvar {0}: {1} A alteração vale só até o RHI ser fechado.",
+        ["Ui.SettingsNotSaved"] = "As configurações não foram salvas: {0} Nada foi alterado.",
+        ["Ui.SaveFailedNothingChanged"] = "Não foi possível salvar {0}: {1} Nada foi alterado.",
+        ["Ui.WhatGameLibrary"] = "a biblioteca de jogos",
+        ["Ui.WhatSettings"] = "as configurações",
+        ["Ui.WhatHdrProfile"] = "o perfil de inicialização HDR",
+        ["Ui.CacheNotCleared"] = "O cache não foi totalmente limpo: {0}",
+        ["Ui.FolderNotOpened"] = "Não foi possível abrir a pasta: {0}"
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -428,7 +438,17 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Current binding: {0}",
         ["Ui.UnknownExistingKey"] = "Existing key (unrecognized)",
         ["Ui.ReShadeInternalFormat"] = "Internal ReShade format: {0}\nInternal order: key, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed."
+        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed.",
+        ["Ui.UnexpectedError"] = "Something went wrong: {0} RHI is still running; the details are in {1}.",
+        ["Ui.UnexpectedErrorNoLog"] = "Something went wrong: {0} RHI is still running, but the details could not be written to the log.",
+        ["Ui.SaveFailedSessionOnly"] = "Could not save {0}: {1} The change only lasts until RHI is closed.",
+        ["Ui.SettingsNotSaved"] = "Settings were not saved: {0} Nothing was changed.",
+        ["Ui.SaveFailedNothingChanged"] = "Could not save {0}: {1} Nothing was changed.",
+        ["Ui.WhatGameLibrary"] = "the game library",
+        ["Ui.WhatSettings"] = "the settings",
+        ["Ui.WhatHdrProfile"] = "the HDR launch profile",
+        ["Ui.CacheNotCleared"] = "The cache was not fully cleared: {0}",
+        ["Ui.FolderNotOpened"] = "Could not open the folder: {0}"
     };
 
 

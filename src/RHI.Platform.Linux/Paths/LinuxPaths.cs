@@ -9,6 +9,10 @@ public static class LinuxPaths
         ?? Path.Combine(Home, ".local", "share");
     public static string CacheHome => Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
         ?? Path.Combine(Home, ".cache");
+    /// <summary>XDG state dir (logs and other state that is not user data); defaults to ~/.local/state.</summary>
+    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } state
+        ? state
+        : Path.Combine(Home, ".local", "state");
 
     public static IEnumerable<string> SteamRoots()
     {

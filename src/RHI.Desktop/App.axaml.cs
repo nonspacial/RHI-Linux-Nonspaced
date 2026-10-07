@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Desktop.Views;
@@ -22,6 +23,7 @@ public sealed class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        UiExceptionGuard.Install();
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var libraryStore = new LinuxGameLibraryStore();
@@ -138,6 +140,11 @@ public sealed class App : Application
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
             tokenNoticeTarget = vm;
+            UiExceptionGuard.SetReporter(message =>
+            {
+                if (Dispatcher.UIThread.CheckAccess()) vm.StatusText = message;
+                else Dispatcher.UIThread.Post(() => vm.StatusText = message);
+            });
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

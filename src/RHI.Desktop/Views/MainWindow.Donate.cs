@@ -17,7 +17,7 @@ public sealed partial class MainWindow
 
     // Upstream 2.8.2 "Donate": mod authors from upstream's built-in list merged with the manifest (donationUrls +
     // authorRoles), sorted, each with a Ko-fi link. With no manifest at all the built-in list still shows.
-    private async void Donate_Click(object? sender, RoutedEventArgs e)
+    private void Donate_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var title = L("RHI-Linux — Apoie os autores dos mods", "RHI-Linux — Support the mod authors");
         var manifest = UpstreamManifest;
@@ -75,7 +75,7 @@ public sealed partial class MainWindow
         var loadToken = loadCancel.Token;
         dialog.Closed += (_, _) => loadCancel.Cancel();
 
-        dialog.Opened += async (_, _) =>
+        dialog.Opened += (_, _) => RunUiSafe(async () =>
         {
             UpstreamDonationList donations;
             try
@@ -136,10 +136,10 @@ public sealed partial class MainWindow
                 list.Children.Add(BuildDonationRow(author, status));
             }
             status.Text = DonateText.AuthorCount(UiLocalizationService.CurrentLanguage, authors.Count);
-        };
+        });
 
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private static Control BuildDonationRow(UpstreamDonationAuthor author, TextBlock status)
     {

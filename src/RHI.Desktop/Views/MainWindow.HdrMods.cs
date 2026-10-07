@@ -18,7 +18,7 @@ public sealed partial class MainWindow
     private const string HdrModsSecondaryTextKey = "RhiSecondaryTextBrush";
 
     // Upstream 2.7.6 "Available HDR Mods": searchable catalogue-wide list with RenoDX/Luma columns and a link.
-    private async void AvailableHdrMods_Click(object? sender, RoutedEventArgs e)
+    private void AvailableHdrMods_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var title = L("RHI-Linux — Mods HDR disponíveis", "RHI-Linux — Available HDR mods");
         if (HdrModsCatalog is not { } catalog)
@@ -79,7 +79,7 @@ public sealed partial class MainWindow
         }
         search.TextChanged += (_, _) => ApplyFilter();
 
-        dialog.Opened += async (_, _) =>
+        dialog.Opened += (_, _) => RunUiSafe(async () =>
         {
             AvailableHdrModsSnapshot snapshot;
             try
@@ -110,10 +110,10 @@ public sealed partial class MainWindow
             search.IsEnabled = true;
             ApplyFilter();
             search.Focus();
-        };
+        });
 
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private static void AddHdrModsHeader(Grid header, string text, int column)
     {

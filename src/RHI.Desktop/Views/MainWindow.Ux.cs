@@ -53,7 +53,7 @@ public sealed partial class MainWindow
         Activated += (_, _) => CorrectTrayMapState();
 
         _addonWatcher.CandidateDetected += candidate =>
-            Dispatcher.UIThread.Post(() => _ = HandleWatchedCandidateAsync(candidate));
+            Dispatcher.UIThread.Post(() => RunUiSafe(() => HandleWatchedCandidateAsync(candidate)));
 
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
@@ -67,13 +67,13 @@ public sealed partial class MainWindow
             SyncTrayIcon();
         });
 
-        Opened += async (_, _) =>
+        Opened += (_, _) => RunUiSafe(async () =>
         {
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
             await ShowStartupMotdIfNeededAsync();
-        };
+        });
 
         Closing += (_, e) =>
         {
@@ -149,7 +149,7 @@ public sealed partial class MainWindow
         var prefixBox = new TextBox { PlaceholderText = L("Prefixo Wine/Proton opcional, ex.: /caminho/para/pfx", "Optional Wine/Proton prefix, e.g. /path/to/pfx"), MinWidth = 420 };
         var launchBox = new TextBox { PlaceholderText = L("Comando de execução opcional", "Optional launch command"), MinWidth = 420 };
         var browsePrefix = new Button { Content = L("Procurar prefixo…", "Browse prefix…"), Padding = new Thickness(10, 5) };
-        browsePrefix.Click += async (_, _) =>
+        browsePrefix.Click += (_, _) => RunUiSafe(async () =>
         {
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
             {
@@ -158,7 +158,7 @@ public sealed partial class MainWindow
             });
             if (folders.Count > 0)
                 prefixBox.Text = folders[0].TryGetLocalPath() ?? prefixBox.Text;
-        };
+        });
 
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
         var add = new Button { Content = L("Adicionar jogo", "Add game"), Padding = new Thickness(14, 7) };
@@ -208,7 +208,7 @@ public sealed partial class MainWindow
             Content = new ScrollViewer { Content = form }
         };
         cancel.Click += (_, _) => dialog.Close();
-        add.Click += async (_, _) =>
+        add.Click += (_, _) => RunUiSafe(async () =>
         {
             add.IsEnabled = cancel.IsEnabled = false;
             try
@@ -239,11 +239,11 @@ public sealed partial class MainWindow
             {
                 add.IsEnabled = cancel.IsEnabled = true;
             }
-        };
+        });
         await ShowFittedDialogAsync(dialog);
     }
 
-    private async void EditGame_Click(object? sender, RoutedEventArgs e)
+    private void EditGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
         var game = vm.SelectedGame;
@@ -286,7 +286,7 @@ public sealed partial class MainWindow
         }
 
         var browseExecutable = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
-        browseExecutable.Click += async (_, _) =>
+        browseExecutable.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -299,13 +299,13 @@ public sealed partial class MainWindow
             if (string.IsNullOrWhiteSpace(selected)) return;
             patchExecutable.Text = selected;
             InferFromExecutable();
-        };
+        });
 
         var detectRoot = new Button { Content = L("Detectar", "Detect"), Padding = new Thickness(10, 5) };
         detectRoot.Click += (_, _) => InferFromExecutable();
 
         var browseRoot = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
-        browseRoot.Click += async (_, _) =>
+        browseRoot.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -315,7 +315,7 @@ public sealed partial class MainWindow
             });
             if (folders.Count > 0)
                 gameRoot.Text = folders[0].TryGetLocalPath() ?? gameRoot.Text;
-        };
+        });
 
         var detectBinary = new Button { Content = L("Detectar", "Detect"), Padding = new Thickness(10, 5) };
         detectBinary.Click += (_, _) =>
@@ -326,7 +326,7 @@ public sealed partial class MainWindow
         };
 
         var browseBinary = new Button { Content = L("Procurar…", "Browse…"), Padding = new Thickness(10, 5) };
-        browseBinary.Click += async (_, _) =>
+        browseBinary.Click += (_, _) => RunUiSafe(async () =>
         {
             if (!StorageProvider.CanOpen) return;
             var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -336,7 +336,7 @@ public sealed partial class MainWindow
             });
             if (folders.Count > 0)
                 binaryDirectory.Text = folders[0].TryGetLocalPath() ?? binaryDirectory.Text;
-        };
+        });
 
         static Grid FieldRow(Control field, params Control[] buttons)
         {
@@ -419,7 +419,7 @@ public sealed partial class MainWindow
         };
 
         cancel.Click += (_, _) => dialog.Close();
-        reset.Click += async (_, _) =>
+        reset.Click += (_, _) => RunUiSafe(async () =>
         {
             reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
             try
@@ -440,8 +440,8 @@ public sealed partial class MainWindow
             {
                 reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = true;
             }
-        };
-        save.Click += async (_, _) =>
+        });
+        save.Click += (_, _) => RunUiSafe(async () =>
         {
             reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
             try
@@ -467,10 +467,10 @@ public sealed partial class MainWindow
             {
                 reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = true;
             }
-        };
+        });
 
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private void GameFiles_DragOver(object? sender, DragEventArgs e)
     {
@@ -486,7 +486,7 @@ public sealed partial class MainWindow
             : DragDropEffects.None;
     }
 
-    private async void GameFiles_Drop(object? sender, DragEventArgs e)
+    private void GameFiles_Drop(object? sender, DragEventArgs e) => RunUiSafe(async () =>
     {
         if (e.DataTransfer.TryGetFiles() is not { } files) return;
         foreach (var file in files)
@@ -512,7 +512,7 @@ public sealed partial class MainWindow
                     break;
             }
         }
-    }
+    });
 
     private void SyncAddonWatcherFromSettings()
     {
@@ -629,7 +629,7 @@ public sealed partial class MainWindow
         return await ShowFittedDialogAsync<bool>(dialog);
     }
 
-    private async void QuickStart_Click(object? sender, RoutedEventArgs e)
+    private void QuickStart_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         await ShowSimpleMessageAsync(
             L("RHI-Linux — Início rápido", "RHI-Linux — Quick Start"),
@@ -644,9 +644,9 @@ public sealed partial class MainWindow
                 "3. Use component rows for ReShade, RenoDX, OptiScaler, Luma and other RHI-managed components. DLSS/Streamline changes remain game-local and preserve .original files.\n\n" +
                 "4. DXVK/VKD3D-Proton, drivers, Vulkan translation and compositor HDR belong to Wine/Proton and the desktop — RHI-Linux does not replace them.\n\n" +
                 "5. Drag a Windows .exe anywhere in RHI to add it manually. Dropped .addon32/.addon64 files can only be imported into Custom Add-ons after confirmation."));
-    }
+    });
 
-    private async void Links_Click(object? sender, RoutedEventArgs e)
+    private void Links_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var links = new (string Label, string Url)[]
         {
@@ -670,7 +670,7 @@ public sealed partial class MainWindow
         var dialog = new Window { Title = "RHI-Linux — Links", Width = 460, Height = 440, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = panel };
         close.Click += (_, _) => dialog.Close();
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private void OpenProjectLink(string url)
     {
@@ -679,7 +679,7 @@ public sealed partial class MainWindow
             vm.StatusText = error ?? LF("Não foi possível abrir {0}", "Could not open {0}", url);
     }
 
-    private async void Motd_Click(object? sender, RoutedEventArgs e)
+    private void Motd_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var message = await _motdService.FetchAsync(includeSeen: true);
         if (message is null)
@@ -688,7 +688,7 @@ public sealed partial class MainWindow
             return;
         }
         await ShowMotdAsync(message);
-    }
+    });
 
     private async Task ShowStartupMotdIfNeededAsync()
     {

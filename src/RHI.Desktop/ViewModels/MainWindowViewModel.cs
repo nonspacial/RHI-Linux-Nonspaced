@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Hdr;
@@ -659,6 +660,7 @@ public partial class MainWindowViewModel : ObservableObject
         ReShadeManageIni = _settings.ReShadeManageIni;
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         Initialization = InitializeAsync();
+        UiExceptionGuard.Forget(Initialization, "initialize");
     }
 
     /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
@@ -698,7 +700,15 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var previousAutoUpdate = _settings.AutoUpdateComponents;
         var previousInterval = _settings.UpdateCheckIntervalHours;
-        _settingsStore.Save(settings);
+        try
+        {
+            _settingsStore.Save(settings);
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("save settings", ex);
+            return UiLocalizationService.Format("Ui.SettingsNotSaved", ex.Message);
+        }
         _settings = _settingsStore.Load();
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
@@ -713,7 +723,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     public string ResetLinuxSettings()
     {
-        _settings = _settingsStore.Reset();
+        try
+        {
+            _settings = _settingsStore.Reset();
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("reset settings", ex);
+            return UiLocalizationService.Format("Ui.SettingsNotSaved", ex.Message);
+        }
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
         ReShadeManageIni = _settings.ReShadeManageIni;
@@ -726,7 +744,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     public string PurgeLinuxCache()
     {
-        var removed = _settingsStore.PurgeCache();
+        int removed;
+        try
+        {
+            removed = _settingsStore.PurgeCache();
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("purge cache", ex);
+            return UiLocalizationService.Format("Ui.CacheNotCleared", ex.Message);
+        }
         return removed == 0 ? UiLocalizationService.Choose("O cache do RHI-Linux já está vazio.", "The RHI-Linux cache is already empty.") : UiLocalizationService.ChooseFormat("{0} arquivo(s) removido(s) do cache.", "{0} file(s) removed from cache.", removed);
     }
 
@@ -950,7 +977,7 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(value);
         if (!string.Equals(value, _libraryState.FilterMode, StringComparison.Ordinal))
             LibraryFilterMode = _libraryState.FilterMode;
-        _libraryStore.Save(_libraryState);
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
     }
 
@@ -1067,7 +1094,7 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshUalState(value);
         RefreshShortFuseState(value);
         LoadNeuralVersionPins(value);
-        _ = RefreshSelectedLatestVersionsAsync(value);
+        UiExceptionGuard.Forget(RefreshSelectedLatestVersionsAsync(value), "RefreshSelectedLatestVersionsAsync");
 
         if (_probeCache.TryGetValue(Key(value), out var cached))
         {
@@ -1081,7 +1108,7 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelected();
         var generation = ++_selectionGeneration;
         _selectionProbeCts = new CancellationTokenSource();
-        _ = AnalyzeSelectedGameAsync(value, generation, _selectionProbeCts.Token);
+        UiExceptionGuard.Forget(AnalyzeSelectedGameAsync(value, generation, _selectionProbeCts.Token), "AnalyzeSelectedGameAsync");
     }
 
     private async Task AnalyzeSelectedGameAsync(DetectedGame game, int generation, CancellationToken cancellationToken)
@@ -1310,7 +1337,7 @@ public partial class MainWindowViewModel : ObservableObject
         _backgroundUpdateCts = null;
         if (!_settings.AutoUpdateComponents) return;
         _backgroundUpdateCts = new CancellationTokenSource();
-        _ = BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate);
+        UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
     }
 
     private async Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
@@ -2611,7 +2638,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ViewMode = IsCompactView ? "Detail" : "Compact";
         _settings.ViewMode = ViewMode;
-        _settingsStore.Save(_settings);
+        TryPersist(() => _settingsStore.Save(_settings), "Ui.WhatSettings");
         NotifyUxSettings();
     }
 
@@ -2637,7 +2664,7 @@ public partial class MainWindowViewModel : ObservableObject
             _libraryState.FavouriteGames.Add(key);
             game.IsFavourite = true;
         }
-        _libraryStore.Save(_libraryState);
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
         NotifySelected();
     }
@@ -2658,9 +2685,30 @@ public partial class MainWindowViewModel : ObservableObject
             _libraryState.HiddenGames.Add(key);
             game.IsHidden = true;
         }
-        _libraryStore.Save(_libraryState);
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
         NotifySelected();
+    }
+
+    /// <summary>
+    /// Runs a store write; on failure logs it and reports in the status line instead of letting the exception reach
+    /// the dispatcher (UI-05). <paramref name="sessionOnly"/> says the in-memory change stays for this session.
+    /// </summary>
+    private bool TryPersist(Action save, string whatKey, bool sessionOnly = true)
+    {
+        try
+        {
+            save();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            UiExceptionGuard.Log.TryWrite("save " + whatKey, ex);
+            StatusText = sessionOnly
+                ? UiLocalizationService.Format("Ui.SaveFailedSessionOnly", UiLocalizationService.Text(whatKey), ex.Message)
+                : UiLocalizationService.Format("Ui.SaveFailedNothingChanged", UiLocalizationService.Text(whatKey), ex.Message);
+            return false;
+        }
     }
 
     /// <summary>Saves the selected game's edit; <c>Saved</c> is the structural success flag (the message is localised).</summary>
@@ -2780,7 +2828,11 @@ public partial class MainWindowViewModel : ObservableObject
             try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
             catch { return false; }
         });
-        _libraryStore.Save(_libraryState);
+        if (!TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary", sessionOnly: false))
+        {
+            _libraryState = _libraryStore.Load();
+            return;
+        }
         await RefreshAsync(ManualOnly);
         StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
     }
@@ -2884,7 +2936,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (string.Equals(previous, pin, StringComparison.OrdinalIgnoreCase)) return;
         _managedComponents.SetNeuralAddonVersionPin(game, kind, pin);
         if (_managedComponents.IsManaged(game, kind))
-            _ = SwapNeuralVersionInPlaceAsync(game, kind, previous);
+            UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
     private void SaveNeuralRenderingDllPin(string value)
@@ -2896,7 +2948,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (string.Equals(previous, pin, StringComparison.Ordinal)) return;
         _managedComponents.SetNeuralRenderingDllVersionPin(game, pin);
         if (OrchestratedDlssStackManaged)
-            _ = SwapNeuralVersionInPlaceAsync(game, kind: null, previous);
+            UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind: null, previous), "SwapNeuralVersionInPlaceAsync");
     }
 
     /// <summary>
@@ -3197,7 +3249,7 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnShortFuseZzzLoadOrderChanged(bool value)
     {
         if (_loadingShortFuseZzzLoadOrder || SelectedGame is null) return;
-        _ = ApplyShortFuseZzzLoadOrderAsync(SelectedGame, value);
+        UiExceptionGuard.Forget(ApplyShortFuseZzzLoadOrderAsync(SelectedGame, value), "ApplyShortFuseZzzLoadOrderAsync");
     }
 
     private async Task ApplyShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled)
@@ -3416,7 +3468,7 @@ public partial class MainWindowViewModel : ObservableObject
         var profile = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
         if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);
         else _libraryState.HdrProfiles[key] = profile;
-        _libraryStore.Save(_libraryState);
+        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatHdrProfile");
         NotifyHdrProfile();
     }
 

@@ -14,7 +14,7 @@ public sealed partial class MainWindow
     /// <summary>Shared with the component service by App; falls back to the default path.</summary>
     public ComponentUpdateLogStore? UpdateLogStore { get; set; }
 
-    private async void UpdateHistory_Click(object? sender, RoutedEventArgs e)
+    private void UpdateHistory_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var store = UpdateLogStore ??= new ComponentUpdateLogStore();
         var list = new StackPanel { Spacing = 0 };
@@ -108,7 +108,7 @@ public sealed partial class MainWindow
             Content = panel
         };
         close.Click += (_, _) => dialog.Close();
-        clear.Click += async (_, _) =>
+        clear.Click += (_, _) => RunUiSafe(async () =>
         {
             var confirmed = await ShowConfirmationAsync(
                 L("Limpar histórico", "Clear history"),
@@ -125,9 +125,9 @@ public sealed partial class MainWindow
                 return;
             }
             Rebuild();
-        };
+        });
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private static Control BuildUpdateHistoryRow(ComponentUpdateLogEntry entry)
     {

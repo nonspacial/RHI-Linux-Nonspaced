@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -7,6 +8,7 @@ using Avalonia.Media;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using RHI.Core.Models;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
@@ -58,6 +60,25 @@ public sealed partial class MainWindow : Window
         Patterns = ["*.zip", "*.ZIP", "*.7z", "*.7Z"],
     };
 
+    /// <summary>Event-handler body runner: nothing a handler throws reaches the dispatcher unreported (UI-05).</summary>
+    private static async void RunUiSafe(Func<Task> work, [CallerMemberName] string context = "")
+        => await UiExceptionGuard.RunAsync(work, context);
+
+    /// <summary>Creates (if needed) and opens a folder; a failure to create it is reported like a failure to open it.</summary>
+    private static bool TryOpenFolder(string path, out string? error)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            error = ex.Message;
+            return false;
+        }
+        return LinuxDesktopOpener.TryOpenDirectory(path, out error);
+    }
+
     private readonly DetailSectionLayoutStore _detailLayoutStore;
     private DetailSectionLayoutSettings _detailLayout;
 
@@ -77,7 +98,7 @@ public sealed partial class MainWindow : Window
                     e.Cancel = !trimmed.TextLayout.TextLines.Any(line => line.HasCollapsed));
     }
 
-    private async void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e)
+    private void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var text = vm.GetSelectedHdrLaunchOptions();
@@ -89,10 +110,10 @@ public sealed partial class MainWindow : Window
         }
         await clipboard.SetTextAsync(text);
         vm.StatusText = L("Perfil de inicialização HDR copiado. O Steam pode usar a forma %command% exibida; no Heroic/Lutris, use as variáveis ou o wrapper na configuração do inicializador, sem tratar %command% como sintaxe universal.", "HDR launch profile copied. Steam can use the displayed %command% form; in Heroic/Lutris, use the variables or wrapper in launcher settings without treating %command% as universal syntax.");
-    }
+    });
 
 
-    private async void AddGame_Click(object? sender, RoutedEventArgs e)
+    private void AddGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel) return;
         if (!StorageProvider.CanOpen)
@@ -116,9 +137,9 @@ public sealed partial class MainWindow : Window
         }
 
         await ShowAddGameDialogForExecutableAsync(executable);
-    }
+    });
 
-    private async void BatchDlss_Click(object? sender, RoutedEventArgs e)
+    private void BatchDlss_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || !vm.CanOpenDlssBatch) return;
 
@@ -307,11 +328,11 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        deploy.Click += async (_, _) => await RunAsync(restoreMode: false);
-        restore.Click += async (_, _) => await RunAsync(restoreMode: true);
+        deploy.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: false));
+        restore.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: true));
         close.Click += (_, _) => dialog.Close();
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private async Task ShowSimpleMessageAsync(string title, string message)
     {
@@ -332,7 +353,7 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     }
 
-    private async void Settings_Click(object? sender, RoutedEventArgs e)
+    private void Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var snapshot = vm.GetLinuxSettingsSnapshot();
@@ -438,17 +459,17 @@ public sealed partial class MainWindow : Window
         var defaultStreamline = BuildDlssDefaultCombo(vm.StreamlineVersions, settings.DefaultStreamlineVersion);
 
         var browseScreenshots = new Button { Content = L("Procurar…", "Browse…"), Padding = new Avalonia.Thickness(12, 6) };
-        browseScreenshots.Click += async (_, _) =>
+        browseScreenshots.Click += (_, _) => RunUiSafe(async () =>
         {
             var chosen = await PickFolderAsync(L("Selecionar pasta de capturas de tela", "Select screenshot folder"));
             if (!string.IsNullOrWhiteSpace(chosen)) screenshotPath.Text = chosen;
-        };
+        });
         var browseWatch = new Button { Content = L("Procurar…", "Browse…"), Padding = new Avalonia.Thickness(12, 6) };
-        browseWatch.Click += async (_, _) =>
+        browseWatch.Click += (_, _) => RunUiSafe(async () =>
         {
             var chosen = await PickFolderAsync(L("Selecionar pasta monitorada de add-ons", "Select watched add-on folder"));
             if (!string.IsNullOrWhiteSpace(chosen)) addonWatchFolder.Text = chosen;
-        };
+        });
 
         var screenshotRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         screenshotRow.Children.Add(screenshotPath);
@@ -525,8 +546,7 @@ public sealed partial class MainWindow : Window
         var openData = new Button { Content = L("Abrir dados", "Open data"), Padding = new Avalonia.Thickness(12, 6) };
         void OpenFolder(string path)
         {
-            Directory.CreateDirectory(path);
-            if (!LinuxDesktopOpener.TryOpenDirectory(path, out var error)) status.Text = LF("Não foi possível abrir a pasta: {0}", "Could not open folder: {0}", error);
+            if (!TryOpenFolder(path, out var error)) status.Text = UiLocalizationService.Format("Ui.FolderNotOpened", error);
         }
         openConfig.Click += (_, _) => OpenFolder(snapshot.ConfigRoot);
         openCache.Click += (_, _) => OpenFolder(snapshot.CacheRoot);
@@ -699,7 +719,7 @@ public sealed partial class MainWindow : Window
             Content = root
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private async Task<string?> PickFolderAsync(string title)
     {
@@ -711,7 +731,7 @@ public sealed partial class MainWindow : Window
         return result.Count == 0 ? null : result[0].TryGetLocalPath();
     }
 
-    private async void ShadersAddons_Click(object? sender, RoutedEventArgs e)
+    private void ShadersAddons_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null)
             return;
@@ -774,11 +794,11 @@ public sealed partial class MainWindow : Window
                     VerticalAlignment = VerticalAlignment.Center
                 };
                 ToolTip.SetTip(filesButton, L("Selecione shaders e texturas individualmente. A seleção fica salva por pacote.", "Select shaders and textures individually. The selection is saved per pack."));
-                filesButton.Click += async (_, _) =>
+                filesButton.Click += (_, _) => RunUiSafe(async () =>
                 {
                     try { await ShowShaderPackFilesDialogAsync(vm, pack); }
                     catch (Exception ex) { vm.StatusText = LF("Não foi possível abrir os arquivos de {0}: {1}", "Could not open files for {0}: {1}", pack.DisplayName, ex.Message); }
-                };
+                });
                 packRow.Children.Add(filesButton);
                 Grid.SetColumn(filesButton, 1);
                 shaderRoot.Children.Add(packRow);
@@ -826,19 +846,17 @@ public sealed partial class MainWindow : Window
 
         openCustomShaders.Click += (_, _) =>
         {
-            Directory.CreateDirectory(snapshot.CustomShaderRoot);
-            if (!LinuxDesktopOpener.TryOpenDirectory(snapshot.CustomShaderRoot, out var error))
+            if (!TryOpenFolder(snapshot.CustomShaderRoot, out var error))
                 status.Text = LF("Não foi possível abrir Shaders personalizados: {0}", "Could not open Custom Shaders: {0}", error);
         };
 
         openCustomAddons.Click += (_, _) =>
         {
-            Directory.CreateDirectory(snapshot.CustomAddonRoot);
-            if (!LinuxDesktopOpener.TryOpenDirectory(snapshot.CustomAddonRoot, out var error))
+            if (!TryOpenFolder(snapshot.CustomAddonRoot, out var error))
                 status.Text = LF("Não foi possível abrir Add-ons personalizados: {0}", "Could not open Custom Add-ons: {0}", error);
         };
 
-        apply.Click += async (_, _) =>
+        apply.Click += (_, _) => RunUiSafe(async () =>
         {
             apply.IsEnabled = false;
             try
@@ -857,7 +875,7 @@ public sealed partial class MainWindow : Window
             {
                 apply.IsEnabled = true;
             }
-        };
+        });
 
         var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), ColumnSpacing = 8 };
         bottom.Children.Add(openCustomShaders);
@@ -908,21 +926,21 @@ public sealed partial class MainWindow : Window
         };
 
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void BrowseD3DCompiler47_Click(object? sender, RoutedEventArgs e)
+    private void BrowseD3DCompiler47_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var path = await PickDllAsync("Selecionar Microsoft D3DCompiler_47.dll");
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.ReShadeD3DCompiler47Path = path;
-    }
+    });
 
-    private async void BrowseReShadeCustomDll_Click(object? sender, RoutedEventArgs e)
+    private void BrowseReShadeCustomDll_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var path = await PickDllAsync("Selecionar DLL personalizada do ReShade");
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.ReShadeCustomDllPath = path;
-    }
+    });
 
     private void ClearD3DCompiler47_Click(object? sender, RoutedEventArgs e)
     {
@@ -1020,12 +1038,12 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     }
 
-    private async void BrowseDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e)
+    private void BrowseDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var path = await PickDeepFriedChickenArchiveAsync("Selecionar pacote oficial Deep Fried Chicken");
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
             vm.Dlss5FeederConsumerPackagePath = path;
-    }
+    });
 
     private void ClearDlss5FeederConsumer_Click(object? sender, RoutedEventArgs e)
     {
@@ -1062,7 +1080,7 @@ public sealed partial class MainWindow : Window
         return $"{description}\n\n{technical}";
     }
 
-    private async void Dlssg2030Settings_Click(object? sender, RoutedEventArgs e)
+    private void Dlssg2030Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasDlssg2030Settings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1151,7 +1169,7 @@ public sealed partial class MainWindow : Window
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Check") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Update"), IsEnabled = false };
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1161,13 +1179,13 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
-            update.Click += async (_, _) =>
+            });
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateDlssg2030Async();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
             buttons.Children.Add(check);
             buttons.Children.Add(update);
             panel.Children.Add(buttons);
@@ -1193,9 +1211,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e)
+    private void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasStandaloneDlssEnablerSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1264,7 +1282,7 @@ public sealed partial class MainWindow : Window
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneCheck") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneUpdate"), IsEnabled = false };
 
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1274,14 +1292,14 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
+            });
 
-            update.Click += async (_, _) =>
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateStandaloneDlssEnablerAsync();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
 
             buttons.Children.Add(check);
             buttons.Children.Add(update);
@@ -1309,9 +1327,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e)
+    private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtx40MfgSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -1412,7 +1430,7 @@ public sealed partial class MainWindow : Window
             var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgCheck") };
             var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgUpdate"), IsEnabled = false };
 
-            check.Click += async (_, _) =>
+            check.Click += (_, _) => RunUiSafe(async () =>
             {
                 check.IsEnabled = false;
                 try
@@ -1422,14 +1440,14 @@ public sealed partial class MainWindow : Window
                     update.IsEnabled = status.Success && status.HasUpdate;
                 }
                 finally { check.IsEnabled = true; }
-            };
+            });
 
-            update.Click += async (_, _) =>
+            update.Click += (_, _) => RunUiSafe(async () =>
             {
                 update.IsEnabled = false;
                 var result = await vm.UpdateRtx40MfgAsync();
                 message.Text = UiLocalizationService.Present(result.Message);
-            };
+            });
 
             buttons.Children.Add(check);
             buttons.Children.Add(update);
@@ -1457,9 +1475,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void RenoDxSettings_Click(object? sender, RoutedEventArgs e)
+    private void RenoDxSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRenoDxSettings) return;
         if (DataContext is not MainWindowViewModel vm) return;
@@ -1582,9 +1600,9 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
-    private async void OptiScalerSettings_Click(object? sender, RoutedEventArgs e)
+    private void OptiScalerSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasOptiScalerSettings) return;
         if (DataContext is not MainWindowViewModel vm) return;
@@ -1706,14 +1724,25 @@ public sealed partial class MainWindow : Window
                 combo.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
                 var acceptedIndex = combo.SelectedIndex;
                 var reverting = false;
-                combo.SelectionChanged += async (_, _) =>
+                combo.SelectionChanged += (_, _) => RunUiSafe(async () =>
                 {
                     if (reverting || combo.SelectedIndex < 0 || combo.SelectedIndex >= options.Length) return;
                     var requestedIndex = combo.SelectedIndex;
                     var selected = options[requestedIndex];
                     combo.IsEnabled = false;
-                    var result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
-                    combo.IsEnabled = true;
+                    ComponentOperationResult result;
+                    try
+                    {
+                        result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = ComponentOperationResult.Fail(UiExceptionGuard.Report(ex, "optiscaler-advanced-setting"));
+                    }
+                    finally
+                    {
+                        combo.IsEnabled = true;
+                    }
                     message.Text = UiLocalizationService.Present(result.Message);
                     if (result.Success)
                     {
@@ -1723,7 +1752,7 @@ public sealed partial class MainWindow : Window
                     reverting = true;
                     combo.SelectedIndex = acceptedIndex;
                     reverting = false;
-                };
+                });
 
                 Grid.SetColumn(label, 0);
                 Grid.SetColumn(combo, 1);
@@ -1756,7 +1785,7 @@ public sealed partial class MainWindow : Window
             Content = new ScrollViewer { Content = panel }
         };
         await ShowFittedDialogAsync(dialog);
-    }
+    });
 
     private void ToggleSection_Click(object? sender, RoutedEventArgs e)
     {
@@ -1776,7 +1805,7 @@ public sealed partial class MainWindow : Window
         UpdateSectionSummaries();
     }
 
-    private async void SectionDragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
+    private void SectionDragHandle_PointerPressed(object? sender, PointerPressedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Control { Tag: string sectionKey }) return;
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
@@ -1784,7 +1813,7 @@ public sealed partial class MainWindow : Window
         var data = new DataTransfer();
         data.Add(DataTransferItem.CreateText(sectionKey));
         await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
-    }
+    });
 
     private void Section_DragOver(object? sender, DragEventArgs e)
     {
