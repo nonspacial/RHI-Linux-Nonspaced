@@ -1,3 +1,4 @@
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Detection;
@@ -62,7 +63,7 @@ public static class GameRootGuard
     {
         var full = Path.GetFullPath(path);
         if (full.Length > 1) full = full.TrimEnd('/');
-        return new HashSet<string>(StringComparer.Ordinal) { full, LinuxPaths.Canonicalise(full) };
+        return new HashSet<string>(StringComparer.Ordinal) { full, PathIdentity.Canonicalize(full) };
     }
 
     // /media/<disk>, /mnt/<disk>, /run/media/<user> and /run/media/<user>/<disk>: whole drives.

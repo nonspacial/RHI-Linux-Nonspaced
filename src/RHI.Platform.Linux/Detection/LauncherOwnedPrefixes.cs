@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Detection;
 
@@ -51,17 +52,17 @@ internal sealed partial class LauncherOwnedPrefixes
                 foreach (var value in ReadScalars(text, "prefix"))
                 {
                     var expanded = Expand(value, home, gameDir);
-                    if (expanded is not null) prefixes.Add(Canonicalise(expanded));
+                    if (expanded is not null) prefixes.Add(PathIdentity.Canonicalize(expanded));
                 }
             }
         }
         // umu-launcher's default: $HOME/Games/umu/$GAMEID.
-        return new LauncherOwnedPrefixes(prefixes, Canonicalise(Path.Combine(home, "Games", "umu")));
+        return new LauncherOwnedPrefixes(prefixes, PathIdentity.Canonicalize(Path.Combine(home, "Games", "umu")));
     }
 
     public bool Owns(string prefixPath)
     {
-        var canonical = Canonicalise(prefixPath);
+        var canonical = PathIdentity.Canonicalize(prefixPath);
         return _lutrisPrefixes.Contains(canonical) ||
                canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal);
     }
@@ -96,42 +97,5 @@ internal sealed partial class LauncherOwnedPrefixes
         var expanded = LutrisPathExpander.Expand(value, home, gameDir);
         // Unresolved placeholders such as $GAMEDIR (no pga.db directory) name no real directory.
         return expanded is not null && Path.IsPathRooted(expanded) && !expanded.Contains('$') ? expanded : null;
-    }
-
-    /// <summary>
-    /// Absolute path with every symlink resolved and no trailing slash, so `~/Games/x/`,
-    /// `/mnt/disk/Games/x` (via a `~/Games` link) and `x/pfx` (Proton's `pfx -> .`) compare equal.
-    /// Components that do not exist are kept as written.
-    /// </summary>
-    internal static string Canonicalise(string path)
-    {
-        var current = Path.GetFullPath(path);
-        for (var hop = 0; hop < 40; hop++)
-        {
-            var next = ResolveFirstLink(current);
-            if (next is null) break;
-            current = next;
-        }
-        return current.Length > 1 ? current.TrimEnd('/') : current;
-    }
-
-    private static string? ResolveFirstLink(string fullPath)
-    {
-        var parts = fullPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var built = "/";
-        for (var i = 0; i < parts.Length; i++)
-        {
-            var candidate = Path.Combine(built, parts[i]);
-            string? target;
-            try { target = new FileInfo(candidate).LinkTarget; } catch { target = null; }
-            if (target is not null)
-            {
-                var resolved = Path.IsPathRooted(target) ? target : Path.Combine(built, target);
-                return Path.GetFullPath(Path.Combine([resolved, .. parts[(i + 1)..]]));
-            }
-            if (!Directory.Exists(candidate) && !File.Exists(candidate)) return null;
-            built = candidate;
-        }
-        return null;
     }
 }

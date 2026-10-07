@@ -1,3 +1,5 @@
+using RHI.Core.Services;
+
 namespace RHI.Platform.Linux.Detection;
 
 /// <summary>One row of Lutris' <c>pga.db</c> <c>games</c> table, keyed by its config file stem.</summary>
@@ -27,7 +29,7 @@ internal static class LutrisPga
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var database in databases)
         {
-            if (!File.Exists(database) || !seen.Add(LauncherOwnedPrefixes.Canonicalise(database))) continue;
+            if (!File.Exists(database) || !seen.Add(PathIdentity.Canonicalize(database))) continue;
             foreach (var row in SqliteTableReader.ReadTable(database, "games"))
             {
                 if (Text(row, "configpath") is not { Length: > 0 } configPath) continue;

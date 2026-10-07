@@ -365,7 +365,7 @@ public sealed class HeroicGameDetector : IGameDetector
     internal static void AttachFallbackPrefixes(IReadOnlyList<DetectedGame> games, IEnumerable<string> prefixRoots)
     {
         var taken = new HashSet<string>(
-            games.Where(g => !string.IsNullOrWhiteSpace(g.PrefixPath)).Select(g => LauncherOwnedPrefixes.Canonicalise(g.PrefixPath!)),
+            games.Where(g => !string.IsNullOrWhiteSpace(g.PrefixPath)).Select(g => PathIdentity.Canonicalize(g.PrefixPath!)),
             StringComparer.Ordinal);
         var folders = new List<(string Prefix, string Name)>();
         foreach (var root in prefixRoots)
@@ -380,7 +380,7 @@ public sealed class HeroicGameDetector : IGameDetector
             foreach (var dir in dirs)
             {
                 var prefix = FindWinePrefix(dir);
-                if (!Directory.Exists(Path.Combine(prefix, "drive_c")) || taken.Contains(LauncherOwnedPrefixes.Canonicalise(prefix)))
+                if (!Directory.Exists(Path.Combine(prefix, "drive_c")) || taken.Contains(PathIdentity.Canonicalize(prefix)))
                     continue;
                 folders.Add((prefix, Normalize(Path.GetFileName(dir))));
             }
@@ -400,7 +400,7 @@ public sealed class HeroicGameDetector : IGameDetector
             claims.Add((game, scored[0].Prefix, scored[0].Score));
         }
 
-        foreach (var contested in claims.GroupBy(c => LauncherOwnedPrefixes.Canonicalise(c.Prefix), StringComparer.Ordinal))
+        foreach (var contested in claims.GroupBy(c => PathIdentity.Canonicalize(c.Prefix), StringComparer.Ordinal))
         {
             var ranked = contested.OrderByDescending(c => c.Score).ToList();
             if (ranked.Count > 1 && ranked[1].Score == ranked[0].Score) continue; // two games fit equally well

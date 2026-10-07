@@ -121,11 +121,11 @@ public sealed partial class LutrisGameDetector : IGameDetector
     private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<(DetectedGame Game, bool ExeResolves)> configs, CancellationToken ct)
     {
         var found = new List<DetectedGame>();
-        var listedRoots = configs.Select(c => LauncherOwnedPrefixes.Canonicalise(c.Game.InstallPath)).ToArray();
+        var listedRoots = configs.Select(c => PathIdentity.Canonicalize(c.Game.InstallPath)).ToArray();
         var seenFolders = new HashSet<string>(StringComparer.Ordinal);
         var byPrefix = configs
             .Where(c => c.Game.PrefixPath is not null)
-            .GroupBy(c => LauncherOwnedPrefixes.Canonicalise(c.Game.PrefixPath!), StringComparer.Ordinal);
+            .GroupBy(c => PathIdentity.Canonicalize(c.Game.PrefixPath!), StringComparer.Ordinal);
         foreach (var sharing in byPrefix)
         {
             try
@@ -134,7 +134,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 // Only store-library game folders; a library entry that has a library of its own is a launcher.
                 var libraryGames = PrefixGameFolders.Find(Path.Combine(prefixPath, "drive_c"))
                     .Where(entry => entry.Library is not null && entry.Excluded is null)
-                    .Select(entry => (Entry: entry, Folder: LauncherOwnedPrefixes.Canonicalise(entry.Directory)))
+                    .Select(entry => (Entry: entry, Folder: PathIdentity.Canonicalize(entry.Directory)))
                     .ToList();
                 if (libraryGames.Count == 0) continue;
                 var launcher = PickParentLauncher(sharing, libraryGames.Select(x => x.Folder).ToArray());
@@ -185,7 +185,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
     /// </summary>
     private static DetectedGame? PickParentLauncher(IEnumerable<(DetectedGame Game, bool ExeResolves)> sharing, IReadOnlyList<string> libraryGameFolders)
         => sharing
-            .Where(c => !libraryGameFolders.Any(folder => IsSameOrUnder(LauncherOwnedPrefixes.Canonicalise(c.Game.InstallPath), folder)))
+            .Where(c => !libraryGameFolders.Any(folder => IsSameOrUnder(PathIdentity.Canonicalize(c.Game.InstallPath), folder)))
             .OrderBy(c => c.ExeResolves ? 0 : 1) // stable: keeps file-name order within each group
             .Select(c => c.Game)
             .FirstOrDefault();

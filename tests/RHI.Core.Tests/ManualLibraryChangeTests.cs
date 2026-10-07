@@ -22,7 +22,7 @@ public sealed class ManualLibraryChangeTests
             InstallPath = tree.Dir("games", "Game", "Inner"), LibraryIdentityPath = saved
         };
 
-        Assert.Equal(1, ManualGameDetector.RemoveEntries(state, listed));
+        Assert.Equal(1, state.RemoveManualEntriesFor(listed));
         Assert.Equal("Other", Assert.Single(state.ManualGames).Name);
     }
 
@@ -40,7 +40,7 @@ public sealed class ManualLibraryChangeTests
             InstallPath = moved, LibraryIdentityPath = moved, ManifestInstallRoot = saved
         };
 
-        Assert.Equal(1, ManualGameDetector.RemoveEntries(state, listed));
+        Assert.Equal(1, state.RemoveManualEntriesFor(listed));
         Assert.Empty(state.ManualGames);
     }
 
@@ -50,7 +50,7 @@ public sealed class ManualLibraryChangeTests
         var state = new LinuxGameLibraryState();
         state.ManualGames.Add(new LinuxManualGameEntry { Name = "Other", InstallPath = "/games/other" });
 
-        Assert.Equal(0, ManualGameDetector.RemoveEntries(state, new DetectedGame { Name = "X", InstallPath = "/games/x", Source = "Manual" }));
+        Assert.Equal(0, state.RemoveManualEntriesFor(new DetectedGame { Name = "X", InstallPath = "/games/x", Source = "Manual" }));
         Assert.Single(state.ManualGames);
     }
 

@@ -31,7 +31,7 @@ public sealed partial class SteamGameDetector : IGameDetector
             foreach (var library in libraries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!seenLibraries.Add(LinuxPaths.Canonicalise(library))) continue;
+                if (!seenLibraries.Add(PathIdentity.Canonicalize(library))) continue;
                 var steamapps = Path.Combine(library, "steamapps");
                 if (!Directory.Exists(steamapps)) continue;
                 string[] manifests;
@@ -124,7 +124,7 @@ public sealed partial class SteamGameDetector : IGameDetector
     {
         static bool IsFlatpak(string root)
             => (root.Replace('\\', '/').TrimEnd('/') + "/").Contains("/.var/app/com.valvesoftware.Steam/", StringComparison.Ordinal);
-        if (IsFlatpak(steamRoot) || IsFlatpak(LinuxPaths.Canonicalise(steamRoot)))
+        if (IsFlatpak(steamRoot) || IsFlatpak(PathIdentity.Canonicalize(steamRoot)))
             return $"flatpak run com.valvesoftware.Steam -applaunch {appId}";
         return hostSteamOnPath ? $"steam -applaunch {appId}" : $"xdg-open steam://rungameid/{appId}";
     }

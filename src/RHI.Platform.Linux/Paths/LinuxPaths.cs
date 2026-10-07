@@ -37,13 +37,9 @@ public static class LinuxPaths
         foreach (var candidate in candidates)
         {
             if (string.IsNullOrWhiteSpace(candidate) || !Directory.Exists(candidate)) continue;
-            if (seen.Add(Canonicalise(candidate))) yield return candidate;
+            if (seen.Add(RHI.Core.Services.PathIdentity.Canonicalize(candidate))) yield return candidate;
         }
     }
-
-    /// <summary>Absolute path with every symlink resolved and no trailing slash (missing parts kept as written).</summary>
-    internal static string Canonicalise(string path)
-        => Detection.LauncherOwnedPrefixes.Canonicalise(path);
 
     public static IEnumerable<string> HeroicRoots()
         => DistinctExisting(HeroicRootCandidates(Home, ConfigHome));

@@ -186,10 +186,10 @@ public sealed class WinePrefixDetector : IGameDetector
 
         private static bool IsHostWine(string wine, Func<string, string?> onPath)
         {
-            var canonical = LauncherOwnedPrefixes.Canonicalise(wine);
+            var canonical = PathIdentity.Canonicalize(wine);
             return new[] { "wine", "wine64" }
                 .Select(onPath)
-                .Any(host => host is not null && LauncherOwnedPrefixes.Canonicalise(host) == canonical);
+                .Any(host => host is not null && PathIdentity.Canonicalize(host) == canonical);
         }
 
         private static string? FindOnPath(string program)

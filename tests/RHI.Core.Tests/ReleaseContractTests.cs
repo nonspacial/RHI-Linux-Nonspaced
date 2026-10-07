@@ -67,6 +67,21 @@ public sealed class ReleaseContractTests
             Assert.Contains(assembly.GetCustomAttributes<SupportedOSPlatformAttribute>(), a => a.PlatformName == "linux");
     }
 
+    [Fact]
+    public void NoSourceFile_WalksAllDirectories_RecursiveWalksGoThroughSafeFileEnumeration()
+    {
+        // The framework's recursive search follows directory symlinks (a Wine prefix's z: -> /), so every
+        // recursive walk in src/ must use SafeFileEnumeration (#64).
+        var root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "RHI-Linux.sln")))
+            root = Path.GetDirectoryName(root) ?? throw new InvalidOperationException("repository root not found");
+        var offenders = Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", new EnumerationOptions { RecurseSubdirectories = true })
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(file => File.ReadAllText(file).Contains("SearchOption.AllDirectories", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Empty(offenders);
+    }
+
     private sealed class NoOpCommand : ICommand
     {
         public event EventHandler? CanExecuteChanged { add { } remove { } }

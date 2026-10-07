@@ -1,11 +1,11 @@
 namespace RHI.Core.Services;
 
 /// <summary>
-/// Recursive enumeration that never descends into a directory symlink. <c>SearchOption.AllDirectories</c>
-/// follows them, so a link such as a Wine prefix's <c>dosdevices/z: -> /</c>, or a user's shader folder
+/// Recursive enumeration that never descends into a directory symlink. The framework's own recursive
+/// search (all-directories option) follows them, so a link such as a Wine prefix's <c>dosdevices/z: -> /</c>, or a user's shader folder
 /// linked into a game, takes the walk (and anything it deletes or copies) outside the tree.
 /// Symlinked files are still returned, as before; pattern matching and error behaviour match the
-/// <c>SearchOption.AllDirectories</c> overloads unless <paramref name="ignoreInaccessible"/> is set.
+/// framework's recursive overloads unless <paramref name="ignoreInaccessible"/> is set.
 /// </summary>
 public static class SafeFileEnumeration
 {
