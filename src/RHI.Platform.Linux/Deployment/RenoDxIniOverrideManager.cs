@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using RHI.Core.Services;
 using RHI.Core.Services.RenoDxSafety;
+using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -23,9 +24,11 @@ internal sealed record RenoDxIniOverrideApplyResult(
 
 /// <summary>
 /// The one grammar every remote [renodx] key/value must meet before it reaches a ReShade.ini (#122): the RHI
-/// Unity database, manifest <c>renodxIniOverrides</c> and <c>renodxExtraSettings</c>. Keys are plain INI names;
-/// values are printable ASCII without brackets, so neither can start a new line or a section. Upstream data only
-/// uses digits; an unsafe pair is dropped whole.
+/// Unity database, manifest <c>renodxIniOverrides</c> and <c>renodxExtraSettings</c>, and the settings UI. Keys are
+/// plain INI names ([A-Za-z0-9_]); values are short tokens of [A-Za-z0-9_.,+-] (or empty, for a bare Unity key), so
+/// neither can start a new line, a section, a comment or a shell command if the file is ever read as something else.
+/// Upstream data (2.8.5 manifest, live rhi-repo Unity database) only uses "", 0, 1, 2 and 3; an unsafe pair is
+/// dropped whole.
 /// </summary>
 internal static class RenoDxIniGrammar
 {
@@ -36,7 +39,7 @@ internal static class RenoDxIniGrammar
         => key is { Length: > 0 and <= MaxKeyLength } && key.All(c => char.IsAsciiLetterOrDigit(c) || c == '_');
 
     public static bool IsSafeValue(string? value)
-        => value is { Length: <= MaxValueLength } && value.All(c => c is >= ' ' and <= '~' and not '[' and not ']');
+        => value is { Length: <= MaxValueLength } && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or ',' or '+' or '-');
 
     public static bool IsSafePair(string? key, string? value) => IsSafeKey(key) && IsSafeValue(value);
 }
@@ -47,18 +50,43 @@ internal static class RenoDxIniGrammar
 /// values are remembered, keys created by RHI are removed on teardown, and user edits made after
 /// deployment are never overwritten during a later update or rollback. Every write replaces the
 /// owner's ReShade.ini atomically (temp file, fsync, rename, mode kept), so a crash or a full disk
-/// leaves the previous bytes in place (#121).
+/// leaves the previous bytes in place (#121). A read-only ReShade.ini is refused, and a symlinked one is written
+/// through only to a reshade.ini inside the game folder or the user's ReShade config folder.
 /// </summary>
 internal static class RenoDxIniOverrideManager
 {
     internal const string MetadataKey = "RenoDx.ManifestIniOverrides";
     private const string SectionName = "renodx";
 
+    /// <summary>Fixed text before "link -> target" when a symlinked ReShade.ini is refused (localisation key).</summary>
+    internal const string LinkRefusalPrefix =
+        "ReShade.ini link not followed: its target must be a file named reshade.ini inside the game folder or the ReShade folder in your config directory. Link: ";
+
+    /// <summary>Folders outside the game where a user may keep a shared ReShade.ini a game's link points at.</summary>
+    internal static IReadOnlyList<string> UserReShadeConfigDirectories =>
+    [
+        Path.Combine(LinuxPaths.ConfigHome, "ReShade"),
+        Path.Combine(LinuxPaths.ConfigHome, "reshade")
+    ];
+
+    /// <summary>
+    /// The only ReShade.ini symlinks RHI writes through: final target named reshade.ini (any case) inside the game
+    /// root, its binary folder or <see cref="UserReShadeConfigDirectories"/>.
+    /// </summary>
+    internal static UserFileLinkPolicy LinkPolicy(string binaryDirectory, string? gameRoot)
+    {
+        var roots = new List<string> { binaryDirectory };
+        if (!string.IsNullOrWhiteSpace(gameRoot)) roots.Add(gameRoot);
+        roots.AddRange(UserReShadeConfigDirectories);
+        return new UserFileLinkPolicy("reshade.ini", roots, LinkRefusalPrefix);
+    }
+
     public static RenoDxIniOverrideApplyResult Apply(
         string binaryDirectory,
         IReadOnlyDictionary<string, string> requested,
         RenoDxIniOverrideState? previousState = null,
-        Func<Stream, Stream>? wrapOutput = null)
+        Func<Stream, Stream>? wrapOutput = null,
+        string? gameRoot = null)
     {
         if (requested.Count == 0)
             return new(previousState, 0, 0);
@@ -146,7 +174,7 @@ internal static class RenoDxIniOverrideManager
         }
 
         if (changed)
-            WriteLines(iniPath, lines, wrapOutput);
+            WriteLines(iniPath, lines, wrapOutput, LinkPolicy(binaryDirectory, gameRoot));
 
         var state = new RenoDxIniOverrideState(
             iniPath,
@@ -155,7 +183,7 @@ internal static class RenoDxIniOverrideManager
         return new(state, applied, preservedUserEdits);
     }
 
-    public static void Cleanup(RenoDxIniOverrideState? state, Func<Stream, Stream>? wrapOutput = null)
+    public static void Cleanup(RenoDxIniOverrideState? state, Func<Stream, Stream>? wrapOutput = null, string? gameRoot = null)
     {
         if (state is null || !File.Exists(state.IniPath)) return;
 
@@ -194,7 +222,7 @@ internal static class RenoDxIniOverrideManager
         }
 
         if (changed)
-            WriteLines(state.IniPath, lines, wrapOutput);
+            WriteLines(state.IniPath, lines, wrapOutput, LinkPolicy(Path.GetDirectoryName(state.IniPath) ?? state.IniPath, gameRoot));
     }
 
 
@@ -221,7 +249,7 @@ internal static class RenoDxIniOverrideManager
         return result;
     }
 
-    public static bool SetUserValue(string binaryDirectory, string key, string value, out string? iniPath)
+    public static bool SetUserValue(string binaryDirectory, string key, string value, out string? iniPath, string? gameRoot = null)
     {
         iniPath = ResolveIniPath(binaryDirectory);
         if (!RenoDxIniGrammar.IsSafePair(key?.Trim(), value?.Trim() ?? ""))
@@ -247,16 +275,16 @@ internal static class RenoDxIniOverrideManager
             lines.Insert(end, $"{normalizedKey}={normalizedValue}");
         }
 
-        WriteLines(iniPath, lines, wrapOutput: null);
+        WriteLines(iniPath, lines, wrapOutput: null, LinkPolicy(binaryDirectory, gameRoot));
         return true;
     }
 
     // Same bytes File.WriteAllLines produced (UTF-8 without BOM, "\n" after every line), written atomically.
-    private static void WriteLines(string path, IReadOnlyList<string> lines, Func<Stream, Stream>? wrapOutput)
+    private static void WriteLines(string path, IReadOnlyList<string> lines, Func<Stream, Stream>? wrapOutput, UserFileLinkPolicy linkPolicy)
     {
         var text = new StringBuilder();
         foreach (var line in lines) text.Append(line).Append('\n');
-        UserFileWriter.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(text.ToString()), wrapOutput);
+        UserFileWriter.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(text.ToString()), linkPolicy, wrapOutput);
     }
 
     public static string Serialize(RenoDxIniOverrideState state)

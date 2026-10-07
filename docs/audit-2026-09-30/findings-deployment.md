@@ -72,7 +72,7 @@
 - **Verification:** Integration test with a fake `IGameRunningProbe` returning true: install must refuse. Unit test: make ShortFuse remove throw after the registry snapshot and assert that `user.reg` is replaced atomically (inode changes; never zero length).
 
 ### DEP-06 — RenoDX add-on download: no scheme or host allow-list and no integrity check
-- **Status:** fixed on `w1/renodx-p0` in `3a3e4be` (#25): shared `TrustedDownloadPolicy` (HTTPS, host allow-list derived from upstream 2.8.5 data, final URI checked after redirects) in RenoDX, RenoDX Upgrade, ReShade Addon Manager and DOF Fix. No digest exists upstream for RenoDX snapshots; integrity stays with DEP-07.
+- **Status:** fixed on `w1/renodx-p0` in `3a3e4be` (#25): shared allow-list (HTTPS, host allow-list derived from upstream 2.8.5 data, final URI checked after redirects) in RenoDX, RenoDX Upgrade, ReShade Addon Manager and DOF Fix. No digest exists upstream for RenoDX snapshots; integrity stays with DEP-07. Lane-local type renamed `RHI.Core.Services.RenoDxSafety.AddonHostPolicy` so it compiles beside w1/core; the integrator folds it into `RHI.Core.Deployment.TrustedDownloadPolicy`.
 - **Where:**
   - Wiki scraping accepts any `http…` link: `RenoDxCatalogService.cs:307-311` (`MakeAbsolute`: `href.StartsWith("http")` passes `http://` and any host), `:303-305` (only the `.addon64` / `.addon32` suffix is checked).
   - The manifest `SnapshotOverrides` URL is taken verbatim: `UpstreamRhiManifestService.cs:466` → `RenoDxCatalogService.cs:143-154`.

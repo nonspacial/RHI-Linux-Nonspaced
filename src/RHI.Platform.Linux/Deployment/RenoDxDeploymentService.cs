@@ -341,7 +341,7 @@ public sealed class RenoDxDeploymentService
                     existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
                     ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
                     : null;
-                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState);
+                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
 
                 if (!string.IsNullOrWhiteSpace(game.EngineIniFileOverride))
                 {
@@ -359,7 +359,7 @@ public sealed class RenoDxDeploymentService
                 // Put every file back as it was; one that cannot be restored keeps its snapshot and is reported (#121).
                 var snapshots = new List<FileSnapshot> { new(target, targetBeforeCopy) };
                 if (iniPathBeforeApply is not null && iniBeforeApply is not null)
-                    snapshots.Add(new(iniPathBeforeApply, iniBeforeApply));
+                    snapshots.Add(new(iniPathBeforeApply, iniBeforeApply, RenoDxIniOverrideManager.LinkPolicy(game.BinaryDirectory, game.InstallPath)));
                 if (engineIniSnapshotPath is not null)
                     snapshots.Add(new(engineIniSnapshotPath, engineIniBeforeApply));
                 var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
@@ -580,7 +580,7 @@ public sealed class RenoDxDeploymentService
 
         try
         {
-            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, normalizedKey, normalizedValue, out var iniPath))
+            if (!RenoDxIniOverrideManager.SetUserValue(game.BinaryDirectory, normalizedKey, normalizedValue, out var iniPath, game.InstallPath))
                 return ComponentOperationResult.Fail("O ReShade.ini ainda não contém uma seção [renodx]. Execute o jogo uma vez com o RenoDX instalado.");
             if (string.IsNullOrWhiteSpace(iniPath))
                 return ComponentOperationResult.Fail("O caminho do ReShade.ini não pôde ser resolvido após salvar a configuração do RenoDX.");
@@ -709,7 +709,7 @@ public sealed class RenoDxDeploymentService
 
             try
             {
-                RenoDxIniOverrideManager.Cleanup(iniState);
+                RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
                 UpstreamEngineIniFileManager.Cleanup(engineIniState);
                 foreach (var file in record.Files)
                     if (File.Exists(file.Path)) File.Delete(file.Path);
@@ -718,7 +718,9 @@ public sealed class RenoDxDeploymentService
             {
                 // Only files that existed are put back: a removal never recreates something that was absent.
                 var snapshots = new List<FileSnapshot>();
-                if (iniSnapshotPath is not null && iniSnapshot is not null) snapshots.Add(new(iniSnapshotPath, iniSnapshot));
+                if (iniSnapshotPath is not null && iniSnapshot is not null)
+                    snapshots.Add(new(iniSnapshotPath, iniSnapshot,
+                        RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(iniSnapshotPath) ?? iniSnapshotPath, game.InstallPath)));
                 if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(new(engineIniSnapshotPath, engineIniSnapshot));
                 var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
                 if (notes.Count > 0)
@@ -735,15 +737,19 @@ public sealed class RenoDxDeploymentService
         }
     }
 
-    /// <summary>A file's bytes before an operation; null bytes = the file did not exist.</summary>
-    internal sealed record FileSnapshot(string Path, byte[]? Bytes);
+    /// <summary>
+    /// A file's bytes before an operation; null bytes = the file did not exist. <paramref name="LinkPolicy"/> says which
+    /// symlink the restore may write through (null: none).
+    /// </summary>
+    internal sealed record FileSnapshot(string Path, byte[]? Bytes, UserFileLinkPolicy? LinkPolicy = null);
 
     private string SnapshotFallbackDirectory => System.IO.Path.Combine(_cacheDir, "restore-snapshots");
 
     /// <summary>
     /// Puts each snapshot back atomically (or deletes a file that did not exist). A file that cannot be restored
     /// keeps its previous bytes in a sidecar next to it, else under <paramref name="fallbackDirectory"/>, and the
-    /// returned notes say where; nothing is dropped silently. Runs to completion whatever the caller's token.
+    /// returned notes say where; nothing is dropped silently. A file that still holds its snapshot bytes is left alone.
+    /// Runs to completion whatever the caller's token, and whatever one snapshot throws.
     /// </summary>
     internal static IReadOnlyList<string> RestoreSnapshots(IEnumerable<FileSnapshot> snapshots, string fallbackDirectory)
     {
@@ -754,16 +760,22 @@ public sealed class RenoDxDeploymentService
             {
                 if (snapshot.Bytes is not null)
                 {
-                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(snapshot.Path)!);
-                    UserFileWriter.WriteAllBytes(snapshot.Path, snapshot.Bytes);
+                    if (File.Exists(snapshot.Path) && File.ReadAllBytes(snapshot.Path).AsSpan().SequenceEqual(snapshot.Bytes))
+                        continue;
+                    var directory = System.IO.Path.GetDirectoryName(snapshot.Path);
+                    if (string.IsNullOrEmpty(directory))
+                        throw new IOException($"Cannot resolve the folder of {snapshot.Path}.");
+                    Directory.CreateDirectory(directory);
+                    UserFileWriter.WriteAllBytes(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
                 }
                 else if (File.Exists(snapshot.Path))
                 {
                     File.Delete(snapshot.Path);
                 }
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
+                // Rollback must finish: any fault (bad recorded path, refused link, I/O) keeps the bytes and is reported.
                 notes.Add(KeepSnapshot(snapshot, ex, fallbackDirectory));
             }
         }
@@ -775,11 +787,10 @@ public sealed class RenoDxDeploymentService
         if (snapshot.Bytes is null)
             return $"Could not remove {snapshot.Path}: {failure.Message}";
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-        var candidates = new[]
-        {
-            $"{snapshot.Path}.rhi-snapshot-{stamp}",
-            System.IO.Path.Combine(fallbackDirectory, $"{stamp}-{System.IO.Path.GetFileName(snapshot.Path)}")
-        };
+        var candidates = new List<string>();
+        if (System.IO.Path.IsPathFullyQualified(snapshot.Path))
+            candidates.Add($"{snapshot.Path}.rhi-snapshot-{stamp}");
+        candidates.Add(System.IO.Path.Combine(fallbackDirectory, $"{stamp}-{SafeFileName(System.IO.Path.GetFileName(snapshot.Path))}"));
         var errors = new List<string>();
         foreach (var candidate in candidates)
         {
@@ -789,12 +800,19 @@ public sealed class RenoDxDeploymentService
                 UserFileWriter.WriteAllBytes(candidate, snapshot.Bytes);
                 return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
                 errors.Add(ex.Message);
             }
         }
         return $"Could not restore {snapshot.Path} ({failure.Message}) nor keep a copy of its previous contents ({string.Join("; ", errors)})";
+    }
+
+    private static string SafeFileName(string name)
+    {
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "snapshot" : safe;
     }
 
     public static string ResolveAddonDeployPath(string binaryDirectory)

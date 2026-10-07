@@ -577,6 +577,15 @@ public static class UiLocalizationService
         ("Upstream wikiUnlinks explicitly removes this title from RenoDX deployment.", "O wikiUnlinks do upstream remove explicitamente este jogo da instalação RenoDX."),
         // Remote/UI [renodx] pair that is not a plain INI entry (#122). The key follows the fragment.
         ("RenoDX setting refused: not a plain INI key and value: ", "Configuração do RenoDX recusada: chave e valor não são uma entrada INI simples: "),
+        // ReShade.ini writes (review w1-renodx-p0 findings 3-6). The path (or "link -> target") follows each fragment.
+        ("Read-only file not replaced (RHI never overwrites a file you locked; make it writable to let RHI change it): ",
+            "Arquivo somente leitura não substituído (o RHI nunca sobrescreve um arquivo que você bloqueou; torne-o gravável para o RHI poder alterá-lo): "),
+        ("Symbolic link not followed (RHI does not write through this link): ",
+            "Link simbólico não seguido (o RHI não grava através deste link): "),
+        ("ReShade.ini link not followed: its target must be a file named reshade.ini inside the game folder or the ReShade folder in your config directory. Link: ",
+            "Link do ReShade.ini não seguido: o destino deve ser um arquivo chamado reshade.ini dentro da pasta do jogo ou da pasta ReShade no seu diretório de configuração. Link: "),
+        ("Written content did not verify; the original file was kept: ", "O conteúdo gravado não pôde ser verificado; o arquivo original foi mantido: "),
+        (" A temporary file could not be removed: ", " Um arquivo temporário não pôde ser removido: "),
         // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.
         ("RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: ",
             "Instalação do RenoDX recusada: um arquivo que o RHI Linux não gerencia já tem o nome deste add-on. Mova ou remova-o e instale novamente: "),

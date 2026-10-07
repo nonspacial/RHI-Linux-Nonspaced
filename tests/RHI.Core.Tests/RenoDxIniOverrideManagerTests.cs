@@ -161,7 +161,7 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
 
     [Fact]
     [SupportedOSPlatform("linux")]
-    public void Apply_KeepsFileModeAndWritesThroughASymlinkedIni()
+    public void Apply_KeepsFileModeAndWritesThroughASymlinkedIniInsideTheGame()
     {
         var shared = Path.Combine(_root, "shared");
         Directory.CreateDirectory(shared);
@@ -173,7 +173,8 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
         var link = Path.Combine(game, "ReShade.ini");
         File.CreateSymbolicLink(link, real);
 
-        RenoDxIniOverrideManager.Apply(game, new Dictionary<string, string> { ["Set_Path"] = "1" });
+        // The shared ini lives in the game root (_root), one level above the binary folder.
+        RenoDxIniOverrideManager.Apply(game, new Dictionary<string, string> { ["Set_Path"] = "1" }, gameRoot: _root);
 
         Assert.NotNull(new FileInfo(link).LinkTarget);
         Assert.Contains("Set_Path=1", File.ReadAllText(real));
