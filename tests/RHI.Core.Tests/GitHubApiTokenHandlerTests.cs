@@ -33,6 +33,94 @@ public sealed class GitHubApiTokenHandlerTests
     }
 
     [Fact]
+    public async Task SendAsync_WorldReadableTokenFile_IsRestrictedTo0600AndReportedOnce()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-gh-token-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var tokenPath = Path.Combine(root, "github_api.txt");
+            await File.WriteAllTextAsync(tokenPath, "github...oken\n");
+            File.SetUnixFileMode(tokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+            var capture = new CaptureHandler();
+            var handler = new GitHubApiTokenHandler(tokenPath, capture);
+            var notices = new List<bool>();
+            handler.TokenFileExposed += (_, e) => notices.Add(e.Restricted);
+            using var http = new HttpClient(handler);
+
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(tokenPath));
+            Assert.Equal([true], notices);
+            Assert.All(capture.Requests, r => Assert.Equal("github...oken", r.Authorization?.Parameter));
+            Assert.Equal("github...oken\n", await File.ReadAllTextAsync(tokenPath)); // contents untouched
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_ExposedTokenFileThatCannotBeRestricted_IsNotUsed()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-gh-token-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var tokenPath = Path.Combine(root, "github_api.txt");
+            await File.WriteAllTextAsync(tokenPath, "github...oken\n");
+            File.SetUnixFileMode(tokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+            var capture = new CaptureHandler();
+            var handler = new GitHubApiTokenHandler(tokenPath, capture)
+            {
+                SetUnixFileMode = (_, _) => throw new UnauthorizedAccessException("not the owner")
+            };
+            var notices = new List<bool>();
+            handler.TokenFileExposed += (_, e) => notices.Add(e.Restricted);
+            using var http = new HttpClient(handler);
+
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+
+            Assert.All(capture.Requests, r => Assert.Null(r.Authorization));
+            Assert.Equal([false], notices);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_PrivateTokenFile_RaisesNoNotice()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-gh-token-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var tokenPath = Path.Combine(root, "github_api.txt");
+            await File.WriteAllTextAsync(tokenPath, "github...oken\n");
+            File.SetUnixFileMode(tokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            var capture = new CaptureHandler();
+            var handler = new GitHubApiTokenHandler(tokenPath, capture);
+            var notices = 0;
+            handler.TokenFileExposed += (_, _) => notices++;
+            using var http = new HttpClient(handler);
+
+            await http.GetAsync("https://api.github.com/repos/RankFTW/RHI/releases/latest");
+
+            Assert.Equal("github...oken", capture.Requests[0].Authorization?.Parameter);
+            Assert.Equal(0, notices);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SendAsync_IgnoresWhitespaceOnlyToken()
     {
         var root = Path.Combine(Path.GetTempPath(), "rhi-gh-token-" + Guid.NewGuid().ToString("N"));

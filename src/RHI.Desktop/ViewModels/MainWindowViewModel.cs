@@ -970,6 +970,18 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// github_api.txt could be read by other users (Refs #36): say once whether RHI restricted it
+    /// to 0600 or is ignoring the token. Must run on the UI thread.
+    /// </summary>
+    public void ReportGitHubTokenFileExposed(bool restricted) => StatusText = _statusNotice.Raise(GitHubTokenFileExposedText(restricted), StatusText);
+
+    public static string GitHubTokenFileExposedText(bool restricted) => restricted
+        ? L("O github_api.txt podia ser lido por outros usuários deste computador; o RHI restringiu o acesso só à sua conta (chmod 600).",
+            "github_api.txt could be read by other users on this computer; RHI restricted it to your account only (chmod 600).")
+        : L("O github_api.txt pode ser lido por outros usuários e o RHI não conseguiu restringi-lo; o token não será usado até você executar chmod 600 nele.",
+            "github_api.txt can be read by other users and RHI could not restrict it; the token is not used until you run chmod 600 on it.");
+
     partial void OnStatusTextChanged(string value)
     {
         var decorated = _statusNotice.Decorate(value);
