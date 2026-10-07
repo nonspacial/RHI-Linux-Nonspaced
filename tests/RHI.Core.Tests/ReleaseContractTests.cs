@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Reflection;
+using System.Runtime.Versioning;
 using System.Windows.Input;
 using RHI.Core.Models;
 using RHI.Desktop.ViewModels;
@@ -58,6 +59,13 @@ public sealed class ReleaseContractTests
     [Fact]
     public void InstallableRows_KeepTheirAction()
         => Assert.True(new ComponentRowViewModel(new ManagedComponent { Kind = ManagedComponentKind.ReShade, DisplayName = "ReShade" }, new NoOpCommand()).HasAction);
+
+    [Fact]
+    public void LinuxOnlyAssemblies_DeclareLinux_SoCa1416CannotBreakTheWarningGate()
+    {
+        foreach (var assembly in new[] { typeof(ReShadeArchiveExtractor).Assembly, typeof(ComponentRowViewModel).Assembly, typeof(ReleaseContractTests).Assembly })
+            Assert.Contains(assembly.GetCustomAttributes<SupportedOSPlatformAttribute>(), a => a.PlatformName == "linux");
+    }
 
     private sealed class NoOpCommand : ICommand
     {

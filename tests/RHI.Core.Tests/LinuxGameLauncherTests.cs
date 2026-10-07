@@ -13,7 +13,6 @@ public sealed class LinuxGameLauncherTests : IDisposable
     [Fact]
     public async Task WinePrefixCommand_RunsFromExecutableDirectory()
     {
-        if (OperatingSystem.IsWindows()) return;
         // Fake wine records the cwd it was started in; the real one maps that to the Windows cwd.
         var fakeWine = Path.Combine(_root, "fake wine");
         var output = Path.Combine(_root, "wine.out");

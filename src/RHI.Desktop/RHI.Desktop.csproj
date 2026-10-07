@@ -20,4 +20,10 @@
     <ProjectReference Include="../RHI.Core/RHI.Core.csproj" />
     <ProjectReference Include="../RHI.Platform.Linux/RHI.Platform.Linux.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Linux-only app over the Linux-only RHI.Platform.Linux; without this every call into it is CA1416. -->
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>linux</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>

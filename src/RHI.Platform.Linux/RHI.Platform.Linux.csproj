@@ -13,4 +13,10 @@
       <_Parameter1>RHI.Core.Tests</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
+  <ItemGroup>
+    <!-- Linux-only assembly: clears the CA1416 class for Unix-only APIs (File.SetUnixFileMode, UnixCreateMode). -->
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>linux</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
