@@ -67,6 +67,7 @@ public sealed class LibraryScanReportTests : IDisposable
     [Fact]
     public async Task UnreadableSteamLibrary_IsSkippedWithAWarning_AndOtherLibrariesStillList()
     {
+        if (!OperatingSystem.IsLinux()) return; // permission bits are the fixture
         var steamRoot = Directory.CreateDirectory(Path.Combine(_root, "Steam")).FullName;
         var locked = Directory.CreateDirectory(Path.Combine(_root, "locked", "steamapps")).FullName;
         var good = Path.Combine(_root, "good");
