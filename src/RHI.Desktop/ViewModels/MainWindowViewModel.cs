@@ -898,6 +898,23 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyDlss();
     }
 
+    private readonly OneShotStatusNotice _statusNotice = new();
+
+    /// <summary>
+    /// GitHub answered 401 to the saved API token (Refs #133): say so once; the token
+    /// handler already continues anonymously. Must run on the UI thread.
+    /// </summary>
+    public void ReportGitHubTokenRejected() => StatusText = _statusNotice.Raise(L(
+        "O GitHub rejeitou o token salvo em github_api.txt (revogado ou expirado); usando acesso anônimo (60 requisições/hora) até o arquivo ser substituído.",
+        "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."));
+
+    partial void OnStatusTextChanged(string value)
+    {
+        var decorated = _statusNotice.Decorate(value);
+        if (!ReferenceEquals(decorated, value))
+            StatusText = decorated;
+    }
+
     partial void OnIsSelectionProbeBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanSelectLumaMode));
