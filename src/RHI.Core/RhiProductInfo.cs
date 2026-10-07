@@ -14,7 +14,8 @@ public static class RhiProductInfo
     public static string UserAgent { get; } = "RHI-Linux/" + Version;
 
     public const string RepositoryUrl = "https://github.com/wizardkof/RHI-Linux";
-    public const string MotdUrl = "https://raw.githubusercontent.com/wizardkof/RHI-Linux/main/motd.md";
+    /// <summary>motd.md at the root of this fork's main branch; until it is published there the fetch 404s and no message is shown.</summary>
+    public const string MotdUrl = "https://raw.githubusercontent.com/nonspacial/RHI-Linux-Nonspaced/main/motd.md";
 
     /// <summary>Drops SemVer build metadata ("+commit") so the version stays stable across builds.</summary>
     internal static string NormalizeVersion(string? informationalVersion)

@@ -34,10 +34,10 @@ done
 
 command -v dotnet >/dev/null 2>&1 || fail "dotnet is not available in PATH; validation was NOT RUN"
 
-# Public-release hygiene: only user-facing Markdown belongs at the repository root.
+# Public-release hygiene: only user-facing Markdown (and the app's motd.md) belongs at the repository root.
 while IFS= read -r md; do
     case "$md" in
-        README.md|UPSTREAM.md) ;;
+        README.md|UPSTREAM.md|motd.md) ;;
         *) fail "internal Markdown file found in public root: $md" ;;
     esac
 done < <(find . -maxdepth 1 -type f -name '*.md' -printf '%f\n' | sort)

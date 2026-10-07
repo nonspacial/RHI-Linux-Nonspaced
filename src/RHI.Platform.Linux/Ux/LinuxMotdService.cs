@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using RHI.Core;
 using RHI.Platform.Linux.Paths;
 
@@ -10,9 +11,10 @@ public sealed record LinuxMotdMessage(string Text, string Sha256, bool AlreadySe
 
 /// <summary>
 /// Fetches the Linux fork's message of the day. A network failure or missing motd.md is a silent
-/// no-op: MOTD must never block application startup.
+/// no-op: MOTD must never block application startup. HTML comments in motd.md are maintainer
+/// notes and are never shown; a file holding only comments means "no message".
 /// </summary>
-public sealed class LinuxMotdService
+public sealed partial class LinuxMotdService
 {
     private sealed class StateDocument
     {
@@ -38,7 +40,7 @@ public sealed class LinuxMotdService
             request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
             using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
-            var text = (await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)).Trim();
+            var text = HtmlComment().Replace(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false), "").Trim();
             if (string.IsNullOrWhiteSpace(text)) return null;
             if (text.Length > 32_000) text = text[..32_000];
             var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
@@ -75,4 +77,7 @@ public sealed class LinuxMotdService
             return new StateDocument();
         }
     }
+
+    [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
+    private static partial Regex HtmlComment();
 }
