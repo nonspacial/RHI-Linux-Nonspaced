@@ -82,3 +82,7 @@ Direct launches (standalone Wine prefixes and manual games) start in the launch 
 
 - Ported: the stable-channel page fetch reads the body of a 5xx answer and uses it only when it carries the add-on download link; the setup exe it points to still needs a success status and passes the PE check. 4xx and other statuses stay failures.
 - Linux addition: when reshade.me is down (5xx without the link, unreachable or timed out), a stable install falls back to the newest stable copy already in the ReShade cache and says so; with no cached copy it fails with "try again later" before touching any game file. The fallback never replaces a newer installed ReShade with an older cached one. The update check reports the outage, keeps the installed ReShade and waits for the next check. A 404 never falls back.
+
+### #140 — Available HDR Mods header and ✗ legibility (2.8.5)
+
+- Ported: column headers and ✗ marks use the theme's secondary text colour (`RhiSecondaryTextBrush`, #A0AABB) instead of 70 % opacity text and the muted grey. Measured on the #121518 dialog in the headless render: ✗ 4.19:1 → 7.82:1; headers 8.03:1 → 7.82:1 (already legible on Linux; now on the theme colour like the rest of the app).
