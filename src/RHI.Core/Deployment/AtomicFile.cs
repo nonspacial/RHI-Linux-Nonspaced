@@ -30,29 +30,7 @@ public static class AtomicFile
 
     // ---- whole-content writes -------------------------------------------------------------------
 
-    public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes)
-    {
-        var temp = TempPathFor(path);
-        try
-        {
-            using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, FileOptions.None))
-            {
-                using var output = IoMeter.Wrap(file);
-                output.Write(bytes);
-                output.Flush();
-                file.Flush(flushToDisk: true);
-            }
-            var expected = SHA256.HashData(bytes);
-            if (!CryptographicOperations.FixedTimeEquals(expected, FileHash.Sha256(temp)))
-                throw new IOException($"Written content did not verify for {path}.");
-            MoveIntoPlace(temp, path);
-        }
-        catch
-        {
-            FileCleanup.TryDelete(temp);
-            throw;
-        }
-    }
+    public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes) => WriteVerified(path, bytes, null, null);
 
     public static async Task WriteAllBytesAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default)
     {
@@ -99,6 +77,105 @@ public static class AtomicFile
         preamble.CopyTo(all, 0);
         body.CopyTo(all, preamble.Length);
         return all;
+    }
+
+    // ---- store files -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Replaces a store file (settings, library, preferences, caches) durably and verified. A symlinked
+    /// store file (dotfiles kept in a repository, a config folder shared across machines) stays a link:
+    /// the file the chain ends at is replaced. That file keeps its Unix mode unless <paramref name="mode"/>
+    /// asks for another (e.g. 0600). The folder is created when missing.
+    /// </summary>
+    public static void WriteStoreFile(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode = null)
+    {
+        var target = FinalLinkTarget(Path.GetFullPath(path));
+        mode ??= ExistingMode(target);
+        var directory = Path.GetDirectoryName(target) ?? throw new IOException($"{target} has no parent directory.");
+        CreateDirectoryDurable(directory);
+        WriteVerified(target, bytes, mode, null);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="bytes"/> to a new file that must not exist yet (a quarantine copy), fsyncs and
+    /// verifies it and fsyncs its folder. A copy that does not verify is removed and the write fails.
+    /// </summary>
+    public static void WriteNew(string path, ReadOnlySpan<byte> bytes)
+    {
+        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        {
+            file.Write(bytes);
+            file.Flush(flushToDisk: true);
+        }
+        if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(path)))
+        {
+            FileCleanup.TryDelete(path);
+            throw new IOException($"Written content did not verify for {path}.");
+        }
+        FsyncDirectoryOf(path);
+    }
+
+    /// <summary>
+    /// The one write path: unique temp beside <paramref name="target"/>, write (through
+    /// <paramref name="wrapOutput"/> when given — a test seam), fsync, full verify, exact mode, rename,
+    /// directory fsync. Returns whether the directory fsync succeeded (the data is durable either way).
+    /// </summary>
+    private static bool WriteVerified(string target, ReadOnlySpan<byte> bytes, UnixFileMode? exactMode, Func<Stream, Stream>? wrapOutput)
+    {
+        var temp = TempPathFor(target);
+        try
+        {
+            var file = CreateTemp(temp, FileOptions.None, exactMode);
+            Stream output = file;
+            try
+            {
+                output = IoMeter.Wrap(file);
+                if (wrapOutput is not null) output = wrapOutput(output);
+                output.Write(bytes);
+                output.Flush();
+                file.Flush(flushToDisk: true);
+            }
+            finally
+            {
+                if (!ReferenceEquals(output, file)) output.Dispose();
+                file.Dispose();
+            }
+            if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(temp)))
+                throw new IOException($"Written content did not verify for {target}.");
+            // The create mode is filtered by the umask; set the exact bits asked for.
+            if (exactMode is { } mode && !OperatingSystem.IsWindows())
+                File.SetUnixFileMode(temp, mode);
+            File.Move(temp, target, overwrite: true);
+        }
+        catch
+        {
+            FileCleanup.TryDelete(temp);
+            throw;
+        }
+        return FsyncDirectoryOf(target);
+    }
+
+    /// <summary>The file a symlink chain ends at (absolute), or <paramref name="fullPath"/> itself.</summary>
+    private static string FinalLinkTarget(string fullPath)
+    {
+        try
+        {
+            var info = new FileInfo(fullPath);
+            if (info.LinkTarget is null) return fullPath;
+            return info.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? fullPath;
+        }
+        catch (IOException)
+        {
+            // A link loop or an unreadable link: write the path as given (replaces the link).
+            return fullPath;
+        }
+    }
+
+    private static UnixFileMode? ExistingMode(string fullPath)
+    {
+        if (OperatingSystem.IsWindows()) return null;
+        try { return File.Exists(fullPath) ? File.GetUnixFileMode(fullPath) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     // ---- copies ----------------------------------------------------------------------------------

@@ -51,6 +51,28 @@ public sealed class DeploymentToolkitTests : IDisposable
         Assert.Empty(Directory.GetFiles(_root));
     }
 
+    [Fact]
+    public void WriteStoreFile_AppliesAnExplicitModeExactly_AndCreatesTheFolder()
+    {
+        var path = Path.Combine(_root, "new-dir", "token.txt");
+        AtomicFile.WriteStoreFile(path, "secret"u8, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        Assert.Equal("secret", File.ReadAllText(path));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!));
+    }
+
+    [Fact]
+    public void WriteNew_RefusesAnExistingFile_AndLeavesItUntouched()
+    {
+        File.WriteAllText(P("copy.json"), "original");
+        Assert.Throws<IOException>(() => AtomicFile.WriteNew(P("copy.json"), "other"u8));
+        Assert.Equal("original", File.ReadAllText(P("copy.json")));
+
+        AtomicFile.WriteNew(P("fresh.json"), "fresh"u8);
+        Assert.Equal("fresh", File.ReadAllText(P("fresh.json")));
+    }
+
     // ---- TrustedDownload ---------------------------------------------------------------------------
 
     [Theory]

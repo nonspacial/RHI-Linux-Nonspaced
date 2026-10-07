@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Persistence;
 
@@ -180,7 +181,7 @@ public static class JsonStoreQuarantine
                 if (File.Exists(target)) continue;
                 try
                 {
-                    DurableFile.WriteNew(target, bytes);
+                    AtomicFile.WriteNew(target, bytes);
                     return target;
                 }
                 catch (IOException) when (File.Exists(target))
@@ -211,7 +212,7 @@ public static class JsonStoreQuarantine
 /// that cannot be read or parsed is copied aside to <c>&lt;file&gt;.corrupt-&lt;utc timestamp&gt;</c>
 /// and, for user data, never overwritten: <see cref="Save"/> throws
 /// <see cref="JsonStoreUnavailableException"/> until the file reads again. Saves are atomic and
-/// durable (<see cref="DurableFile"/>). Callers keep their own lock around load-modify-save.
+/// durable (<see cref="AtomicFile.WriteStoreFile"/>). Callers keep their own lock around load-modify-save.
 /// <para>A leading UTF-8 byte order mark (editors offer to add one) is ignored, as
 /// <see cref="File.ReadAllText(string)"/> did before.</para>
 /// <para>Reading is fail-closed: content the parser or the <c>parse:</c> callback rejects counts as
@@ -309,7 +310,7 @@ public sealed class JsonFileStore<T> where T : class
         ArgumentNullException.ThrowIfNull(value);
         EnsureWritable();
         if (_kind == JsonStoreKind.Cache) Load(); // copies an unreadable cache aside before replacing it
-        DurableFile.WriteAllBytes(FilePath, _serialize(value));
+        AtomicFile.WriteStoreFile(FilePath, _serialize(value));
         JsonStoreQuarantine.Forget(FilePath);
     }
 

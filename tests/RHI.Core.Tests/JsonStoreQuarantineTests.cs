@@ -369,7 +369,7 @@ public sealed class JsonStoreQuarantineTests : IDisposable
 
     [Fact]
     [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    public void DurableFile_SymlinkedStoreFile_StaysALinkAndTheTargetKeepsItsMode()
+    public void StoreFileWrite_SymlinkedStoreFile_StaysALinkAndTheTargetKeepsItsMode()
     {
         var dir = Path.Combine(_root, "symlink");
         var target = Path.Combine(dir, "dotfiles", "settings.json");
@@ -389,7 +389,7 @@ public sealed class JsonStoreQuarantineTests : IDisposable
 
     [Fact]
     [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    public void DurableFile_Replace_KeepsAModeWiderThanTheUmaskAllows()
+    public void StoreFileWrite_Replace_KeepsAModeWiderThanTheUmaskAllows()
     {
         var path = Path.Combine(_root, "mode", "shared.json");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

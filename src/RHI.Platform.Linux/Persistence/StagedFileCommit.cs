@@ -1,3 +1,5 @@
+using RHI.Core.Deployment;
+
 namespace RHI.Platform.Linux.Persistence;
 
 /// <summary>
@@ -49,7 +51,7 @@ public static class StagedFileCommit
                 // Checked again right before each write: a concurrent save in between aborts too.
                 if (!Unchanged(write))
                     throw new IOException($"{write.Path} changed while the change was being written.");
-                DurableFile.WriteAllBytes(write.Path, write.After);
+                AtomicFile.WriteStoreFile(write.Path, write.After);
                 written.Add(write);
             }
         }
@@ -61,8 +63,8 @@ public static class StagedFileCommit
                 var done = written[i];
                 try
                 {
-                    if (done.Before is null) File.Delete(done.Path);
-                    else DurableFile.WriteAllBytes(done.Path, done.Before);
+                    if (done.Before is null) AtomicFile.Delete(done.Path);
+                    else AtomicFile.WriteStoreFile(done.Path, done.Before);
                 }
                 catch (Exception restoreError) when (restoreError is IOException or UnauthorizedAccessException)
                 {
