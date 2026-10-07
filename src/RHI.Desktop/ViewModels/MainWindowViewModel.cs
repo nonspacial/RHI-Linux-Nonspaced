@@ -887,7 +887,7 @@ public partial class MainWindowViewModel : ObservableObject
     // those computed states on every busy transition so both surfaces converge automatically.
     partial void OnIsBusyChanged(bool value)
     {
-        _statusNotice.SetOperationRunning(value || IsSelectionProbeBusy);
+        _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanRemoveManualGame));
@@ -903,12 +903,14 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>
-    /// GitHub answered 401 to the saved API token (Refs #133): say so once; the token
-    /// handler already continues anonymously. Must run on the UI thread.
+    /// GitHub answered 401 to the saved API token (Refs #133): say so once, appended to the
+    /// current status line (an operation's result stays visible); the token handler already
+    /// continues anonymously. Must run on the UI thread.
     /// </summary>
     public void ReportGitHubTokenRejected() => StatusText = _statusNotice.Raise(L(
         "O GitHub rejeitou o token salvo em github_api.txt (revogado ou expirado); usando acesso anônimo (60 requisições/hora) até o arquivo ser substituído.",
-        "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."));
+        "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."),
+        StatusText);
 
     partial void OnStatusTextChanged(string value)
     {
@@ -929,7 +931,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnIsSelectionProbeBusyChanged(bool value)
     {
-        _statusNotice.SetOperationRunning(IsBusy || value);
+        _statusNotice.SetSelectionProbeBusy(value);
         OnPropertyChanged(nameof(CanSelectLumaMode));
         NotifyUal();
         NotifyShortFuse();
