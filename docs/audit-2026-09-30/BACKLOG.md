@@ -9,12 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 102 |
+| `audit-remediation` | 104 |
 | `upstream-sync/2.7.9` | 14 |
 | `upstream-sync/2.8.5` | 13 |
 | `feature-parity` | 13 |
 | (none) | 1 (#101 overview) |
-| **Total** | **143** |
+| **Total** | **145** |
 
 ## upstream-sync/2.7.9
 
@@ -171,8 +171,21 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #128 | fix-responsive follow-up | Responsive panels: share invalidation list, watch late children, pin Avalonia internals; tray restore un-maximises | audit:ui, hygiene | P3 |
 | #142 | wave3 (up-129 re-review) | Tests write fake add-ons into the real ~/.cache/rhi-linux (isolate all XDG paths in tests; verify cache before reuse) | audit:data-safety | P0 |
 | #143 | wave3 harness, up-131 lane | Portuguese-only message in the English UI when an automatic ReShade dependency fails | audit:ui | P2 |
+| #144 | w1-policy review nit 10 (#56) | Heroic and Wine-prefix detectors: report skipped entries via DetectorDiagnostics | audit:detection | P3 |
+| #145 | w1-detect correction (F9 follow-up) | Manual entries with a missing folder are hidden; show them as 'folder missing' and keep them removable | audit:detection | P2 |
 
 Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, #44 `c4cc212`, #127/#128 `9983d1b`. Owner decisions (recorded on the tickets): a Lutris entry with no real game folder (Rekordbox) is not listed (`884c716`); games inside Lutris launcher prefixes become their own cards (#119). Integration fixes: scanner merge keeps `RequiresExplicitPatchTarget` (`963059c`, fix-44 review 1); direct-wine Proton prefixes report native-Wayland HDR as Blocked (`327ea7f`, fix-50 review 4).
+
+### Wave 1 — `integration/w1`
+
+Lanes (`w1/<lane>`, reviews and progress notes in `/mnt/vdo_storage/worktrees/rhi-linux/reviews/w1-*.md`) merged with `--no-ff` into `integration/w1` (from `main` @ `0ece748`; open until Robbie's GUI check and the install; no ticket is closed by the merge):
+hygiene `1becc79` (#1–#8), core `1725848` (#42 #31 #33 #23 #39 #40 #32 #118), stores `58bb73e` (#57 #36 #38), policy `de00a45` (#45 #62 #55 #56 #52 #53 #54 #102–#105 #43 #61), detect `e7d1508` (#47 #66 #49 #67 #51 #59 #64 #65 #69 #70 #58 #125), ui-found `9ea7989` (#88 #73 #79 #143 #78), renodx-p0 `aaa7c9b` (#25 #108 #29 #121 #122 #141).
+One implementation of each shared primitive after the integration:
+- Atomic writes: `RHI.Core.Deployment.AtomicFile` only — store files (`WriteStoreFile`/`WriteNew`; `DurableFile` deleted, `StagedFileCommit` built on it, `074c8dc`), user files (`ReplaceUserFile`: mode kept, read-only refused, reshade.ini link policy, verify, dir fsync; `UserFileWriter` deleted, `4049bcf`), archive members (`StageStreamAsync` with a fixed mode; ReShade extractor, `e982bb1`), policy's caches (`9dc5c86`).
+- Downloads: `TrustedDownloadPolicy`/`TrustedDownload` only (`AddonHostPolicy` deleted): single-label `*.github.io`, port/user-info/DNS-only, one `UntrustedDownloadException` with a per-policy fixed prefix and PT-BR row; RenoDX (incl. HEAD), RenoDX Upgrade, ReShade Addon Manager, DOF Fix and DLSS go through it (`4049bcf`).
+- Logs: one `AppLog` at `$XDG_STATE_HOME/rhi-linux/logs/rhi.log` (rotated ×3, fsynced); `errors.log`/`UiErrorLog` merged into it; `UiExceptionGuard.Install` is the only unhandled-exception hook (contract test); `recovery.log` and `launch/` beside it; store quarantines and RenoDX rollback notes also logged (`9ea7989`, `4ce7a35`). Tests attach a per-flow log (`AppLog.UseInThisFlow`, `429cd3c`).
+- One UI store-write helper (`TryPersist`, stores' refusal text + ui-found's logging; dropdowns revert, add/edit/remove/reset mutate a copy), one manual-removal helper (`RemoveManualEntriesFor`), one path canonicaliser (`PathIdentity`; detect's and stores' copies deleted, `aa2cf0b`, `87c6cf9`), one `LinuxPaths.StateHome`, one `SafeFileEnumeration` (no `SearchOption.AllDirectories` in `src`, contract test), one localisation table (`tools/l10n-migrate.py` moved 79 lane pairs).
+Lane follow-ups filed: #144, #145.
 
 ## feature-parity
 
