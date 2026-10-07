@@ -18,7 +18,7 @@ public sealed class OrphanedProtonPrefixTests
     private static string FakeWine(DetectionTestTree tree, params string[] parts)
     {
         var path = tree.File("#!/bin/sh\n", parts);
-        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        if (OperatingSystem.IsLinux()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         return path;
     }
 
