@@ -128,6 +128,31 @@ public sealed class UpstreamGameLibraryPolicyServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_SplitChildOfARefusedManualEntry_KeepsFolderNotAllowed()
+    {
+        // A manual entry whose root the guard refuses stays visible with its "folder not allowed" state; a
+        // manifest split must not hand its children a clean state (integration w1 detect review 4).
+        var json = """
+        { "version": 3, "splitGames": { "Bundle": [ { "name": "Bundle Part One", "subPath": "One" } ] } }
+        """;
+        using var http = Http(json);
+        var policy = new UpstreamGameLibraryPolicyService(
+            new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"));
+        using var root = new TempTree();
+        var bundle = root.Dir("Bundle");
+        Directory.CreateDirectory(Path.Combine(bundle, "One"));
+        var refused = Game("Bundle", bundle);
+        refused.IsManuallyAdded = true;
+        refused.GameRootNotAllowed = true;
+        refused.RequiresExplicitPatchTarget = true;
+
+        var child = Assert.Single(await policy.ApplyAsync([refused]));
+
+        Assert.Equal("Bundle Part One", child.Name);
+        Assert.True(child.GameRootNotAllowed);
+    }
+
+    [Fact]
     public async Task ApplyAsync_AppliesInstallPathLaunchAndCrossPlatformMetadata()
     {
         var json = """
