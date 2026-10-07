@@ -55,25 +55,19 @@ public sealed class ToolbarPanel : Panel
 
     private const double FitTolerance = 1;
 
-    // Properties the width estimate reads; a change to any of them on a child or its logical descendants (outside
-    // the panel's own visibility writes) invalidates the cached estimates.
-    private static readonly HashSet<AvaloniaProperty> EstimateInputs =
-    [
-        ContentControl.ContentProperty, TextBlock.TextProperty, IsVisibleProperty,
-        TextBlock.FontSizeProperty, TextBlock.FontFamilyProperty, TextBlock.FontWeightProperty, TextBlock.FontStyleProperty,
-        TextBlock.FontStretchProperty, TextBlock.PaddingProperty,
-        TemplatedControl.FontSizeProperty, TemplatedControl.FontFamilyProperty, TemplatedControl.FontWeightProperty,
-        TemplatedControl.FontStyleProperty, TemplatedControl.FontStretchProperty, TemplatedControl.PaddingProperty,
-        TemplatedControl.BorderThicknessProperty, Border.PaddingProperty, Border.BorderThicknessProperty,
-        MarginProperty, WidthProperty, MinWidthProperty, MaxWidthProperty,
-        StackPanel.SpacingProperty, StackPanel.OrientationProperty
-    ];
-
-    private readonly List<Control> _watched = [];
+    // A change to any WidthEstimator.Inputs property on a descendant (outside the panel's own visibility writes), or
+    // a child added/removed anywhere below the panel, drops the cached estimates (EstimateInputWatcher).
+    private readonly EstimateInputWatcher _watcher;
     private bool _applying;
     private Estimates? _estimates;
 
     static ToolbarPanel() => AffectsMeasure<ToolbarPanel>(SpacingProperty, LeadingSpacingProperty, MinGapProperty);
+
+    public ToolbarPanel() => _watcher = new EstimateInputWatcher(this, IsEstimateInput, () =>
+    {
+        _estimates = null;
+        InvalidateMeasure();
+    });
 
     public static ToolbarSlot GetSlot(Control c) => c.GetValue(SlotProperty);
     public static void SetSlot(Control c, ToolbarSlot v) => c.SetValue(SlotProperty, v);
@@ -280,52 +274,32 @@ public sealed class ToolbarPanel : Panel
         return new Rect(x, (height - h) / 2, c.DesiredSize.Width, h);
     }
 
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        Watch();
+        _watcher.Watch();
+        _estimates = null;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        Unwatch();
+        _watcher.Unwatch();
     }
 
+    // Also covers changes while detached (the watcher only runs while attached).
     protected override void ChildrenChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         base.ChildrenChanged(sender, e);
         _estimates = null;
-        if (!this.IsAttachedToVisualTree()) return;
-        Unwatch();
-        Watch();
     }
 
-    private void Watch()
+    private bool IsEstimateInput(Control sender, AvaloniaPropertyChangedEventArgs e)
     {
-        foreach (var child in Children)
-            foreach (var c in child.GetLogicalDescendants().OfType<Control>().Prepend(child))
-            {
-                c.PropertyChanged += OnWatchedPropertyChanged;
-                _watched.Add(c);
-            }
-        _estimates = null;
-    }
-
-    private void Unwatch()
-    {
-        foreach (var c in _watched) c.PropertyChanged -= OnWatchedPropertyChanged;
-        _watched.Clear();
-    }
-
-    private void OnWatchedPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-    {
-        if (_applying || !EstimateInputs.Contains(e.Property)) return;
+        if (_applying) return false;
         // Item/overflow/collapsible visibility is the panel's own output, not an input of the estimate.
-        if (e.Property == IsVisibleProperty && sender is Control c
-            && (GetCollapsible(c) || (Children.Contains(c) && GetSlot(c) is ToolbarSlot.Item or ToolbarSlot.Overflow)))
-            return;
-        _estimates = null;
-        InvalidateMeasure();
+        return !(e.Property == IsVisibleProperty
+                 && (GetCollapsible(sender) || (Children.Contains(sender) && GetSlot(sender) is ToolbarSlot.Item or ToolbarSlot.Overflow)));
     }
 }

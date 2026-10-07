@@ -41,10 +41,7 @@ public sealed partial class MainWindow
     private void InitializeResponsive()
     {
         if (this.FindControl<ToolbarPanel>("ToolbarRow") is { } toolbar)
-        {
-            BuildOverflowMenuItems(toolbar);
             toolbar.OverflowItemsChanged += (_, _) => QueueOverflowMenuSync();
-        }
         if (this.FindControl<Button>("ToolbarOverflowButton")?.Flyout is MenuFlyout overflowMenu)
             overflowMenu.ItemsSource = _overflowMenuItems;
         // Enter on a game commits the pick. ListBoxItem marks Enter handled before it bubbles, so listen in the
@@ -206,21 +203,20 @@ public sealed partial class MainWindow
     }
 
     // The '…' menu lists the buttons the toolbar moved out of the row, in order, with their labels, enabled state,
-    // tooltips and actions. One MenuItem per toolbar button is built once (its bindings live as long as the window);
-    // only which of them sit in the menu's collection changes.
-    private void BuildOverflowMenuItems(ToolbarPanel toolbar)
+    // tooltips and actions. One MenuItem per toolbar button is built the first time that button overflows (its
+    // bindings live as long as the window; a button added to the toolbar later gets one too); afterwards only which
+    // of them sit in the menu's collection changes.
+    private MenuItem OverflowMenuItemFor(Button button)
     {
-        foreach (var button in toolbar.Children.OfType<Button>().Where(b => ToolbarPanel.GetSlot(b) == ToolbarSlot.Item))
-        {
-            var item = new MenuItem();
-            item.Classes.Add(OverflowMenuClass);
-            item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty));
-            item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty));
-            item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty));
-            var source = button;
-            item.Click += (_, _) => InvokeToolbarButton(source);
-            _overflowMenuItemFor[button] = item;
-        }
+        if (_overflowMenuItemFor.TryGetValue(button, out var existing)) return existing;
+        var item = new MenuItem();
+        item.Classes.Add(OverflowMenuClass);
+        item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty));
+        item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty));
+        item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty));
+        item.Click += (_, _) => InvokeToolbarButton(button);
+        _overflowMenuItemFor[button] = item;
+        return item;
     }
 
     private void ToolbarOverflowMenu_Opening(object? sender, EventArgs e) => SyncOverflowMenuItems();
@@ -242,8 +238,10 @@ public sealed partial class MainWindow
     private void SyncOverflowMenuItems()
     {
         if (this.FindControl<ToolbarPanel>("ToolbarRow") is not { } toolbar) return;
-        var wanted = toolbar.OverflowItems.OfType<Button>()
-            .Select(b => _overflowMenuItemFor.GetValueOrDefault(b)).OfType<MenuItem>().ToList();
+        // Buttons removed from the toolbar drop their item (and with it the item's bindings to them).
+        foreach (var gone in _overflowMenuItemFor.Keys.Where(b => !toolbar.Children.Contains(b)).ToList())
+            _overflowMenuItemFor.Remove(gone);
+        var wanted = toolbar.OverflowItems.OfType<Button>().Select(OverflowMenuItemFor).ToList();
         if (wanted.SequenceEqual(_overflowMenuItems)) return;
         _overflowMenuItems.Clear();
         foreach (var item in wanted) _overflowMenuItems.Add(item);

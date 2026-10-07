@@ -23,34 +23,51 @@ public sealed class WidthEstimator
         public Func<Control, double?> Width { get; init; } = _ => null;
     }
 
+    /// <summary>
+    /// Every property <see cref="Estimate"/> reads, on the control or on any logical descendant it walks. Panels that
+    /// cache estimates drop them when one of these changes (<see cref="EstimateInputWatcher"/>); keep this set in step
+    /// with <see cref="Estimate"/> — it is the single definition both <see cref="ToolbarPanel"/> and
+    /// <see cref="DetailHeaderPanel"/> use. Structural changes (children added to or removed from a panel, content
+    /// swapped for a control) are tracked separately by the watcher (Panel.Children, Content/Child swaps).
+    /// </summary>
+    public static readonly IReadOnlySet<AvaloniaProperty> Inputs = new HashSet<AvaloniaProperty>
+    {
+        Visual.IsVisibleProperty, Layoutable.MarginProperty, Layoutable.WidthProperty, Layoutable.MinWidthProperty,
+        Layoutable.MaxWidthProperty,
+        TextBlock.TextProperty, TextBlock.FontSizeProperty, TextBlock.FontFamilyProperty, TextBlock.FontWeightProperty,
+        TextBlock.FontStyleProperty, TextBlock.FontStretchProperty, TextBlock.PaddingProperty,
+        ContentControl.ContentProperty,
+        TemplatedControl.FontSizeProperty, TemplatedControl.FontFamilyProperty, TemplatedControl.FontWeightProperty,
+        TemplatedControl.FontStyleProperty, TemplatedControl.FontStretchProperty, TemplatedControl.PaddingProperty,
+        TemplatedControl.BorderThicknessProperty,
+        Border.ChildProperty, Border.PaddingProperty, Border.BorderThicknessProperty,
+        StackPanel.SpacingProperty, StackPanel.OrientationProperty, WrapPanel.ItemSpacingProperty
+    };
+
     private readonly Values _values;
 
     public WidthEstimator(Values? values = null) => _values = values ?? new Values();
 
     // Shaping text is the expensive part of every estimate, and a resize asks for the same (text, font, size)
     // again and again (header scale search, path ellipsis candidates), so widths are memoised. Bounded: cleared when
-    // full or when the UI culture changes.
+    // full. The key needs no culture: the app never changes CultureInfo (a language switch,
+    // UiLocalizationService.Apply, only swaps resource strings, i.e. the texts, which are part of the key), so the
+    // culture handed to FormattedText is the same for the whole process.
     private const int TextWidthCacheLimit = 16384;
     private static readonly Dictionary<(string Text, Typeface Typeface, double Size), double> TextWidths = new();
     private static readonly object TextWidthsLock = new();
-    private static CultureInfo? _textWidthsCulture;
 
     /// <summary>One-line width of <paramref name="text"/> (rounded up), memoised per (text, typeface, size).</summary>
     public static double TextWidth(string? text, Typeface typeface, double fontSize)
     {
         if (string.IsNullOrEmpty(text)) return 0;
-        var culture = CultureInfo.CurrentUICulture;
         var key = (text, typeface, fontSize);
         lock (TextWidthsLock)
         {
-            if (!Equals(culture, _textWidthsCulture) || TextWidths.Count >= TextWidthCacheLimit)
-            {
-                TextWidths.Clear();
-                _textWidthsCulture = culture;
-            }
+            if (TextWidths.Count >= TextWidthCacheLimit) TextWidths.Clear();
             if (TextWidths.TryGetValue(key, out var cached)) return cached;
         }
-        var width = Math.Ceiling(new FormattedText(text, culture, FlowDirection.LeftToRight, typeface, fontSize, null)
+        var width = Math.Ceiling(new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, fontSize, null)
             .WidthIncludingTrailingWhitespace);
         lock (TextWidthsLock) TextWidths[key] = width;
         return width;
