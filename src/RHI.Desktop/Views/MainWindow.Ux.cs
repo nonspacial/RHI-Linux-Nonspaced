@@ -58,7 +58,10 @@ public sealed partial class MainWindow
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (DataContext is MainWindowViewModel confirmVm)
+            {
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
+                confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
+            }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
@@ -561,20 +564,50 @@ public sealed partial class MainWindow
         vm.ImportCustomAddonFile(path);
     }
 
-    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280)
+    /// <param name="height">Fixed height, or NaN to fit the content (manifest texts vary in length).</param>
+    /// <param name="sections">Manifest install warnings shown after the message, each with an optional heading and its http(s)
+    /// links as buttons (opened through the desktop handler only).</param>
+    private async Task<bool> ShowConfirmationAsync(string title, string message, string acceptText, double height = 280, IReadOnlyList<InstallWarningSection>? sections = null)
     {
         var accept = new Button { Content = acceptText, Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = L("Cancelar", "Cancel"), Padding = new Thickness(14, 7) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(cancel); buttons.Children.Add(accept);
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+        if (message.Length > 0)
+            panel.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+        foreach (var section in sections ?? [])
+        {
+            // Same rhythm as a plain confirmation inside a section; a heading sits closer to its text, and sections are set
+            // further apart than the lines within them.
+            var block = new StackPanel { Spacing = 14, Margin = new Thickness(0, panel.Children.Count > 0 ? 8 : 0, 0, 0) };
+            if (!string.IsNullOrWhiteSpace(section.Heading))
+                block.Children.Add(new TextBlock { Text = section.Heading, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, MaxWidth = 560, Margin = new Thickness(0, 0, 0, -8) });
+            if (section.Warning.Text.Length > 0)
+                block.Children.Add(new TextBlock { Text = section.Warning.Text, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+            foreach (var link in section.Warning.Links)
+            {
+                var url = link.AbsoluteUri;
+                // One line, trimmed to the dialog width; the full address is in the 2 s tooltip (long Discord thread links).
+                var button = new Button
+                {
+                    Content = new MiddleEllipsisText { FullText = url, WrapNonPath = false },
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    MaxWidth = 560,
+                    Padding = new Thickness(10, 5)
+                };
+                button.Click += (_, _) => OpenProjectLink(url);
+                block.Children.Add(button);
+            }
+            panel.Children.Add(block);
+        }
         panel.Children.Add(buttons);
         var dialog = new Window
         {
             Title = title,
             Width = 600,
             Height = height,
+            SizeToContent = double.IsNaN(height) ? SizeToContent.Height : SizeToContent.Manual,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = panel

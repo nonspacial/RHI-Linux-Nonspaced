@@ -1582,6 +1582,47 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
     public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
 
+    /// <summary>
+    /// Set by the window: shows the manifest install warnings (title, one section per component with its links, accept
+    /// text) in one dialog; true to proceed.
+    /// </summary>
+    public Func<string, IReadOnlyList<InstallWarningSection>, string, Task<bool>>? ConfirmInstallWarningAsync { get; set; }
+
+    /// <summary>Dialog sections for <paramref name="warnings"/>; a lone warning for the requested component has no heading, as upstream.</summary>
+    public static IReadOnlyList<InstallWarningSection> InstallWarningSections(IReadOnlyList<ComponentInstallWarning> warnings, string targetName)
+    {
+        if (warnings is [{ AddedAutomatically: false } only]) return [new InstallWarningSection(null, only.Warning)];
+        return warnings.Select(warning => new InstallWarningSection(
+            warning.AddedAutomatically
+                ? LF("{0} — instalado automaticamente com {1}", "{0} — installed automatically with {1}",
+                    LinuxManagedComponentService.DisplayDependencyName(warning.Kind), targetName)
+                : targetName,
+            warning.Warning)).ToList();
+    }
+
+    // Upstream 2.8.0: user-initiated installs show the manifest's per-game warning first. On Linux an install can also add
+    // ReShade (add-ons, Luma, ShortFuse) or RE Framework (ReShade on RE Engine) automatically; their warnings are shown in
+    // the same dialog. Update All and the background pass go through LinuxUpdateAllService and never reach this prompt.
+    private async Task<bool> AcceptManifestInstallWarningsAsync(
+        DetectedGame game,
+        ManagedComponentKind target,
+        string displayName,
+        bool installsTarget,
+        IReadOnlyList<string>? indexedFiles)
+    {
+        if (ConfirmInstallWarningAsync is not { } confirm) return true;
+        var warnings = ManifestInstallWarning.ForInstall(game, target, installsTarget,
+            _managedComponents.PendingAutoDependencies(game, target, indexedFiles));
+        if (warnings.Count == 0) return true;
+        if (await confirm(LF("⚠ Nota de instalação — {0}", "⚠ Install note — {0}", game.Name), InstallWarningSections(warnings, displayName), L("Continuar", "Continue")))
+            return true;
+        StatusText = LF("Instalação de {0} cancelada.", "{0} installation cancelled.", displayName);
+        return false;
+    }
+
+    private IReadOnlyList<string>? ProbedFiles(DetectedGame game)
+        => _probeCache.TryGetValue(Key(game), out var probe) ? probe.Files : null;
+
     [RelayCommand]
     private async Task ManageComponentAsync(ManagedComponentKind kind)
     {
@@ -1609,6 +1650,8 @@ public partial class MainWindowViewModel : ObservableObject
                 StatusText = L("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial (.zip ou .7z). Selecione-o primeiro em Perfil do ReShade → Consumidor do Feeder.", "DLSS5 Feeder Full with Deep Fried Chicken requires the official package (.zip or .7z). Select it first under ReShade Profile → Feeder consumer.");
                 return;
             }
+
+            if (!removing && !await AcceptManifestInstallWarningsAsync(game, kind, component.DisplayName, installsTarget: true, probe.Files)) return;
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
             if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
@@ -1826,6 +1869,8 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var removing = _managedComponents.IsShortFuseManaged(game);
+            // ShortFuse has no manifest key of its own, but installing it adds RHI-owned ReShade when absent.
+            if (!removing && !await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ShortFuse, "ShortFuse", installsTarget: true, ProbedFiles(game))) return;
             StatusText = removing
                 ? L("Removendo ShortFuse e restaurando a pilha anterior…", "Removing ShortFuse and restoring the previous stack…")
                 : L("Instalando a orquestração de Geração de Quadros DLSS do ShortFuse…", "Installing ShortFuse DLSS Frame Generation orchestration…");
@@ -1899,6 +1944,10 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            // Applying a profile installs ReShade when it is not there yet (Available or Unknown), and RE Framework on an
+            // RE Engine game when that is missing; those are the installs the manifest warns about.
+            if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, component.DisplayName,
+                    installsTarget: ManifestInstallWarning.IsFirstInstall(component.Availability), probe.Files)) return;
             StatusText = LF("Aplicando perfil {0} do ReShade…", "Applying ReShade {0} profile…", channel);
             var result = await _managedComponents.ApplyReShadeAsync(game, options);
             StatusText = UiLocalizationService.Present(result.Message);
@@ -2404,6 +2453,14 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            // Apply installs ReShade when RHI does not manage it yet (plus RE Framework on RE Engine): warn first.
+            var installsReShade = !_managedComponents.IsReShadeManaged(game) &&
+                (_probeCache.TryGetValue(Key(game), out var probe)
+                    ? probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade) is not { } row || ManifestInstallWarning.IsFirstInstall(row.Availability)
+                    : true);
+            if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, "ReShade", installsReShade, ProbedFiles(game)))
+                return ComponentOperationResult.Fail(StatusText);
+
             var options = _managedComponents.GetReShadeOptions(game);
             options.ShaderPackIds = shaderIds
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -2729,6 +2786,8 @@ public partial class MainWindowViewModel : ObservableObject
         IsBusy = true;
         try
         {
+            if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.LumaFramework, "Luma", installsTarget: true, ProbedFiles(game)))
+                return ComponentOperationResult.Fail(StatusText);
             StatusText = LF("Instalando pacote Luma local em {0}…", "Installing local Luma package in {0}…", game.Name);
             var result = await _managedComponents
                 .InstallLocalLumaPackageAsync(game, sourcePath, cancellationToken)
@@ -3616,3 +3675,6 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string Key(DetectedGame g) => LinuxGameLibraryStore.GameKey(g);
 }
+
+/// <summary>One component's manifest warning in the install-warning dialog; <see cref="Heading"/> names the component when several are shown.</summary>
+public sealed record InstallWarningSection(string? Heading, ManifestInstallWarning Warning);
