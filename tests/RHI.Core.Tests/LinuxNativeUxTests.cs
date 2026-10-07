@@ -85,6 +85,24 @@ public sealed class LinuxNativeUxTests : IDisposable
     }
 
     [Fact]
+    public void ManualInference_UnrealProjectBesideEngine_ReturnsTheGameFolder()
+    {
+        var game = Path.Combine(_root, "The Outer Worlds 2");
+        var binaries = Path.Combine(game, "TheOuterWorlds2", "Binaries", "Win64");
+        Directory.CreateDirectory(binaries);
+        Directory.CreateDirectory(Path.Combine(game, "Engine", "Plugins", "Runtime", "Nvidia", "DLSS", "Binaries", "ThirdParty", "Win64"));
+        var exe = Path.Combine(binaries, "TheOuterWorlds2-Win64-Shipping.exe");
+        File.WriteAllBytes(exe, [0]);
+        var engineExe = Path.Combine(game, "Engine", "Binaries", "Win64", "CrashReportClient.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(engineExe)!);
+        File.WriteAllBytes(engineExe, [0]);
+
+        Assert.Equal(Path.GetFullPath(game), ManualGamePathInference.InferInstallRoot(exe));
+        Assert.Equal(Path.GetFullPath(game), ManualGamePathInference.InferInstallRoot(engineExe));
+        Assert.Equal("The Outer Worlds 2", ManualGamePathInference.InferGameName(exe, ManualGamePathInference.InferInstallRoot(exe)));
+    }
+
+    [Fact]
     public void ManualInference_WalksUpToSteamMarker()
     {
         var root = Path.Combine(_root, "SteamGame");
