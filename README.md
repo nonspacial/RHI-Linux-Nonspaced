@@ -141,6 +141,12 @@ Run:
 
 The validation scripts included in the repository are intended for development and release verification and are **not required to run RHI Linux**.
 
+## Runtime requirements
+
+* The AppImage bundles the .NET runtime; nothing else from .NET is needed on the host.
+* ReShade is extracted from its official setup by RHI Linux itself; no archive tool is needed.
+* OptiScaler releases, `.7z` shader packs and Deep Fried Chicken packages are 7-Zip archives and need a host `7z`/`7zz`/`7za` (package `7zip` on Arch/CachyOS, `7zip` or `p7zip-full` elsewhere); `bsdtar` also works except for encrypted packages. RHI Linux names the missing tool when one is needed.
+
 ## Building the AppImage
 
 ```bash
