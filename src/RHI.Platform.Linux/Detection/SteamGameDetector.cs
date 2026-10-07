@@ -13,13 +13,22 @@ public sealed partial class SteamGameDetector : IGameDetector
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
     private IReadOnlyList<DetectedGame> Detect(CancellationToken cancellationToken)
+        => DetectIn(LinuxPaths.SteamRoots(), cancellationToken);
+
+    /// <summary>
+    /// Test seam: every library of the given Steam roots, each real library folder walked once however
+    /// many roots or <c>libraryfolders.vdf</c> entries (symlinked or not) point at it.
+    /// </summary>
+    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> steamRoots, CancellationToken cancellationToken)
     {
         var games = new List<DetectedGame>();
-        foreach (var steamRoot in LinuxPaths.SteamRoots())
+        var seenLibraries = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var steamRoot in LinuxPaths.DistinctExisting(steamRoots))
         {
             foreach (var library in FindLibraries(steamRoot))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (!seenLibraries.Add(LinuxPaths.Canonicalise(library))) continue;
                 var steamapps = Path.Combine(library, "steamapps");
                 if (!Directory.Exists(steamapps)) continue;
                 foreach (var acf in Directory.EnumerateFiles(steamapps, "appmanifest_*.acf"))
@@ -90,18 +99,16 @@ public sealed partial class SteamGameDetector : IGameDetector
 
     private static IEnumerable<string> FindLibraries(string steamRoot)
     {
-        var roots = new HashSet<string>(StringComparer.Ordinal) { steamRoot };
+        var roots = new List<string> { steamRoot };
         var vdf = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
         if (File.Exists(vdf))
         {
             var text = File.ReadAllText(vdf);
             foreach (Match match in LibraryPathRegex().Matches(text))
-            {
-                var path = match.Groups[1].Value.Replace("\\\\", "\\");
-                if (Directory.Exists(path)) roots.Add(path);
-            }
+                roots.Add(match.Groups[1].Value.Replace("\\\\", "\\"));
         }
-        return roots;
+        // The vdf names the root's own library too, often by another spelling of the same folder.
+        return LinuxPaths.DistinctExisting(roots);
     }
 
     [GeneratedRegex("\\\"path\\\"\\s+\\\"([^\\\"]+)\\\"", RegexOptions.IgnoreCase)]
