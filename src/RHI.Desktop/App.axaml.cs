@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
@@ -33,7 +34,11 @@ public sealed class App : Application
                 new ManualGameDetector(libraryStore)
             };
             var githubTokenPath = Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "github_api.txt");
-            var http = new HttpClient(new GitHubApiTokenHandler(githubTokenPath)) { Timeout = TimeSpan.FromMinutes(5) };
+            var githubToken = new GitHubApiTokenHandler(githubTokenPath);
+            // Subscribed before any service can send; the post runs once this method returns.
+            MainWindowViewModel? tokenNoticeTarget = null;
+            githubToken.TokenRejected += (_, _) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenRejected());
+            var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
             var upstreamManifest = new UpstreamRhiManifestService(http);
             var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
             var scanner = new GameLibraryScanner(detectors, [libraryPolicy]);
@@ -132,6 +137,7 @@ public sealed class App : Application
             var updateAll = new LinuxUpdateAllService(records, managedComponents);
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
+            tokenNoticeTarget = vm;
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

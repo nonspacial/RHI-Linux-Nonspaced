@@ -75,3 +75,9 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #133 — Revoked GitHub token falls back to anonymous access (2.8.3/2.8.4)
+
+Upstream validates its stored OAuth token against `/user` at start-up and, on 401, strips it from the shared client and clears it from settings. The fork has no sign-in (#134 is parked); the token is the user's own `~/.config/rhi-linux/github_api.txt`, attached per request to `api.github.com` only, so there is no start-up race to fix. `GitHubApiTokenHandler` instead treats any 401 on a request that carried that token as a rejection: GET/HEAD requests without a body are replayed once anonymously, later requests go anonymous for the session, and 403/429 rate-limit responses keep the token. The file is not deleted; rewriting it (new mtime) re-enables the token. The user gets one localised status notice per rejected file version. While an operation (library scan, game analysis, component action) is running, the notice is appended to each of its status lines, so the progress lines that follow do not hide it and the operation's final result line carries it; it is dropped once that line is left on screen with no operation running. A notice raised while nothing is running is appended to the next status line. The token is never logged or shown.
