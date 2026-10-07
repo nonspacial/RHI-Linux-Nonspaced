@@ -427,9 +427,13 @@ internal static class GraphicsApiDetector
 
     /// <summary>
     /// Settings a game writes into the Wine prefix rather than its install folder (RDR2's
-    /// <c>Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml</c>). Only folders whose
-    /// name carries the game folder or executable name are read, at most two levels below
-    /// Documents/AppData, so another game's settings in a shared prefix do not count.
+    /// <c>Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml</c>, Unreal's
+    /// <c>Documents/My Games/&lt;Game&gt;/Saved/Config/&lt;Platform&gt;/GameUserSettings.ini</c>). Only folders whose
+    /// name carries the game folder or executable name are read, found at most two levels below
+    /// Documents/AppData and read three levels deep, so another game's settings in a shared prefix do not
+    /// count. Settings files (.ini/.xml/.cfg) are read before anything else and run records (benchmark
+    /// results, logs, crash reports) never: Borderlands 3's benchmark log records the API of that run,
+    /// not the user's setting.
     /// </summary>
     internal static GraphicsApiDetection DetectFromPrefixSettings(
         string? prefixPath,
@@ -474,8 +478,8 @@ internal static class GraphicsApiDetector
                     foreach (var folder in candidates)
                     {
                         var files = new List<string>();
-                        CollectConfigFiles(folder, 2, files, 40, cancellationToken);
-                        foreach (var file in files.OrderBy(f => f, StringComparer.Ordinal))
+                        CollectConfigFiles(folder, 3, files, 80, cancellationToken);
+                        foreach (var file in files.OrderBy(SettingsFileRank).ThenBy(f => f, StringComparer.Ordinal))
                         {
                             if (ConfigSelection(file, cancellationToken) is { } api && selectable(api))
                                 return new GraphicsApiDetection(api, [api], GraphicsApiConfidence.Medium,
@@ -536,6 +540,31 @@ internal static class GraphicsApiDetector
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
     }
 
+    /// <summary>Settings files first, then other structured config, plain text last.</summary>
+    private static int SettingsFileRank(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (name.Equals("GameUserSettings.ini", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("system.xml", StringComparison.OrdinalIgnoreCase)) return 0;
+        return Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".ini" or ".xml" or ".cfg" => 1,
+            ".conf" or ".toml" or ".json" => 2,
+            _ => 3
+        };
+    }
+
+    /// <summary>Folders that hold records of past runs (benchmarks, logs, crash dumps), not settings.</summary>
+    internal static bool IsRunRecordFolder(string directory)
+    {
+        var name = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar));
+        return name.Contains("benchmark", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Logs", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Log", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("Crashes", StringComparison.OrdinalIgnoreCase)
+               || name.Equals("CrashDumps", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void CollectConfigFiles(string root, int maxDepth, List<string> result, int maxResults, CancellationToken cancellationToken)
     {
         if (IsSymlink(root)) return;
@@ -554,7 +583,7 @@ internal static class GraphicsApiDetector
                 }
                 if (depth >= maxDepth) continue;
                 foreach (var sub in Directory.EnumerateDirectories(dir))
-                    if (!IsSymlink(sub)) stack.Push((sub, depth + 1));
+                    if (!IsSymlink(sub) && !IsRunRecordFolder(sub)) stack.Push((sub, depth + 1));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* unreadable folder: skip it */ }
         }
@@ -589,6 +618,7 @@ internal static class GraphicsApiDetector
         var binaryDir = !string.IsNullOrWhiteSpace(executablePath) ? Path.GetDirectoryName(executablePath) : null;
         var candidates = indexedFiles
             .Where(IsLikelyConfigFile)
+            .Where(f => !IsUnderRunRecordFolder(f, gameRoot))
             .OrderBy(f => ConfigAffinity(f, binaryDir, gameRoot))
             .ThenBy(f => SafeLength(f))
             .Take(80);
@@ -604,6 +634,20 @@ internal static class GraphicsApiDetector
 
         return GraphicsApiDetection.Unknown;
     }
+
+    private static bool IsUnderRunRecordFolder(string file, string gameRoot)
+    {
+        var dir = Path.GetDirectoryName(file);
+        while (!string.IsNullOrEmpty(dir) && !PathEquals(dir, gameRoot))
+        {
+            if (IsRunRecordFolder(dir)) return true;
+            dir = Path.GetDirectoryName(dir);
+        }
+        return false;
+    }
+
+    private static bool PathEquals(string a, string b)
+        => string.Equals(a.TrimEnd(Path.DirectorySeparatorChar), b.TrimEnd(Path.DirectorySeparatorChar), StringComparison.Ordinal);
 
     private static bool IsLikelyConfigFile(string path)
     {

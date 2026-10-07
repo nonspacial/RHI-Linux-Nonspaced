@@ -234,6 +234,49 @@ public sealed class MultiApiDetectionTests : IDisposable
         Assert.DoesNotContain("Prefix settings", found.Evidence);
     }
 
+    [Fact]
+    public void PrefixSettings_UnrealGameUserSettingsThreeLevelsDown_WinOverABenchmarkLog()
+    {
+        // Borderlands 3's real prefix: the benchmark log says D3D11 (the API of that run), the user's
+        // setting at Saved/Config/WindowsNoEditor/GameUserSettings.ini says DX12.
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Borderlands 3")).FullName;
+        var exe = WritePe(Path.Combine("Borderlands 3", "Borderlands3.exe"),
+            ["KERNEL32.dll", "dxgi.dll", "d3d9.dll", "d3d11.dll", "OPENGL32.dll"], ["GFSDK_Aftermath_Lib.x64.dll", "d3d12.dll"]);
+        var prefix = Path.Combine(_root, "pfx");
+        var saved = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "My Games", "Borderlands 3", "Saved");
+        Directory.CreateDirectory(Path.Combine(saved, "BenchmarkData"));
+        File.WriteAllText(Path.Combine(saved, "BenchmarkData", "BenchmarkData_2025-11-17_01-27-20.txt"), "GraphicsAPI:                        D3D11\r\n");
+        Directory.CreateDirectory(Path.Combine(saved, "Logs"));
+        File.WriteAllText(Path.Combine(saved, "Logs", "render.ini"), "Renderer=DX11\n");
+
+        var benchmarkOnly = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+        Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.Medium), (benchmarkOnly.Primary, benchmarkOnly.Confidence));
+        Assert.StartsWith("Executable imports:", benchmarkOnly.Evidence);
+
+        var config = Directory.CreateDirectory(Path.Combine(saved, "Config", "WindowsNoEditor")).FullName;
+        File.WriteAllText(Path.Combine(config, "Compat.ini"), "[ScalabilitySettings]\n");
+        File.WriteAllText(Path.Combine(config, "GameUserSettings.ini"), "[/Script/OakGame.OakGameUserSettings]\r\nPreferredGraphicsAPI=DX12\r\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (found.Primary, found.Confidence));
+        Assert.StartsWith("Prefix settings: My Games/Borderlands 3/Saved/Config/WindowsNoEditor/GameUserSettings.ini", found.Evidence);
+    }
+
+    [Fact]
+    public void PrefixSettings_IniOutranksText_InTheSameFolder()
+    {
+        var (gameRoot, exe, prefix) = Rdr2Layout();
+        var settings = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "Rockstar Games", "Red Dead Redemption 2", "Settings");
+        Directory.CreateDirectory(settings);
+        File.WriteAllText(Path.Combine(settings, "a-notes.txt"), "Renderer=DX12\n");
+        File.WriteAllText(Path.Combine(settings, "system.xml"), Rdr2SystemXml);
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.Equal(GraphicsApi.Vulkan, found.Primary);
+    }
+
     [Theory]
     [InlineData("Launcher", "")]
     [InlineData("Shipping", "")]
