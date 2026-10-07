@@ -2,6 +2,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
@@ -334,6 +335,40 @@ public sealed class UiExceptionHandlingTests : IDisposable
         UnlockAll(fx.DataDir);
         fx.Vm.ToggleFavouriteCommand.Execute(null);
         Assert.Equal(["Tunic"], fx.Library.Load().ManualGames.Select(g => g.Name));
+    }
+
+    [Fact]
+    public async Task AdoptedMergeState_ThatCannotBeSaved_IsReportedThroughTryPersist()
+    {
+        // integration w1 detect review 9: the automatic save after a merge goes through the one store-write helper.
+        var root = Path.Combine(Path.GetTempPath(), "rhi-adopt-" + Guid.NewGuid().ToString("N"));
+        var real = Directory.CreateDirectory(Path.Combine(root, "media", "X")).FullName;
+        var link = Path.Combine(root, "Games");
+        Directory.CreateSymbolicLink(link, Path.Combine(root, "media"));
+        var heroic = new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real };
+        try
+        {
+            using var fx = await ViewModelFixture.StartAsync([heroic], seed: store =>
+            {
+                var manual = new LinuxManualGameEntry { Name = "X", InstallPath = Path.Combine(link, "X") };
+                var state = store.Load();
+                state.ManualGames.Add(manual);
+                state.FavouriteGames.Add(LinuxGameLibraryStore.GameKey(new DetectedGame
+                {
+                    Name = "X", Source = "Manual", InstallPath = manual.InstallPath, IsManuallyAdded = true
+                }));
+                store.Save(state);
+                File.SetUnixFileMode(Path.GetDirectoryName(store.LibraryPath)!, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            });
+
+            Assert.True(Assert.Single(fx.Vm.Games).IsFavourite);
+            Assert.Contains("Could not save the game library", fx.Vm.StatusText);
+            UnlockAll(fx.DataDir);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
     }
 
     private static void LockLibrary(ViewModelFixture fx)

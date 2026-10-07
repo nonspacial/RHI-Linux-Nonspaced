@@ -944,16 +944,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
-    /// <summary>A merged card took over a duplicate's favourite/hidden/edit state; persist the move.</summary>
-    private void SaveAdoptedLibraryState()
-    {
-        try { _libraryStore.Save(_libraryState); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The card already shows the adopted state; the next library-state save persists it.
-            AppLog.Warn("library", "Could not save library state adopted from merged duplicates", ex);
-        }
-    }
+    /// <summary>
+    /// A merged card took over a duplicate's favourite/hidden/edit state; persist the move through the one
+    /// store-write helper. Automatic, so a refusal is only reported (returned for the scan's status line):
+    /// the card already shows the adopted state and the next library save retries it. The move is one-way:
+    /// if the duplicates later stop merging, the adopted keys stay on the card's key.
+    /// </summary>
+    private string? SaveAdoptedLibraryState()
+        => TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
 
     private async Task LoadDlssManifestAsync()
     {
@@ -1377,7 +1375,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private Task RefreshAsync() => RefreshAsync(null);
 
     /// <summary>
-    /// Refresh that waits for the current busy operation (startup DLSS fetch, Update All…) instead of
+    /// Refresh that waits for the current busy operation (Update All, an install…) instead of
     /// being skipped, for changes the user just saved. True when the refresh ran and succeeded.
     /// </summary>
     private async Task<bool> RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors)
@@ -1450,7 +1448,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                 merged.Add(game);
             }
-            if (adoptedMergedKeys) SaveAdoptedLibraryState();
+            var adoptRefused = adoptedMergedKeys ? SaveAdoptedLibraryState() : null;
             _allGames.Clear();
             _allGames.AddRange(merged);
             ApplyFilter();
@@ -1460,7 +1458,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
-            var scanProblems = LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath);
+            var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
+                .Where(text => !string.IsNullOrEmpty(text)));
+            string? scanProblems = problems.Length == 0 ? null : problems;
             var scanDone = LibraryScanStatusText.Done(_allGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             return true;
