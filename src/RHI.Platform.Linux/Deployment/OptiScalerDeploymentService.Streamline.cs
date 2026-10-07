@@ -197,6 +197,8 @@ public sealed partial class OptiScalerDeploymentService
 
         try
         {
+            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+
             // Preflight all destinations before touching any file.
             foreach (var (sourceRaw, targetRaw) in requested)
             {
@@ -408,6 +410,8 @@ public sealed partial class OptiScalerDeploymentService
 
         try
         {
+            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+
             foreach (var (_, file) in ownedFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();

@@ -48,6 +48,52 @@ public sealed partial class OptiScalerFgStackDlssgTests
         Assert.Contains(Path.Combine(fx.Bin, "OptiScaler", "Streamline", "sl.interposer.dll"), result.ChangedFiles!);
     }
 
+    // up-135 re-review minor 2: builds before #135 let Quick Apply / Batch Deploy / the panel's Streamline swap replace
+    // RHI's own OptiScaler/Streamline/sl.* (the owned file kept as .original). Those flows no longer reach the folder, so
+    // disable and removal give such a backup back instead of refusing forever.
+    [Theory]
+    [InlineData("disable")]
+    [InlineData("remove")]
+    public async Task LegacyDlssSwapOfAStackFile_IsGivenBackOnDisableAndRemoval(string action)
+    {
+        var fx = CreateFixture("legacy-swap-" + action);
+        Assert.True((await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "true")).Success);
+        var interposer = Path.Combine(fx.Bin, "OptiScaler", "Streamline", "sl.interposer.dll");
+        Assert.True(File.Exists(interposer));
+        // What the old direct swap did: keep the current (RHI-owned) file as .original, write the swapped-in DLL.
+        File.Move(interposer, interposer + ".original");
+        File.WriteAllBytes(interposer, Dlssg(0x6E));
+
+        var result = action == "disable"
+            ? await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false")
+            : await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(result.Success, result.Message);
+        Assert.False(File.Exists(interposer));
+        Assert.False(File.Exists(interposer + ".original"));
+        if (action == "remove") Assert.Null(fx.Store.Find(fx.Game, ManagedComponentKind.OptiScaler));
+        else Assert.DoesNotContain("OptiScaler/Streamline/sl.interposer.dll", OwnedStackFiles(fx.Store.Find(fx.Game, ManagedComponentKind.OptiScaler)!));
+    }
+
+    [Fact]
+    public async Task ModifiedStackFileWhoseOriginalIsNotRhisFile_IsStillRefused()
+    {
+        var fx = CreateFixture("legacy-swap-foreign");
+        Assert.True((await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "true")).Success);
+        var interposer = Path.Combine(fx.Bin, "OptiScaler", "Streamline", "sl.interposer.dll");
+        File.WriteAllBytes(interposer, Dlssg(0x6E));                   // replaced by the user
+        File.WriteAllBytes(interposer + ".original", Dlssg(0x6F));     // and a backup that is not RHI's file
+
+        var disabled = await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false");
+        var removed = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.False(disabled.Success);
+        Assert.Contains("modified outside RHI", disabled.Message);
+        Assert.False(removed.Success);
+        Assert.Equal(Dlssg(0x6E), File.ReadAllBytes(interposer));
+        Assert.Equal(Dlssg(0x6F), File.ReadAllBytes(interposer + ".original"));
+    }
+
     [Fact]
     public async Task DisableFgStack_PartialFailureSavesProgressAndARetryCompletes()
     {

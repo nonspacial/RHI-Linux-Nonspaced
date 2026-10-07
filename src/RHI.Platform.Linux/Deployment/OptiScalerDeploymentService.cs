@@ -74,6 +74,15 @@ public sealed partial class OptiScalerDeploymentService
         var record = GetRecord(game);
         if (record is null) return ComponentOperationResult.Fail("OptiScaler is not managed by RHI Linux for this game.");
 
+        try
+        {
+            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ComponentOperationResult.Fail($"Could not give back an OptiScaler file an older DLSS swap replaced: {ex.Message}");
+        }
+
         foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
         {
             if (!File.Exists(file.Path) || string.IsNullOrWhiteSpace(file.Sha256))
@@ -366,6 +375,8 @@ public sealed partial class OptiScalerDeploymentService
 
         try
         {
+            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+
             // Preflight every destructive action before changing any file. Kept/taken-over files are
             // hash-checked too: restoring their .original would overwrite a file the user replaced.
             foreach (var file in record.Files)
@@ -421,9 +432,10 @@ public sealed partial class OptiScalerDeploymentService
             {
                 if (File.Exists(dxgi))
                     return FailKeepingProgress("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
+                // From the move on, nothing may be cancelled before the ReShade record follows the file. The
+                // content is the ReShade64.dll the preflight just hash-checked, so its recorded hash stays valid.
                 File.Move(reShade64.Path, dxgi);
                 reShade64.Path = dxgi;
-                reShade64.Sha256 = await Sha256Async(dxgi, cancellationToken).ConfigureAwait(false);
                 reShadeRecord.WineOverride = record.WineOverride;
                 _records.Upsert(reShadeRecord);
                 keptReShade = true;
@@ -443,6 +455,32 @@ public sealed partial class OptiScalerDeploymentService
         {
             return FailKeepingProgress($"OptiScaler removal failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Before #135 the direct DLSS flows (Quick Apply / Batch Deploy with a Streamline default, the panel's Streamline
+    /// swap) also swapped RHI's own <c>OptiScaler/Streamline/sl.*</c>: the owned file was kept next to the new one as
+    /// <c>&lt;name&gt;.original</c> (the DLSS swap backup) and no longer matched the record. Those flows no longer reach
+    /// OptiScaler's files, so that backup would be stranded and every disable/redeploy/removal refused. When a managed
+    /// file RHI created (not a kept original) mismatches its recorded hash and its <c>.original</c> carries exactly that
+    /// hash, the backup is RHI's own file: it is moved back, which only returns ownership and overwrites nothing foreign.
+    /// Returns the files given back.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> RestoreLegacyDlssSwapsAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    {
+        var restored = new List<string>();
+        foreach (var file in record.Files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.ExistedBeforeInstall || file.AllowUserChanges || string.IsNullOrWhiteSpace(file.Sha256)) continue;
+            var backup = file.Path + TransactionalFileDeploymentService.BackupExtension;
+            if (!File.Exists(file.Path) || !File.Exists(backup)) continue;
+            if (string.Equals(await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(await Sha256Async(backup, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+            File.Move(backup, file.Path, overwrite: true);
+            restored.Add(file.Path);
+        }
+        return restored;
     }
 
     private async Task<ReShadeMigration?> MigrateManagedReShadeIfNeededAsync(

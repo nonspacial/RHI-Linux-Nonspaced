@@ -204,6 +204,36 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
             File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")), "dxgi", "Game.exe"));
     }
 
+    // up-135 re-review nit 4: a retry after a removal that already deleted OptiScaler's dxgi.dll (and saved that
+    // progress) still moves ReShade64.dll back to dxgi.dll, with its record following the file.
+    [Fact]
+    public async Task RemoveOptiScaler_RetryAfterTheProxyWasAlreadyRemoved_MovesReShadeBack()
+    {
+        var (game, store) = CreateGame("remove-retry-coexist", GraphicsApi.DirectX12);
+        SeedManagedReShade(game, store);
+        var service = NewService(store, CreatePackage("remove-retry-coexist-package"));
+        Assert.True((await service.InstallAsync(game)).Success);
+        var dxgi = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var reshade64 = Path.Combine(game.BinaryDirectory!, "ReShade64.dll");
+        var reshadeHash = Sha256(reshade64);
+        // The state a partly failed removal leaves: dxgi.dll deleted and dropped from the saved record.
+        var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
+        Assert.Equal(1, record.Files.RemoveAll(file => Path.GetFullPath(file.Path) == Path.GetFullPath(dxgi)));
+        store.Upsert(record);
+        File.Delete(dxgi);
+
+        var removed = await service.RemoveAsync(game);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.True(BinarySignatureInspector.LooksLikeReShade(dxgi));
+        Assert.False(File.Exists(reshade64));
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+        var reShadeFile = Assert.Single(store.Find(game, ManagedComponentKind.ReShade)!.Files);
+        Assert.Equal(Path.GetFullPath(dxgi), Path.GetFullPath(reShadeFile.Path));
+        Assert.Equal(reshadeHash, reShadeFile.Sha256);
+        Assert.Equal(Sha256(dxgi), reShadeFile.Sha256);
+    }
+
     [Fact]
     public async Task RemoveReShadeFirst_LeavesOptiScalerThenOptiRemovalCleansRegistry()
     {
