@@ -122,6 +122,7 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     public void Upsert_ThatFailsToSave_LeavesCacheAndLedgerUnchanged()
     {
         var path = Path.Combine(_root, "records.json");
