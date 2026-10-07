@@ -8,6 +8,7 @@ using RHI.Core.Services;
 namespace RHI.Core.Tests;
 
 /// <summary>#39 (DEP-20): DlssManagerService cache hygiene.</summary>
+[Collection(AppLogCollection.Name)]
 public sealed class DlssManagerCacheHygieneTests : IDisposable
 {
     private const string ZipUrl = "https://github.com/RankFTW/rhi-repo/releases/download/test/dlss.zip";
@@ -66,7 +67,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         var cached = (await service.EnsureCachedAsync(DlssComponentKind.SuperResolution, "9.1"))!;
         Assert.True(CacheStamp.IsValid(cached, ZipUrl, "9.1", Hex(first)));
         Assert.Equal(1, handler.ZipRequests);
-        Assert.Empty(CacheFiles(cache).Where(path => path.Contains(".rhi-tmp-", StringComparison.Ordinal)));
+        Assert.DoesNotContain(CacheFiles(cache), path => path.Contains(".rhi-tmp-", StringComparison.Ordinal));
 
         // Same URL and version, but the publisher now announces a different archive.
         var second = Zip(Dll(0x33));
@@ -121,6 +122,49 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
     }
 
     [Fact]
+    public async Task ManifestCacheWriteFailure_IsLogged_AndTheFreshManifestIsStillUsed()
+    {
+        var cache = Path.Combine(_root, "cache-unwritable");
+        Directory.CreateDirectory(Path.Combine(cache, "dlss_manifest.json")); // a folder where the file goes: the write fails
+        var log = new AppLog(Path.Combine(_root, "state", "rhi.log"));
+        var previous = AppLog.Current;
+        AppLog.Current = log;
+        DlssManifestData manifest;
+        DlssManagerService service;
+        try
+        {
+            service = new DlssManagerService(new HttpClient(new Handler(Manifest(null), [])), new TransactionalFileDeploymentService(), cache);
+            manifest = await service.FetchManifestAsync();
+        }
+        finally
+        {
+            AppLog.Current = previous;
+        }
+
+        Assert.Equal("9.1", Assert.Single(manifest.Dlss).Version);
+        Assert.NotNull(service.ManifestCacheWriteError);
+        Assert.Contains("[dlss-manifest]", File.ReadAllText(log.FilePath));
+    }
+
+    [Fact]
+    public async Task CancellationAfterTheManifestWasParsed_DoesNotSwapInTheOlderCachedCopy()
+    {
+        var cache = Path.Combine(_root, "cache-cancel");
+        Directory.CreateDirectory(cache);
+        File.WriteAllText(Path.Combine(cache, "dlss_manifest.json"),
+            """{ "dlss": [{ "version": "1.0-old", "url": "https://github.com/RankFTW/rhi-repo/releases/download/test/old.zip" }] }""");
+        using var cancel = new CancellationTokenSource();
+        var handler = new Handler(Manifest(null), []) { CancelAfterManifest = cancel };
+        var service = new DlssManagerService(new HttpClient(handler), new TransactionalFileDeploymentService(), cache);
+
+        var manifest = await service.FetchManifestAsync(cancel.Token);
+
+        Assert.True(cancel.IsCancellationRequested);
+        Assert.Equal("9.1", Assert.Single(manifest.Dlss).Version);
+        Assert.Contains("\"9.1\"", File.ReadAllText(Path.Combine(cache, "dlss_manifest.json")));
+    }
+
+    [Fact]
     public async Task MalformedPublishedDigest_RejectsTheManifest()
     {
         var service = new DlssManagerService(new HttpClient(new Handler(Manifest("not-a-digest"), [])), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-bad"));
@@ -150,17 +194,39 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         public int ZipRequests { get; private set; }
         public int? FailZipAfterBytes { get; init; }
         public Uri? RedirectZipTo { get; init; }
+        public CancellationTokenSource? CancelAfterManifest { get; init; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.RequestUri?.AbsoluteUri == DlssManagerService.ManifestUrl)
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Encoding.UTF8.GetBytes(manifest)) });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = CancelAfterManifest is { } cancel
+                        ? new CancelWhenReadContent(Encoding.UTF8.GetBytes(manifest), cancel)
+                        : new ByteArrayContent(Encoding.UTF8.GetBytes(manifest))
+                });
             ZipRequests++;
             HttpContent content = FailZipAfterBytes is int limit
                 ? new StreamContent(new FailingStream(zip, limit))
                 : new ByteArrayContent(zip);
             if (RedirectZipTo is not null) request.RequestUri = RedirectZipTo;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content, RequestMessage = request });
+        }
+    }
+
+    /// <summary>Delivers the whole body, then cancels: the caller's token fires right after the manifest arrived.</summary>
+    private sealed class CancelWhenReadContent(byte[] body, CancellationTokenSource cancel) : HttpContent
+    {
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            await stream.WriteAsync(body);
+            cancel.Cancel();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = body.Length;
+            return true;
         }
     }
 

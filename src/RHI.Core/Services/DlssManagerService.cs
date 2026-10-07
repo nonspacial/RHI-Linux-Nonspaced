@@ -67,13 +67,17 @@ public sealed class DlssManagerService
             _manifest = parsed;
             // Durable and atomic (#39): a crash never leaves a truncated fallback manifest, and a
             // cache that cannot be written does not discard the manifest just downloaded.
+            // CancellationToken.None: the manifest is already parsed and in use; a cancellation here
+            // must not turn into the outer fallback that returns the older cached copy instead.
             try
             {
-                await AtomicFile.WriteAllTextAsync(cachePath, json, cancellationToken).ConfigureAwait(false);
+                await AtomicFile.WriteAllTextAsync(cachePath, json, CancellationToken.None).ConfigureAwait(false);
+                ManifestCacheWriteError = null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 ManifestCacheWriteError = ex.Message;
+                AppLog.Warn("dlss-manifest", $"The downloaded DLSS manifest is in use but could not be cached at {cachePath}; the next offline start uses the older copy", ex);
             }
             return parsed;
         }
@@ -541,7 +545,7 @@ public sealed class DlssManagerService
             IEnumerable<string> files;
             try
             {
-                files = Directory.EnumerateFiles(componentRoot, "*", SearchOption.AllDirectories).ToArray();
+                files = SafeFileEnumeration.Files(componentRoot).ToArray();
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -583,7 +587,7 @@ public sealed class DlssManagerService
             string[] dlls;
             try
             {
-                dlls = Directory.EnumerateFiles(componentRoot, "*.dll", SearchOption.AllDirectories).ToArray();
+                dlls = SafeFileEnumeration.Files(componentRoot, "*.dll").ToArray();
             }
             catch
             {
