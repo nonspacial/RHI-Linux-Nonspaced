@@ -1,8 +1,9 @@
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
-using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -69,8 +70,8 @@ public sealed class RenoDxUpgradeDeploymentService
         sourceUrl ??= pack.DownloadUrl;
         if (string.IsNullOrWhiteSpace(sourceUrl))
             return ComponentOperationResult.Fail($"Upstream RHI manifest has no {ArchitectureLabel(architecture)} RenoDX Upgrade download URL.");
-        if (!AddonHostPolicy.RenoDxAddons.IsTrusted(sourceUrl))
-            return ComponentOperationResult.Fail(new UntrustedDownloadException(sourceUrl, AddonHostPolicy.RenoDxAddons).Message);
+        if (!TrustedDownloadPolicy.RenoDxAddons.IsTrusted(sourceUrl))
+            return ComponentOperationResult.Fail(new UntrustedDownloadException(sourceUrl, TrustedDownloadPolicy.RenoDxAddons).Message);
 
         var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
         Directory.CreateDirectory(deployDir);
@@ -220,33 +221,21 @@ public sealed class RenoDxUpgradeDeploymentService
         Directory.CreateDirectory(_cacheDir);
         var fileName = architecture == PeArchitecture.X86 ? AddonFileName32 : AddonFileName64;
         var cache = Path.Combine(_cacheDir, fileName);
-        var temp = cache + $".tmp-{Guid.NewGuid():N}";
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, AddonHostPolicy.RenoDxAddons.Validate(sourceUrl));
-            request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            AddonHostPolicy.RenoDxAddons.ValidateFinal(response, sourceUrl);
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        // HTTPS on the RenoDX add-on hosts (request and redirects), size cap, verified temp (TrustedDownload).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, sourceUrl, cache, TrustedDownloadPolicy.RenoDxAddons,
+            userAgent: ProductInfoHeaderValue.Parse(RHI.Core.RhiProductInfo.UserAgent),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            if (!BinarySignatureInspector.HasPeSignature(temp, MinimumPayloadSize))
-                throw new InvalidDataException("Downloaded RenoDX Upgrade add-on is not a valid PE payload or is unexpectedly small.");
+        if (!BinarySignatureInspector.HasPeSignature(download.Path, MinimumPayloadSize))
+            throw new InvalidDataException("Downloaded RenoDX Upgrade add-on is not a valid PE payload or is unexpectedly small.");
 
-            var payloadArchitecture = PeArchitectureDetector.Detect(temp);
-            if (payloadArchitecture != architecture)
-                throw new InvalidDataException($"Downloaded RenoDX Upgrade payload is {ArchitectureLabel(payloadArchitecture)}, expected {ArchitectureLabel(architecture)}.");
+        var payloadArchitecture = PeArchitectureDetector.Detect(download.Path);
+        if (payloadArchitecture != architecture)
+            throw new InvalidDataException($"Downloaded RenoDX Upgrade payload is {ArchitectureLabel(payloadArchitecture)}, expected {ArchitectureLabel(architecture)}.");
 
-            File.Move(temp, cache, overwrite: true);
-            return cache;
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
+        download.MoveTo(cache);
+        return cache;
     }
 
     private static string ArchitectureLabel(PeArchitecture architecture) => architecture switch

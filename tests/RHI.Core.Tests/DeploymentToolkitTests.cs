@@ -82,15 +82,33 @@ public sealed class DeploymentToolkitTests : IDisposable
     [InlineData("https://github.com:8443/a/b.zip")]
     [InlineData("https://user:secret@github.com/a/b.zip")]
     public void Validate_RefusesNonHttpsAndUnlistedHosts(string url)
-        => Assert.Throws<InvalidDataException>(() => TrustedDownload.Validate(url, TrustedDownloadPolicy.GitHubReleases));
+    {
+        var refused = Assert.Throws<UntrustedDownloadException>(() => TrustedDownload.Validate(url, TrustedDownloadPolicy.GitHubReleases));
+        Assert.Equal(TrustedDownloadPolicy.GitHubReleases.RefusalPrefix + url, refused.Message);
+    }
+
+    [Fact]
+    public async Task Head_RedirectToUnlistedHost_IsRefused_AndAnUnlistedLinkIsNeverRequested()
+    {
+        var handler = new StubHandler(_ => [], redirectTo: new Uri("https://evil.example/x.addon64"));
+        using var http = new HttpClient(handler);
+        var refused = await Assert.ThrowsAsync<UntrustedDownloadException>(() => TrustedDownload.HeadAsync(
+            http, "https://github.com/o/r/releases/download/v1/x.addon64", TrustedDownloadPolicy.RenoDxAddons));
+        Assert.Equal("https://evil.example/x.addon64", refused.Url);
+
+        await Assert.ThrowsAsync<UntrustedDownloadException>(() => TrustedDownload.HeadAsync(
+            http, "http://github.com/o/r/releases/download/v1/x.addon64", TrustedDownloadPolicy.RenoDxAddons));
+        Assert.Equal(1, handler.Requests);
+    }
 
     [Fact]
     public async Task Download_RedirectToUnlistedHost_IsRefusedAndLeavesNothing()
     {
         var handler = new StubHandler(_ => Bytes(100, 4), redirectTo: new Uri("https://evil.example/payload.zip"));
         using var http = new HttpClient(handler);
-        await Assert.ThrowsAsync<InvalidDataException>(() => TrustedDownload.DownloadToTempAsync(
+        var refused = await Assert.ThrowsAsync<UntrustedDownloadException>(() => TrustedDownload.DownloadToTempAsync(
             http, "https://github.com/o/r/releases/download/v1/a.zip", P("a.zip"), TrustedDownloadPolicy.GitHubReleases));
+        Assert.Equal("https://evil.example/payload.zip", refused.Url);
         Assert.Empty(Directory.GetFiles(_root));
     }
 

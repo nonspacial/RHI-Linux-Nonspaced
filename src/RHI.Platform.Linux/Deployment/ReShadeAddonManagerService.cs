@@ -1,13 +1,13 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
-using RHI.Core;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Core;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
-using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -705,22 +705,11 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
 
     private async Task DownloadAsync(string url, string destination, CancellationToken cancellationToken)
     {
-        var temp = destination + $".tmp-{Guid.NewGuid():N}";
-        try
-        {
-            // DEP-06: add-on DLLs only over HTTPS from GitHub / GitHub Pages; checked before the request and after redirects.
-            using var response = await _http.GetAsync(AddonHostPolicy.ReShadeAddons.Validate(url), HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            AddonHostPolicy.ReShadeAddons.ValidateFinal(response, url);
-            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, destination, overwrite: true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
+        // DEP-06: add-on DLLs only over HTTPS from GitHub / GitHub Pages; checked before the request and after
+        // redirects, size-capped and written through a verified, fsynced temp (TrustedDownload).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, url, destination, TrustedDownloadPolicy.ReShadeAddons, cancellationToken: cancellationToken).ConfigureAwait(false);
+        download.MoveTo(destination);
     }
 
     internal static void ValidateDirectUrlArchitecture(string url, string expectedExtension)

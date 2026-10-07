@@ -1,9 +1,10 @@
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
-using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -304,38 +305,19 @@ public sealed class DofFixDeploymentService
         Directory.CreateDirectory(_cacheDir);
         var safeVersion = string.Concat(release.Version.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_'));
         var cache = Path.Combine(_cacheDir, $"{safeVersion}-{AddonFileName}");
-        var temp = cache + $".tmp-{Guid.NewGuid():N}";
 
-        // DEP-06: the release asset or the manifest's ueDofFix template must be HTTPS on GitHub.
-        using var request = new HttpRequestMessage(HttpMethod.Get, AddonHostPolicy.GitHub.Validate(release.AssetUrl));
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        AddonHostPolicy.GitHub.ValidateFinal(response, release.AssetUrl);
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            if (!BinarySignatureInspector.HasPeSignature(temp, MinimumPayloadSize))
-                throw new InvalidDataException("Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small.");
-
-            if (!string.IsNullOrWhiteSpace(release.Sha256))
-            {
-                var actual = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Downloaded Universal UE DOF Fix failed the SHA-256 digest published by GitHub.");
-            }
-
-            File.Move(temp, cache, overwrite: true);
-            return cache;
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
+        // DEP-06: the release asset or the manifest's ueDofFix template must be HTTPS on GitHub (request and redirects).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, release.AssetUrl, cache, TrustedDownloadPolicy.GitHub,
+            userAgent: ProductInfoHeaderValue.Parse(RHI.Core.RhiProductInfo.UserAgent),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!BinarySignatureInspector.HasPeSignature(download.Path, MinimumPayloadSize))
+            throw new InvalidDataException("Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small.");
+        // The digest GitHub publishes; the download already hashed the bytes it wrote.
+        if (!string.IsNullOrWhiteSpace(release.Sha256) && !string.Equals(download.Sha256, release.Sha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Downloaded Universal UE DOF Fix failed the SHA-256 digest published by GitHub.");
+        download.MoveTo(cache);
+        return cache;
     }
 
     private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)

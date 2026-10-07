@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using RHI.Core.Services;
 
 namespace RHI.Core.Deployment;
 
@@ -22,6 +23,12 @@ public static class AtomicFile
 {
     /// <summary>Marker of a toolkit temporary file; a crash can leave one behind for the start-up sweep.</summary>
     public const string TempMarker = ".rhi-tmp-";
+
+    // Fixed message fragments (localisation keys: PT-BR presentation pairs match them); the path follows each.
+    public const string ReadOnlyRefusalPrefix = "Read-only file not replaced (RHI never overwrites a file you locked; make it writable to let RHI change it): ";
+    public const string LinkRefusalPrefix = "Symbolic link not followed (RHI does not write through this link): ";
+    public const string VerifyFailurePrefix = "Written content did not verify; the original file was kept: ";
+    public const string TempLeftoverFragment = " A temporary file could not be removed: ";
 
     private const int BufferSize = FileHash.BufferSize;
 
@@ -49,7 +56,7 @@ public static class AtomicFile
             var expected = SHA256.HashData(bytes.Span);
             var written = await FileHash.Sha256Async(temp, cancellationToken).ConfigureAwait(false);
             if (!CryptographicOperations.FixedTimeEquals(expected, written))
-                throw new IOException($"Written content did not verify for {path}.");
+                throw new IOException(VerifyFailurePrefix + path);
             MoveIntoPlace(temp, path);
         }
         catch
@@ -110,7 +117,7 @@ public static class AtomicFile
         if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(path)))
         {
             FileCleanup.TryDelete(path);
-            throw new IOException($"Written content did not verify for {path}.");
+            throw new IOException(VerifyFailurePrefix + path);
         }
         FsyncDirectoryOf(path);
     }
@@ -141,15 +148,17 @@ public static class AtomicFile
                 file.Dispose();
             }
             if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(temp)))
-                throw new IOException($"Written content did not verify for {target}.");
+                throw new IOException(VerifyFailurePrefix + target);
             // The create mode is filtered by the umask; set the exact bits asked for.
             if (exactMode is { } mode && !OperatingSystem.IsWindows())
                 File.SetUnixFileMode(temp, mode);
             File.Move(temp, target, overwrite: true);
         }
-        catch
+        catch (Exception failure)
         {
-            FileCleanup.TryDelete(temp);
+            // The target is untouched; a temp that cannot be removed is reported, never swallowed.
+            if (!FileCleanup.TryDelete(temp, out var leftover))
+                throw new IOException($"{failure.Message}{TempLeftoverFragment}{temp} ({leftover!.Message})", failure);
             throw;
         }
         return FsyncDirectoryOf(target);
@@ -176,6 +185,61 @@ public static class AtomicFile
         if (OperatingSystem.IsWindows()) return null;
         try { return File.Exists(fullPath) ? File.GetUnixFileMode(fullPath) : null; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    // ---- user files ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Replaces a file the user owns (a game's ReShade.ini edited by RenoDX, a rollback restore of it) through the
+    /// one write path (unique temp, fsync, full read-back verify, rename, directory fsync). The file keeps its Unix
+    /// mode. A read-only target is refused, never replaced. A symlinked path is written through only when
+    /// <paramref name="linkPolicy"/> allows its final target (name and containment); any other link is refused.
+    /// </summary>
+    /// <param name="wrapOutput">Test seam: wraps the temp-file stream (e.g. to fail mid-write like a full disk).</param>
+    public static UserFileWriteResult ReplaceUserFile(
+        string path, byte[] bytes, UserFileLinkPolicy? linkPolicy = null, Func<Stream, Stream>? wrapOutput = null)
+    {
+        var target = ResolveUserFileTarget(path, linkPolicy);
+        if (string.IsNullOrEmpty(Path.GetDirectoryName(target))) throw new IOException($"Cannot resolve the folder of {path}.");
+        UnixFileMode? mode = null;
+        if (File.Exists(target))
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                if (File.GetAttributes(target).HasFlag(FileAttributes.ReadOnly))
+                    throw new IOException(ReadOnlyRefusalPrefix + target);
+            }
+            else
+            {
+                var current = File.GetUnixFileMode(target);
+                if (!current.HasFlag(UnixFileMode.UserWrite))
+                    throw new IOException(ReadOnlyRefusalPrefix + target);
+                mode = current;
+            }
+        }
+        var synced = WriteVerified(target, bytes, mode, wrapOutput);
+        return new UserFileWriteResult(target, synced);
+    }
+
+    /// <summary>
+    /// The file a write to <paramref name="path"/> replaces: the path itself, or the final target of a symlink the
+    /// policy allows (name equal to <see cref="UserFileLinkPolicy.RequiredFileName"/>, inside one of its roots with
+    /// every symlink resolved on both sides, not a folder). Throws <see cref="IOException"/> for any other link.
+    /// </summary>
+    public static string ResolveUserFileTarget(string path, UserFileLinkPolicy? linkPolicy)
+    {
+        if (new FileInfo(path).LinkTarget is null) return path;
+        if (linkPolicy is null) throw new IOException(LinkRefusalPrefix + path);
+
+        var final = PathIdentity.Canonicalize(path);
+        var nameAllowed = Path.GetFileName(final).Equals(linkPolicy.RequiredFileName, StringComparison.OrdinalIgnoreCase);
+        var inside = linkPolicy.AllowedRoots
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .Any(root => PathIdentity.IsSameOrInside(final, root));
+        // A link loop leaves a link at the end of the "canonical" path: refused like any other unresolvable link.
+        if (!nameAllowed || !inside || Directory.Exists(final) || new FileInfo(final).LinkTarget is not null)
+            throw new IOException($"{linkPolicy.RefusalPrefix}{path} -> {final}");
+        return final;
     }
 
     // ---- copies ----------------------------------------------------------------------------------
@@ -543,3 +607,14 @@ public static class AtomicFile
 
 /// <summary>A verified, fsynced temporary file waiting to be placed.</summary>
 public sealed record StagedFile(string Path, string Sha256, long Length);
+
+/// <summary>
+/// Which symlinked user file <see cref="AtomicFile.ReplaceUserFile"/> may write through: the link's final target must
+/// be named <paramref name="RequiredFileName"/> (case-insensitive) and lie, with every symlink resolved, inside one of
+/// <paramref name="AllowedRoots"/>. <paramref name="RefusalPrefix"/> starts the refusal message (localisation key); the
+/// link and its target follow it.
+/// </summary>
+public sealed record UserFileLinkPolicy(string RequiredFileName, IReadOnlyList<string> AllowedRoots, string RefusalPrefix);
+
+/// <summary>What <see cref="AtomicFile.ReplaceUserFile"/> did: the file actually replaced and whether its folder was fsynced.</summary>
+public sealed record UserFileWriteResult(string WrittenPath, bool DirectorySynced);

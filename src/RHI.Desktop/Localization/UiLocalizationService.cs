@@ -601,12 +601,15 @@ public static class UiLocalizationService
         ("RenoDX update check could not compare the snapshot: the server sent no ETag, Last-Modified or size.", "A verificação de atualização do RenoDX não conseguiu comparar o snapshot: o servidor não enviou ETag, Last-Modified nem tamanho."),
         ("RenoDX update check failed: ", "A verificação de atualização do RenoDX falhou: "),
         // Download host allow-list (DEP-06, #25). The refused link follows the fragment.
-        ("Download refused: RenoDX add-on links must be HTTPS on a trusted host (GitHub, GitHub Pages or renodx.com). Refused link: ",
+        // One row per download policy, keyed on the policy's own fixed refusal prefix (the link follows it).
+        (RHI.Core.Deployment.TrustedDownloadPolicy.RenoDxAddons.RefusalPrefix,
             "Download recusado: links de add-on RenoDX devem ser HTTPS em um host confiável (GitHub, GitHub Pages ou renodx.com). Link recusado: "),
-        ("Download refused: ReShade add-on links must be HTTPS on a trusted host (GitHub or GitHub Pages). Refused link: ",
+        (RHI.Core.Deployment.TrustedDownloadPolicy.ReShadeAddons.RefusalPrefix,
             "Download recusado: links de add-on ReShade devem ser HTTPS em um host confiável (GitHub ou GitHub Pages). Link recusado: "),
-        ("Download refused: GitHub links must be HTTPS on a trusted host (GitHub). Refused link: ",
+        (RHI.Core.Deployment.TrustedDownloadPolicy.GitHub.RefusalPrefix,
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        (RHI.Core.Deployment.TrustedDownloadPolicy.GitHubReleases.RefusalPrefix,
+            "Download recusado: links de release do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
         // wikiUnlinks title kept installable by a manifest snapshot override (#141). The URL follows the fragment.
         ("Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: ",

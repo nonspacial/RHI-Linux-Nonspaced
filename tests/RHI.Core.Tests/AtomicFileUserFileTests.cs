@@ -1,16 +1,16 @@
 using System.Runtime.Versioning;
-using RHI.Core.Services.RenoDxSafety;
+using RHI.Core.Deployment;
 
 namespace RHI.Core.Tests;
 
-// UserFileWriter (review w1-renodx-p0 findings 3-6): read-only refusal, link policy, read-back verify,
+// AtomicFile.ReplaceUserFile (folded from UserFileWriter; review w1-renodx-p0 findings 3-6): read-only refusal, link policy, read-back verify,
 // folder fsync, temp cleanup reported instead of swallowed.
 [SupportedOSPlatform("linux")]
-public sealed class UserFileWriterTests : IDisposable
+public sealed class AtomicFileUserFileTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-user-file-writer-tests-" + Guid.NewGuid().ToString("N"));
 
-    public UserFileWriterTests() => Directory.CreateDirectory(_root);
+    public AtomicFileUserFileTests() => Directory.CreateDirectory(_root);
 
     [Fact]
     public void Write_ReplacesTheFileAndSyncsItsFolder()
@@ -19,7 +19,7 @@ public sealed class UserFileWriterTests : IDisposable
         File.WriteAllText(file, "old");
         File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
 
-        var result = UserFileWriter.WriteAllBytes(file, "new"u8.ToArray());
+        var result = AtomicFile.ReplaceUserFile(file, "new"u8.ToArray());
 
         Assert.Equal(file, result.WrittenPath);
         Assert.True(result.DirectorySynced);
@@ -35,9 +35,9 @@ public sealed class UserFileWriterTests : IDisposable
         File.WriteAllText(file, "locked by the user");
         File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
 
-        var refused = Assert.Throws<IOException>(() => UserFileWriter.WriteAllBytes(file, "new"u8.ToArray()));
+        var refused = Assert.Throws<IOException>(() => AtomicFile.ReplaceUserFile(file, "new"u8.ToArray()));
 
-        Assert.Equal(UserFileWriter.ReadOnlyRefusalPrefix + file, refused.Message);
+        Assert.Equal(AtomicFile.ReadOnlyRefusalPrefix + file, refused.Message);
         Assert.Equal("locked by the user", File.ReadAllText(file));
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead, File.GetUnixFileMode(file));
         Assert.Single(Directory.EnumerateFileSystemEntries(_root));
@@ -50,9 +50,9 @@ public sealed class UserFileWriterTests : IDisposable
         File.WriteAllText(file, "original");
 
         var refused = Assert.Throws<IOException>(() =>
-            UserFileWriter.WriteAllBytes(file, "intended"u8.ToArray(), wrapOutput: inner => new CorruptingStream(inner)));
+            AtomicFile.ReplaceUserFile(file, "intended"u8.ToArray(), wrapOutput: inner => new CorruptingStream(inner)));
 
-        Assert.Equal(UserFileWriter.VerifyFailurePrefix + file, refused.Message);
+        Assert.Equal(AtomicFile.VerifyFailurePrefix + file, refused.Message);
         Assert.Equal("original", File.ReadAllText(file));
         Assert.Single(Directory.EnumerateFileSystemEntries(_root));
     }
@@ -66,10 +66,10 @@ public sealed class UserFileWriterTests : IDisposable
         File.WriteAllText(file, "original");
         try
         {
-            var failed = Assert.Throws<IOException>(() => UserFileWriter.WriteAllBytes(file, "new"u8.ToArray(),
+            var failed = Assert.Throws<IOException>(() => AtomicFile.ReplaceUserFile(file, "new"u8.ToArray(),
                 wrapOutput: inner => new LockFolderThenFailStream(inner, folder)));
 
-            Assert.Contains(UserFileWriter.TempLeftoverFragment, failed.Message, StringComparison.Ordinal);
+            Assert.Contains(AtomicFile.TempLeftoverFragment, failed.Message, StringComparison.Ordinal);
             Assert.StartsWith("No space left on device", failed.Message, StringComparison.Ordinal);
             Assert.Equal("original", File.ReadAllText(file));
         }
@@ -87,9 +87,9 @@ public sealed class UserFileWriterTests : IDisposable
         var link = Path.Combine(_root, "ReShade.ini");
         File.CreateSymbolicLink(link, real);
 
-        var refused = Assert.Throws<IOException>(() => UserFileWriter.WriteAllBytes(link, "new"u8.ToArray()));
+        var refused = Assert.Throws<IOException>(() => AtomicFile.ReplaceUserFile(link, "new"u8.ToArray()));
 
-        Assert.Equal(UserFileWriter.LinkRefusalPrefix + link, refused.Message);
+        Assert.Equal(AtomicFile.LinkRefusalPrefix + link, refused.Message);
         Assert.Equal("real", File.ReadAllText(real));
     }
 
@@ -108,7 +108,7 @@ public sealed class UserFileWriterTests : IDisposable
         File.CreateSymbolicLink(link, Path.Combine("config", "reshade.INI"));
         var policy = new UserFileLinkPolicy("reshade.ini", [linkedGame], "refused: ");
 
-        var result = UserFileWriter.WriteAllBytes(link, "new"u8.ToArray(), policy);
+        var result = AtomicFile.ReplaceUserFile(link, "new"u8.ToArray(), policy);
 
         Assert.Equal(realIni, result.WrittenPath);
         Assert.Equal("new", File.ReadAllText(realIni));
@@ -130,7 +130,7 @@ public sealed class UserFileWriterTests : IDisposable
         File.CreateSymbolicLink(link, target);
         var policy = new UserFileLinkPolicy("reshade.ini", [game], "ReShade.ini link not followed: ");
 
-        var refused = Assert.Throws<IOException>(() => UserFileWriter.WriteAllBytes(link, "Key=0;curl x|sh\n"u8.ToArray(), policy));
+        var refused = Assert.Throws<IOException>(() => AtomicFile.ReplaceUserFile(link, "Key=0;curl x|sh\n"u8.ToArray(), policy));
 
         Assert.Equal($"ReShade.ini link not followed: {link} -> {target}", refused.Message);
         Assert.Equal("victim", File.ReadAllText(target));

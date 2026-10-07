@@ -1,19 +1,19 @@
 using System.Net;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
-using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Core.Tests;
 
 // DEP-06 (#25): RenoDX and other add-on DLLs are fetched only over HTTPS from an explicit host allow-list.
-public sealed class AddonHostPolicyTests : IDisposable
+public sealed class TrustedDownloadPolicyTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-trusted-download-tests-" + Guid.NewGuid().ToString("N"));
 
-    public AddonHostPolicyTests() => Directory.CreateDirectory(_root);
+    public TrustedDownloadPolicyTests() => Directory.CreateDirectory(_root);
 
     [Theory]
     // Shapes taken from upstream 2.8.5 RenoDXdb.json / manifest snapshotOverrides and the redirects they follow.
@@ -25,7 +25,7 @@ public sealed class AddonHostPolicyTests : IDisposable
     [InlineData("https://Marat569.GitHub.io/renodx/renodx-ue-extended.addon64")]
     [InlineData("https://renodx.com/renodx-unrealengine.addon64")]
     public void RenoDxPolicy_AcceptsUpstreamHosts(string url)
-        => Assert.True(AddonHostPolicy.RenoDxAddons.IsTrusted(url));
+        => Assert.True(TrustedDownloadPolicy.RenoDxAddons.IsTrusted(url));
 
     [Theory]
     [InlineData("http://github.com/clshortfuse/renodx/releases/download/snapshot/x.addon64")]
@@ -45,17 +45,17 @@ public sealed class AddonHostPolicyTests : IDisposable
     [InlineData(null)]
     public void RenoDxPolicy_RefusesEverythingElse(string? url)
     {
-        Assert.False(AddonHostPolicy.RenoDxAddons.IsTrusted(url));
-        var refused = Assert.Throws<UntrustedDownloadException>(() => AddonHostPolicy.RenoDxAddons.Validate(url));
+        Assert.False(TrustedDownloadPolicy.RenoDxAddons.IsTrusted(url));
+        var refused = Assert.Throws<UntrustedDownloadException>(() => TrustedDownloadPolicy.RenoDxAddons.Validate(url));
         Assert.EndsWith(url ?? "", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void GitHubPolicy_DoesNotAcceptPagesOrRenoDxCom()
     {
-        Assert.True(AddonHostPolicy.GitHub.IsTrusted("https://github.com/RankFTW/rhi-repo/releases/download/x/y.addon64"));
-        Assert.False(AddonHostPolicy.GitHub.IsTrusted("https://clshortfuse.github.io/renodx/x.addon64"));
-        Assert.False(AddonHostPolicy.GitHub.IsTrusted("https://renodx.com/x.addon64"));
+        Assert.True(TrustedDownloadPolicy.GitHub.IsTrusted("https://github.com/RankFTW/rhi-repo/releases/download/x/y.addon64"));
+        Assert.False(TrustedDownloadPolicy.GitHub.IsTrusted("https://clshortfuse.github.io/renodx/x.addon64"));
+        Assert.False(TrustedDownloadPolicy.GitHub.IsTrusted("https://renodx.com/x.addon64"));
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public sealed class AddonHostPolicyTests : IDisposable
     [Fact]
     public void RefusalMessages_ArePresentedInPortuguese()
     {
-        foreach (var policy in new[] { AddonHostPolicy.RenoDxAddons, AddonHostPolicy.ReShadeAddons, AddonHostPolicy.GitHub })
+        foreach (var policy in new[] { TrustedDownloadPolicy.RenoDxAddons, TrustedDownloadPolicy.ReShadeAddons, TrustedDownloadPolicy.GitHub, TrustedDownloadPolicy.GitHubReleases, RHI.Core.Services.DlssManagerService.DownloadPolicy })
         {
             var message = new UntrustedDownloadException("http://evil/x.addon64", policy).Message;
             var pt = UiLocalizationService.PresentFor("pt-BR", message);

@@ -1,8 +1,8 @@
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
-using RHI.Core.Services.RenoDxSafety;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -53,8 +53,8 @@ public sealed class RenoDxDeploymentService
         _engineIniFiles = new UpstreamEngineIniFileManager(http, Path.Combine(_cacheDir, "engine-files"));
     }
 
-    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="AddonHostPolicy.RenoDxAddons"/>).</summary>
-    public static AddonHostPolicy DownloadPolicy => AddonHostPolicy.RenoDxAddons;
+    /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="TrustedDownloadPolicy.RenoDxAddons"/>).</summary>
+    public static TrustedDownloadPolicy DownloadPolicy => TrustedDownloadPolicy.RenoDxAddons;
 
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
@@ -766,7 +766,7 @@ public sealed class RenoDxDeploymentService
                     if (string.IsNullOrEmpty(directory))
                         throw new IOException($"Cannot resolve the folder of {snapshot.Path}.");
                     Directory.CreateDirectory(directory);
-                    UserFileWriter.WriteAllBytes(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
+                    AtomicFile.ReplaceUserFile(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
                 }
                 else if (File.Exists(snapshot.Path))
                 {
@@ -797,7 +797,7 @@ public sealed class RenoDxDeploymentService
             try
             {
                 Directory.CreateDirectory(System.IO.Path.GetDirectoryName(candidate)!);
-                UserFileWriter.WriteAllBytes(candidate, snapshot.Bytes);
+                AtomicFile.ReplaceUserFile(candidate, snapshot.Bytes);
                 return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
             }
             catch (Exception ex)
@@ -899,30 +899,21 @@ public sealed class RenoDxDeploymentService
         if (current)
             return (cache, cachedRemote);
         CacheStamp.Invalidate(cache);
-        var temp = cache + $".tmp-{Guid.NewGuid():N}";
-        RenoDxRemoteStamp remote;
-        using (var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+        RenoDxRemoteStamp? remote = null;
+        // HTTPS + allow-list on the request and after redirects, size cap, fsynced verified temp (TrustedDownload).
+        using (var download = await TrustedDownload.DownloadToTempAsync(
+                   _http, url, cache, DownloadPolicy, cancellationToken: cancellationToken,
+                   onResponse: response => remote = RenoDxRemoteStamp.FromResponse(response)).ConfigureAwait(false))
         {
-            response.EnsureSuccessStatusCode();
-            DownloadPolicy.ValidateFinal(response, url);
-            remote = RenoDxRemoteStamp.FromResponse(response);
-            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+            if (!BinarySignatureInspector.HasPeSignature(download.Path, 100 * 1024))
+                throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
+            // The snapshot's own time, so a version-less add-on keeps one version across re-downloads.
+            if (remote!.LastModified is { } lastModified)
+                File.SetLastWriteTimeUtc(download.Path, lastModified.UtcDateTime);
+            AtomicFile.Delete(source);
+            download.MoveTo(cache);
         }
-        if (!BinarySignatureInspector.HasPeSignature(temp, 100 * 1024))
-        {
-            File.Delete(temp);
-            throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
-        }
-        // The snapshot's own time, so a version-less add-on keeps one version across re-downloads.
-        if (remote.LastModified is { } lastModified)
-            File.SetLastWriteTimeUtc(temp, lastModified.UtcDateTime);
-        if (File.Exists(source)) File.Delete(source);
-        File.Move(temp, cache, overwrite: true);
-        var sourceTemp = source + $".tmp-{Guid.NewGuid():N}";
-        await File.WriteAllTextAsync(sourceTemp, RenoDxRemoteStamp.SerializeSidecar(url, remote), CancellationToken.None).ConfigureAwait(false);
-        File.Move(sourceTemp, source, overwrite: true);
+        AtomicFile.WriteAllText(source, RenoDxRemoteStamp.SerializeSidecar(url, remote));
         // Written last: the stamp hashes the bytes now in place (it does not use mtime).
         CacheStamp.Write(cache, url);
         return (cache, remote.HasValidator ? remote : null);
@@ -956,9 +947,7 @@ public sealed class RenoDxDeploymentService
         {
             using var headCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             headCts.CancelAfter(TimeSpan.FromSeconds(10));
-            using var request = new HttpRequestMessage(HttpMethod.Head, DownloadPolicy.Validate(url));
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headCts.Token).ConfigureAwait(false);
-            DownloadPolicy.ValidateFinal(response, url);
+            using var response = await TrustedDownload.HeadAsync(_http, url, DownloadPolicy, headCts.Token).ConfigureAwait(false);
             return response.IsSuccessStatusCode
                 ? (RenoDxRemoteStamp.FromResponse(response), null)
                 : (null, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");

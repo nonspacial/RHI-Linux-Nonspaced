@@ -1,8 +1,8 @@
 using System.Net;
 using System.Runtime.Versioning;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
-using RHI.Core.Services.RenoDxSafety;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
@@ -28,7 +28,7 @@ public sealed class RenoDxIniSafetyTests : IDisposable
         var refused = Assert.Throws<IOException>(() =>
             RenoDxIniOverrideManager.Apply(_root, new Dictionary<string, string> { ["Set_Path"] = "1" }));
 
-        Assert.Equal(UserFileWriter.ReadOnlyRefusalPrefix + ini, refused.Message);
+        Assert.Equal(AtomicFile.ReadOnlyRefusalPrefix + ini, refused.Message);
         Assert.Equal("[renodx]\nSet_Path=0\n", File.ReadAllText(ini));
         Assert.Equal(ReadOnly, File.GetUnixFileMode(ini));
         Assert.Single(Directory.EnumerateFileSystemEntries(_root));
@@ -49,7 +49,7 @@ public sealed class RenoDxIniSafetyTests : IDisposable
         var result = service.SetCompatibilitySetting(new DetectedGame { Name = "Locked", InstallPath = _root, BinaryDirectory = bin }, "Set_Path", "1");
 
         Assert.False(result.Success);
-        Assert.Contains(UserFileWriter.ReadOnlyRefusalPrefix + ini, result.Message, StringComparison.Ordinal);
+        Assert.Contains(AtomicFile.ReadOnlyRefusalPrefix + ini, result.Message, StringComparison.Ordinal);
         Assert.Contains("Arquivo somente leitura não substituído", UiLocalizationService.PresentFor("pt-BR", result.Message), StringComparison.Ordinal);
         Assert.Contains("Read-only file not replaced", UiLocalizationService.PresentFor("en-US", result.Message), StringComparison.Ordinal);
         Assert.Equal("[renodx]\nSet_Path=0\n", File.ReadAllText(ini));

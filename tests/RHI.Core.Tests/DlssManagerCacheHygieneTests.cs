@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -88,7 +89,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         var service = new DlssManagerService(new HttpClient(handler), new TransactionalFileDeploymentService(), cache);
         await service.FetchManifestAsync();
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => service.EnsureCachedAsync(DlssComponentKind.SuperResolution, "9.1"));
+        await Assert.ThrowsAsync<UntrustedDownloadException>(() => service.EnsureCachedAsync(DlssComponentKind.SuperResolution, "9.1"));
         Assert.Empty(CacheFiles(cache));
     }
 
