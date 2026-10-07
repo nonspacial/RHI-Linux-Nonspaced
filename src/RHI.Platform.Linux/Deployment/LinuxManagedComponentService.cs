@@ -1668,7 +1668,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private async Task<ManagedUpdateCheck> CheckReShadeManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken)
     {
         var status = await _reshade.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false);
-        return new ManagedUpdateCheck(status.IsInstalled, status.UpdateAvailable, status.Message, status.InstalledVersion, status.LatestVersion);
+        return new ManagedUpdateCheck(status.IsInstalled, status.UpdateAvailable, status.Message, status.InstalledVersion, status.LatestVersion,
+            CouldNotCheck: status.CouldNotCheck);
     }
 
     public Task<ComponentOperationResult> UpdateManagedAsync(
@@ -1682,7 +1683,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
         return Track(game, component, ComponentUpdateAction.Update, () => component switch
         {
-            ManagedComponentKind.ReShade => _reshade.InstallAsync(game, _reshade.GetInstalledOptions(game), cancellationToken),
+            ManagedComponentKind.ReShade => _reshade.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.UpdateAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.ReLimiter => _relimiter.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.UpdateAsync(game, cancellationToken),

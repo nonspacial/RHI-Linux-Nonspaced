@@ -13,6 +13,9 @@ public sealed partial class MainWindow
     public AvailableHdrModsCatalog? HdrModsCatalog { get; set; }
 
     private const string HdrModsColumns = "*,64,64,80";
+    // Upstream 2.8.5: headers and ✗ marks use the secondary text colour (#A0AABB, ~8:1 on the #121518 dialog),
+    // not faded or muted text (~3.4:1), so they stay readable.
+    private const string HdrModsSecondaryTextKey = "RhiSecondaryTextBrush";
 
     // Upstream 2.7.6 "Available HDR Mods": searchable catalogue-wide list with RenoDX/Luma columns and a link.
     private async void AvailableHdrMods_Click(object? sender, RoutedEventArgs e)
@@ -119,9 +122,9 @@ public sealed partial class MainWindow
             Text = text,
             FontSize = 11,
             FontWeight = FontWeight.SemiBold,
-            Opacity = 0.7,
             HorizontalAlignment = column == 0 ? HorizontalAlignment.Left : HorizontalAlignment.Center
         };
+        block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable(HdrModsSecondaryTextKey));
         header.Children.Add(block);
         Grid.SetColumn(block, column);
     }
@@ -163,14 +166,12 @@ public sealed partial class MainWindow
             },
             FontSize = 13,
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = new SolidColorBrush(Color.Parse(availability switch
-            {
-                HdrModAvailability.Available => availableColour,
-                HdrModAvailability.WorkInProgress => "#D4A856",
-                _ => "#6B7A8E"
-            }))
+            VerticalAlignment = VerticalAlignment.Center
         };
+        if (availability == HdrModAvailability.None)
+            block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable(HdrModsSecondaryTextKey));
+        else
+            block.Foreground = new SolidColorBrush(Color.Parse(availability == HdrModAvailability.Available ? availableColour : "#D4A856"));
         ToolTip.SetTip(block, availability switch
         {
             HdrModAvailability.Available => L("Disponível", "Available"),

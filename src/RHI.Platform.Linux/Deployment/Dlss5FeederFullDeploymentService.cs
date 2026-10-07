@@ -187,6 +187,10 @@ public sealed class Dlss5FeederFullDeploymentService
         }
     }
 
+    // The host64 ReShade is staged like any stable ReShade: during a reshade.me outage it comes from the cache.
+    internal static string Host64CacheNote(bool fromCache)
+        => fromCache ? " The 64-bit host ReShade came from the ReShade cache because reshade.me was unavailable." : "";
+
     /// <summary>
     /// Replaces only the Feeder add-on (plus the host64 helper on 32-bit games, which ships in the
     /// same archive and must match it) with the pinned or latest release. The consumer, DLSS DLLs,
@@ -535,6 +539,7 @@ public sealed class Dlss5FeederFullDeploymentService
             Directory.CreateDirectory(shaderRoot);
             Directory.CreateDirectory(textureRoot);
             createdDirs.Add(integrationRoot);
+            var host64CacheNote = "";
             if (layout.RequiresHost64)
             {
                 if (_reShade is null)
@@ -542,6 +547,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 Directory.CreateDirectory(layout.Host64Directory!);
                 createdDirs.Add(layout.Host64Directory!);
                 var hostReShade = await _reShade.EnsureLatestStagedAsync(PeArchitecture.X64, cancellationToken).ConfigureAwait(false);
+                host64CacheNote = Host64CacheNote(hostReShade.FromCache);
                 await CopyOwnedAsync(host64Executable!, layout.Host64ExecutableTarget!, copied, cancellationToken).ConfigureAwait(false);
                 await CopyOwnedAsync(hostReShade.DllPath, Path.Combine(layout.Host64Directory!, "dxgi.dll"), copied, cancellationToken).ConfigureAwait(false);
             }
@@ -682,7 +688,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 ? $"Deep Fried Chicken {dfc!.Version}. The consumer binaries matched SHA256SUMS.txt and early ReShade loading was configured for {DeepFriedAddonName}.{configNote}"
                 : $"RenoDX DLSS5 {renoDxRelease!.Version}. No Deep Fried Chicken files or LoadFromDllMain token were installed.";
             return ComponentOperationResult.Ok(
-                $"DLSS5 Feeder Full {feederRelease.Version} installed with {consumerMessage}",
+                $"DLSS5 Feeder Full {feederRelease.Version} installed with {consumerMessage}{host64CacheNote}",
                 copied.ToArray());
         }
         catch (Exception ex)
