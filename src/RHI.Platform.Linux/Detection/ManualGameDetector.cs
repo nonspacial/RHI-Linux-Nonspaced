@@ -45,27 +45,35 @@ public sealed class ManualGameDetector : IGameDetector
     {
         cancellationToken.ThrowIfCancellationRequested();
         var games = _store.Load().ManualGames
-            // Add/Edit refuse these roots; an older entry with one is not listed rather than indexing
-            // $HOME, / or a whole Wine prefix on every selection.
-            .Where(entry => GameRootGuard.IsAcceptable(entry.InstallPath))
-            .Select(entry => new DetectedGame
+            // Unchanged from main: an entry whose folder no longer exists is not listed (it stays saved).
+            .Where(entry => Directory.Exists(entry.InstallPath))
+            .Select(entry =>
             {
-                Name = entry.Name,
-                InstallPath = entry.InstallPath,
-                Source = "Manual",
-                IsManuallyAdded = true,
-                ExecutablePath = File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null,
-                LaunchExecutablePath = File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null,
-                BinaryDirectory = File.Exists(entry.ExecutablePath)
-                    ? Path.GetDirectoryName(entry.ExecutablePath)
-                    : entry.InstallPath,
-                PrefixPath = Directory.Exists(entry.PrefixPath) ? entry.PrefixPath : null,
-                Runner = entry.Runner ?? "Manual Windows",
-                LaunchCommand = entry.LaunchCommand,
-                CompatibilityLayerType = Directory.Exists(entry.PrefixPath) ? "wine" : null,
-                UserGraphicsApiOverride = entry.UserGraphicsApiOverride
+                // Add/Edit refuse $HOME, /, a whole Wine prefix… as a game folder. An older entry saved with
+                // one stays listed (never hidden: it is the user's entry) as "folder not allowed", with no
+                // patch target, so nothing indexes or patches that folder; Remove or Edit repairs it.
+                var notAllowed = !GameRootGuard.IsAcceptable(entry.InstallPath);
+                var exe = !notAllowed && File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null;
+                return new DetectedGame
+                {
+                    Name = entry.Name,
+                    InstallPath = entry.InstallPath,
+                    Source = "Manual",
+                    IsManuallyAdded = true,
+                    GameRootNotAllowed = notAllowed,
+                    RequiresExplicitPatchTarget = notAllowed,
+                    ExecutablePath = exe,
+                    LaunchExecutablePath = File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null,
+                    BinaryDirectory = notAllowed
+                        ? null
+                        : exe is not null ? Path.GetDirectoryName(exe) : entry.InstallPath,
+                    PrefixPath = Directory.Exists(entry.PrefixPath) ? entry.PrefixPath : null,
+                    Runner = entry.Runner ?? "Manual Windows",
+                    LaunchCommand = entry.LaunchCommand,
+                    CompatibilityLayerType = Directory.Exists(entry.PrefixPath) ? "wine" : null,
+                    UserGraphicsApiOverride = entry.UserGraphicsApiOverride
+                };
             })
-            .Cast<DetectedGame>()
             .ToArray();
         return Task.FromResult<IReadOnlyList<DetectedGame>>(games);
     }

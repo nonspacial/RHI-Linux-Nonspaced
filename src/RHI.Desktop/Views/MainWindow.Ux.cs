@@ -223,10 +223,10 @@ public sealed partial class MainWindow
                     LaunchCommand = string.IsNullOrWhiteSpace(launchBox.Text) ? null : launchBox.Text.Trim(),
                     Runner = prefix is null ? "Manual Windows" : "Manual Wine"
                 };
-                var (added, result) = await vm.TryAddManualGameAsync(entry);
-                status.Text = result;
-                if (added)
-                    dialog.Close();
+                // Closes as soon as the entry is saved: a refresh that waits for a running operation
+                // reports to the main status line, not to a disabled dialog with no message.
+                var (added, result) = await vm.TryAddManualGameAsync(entry, saved: dialog.Close);
+                if (!added) status.Text = result;
             }
             catch (Exception ex)
             {
@@ -421,8 +421,10 @@ public sealed partial class MainWindow
             reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
             try
             {
-                status.Text = await vm.ResetSelectedGameEditAsync();
-                dialog.Close();
+                // Closes once the reset is saved; a refusal (managed components present) stays visible here.
+                var closed = false;
+                var result = await vm.ResetSelectedGameEditAsync(saved: () => { closed = true; dialog.Close(); });
+                if (!closed) status.Text = result;
             }
             catch (Exception ex)
             {
@@ -439,13 +441,13 @@ public sealed partial class MainWindow
             try
             {
                 var chosenProvider = provider.SelectedItem?.ToString();
-                status.Text = await vm.SaveSelectedGameEditAsync(
+                var (saved, result) = await vm.TrySaveSelectedGameEditAsync(
                     patchExecutable.Text?.Trim() ?? "",
                     gameRoot.Text?.Trim() ?? "",
                     binaryDirectory.Text?.Trim() ?? "",
-                    chosenProvider);
-                if (status.Text.Contains("alvo de modificações salvo", StringComparison.OrdinalIgnoreCase) || status.Text.Contains("modification target saved", StringComparison.OrdinalIgnoreCase))
-                    dialog.Close();
+                    chosenProvider,
+                    saved: dialog.Close);
+                if (!saved) status.Text = result;
             }
             catch (Exception ex)
             {

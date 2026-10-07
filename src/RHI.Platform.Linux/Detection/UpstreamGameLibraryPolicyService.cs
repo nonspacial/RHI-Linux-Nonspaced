@@ -281,6 +281,7 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
             InstallPath = game.InstallPath,
             Source = game.Source,
             IsManuallyAdded = game.IsManuallyAdded,
+            GameRootNotAllowed = game.GameRootNotAllowed,
             SteamAppId = game.SteamAppId,
             ManifestSteamAppIdOverride = game.ManifestSteamAppIdOverride,
             EpicCatalogNamespace = game.EpicCatalogNamespace,

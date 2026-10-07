@@ -52,7 +52,7 @@ public sealed class GameRootGuardTests
     }
 
     [Fact]
-    public async Task ManualDetector_DoesNotListAWholePrefixOrRoot()
+    public async Task ManualDetector_ListsAWholePrefixOrRoot_AsNotAllowed_WithNoPatchTarget()
     {
         using var tree = new DetectionTestTree();
         var store = new LinuxGameLibraryStore(tree.Path_("game-library.json"));
@@ -65,9 +65,19 @@ public sealed class GameRootGuardTests
         state.ManualGames.Add(new LinuxManualGameEntry { Name = "Real", InstallPath = game });
         store.Save(state);
 
-        var games = await new ManualGameDetector(store).DetectAsync();
+        var games = (await new ManualGameDetector(store).DetectAsync()).ToDictionary(g => g.Name);
 
-        Assert.Equal("Real", Assert.Single(games).Name);
+        // Never hidden (it is the user's entry), never indexed or patched.
+        Assert.Equal(["Prefix", "Real", "Root"], games.Keys.Order(StringComparer.Ordinal));
+        foreach (var refused in new[] { games["Prefix"], games["Root"] })
+        {
+            Assert.True(refused.GameRootNotAllowed);
+            Assert.False(refused.HasConfirmedPatchTarget);
+            Assert.Null(refused.ExecutablePath);
+            Assert.Null(refused.BinaryDirectory);
+        }
+        Assert.False(games["Real"].GameRootNotAllowed);
+        Assert.True(games["Real"].HasConfirmedPatchTarget);
     }
 
     [Fact]

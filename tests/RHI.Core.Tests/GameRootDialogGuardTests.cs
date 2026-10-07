@@ -1,0 +1,175 @@
+using RHI.Core.Models;
+using RHI.Desktop.ViewModels;
+using RHI.Platform.Linux.Detection;
+using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// #59 at the view-model seam (w1/detect review findings 2, 9, 10): Add and Edit refuse a whole Wine
+/// prefix, $HOME and / as a game folder and leave the library untouched; an older saved entry with such a
+/// folder stays listed as "folder not allowed" and can be removed; the dialogs can close as soon as their
+/// change is saved instead of waiting, disabled, for a running operation.
+/// Assertions are structural (flags and stores), never on localised text.
+/// </summary>
+public sealed class GameRootDialogGuardTests
+{
+    private static string Exe(string directory, string name = "Game.exe")
+    {
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, name);
+        File.WriteAllBytes(path, [(byte)'M', (byte)'Z', .. new byte[4096]]);
+        return path;
+    }
+
+    /// <summary>A Wine prefix root holding a game, and that game's exe.</summary>
+    private static (string Prefix, string GameExe) PrefixWithGame(string root)
+    {
+        var prefix = Path.Combine(root, "pfx");
+        Directory.CreateDirectory(Path.Combine(prefix, "drive_c", "windows"));
+        File.WriteAllText(Path.Combine(prefix, "system.reg"), "WINE REGISTRY Version 2\n");
+        return (prefix, Exe(Path.Combine(prefix, "drive_c", "Games", "Inside")));
+    }
+
+    private static string Snapshot(string path) => File.Exists(path) ? File.ReadAllText(path) : "<none>";
+
+    private static string HomeGameExe() => Exe(Path.Combine(LinuxPaths.Home, $"rhi-guard-{Guid.NewGuid():N}"));
+
+    public static TheoryData<string> RefusedRoots => new() { "prefix", "home", "root" };
+
+    private static (string Root, string Exe) Refused(string kind, DetectViewModelFixture fixture) => kind switch
+    {
+        "prefix" => PrefixWithGame(fixture.Root),
+        "home" => (LinuxPaths.Home, HomeGameExe()),
+        _ => ("/", Exe(Path.Combine(fixture.Root, "anywhere")))
+    };
+
+    [Theory]
+    [MemberData(nameof(RefusedRoots))]
+    public async Task AddManualGame_RefusesTheFolder_AndLeavesTheLibraryUnchanged(string kind)
+    {
+        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        var (root, exe) = Refused(kind, fixture);
+        Assert.NotEqual(GameRootProblem.None, GameRootGuard.Check(root));
+        var before = Snapshot(fixture.Library.LibraryPath);
+        var saved = false;
+
+        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+            new LinuxManualGameEntry { Name = "Guarded", InstallPath = root, ExecutablePath = exe }, () => saved = true);
+
+        Assert.False(added);
+        Assert.False(saved);
+        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.Empty(fixture.Library.Load().ManualGames);
+        Assert.Equal(before, Snapshot(fixture.Library.LibraryPath));
+        Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Guarded");
+    }
+
+    [Theory]
+    [MemberData(nameof(RefusedRoots))]
+    public async Task EditGame_RefusesTheFolder_AndSavesNoOverride(string kind)
+    {
+        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        var listed = Exe(Path.Combine(fixture.Root, "games", "Listed"));
+        var state = fixture.Library.Load();
+        state.ManualGames.Add(new LinuxManualGameEntry { Name = "Listed", InstallPath = Path.GetDirectoryName(listed)!, ExecutablePath = listed });
+        fixture.Library.Save(state);
+        await fixture.Vm.RefreshCommand.ExecuteAsync(null);
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Listed");
+        // The exe and binaries folder sit inside the refused root, so only the root guard can refuse.
+        var (root, exe) = Refused(kind, fixture);
+
+        var (savedEdit, message) = await fixture.Vm.TrySaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null);
+
+        Assert.False(savedEdit);
+        Assert.False(string.IsNullOrWhiteSpace(message));
+        Assert.Empty(fixture.Library.Load().GameEdits);
+    }
+
+    [Fact]
+    public async Task SavedEntriesWithARefusedFolder_StayListedAsNotAllowed_AndCanBeRemoved()
+    {
+        using var fixture = await DetectViewModelFixture.StartAsync([], seed: store =>
+        {
+            var state = store.Load();
+            state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Home", InstallPath = LinuxPaths.Home, LaunchCommand = "true" });
+            var prefix = PrefixWithGame(Path.GetFullPath(Path.Combine(Path.GetDirectoryName(store.LibraryPath)!, ".."))).Prefix;
+            state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Prefix", InstallPath = prefix });
+            store.Save(state);
+        });
+
+        var home = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
+        var whole = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Prefix");
+        foreach (var game in new[] { home, whole })
+        {
+            Assert.True(game.GameRootNotAllowed);
+            Assert.False(game.HasConfirmedPatchTarget);
+            Assert.True(game.IsManuallyAdded);
+            Assert.Contains("⚠", game.LibraryBadge);
+        }
+        Assert.Equal(LinuxPaths.Home, home.InstallPath);
+        Assert.Equal("true", home.LaunchCommand);
+
+        fixture.Vm.SelectedGame = home;
+        Assert.Contains("Whole Home", fixture.Vm.PatchTargetStatusText);
+        Assert.Contains(LinuxPaths.Home, fixture.Vm.SelectedInstallPath);
+        Assert.True(fixture.Vm.CanRemoveManualGame);
+        await fixture.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+
+        Assert.Equal(["Whole Prefix"], fixture.Library.Load().ManualGames.Select(e => e.Name));
+        Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Whole Home");
+    }
+
+    [Fact]
+    public async Task EditingARefusedEntryOntoTheGamesOwnFolder_ClearsTheState()
+    {
+        using var fixture = await DetectViewModelFixture.StartAsync([], seed: store =>
+        {
+            var state = store.Load();
+            state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Home", InstallPath = LinuxPaths.Home });
+            store.Save(state);
+        });
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
+        var exe = HomeGameExe();
+
+        var (saved, _) = await fixture.Vm.TrySaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
+
+        Assert.True(saved);
+        var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
+        Assert.False(fixedGame.GameRootNotAllowed);
+        Assert.True(fixedGame.HasConfirmedPatchTarget);
+        Assert.Equal(Path.GetDirectoryName(exe), fixedGame.InstallPath);
+    }
+
+    [Fact]
+    public async Task AddAndEdit_ReportSavedBeforeTheRefreshWaitsForARunningOperation()
+    {
+        using var fixture = await DetectViewModelFixture.StartAsync([]);
+        var exe = Exe(Path.Combine(fixture.Root, "games", "Busy Add"));
+        var vm = fixture.Vm;
+
+        vm.IsBusy = true; // e.g. Update All running
+        var addSaved = false;
+        var add = vm.TryAddManualGameAsync(
+            new LinuxManualGameEntry { Name = "Busy Add", InstallPath = Path.GetDirectoryName(exe)!, ExecutablePath = exe }, () => addSaved = true);
+
+        Assert.True(addSaved);
+        Assert.False(add.IsCompleted);
+        Assert.Single(fixture.Library.Load().ManualGames);
+
+        vm.IsBusy = false;
+        var (added, _) = await add.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(added);
+
+        vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add");
+        vm.IsBusy = true;
+        var editSaved = false;
+        var edit = vm.TrySaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
+
+        Assert.True(editSaved);
+        Assert.False(edit.IsCompleted);
+        vm.IsBusy = false;
+        Assert.True((await edit.WaitAsync(TimeSpan.FromSeconds(30))).Saved);
+    }
+}
