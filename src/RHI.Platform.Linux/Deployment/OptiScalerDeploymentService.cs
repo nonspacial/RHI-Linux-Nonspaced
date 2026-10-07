@@ -352,18 +352,27 @@ public sealed partial class OptiScalerDeploymentService
         var reShade64 = reShadeRecord?.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
         var dxgi = Path.Combine(record.BinaryDirectory, "dxgi.dll");
 
+        var changed = false;
+        ComponentOperationResult FailKeepingProgress(string message)
+        {
+            // Files already removed/restored must leave the record, or a restored .original blocks every retry.
+            if (changed)
+            {
+                PruneFgStackOwnership(record);
+                _records.Upsert(record);
+            }
+            return ComponentOperationResult.Fail(message);
+        }
+
         try
         {
-            // Preflight every destructive action before changing any file.
+            // Preflight every destructive action before changing any file. Kept/taken-over files are
+            // hash-checked too: restoring their .original would overwrite a file the user replaced.
             foreach (var file in record.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (file.ExistedBeforeInstall)
-                {
-                    if (!File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
-                        return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler: preserved original is missing for {file.Path}.");
-                    continue;
-                }
+                if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
+                    return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler: preserved original is missing for {file.Path}.");
                 if (!File.Exists(file.Path) || file.AllowUserChanges) continue;
                 var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -383,31 +392,35 @@ public sealed partial class OptiScalerDeploymentService
                 // order is ReShade first, then OptiScaler.
                 var proxyRecord = record.Files.FirstOrDefault(file =>
                     Path.GetFullPath(file.Path).Equals(Path.GetFullPath(dxgi), StringComparison.Ordinal));
-                if (proxyRecord is null)
+                // No proxy record with dxgi.dll gone: an earlier, partly failed removal already deleted it.
+                if (proxyRecord is null && File.Exists(dxgi))
                     return ComponentOperationResult.Fail("Cannot safely remove OptiScaler while ReShade depends on it: the managed dxgi.dll record is missing.");
-                if (proxyRecord.ExistedBeforeInstall)
+                if (proxyRecord is { ExistedBeforeInstall: true })
                     return ComponentOperationResult.Fail("Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing dxgi.dll, so ReShade64.dll cannot be moved back to dxgi.dll without overwriting that original.");
             }
 
-            foreach (var file in record.Files.OrderByDescending(file => file.Path.Length))
+            foreach (var file in record.Files.OrderByDescending(file => file.Path.Length).ToArray())
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall)
                 {
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
-                    if (!restored.Success) return ComponentOperationResult.Fail(restored.Error ?? $"Could not restore {file.Path}");
+                    if (!restored.Success) return FailKeepingProgress(restored.Error ?? $"Could not restore {file.Path}");
                 }
                 else
                 {
-                    try { if (File.Exists(file.Path)) File.Delete(file.Path); } catch (Exception ex) { return ComponentOperationResult.Fail($"Could not remove {file.Path}: {ex.Message}"); }
+                    try { if (File.Exists(file.Path)) File.Delete(file.Path); }
+                    catch (Exception ex) { return FailKeepingProgress($"Could not remove {file.Path}: {ex.Message}"); }
                 }
+                record.Files.Remove(file);
+                changed = true;
             }
 
             var keptReShade = false;
             if (reShadeRecord is not null && reShade64 is not null && File.Exists(reShade64.Path))
             {
                 if (File.Exists(dxgi))
-                    return ComponentOperationResult.Fail("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
+                    return FailKeepingProgress("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
                 File.Move(reShade64.Path, dxgi);
                 reShade64.Path = dxgi;
                 reShade64.Sha256 = await Sha256Async(dxgi, cancellationToken).ConfigureAwait(false);
@@ -428,7 +441,7 @@ public sealed partial class OptiScalerDeploymentService
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"OptiScaler removal failed: {ex.Message}");
+            return FailKeepingProgress($"OptiScaler removal failed: {ex.Message}");
         }
     }
 
