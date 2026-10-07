@@ -1613,8 +1613,9 @@ public partial class MainWindowViewModel : ObservableObject
         IReadOnlyList<string>? indexedFiles)
     {
         if (ConfirmInstallWarningAsync is not { } confirm) return true;
-        var warnings = ManifestInstallWarning.ForInstall(game, target, installsTarget,
-            _managedComponents.PendingAutoDependencies(game, target, indexedFiles));
+        // The dependency plan may index the game folder (RE Framework check on RE Engine games): keep it off the UI thread.
+        var pending = await Task.Run(() => _managedComponents.PendingAutoDependencies(game, target, indexedFiles));
+        var warnings = ManifestInstallWarning.ForInstall(game, target, installsTarget, pending);
         if (warnings.Count == 0) return true;
         if (await confirm(LF("⚠ Nota de instalação — {0}", "⚠ Install note — {0}", game.Name), InstallWarningSections(warnings, displayName), L("Continuar", "Continue")))
             return true;

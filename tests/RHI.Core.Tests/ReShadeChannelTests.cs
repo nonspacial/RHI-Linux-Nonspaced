@@ -283,6 +283,71 @@ public sealed class ReShadeChannelTests : IDisposable
         Assert.Equal("9.9.9", store.Find(game, ManagedComponentKind.ReShade)!.Version);
     }
 
+    // up-131 re-review minor 1: the install-warning list and the install read one dependency plan, so the warnings name
+    // exactly what the install adds — and nothing when the install refuses.
+    [Fact]
+    public async Task PendingAutoDependencies_AreWhatTheInstallAdds()
+    {
+        var (game, store) = CreateGame("plan-parity");
+        var components = ManagedComponents(store, NewService(store, new MutableHandler(), Path.Combine(_root, "plan-parity-cache")));
+
+        var pending = components.PendingAutoDependencies(game, ManagedComponentKind.RenoDX);
+        var targetRan = false;
+        var result = await components.InstallWithManagedDependenciesAsync(game, ManagedComponentKind.RenoDX, null,
+            () => { targetRan = true; return Task.FromResult(ComponentOperationResult.Ok("target installed")); },
+            CancellationToken.None);
+
+        Assert.True(result.Success, result.Message);
+        Assert.True(targetRan);
+        Assert.Equal([ManagedComponentKind.ReShade], pending);
+        Assert.Equal(pending, store.FindAll(game).Select(record => record.Component));
+        Assert.Empty(components.PendingAutoDependencies(game, ManagedComponentKind.RenoDX));
+    }
+
+    [Theory]
+    [InlineData("nested-broken")]   // RE Engine: ReShade would need RE Framework, whose managed record lost its payload
+    [InlineData("conflict")]        // ReLimiter while Display Commander is managed
+    public async Task PendingAutoDependencies_RefusedInstall_ListsNothingAndAddsNothing(string scenario)
+    {
+        var (game, store) = CreateGame("plan-refused-" + scenario);
+        var components = ManagedComponents(store, NewService(store, new MutableHandler(), Path.Combine(_root, "plan-refused-" + scenario + "-cache")));
+        ManagedComponentKind target;
+        if (scenario == "nested-broken")
+        {
+            game.EngineHint = "RE Engine";
+            target = ManagedComponentKind.RenoDX;
+            store.Upsert(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.REFramework,
+                BinaryDirectory = game.BinaryDirectory!, Version = "1",
+                Files = [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, "dinput8.dll") }]
+            });
+        }
+        else
+        {
+            target = ManagedComponentKind.ReLimiter;
+            var payload = Path.Combine(game.BinaryDirectory!, "DisplayCommander.addon64");
+            File.WriteAllText(payload, "x");
+            store.Upsert(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.DisplayCommander,
+                BinaryDirectory = game.BinaryDirectory!, Version = "1", Files = [new LinuxDeployedFile { Path = payload }]
+            });
+        }
+        var before = store.FindAll(game).Select(record => record.Component).ToArray();
+
+        Assert.Empty(components.PendingAutoDependencies(game, target));
+        var targetRan = false;
+        var result = await components.InstallWithManagedDependenciesAsync(game, target, null,
+            () => { targetRan = true; return Task.FromResult(ComponentOperationResult.Ok("target installed")); },
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(targetRan);
+        Assert.Equal(before, store.FindAll(game).Select(record => record.Component));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+    }
+
     // up-132 re-review nit 2: the page answers, then the setup download hits an outage — the same outage handling.
     [Theory]
     [InlineData(HttpStatusCode.BadGateway, false)]

@@ -879,10 +879,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     /// <summary>
     /// The managed dependencies an install of <paramref name="target"/> would add automatically right now, in install
-    /// order (nested first: RE Framework before ReShade on an RE Engine game). Mirrors
-    /// <see cref="EnsureManagedDependenciesAsync"/> without touching anything: dependencies already managed or supplied
-    /// externally are skipped, and a broken managed dependency (the install refuses) adds nothing. Used to show the
-    /// manifest warnings of those components before a user-initiated install (upstream 2.8.0 #131).
+    /// order (nested first: RE Framework before ReShade on an RE Engine game). Read from the same plan the install
+    /// executes (<see cref="PlanManagedDependencies"/>), without touching anything: dependencies already managed or
+    /// supplied externally are skipped, and when the install would refuse (a broken managed dependency anywhere in the
+    /// graph, a conflicting component) nothing is added. Used to show the manifest warnings of those components before
+    /// a user-initiated install (upstream 2.8.0 #131). May index the game folder (RE Framework check): call it off the
+    /// UI thread.
     /// </summary>
     public IReadOnlyList<ManagedComponentKind> PendingAutoDependencies(
         DetectedGame game,
@@ -893,51 +895,108 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, target).Count == 0)
             return Array.Empty<ManagedComponentKind>();
 
-        // Only the RE Framework check reads the file index; build it on first use.
         IReadOnlyList<string>? index = null;
-        var pending = new List<ManagedComponentKind>();
-        var visiting = new HashSet<ManagedComponentKind>();
-        Walk(target);
-        return pending;
+        var plan = PlanManagedDependencies(game, target, () => index ??= BuildDependencyIndex(game, indexedFiles), cancellationToken);
+        return plan.Refusal is null
+            ? plan.Steps.Select(step => step.Dependency).ToArray()
+            : Array.Empty<ManagedComponentKind>();
+    }
 
-        void Walk(ManagedComponentKind component)
+    /// <summary>One automatic dependency to install, and the component that requires it.</summary>
+    internal readonly record struct ManagedDependencyStep(ManagedComponentKind Parent, ManagedComponentKind Dependency);
+
+    /// <summary>What an install of a target does to its managed dependencies: the steps in install order, or a refusal.</summary>
+    internal sealed record ManagedDependencyPlan(IReadOnlyList<ManagedDependencyStep> Steps, ComponentOperationResult? Refusal);
+
+    /// <summary>
+    /// The single automatic-dependency walk shared by <see cref="PendingAutoDependencies"/> and the install. Reads the
+    /// record store and the game folder only. Order: nested dependencies first, each Missing dependency once.
+    /// </summary>
+    internal ManagedDependencyPlan PlanManagedDependencies(
+        DetectedGame game,
+        ManagedComponentKind target,
+        Func<IReadOnlyList<string>> index,
+        CancellationToken cancellationToken)
+    {
+        var refusal = DependencyConflictGuard(game, target);
+        if (refusal is not null) return new ManagedDependencyPlan(Array.Empty<ManagedDependencyStep>(), refusal);
+
+        var steps = new List<ManagedDependencyStep>();
+        var visiting = new HashSet<ManagedComponentKind>();
+        refusal = Walk(target);
+        return refusal is null
+            ? new ManagedDependencyPlan(steps, null)
+            : new ManagedDependencyPlan(Array.Empty<ManagedDependencyStep>(), refusal);
+
+        ComponentOperationResult? Walk(ManagedComponentKind component)
         {
-            if (!visiting.Add(component)) return;
-            foreach (var dependency in LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, component))
+            if (!visiting.Add(component))
+                return ComponentOperationResult.Fail($"Dependency cycle detected while preparing {DisplayDependencyName(component)}.");
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var files = dependency == ManagedComponentKind.REFramework
-                    ? index ??= BuildDependencyIndex(game, indexedFiles)
-                    : indexedFiles ?? Array.Empty<string>();
-                var satisfaction = InspectDependency(game, component, dependency, files, cancellationToken);
-                if (satisfaction is DependencySatisfaction.External or DependencySatisfaction.BrokenManaged) continue;
-                Walk(dependency);
-                if (satisfaction == DependencySatisfaction.Missing && !pending.Contains(dependency)) pending.Add(dependency);
+                foreach (var dependency in LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, component))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var satisfaction = InspectDependency(game, component, dependency, DependencyFiles(dependency, index), cancellationToken);
+                    if (satisfaction == DependencySatisfaction.BrokenManaged)
+                        return ComponentOperationResult.Fail(
+                            $"A dependência gerenciada {DisplayDependencyName(dependency)} possui registro de ownership, mas seu payload não está presente. Repare ou remova esse estado antes de instalar {DisplayDependencyName(component)}.");
+
+                    // An external dependency is a preservation boundary. It may satisfy ordinary add-ons,
+                    // but RHI does not recurse into or adopt the external stack. RHI-managed dependencies,
+                    // on the other hand, must keep their own transitive dependency graph valid.
+                    if (satisfaction == DependencySatisfaction.External) continue;
+
+                    var nested = Walk(dependency);
+                    if (nested is not null) return nested;
+                    if (satisfaction == DependencySatisfaction.Missing && !steps.Any(step => step.Dependency == dependency))
+                        steps.Add(new ManagedDependencyStep(component, dependency));
+                }
+                return null;
             }
-            visiting.Remove(component);
+            finally
+            {
+                visiting.Remove(component);
+            }
         }
     }
 
-    private async Task<ComponentOperationResult> InstallWithManagedDependenciesAsync(
+    // Only the RE Framework check reads the file index; other dependencies are checked by record or fixed file names.
+    private static IReadOnlyList<string> DependencyFiles(ManagedComponentKind dependency, Func<IReadOnlyList<string>> index)
+        => dependency == ManagedComponentKind.REFramework ? index() : Array.Empty<string>();
+
+    internal async Task<ComponentOperationResult> InstallWithManagedDependenciesAsync(
         DetectedGame game,
         ManagedComponentKind target,
         IReadOnlyList<string>? indexedFiles,
         Func<Task<ComponentOperationResult>> targetInstaller,
         CancellationToken cancellationToken)
     {
-        var conflict = DependencyConflictGuard(game, target);
-        if (conflict is not null) return conflict;
+        IReadOnlyList<string>? index = null;
+        IReadOnlyList<string> Index() => index ??= BuildDependencyIndex(game, indexedFiles);
+        ManagedDependencyPlan plan;
+        try
+        {
+            plan = PlanManagedDependencies(game, target, Index, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return ComponentOperationResult.Fail("Instalação cancelada durante a resolução automática de dependências.");
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"Falha inesperada durante a resolução automática de dependências: {ex.Message}");
+        }
+        if (plan.Refusal is not null) return plan.Refusal;
 
-        var index = BuildDependencyIndex(game, indexedFiles);
         var installedThisAttempt = new List<ManagedComponentKind>();
         var dependencyChanges = new List<string>();
-        var visiting = new HashSet<ManagedComponentKind>();
 
         ComponentOperationResult dependencies;
         try
         {
-            dependencies = await EnsureManagedDependenciesAsync(
-                game, target, index, installedThisAttempt, dependencyChanges, visiting, cancellationToken).ConfigureAwait(false);
+            dependencies = await InstallPlannedDependenciesAsync(
+                game, plan, Index, installedThisAttempt, dependencyChanges, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -994,62 +1053,38 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         };
     }
 
-    private async Task<ComponentOperationResult> EnsureManagedDependenciesAsync(
+    // Executes a plan from PlanManagedDependencies step by step. Each step is re-checked right before it runs, since
+    // an earlier step (or the user, meanwhile) may have changed what is there.
+    private async Task<ComponentOperationResult> InstallPlannedDependenciesAsync(
         DetectedGame game,
-        ManagedComponentKind target,
-        IReadOnlyList<string> indexedFiles,
+        ManagedDependencyPlan plan,
+        Func<IReadOnlyList<string>> index,
         List<ManagedComponentKind> installedThisAttempt,
         List<string> dependencyChanges,
-        HashSet<ManagedComponentKind> visiting,
         CancellationToken cancellationToken)
     {
-        if (!visiting.Add(target))
-            return ComponentOperationResult.Fail($"Dependency cycle detected while preparing {DisplayDependencyName(target)}.");
-
-        try
+        foreach (var (parent, dependency) in plan.Steps)
         {
-            foreach (var dependency in LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, target))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var satisfaction = InspectDependency(game, target, dependency, indexedFiles, cancellationToken);
-                if (satisfaction == DependencySatisfaction.BrokenManaged)
-                    return ComponentOperationResult.Fail(
-                        $"A dependência gerenciada {DisplayDependencyName(dependency)} possui registro de ownership, mas seu payload não está presente. Repare ou remova esse estado antes de instalar {DisplayDependencyName(target)}.");
+            cancellationToken.ThrowIfCancellationRequested();
+            var satisfaction = InspectDependency(game, parent, dependency, DependencyFiles(dependency, index), cancellationToken);
+            if (satisfaction is DependencySatisfaction.Managed or DependencySatisfaction.External) continue;
+            if (satisfaction == DependencySatisfaction.BrokenManaged)
+                return ComponentOperationResult.Fail(
+                    $"A dependência gerenciada {DisplayDependencyName(dependency)} ficou inconsistente durante a resolução automática.");
 
-                // An external dependency is a preservation boundary. It may satisfy ordinary add-ons,
-                // but RHI does not recurse into or adopt the external stack. RHI-managed dependencies,
-                // on the other hand, must keep their own transitive dependency graph valid.
-                if (satisfaction == DependencySatisfaction.External) continue;
+            var before = _records.Find(game, dependency);
+            var install = await InstallDependencyCoreAsync(game, dependency, cancellationToken).ConfigureAwait(false);
+            if (!install.Success)
+                return ComponentOperationResult.Fail(
+                    $"Não foi possível instalar automaticamente a dependência {DisplayDependencyName(dependency)} exigida por {DisplayDependencyName(parent)}: {install.Message}");
 
-                var nested = await EnsureManagedDependenciesAsync(
-                    game, dependency, indexedFiles, installedThisAttempt, dependencyChanges, visiting, cancellationToken).ConfigureAwait(false);
-                if (!nested.Success) return nested;
-
-                satisfaction = InspectDependency(game, target, dependency, indexedFiles, cancellationToken);
-                if (satisfaction == DependencySatisfaction.Managed) continue;
-                if (satisfaction == DependencySatisfaction.External) continue;
-                if (satisfaction == DependencySatisfaction.BrokenManaged)
-                    return ComponentOperationResult.Fail(
-                        $"A dependência gerenciada {DisplayDependencyName(dependency)} ficou inconsistente durante a resolução automática.");
-
-                var before = _records.Find(game, dependency);
-                var install = await InstallDependencyCoreAsync(game, dependency, cancellationToken).ConfigureAwait(false);
-                if (!install.Success)
-                    return ComponentOperationResult.Fail(
-                        $"Não foi possível instalar automaticamente a dependência {DisplayDependencyName(dependency)} exigida por {DisplayDependencyName(target)}: {install.Message}");
-
-                if (before is null && _records.Find(game, dependency) is not null)
-                    installedThisAttempt.Add(dependency);
-                if (install.ChangedFiles is { Count: > 0 })
-                    dependencyChanges.AddRange(install.ChangedFiles.Where(path => !string.IsNullOrWhiteSpace(path)));
-            }
-
-            return ComponentOperationResult.Ok("Dependencies ready.");
+            if (before is null && _records.Find(game, dependency) is not null)
+                installedThisAttempt.Add(dependency);
+            if (install.ChangedFiles is { Count: > 0 })
+                dependencyChanges.AddRange(install.ChangedFiles.Where(path => !string.IsNullOrWhiteSpace(path)));
         }
-        finally
-        {
-            visiting.Remove(target);
-        }
+
+        return ComponentOperationResult.Ok("Dependencies ready.");
     }
 
     private Task<ComponentOperationResult> InstallDependencyCoreAsync(
