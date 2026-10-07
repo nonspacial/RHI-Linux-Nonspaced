@@ -380,9 +380,20 @@ public partial class MainWindowViewModel : ObservableObject
     }
     public bool HasSelectedGame => SelectedGame is not null;
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
-    public string? LaunchToolTip => SelectedGame?.ParentLauncherName is { Length: > 0 } parent
-        ? LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent)
-        : null;
+    public string? LaunchToolTip => SelectedGame switch
+    {
+        { ParentLauncherName: { Length: > 0 } parent } => LF("Abre {0}. Inicie o jogo a partir do launcher.", "Opens {0}. Start the game from the launcher.", parent),
+        { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game)
+            => LF("Indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton e atualize a biblioteca.",
+                  "Unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton and refresh the library.",
+                  game.CompatibilityTool ?? "?"),
+        _ => null
+    };
+
+    private static string OrphanedProtonText(DetectedGame game)
+        => LF("Winetricks indisponível: este prefixo foi criado pelo Proton {0}, que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca.",
+              "Winetricks unavailable: this prefix was built by Proton {0}, which is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library.",
+              game.CompatibilityTool ?? game.Runner ?? "?");
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
     public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
     public bool CanInstallD3DCompilerWithWinetricks
@@ -397,6 +408,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             null => L("Selecione um jogo para determinar o auxiliar D3DCompiler correto.", "Select a game to determine the correct D3DCompiler helper."),
             { UsesProton: true } => L("Alvo Steam/Proton: Protontricks é usado com o Steam AppID.", "Steam/Proton target: Protontricks is used with the Steam AppID."),
+            { } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game) => OrphanedProtonText(game),
             { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
                 => LF("Alvo {0}: Winetricks usa o {1} ativo e o prefixo correspondente; executores Proton são normalizados para o Wine embutido em vez do Wine do sistema.", "{0} target: Winetricks uses the active {1} and matching prefix; Proton runners are normalized to their embedded Wine instead of system Wine.", game.Source, game.CompatibilityTool ?? game.Runner ?? L("executor do launcher", "launcher runner")),
             { SteamAppId: null, PrefixPath: not null } => L("Alvo Wine independente/do sistema: Winetricks é executado contra o WINEPREFIX detectado.", "Standalone/system Wine target: Winetricks runs against the detected WINEPREFIX."),

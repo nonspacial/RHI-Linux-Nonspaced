@@ -550,6 +550,8 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] PresentationPairs =
     [
+        ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
+         "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
         // RenoDX update check (#129). Mod names, HTTP status and exception text follow the fragments.
         ("RenoDX is not managed by RHI Linux.", "O RenoDX não é gerenciado pelo RHI Linux."),
         ("Game executable is unavailable; RenoDX update check skipped.", "Executável do jogo indisponível; a verificação de atualização do RenoDX foi ignorada."),

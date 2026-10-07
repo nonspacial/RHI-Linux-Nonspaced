@@ -133,7 +133,10 @@ public sealed class WinePrefixDetector : IGameDetector
     /// </summary>
     internal sealed record PrefixRuntime(bool IsProton, string? Version, string? WineBinary, string? WineServer)
     {
-        public static PrefixRuntime Read(string prefix)
+        public static PrefixRuntime Read(string prefix) => Read(prefix, FindOnPath);
+
+        /// <param name="onPath">Resolves a program name on PATH (host Wine), injectable for tests.</param>
+        internal static PrefixRuntime Read(string prefix, Func<string, string?> onPath)
         {
             // Steam-style layout keeps the markers beside `pfx/`.
             var dirs = Path.GetFileName(prefix) == "pfx" ? new[] { prefix, Path.GetDirectoryName(prefix)! } : [prefix];
@@ -149,7 +152,12 @@ public sealed class WinePrefixDetector : IGameDetector
                 if (!string.IsNullOrEmpty(fonts) && Path.IsPathRooted(fonts))
                 {
                     var bin = Path.GetFullPath(Path.Combine(fonts.TrimEnd('/'), "..", "..", "bin"));
-                    wine = new[] { "wine", "wine64" }.Select(n => Path.Combine(bin, n)).FirstOrDefault(File.Exists);
+                    if (IsProtonDistBin(bin))
+                    {
+                        wine = new[] { "wine", "wine64" }.Select(n => Path.Combine(bin, n)).FirstOrDefault(File.Exists);
+                        // Never the host's Wine, whatever the path says: it would run wineboot over the prefix.
+                        if (wine is not null && IsHostWine(wine, onPath)) wine = null;
+                    }
                     var serverPath = Path.Combine(bin, "wineserver");
                     server = wine is not null && File.Exists(serverPath) ? serverPath : null;
                 }
@@ -157,6 +165,35 @@ public sealed class WinePrefixDetector : IGameDetector
             }
             return new PrefixRuntime(false, null, null, null);
         }
+
+        /// <summary>
+        /// A Proton build keeps its Wine in <c>&lt;dist&gt;/files/bin</c> (or <c>dist/bin</c> in older builds)
+        /// beside a <c>proton</c> script or <c>version</c> file. Anything else (a stale or hand-edited
+        /// config_info pointing at /usr/share/fonts, say) is not that Proton's Wine.
+        /// </summary>
+        internal static bool IsProtonDistBin(string bin)
+        {
+            var files = Path.GetDirectoryName(bin.TrimEnd('/'));
+            if (files is null || Path.GetFileName(bin.TrimEnd('/')) != "bin") return false;
+            if (Path.GetFileName(files) is not ("files" or "dist")) return false;
+            var dist = Path.GetDirectoryName(files);
+            return dist is not null &&
+                   (File.Exists(Path.Combine(dist, "proton")) || File.Exists(Path.Combine(dist, "version")));
+        }
+
+        private static bool IsHostWine(string wine, Func<string, string?> onPath)
+        {
+            var canonical = LauncherOwnedPrefixes.Canonicalise(wine);
+            return new[] { "wine", "wine64" }
+                .Select(onPath)
+                .Any(host => host is not null && LauncherOwnedPrefixes.Canonicalise(host) == canonical);
+        }
+
+        private static string? FindOnPath(string program)
+            => (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+                .Select(dir => Path.Combine(dir, program))
+                .FirstOrDefault(File.Exists);
 
         private static string[]? ReadLines(string path)
         {

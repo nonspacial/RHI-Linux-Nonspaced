@@ -154,7 +154,7 @@
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenFolder}" Command="{Binding OpenGameFolderCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.OpenPrefix}" Command="{Binding OpenPrefixCommand}" IsEnabled="{Binding HasSelectedGame}"/>
               <Button views:DetailHeaderPanel.Role="Action" Content="{DynamicResource Ui.Play}" Command="{Binding LaunchCommand}" IsEnabled="{Binding CanLaunch}"
-                      ToolTip.Tip="{Binding LaunchToolTip}"
+                      ToolTip.Tip="{Binding LaunchToolTip}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"
                       Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1"
                       CornerRadius="8" Padding="16,8"/>
             </WrapPanel>

@@ -37,6 +37,8 @@ public sealed class D3DCompilerToolInstaller
     {
         if (!CanInstallWithWinetricks(game))
         {
+            if (IsOrphanedProtonPrefix(game))
+                return Task.FromResult(ComponentOperationResult.Fail(OrphanedProtonMessage(game)));
             if (game.SteamAppId.HasValue)
                 return Task.FromResult(ComponentOperationResult.Fail("This is a Steam/Proton game. Use the Protontricks button instead of Winetricks."));
             if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
@@ -80,7 +82,9 @@ public sealed class D3DCompilerToolInstaller
         CancellationToken cancellationToken = default)
     {
         if (!CanInstallWithWinetricks(game))
-            return Task.FromResult(ComponentOperationResult.Fail("No safe Winetricks route is available for this prefix."));
+            return Task.FromResult(ComponentOperationResult.Fail(IsOrphanedProtonPrefix(game)
+                ? OrphanedProtonMessage(game)
+                : "No safe Winetricks route is available for this prefix."));
 
         var launcherManaged = IsLauncherManagedPrefix(game);
         if (launcherManaged && (string.IsNullOrWhiteSpace(game.WineBinaryPath) || !File.Exists(game.WineBinaryPath)))
@@ -208,7 +212,24 @@ public sealed class D3DCompilerToolInstaller
         => !game.SteamAppId.HasValue
            && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(game.PrefixPath)
-           && Directory.Exists(game.PrefixPath);
+           && Directory.Exists(game.PrefixPath)
+           && !IsOrphanedProtonPrefix(game);
+
+    /// <summary>
+    /// A Proton-built prefix (outside Steam) whose Proton build is no longer installed. Only that
+    /// Proton's own Wine may run in it: system Wine runs wineboot over the prefix and can break it, so
+    /// Winetricks and direct launches are refused until the build is back.
+    /// </summary>
+    public static bool IsOrphanedProtonPrefix(DetectedGame game)
+        => !game.SteamAppId.HasValue
+           && string.Equals(game.CompatibilityLayerType, "proton", StringComparison.OrdinalIgnoreCase)
+           && (string.IsNullOrWhiteSpace(game.WineBinaryPath) || !File.Exists(game.WineBinaryPath));
+
+    internal const string OrphanedProtonMessagePrefix =
+        "Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ";
+
+    private static string OrphanedProtonMessage(DetectedGame game)
+        => OrphanedProtonMessagePrefix + (game.CompatibilityTool ?? game.Runner ?? "?");
 
     public static bool IsLauncherManagedPrefix(DetectedGame game)
         => game.Source.StartsWith("Heroic", StringComparison.OrdinalIgnoreCase)
