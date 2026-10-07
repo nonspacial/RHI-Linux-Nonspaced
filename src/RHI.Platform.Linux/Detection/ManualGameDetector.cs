@@ -15,6 +15,32 @@ public sealed class ManualGameDetector : IGameDetector
 
     public ManualGameDetector(LinuxGameLibraryStore store) => _store = store;
 
+    /// <summary>
+    /// Removes the saved manual entries behind a listed game and returns how many were removed. Matches
+    /// the folder the entry was saved with (the game's library identity), not the current InstallPath,
+    /// which a game edit or the manifest can rewrite.
+    /// </summary>
+    public static int RemoveEntries(LinuxGameLibraryState state, DetectedGame game)
+    {
+        var identities = new[]
+            {
+                string.IsNullOrWhiteSpace(game.LibraryIdentityPath) ? game.InstallPath : game.LibraryIdentityPath,
+                // The manifest can move InstallPath before the identity is taken; it keeps the original here.
+                game.ManifestInstallRoot
+            }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Normalise(path!))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return state.ManualGames.RemoveAll(entry =>
+            !string.IsNullOrWhiteSpace(entry.InstallPath) && identities.Contains(Normalise(entry.InstallPath)));
+    }
+
+    private static string Normalise(string path)
+    {
+        var full = Path.GetFullPath(path);
+        return full.Length > 1 ? full.TrimEnd(Path.DirectorySeparatorChar) : full;
+    }
+
     public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

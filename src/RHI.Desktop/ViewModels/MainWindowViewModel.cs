@@ -888,6 +888,7 @@ public partial class MainWindowViewModel : ObservableObject
     // those computed states on every busy transition so both surfaces converge automatically.
     partial void OnIsBusyChanged(bool value)
     {
+        _busyGate.SetBusy(value);
         _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
@@ -1167,6 +1168,7 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelected();
     }
 
+    private readonly BusyGate _busyGate = new();
     private static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
     private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
 
@@ -1174,12 +1176,25 @@ public partial class MainWindowViewModel : ObservableObject
     private Task RefreshAsync() => RefreshAsync(null);
 
     /// <summary>
-    /// Full library refresh when <paramref name="onlyDetectors"/> is null; otherwise only the named
-    /// detectors are re-run and the rest of the library is reused from the previous scan.
+    /// Refresh that waits for the current busy operation (startup DLSS fetch, Update All…) instead of
+    /// being skipped, for changes the user just saved. True when the refresh ran and succeeded.
     /// </summary>
-    private async Task RefreshAsync(IReadOnlySet<string>? onlyDetectors)
+    private async Task<bool> RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors)
     {
-        if (IsBusy) return;
+        if (IsBusy)
+            StatusText = L("Aguardando a operação atual terminar para atualizar a biblioteca…", "Waiting for the current operation to finish before updating the library…");
+        await _busyGate.WhenIdleAsync();
+        return await RefreshAsync(onlyDetectors);
+    }
+
+    /// <summary>
+    /// Full library refresh when <paramref name="onlyDetectors"/> is null; otherwise only the named
+    /// detectors are re-run and the rest of the library is reused from the previous scan. False when it
+    /// did not run (busy) or failed.
+    /// </summary>
+    private async Task<bool> RefreshAsync(IReadOnlySet<string>? onlyDetectors)
+    {
+        if (IsBusy) return false;
         IsBusy = true;
         StatusText = onlyDetectors is null
             ? L("Verificando Steam, Heroic, Lutris e prefixos Wine…", "Scanning Steam, Heroic, Lutris and Wine prefixes…")
@@ -1236,10 +1251,12 @@ public partial class MainWindowViewModel : ObservableObject
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             StatusText = LF("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", _allGames.Count);
+            return true;
         }
         catch (Exception ex)
         {
             StatusText = LF("Falha na verificação: {0}", "Scan failed: {0}", ex.Message);
+            return false;
         }
         finally
         {
@@ -2742,7 +2759,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
-        await RefreshAsync(NoDetectors);
+        if (!await RefreshWhenIdleAsync(NoDetectors))
+            return LF("{0}: alvo de modificações salvo, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: modification target saved, but the library was not updated. Use Refresh.", name);
         return LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name);
     }
 
@@ -2757,7 +2775,8 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryStore.Save(_libraryState);
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
-        await RefreshAsync(NoDetectors);
+        if (!await RefreshWhenIdleAsync(NoDetectors))
+            return LF("{0}: alterações salvas, mas a biblioteca não foi atualizada. Use Atualizar.", "{0}: changes saved, but the library was not updated. Use Refresh.", name);
         return removed
             ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
             : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
@@ -2805,9 +2824,13 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryState.FilterMode = "All Games";
         _libraryStore.Save(_libraryState);
         LibraryFilterMode = "All Games";
-        await RefreshAsync(ManualOnly);
-        SelectedGame = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
-            Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
+        if (!await RefreshWhenIdleAsync(ManualOnly))
+            return (true, LF("{0} foi salvo na biblioteca manual, mas a biblioteca não foi atualizada. Use Atualizar.", "{0} was saved to the manual library, but the library was not updated. Use Refresh.", entry.Name));
+        var added = _allGames.FirstOrDefault(game => game.IsManuallyAdded &&
+            Path.GetFullPath(game.LibraryIdentityPath ?? game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase));
+        if (added is null)
+            return (true, LF("{0} foi salvo na biblioteca manual, mas não apareceu na lista. Confira a pasta do jogo.", "{0} was saved to the manual library but did not appear in the list. Check the game folder.", entry.Name));
+        SelectedGame = added;
         return (true, LF("{0} foi adicionado à biblioteca manual.", "Added {0} to the manual library.", entry.Name));
     }
 
@@ -2815,16 +2838,17 @@ public partial class MainWindowViewModel : ObservableObject
     private async Task RemoveManualGameAsync()
     {
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
-        var installPath = Path.GetFullPath(selected.InstallPath);
         _libraryState = _libraryStore.Load();
-        _libraryState.ManualGames.RemoveAll(entry =>
+        // By the folder the entry was saved with: an edit or the manifest may have moved InstallPath.
+        if (ManualGameDetector.RemoveEntries(_libraryState, selected) == 0)
         {
-            try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
-            catch { return false; }
-        });
+            StatusText = LF("{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed.", selected.Name);
+            return;
+        }
         _libraryStore.Save(_libraryState);
-        await RefreshAsync(ManualOnly);
-        StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
+        StatusText = await RefreshWhenIdleAsync(ManualOnly)
+            ? LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name)
+            : LF("{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh.", selected.Name);
     }
 
     public async Task<ComponentOperationResult> InstallLocalLumaPackageAsync(
