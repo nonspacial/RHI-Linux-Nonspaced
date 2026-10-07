@@ -137,6 +137,31 @@ public sealed class TransactionalFileDeploymentTests : IDisposable
         Assert.False(File.Exists(target + ".original"));
     }
 
+    [Fact]
+    public async Task Restore_TouchesOnlyTargetAndOriginal_LeavesUnownedSidecarsAlone()
+    {
+        // #40: restore used to delete "<target>.rhi_custom", a file nothing in RHI creates.
+        var source = Path.Combine(_root, "sidecar-new.dll");
+        var target = Path.Combine(_root, "sidecar-target.dll");
+        var sidecar = target + ".rhi_custom";
+        var unrelated = Path.Combine(_root, "unrelated.txt");
+        await File.WriteAllTextAsync(source, "replacement");
+        await File.WriteAllTextAsync(target, "original");
+        await File.WriteAllTextAsync(sidecar, "user data");
+        await File.WriteAllTextAsync(unrelated, "other");
+
+        var service = new TransactionalFileDeploymentService();
+        Assert.True((await service.ReplaceAsync(source, target)).Success);
+        var before = Directory.GetFiles(_root).Order(StringComparer.Ordinal).ToArray();
+
+        Assert.True((await service.RestoreAsync(target)).Success);
+
+        var after = Directory.GetFiles(_root).Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(before.Where(path => path != target + ".original"), after);
+        Assert.Equal("user data", await File.ReadAllTextAsync(sidecar));
+        Assert.Equal("original", await File.ReadAllTextAsync(target));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

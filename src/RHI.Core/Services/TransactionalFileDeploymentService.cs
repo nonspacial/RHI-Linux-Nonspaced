@@ -112,7 +112,6 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
             // Only consume .original after the target is proven byte-identical to it.
             File.Delete(backupPath);
             TryDelete(currentSnapshot);
-            TryDelete(targetPath + ".rhi_custom");
             return new(true, targetPath, null, null, Changed: true);
         }
         catch (Exception ex)
