@@ -27,7 +27,7 @@ public sealed partial class MainWindow
     // Live source of the '…' menu: assigned before the first open so the presenter binds to it. It holds the
     // prebuilt items (one per toolbar button, bindings created once) of the buttons currently overflowing.
     private readonly System.Collections.ObjectModel.ObservableCollection<MenuItem> _overflowMenuItems = [];
-    private readonly Dictionary<Button, MenuItem> _overflowMenuItemFor = [];
+    private readonly Dictionary<Button, OverflowMenuEntry> _overflowMenuItemFor = [];
     private bool _libraryOverlayOpen;
     private bool _overflowSyncQueued;
     private string? _libraryLayoutKey;
@@ -42,8 +42,12 @@ public sealed partial class MainWindow
     {
         if (this.FindControl<ToolbarPanel>("ToolbarRow") is { } toolbar)
         {
-            BuildOverflowMenuItems(toolbar);
             toolbar.OverflowItemsChanged += (_, _) => QueueOverflowMenuSync();
+            toolbar.Children.CollectionChanged += (_, _) =>
+            {
+                DropOverflowMenuItemsOfRemovedButtons(toolbar);
+                QueueOverflowMenuSync();
+            };
         }
         if (this.FindControl<Button>("ToolbarOverflowButton")?.Flyout is MenuFlyout overflowMenu)
             overflowMenu.ItemsSource = _overflowMenuItems;
@@ -95,6 +99,7 @@ public sealed partial class MainWindow
 
         if (toggle is not null) toggle.IsVisible = narrow;
         if (backdrop is not null) backdrop.IsVisible = narrow && _libraryOverlayOpen;
+        if (this.FindControl<Border>("StatusBarBackdrop") is { } statusBackdrop) statusBackdrop.IsVisible = narrow && _libraryOverlayOpen;
         if (narrow)
         {
             main.ColumnDefinitions = new ColumnDefinitions("0,*");
@@ -120,7 +125,8 @@ public sealed partial class MainWindow
     }
 
     // While the overlay is open, Tab/Shift+Tab cycle inside it (search box, chips, list) and the controls behind
-    // it (detail pane, status bar) are no tab stops and take no pointer input; the toolbar above stays usable.
+    // it (detail pane, status bar) are no tab stops and take no pointer input; the toolbar above stays usable. The
+    // dimmed backdrop covers both (LibraryBackdrop, StatusBarBackdrop), so a click on either closes the overlay.
     private void ApplyOverlayFocusScope(bool open)
     {
         if (this.FindControl<Border>("LibrarySidebar") is { } sidebar)
@@ -203,21 +209,40 @@ public sealed partial class MainWindow
         e.Handled = true;
     }
 
+    // A toolbar button's mirror item in the '…' menu and the bindings that tie it to the button.
+    private sealed record OverflowMenuEntry(MenuItem Item, IDisposable[] Bindings);
+
     // The '…' menu lists the buttons the toolbar moved out of the row, in order, with their labels, enabled state,
-    // tooltips and actions. One MenuItem per toolbar button is built once (its bindings live as long as the window);
-    // only which of them sit in the menu's collection changes.
-    private void BuildOverflowMenuItems(ToolbarPanel toolbar)
+    // tooltips and actions. One MenuItem per toolbar button is built the first time that button overflows (a button
+    // added to the toolbar later gets one too); afterwards only which of them sit in the menu's collection changes.
+    // The bindings live while the button is in the toolbar: removing it disposes them and drops the item, and a
+    // button added back gets a fresh one.
+    private MenuItem OverflowMenuItemFor(Button button)
     {
-        foreach (var button in toolbar.Children.OfType<Button>().Where(b => ToolbarPanel.GetSlot(b) == ToolbarSlot.Item))
+        if (_overflowMenuItemFor.TryGetValue(button, out var existing)) return existing.Item;
+        var item = new MenuItem();
+        item.Classes.Add(OverflowMenuClass);
+        IDisposable[] bindings =
+        [
+            item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty)),
+            item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty)),
+            item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty))
+        ];
+        item.Click += (_, _) => InvokeToolbarButton(button);
+        _overflowMenuItemFor[button] = new OverflowMenuEntry(item, bindings);
+        return item;
+    }
+
+    // Disposes the bindings of buttons no longer in the toolbar (the button may be kept and re-added elsewhere, so
+    // its subscriptions must not keep the old item alive) and takes their items out of the menu.
+    private void DropOverflowMenuItemsOfRemovedButtons(ToolbarPanel toolbar)
+    {
+        foreach (var gone in _overflowMenuItemFor.Keys.Where(b => !toolbar.Children.Contains(b)).ToList())
         {
-            var item = new MenuItem();
-            item.Classes.Add(OverflowMenuClass);
-            item.Bind(MenuItem.HeaderProperty, button.GetObservable(ContentControl.ContentProperty));
-            item.Bind(IsEnabledProperty, button.GetObservable(IsEffectivelyEnabledProperty));
-            item.Bind(ToolTip.TipProperty, button.GetObservable(ToolTip.TipProperty));
-            var source = button;
-            item.Click += (_, _) => InvokeToolbarButton(source);
-            _overflowMenuItemFor[button] = item;
+            var entry = _overflowMenuItemFor[gone];
+            _overflowMenuItemFor.Remove(gone);
+            foreach (var binding in entry.Bindings) binding.Dispose();
+            _overflowMenuItems.Remove(entry.Item);
         }
     }
 
@@ -240,8 +265,8 @@ public sealed partial class MainWindow
     private void SyncOverflowMenuItems()
     {
         if (this.FindControl<ToolbarPanel>("ToolbarRow") is not { } toolbar) return;
-        var wanted = toolbar.OverflowItems.OfType<Button>()
-            .Select(b => _overflowMenuItemFor.GetValueOrDefault(b)).OfType<MenuItem>().ToList();
+        DropOverflowMenuItemsOfRemovedButtons(toolbar);
+        var wanted = toolbar.OverflowItems.OfType<Button>().Select(OverflowMenuItemFor).ToList();
         if (wanted.SequenceEqual(_overflowMenuItems)) return;
         _overflowMenuItems.Clear();
         foreach (var item in wanted) _overflowMenuItems.Add(item);

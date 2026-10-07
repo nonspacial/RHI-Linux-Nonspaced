@@ -14,6 +14,19 @@ namespace RHI.Desktop.Views;
 /// like ordinary text when <see cref="WrapNonPath"/> is set, otherwise they are trimmed at the end (full text in the
 /// tooltip). Styled as a plain TextBlock; <see cref="TextBlock.Text"/> holds the full value.
 /// </summary>
+// PINNED TO AVALONIA 12.1.2 INTERNALS (TextBlock source read at tag 12.1.2). On any Avalonia upgrade re-read
+// TextBlock.cs and re-run the harness path-row check (rhi-ui-shots Checks.PathRows: the text drawn by every visible
+// MiddleEllipsisText == DisplayText, a prefix…suffix compaction of FullText, never wider than its slot) and
+// MiddleEllipsisTextPinTests. What this class relies on:
+// - CreateTextLayout(string?) is protected virtual and is the only place TextBlock builds its TextLayout; ours copies
+//   the base's construction (typeface, FontSize, Foreground, alignment rule, wrapping, trimming, decorations,
+//   LineHeight, LetterSpacing, MaxLines, FontFeatures) minus LineSpacing, which is irrelevant on one line.
+// - TextBlock's own TextRunCache (_textRunCache, private) is keyed by text position, not content, and is reset only
+//   by InvalidateTextLayout (which also calls InvalidateMeasure), so the compacted string needs its own run cache.
+// - The protected field _constraint holds the last deflated measure constraint; TextBlock.MeasureOverride disposes
+//   and rebuilds the layout when the constraint differs, so setting it to (NaN, NaN) forces a rebuild in the same
+//   measure. ArrangeOverride and OnMeasureInvalidated dispose _textLayout (ours included) — we never dispose it.
+// - Shaping-relevant property names in OnPropertyChanged (FontSize … Foreground) mirror the base's switch.
 public sealed class MiddleEllipsisText : TextBlock
 {
     public const int TooltipDelay = 2000;

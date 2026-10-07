@@ -27,8 +27,10 @@ public enum ToolbarSlot
 /// hides items from the right end (<see cref="ToolbarOverflow"/>) and shows the overflow button. Widths come from
 /// <see cref="WidthEstimator"/> (hidden items included), so the decision is made once per measure and visibility is
 /// written once, only when it changes. The estimates depend only on the content, so they are cached and recomputed
-/// only when a watched property of a child (content, text, font, padding, margin, size, visibility of a leading
-/// child) changes; a resize only re-runs the cheap partition. Hidden items keep their commands/handlers;
+/// only when a watched property of a descendant (content, text, font, padding, margin, size, visibility of a leading
+/// child, or the Slot/IsSeparator/Collapsible markers), the panel's own Spacing/LeadingSpacing, or the children
+/// change; a resize only re-runs the cheap partition. A control the panel hid and no longer manages (its marker
+/// changed, or it was removed) is shown again. Hidden items keep their commands/handlers;
 /// <see cref="OverflowItems"/> lists them for the overflow menu and <see cref="OverflowItemsChanged"/> reports
 /// changes. Never scrolls or clips.
 /// </summary>
@@ -55,25 +57,24 @@ public sealed class ToolbarPanel : Panel
 
     private const double FitTolerance = 1;
 
-    // Properties the width estimate reads; a change to any of them on a child or its logical descendants (outside
-    // the panel's own visibility writes) invalidates the cached estimates.
-    private static readonly HashSet<AvaloniaProperty> EstimateInputs =
-    [
-        ContentControl.ContentProperty, TextBlock.TextProperty, IsVisibleProperty,
-        TextBlock.FontSizeProperty, TextBlock.FontFamilyProperty, TextBlock.FontWeightProperty, TextBlock.FontStyleProperty,
-        TextBlock.FontStretchProperty, TextBlock.PaddingProperty,
-        TemplatedControl.FontSizeProperty, TemplatedControl.FontFamilyProperty, TemplatedControl.FontWeightProperty,
-        TemplatedControl.FontStyleProperty, TemplatedControl.FontStretchProperty, TemplatedControl.PaddingProperty,
-        TemplatedControl.BorderThicknessProperty, Border.PaddingProperty, Border.BorderThicknessProperty,
-        MarginProperty, WidthProperty, MinWidthProperty, MaxWidthProperty,
-        StackPanel.SpacingProperty, StackPanel.OrientationProperty
-    ];
-
-    private readonly List<Control> _watched = [];
+    // A change to any WidthEstimator.Inputs property or slot/separator/collapsible marker on a descendant (outside
+    // the panel's own visibility writes), or a child added/removed anywhere below the panel, drops the cached
+    // estimates (EstimateInputWatcher); the panel's own spacings drop them in OnPropertyChanged.
+    private readonly EstimateInputWatcher _watcher;
     private bool _applying;
     private Estimates? _estimates;
+    // Controls this panel has hidden (overflowed items, '…', collapsed leading text).
+    private readonly HashSet<Control> _hidden = [];
 
     static ToolbarPanel() => AffectsMeasure<ToolbarPanel>(SpacingProperty, LeadingSpacingProperty, MinGapProperty);
+
+    // Collapsible is looked up on the leading children's visual descendants; the watcher follows logical descendants,
+    // which covers the XAML-authored markers (template parts are never marked).
+    public ToolbarPanel() => _watcher = new EstimateInputWatcher(this, IsEstimateInput, () =>
+    {
+        _estimates = null;
+        InvalidateMeasure();
+    }, [SlotProperty, IsSeparatorProperty, CollapsibleProperty]);
 
     public static ToolbarSlot GetSlot(Control c) => c.GetValue(SlotProperty);
     public static void SetSlot(Control c, ToolbarSlot v) => c.SetValue(SlotProperty, v);
@@ -128,6 +129,7 @@ public sealed class ToolbarPanel : Panel
         var collapsible = leading.SelectMany(c => c.GetVisualDescendants().OfType<Control>().Prepend(c)).Where(GetCollapsible).ToArray();
         var owned = new HashSet<Control>(items);
         if (overflow is not null) owned.Add(overflow);
+        Release(owned, collapsible);
         var full = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => owned.Contains(c) || GetCollapsible(c) || c.IsVisible });
         var compactLeading = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => !GetCollapsible(c) && c.IsVisible });
 
@@ -194,6 +196,35 @@ public sealed class ToolbarPanel : Panel
         return Desired();
     }
 
+    // Shows again what this panel hid but no longer manages because a marker changed, before the estimate reads
+    // visibility. A control that has left the panel is only forgotten: its new owner decides its visibility.
+    private void Release(HashSet<Control> owned, Control[] collapsible)
+    {
+        var released = _hidden.Where(c => !owned.Contains(c) && Array.IndexOf(collapsible, c) < 0).ToList();
+        if (released.Count == 0) return;
+        var wasApplying = _applying;
+        _applying = true;
+        try
+        {
+            foreach (var c in released)
+            {
+                _hidden.Remove(c);
+                if (this.IsLogicalAncestorOf(c) && !c.IsVisible) c.IsVisible = true;
+            }
+        }
+        finally
+        {
+            _applying = wasApplying;
+        }
+    }
+
+    private void SetShown(Control c, bool shown)
+    {
+        if (c.IsVisible != shown) c.IsVisible = shown;
+        if (shown) _hidden.Remove(c);
+        else _hidden.Add(c);
+    }
+
     private Size Desired()
     {
         double leadingWidth = 0, rightWidth = 0, height = 0;
@@ -216,13 +247,11 @@ public sealed class ToolbarPanel : Panel
         _applying = true;
         try
         {
-            foreach (var c in e.Collapsible)
-                if (c.IsVisible == compact) c.IsVisible = !compact;
+            foreach (var c in e.Collapsible) SetShown(c, !compact);
             IsLeadingCompact = compact;
-            for (var i = 0; i < e.Items.Length; i++)
-                if (e.Items[i].IsVisible != i < kept) e.Items[i].IsVisible = i < kept;
+            for (var i = 0; i < e.Items.Length; i++) SetShown(e.Items[i], i < kept);
             var hidden = ToolbarOverflow.Hidden(e.Separators, kept);
-            if (e.Overflow is not null && e.Overflow.IsVisible != hidden.Count > 0) e.Overflow.IsVisible = hidden.Count > 0;
+            if (e.Overflow is not null) SetShown(e.Overflow, hidden.Count > 0);
             if (!SameItems(hidden, e.Items))
             {
                 OverflowItems = hidden.Select(i => e.Items[i]).ToArray();
@@ -280,52 +309,38 @@ public sealed class ToolbarPanel : Panel
         return new Rect(x, (height - h) / 2, c.DesiredSize.Width, h);
     }
 
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        // Cached into TrailingWidth/LeadingFull/LeadingCompact; AffectsMeasure re-measures.
+        if (change.Property == SpacingProperty || change.Property == LeadingSpacingProperty) _estimates = null;
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
-        Watch();
+        _watcher.Watch();
+        _estimates = null;
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        Unwatch();
+        _watcher.Unwatch();
     }
 
+    // Also covers changes while detached (the watcher only runs while attached).
     protected override void ChildrenChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         base.ChildrenChanged(sender, e);
         _estimates = null;
-        if (!this.IsAttachedToVisualTree()) return;
-        Unwatch();
-        Watch();
     }
 
-    private void Watch()
+    private bool IsEstimateInput(Control sender, AvaloniaPropertyChangedEventArgs e)
     {
-        foreach (var child in Children)
-            foreach (var c in child.GetLogicalDescendants().OfType<Control>().Prepend(child))
-            {
-                c.PropertyChanged += OnWatchedPropertyChanged;
-                _watched.Add(c);
-            }
-        _estimates = null;
-    }
-
-    private void Unwatch()
-    {
-        foreach (var c in _watched) c.PropertyChanged -= OnWatchedPropertyChanged;
-        _watched.Clear();
-    }
-
-    private void OnWatchedPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-    {
-        if (_applying || !EstimateInputs.Contains(e.Property)) return;
+        if (_applying) return false;
         // Item/overflow/collapsible visibility is the panel's own output, not an input of the estimate.
-        if (e.Property == IsVisibleProperty && sender is Control c
-            && (GetCollapsible(c) || (Children.Contains(c) && GetSlot(c) is ToolbarSlot.Item or ToolbarSlot.Overflow)))
-            return;
-        _estimates = null;
-        InvalidateMeasure();
+        return !(e.Property == IsVisibleProperty
+                 && (GetCollapsible(sender) || (Children.Contains(sender) && GetSlot(sender) is ToolbarSlot.Item or ToolbarSlot.Overflow)));
     }
 }

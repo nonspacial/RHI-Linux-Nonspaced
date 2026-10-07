@@ -57,27 +57,29 @@ public sealed class DetailHeaderPanel : Panel
     private const double MinActionsGap = 12;
 
     private List<RoleEntry>? _roles;
+    // The role controls the panel last wrote to, so one that loses its role (or leaves the panel) gets its authored
+    // values back.
+    private List<RoleEntry> _written = [];
     // Authored values are captured once per control, before the panel first writes them, and survive re-attachment.
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Control, RoleEntry> _entries = new();
-    private readonly List<Control> _watched = [];
     private readonly Dictionary<double, double> _oneLineWidths = [];
+    // A change to any WidthEstimator.Inputs property or Role outside ApplyOnce, or a control added/removed anywhere
+    // below the panel (e.g. an action button added at runtime), drops the cached widths and roles and re-measures.
+    private readonly EstimateInputWatcher _watcher;
     private bool _applying;
     private bool _stacked;
 
-    // Properties the width estimate reads; a change outside ApplyOnce drops the cached widths and re-measures.
-    private static readonly HashSet<AvaloniaProperty> EstimateInputs =
-    [
-        TextBlock.TextProperty, ContentControl.ContentProperty, IsVisibleProperty,
-        TextBlock.FontSizeProperty, TextBlock.FontFamilyProperty, TextBlock.FontWeightProperty, TextBlock.FontStyleProperty,
-        TextBlock.FontStretchProperty, TextBlock.PaddingProperty,
-        TemplatedControl.FontSizeProperty, TemplatedControl.FontFamilyProperty, TemplatedControl.FontWeightProperty,
-        TemplatedControl.FontStyleProperty, TemplatedControl.FontStretchProperty, TemplatedControl.PaddingProperty,
-        TemplatedControl.BorderThicknessProperty, Border.PaddingProperty, Border.BorderThicknessProperty,
-        MarginProperty, WidthProperty, MinWidthProperty, MaxWidthProperty,
-        StackPanel.SpacingProperty, StackPanel.OrientationProperty, WrapPanel.ItemSpacingProperty, DockPanel.DockProperty
-    ];
-
     static DetailHeaderPanel() => AffectsMeasure<DetailHeaderPanel>(RowSpacingProperty);
+
+    // A content or visibility change that keeps a child's desired size would not re-measure this panel; the chosen
+    // scale depends on it, so the watcher asks for a measure explicitly. The panel's own writes (ApplyOnce) are
+    // outputs, not inputs: the estimate substitutes the role values.
+    public DetailHeaderPanel() => _watcher = new EstimateInputWatcher(this, (_, _) => !_applying, () =>
+    {
+        _roles = null;
+        _oneLineWidths.Clear();
+        InvalidateMeasure();
+    }, [RoleProperty]);
 
     public static DetailHeaderRole GetRole(Control control) => control.GetValue(RoleProperty);
     public static void SetRole(Control control, DetailHeaderRole value) => control.SetValue(RoleProperty, value);
@@ -212,42 +214,55 @@ public sealed class DetailHeaderPanel : Panel
         return null;
     }
 
-    // Role controls are XAML children (logical tree), not template parts; cached until the panel is re-attached.
+    // Role controls are XAML children (logical tree), not template parts; cached until the panel is re-attached or
+    // the watcher reports a change (structure, an estimate input or a Role). A control whose role changed, or that
+    // lost its role or left the panel, first gets its authored values back (scale 1 under the role it had), so the
+    // old role's scaled sizes do not stick to it.
     private List<RoleEntry> Roles()
-        => _roles ??= this.GetLogicalDescendants().OfType<Control>()
+    {
+        if (_roles is not null) return _roles;
+        var roles = this.GetLogicalDescendants().OfType<Control>()
             .Where(c => GetRole(c) != DetailHeaderRole.None)
             .Select(c => _entries.GetValue(c, key => new RoleEntry(key, GetRole(key))))
             .ToList();
+        var stale = _written.Where(r => r.Role != GetRole(r.Control) || !roles.Contains(r))
+            .Concat(roles.Where(r => r.Role != GetRole(r.Control))).Distinct().ToList();
+        if (stale.Count > 0)
+        {
+            // Restore rather than clear: Roles() can run inside ApplyOnce, which owns the flag.
+            var wasApplying = _applying;
+            _applying = true;
+            try
+            {
+                foreach (var r in stale)
+                {
+                    if (r.Apply(1) && this.IsLogicalAncestorOf(r.Control)) InvalidateForRemeasure(r.Control);
+                    r.Role = GetRole(r.Control);
+                }
+            }
+            finally
+            {
+                _applying = wasApplying;
+            }
+        }
+        _written = roles;
+        return _roles = roles;
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
         _roles = null;
         _oneLineWidths.Clear();
-        // A content or visibility change that keeps a child's desired size would not re-measure this panel; the
-        // chosen scale depends on it, so ask for a measure explicitly.
-        foreach (var c in this.GetLogicalDescendants().OfType<Control>())
-        {
-            c.PropertyChanged += OnDescendantPropertyChanged;
-            _watched.Add(c);
-        }
+        _watcher.Watch();
     }
 
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
-        foreach (var c in _watched) c.PropertyChanged -= OnDescendantPropertyChanged;
-        _watched.Clear();
+        _watcher.Unwatch();
         _roles = null;
         _oneLineWidths.Clear();
-    }
-
-    private void OnDescendantPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-    {
-        // The panel's own writes (ApplyOnce) are outputs, not inputs: the estimate substitutes the role values.
-        if (_applying || !EstimateInputs.Contains(e.Property)) return;
-        _oneLineWidths.Clear();
-        InvalidateMeasure();
     }
 
     private static double Lerp(double min, double max, double scale) => min + (max - min) * scale;
@@ -281,7 +296,7 @@ public sealed class DetailHeaderPanel : Panel
         }
 
         public Control Control { get; }
-        public DetailHeaderRole Role { get; }
+        public DetailHeaderRole Role { get; set; }
 
         public double? FontSizeAt(double scale) => Role switch
         {
