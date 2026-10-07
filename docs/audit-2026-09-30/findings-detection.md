@@ -52,6 +52,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** On a black-holed network the app shows an empty library for up to 5 minutes with `IsBusy` set. Examples are a VPN kill-switch (this host runs Mullvad `wg0`) or a captive portal. A DNS failure fails fast; a black hole does not.
 - **Fix seam:** Start the scan in parallel with the manifest fetch, or put a `CancelAfter(10-15 s)` around it and fall back to the cached copy (the cache path already exists).
 - **Verify:** Test with a stub `HttpMessageHandler` that never completes; assert `ScanAsync` is called within about 1 s of `InitializeAsync`.
+- **Status:** fixed on `w1/policy` in `d1f1840` (#43). The startup scan and the DLSS manifest load run concurrently; `FetchManifestAsync` has a 15 s deadline and falls back to the cached copy.
 
 ### DET-04 — Every Lutris launch command targets a non-existent slug
 - **Where:** `src/RHI.Platform.Linux/Detection/LutrisGameDetector.cs:43, 73`.
@@ -84,6 +85,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** This is the same bug class HEAD fixed, a launcher root being fed to `GameFileIndexer`. It indexes every game in the library (up to the 200k-file cap) and makes the entire library the patch root.
 - **Fix seam:** Reject any resolved candidate that is an ancestor of `steamapps/common`, a library root, a Wine prefix root, `$HOME` or `/`. Cap `..` climbing at the original root's parent.
 - **Verify:** Policy test: Hades II fixture without `Ship`; assert `InstallPath` stays at the original root.
+- **Status:** fixed on `w1/policy` in `a5fe406` (#45). installPathOverrides/splitGames/launchExeOverrides candidates must stay inside the detected root (`PathIdentity`, symlinks resolved); `"Hades II": "Ship|..\\.."` keeps the original root when `Ship` is missing.
 
 ### DET-07 — HDR launch wraps `xdg-open` for Heroic games and reports HDR as applied
 - **Where:** `src/RHI.Platform.Linux/Hdr/LinuxHdrLaunchProfileService.cs:198-209`; `src/RHI.Platform.Linux/Detection/HeroicGameDetector.cs:174, 181`; `src/RHI.Desktop/ViewModels/MainWindowViewModel.cs:1276-1287`.
@@ -168,6 +170,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** High-confidence evidence overrides every other signal, and it chooses ReShade's proxy DLL. The existing test (`NativeRuntimeDetectionTests.cs:78`) uses an unrelated prefix name, so it misses this.
 - **Fix seam:** Match only the path segments below `AppData/LocalLow/`, i.e. the company and product names.
 - **Verify:** A copy of the existing test with the prefix directory named after the game; assert no runtime-log evidence.
+- **Status:** fixed on `w1/policy` in `2f2e927` (#52). Only the product folders below `AppData/LocalLow/<Company>/` identify the game.
 
 ### DET-14 — An executable containing several API strings is reported as the highest API at High confidence
 - **Where:** `GraphicsApiDetector.cs:174-183, 193-202`, compared with the ambiguity rule at `233-237`.
@@ -178,6 +181,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** DX12 maps to proxy `dxgi.dll` (`ReShadeDeploymentService.cs:942-948`). ReShade will not load in a Vulkan-configured RDR2.
 - **Fix seam:** Apply the same 3-or-more ambiguity rule to exe signatures (Medium confidence, keep the candidate list), and let the config and prefix settings pass decide. RDR2's `system.xml` sits in the prefix under `Documents/Rockstar Games/...`.
 - **Verify:** Detector test: exe containing all five API strings; assert confidence below High.
+- **Status:** fixed on `w1/policy` in `205c067` (#53). The PE import table decides first with upstream's rule; string-only evidence keeps every candidate at Medium (2) / Low (3+), and a config or prefix-settings selection (RDR2 `system.xml`) wins.
 
 ### DET-15 — PCGamingWiki fallback overrides native Linux results, caches no misses, and blocks selection
 - **Where:** `src/RHI.Platform.Linux/Detection/LinuxGameRuntimeProbe.cs:58-82`; `PcGamingWikiGraphicsApiService.cs:57-79, 23-25`.
@@ -191,6 +195,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
   - Cache misses with a TTL.
   - Move the cache to `LinuxPaths.CacheHome/rhi-linux`.
 - **Verify:** Runtime-probe test with a native-FNA fixture and a stub PCGW; assert zero HTTP calls.
+- **Status:** fixed on `w1/policy` in `8e9b693` (#54). Skipped for native Linux and when local candidates exist; definite misses cached 7 days; cache under `$XDG_CACHE_HOME/rhi-linux`; selection waits at most 1 s and a late answer re-analyses the game.
 
 ### DET-16 — `GameLibraryScanner.Merge` is lossy, and the merge key is not canonical
 - **Where:** `src/RHI.Core/Services/GameLibraryScanner.cs:90, 96-107, 109-164`.
@@ -202,6 +207,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
   - `~/Games/X` and `/media/4TBssd/Games/X` are the same directory on this host, because `~/Games` is a symlink, yet they are treated as different.
 - **Fix seam:** Canonicalise the key (resolve symlinks, trim trailing separators, compare ordinally). Merge an explicit list of "sticky" fields with OR/union semantics, and let manual entries win for user-authored fields.
 - **Verify:** Scanner test: a Manual and a Heroic entry at the same path, one of them with a trailing slash; assert one card with `IsManuallyAdded` true and the manual exe kept.
+- **Status:** fixed on `w1/policy` in `1dc0731`, `56299c1` (#55). Canonical key (`PathIdentity`, ordinal); merge fills every field, manual duplicates keep exe/API override/launch command and stay removable; a fail-closed target is never confirmed by another source's guess.
 
 ### DET-17 — Detector failures are swallowed and the scan still reports success
 - **Where:**
@@ -213,6 +219,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** An EACCES or EIO on one mount looks like "Steam has no games". Support cannot diagnose anything after the fact.
 - **Fix seam:** Return per-detector status (`ok`, `failed:<message>`, `count`) from `ScanAsync`, show it in the status line, and write swallowed exceptions to an XDG state log (`~/.local/state/rhi-linux/rhi.log`).
 - **Verify:** Scanner test with a throwing detector; assert a failure status is surfaced.
+- **Status:** fixed on `w1/policy` in `3fbbae6` (#56). `ScanWithReportAsync` reports per-detector status and policy failures, the status line names them, and `$XDG_STATE_HOME/rhi-linux/rhi.log` records them plus unhandled/unobserved exceptions. Steam per-library and per-entry failures no longer abort or vanish.
 
 ### DET-18 — Corrupt stores fail open to empty state, and the next save overwrites the user's data
 - **Where:** `src/RHI.Platform.Linux/Settings/LinuxGameLibraryStore.cs:143-155, 157-165`; `src/RHI.Platform.Linux/Paths/GraphicsApiOverrideStore.cs:49-62`; the same pattern in `LinuxDeploymentRecordStore.cs:74` (the records used by every Paths store).
@@ -251,6 +258,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **What happens:** On a black-holed network each add, remove or edit waits up to 15 s before falling back to the last-known-good copy. The HEAD claim of 6 ms holds only on a fast network.
 - **Fix seam:** Skip `InvalidateProcessCache()` on partial scans. Add a TTL, or `If-None-Match`/ETag, to the live fetch.
 - **Verify:** Stub handler that delays 20 s; the partial scan must complete in under 100 ms.
+- **Status:** fixed on `w1/policy` in `4b3e791` (#61). Only an explicit full refresh revalidates the manifest (ETag); a total failure is remembered for 2 min.
 
 ### DET-23 — Path-identity canonicalisation assigns other titles' policies (sibling of DET-01)
 - **Where:** `UpstreamGameLibraryPolicyService.cs:181-197`; `UpstreamRhiManifestService.cs:521-546`.
@@ -259,6 +267,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
   - It then inherits Hades' `installPathOverrides`, `ForcedArchitecture`, engine hints and DLL-name overrides. `ForcedArchitecture` also makes `ApplyRuntimeMetadata` re-select a different exe (`DetectionHelpers.cs:306-315`).
 - **Fix seam:** Require the canonical phrase to equal a whole path segment (the game folder or exe stem), not any substring of the full path. Ignore segments at or above the library root.
 - **Verify:** Policy test with the case above; assert the canonical name is unchanged.
+- **Status:** fixed on `w1/policy` in `2e782d0` (#62). Manifest titles come from the game's own folders/exe stem, or a parent folder holding the whole title only when the card's own name is part of it.
 
 ### DET-24 — Synchronous JSON reads on the UI thread, N+1 per property evaluation
 - **Where:** `MainWindowViewModel.cs:169`, where `CanUpdateAll` calls `_updateAll.HasManagedTargets(_allGames)`, which does `FindAll` per game (`LinuxUpdateAllService.cs:143-144`), and each call deserialises the whole records file (`LinuxDeploymentRecordStore.cs:29-33, 59-64`).
