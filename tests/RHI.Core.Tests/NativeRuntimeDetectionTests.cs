@@ -75,6 +75,44 @@ public sealed class NativeRuntimeDetectionTests : IDisposable
     }
 
     [Fact]
+    public void Detect_PrefixNamedAfterTheGame_DoesNotClaimAnotherGamesPlayerLog()
+    {
+        // Same as above, but the shared prefix carries the game's name and the log belongs to another game.
+        var gameRoot = Path.Combine(_root, "TheWeirdHunter");
+        Directory.CreateDirectory(gameRoot);
+        var exe = Path.Combine(gameRoot, "TheWeirdHunter.exe");
+        File.WriteAllText(exe, "MZ dynamic graphics backend");
+        File.WriteAllText(Path.Combine(gameRoot, "UnityPlayer.dll"), "renderer loaded dynamically");
+        var prefix = Path.Combine(_root, "the-weird-hunter");
+        var logDir = Path.Combine(prefix, "drive_c", "users", "theweirdhunter", "AppData", "LocalLow", "Other Studio", "Other Game");
+        Directory.CreateDirectory(logDir);
+        File.WriteAllText(Path.Combine(logDir, "Player.log"), "Version: Direct3D 12.0\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.DoesNotContain("Runtime renderer log", found.Evidence ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("Ubisoft Game Launcher", "UbisoftConnect.exe")] // launcher named like its prefix (~/Games/ubisoft-connect)
+    [InlineData("Ubisoft", "upc.exe")]                         // card named like the company folder only
+    public void Detect_LauncherCardsDoNotInheritAGamesPlayerLog(string folder, string exeName)
+    {
+        var prefix = Path.Combine(_root, "ubisoft-connect");
+        var gameRoot = Path.Combine(prefix, "drive_c", "Program Files (x86)", folder);
+        Directory.CreateDirectory(gameRoot);
+        var exe = Path.Combine(gameRoot, exeName);
+        File.WriteAllText(exe, "MZ launcher");
+        var logDir = Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "LocalLow", "Ubisoft", "Prince of Persia");
+        Directory.CreateDirectory(logDir);
+        File.WriteAllText(Path.Combine(logDir, "Player.log"), "Version: Direct3D 11.0 [level 11.1]\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.DoesNotContain("Runtime renderer log", found.Evidence ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Detect_SharedPrefixIgnoresUnrelatedUnityPlayerLog()
     {
         var gameRoot = Path.Combine(_root, "TargetGame");

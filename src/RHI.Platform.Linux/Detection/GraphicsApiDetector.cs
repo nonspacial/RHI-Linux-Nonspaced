@@ -516,11 +516,28 @@ internal static class GraphicsApiDetector
         return GraphicsApiDetection.Unknown;
     }
 
-    private static bool RuntimeLogMatchesGame(string log, string rootToken, string exeToken)
+    /// <summary>
+    /// A shared prefix can hold several games' Unity logs. Attribution uses only the product folders
+    /// below <c>AppData/LocalLow/&lt;Company&gt;/</c>: the prefix directory and user name are not game
+    /// identity (a launcher whose prefix is named after it matched every log inside it), and the company
+    /// folder alone is not either (a "Ubisoft" launcher card must not inherit a Ubisoft game's log) (Refs #52).
+    /// </summary>
+    internal static bool RuntimeLogMatchesGame(string log, string rootToken, string exeToken)
     {
-        var pathToken = NormalizeLooseToken(log);
-        return (rootToken.Length >= 5 && pathToken.Contains(rootToken, StringComparison.OrdinalIgnoreCase)) ||
-               (exeToken.Length >= 5 && pathToken.Contains(exeToken, StringComparison.OrdinalIgnoreCase));
+        var normalized = log.Replace('\\', '/');
+        const string marker = "/AppData/LocalLow/";
+        var at = normalized.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return false;
+        var folders = normalized[(at + marker.Length)..].Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
+        var productFolders = folders.Length > 1 ? folders.Skip(1) : folders;
+        foreach (var folder in productFolders)
+        {
+            var token = NormalizeLooseToken(folder);
+            if ((rootToken.Length >= 5 && token.Contains(rootToken, StringComparison.Ordinal)) ||
+                (exeToken.Length >= 5 && token.Contains(exeToken, StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
     }
 
     private static string NormalizeLooseToken(string value)
