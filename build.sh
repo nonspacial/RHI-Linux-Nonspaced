@@ -40,7 +40,7 @@ check_disk_space() {
 check_disk_space "$ROOT" "build filesystem"
 check_disk_space "${NUGET_PACKAGES:-$HOME/.nuget/packages}" "NuGet package filesystem"
 
-dotnet restore RHI-Linux.sln
+dotnet restore RHI-Linux.sln --locked-mode
 dotnet test RHI-Linux.sln -c Release --no-restore
 
 if [[ "$appimage" == true ]]; then
