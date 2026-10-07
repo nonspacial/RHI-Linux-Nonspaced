@@ -24,7 +24,8 @@ public sealed class LibraryScanReportTests : IDisposable
         Assert.True(steam.Failed);
         Assert.Equal("Permission denied", steam.Error);
         Assert.True(scan.HasProblems);
-        var status = LibraryScanStatusText.Format(scan, scan.Games.Count, "/state/rhi.log");
+        var status = LibraryScanStatusText.Problems(scan, "/state/rhi.log");
+        Assert.NotNull(status);
         Assert.Contains("Steam", status);
         Assert.Contains("Permission denied", status);
         Assert.Contains("/state/rhi.log", status);
@@ -52,16 +53,16 @@ public sealed class LibraryScanReportTests : IDisposable
 
         Assert.Single(scan.Games);
         Assert.Equal(("Broken policy", "offline"), (scan.PolicyFailures.Single().Name, scan.PolicyFailures.Single().Error));
-        Assert.Contains("Broken policy", LibraryScanStatusText.Format(scan, 1, null));
+        Assert.Contains("Broken policy", LibraryScanStatusText.Problems(scan, null));
     }
 
     [Fact]
-    public async Task CleanScan_KeepsThePlainStatusLine()
+    public async Task CleanScan_RaisesNoProblemsNotice()
     {
         var scan = await new GameLibraryScanner([new Fixed("Heroic", Game("Game", "Heroic"))]).ScanWithReportAsync(null);
 
         Assert.False(scan.HasProblems);
-        Assert.DoesNotContain("·", LibraryScanStatusText.Format(scan, 1, "/state/rhi.log"));
+        Assert.Null(LibraryScanStatusText.Problems(scan, "/state/rhi.log"));
     }
 
     [Fact]

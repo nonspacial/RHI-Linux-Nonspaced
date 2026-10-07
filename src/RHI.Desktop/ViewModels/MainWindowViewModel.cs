@@ -1248,7 +1248,10 @@ public partial class MainWindowViewModel : ObservableObject
                 ? Games.FirstOrDefault()
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
-            StatusText = LibraryScanStatusText.Format(scan, _allGames.Count, AppLog.Current?.FilePath);
+            // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
+            var scanProblems = LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath);
+            var scanDone = LibraryScanStatusText.Done(_allGames.Count);
+            StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
         }
         catch (Exception ex)
         {
