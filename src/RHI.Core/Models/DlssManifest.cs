@@ -15,6 +15,8 @@ public sealed class DlssManifestEntry
 {
     [JsonPropertyName("version")] public string Version { get; set; } = "";
     [JsonPropertyName("url")] public string Url { get; set; } = "";
+    /// <summary>Optional SHA-256 of the archive at <see cref="Url"/>; when present the download must match it.</summary>
+    [JsonPropertyName("sha256")] public string? Sha256 { get; set; }
 }
 
 public enum DlssComponentKind

@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class ReShadeChannelTests : IDisposable
+public sealed partial class ReShadeChannelTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-reshade-channel-tests-" + Guid.NewGuid().ToString("N"));
 

@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -42,6 +43,7 @@ public sealed partial class ReShadeDeploymentService
     private readonly IReShadeArchiveExtractor _extractor;
     private readonly ReShadeShaderPackService _shaderPacks;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
     public ReShadeDeploymentService(
         HttpClient http,
@@ -51,8 +53,10 @@ public sealed partial class ReShadeDeploymentService
         IReShadeArchiveExtractor extractor,
         string? cacheDir = null,
         ReShadeShaderPackService? shaderPacks = null,
-        UpstreamRhiManifestService? upstreamManifest = null)
+        UpstreamRhiManifestService? upstreamManifest = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _files = files;
         _records = records;
@@ -267,12 +271,53 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Fail($"The RHI-managed D3DCompiler_47.dll no longer looks like a native Microsoft shader compiler: {previousCompilerFile.Path}");
         }
 
+        // Write-ahead journal (#23): every file this install can change is tracked and every Wine
+        // override is journaled before it is made, so a crash before the record is saved is rolled
+        // back on the next start instead of leaving an unowned proxy and override behind.
+        DeploymentOperation? journaled = null;
+        if (_journal is not null)
+        {
+            try
+            {
+                journaled = await _journal.BeginAsync(
+                    $"ReShade {(isUpdate ? "update" : "install")}: {game.Name}",
+                    LinuxDeploymentRecovery.RecordCommitProbe(game, ManagedComponentKind.ReShade),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (updateSnapshot is not null) FileCleanup.TryDelete(updateSnapshot);
+                return ComponentOperationResult.Fail($"ReShade install/update failed: the deployment journal could not be written ({ex.Message}). Nothing was changed.");
+            }
+        }
+        await using var operation = journaled;
+        string[] trackedInis = [];
+        // Crash recovery restores a tracked file only while it holds what this install wrote, so every
+        // write is declared: DLL payloads by hash before they are placed, in-place INI edits right after.
+        async Task DeclareIniWritesAsync()
+        {
+            if (operation is null) return;
+            foreach (var ini in trackedInis)
+                await operation.RecordWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+        }
+
         try
         {
+            trackedInis = IniPathsTouchedByInstall(game, existingRecord, coexist).ToArray();
+            if (operation is not null)
+            {
+                await operation.TrackFileAsync(target, cancellationToken, includeBackup: false).ConfigureAwait(false);
+                if (d3dCompilerPlan is not null)
+                    await operation.TrackFileAsync(d3dCompilerPlan.TargetPath, cancellationToken, includeBackup: false).ConfigureAwait(false);
+                foreach (var ini in trackedInis)
+                    await operation.TrackFileAsync(ini, cancellationToken, includeBackup: false).ConfigureAwait(false);
+            }
+
             // Remove only RHI-owned shader/INI entries from the previous profile before applying a new profile.
             if (existingRecord is not null)
             {
                 CleanupManagedIni(existingRecord);
+                await DeclareIniWritesAsync().ConfigureAwait(false);
                 _shaderPacks.Cleanup(game.BinaryDirectory);
             }
 
@@ -286,6 +331,8 @@ public sealed partial class ReShadeDeploymentService
                 (!previousPayload.ExistedBeforeInstall || shortFuseUpdate) && File.Exists(target))
                 File.Delete(target);
 
+            if (operation is not null)
+                await operation.RecordWriteAsync(target, await Sha256Async(staged.DllPath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
             var result = await _files.ReplaceAsync(staged.DllPath, target, cancellationToken).ConfigureAwait(false);
             if (!result.Success) throw new IOException(result.Error ?? "Failed to deploy ReShade DLL.");
             fileReplaced = true;
@@ -297,6 +344,10 @@ public sealed partial class ReShadeDeploymentService
                     throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
                 if (overrideRecord is null)
                 {
+                    if (operation is not null)
+                        await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
+                            WineOverrideCompensator.Describe(prefix, _overrides.PlanNativeBuiltin(prefix, directProxy, Path.GetFileName(game.ExecutablePath))),
+                            cancellationToken).ConfigureAwait(false);
                     overrideRecord = _overrides.EnsureNativeBuiltin(prefix, directProxy, Path.GetFileName(game.ExecutablePath));
                     appliedOverride = overrideRecord;
                     overrideCreatedThisAttempt = true;
@@ -305,6 +356,7 @@ public sealed partial class ReShadeDeploymentService
             else
             {
                 OptiScalerIniEditor.SetLoadReShade(game.BinaryDirectory, true);
+                await DeclareIniWritesAsync().ConfigureAwait(false);
                 await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
             }
 
@@ -322,6 +374,9 @@ public sealed partial class ReShadeDeploymentService
 
                 if (d3dCompilerPlan.DeploySourcePath is not null)
                 {
+                    if (operation is not null)
+                        await operation.RecordWriteAsync(d3dCompilerPlan.TargetPath,
+                            await Sha256Async(d3dCompilerPlan.DeploySourcePath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var compilerDeploy = await _files.ReplaceAsync(
                         d3dCompilerPlan.DeploySourcePath,
                         d3dCompilerPlan.TargetPath,
@@ -333,12 +388,16 @@ public sealed partial class ReShadeDeploymentService
                     {
                         Path = d3dCompilerPlan.TargetPath,
                         ExistedBeforeInstall = d3dCompilerPlan.TargetExistedBefore,
-                        Sha256 = await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
+                        Sha256 = compilerDeploy.Sha256 ?? await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
                     };
                 }
 
                 if (appliedCompilerOverride is null)
                 {
+                    if (operation is not null)
+                        await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
+                            WineOverrideCompensator.Describe(compilerPrefix, _overrides.PlanNativeBuiltin(compilerPrefix, D3DCompilerOverrideName, Path.GetFileName(game.ExecutablePath))),
+                            cancellationToken).ConfigureAwait(false);
                     appliedCompilerOverride = _overrides.EnsureNativeBuiltin(
                         compilerPrefix,
                         D3DCompilerOverrideName,
@@ -358,6 +417,7 @@ public sealed partial class ReShadeDeploymentService
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
                 iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);
+            await DeclareIniWritesAsync().ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>
             {
@@ -365,7 +425,8 @@ public sealed partial class ReShadeDeploymentService
                 {
                     Path = target,
                     ExistedBeforeInstall = existedBefore,
-                    Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                    // The file service returns the hash of what it placed (#33); no second read of the target.
+                    Sha256 = result.Sha256 ?? await Sha256Async(target, cancellationToken).ConfigureAwait(false)
                 }
             };
             if (compilerFileRecord is not null)
@@ -392,6 +453,7 @@ public sealed partial class ReShadeDeploymentService
             if (d3dCompilerPlan is not null)
                 SetOrRemove(metadata, MetaD3DCompilerSource, d3dCompilerPlan.UserSourcePath);
             WriteIniMetadata(metadata, iniResult);
+            SetOrRemove(metadata, LinuxDeploymentRecovery.OperationIdMetadataKey, operation?.Id);
 
             var record = new LinuxDeploymentRecord
             {
@@ -408,6 +470,8 @@ public sealed partial class ReShadeDeploymentService
                 Metadata = metadata
             };
             _records.Upsert(record);
+            // The record carries the operation id, so it is the commit point even if this cleanup fails.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
 
             var mode = Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase)
@@ -1081,6 +1145,16 @@ public sealed partial class ReShadeDeploymentService
         metadata[MetaIniTextureCreated] = ini.TextureKeyCreated.ToString();
         metadata[MetaIniEffectAdded] = JsonSerializer.Serialize(ini.AddedEffectPaths);
         metadata[MetaIniTextureAdded] = JsonSerializer.Serialize(ini.AddedTexturePaths);
+    }
+
+    /// <summary>INI files an install or update may rewrite: ReShade.ini (old record's and current) and, when coexisting, OptiScaler.ini.</summary>
+    private static IEnumerable<string> IniPathsTouchedByInstall(DetectedGame game, LinuxDeploymentRecord? existingRecord, bool coexist)
+    {
+        var paths = new List<string> { ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!) };
+        if (existingRecord?.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } recorded)
+            paths.Add(recorded.Path);
+        if (coexist) paths.Add(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini"));
+        return paths.Distinct(StringComparer.Ordinal);
     }
 
     private async Task RefreshManagedOptiScalerIniHashAsync(DetectedGame game, CancellationToken cancellationToken)

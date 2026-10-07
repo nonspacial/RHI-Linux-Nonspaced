@@ -64,17 +64,18 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var oldHash = Sha256(target);
         var source = Write("new.addon64", [9, 9, 9]);
 
-        // The ledger's temp path is a directory, so Upsert fails after the file was swapped.
-        Directory.CreateDirectory(ledger + ".tmp");
+        // The ledger's directory refuses writes, so Upsert fails after the file was swapped.
         var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
-        await Assert.ThrowsAnyAsync<Exception>(() => ManagedFileSwap.ReplaceAsync(record, [(target, source)], updated =>
+        using (LedgerWriteBlocker.Block(records, ledger))
         {
-            updated.Version = "NEW";
-            updated.SourceUrl = "https://example.invalid/new";
-            updated.Metadata["GitHub.ReleaseTagPin"] = "vNEW";
-            records.Upsert(updated);
-        }));
-        Directory.Delete(ledger + ".tmp");
+            await Assert.ThrowsAnyAsync<Exception>(() => ManagedFileSwap.ReplaceAsync(record, [(target, source)], updated =>
+            {
+                updated.Version = "NEW";
+                updated.SourceUrl = "https://example.invalid/new";
+                updated.Metadata["GitHub.ReleaseTagPin"] = "vNEW";
+                records.Upsert(updated);
+            }));
+        }
 
         Assert.Equal([1, 2, 3], File.ReadAllBytes(target));
         Assert.Equal(oldHash, ManagedFileSwap.FindFile(record, "addon.addon64")!.Sha256);
@@ -160,9 +161,9 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         using var http = ShortFuseHttp(Payload(0x30, 40 * 1024));
         var sf = ShortFuse(http, records, "sf-fail");
 
-        Directory.CreateDirectory(ledger + ".tmp");
-        var result = await sf.SwapAddonVersionAsync(game, releaseTag: null);
-        Directory.Delete(ledger + ".tmp");
+        ComponentOperationResult result;
+        using (LedgerWriteBlocker.Block(records, ledger))
+            result = await sf.SwapAddonVersionAsync(game, releaseTag: null);
 
         Assert.False(result.Success);
         Assert.Contains("the previous add-on was kept", result.Message);

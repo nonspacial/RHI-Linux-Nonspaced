@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
@@ -43,14 +44,18 @@ public sealed class App : Application
             var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
             var scanner = new GameLibraryScanner(detectors, [libraryPolicy]);
             var launcher = new LinuxGameLauncher();
-            var deployment = new TransactionalFileDeploymentService();
+            var records = new LinuxDeploymentRecordStore();
+            var wineOverrides = new WineDllOverrideService();
+            // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
+            // service exists that could deploy (installs, start-up auto-update).
+            var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides);
+            var recovery = RunDeploymentStartup(desktop, journal, records);
+            var deployment = new TransactionalFileDeploymentService(journal);
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
             var pcgwData = new PcgwCentralDataService(http);
             var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
-            var records = new LinuxDeploymentRecordStore();
-            var wineOverrides = new WineDllOverrideService();
             var reshadeExtractor = new ReShadeArchiveExtractor();
-            var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest);
+            var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest, journal: journal);
             var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
             var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
             var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
@@ -138,6 +143,8 @@ public sealed class App : Application
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
             tokenNoticeTarget = vm;
+            if (recovery.NeedsNotice)
+                Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,
@@ -147,5 +154,29 @@ public sealed class App : Application
             };
         }
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>This process's registration; held (flock) for the app's lifetime so other instances skip their sweep.</summary>
+    private static DeploymentInstanceGate? s_instanceGate;
+
+    /// <summary>
+    /// Start-up recovery and leftover sweep, synchronously: nothing may deploy until both are done.
+    /// Never throws; every outcome goes to the recovery log and the returned summary.
+    /// </summary>
+    private static DeploymentRecoverySummary RunDeploymentStartup(
+        IClassicDesktopStyleApplicationLifetime desktop, DeploymentJournal journal, LinuxDeploymentRecordStore records)
+    {
+        try
+        {
+            s_instanceGate = DeploymentInstanceGate.Register(LinuxDeploymentRecovery.InstanceDirectory);
+            desktop.Exit += (_, _) => s_instanceGate?.Dispose();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("deployment-recovery", "Could not register this RHI instance; the leftover sweep is skipped", ex);
+        }
+        // Normally an empty directory listing; runs off the UI thread's context (no deadlock).
+        var report = Task.Run(() => LinuxDeploymentRecovery.RunAtStartupAsync(journal, records, s_instanceGate)).GetAwaiter().GetResult();
+        return LinuxDeploymentRecovery.Record(report);
     }
 }

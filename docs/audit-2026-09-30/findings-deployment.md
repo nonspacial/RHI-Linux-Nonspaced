@@ -35,6 +35,7 @@
 - **Verification:** Inject a failing file-system seam (or `chmod 0500` the directory after the first restore) in a two-target `RestoreBatchAsync` test. Assert that either `A.original` or a surviving snapshot still holds the original bytes.
 
 ### DEP-03 — No crash journal: a crash mid-operation leaves unowned payloads, orphaned `.original` files and temp copies that are never swept
+- **Status (branch w1/core, #23):** journal + start-up recovery + leftover sweep landed (`ede3e23`, `b0d67ea`, `65dfdfb`); `TransactionalFileDeploymentService` and ReShade install/update are journaled. Review corrections (`4f25dec`, `3c582d6`): recovery keeps any file changed after the crash and sets RHI's copy aside in a same-file-system `.rhi-recovered/` (final, not retried); recovery and sweep finish before any deployment service exists; the sweep is skipped while another RHI instance runs, ages by ctime and asks the journal per file. Other services that change files/overrides before their `Upsert` (OptiScaler, StandaloneDlssEnabler, Dlssg2030, Rtx40Mfg, UltimateAsiLoader, REFramework, ShortFuse, Feeder, Dx9 coordinator, D3DCompiler tools) adopt `DeploymentOperation` in wave 2.
 - **Where:**
   - Records are written last: `ReShadeDeploymentService.cs:254` (file replaced) → `:265` (Wine override) → `:375` (`Upsert`); `OptiScalerDeploymentService.cs:277` → `:295`; `StandaloneDlssEnablerDeploymentService.cs:159-164`.
   - Snapshot/temp names that are never swept: `TransactionalFileDeploymentService.cs:29-30,156,231,236` and `ReShadeDeploymentService.cs:216`. A grep for any sweep of `*.rhi-tmp-*`, `*.rhi-rollback-*`, `*.rhi-replace-current-*` or `*.rhi-update-snapshot-*` finds none.
@@ -132,6 +133,7 @@
 - **Verification:** Unit test: ensure, then the user sets `"dxgi"="builtin"`, then `Restore`. Assert the user value is preserved.
 
 ### DEP-12 — Writes are not durable, and several "atomic" copies verify length only
+- **Status (branch w1/core, #31):** `AtomicFile` (fsync + full verify + directory fsync) in `src/RHI.Core/Deployment`; `TransactionalFileDeploymentService`, the record store, `CacheStamp` and `DlssManagerService` use it (`22a3a89`, `d92fec6`, `f9a22b8`, `bd1b79e`). The listed length-only helpers and in-place rollback rewrites in other services migrate in wave 2.
 - **Where:**
   - No `Flush(true)` or `FileOptions.WriteThrough` anywhere under `src/` (grep).
   - Length-only verification: `RenoDxDeploymentService.cs:557`, `OptiScalerDeploymentService.cs:576`, and the same helper copied into `DofFixDeploymentService.cs:338`, `GitHubReShadeAddonDeploymentService.cs:455`, `REFrameworkDeploymentService.cs:341,362`, `RenoDxUpgradeDeploymentService.cs:259` and `LumaFrameworkDeploymentService.cs:1047`.
@@ -141,12 +143,14 @@
 - **Verification:** Grep gate in CI: forbid `File.WriteAllBytes*` and `File.Copy(..., overwrite: true)` targeting game or prefix paths outside the helper.
 
 ### DEP-13 — The record store re-reads and re-parses the whole JSON on every `Find`; `Decorate` does this about 39 times per refresh
+- **Status (branch w1/core, #32):** fixed in `0f468ff` (reads reuse the parsed ledger without copying; `Decorate` reads one `FindAll` snapshot: 14 lookups -> 1).
 - **Where:** `LinuxDeploymentRecordStore.cs:23-33` (each call goes to `LoadUnsafe` → `File.ReadAllText` + `Deserialize`). `LinuxManagedComponentService.Decorate` `:106-768` has 20 direct `_records.Find` calls plus one per component inside the loop (`:154`), about 19 components.
 - **What happens:** Selecting a game triggers roughly 40 disk reads and full deserialisations. The cost grows linearly with the number of games and records.
 - **Remediation seam:** Give `LinuxDeploymentRecordStore` an in-memory snapshot invalidated by mtime (or by its own writes). Better, have `Decorate` take a single `FindAll(game)` dictionary.
 - **Verification:** Micro-benchmark or counter test: wrap the store to count `LoadUnsafe` calls in `Decorate` and assert at most one.
 
 ### DEP-14 — Hash and copy amplification in `TransactionalFileDeploymentService`
+- **Status (branch w1/core, #33):** fixed in `d92fec6`, `c840749` (replace of an existing target: 3 reads + 1 write; restore: 2 reads, 0 writes; hash returned in `FileDeploymentResult.Sha256`). OptiScaler and other callers still re-hash; wave 2.
 - **Where:** `src/RHI.Core/Services/TransactionalFileDeploymentService.cs:40,44,47,49,56,157,295-307`.
 - **What happens:** For one target that already exists and has no backup, `ReplaceAsync` does:
   - `FilesEqual`: 2 full reads;
@@ -207,6 +211,7 @@
 - **Verification:** Test: a record created under `/a/game` and a game now at `/b/game`; update must refuse with a repair message rather than write to `/a`.
 
 ### DEP-20 — `DlssManagerService` cache hygiene
+- **Status (branch w1/core, #39):** fixed in `bd1b79e`; review corrections in `0fdacac` (cache-write failure logged, written with `CancellationToken.None`, `SafeFileEnumeration`).
 - **Where:** `src/RHI.Core/Services/DlssManagerService.cs`:
   - `:54`: the manifest cache is written in place (not atomic);
   - `:318,353`: fixed name `download.zip.part` (concurrent same-version downloads collide);
@@ -216,6 +221,7 @@
 - **Verification:** Test: a download that throws midway leaves no `download.zip.part`.
 
 ### DEP-21 — `RestoreAsync` deletes an unowned `.rhi_custom` sidecar
+- **Status (branch w1/core, #40):** fixed in `8bf9bff`. Owner of `.rhi_custom`: upstream's custom NR DLL marker (`DetailPanelBuilder.Overrides.NvidiaProfile.cs`); the fork never creates it.
 - **Where:** `src/RHI.Core/Services/TransactionalFileDeploymentService.cs:115`. No other reference to `.rhi_custom` exists in `src/` (grep).
 - **Risk:** A dead side effect on a file this layer never creates. Harmless today, but surprising.
 - **Remediation seam:** Remove it, or document its owner.
@@ -237,6 +243,7 @@
 ## Structure
 
 ### DEP-S1 — About 15 near-identical `*DeploymentService` classes share one unextracted shape
+- **Status (branch w1/core, #42):** kit in `src/RHI.Core/Deployment` (`f9a22b8`, `f1eebf1`): `FileHash`, `AtomicFile`, `FileCleanup`, `TrustedDownload`, `OwnedFileSet`, `DeploymentJournal`, `DeploymentLeftoverSweeper`. Migrated: `TransactionalFileDeploymentService`, `LinuxDeploymentRecordStore`, `DlssManagerService`. Remaining services: wave 2.
 - **Shared shape:**
   1. **Guard:** Native Linux, `BinaryDirectory`, `ExecutablePath`, PE architecture, prefix initialised. The "Native Linux" string check appears in 17 files.
   2. **Resolve:** GitHub or manifest release to (version, url, digest).

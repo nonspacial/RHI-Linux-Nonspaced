@@ -122,6 +122,7 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.SupportedOSPlatform("linux")]
     public void Upsert_ThatFailsToSave_LeavesCacheAndLedgerUnchanged()
     {
         var path = Path.Combine(_root, "records.json");
@@ -130,15 +131,24 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         store.Upsert(Seed());
         var ledger = File.ReadAllText(path);
 
-        // The temp file path is occupied by a directory, so the write fails with the cache stamp intact.
-        Directory.CreateDirectory(path + ".tmp");
+        // The ledger directory refuses new files, so the write fails with the cache stamp intact.
+        var directory = Path.GetDirectoryName(path)!;
+        var mode = File.GetUnixFileMode(directory);
         var changed = store.Find(game, ManagedComponentKind.ShortFuse)!;
         Mutate(changed);
-        Assert.ThrowsAny<Exception>(() => store.Upsert(changed));
-        Directory.Delete(path + ".tmp");
+        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            Assert.ThrowsAny<Exception>(() => store.Upsert(changed));
+        }
+        finally
+        {
+            File.SetUnixFileMode(directory, mode);
+        }
 
         AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
         Assert.Equal(ledger, File.ReadAllText(path));
+        Assert.DoesNotContain(Directory.GetFiles(directory), file => file.Contains(".rhi-tmp-", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -157,6 +167,40 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         File.WriteAllText(path, ledger);
 
         AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+    }
+
+    // #118: Clone switched to dedicated non-indented options; it must still copy every property. The
+    // fixture sets every public property of the three record types, so a new field without a value
+    // here fails the first assertion instead of being silently dropped by a future hand-written copy.
+    [Fact]
+    public void Clone_CopiesEveryPropertyDeeply()
+    {
+        var original = new LinuxDeploymentRecord
+        {
+            GameKey = "steam:42", GameName = "Game", Component = ManagedComponentKind.ShortFuse, BinaryDirectory = "/g/bin",
+            SourceUrl = "https://example.invalid/a", Version = "1.2", InstalledAtUtc = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+            Files = [new LinuxDeployedFile { Path = "/g/bin/a.dll", ExistedBeforeInstall = true, Sha256 = "AB", AllowUserChanges = true }],
+            DirectoriesCreatedByRhi = ["/g/bin/d"],
+            WineOverride = new WineOverrideRecord { DllName = "dxgi", PreviousValue = "builtin", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "game.exe" },
+            AdditionalWineOverrides = [new WineOverrideRecord { DllName = "d3dcompiler_47", PreviousValue = "b", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "g.exe" }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase) { ["Key"] = "Value" }
+        };
+        foreach (var item in new object[] { original, original.Files[0], original.WineOverride })
+            foreach (var property in item.GetType().GetProperties())
+            {
+                var value = property.GetValue(item);
+                var unset = property.PropertyType.IsValueType ? Activator.CreateInstance(property.PropertyType) : null;
+                Assert.False(Equals(value, unset) || value is System.Collections.ICollection { Count: 0 },
+                    $"{item.GetType().Name}.{property.Name} has no value in the fixture");
+            }
+
+        var copy = LinuxDeploymentRecordStore.Clone(original);
+
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(original), System.Text.Json.JsonSerializer.Serialize(copy));
+        Assert.NotSame(original.Files[0], copy.Files[0]);
+        Assert.NotSame(original.WineOverride, copy.WineOverride);
+        Assert.NotSame(original.Metadata, copy.Metadata);
+        Assert.Equal("Value", copy.Metadata["KEY"]);
     }
 
     private static LinuxDeploymentRecord Seed() => new()

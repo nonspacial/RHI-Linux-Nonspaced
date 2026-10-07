@@ -13,6 +13,24 @@ public sealed class WineDllOverrideService
 
     public WineOverrideRecord EnsureNativeBuiltin(string prefixPath, string dllName, string? applicationName = null)
     {
+        var plan = PlanNativeBuiltin(prefixPath, dllName, applicationName);
+        if (!plan.ChangedByRhi) return plan;
+
+        var path = RegistryPath(prefixPath);
+        var text = File.ReadAllText(path);
+        BackupRegistryOnce(path);
+        var updated = SetOverride(text, plan.DllName, "native,builtin", plan.ApplicationName);
+        AtomicWrite(path, updated);
+        return plan;
+    }
+
+    /// <summary>
+    /// The record <see cref="EnsureNativeBuiltin"/> would return, without changing the registry, so a
+    /// journal can hold the exact undo step before the override is written. <see cref="Restore"/>
+    /// with this record is safe whether or not the override was then written.
+    /// </summary>
+    public WineOverrideRecord PlanNativeBuiltin(string prefixPath, string dllName, string? applicationName = null)
+    {
         dllName = NormalizeDllName(dllName);
         applicationName = NormalizeApplicationName(applicationName);
         var path = RegistryPath(prefixPath);
@@ -23,23 +41,12 @@ public sealed class WineDllOverrideService
         var sectionName = SectionFor(applicationName);
         var sectionExistedBefore = FindSection(SplitLines(text), sectionName).Start >= 0;
         var previous = TryReadOverride(text, dllName, applicationName);
-        if (string.Equals(previous, "native,builtin", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(previous, "native", StringComparison.OrdinalIgnoreCase))
-        {
-            return new WineOverrideRecord
-            {
-                DllName = dllName, PreviousValue = previous, ChangedByRhi = false,
-                SectionCreatedByRhi = false, ApplicationName = applicationName
-            };
-        }
-
-        BackupRegistryOnce(path);
-        var updated = SetOverride(text, dllName, "native,builtin", applicationName);
-        AtomicWrite(path, updated);
+        var alreadyNative = string.Equals(previous, "native,builtin", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(previous, "native", StringComparison.OrdinalIgnoreCase);
         return new WineOverrideRecord
         {
-            DllName = dllName, PreviousValue = previous, ChangedByRhi = true,
-            SectionCreatedByRhi = !sectionExistedBefore, ApplicationName = applicationName
+            DllName = dllName, PreviousValue = previous, ChangedByRhi = !alreadyNative,
+            SectionCreatedByRhi = !alreadyNative && !sectionExistedBefore, ApplicationName = applicationName
         };
     }
 

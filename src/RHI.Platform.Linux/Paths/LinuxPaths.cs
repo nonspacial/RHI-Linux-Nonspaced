@@ -9,6 +9,11 @@ public static class LinuxPaths
         ?? Path.Combine(Home, ".local", "share");
     public static string CacheHome => Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
         ?? Path.Combine(Home, ".cache");
+    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME")
+        ?? Path.Combine(Home, ".local", "state");
+
+    /// <summary>Diagnostics log (<see cref="RHI.Core.Services.AppLog"/>): <c>$XDG_STATE_HOME/rhi-linux/rhi.log</c>.</summary>
+    public static string AppLogPath => Path.Combine(StateHome, "rhi-linux", "rhi.log");
 
     public static IEnumerable<string> SteamRoots()
     {
