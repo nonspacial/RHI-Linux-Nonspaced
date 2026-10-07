@@ -185,6 +185,72 @@ public sealed class GitHubApiTokenHandlerTests
         Assert.Equal(["revoked-token", null], capture.Requests.Select(r => r.Authorization?.Parameter));
     }
 
+    [Fact]
+    public async Task SendAsync_401AfterRedirect_KeepsToken()
+    {
+        using var dir = new TokenDir("good-token");
+        var capture = new CaptureHandler(request =>
+        {
+            if (request.RequestUri!.Host != "api.github.com")
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            // What the inner redirect handler does on a 301 to another host: the request now
+            // points elsewhere and the 401 comes from there, without our token.
+            request.RequestUri = new Uri("https://objects.example.test/asset");
+            request.Headers.Authorization = null;
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        });
+        var handler = new GitHubApiTokenHandler(dir.TokenPath, capture);
+        var rejections = 0;
+        handler.TokenRejected += (_, _) => Interlocked.Increment(ref rejections);
+        using var http = new HttpClient(handler);
+
+        using var first = await http.GetAsync(ReleaseUrl);
+        using var second = await http.GetAsync(ReleaseUrl);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, first.StatusCode);
+        Assert.Equal(0, rejections);
+        Assert.Equal(["good-token", "good-token"], capture.Requests.Select(r => r.Authorization?.Parameter));
+    }
+
+    [Fact]
+    public async Task SendAsync_401ForTokenReplacedMidRequest_KeepsNewToken()
+    {
+        using var dir = new TokenDir("old-token");
+        var oldTokenSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var newTokenAnswered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var capture = new CaptureHandler(async request =>
+        {
+            switch (request.Headers.Authorization?.Parameter)
+            {
+                case "old-token":
+                    oldTokenSent.SetResult();
+                    await newTokenAnswered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                case "new-token":
+                    newTokenAnswered.TrySetResult();
+                    return new HttpResponseMessage(HttpStatusCode.OK);
+                default:
+                    return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+        });
+        var handler = new GitHubApiTokenHandler(dir.TokenPath, capture);
+        var rejections = 0;
+        handler.TokenRejected += (_, _) => Interlocked.Increment(ref rejections);
+        using var http = new HttpClient(handler);
+
+        // The old token is in flight when the user saves a new one; another request loads it
+        // before the old token's 401 arrives.
+        var stale = http.GetAsync(ReleaseUrl);
+        await oldTokenSent.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        dir.Rewrite("new-token");
+        using (await http.GetAsync(ReleaseUrl)) { }
+        using (await stale) { }
+        using (await http.GetAsync(ReleaseUrl)) { }
+
+        Assert.Equal(0, rejections);
+        Assert.Equal("new-token", capture.Requests[^1].Authorization?.Parameter);
+    }
+
     private static Func<HttpRequestMessage, HttpResponseMessage> RejectToken(string token) => request =>
         new HttpResponseMessage(request.Headers.Authorization?.Parameter == token ? HttpStatusCode.Unauthorized : HttpStatusCode.OK)
         {
