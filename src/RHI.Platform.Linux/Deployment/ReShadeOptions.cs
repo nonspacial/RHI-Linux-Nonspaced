@@ -33,4 +33,5 @@ internal sealed record ReShadeStagedDll(
     string Version,
     string SourceUrl,
     string SourceIdentity,
-    ReShadeChannel Channel);
+    ReShadeChannel Channel,
+    bool FromCache = false);

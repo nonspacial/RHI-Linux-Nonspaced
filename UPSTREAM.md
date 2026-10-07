@@ -75,3 +75,10 @@ RHI Linux remains a GPLv3 derivative of the upstream project.
 ### #22 — Launch working directory (2.7.9)
 
 Direct launches (standalone Wine prefixes and manual games) start in the launch executable's folder, falling back to the game folder, as upstream's exe-override and auto-detected-exe launches do. Steam, Heroic and Lutris hand-offs keep the store client's own working directory, matching upstream's protocol launches. Upstream's per-game launch exe override and manifest `launchExeOverrides` as a *launch* target are not ported: Linux launches run the stored launch command, and the manifest override only selects the patch target.
+
+## Parity notes (upstream 2.8.0–2.8.5)
+
+### #132 — ReShade when reshade.me answers HTTP 5xx (2.8.3)
+
+- Ported: the stable-channel page fetch reads the body of a 5xx answer and uses it only when it carries the add-on download link; the setup exe it points to still needs a success status and passes the PE check. 4xx and other statuses stay failures.
+- Linux addition: when reshade.me is down (5xx without the link, unreachable or timed out), a stable install falls back to the newest stable copy already in the ReShade cache and says so; with no cached copy it fails with "try again later" before touching any game file. The fallback never replaces a newer installed ReShade with an older cached one. The update check reports the outage, keeps the installed ReShade and waits for the next check. A 404 never falls back.

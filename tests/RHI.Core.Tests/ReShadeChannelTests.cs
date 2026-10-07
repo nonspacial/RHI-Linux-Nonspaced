@@ -99,6 +99,108 @@ public sealed class ReShadeChannelTests : IDisposable
         Assert.Equal(0, handler.RequestCount);
     }
 
+    // #132 (upstream 2.8.3): reshade.me intermittently answers 5xx with a normal page.
+    [Fact]
+    public async Task StableChannel_ServerErrorPageWithLink_StillInstalls()
+    {
+        var (game, store) = CreateGame("stable-500-link");
+        var handler = new MutableHandler { StableVersion = "9.9.9", HomeStatus = HttpStatusCode.InternalServerError };
+        var service = NewService(store, handler, Path.Combine(_root, "stable-500-link-cache"));
+
+        var result = await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(result.Success, result.Message);
+        Assert.Contains("ReShade 9.9.9", result.Message);
+        Assert.DoesNotContain("cached copy", result.Message);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+    }
+
+    [Fact]
+    public async Task StableChannel_ServerErrorWithoutLinkAndNoCache_FailsClearlyAndWritesNothing()
+    {
+        var (game, store) = CreateGame("stable-500-nolink");
+        var handler = new MutableHandler { HomeStatus = HttpStatusCode.ServiceUnavailable, HomeHasLink = false };
+        var service = NewService(store, handler, Path.Combine(_root, "stable-500-nolink-cache"));
+
+        var result = await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Contains("HTTP 503", result.Message);
+        Assert.Contains("try again later", result.Message);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+    }
+
+    [Fact]
+    public async Task StableChannel_NotFound_FailsEvenWithCachedCopy()
+    {
+        var cache = Path.Combine(_root, "stable-404-cache");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var (seedGame, seedStore) = CreateGame("stable-404-seed");
+        Assert.True((await NewService(seedStore, handler, cache).InstallAsync(seedGame, new ReShadeInstallOptions { ManageIni = false })).Success);
+
+        var (game, store) = CreateGame("stable-404");
+        handler.HomeStatus = HttpStatusCode.NotFound;
+        var result = await NewService(store, handler, cache).InstallAsync(game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Contains("HTTP 404", result.Message);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+    }
+
+    [Fact]
+    public async Task StableChannel_SiteOutage_UsesCachedCopyAndUpdateCheckWaits()
+    {
+        var cache = Path.Combine(_root, "stable-outage-cache");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var (installedGame, installedStore) = CreateGame("stable-outage-installed");
+        var installedService = NewService(installedStore, handler, cache);
+        Assert.True((await installedService.InstallAsync(installedGame, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var proxy = Path.Combine(installedGame.BinaryDirectory!, "dxgi.dll");
+        var proxyHash = Sha256(proxy);
+
+        handler.HomeStatus = HttpStatusCode.InternalServerError;
+        handler.HomeHasLink = false;
+        var (freshGame, freshStore) = CreateGame("stable-outage-fresh");
+        var fresh = await NewService(freshStore, handler, cache).InstallAsync(freshGame, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(fresh.Success, fresh.Message);
+        Assert.Contains("ReShade 9.9.9", fresh.Message);
+        Assert.Contains("cached copy", fresh.Message);
+
+        handler.HomeUnreachable = true;
+        var status = await installedService.CheckUpdateAsync(installedGame);
+
+        Assert.True(status.IsInstalled);
+        Assert.False(status.UpdateAvailable);
+        Assert.Contains("check again later", status.Message);
+        Assert.Equal(proxyHash, Sha256(proxy));
+    }
+
+    [Fact]
+    public async Task StableChannel_SiteOutage_RefusesOlderCachedCopyOverNewerInstall()
+    {
+        var cache = Path.Combine(_root, "stable-downgrade-cache");
+        var (game, store) = CreateGame("stable-downgrade");
+        var handler = new MutableHandler { StableVersion = "9.9.9" };
+        var service = NewService(store, handler, cache);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        handler.StableVersion = "10.0.0";
+        Assert.True((await service.InstallAsync(game, service.GetInstalledOptions(game))).Success);
+        Directory.Delete(Path.Combine(cache, "stable", "10.0.0"), true);
+        var proxy = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var proxyHash = Sha256(proxy);
+
+        handler.HomeStatus = HttpStatusCode.BadGateway;
+        handler.HomeHasLink = false;
+        var result = await service.InstallAsync(game, service.GetInstalledOptions(game));
+
+        Assert.False(result.Success);
+        Assert.Contains("older than the installed 10.0.0", result.Message);
+        Assert.Equal("10.0.0", store.Find(game, ManagedComponentKind.ReShade)!.Version);
+        Assert.Equal(proxyHash, Sha256(proxy));
+    }
+
     [Fact]
     public async Task StableChannel_CheckUpdateDetectsNewVersion()
     {
@@ -591,6 +693,9 @@ public sealed class ReShadeChannelTests : IDisposable
         public string StableVersion { get; set; } = "9.9.9";
         public byte[]? NightlyPayload { get; set; }
         public int RequestCount { get; private set; }
+        public HttpStatusCode HomeStatus { get; set; } = HttpStatusCode.OK;
+        public bool HomeHasLink { get; set; } = true;
+        public bool HomeUnreachable { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -598,8 +703,11 @@ public sealed class ReShadeChannelTests : IDisposable
             var uri = request.RequestUri!;
             if (uri.Host.Equals("reshade.me", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath == "/")
             {
-                var html = $"<a href=\"/downloads/ReShade_Setup_{StableVersion}_Addon.exe\">Download</a>";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) });
+                if (HomeUnreachable) throw new HttpRequestException("Connection refused");
+                var html = HomeHasLink
+                    ? $"<a href=\"/downloads/ReShade_Setup_{StableVersion}_Addon.exe\">Download</a>"
+                    : "<html><body>Internal Server Error</body></html>";
+                return Task.FromResult(new HttpResponseMessage(HomeStatus) { Content = new StringContent(html) });
             }
             if (uri.Host.Equals("nightly.link", StringComparison.OrdinalIgnoreCase))
             {
