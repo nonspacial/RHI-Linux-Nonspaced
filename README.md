@@ -115,8 +115,10 @@ The game executable and Wine prefix can be configured independently when necessa
 Install the required packages:
 
 ```fish
-sudo pacman -S --needed dotnet-sdk-8.0 7zip git
+sudo pacman -S --needed dotnet-sdk dotnet-runtime-8.0 7zip git
 ```
+
+Building from source needs a .NET 10 SDK (any 10.0 feature band, pinned by `global.json`) and the .NET 8 runtime the app targets. NuGet restores are locked by the committed `packages.lock.json` files; after changing a package reference, run `dotnet restore --force-evaluate` and commit the updated lock files.
 
 Clone RHI Linux:
 
