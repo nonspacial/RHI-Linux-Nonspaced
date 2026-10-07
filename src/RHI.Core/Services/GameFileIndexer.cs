@@ -26,7 +26,7 @@ public static class GameFileIndexer
         int maxFiles,
         CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(root)) return [];
+        if (!Directory.Exists(root)) return new IndexedFiles([], truncated: false);
 
         var result = new List<string>(2048);
         var rootDepth = Depth(root);
@@ -43,7 +43,7 @@ public static class GameFileIndexer
                 foreach (var file in Directory.EnumerateFiles(dir))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (result.Count >= maxFiles) return result;
+                    if (result.Count >= maxFiles) return new IndexedFiles(result, truncated: true);
                     result.Add(file);
                 }
             }
@@ -67,7 +67,21 @@ public static class GameFileIndexer
             catch { }
         }
 
-        return result;
+        return new IndexedFiles(result, truncated: false);
+    }
+
+    /// <summary>
+    /// True when <paramref name="files"/> came from <see cref="Build(string, int, int, CancellationToken)"/>
+    /// and stopped at the file cap: which files are missing depends on walk order, so callers say so.
+    /// </summary>
+    public static bool IsTruncated(IReadOnlyList<string> files) => files is IndexedFiles { Truncated: true };
+
+    /// <summary>The indexed paths plus whether the walk stopped at the file cap.</summary>
+    public sealed class IndexedFiles : System.Collections.ObjectModel.ReadOnlyCollection<string>
+    {
+        internal IndexedFiles(IList<string> files, bool truncated) : base(files) => Truncated = truncated;
+
+        public bool Truncated { get; }
     }
 
     private static bool IsSymbolicLink(string path)

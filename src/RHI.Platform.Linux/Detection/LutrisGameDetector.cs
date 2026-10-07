@@ -202,35 +202,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
         var candidates = nativeLauncher
             ? new[] { workingDir, exeDir, prefix }
             : new[] { exeDir, prefix };
-        return candidates.FirstOrDefault(dir =>
-            !string.IsNullOrWhiteSpace(dir) &&
-            Directory.Exists(dir) &&
-            !IsSharedDirectory(dir, home) &&
-            // A whole Wine prefix is not a game directory. Indexing it walks the entire
-            // Windows image and (through dosdevices symlinks) every mounted drive.
-            !IsWinePrefixRoot(dir));
-    }
-
-    /// <summary>
-    /// Folders that hold executables for many programs (or everything): a wrapper living there says
-    /// nothing about where the game is, and deploying DLLs there would pollute PATH.
-    /// </summary>
-    internal static bool IsSharedDirectory(string path, string home)
-    {
-        var normalised = NormalisePath(path);
-        string[] shared =
-        [
-            "/", "/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
-            "/usr/games", "/usr/local/games",
-            NormalisePath(home), NormalisePath(Path.Combine(home, "bin")), NormalisePath(Path.Combine(home, ".local", "bin"))
-        ];
-        if (shared.Contains(normalised, StringComparer.Ordinal)) return true;
-        try
-        {
-            var target = new DirectoryInfo(normalised).ResolveLinkTarget(returnFinalTarget: true);
-            return target is not null && shared.Contains(NormalisePath(target.FullName), StringComparer.Ordinal);
-        }
-        catch { return false; }
+        // Shared executable folders, $HOME, / and a whole Wine prefix are not game directories: indexing a
+        // prefix walks the entire Windows image and (through dosdevices symlinks) every mounted drive.
+        return candidates.FirstOrDefault(dir => GameRootGuard.IsAcceptable(dir, home));
     }
 
     private static bool IsWindowsExecutable(string path)

@@ -159,7 +159,8 @@ public sealed class HeroicGameDetector : IGameDetector
 
             if (!string.IsNullOrWhiteSpace(install)
                 && !string.IsNullOrWhiteSpace(name)
-                && Directory.Exists(install)
+                // A record pointing at $HOME, / or a whole prefix (a sideload exe dropped there) is not a game folder.
+                && GameRootGuard.IsAcceptable(install)
                 && isInstalled != false)
             {
                 var explicitRunner = StringValue(merged, "runner", "store");

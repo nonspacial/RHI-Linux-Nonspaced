@@ -19,7 +19,9 @@ public sealed class ManualGameDetector : IGameDetector
     {
         cancellationToken.ThrowIfCancellationRequested();
         var games = _store.Load().ManualGames
-            .Where(entry => Directory.Exists(entry.InstallPath))
+            // Add/Edit refuse these roots; an older entry with one is not listed rather than indexing
+            // $HOME, / or a whole Wine prefix on every selection.
+            .Where(entry => GameRootGuard.IsAcceptable(entry.InstallPath))
             .Select(entry => new DetectedGame
             {
                 Name = entry.Name,

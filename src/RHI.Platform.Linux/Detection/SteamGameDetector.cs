@@ -47,7 +47,8 @@ public sealed partial class SteamGameDetector : IGameDetector
                         if (classifier.IsNotAGame(appId, name, installDir))
                             continue;
                         var gameRoot = Path.Combine(steamapps, "common", installDir);
-                        if (!Directory.Exists(gameRoot)) continue;
+                        // An empty installdir names steamapps/common itself.
+                        if (!GameRootGuard.IsAcceptable(gameRoot)) continue;
                         var prefix = appId is int id ? Path.Combine(steamapps, "compatdata", id.ToString(), "pfx") : null;
                         if (prefix is not null && !Directory.Exists(prefix)) prefix = null;
                         // What Steam will actually run: the per-app compatibility tool, else the native build when

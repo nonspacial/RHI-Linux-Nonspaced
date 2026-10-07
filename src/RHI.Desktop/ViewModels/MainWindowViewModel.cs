@@ -9,6 +9,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Settings;
@@ -1128,7 +1129,11 @@ public partial class MainWindowViewModel : ObservableObject
             _probeCache[Key(game)] = derived;
             ApplyProbeResult(derived);
             timer.Stop();
-            StatusText = LF("Pronto — {0}: {1} arquivos indexados em {2} ms", "Ready — {0}: {1} files indexed in {2} ms", game.Name, files.Count, timer.ElapsedMilliseconds);
+            StatusText = GameFileIndexer.IsTruncated(files)
+                ? LF("{0}: a indexação parou em {1} arquivos, então alguns arquivos do jogo podem não ser vistos. A pasta do jogo parece conter mais que o jogo; confira a raiz em Editar jogo.",
+                     "{0}: indexing stopped at {1} files, so some game files may not be seen. The game folder seems to hold more than the game; check the root in Edit game.",
+                     game.Name, files.Count)
+                : LF("Pronto — {0}: {1} arquivos indexados em {2} ms", "Ready — {0}: {1} files indexed in {2} ms", game.Name, files.Count, timer.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -2672,6 +2677,7 @@ public partial class MainWindowViewModel : ObservableObject
             return L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications.");
         if (string.IsNullOrWhiteSpace(gameRootPath) || !Directory.Exists(gameRootPath))
             return L("A raiz do jogo selecionada não existe.", "The selected game root does not exist.");
+        if (GameRootRefusal(gameRootPath) is { } rootRefusal) return rootRefusal;
         if (string.IsNullOrWhiteSpace(binaryDirectory) || !Directory.Exists(binaryDirectory))
             return L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist.");
 
@@ -2731,6 +2737,20 @@ public partial class MainWindowViewModel : ObservableObject
             : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
     }
 
+    /// <summary>Why a folder cannot be a game root (shared rule with every detector), or null when it can.</summary>
+    public static string? GameRootRefusal(string path, string? home = null) => GameRootGuard.Check(path, home) switch
+    {
+        GameRootProblem.None => null,
+        GameRootProblem.Missing => L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."),
+        GameRootProblem.FilesystemRoot => L("A raiz do sistema (/) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "The filesystem root (/) cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.HomeFolder => L("A pasta pessoal (ou uma pasta acima dela) não pode ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "Your home folder (or a folder above it) cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.SystemFolder => L("Pastas do sistema e raízes de discos não podem ser a pasta de um jogo. Escolha a pasta do próprio jogo.", "System folders and drive roots cannot be a game folder. Choose the game's own folder."),
+        GameRootProblem.SharedFolder => L("Esta pasta guarda vários programas ou jogos. Escolha a pasta do próprio jogo.", "This folder holds many programs or games. Choose the game's own folder."),
+        GameRootProblem.WinePrefix => L("Este é um prefixo Wine inteiro (ou uma pasta de sistema dele). Escolha a pasta do jogo dentro de drive_c.", "This is a whole Wine prefix (or one of its system folders). Choose the game's folder inside drive_c."),
+        GameRootProblem.SteamLibraryFolder => L("Esta é uma pasta da biblioteca Steam. Escolha a pasta do jogo em steamapps/common.", "This is a Steam library folder. Choose the game's folder inside steamapps/common."),
+        _ => L("Esta pasta não pode ser a pasta de um jogo.", "This folder cannot be a game folder.")
+    };
+
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
         => (await TryAddManualGameAsync(entry)).Message;
 
@@ -2740,6 +2760,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(entry.Name)) return (false, L("Digite um nome para o jogo.", "Enter a name for the game."));
         if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
             return (false, L("O diretório do jogo não existe.", "The game directory does not exist."));
+        if (GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
         if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
             return (false, L("O executável selecionado não existe.", "The selected executable does not exist."));
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
