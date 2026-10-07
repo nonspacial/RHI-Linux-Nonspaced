@@ -816,8 +816,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private static ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
         => game.HasConfirmedPatchTarget
             ? null
-            : new ManagedUpdateCheck(false, false,
-                "Alvo de modificações não definido. Atualizações locais estão bloqueadas até Editar jogo confirmar o executável real do jogo.");
+            : new ManagedUpdateCheck(true, false,
+                "Alvo de modificações não definido. Atualizações locais estão bloqueadas até Editar jogo confirmar o executável real do jogo.",
+                Blocked: true);
 
     private IReadOnlyList<string> BuildDependencyIndex(DetectedGame game, IReadOnlyList<string>? indexedFiles = null)
     {
@@ -1637,11 +1638,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var patchGuard = PatchTargetUpdateGuard(game);
-        if (patchGuard is not null) return patchGuard;
-
         if (_records.Find(game, component) is null)
             return new ManagedUpdateCheck(false, false, $"{component} is not managed by RHI Linux.");
+
+        // A managed component on a game without a confirmed patch target is blocked, as
+        // UpdateManagedAsync would refuse it: Update All reports a failure, not "current".
+        var patchGuard = PatchTargetUpdateGuard(game);
+        if (patchGuard is not null) return patchGuard;
 
         return component switch
         {

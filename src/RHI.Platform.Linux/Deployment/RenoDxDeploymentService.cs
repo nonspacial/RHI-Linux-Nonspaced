@@ -71,27 +71,108 @@ public sealed class RenoDxDeploymentService
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
         if (record is null) return new ManagedUpdateCheck(false, false, "RenoDX is not managed by RHI Linux.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version);
+            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
         var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
-            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version);
+            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
         try
         {
             var mod = await _catalog.ResolveAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
-            if (mod is null) return new ManagedUpdateCheck(true, false, "No current RenoDX catalog match was found; installed payload was preserved.", record.Version);
+            if (mod is null) return new ManagedUpdateCheck(true, false, "No current RenoDX catalog match was found; installed payload was preserved.", record.Version, CouldNotCheck: true);
             var latestUrl = mod.UrlFor(architecture);
             if (string.IsNullOrWhiteSpace(latestUrl))
-                return new ManagedUpdateCheck(true, false, "Current RenoDX catalog match has no compatible payload for this architecture.", record.Version);
-            var update = !string.Equals(record.SourceUrl, latestUrl, StringComparison.OrdinalIgnoreCase)
-                         || !string.Equals(record.Version, mod.Name, StringComparison.OrdinalIgnoreCase);
-            return new ManagedUpdateCheck(true, update,
-                update ? $"RenoDX catalog update available: {record.Version ?? "unknown"} → {mod.Name}." : $"RenoDX catalog entry {mod.Name} is current.",
-                record.Version, mod.Name);
+                return new ManagedUpdateCheck(true, false, "Current RenoDX catalog match has no compatible payload for this architecture.", record.Version, CouldNotCheck: true);
+            if (!string.Equals(record.SourceUrl, latestUrl, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(record.Version, mod.Name, StringComparison.OrdinalIgnoreCase))
+                return new ManagedUpdateCheck(true, true,
+                    $"RenoDX catalog update available: {record.Version ?? "unknown"} → {mod.Name}.", record.Version, mod.Name);
+
+            // Snapshots are rebuilt in place under the same URL and name (upstream 2.8.0 flags them
+            // from the remote file), so compare what the server serves now with what was installed.
+            var (remote, error) = await HeadAsync(latestUrl, cancellationToken).ConfigureAwait(false);
+            if (remote is null)
+                return new ManagedUpdateCheck(true, false, $"RenoDX update check could not reach the snapshot: {error}", record.Version, CouldNotCheck: true);
+            var recorded = InstalledRemoteStamp(record);
+            var comparison = recorded is not null
+                ? RenoDxRemoteStamp.Compare(recorded, remote)
+                : CompareLegacyRecord(record, remote);
+            return comparison switch
+            {
+                RemoteStampComparison.Changed => new ManagedUpdateCheck(true, true,
+                    $"RenoDX snapshot was rebuilt upstream: {mod.Name}.", record.Version, mod.Name),
+                RemoteStampComparison.Same => new ManagedUpdateCheck(true, false,
+                    $"RenoDX snapshot is current: {mod.Name}.", record.Version, mod.Name),
+                _ => new ManagedUpdateCheck(true, false,
+                    "RenoDX update check could not compare the snapshot: the server sent no ETag, Last-Modified or size.", record.Version, CouldNotCheck: true)
+            };
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ManagedUpdateCheck(true, false, $"RenoDX update check failed: {ex.Message}", record.Version);
+            return new ManagedUpdateCheck(true, false, $"RenoDX update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
+    }
+
+    public const string RemoteStampMetadataKey = "RenoDX.RemoteStamp";
+    public const string AddonVersionMetadataKey = "RenoDX.AddonVersion";
+
+    /// <summary>
+    /// Version shown in the update history (upstream 2.8.0): the add-on's own version recorded at
+    /// install, else read from the installed file (records written before it was recorded).
+    /// </summary>
+    public static string? InstalledAddonVersion(LinuxDeploymentRecord record)
+    {
+        if (record.Metadata.TryGetValue(AddonVersionMetadataKey, out var recorded) && !string.IsNullOrWhiteSpace(recorded))
+            return recorded;
+        var installed = record.Files.FirstOrDefault()?.Path;
+        return installed is not null && File.Exists(installed) ? ReadAddonVersion(installed) : null;
+    }
+
+    /// <summary>
+    /// Upstream AuxInstallService.ReadInstalledVersion for add-ons: PE ProductVersion, else FileVersion,
+    /// with RenoDX's "0.YYYY.MMDD.HHMM" shown as "YY.MMDD.HHMM"; no version resource → file time in
+    /// the same shape. Linux also accepts the fixed VS_FIXEDFILEINFO number before the file time.
+    /// </summary>
+    public static string ReadAddonVersion(string path)
+    {
+        var info = PeVersionReader.Read(path);
+        var raw = !string.IsNullOrWhiteSpace(info?.ProductVersion) ? info.ProductVersion
+            : !string.IsNullOrWhiteSpace(info?.FileVersion) ? info.FileVersion
+            : info?.FixedFileVersion?.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            var written = File.GetLastWriteTimeUtc(path);
+            return written.ToString("yy'.'MMdd'.'HHmm", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return FormatAddonVersion(raw);
+    }
+
+    internal static string FormatAddonVersion(string raw)
+    {
+        var parts = raw.Trim().Split('.');
+        if (parts.Length < 2 || parts[0] != "0") return raw.Trim();
+        var remaining = parts[1..];
+        if (remaining[0].Length == 4) remaining[0] = remaining[0][2..];
+        return string.Join('.', remaining);
+    }
+
+    internal static RenoDxRemoteStamp? InstalledRemoteStamp(LinuxDeploymentRecord record)
+        => record.Metadata.TryGetValue(RemoteStampMetadataKey, out var json) ? RenoDxRemoteStamp.Deserialize(json) : null;
+
+    // Records written before stamps were kept: a remote modified after the install is newer
+    // (catches same-size rebuilds); otherwise fall back to upstream's size comparison. Residual gap:
+    // a dev build with the size-only cache could install a stale same-size file after a rebuild;
+    // that record reads as current until the snapshot is rebuilt again or the mod is reinstalled.
+    private static RemoteStampComparison CompareLegacyRecord(LinuxDeploymentRecord record, RenoDxRemoteStamp remote)
+    {
+        var installedAt = record.InstalledAtUtc.Kind == DateTimeKind.Local
+            ? record.InstalledAtUtc.ToUniversalTime()
+            : DateTime.SpecifyKind(record.InstalledAtUtc, DateTimeKind.Utc);
+        if (remote.LastModified is { } modified && modified.UtcDateTime > installedAt)
+            return RemoteStampComparison.Changed;
+        var installedFile = record.Files.FirstOrDefault()?.Path;
+        if (remote.Length is > 0 && installedFile is not null && File.Exists(installedFile))
+            return new FileInfo(installedFile).Length == remote.Length ? RemoteStampComparison.Same : RemoteStampComparison.Changed;
+        return remote.LastModified is not null ? RemoteStampComparison.Same : RemoteStampComparison.Unknown;
     }
 
     public async Task<ComponentOperationResult> UpdateAsync(
@@ -184,7 +265,7 @@ public sealed class RenoDxDeploymentService
 
         try
         {
-            var cached = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
+            var (cached, remoteStamp) = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
             // Control UE (upstream 2.7.9): runs on a fresh install, which the UI confirms first, or
             // on a reinstall/update of an install that already carries the step. Downloads happen
             // here, before any game file changes, so cancelling cannot leave the step half done.
@@ -318,6 +399,9 @@ public sealed class RenoDxDeploymentService
                     }
                 ]
             };
+            if (remoteStamp is not null)
+                record.Metadata[RemoteStampMetadataKey] = remoteStamp.Serialize();
+            record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(cached);
             if (iniApply.State is not null)
                 record.Metadata[RenoDxIniOverrideManager.MetadataKey] = RenoDxIniOverrideManager.Serialize(iniApply.State);
             if (engineIniApply.State is not null)
@@ -677,52 +761,75 @@ public sealed class RenoDxDeploymentService
            fileName.Contains("mfgunlock", StringComparison.OrdinalIgnoreCase) ||
            fileName.Contains("mfg_unlock", StringComparison.OrdinalIgnoreCase);
 
-    private async Task<string> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
+    private async Task<(string Path, RenoDxRemoteStamp? Stamp)> DownloadAsync(string url, string fileName, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var cache = Path.Combine(_cacheDir, fileName);
         var source = cache + ".source";
-        if (await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false))
-            return cache;
+        var (current, cachedStamp) = await IsCacheCurrentAsync(url, cache, source, cancellationToken).ConfigureAwait(false);
+        if (current)
+            return (cache, cachedStamp);
         var temp = cache + ".tmp";
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
+        RenoDxRemoteStamp stamp;
+        using (var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+        {
+            response.EnsureSuccessStatusCode();
+            stamp = RenoDxRemoteStamp.FromResponse(response);
+            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true);
             await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        }
         if (!BinarySignatureInspector.HasPeSignature(temp, 100 * 1024))
         {
             File.Delete(temp);
             throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
         }
+        // The snapshot's own time, so a version-less add-on keeps one version across re-downloads.
+        if (stamp.LastModified is { } lastModified)
+            File.SetLastWriteTimeUtc(temp, lastModified.UtcDateTime);
         if (File.Exists(source)) File.Delete(source);
         File.Move(temp, cache, overwrite: true);
-        await File.WriteAllTextAsync(source, url, CancellationToken.None).ConfigureAwait(false);
-        return cache;
+        var sourceTemp = source + ".tmp";
+        await File.WriteAllTextAsync(sourceTemp, RenoDxRemoteStamp.SerializeSidecar(url, stamp), CancellationToken.None).ConfigureAwait(false);
+        File.Move(sourceTemp, source, overwrite: true);
+        return (cache, stamp.HasValidator ? stamp : null);
     }
 
-    // Upstream 2.7.6-2.7.9: reuse the cached add-on unless the remote size explicitly differs; a failed
-    // HEAD or missing Content-Length keeps the cache. The .source sidecar stops a same-named add-on
-    // from another repository being served from cache.
-    private async Task<bool> IsCacheCurrentAsync(string url, string cache, string source, CancellationToken cancellationToken)
+    // Upstream 2.7.6-2.7.9 reuses the cached add-on unless the remote size differs; a failed HEAD
+    // keeps the cache. Linux (#107): the .source sidecar ties the file to its URL and to the ETag/
+    // Last-Modified it was served with, so a same-size rebuild is fetched again. When the server
+    // sends validators the cache must match them; an old URL-only sidecar is therefore refreshed.
+    private async Task<(bool Current, RenoDxRemoteStamp? Stamp)> IsCacheCurrentAsync(string url, string cache, string source, CancellationToken cancellationToken)
     {
-        if (!File.Exists(cache) || !File.Exists(source)) return false;
-        if (!string.Equals((await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false)).Trim(), url, StringComparison.Ordinal))
-            return false;
-        if (!BinarySignatureInspector.HasPeSignature(cache, 100 * 1024)) return false;
+        if (!File.Exists(cache) || !File.Exists(source)) return (false, null);
+        var (cachedUrl, cachedStamp) = RenoDxRemoteStamp.ReadSidecar(await File.ReadAllTextAsync(source, cancellationToken).ConfigureAwait(false));
+        if (!string.Equals(cachedUrl, url, StringComparison.Ordinal)) return (false, null);
+        if (!BinarySignatureInspector.HasPeSignature(cache, 100 * 1024)) return (false, null);
+        if (cachedStamp?.Length is > 0 && cachedStamp.Length != new FileInfo(cache).Length) return (false, null);
 
-        long? remoteSize = null;
+        var (remote, _) = await HeadAsync(url, cancellationToken).ConfigureAwait(false);
+        if (remote is null || !remote.HasValidator) return (true, cachedStamp);
+        return RenoDxRemoteStamp.Compare(cachedStamp, remote) == RemoteStampComparison.Same
+            ? (true, remote)
+            : (false, null);
+    }
+
+    // Null stamp = the remote could not be asked; the error text says why.
+    private async Task<(RenoDxRemoteStamp? Stamp, string? Error)> HeadAsync(string url, CancellationToken cancellationToken)
+    {
         try
         {
             using var headCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             headCts.CancelAfter(TimeSpan.FromSeconds(10));
             using var request = new HttpRequestMessage(HttpMethod.Head, url);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, headCts.Token).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode) remoteSize = response.Content.Headers.ContentLength;
+            return response.IsSuccessStatusCode
+                ? (RenoDxRemoteStamp.FromResponse(response), null)
+                : (null, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch { }
-        return remoteSize is null or <= 0 || remoteSize.Value == new FileInfo(cache).Length;
+        catch (OperationCanceledException) { return (null, "the request timed out"); }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or NotSupportedException or UriFormatException) { return (null, ex.Message); }
     }
 
     private static bool HasReShade(string binaryDirectory)

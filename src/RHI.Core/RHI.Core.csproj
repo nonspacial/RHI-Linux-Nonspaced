@@ -4,4 +4,7 @@
     <RootNamespace>RHI.Core</RootNamespace>
     <AssemblyName>RHI.Core</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RHI.Core.Tests" />
+  </ItemGroup>
 </Project>
