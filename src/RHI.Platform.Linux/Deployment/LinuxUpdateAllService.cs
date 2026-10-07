@@ -216,7 +216,11 @@ public sealed class LinuxUpdateAllService
                         }
 
                         var update = await _backend.UpdateManagedAsync(game, component, files, cancellationToken).ConfigureAwait(false);
-                        results.Add(new LinuxUpdateItemResult(game.Name, component, update.Success, update.Success, false, update.Message));
+                        // The component's source was unreachable (e.g. a reshade.me outage) and nothing was changed:
+                        // "could not be checked", not a failure and never an update (#132).
+                        results.Add(update.SourceUnavailable
+                            ? new LinuxUpdateItemResult(game.Name, component, true, false, false, update.Message, Unchecked: true)
+                            : new LinuxUpdateItemResult(game.Name, component, update.Success, update.Success, false, update.Message));
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {

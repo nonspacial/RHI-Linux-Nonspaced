@@ -250,7 +250,10 @@ public sealed class ReShadeChannelTests : IDisposable
 
         var item = Assert.Single(all.Items);
         Assert.False(item.Changed);
-        Assert.False(item.Success); // up/129 integration: counted as "could not be checked" (see progress notes)
+        Assert.True(item.Unchecked); // counted as "could not be checked", neither failed nor current
+        Assert.Equal(1, all.UncheckedCount);
+        Assert.Equal(0, all.FailedCount);
+        Assert.Equal(0, all.CurrentCount);
         Assert.Equal(0, all.ChangedCount);
         Assert.Contains("Installed version kept (9.9.9)", item.Message);
         Assert.Equal(proxyHash, Sha256(proxy));
