@@ -110,6 +110,28 @@ public sealed class UserLaunchCommandTests : IDisposable
         Assert.True(File.Exists(keep));
     }
 
+    [Fact]
+    public async Task LaunchLogProblems_AreWrittenToTheAppLog()
+    {
+        // Trace output is invisible in Release (integration w1 detect review 5).
+        var log = new AppLog(_tree.Path_("state", "rhi.log"));
+        var notADirectory = _tree.File("x", "logs-is-a-file");
+        using (AppLog.UseInThisFlow(log))
+        {
+            await new LinuxGameLauncher(TimeSpan.FromSeconds(10), notADirectory)
+                .LaunchAsync(new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = "true" });
+
+            var logs = _tree.Dir("logs");
+            var failure = await Assert.ThrowsAsync<GameLaunchFailedException>(() => Launcher(TimeSpan.FromSeconds(10)).LaunchAsync(
+                new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = $"echo boom >&2; chmod 000 '{logs}'/*.log; exit 3" }));
+            Assert.Null(failure.Detail);
+        }
+
+        var text = await File.ReadAllTextAsync(log.FilePath);
+        Assert.Contains($"[launch] no stderr log in {notADirectory}", text);
+        Assert.Contains("unreadable", text);
+    }
+
     private static async Task<string> ReadWhenWritten(string path)
     {
         for (var i = 0; i < 100; i++)

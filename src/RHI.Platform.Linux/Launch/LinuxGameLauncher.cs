@@ -200,7 +200,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"[RHI launch] no stderr log in {_logDirectory} ({ex.Message}); a failed launch is reported without its stderr");
+            AppLog.Warn("launch", $"no stderr log in {_logDirectory}; a failed launch is reported without its stderr", ex);
             return null;
         }
     }
@@ -230,7 +230,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"[RHI launch] stderr log {stderrLog} unreadable ({ex.Message})");
+            AppLog.Warn("launch", $"stderr log {stderrLog} unreadable", ex);
             return null;
         }
     }
