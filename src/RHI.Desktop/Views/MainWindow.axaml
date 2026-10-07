@@ -8,6 +8,13 @@
         Title="{DynamicResource Ui.WindowTitle}"
         Background="#121518"
         DragDrop.AllowDrop="True" DragDrop.DragOver="GameFiles_DragOver" DragDrop.Drop="GameFiles_Drop">
+  <Window.Styles>
+    <!-- One dim for the whole library-overlay backdrop: over the main content and over the status bar. -->
+    <Style Selector="Border.libraryBackdrop">
+      <Setter Property="Background" Value="#0D1015"/>
+      <Setter Property="Opacity" Value="0.75"/>
+    </Style>
+  </Window.Styles>
   <Grid RowDefinitions="Auto,*,Auto">
     <!-- Toolbar: deliberately mirrors the upstream RHI layout. Always one row (ToolbarPanel): the brand subtitle hides
          first, then buttons move from the right end into the '…' menu; Settings stays pinned at the far right. -->
@@ -54,7 +61,7 @@
 
     <Grid x:Name="MainContentGrid" Grid.Row="1" ColumnDefinitions="300,*">
       <!-- Below 900 px the column is removed and the same sidebar opens over this dimmed backdrop (MainWindow.Responsive.cs). -->
-      <Border x:Name="LibraryBackdrop" Grid.ColumnSpan="2" Background="#0D1015" Opacity="0.75" IsVisible="False" ZIndex="10"
+      <Border x:Name="LibraryBackdrop" Classes="libraryBackdrop" Grid.ColumnSpan="2" IsVisible="False" ZIndex="10"
               PointerPressed="LibraryBackdrop_PointerPressed"/>
       <!-- Sidebar -->
       <Border x:Name="LibrarySidebar" Grid.Column="0" Background="#101419" BorderBrush="#1E2630" BorderThickness="0,0,1,0" ClipToBounds="True">
@@ -611,6 +618,9 @@
       </Border>
     </Grid>
 
+    <!-- The overlay backdrop continues over the status bar (same dim); a click there closes the overlay too. -->
+    <Border x:Name="StatusBarBackdrop" Classes="libraryBackdrop" Grid.Row="2" IsVisible="False" ZIndex="1"
+            PointerPressed="LibraryBackdrop_PointerPressed"/>
     <Border x:Name="StatusBar" Grid.Row="2" Padding="12,6" Background="#0D1015" BorderBrush="#1E2630" BorderThickness="0,1,0,0">
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>

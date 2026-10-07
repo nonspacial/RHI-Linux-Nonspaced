@@ -95,6 +95,7 @@ public sealed partial class MainWindow
 
         if (toggle is not null) toggle.IsVisible = narrow;
         if (backdrop is not null) backdrop.IsVisible = narrow && _libraryOverlayOpen;
+        if (this.FindControl<Border>("StatusBarBackdrop") is { } statusBackdrop) statusBackdrop.IsVisible = narrow && _libraryOverlayOpen;
         if (narrow)
         {
             main.ColumnDefinitions = new ColumnDefinitions("0,*");
@@ -120,7 +121,8 @@ public sealed partial class MainWindow
     }
 
     // While the overlay is open, Tab/Shift+Tab cycle inside it (search box, chips, list) and the controls behind
-    // it (detail pane, status bar) are no tab stops and take no pointer input; the toolbar above stays usable.
+    // it (detail pane, status bar) are no tab stops and take no pointer input; the toolbar above stays usable. The
+    // dimmed backdrop covers both (LibraryBackdrop, StatusBarBackdrop), so a click on either closes the overlay.
     private void ApplyOverlayFocusScope(bool open)
     {
         if (this.FindControl<Border>("LibrarySidebar") is { } sidebar)
