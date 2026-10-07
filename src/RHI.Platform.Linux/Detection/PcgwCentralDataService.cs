@@ -157,6 +157,11 @@ public sealed class PcgwCentralDataService
     private PcgwCentralData? _data;
     private Task<PcgwCentralData?>? _load;
     private bool _revalidate;
+    // Invalidate bumps _generation. A load serves the generation it started in (_loadGeneration) and
+    // publishes only if no Invalidate happened meanwhile; otherwise the next caller chains a fresh,
+    // revalidating load behind it instead of joining the stale one.
+    private int _generation;
+    private int _loadGeneration;
     private DateTimeOffset _retryAfterFailure = DateTimeOffset.MinValue;
 
     public PcgwCentralDataService(
@@ -191,12 +196,15 @@ public sealed class PcgwCentralDataService
         lock (_sync)
         {
             if (_data is not null) return Task.FromResult<PcgwCentralData?>(_data);
-            if (_load is null)
+            if (_load is null || _loadGeneration != _generation)
             {
-                if (_time.GetUtcNow() < _retryAfterFailure) return Task.FromResult<PcgwCentralData?>(null);
+                if (_load is null && _time.GetUtcNow() < _retryAfterFailure) return Task.FromResult<PcgwCentralData?>(null);
+                var previous = _load;
                 var revalidate = _revalidate;
+                var generation = _generation;
                 _revalidate = false;
-                _load = Task.Run(() => LoadSharedAsync(revalidate), CancellationToken.None);
+                _loadGeneration = generation;
+                _load = Task.Run(() => LoadAfterAsync(previous, revalidate, generation), CancellationToken.None);
             }
             load = _load;
         }
@@ -217,10 +225,18 @@ public sealed class PcgwCentralDataService
             _data = null;
             _retryAfterFailure = DateTimeOffset.MinValue;
             _revalidate = true;
+            _generation++;
         }
     }
 
-    private async Task<PcgwCentralData?> LoadSharedAsync(bool revalidate)
+    /// <summary>A load chained behind one an Invalidate superseded: one download at a time.</summary>
+    private async Task<PcgwCentralData?> LoadAfterAsync(Task<PcgwCentralData?>? previous, bool revalidate, int generation)
+    {
+        if (previous is not null) await previous.ConfigureAwait(false); // never faults (LoadSharedAsync catches)
+        return await LoadSharedAsync(revalidate, generation).ConfigureAwait(false);
+    }
+
+    private async Task<PcgwCentralData?> LoadSharedAsync(bool revalidate, int generation)
     {
         PcgwCentralData? data = null;
         using var timeout = new CancellationTokenSource(_loadTimeout);
@@ -240,6 +256,9 @@ public sealed class PcgwCentralDataService
 
         lock (_sync)
         {
+            // Superseded by Invalidate: callers already waiting get this copy, but it is not kept, and
+            // _load is left for GetAsync to chain the revalidating load (or to own one it already chained).
+            if (generation != _generation) return data;
             _load = null;
             if (data is not null) _data = data;
             else _retryAfterFailure = _time.GetUtcNow() + FailureRetryDelay;

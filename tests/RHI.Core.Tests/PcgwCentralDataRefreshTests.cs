@@ -35,6 +35,46 @@ public sealed class PcgwCentralDataRefreshTests : IDisposable
     }
 
     [Fact]
+    public async Task InvalidateDuringALoad_IsNotLost_TheNextReadRevalidates()
+    {
+        var release = new TaskCompletionSource();
+        var handler = new SequenceHandler(release.Task,
+            """{ "version": 1, "games": { "Old": { "dx11": true } } }""",
+            """{ "version": 1, "games": { "Old": { "dx11": true }, "New": { "dx12": true } } }""");
+        var service = new PcgwCentralDataService(new HttpClient(handler), Path.Combine(_root, "pcgw_data.json"), "https://example.test/pcgw_data.json", null);
+
+        var first = service.GetAsync();
+        await handler.FirstRequest.WaitAsync(TimeSpan.FromSeconds(10));
+        service.Invalidate();                          // full Refresh while the first download is in flight
+        var second = service.GetAsync();
+        release.SetResult();
+
+        Assert.Equal(1, (await first.WaitAsync(TimeSpan.FromSeconds(10)))?.Count);
+        Assert.Equal(2, (await second.WaitAsync(TimeSpan.FromSeconds(10)))?.Count);
+        Assert.Equal(2, (await service.GetAsync())?.Count); // the revalidated copy is the one kept
+        Assert.Equal(2, handler.Requests);
+    }
+
+    [Fact]
+    public async Task InvalidateDuringALoad_WithNoWaitingCaller_StillRevalidatesOnTheNextRead()
+    {
+        var release = new TaskCompletionSource();
+        var handler = new SequenceHandler(release.Task,
+            """{ "version": 1, "games": { "Old": { "dx11": true } } }""",
+            """{ "version": 1, "games": { "Old": { "dx11": true }, "New": { "dx12": true } } }""");
+        var service = new PcgwCentralDataService(new HttpClient(handler), Path.Combine(_root, "pcgw_data.json"), "https://example.test/pcgw_data.json", null);
+
+        var first = service.GetAsync();
+        await handler.FirstRequest.WaitAsync(TimeSpan.FromSeconds(10));
+        service.Invalidate();
+        release.SetResult();
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(2, (await service.GetAsync().WaitAsync(TimeSpan.FromSeconds(10)))?.Count);
+        Assert.Equal(2, handler.Requests);
+    }
+
+    [Fact]
     public async Task FullLibraryRefresh_RevalidatesInTheBackground_PartialRefreshDoesNot()
     {
         var handler = new DataHandler();
@@ -73,6 +113,31 @@ public sealed class PcgwCentralDataRefreshTests : IDisposable
         public string Name => name;
         public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<DetectedGame>>(games.Select(g => g.ShallowClone()).ToArray());
+    }
+
+    /// <summary>Serves the bodies in order; the first request waits for <c>gate</c>.</summary>
+    private sealed class SequenceHandler(Task gate, params string[] bodies) : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _requests;
+        public int Requests => Volatile.Read(ref _requests);
+        public Task FirstRequest => _first.Task;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var index = Interlocked.Increment(ref _requests) - 1;
+            if (index == 0)
+            {
+                _first.TrySetResult();
+                await gate.WaitAsync(cancellationToken);
+            }
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(bodies[Math.Min(index, bodies.Length - 1)], Encoding.UTF8, "application/json")
+            };
+            response.Headers.ETag = new EntityTagHeaderValue($"\"v{index + 1}\"");
+            return response;
+        }
     }
 
     private sealed class DataHandler : HttpMessageHandler
