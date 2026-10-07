@@ -92,33 +92,19 @@ public sealed partial class MainWindow
     {
         if (DataContext is not MainWindowViewModel vm) return;
         var compact = vm.IsCompactView;
-        var main = this.FindControl<Grid>("MainContentGrid");
         var filters = this.FindControl<Border>("LibraryFilterBar");
         var detail = this.FindControl<Grid>("DetailRoot");
-        if (main is not null)
-            main.ColumnDefinitions = new ColumnDefinitions(compact ? "235,*" : "300,*");
         if (filters is not null)
             filters.IsVisible = !compact;
         if (detail is not null)
             detail.Margin = new Thickness(compact ? 12 : 24);
 
-        if (compact)
-        {
-            MinWidth = 1120;
-            MinHeight = 620;
-            if (Width > 1280 || Height > 780)
-            {
-                Width = 1280;
-                Height = 760;
-            }
-        }
-        else
-        {
-            MinWidth = 1080;
-            MinHeight = 680;
-            if (Width < 1320) Width = 1450;
-            if (Height < 820) Height = 900;
-        }
+        // 640 × 480 minimum in both views. Switching view changes the layout only: the app never resizes the
+        // user's window (no enlarge for Detailed, no shrink or cap for Compact).
+        MinWidth = 640;
+        MinHeight = 480;
+        _libraryLayoutKey = null;
+        ApplyLibraryLayout();
     }
 
     private async Task ShowAddGameDialogForExecutableAsync(string executable)
@@ -225,7 +211,7 @@ public sealed partial class MainWindow
                 add.IsEnabled = cancel.IsEnabled = true;
             }
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private async void EditGame_Click(object? sender, RoutedEventArgs e)
@@ -246,19 +232,19 @@ public sealed partial class MainWindow
         {
             Text = game.HasConfirmedPatchTarget ? game.ExecutablePath : "",
             PlaceholderText = L("Selecione o executável real do jogo, ex.: .../Game.exe", "Select the real game executable, e.g. .../Game.exe"),
-            MinWidth = 520
+            MinWidth = 200
         };
         var gameRoot = new TextBox
         {
             Text = game.HasConfirmedPatchTarget ? game.InstallPath : "",
             PlaceholderText = L("Raiz real do jogo", "Real game root"),
-            MinWidth = 520
+            MinWidth = 200
         };
         var binaryDirectory = new TextBox
         {
             Text = game.HasConfirmedPatchTarget ? game.BinaryDirectory : "",
             PlaceholderText = L("Diretório onde ficam o executável e os arquivos locais dos componentes", "Directory containing the executable and local component files"),
-            MinWidth = 520
+            MinWidth = 200
         };
 
         void InferFromExecutable()
@@ -445,7 +431,7 @@ public sealed partial class MainWindow
             }
         };
 
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private void GameFiles_DragOver(object? sender, DragEventArgs e)
@@ -572,7 +558,7 @@ public sealed partial class MainWindow
         };
         cancel.Click += (_, _) => dialog.Close(false);
         accept.Click += (_, _) => dialog.Close(true);
-        return await dialog.ShowDialog<bool>(this);
+        return await ShowFittedDialogAsync<bool>(dialog);
     }
 
     private async void QuickStart_Click(object? sender, RoutedEventArgs e)
@@ -615,7 +601,7 @@ public sealed partial class MainWindow
         panel.Children.Add(close);
         var dialog = new Window { Title = "RHI-Linux — Links", Width = 460, Height = 440, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = panel };
         close.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private void OpenProjectLink(string url)
@@ -663,7 +649,7 @@ public sealed partial class MainWindow
             Content = panel
         };
         close.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
         try { _motdService.MarkSeen(message); }
         catch (Exception ex)
         {

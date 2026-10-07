@@ -109,7 +109,7 @@ public sealed partial class MainWindow
             search.Focus();
         };
 
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private static void AddHdrModsHeader(Grid header, string text, int column)

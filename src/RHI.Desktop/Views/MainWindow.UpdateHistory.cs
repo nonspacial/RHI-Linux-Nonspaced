@@ -126,7 +126,7 @@ public sealed partial class MainWindow
             }
             Rebuild();
         };
-        await dialog.ShowDialog(this);
+        await ShowFittedDialogAsync(dialog);
     }
 
     private static Control BuildUpdateHistoryRow(ComponentUpdateLogEntry entry)
