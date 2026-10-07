@@ -22,7 +22,12 @@ public sealed partial class LutrisGameDetector : IGameDetector
     internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> configRoots, string home, CancellationToken ct, IEnumerable<string>? pgaDatabases = null)
     {
         var rootList = configRoots.ToList();
-        var library = LutrisPga.Load(pgaDatabases ?? LutrisPga.Candidates(rootList, home));
+        return DetectWith(rootList, home, LutrisPga.Load(pgaDatabases ?? LutrisPga.Candidates(rootList, home)), ct);
+    }
+
+    /// <summary>Test seam: detection against already-read <c>pga.db</c> rows keyed by config stem.</summary>
+    internal static IReadOnlyList<DetectedGame> DetectWith(IReadOnlyList<string> rootList, string home, IReadOnlyDictionary<string, LutrisPgaGame> library, CancellationToken ct)
+    {
         var games = new List<(DetectedGame Game, string Slug, string ConfigFile, bool ExeResolves)>();
         foreach (var configRoot in rootList)
         {
@@ -34,14 +39,14 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 {
                     var stem = Path.GetFileNameWithoutExtension(file);
                     library.TryGetValue(stem, out var pga);
+                    // Lutris keeps a removed game's config file; pga.db says it is no longer installed.
+                    if (pga?.Installed == false) continue;
                     var config = LutrisConfigFile.Parse(File.ReadAllText(file));
+                    var gameDir = string.IsNullOrWhiteSpace(pga?.Directory) ? null : pga!.Directory;
                     // Only the top-level game: mapping; an installer script: repeats game/exe/prefix keys.
-                    var exe = config.Section("game", "exe");
-                    var prefix = config.Section("game", "prefix");
-                    var workingDir = config.Section("game", "working_dir");
-                    exe = Expand(exe);
-                    prefix = Expand(prefix);
-                    workingDir = Expand(workingDir);
+                    var exe = LutrisPathExpander.Expand(config.Section("game", "exe"), home, gameDir);
+                    var prefix = LutrisPathExpander.Expand(config.Section("game", "prefix"), home, gameDir);
+                    var workingDir = LutrisPathExpander.Expand(config.Section("game", "working_dir"), home, gameDir);
                     exe = ResolveRelativeExe(exe, prefix, workingDir);
                     var install = ResolveInstallRoot(exe, workingDir, prefix, home);
                     // No real game folder (e.g. a wrapper script in ~/.local/bin driving a whole prefix,
@@ -308,12 +313,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
 
     private static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
-    private static string? Expand(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        if (value.StartsWith("~/")) return Path.Combine(LinuxPaths.Home, value[2..]);
-        return Environment.ExpandEnvironmentVariables(value);
-    }
+    private static string? Expand(string? value) => LutrisPathExpander.Expand(value, LinuxPaths.Home);
 
     /// <summary>
     /// Lutris stores installer-created games with an exe path relative to the prefix
@@ -325,8 +325,10 @@ public sealed partial class LutrisGameDetector : IGameDetector
     {
         if (string.IsNullOrWhiteSpace(exe)) return null;
         if (exe.Contains("_xXx_", StringComparison.Ordinal)) return null; // Lutris auto-detect placeholder
-        if (exe.StartsWith("$GAMEDIR/", StringComparison.Ordinal))
-            exe = exe["$GAMEDIR/".Length..];
+        // $GAMEDIR left unexpanded (no pga.db directory): the rest is relative to the working dir or prefix.
+        foreach (var token in new[] { "$GAMEDIR/", "${GAMEDIR}/" })
+            if (exe.StartsWith(token, StringComparison.Ordinal))
+                exe = exe[token.Length..];
         if (Path.IsPathRooted(exe)) return exe;
 
         foreach (var baseDir in new[] { workingDir, prefix })

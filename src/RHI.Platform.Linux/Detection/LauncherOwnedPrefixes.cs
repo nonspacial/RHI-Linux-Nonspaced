@@ -21,7 +21,9 @@ internal sealed partial class LauncherOwnedPrefixes
     public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots)
     {
         var prefixes = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var root in lutrisConfigRoots.Where(Directory.Exists))
+        var roots = lutrisConfigRoots.Where(Directory.Exists).ToList();
+        var library = LutrisPga.Load(LutrisPga.Candidates(roots, home));
+        foreach (var root in roots)
         {
             IEnumerable<string> files;
             try { files = Directory.EnumerateFiles(root, "*.yml").Concat(Directory.EnumerateFiles(root, "*.yaml")).ToArray(); }
@@ -30,9 +32,11 @@ internal sealed partial class LauncherOwnedPrefixes
             {
                 string text;
                 try { text = File.ReadAllText(file); } catch { continue; }
+                library.TryGetValue(Path.GetFileNameWithoutExtension(file), out var pga);
+                var gameDir = string.IsNullOrWhiteSpace(pga?.Directory) ? null : pga!.Directory;
                 foreach (var value in ReadScalars(text, "prefix"))
                 {
-                    var expanded = Expand(value, home);
+                    var expanded = Expand(value, home, gameDir);
                     if (expanded is not null) prefixes.Add(Canonicalise(expanded));
                 }
             }
@@ -73,12 +77,11 @@ internal sealed partial class LauncherOwnedPrefixes
         }
     }
 
-    private static string? Expand(string value, string home)
+    private static string? Expand(string value, string home, string? gameDir)
     {
-        if (value.StartsWith("~/", StringComparison.Ordinal)) value = Path.Combine(home, value[2..]);
-        value = Environment.ExpandEnvironmentVariables(value);
-        // Unresolved placeholders such as $GAMEDIR name no real directory.
-        return Path.IsPathRooted(value) && !value.Contains('$') ? value : null;
+        var expanded = LutrisPathExpander.Expand(value, home, gameDir);
+        // Unresolved placeholders such as $GAMEDIR (no pga.db directory) name no real directory.
+        return expanded is not null && Path.IsPathRooted(expanded) && !expanded.Contains('$') ? expanded : null;
     }
 
     /// <summary>
