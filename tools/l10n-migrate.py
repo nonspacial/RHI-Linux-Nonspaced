@@ -5,6 +5,7 @@ Idempotent: re-run after a merge to migrate pairs that arrived from other branch
 string literals (or literal concatenations) become T("Key") / TF("Key", args...) (or UiLocalizationService.Text /
 Format for the qualified Choose/ChooseFormat calls). Calls with computed arguments are reported and left alone.
 Usage: tools/l10n-migrate.py <repo-root> [--dry-run]
+Exit 2, writing nothing, when UiStrings.cs has a row it cannot read back (it would otherwise be dropped on rewrite).
 An inline pair is any L("pt", "en") / LF("pt", "en", args) call (define the helper locally while migrating).
 """
 import re, sys, os, glob
@@ -26,13 +27,23 @@ def parse_literal(src, i):
     if src[i] != '"':
         return None
     j = i + 1; out = []
-    esc = {'n': '\n', 't': '\t', 'r': '\r', '"': '"', '\\': '\\', '0': '\0', "'": "'"}
+    esc = {'n': '\n', 't': '\t', 'r': '\r', '"': '"', '\\': '\\', '0': '\0', "'": "'",
+           'a': '\a', 'b': '\b', 'f': '\f', 'v': '\v', 'e': '\x1b'}
     while True:
         c = src[j]
         if c == '\\':
             n = src[j + 1]
             if n == 'u':
                 out.append(chr(int(src[j + 2:j + 6], 16))); j += 6; continue
+            if n == 'U':
+                out.append(chr(int(src[j + 2:j + 10], 16))); j += 10; continue
+            if n == 'x':
+                m = re.match(r'[0-9A-Fa-f]{1,4}', src[j + 2:j + 6])
+                if not m:
+                    return None
+                out.append(chr(int(m.group(0), 16))); j += 2 + len(m.group(0)); continue
+            if n not in esc:
+                return None  # unknown escape: let the caller refuse the row instead of guessing
             out.append(esc[n]); j += 2; continue
         if c == '"':
             return ''.join(out), j + 1
@@ -99,6 +110,7 @@ def find_close(src, i):
 
 def cs_literal(value):
     s = value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t').replace('\r', '\\r')
+    s = re.sub(r'[\x00-\x1f\x7f]', lambda m: '\\u%04x' % ord(m.group(0)), s)
     return '"' + s + '"'
 
 STOP = {'a', 'an', 'the', 'to', 'of', 'and', 'or', 'is', 'are', 'be', 'for', 'in', 'on', 'it', 'this', 'that', 'with'}
@@ -115,17 +127,34 @@ def key_name(prefix, en, taken):
         key = f'{prefix}.{name}{n}'; n += 1
     return key
 
+class TableUnreadable(Exception):
+    pass
+
+ROW = re.compile(r'^[ \t]+\(', re.M)
+
 def load_table():
+    """Read every row of UiStrings.cs. The table is rewritten from what is read here, so a row the parser cannot read
+    (a raw or interpolated string, a const, an unknown escape) or a duplicate key must abort the run, never vanish."""
     entries = {}
-    if os.path.exists(TABLE):
-        src = open(TABLE, encoding='utf-8').read()
-        for m in re.finditer(r'\("([^"]+)",\s*', src):
-            i = m.end()
-            pt = parse_literal_expr(src, i)
-            if not pt: continue
-            en = parse_literal_expr(src, pt[1] + 1)
-            if not en: continue
-            entries[m.group(1)] = (pt[0], en[0])
+    if not os.path.exists(TABLE):
+        return entries
+    src = open(TABLE, encoding='utf-8').read()
+    problems = []
+    for row in ROW.finditer(src):
+        line = src.count('\n', 0, row.start()) + 1
+        m = re.compile(r'\("([^"]+)",\s*').match(src, row.end() - 1)
+        pt = parse_literal_expr(src, m.end()) if m else None
+        en = parse_literal_expr(src, pt[1] + 1) if pt and src[pt[1]] == ',' else None
+        if not en or src[en[1]] != ')':
+            problems.append(f'{os.path.relpath(TABLE, ROOT)}:{line}: row not understood: '
+                            + src[row.start():src.find('\n', row.start())].strip()[:120])
+            continue
+        if m.group(1) in entries:
+            problems.append(f'{os.path.relpath(TABLE, ROOT)}:{line}: duplicate key {m.group(1)}')
+            continue
+        entries[m.group(1)] = (pt[0], en[0])
+    if problems:
+        raise TableUnreadable('\n'.join(problems))
     return entries
 
 def existing_service_keys():
@@ -189,7 +218,8 @@ def migrate():
     return table, changed_files, skipped
 
 def write_table(table):
-    lines = ['// Seeded by tools/l10n-migrate.py; edit entries by hand freely (the script keeps existing keys).',
+    lines = ['// Seeded by tools/l10n-migrate.py; edit rows by hand freely, as plain or verbatim string literals (the script',
+             '// keeps existing keys and stops, changing nothing, at a row it cannot read).',
              '// One row per UI string: key, PT-BR, EN. Keys are looked up through UiLocalizationService.Text/Format.',
              'namespace RHI.Desktop.Localization;', '',
              'internal static class UiStrings', '{',
@@ -199,7 +229,13 @@ def write_table(table):
     open(TABLE, 'w', encoding='utf-8').write('\n'.join(lines))
 
 if __name__ == '__main__':
-    table, changed, skipped = migrate()
+    try:
+        table, changed, skipped = migrate()
+    except TableUnreadable as problem:
+        print('ABORTED, nothing written: the key table has rows this script cannot read back, and rewriting it would '
+              'drop them. Rewrite them as plain string literals (or add them by hand after the run):', file=sys.stderr)
+        print(problem, file=sys.stderr)
+        sys.exit(2)
     print(f'table entries: {len(table)}; files changed: {len(changed)}; calls: {sum(n for _, n in changed.values())}')
     for f, line, text in skipped:
         print(f'SKIPPED (computed argument) {os.path.relpath(f, ROOT)}:{line}: {text}')

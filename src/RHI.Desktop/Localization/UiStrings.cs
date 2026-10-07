@@ -1,4 +1,5 @@
-// Seeded by tools/l10n-migrate.py; edit entries by hand freely (the script keeps existing keys).
+// Seeded by tools/l10n-migrate.py; edit rows by hand freely, as plain or verbatim string literals (the script
+// keeps existing keys and stops, changing nothing, at a row it cannot read).
 // One row per UI string: key, PT-BR, EN. Keys are looked up through UiLocalizationService.Text/Format.
 namespace RHI.Desktop.Localization;
 
