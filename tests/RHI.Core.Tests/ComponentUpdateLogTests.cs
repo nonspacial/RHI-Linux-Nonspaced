@@ -155,6 +155,29 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Equal((false, ManagedComponentKind.OptiScaler, "disk full"), (failed.Success, failed.Component, failed.Message));
     }
 
+    // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
+    // drop the real change and log every other component as installed or removed.
+    [Fact]
+    public async Task Recorder_RenoDxVersionReadFailure_FallsBackPerRecord()
+    {
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        Upsert(records, ManagedComponentKind.ReShade, "6.3.0");
+        Upsert(records, ManagedComponentKind.RenoDX, "Generic Unity");
+        var log = new ComponentUpdateLogStore(LogPath);
+        var recorder = new ComponentUpdateRecorder(records, log, null, _ => throw new IOException("unreadable add-on"));
+
+        var result = await recorder.TrackAsync(_game, ManagedComponentKind.ReShade, ComponentUpdateAction.Update, () =>
+        {
+            Upsert(records, ManagedComponentKind.ReShade, "6.4.0");
+            return Task.FromResult(ComponentOperationResult.Ok("updated"));
+        });
+
+        Assert.True(result.Success);
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal((ManagedComponentKind.ReShade, ComponentUpdateAction.Update, "6.3.0", "6.4.0"),
+            (entry.Component, entry.Action, entry.FromVersion, entry.ToVersion));
+    }
+
     private void Upsert(LinuxDeploymentRecordStore records, ManagedComponentKind kind, string version)
         => records.Upsert(new LinuxDeploymentRecord
         {

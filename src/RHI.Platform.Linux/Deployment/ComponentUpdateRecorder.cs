@@ -13,12 +13,24 @@ public sealed class ComponentUpdateRecorder
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ComponentUpdateLogStore _log;
     private readonly Func<DateTime> _utcNow;
+    private readonly Func<LinuxDeploymentRecord, string?> _renoDxVersion;
 
     public ComponentUpdateRecorder(LinuxDeploymentRecordStore records, ComponentUpdateLogStore log, Func<DateTime>? utcNow = null)
+        : this(records, log, utcNow, RenoDxDeploymentService.InstalledAddonVersion)
+    {
+    }
+
+    // Test seam: the RenoDX add-on version reader (file I/O for records from older builds).
+    internal ComponentUpdateRecorder(
+        LinuxDeploymentRecordStore records,
+        ComponentUpdateLogStore log,
+        Func<DateTime>? utcNow,
+        Func<LinuxDeploymentRecord, string?> renoDxVersion)
     {
         _records = records;
         _log = log;
         _utcNow = utcNow ?? (() => DateTime.UtcNow);
+        _renoDxVersion = renoDxVersion;
     }
 
     public async Task<ComponentOperationResult> TrackAsync(
@@ -133,11 +145,21 @@ public sealed class ComponentUpdateRecorder
     }
 
     // RenoDX records keep the catalogue mod name in Version; a rebuilt snapshot keeps that name,
-    // so history diffs the add-on file's own version instead (upstream 2.8.0).
-    private static string? HistoryVersion(LinuxDeploymentRecord record)
-        => record.Component == ManagedComponentKind.RenoDX
-            ? RenoDxDeploymentService.InstalledAddonVersion(record) ?? record.Version
-            : record.Version;
+    // so history diffs the add-on file's own version instead (upstream 2.8.0). A failed read falls
+    // back to the record's Version for that record only: an empty snapshot would log every other
+    // component as installed or removed.
+    private string? HistoryVersion(LinuxDeploymentRecord record)
+    {
+        if (record.Component != ManagedComponentKind.RenoDX) return record.Version;
+        try
+        {
+            return _renoDxVersion(record) ?? record.Version;
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return record.Version;
+        }
+    }
 
     private void TryRecord(
         DetectedGame game,

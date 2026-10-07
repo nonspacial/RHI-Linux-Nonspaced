@@ -25,23 +25,38 @@ public static class PeVersionReader
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
         try
         {
+            // Regular files only: File.Exists is true for a FIFO or device, and opening a FIFO blocks
+            // until a writer appears. Those report a zero size (also through a symlink), and no PE is
+            // smaller than its DOS header, so the size check keeps them from ever being opened.
+            if (!IsRegularFileCandidate(path)) return null;
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (!stream.CanSeek) return null;
             var blob = ReadVersionResource(stream);
             return blob is null ? null : ParseVersionInfo(blob);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OverflowException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or OverflowException or NotSupportedException)
         {
             // Unreadable or malformed file: the caller falls back as for a file without a version resource.
             return null;
         }
     }
 
+    private const int DosHeaderSize = 0x40;
+
+    private static bool IsRegularFileCandidate(string path)
+    {
+        FileSystemInfo info = new FileInfo(path);
+        if (info.LinkTarget is not null)
+            info = info.ResolveLinkTarget(returnFinalTarget: true) ?? info;
+        return info is FileInfo { Exists: true } file && file.Length >= DosHeaderSize;
+    }
+
     private static byte[]? ReadVersionResource(FileStream stream)
     {
-        var dos = ReadAt(stream, 0, 0x40);
+        var dos = ReadAt(stream, 0, DosHeaderSize);
         if (dos is null || dos[0] != 'M' || dos[1] != 'Z') return null;
         var peOffset = BinaryPrimitives.ReadInt32LittleEndian(dos.AsSpan(0x3C));
-        var coff = peOffset < 0x40 ? null : ReadAt(stream, peOffset, 24);
+        var coff = peOffset < DosHeaderSize ? null : ReadAt(stream, peOffset, 24);
         if (coff is null || BinaryPrimitives.ReadUInt32LittleEndian(coff) != 0x00004550) return null;
         var sectionCount = BinaryPrimitives.ReadUInt16LittleEndian(coff.AsSpan(6));
         var optionalSize = BinaryPrimitives.ReadUInt16LittleEndian(coff.AsSpan(20));
@@ -132,8 +147,12 @@ public static class PeVersionReader
     internal static PeVersionInfo? ParseVersionInfo(byte[] blob)
     {
         if (!TryReadBlock(blob, 0, out var root) || root.Key != "VS_VERSION_INFO") return null;
+        // The root value is always the binary VS_FIXEDFILEINFO: count wValueLength in bytes whatever
+        // wType claims, and never read it past the block (a short or text-typed root keeps its strings).
+        var valueEnd = (long)root.ValueOffset + root.ValueLength;
+        root = root with { ChildrenOffset = (int)Math.Min(Align4((int)Math.Min(valueEnd, root.End)), root.End) };
         Version? fixedVersion = null;
-        if (root.ValueLength >= 52)
+        if (root.ValueLength >= 52 && root.ValueOffset + 52 <= root.End)
         {
             var value = blob.AsSpan(root.ValueOffset, 52);
             if (BinaryPrimitives.ReadUInt32LittleEndian(value) == FixedFileInfoSignature)

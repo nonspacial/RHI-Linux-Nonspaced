@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
@@ -59,10 +60,70 @@ public sealed class PeVersionReaderTests : IDisposable
         Assert.Null(PeVersionReader.Read(Path.Combine(_root, "missing.dll")));
     }
 
+    // Review up-129 #1: a text-typed (wType 1) root used to push the children past StringFileInfo
+    // and a short root value threw out of ParseVersionInfo, losing every version string.
+    [Fact]
+    public void Read_RootTypedAsText_StillReturnsStringsAndFixedVersion()
+    {
+        var path = Path.Combine(_root, "text-root.addon64");
+        File.WriteAllBytes(path, BuildVersionedPe(fileVersion: "0.2026.0325.2215", productVersion: "1.2.3", rootType: 1));
+
+        var info = PeVersionReader.Read(path);
+
+        Assert.NotNull(info);
+        Assert.Equal(("1.2.3", "0.2026.0325.2215"), (info.ProductVersion, info.FileVersion));
+        Assert.Equal(new Version(0, 2026, 325, 2215), info.FixedFileVersion);
+    }
+
+    [Fact]
+    public void ParseVersionInfo_RootValueShorterThanFixedInfo_DoesNotThrow()
+    {
+        var shortRoot = Block("VS_VERSION_INFO", new byte[8], 1, 52, []);
+        var shortTyped0 = Block("VS_VERSION_INFO", new byte[52], 0, 52, []);
+        shortTyped0 = shortTyped0[..^20]; // truncated resource: the block claims more than the blob holds
+        BitConverter.GetBytes((ushort)(shortTyped0.Length + 20)).CopyTo(shortTyped0, 0);
+
+        Assert.Null(PeVersionReader.ParseVersionInfo(shortRoot));
+        Assert.Null(PeVersionReader.ParseVersionInfo(shortTyped0));
+    }
+
+    // Review up-129 #8: File.Exists is true for a FIFO, and opening one blocks until a writer appears.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Read_Fifo_ReturnsNullWithoutOpeningIt(bool throughSymlink)
+    {
+        var fifo = Path.Combine(_root, "pipe.addon64");
+        Assert.Equal(0, mkfifo(fifo, Convert.ToUInt32("600", 8)));
+        var path = fifo;
+        if (throughSymlink)
+        {
+            path = Path.Combine(_root, new string('l', 120) + ".addon64"); // link longer than a DOS header
+            File.CreateSymbolicLink(path, fifo);
+        }
+
+        var read = Task.Run(() => PeVersionReader.Read(path));
+        try
+        {
+            Assert.Same(read, await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(5))));
+            Assert.Null(await read);
+        }
+        finally
+        {
+            if (!read.IsCompleted)
+            {
+                using var writer = new FileStream(fifo, FileMode.Open, FileAccess.Write); // release the blocked reader
+            }
+        }
+    }
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern int mkfifo(string path, uint mode);
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     /// <summary>Minimal PE32+ with one .rsrc section holding RT_VERSION/1/0x409.</summary>
-    internal static byte[] BuildVersionedPe(string? fileVersion, string? productVersion, int size = 4096)
+    internal static byte[] BuildVersionedPe(string? fileVersion, string? productVersion, int size = 4096, ushort rootType = 0)
     {
         var strings = new List<byte[]>();
         if (fileVersion is not null) strings.Add(StringBlock("FileVersion", fileVersion));
@@ -75,7 +136,7 @@ public sealed class PeVersionReaderTests : IDisposable
         BitConverter.GetBytes(0x00010000u).CopyTo(fixedInfo, 4);
         BitConverter.GetBytes((uint)((numbers.Major << 16) | numbers.Minor)).CopyTo(fixedInfo, 8);
         BitConverter.GetBytes((uint)((Math.Max(0, numbers.Build) << 16) | Math.Max(0, numbers.Revision))).CopyTo(fixedInfo, 12);
-        var versionInfo = Block("VS_VERSION_INFO", fixedInfo, 0, fixedInfo.Length, [stringInfo]);
+        var versionInfo = Block("VS_VERSION_INFO", fixedInfo, rootType, fixedInfo.Length, [stringInfo]);
 
         const int rsrcFile = 0x200, rsrcRva = 0x1000, blobAt = 0x58;
         var rsrc = new byte[blobAt + versionInfo.Length];
