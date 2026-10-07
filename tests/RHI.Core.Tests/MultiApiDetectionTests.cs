@@ -63,29 +63,49 @@ public sealed class MultiApiDetectionTests : IDisposable
     }
 
     [Fact]
-    public void ImportTable_UsesUpstreamsRule_DelayLoadsDoNotOutrankAnImportedDx11()
+    public void ImportTable_DelayLoadedDx12_KeepsTheImportedDx11_AtMedium()
     {
-        // UE4 shape: d3d11 imported, d3d12 delay-loaded and only used with -dx12.
+        // UE4 shape: d3d11 imported, d3d12 delay-loaded and only used with -dx12. Two renderers are in
+        // play, so the imports guess (upstream's rule) and leave the decision open to config files.
         var exe = WritePe("UE4Game.exe", ["kernel32.dll", "dxgi.dll", "d3d11.dll"], ["d3d12.dll"]);
 
         var found = GraphicsApiDetector.Detect(_root, exe);
 
         Assert.Equal(GraphicsApi.DirectX11, found.Primary);
-        Assert.Equal(GraphicsApiConfidence.High, found.Confidence);
+        Assert.Equal(GraphicsApiConfidence.Medium, found.Confidence);
         Assert.Contains(GraphicsApi.DirectX12, found.Candidates);
         Assert.StartsWith("Executable imports:", found.Evidence);
     }
 
     [Fact]
-    public void ImportTable_DxgiOnlyMeansDx12_AndTwoImportedRenderersLowerConfidence()
+    public void ImportTable_OneImportedRendererAndNoOtherReference_IsHigh()
+    {
+        var found = GraphicsApiDetector.Detect(_root, WritePe("Dx11Game.exe", ["kernel32.dll", "dxgi.dll", "d3d11.dll"], []));
+
+        Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.High), (found.Primary, found.Confidence));
+        Assert.Equal([GraphicsApi.DirectX11], found.Candidates);
+    }
+
+    [Fact]
+    public void ImportTable_OneImportedRendererButAnotherReferenced_IsMedium()
+    {
+        var found = GraphicsApiDetector.Detect(_root, WritePe("Dx11Game.exe", ["dxgi.dll", "d3d11.dll"], [], "vulkan-1.dll vkCreateInstance"));
+
+        Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.Medium), (found.Primary, found.Confidence));
+        Assert.Equal([GraphicsApi.DirectX11, GraphicsApi.Vulkan], found.Candidates);
+    }
+
+    [Fact]
+    public void ImportTable_DxgiOnlyIsAnInferredDx12_AndTwoImportedRenderersStayDirectXFirst()
     {
         var dxgiOnly = GraphicsApiDetector.Detect(_root, WritePe("Dx12Game.exe", ["dxgi.dll"], []));
-        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.High), (dxgiOnly.Primary, dxgiOnly.Confidence));
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (dxgiOnly.Primary, dxgiOnly.Confidence));
 
+        // No ReShade Vulkan proxy on Linux: DirectX-first keeps installs working (Robbie's #53 decision).
         var dual = GraphicsApiDetector.Detect(_root, WritePe("DualGame.exe", ["d3d11.dll", "vulkan-1.dll"], []));
-        Assert.Equal(GraphicsApi.Vulkan, dual.Primary); // upstream priority: DX12 > Vulkan > DX11
+        Assert.Equal(GraphicsApi.DirectX11, dual.Primary);
         Assert.Equal(GraphicsApiConfidence.Medium, dual.Confidence);
-        Assert.Equal([GraphicsApi.Vulkan, GraphicsApi.DirectX11], dual.Candidates);
+        Assert.Equal([GraphicsApi.DirectX11, GraphicsApi.Vulkan], dual.Candidates);
     }
 
     [Fact]
@@ -97,6 +117,115 @@ public sealed class MultiApiDetectionTests : IDisposable
         Assert.Contains("delay-loads", found.Evidence);
     }
 
+    [Fact]
+    public void Rdr2_DxgiOnlyImports_PrefixSystemXmlSelectsVulkan()
+    {
+        // RDR2.exe links dxgi.dll only and loads its renderer itself; the strings name all four.
+        var (gameRoot, exe, prefix) = Rdr2Layout();
+
+        var withoutSettings = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+        Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (withoutSettings.Primary, withoutSettings.Confidence));
+
+        var settings = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "Rockstar Games", "Red Dead Redemption 2", "Settings");
+        Directory.CreateDirectory(settings);
+        File.WriteAllText(Path.Combine(settings, "system.xml"), Rdr2SystemXml);
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.Equal(GraphicsApi.Vulkan, found.Primary);
+        Assert.Equal(GraphicsApiConfidence.Medium, found.Confidence);
+        Assert.Contains("system.xml", found.Evidence);
+        Assert.Equal(4, found.Candidates.Count);
+    }
+
+    [Fact]
+    public void PrefixSettings_InASymlinkedFolder_AreNotRead()
+    {
+        var (gameRoot, exe, prefix) = Rdr2Layout();
+        var elsewhere = Path.Combine(_root, "elsewhere", "Settings");
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllText(Path.Combine(elsewhere, "system.xml"), Rdr2SystemXml);
+        var rockstar = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "Rockstar Games");
+        Directory.CreateDirectory(rockstar);
+        Directory.CreateSymbolicLink(Path.Combine(rockstar, "Red Dead Redemption 2"), Path.Combine(_root, "elsewhere"));
+        var documents = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents");
+        Directory.CreateSymbolicLink(Path.Combine(documents, "Red Dead Redemption 2 copy"), Path.Combine(_root, "elsewhere"));
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.Equal(GraphicsApi.DirectX12, found.Primary);
+        Assert.DoesNotContain("system.xml", found.Evidence);
+    }
+
+    [Fact]
+    public void PrefixSettings_GenericExeName_DoesNotClaimALaunchersSettings()
+    {
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Game")).FullName;
+        var exe = WritePe(Path.Combine("Game", "Launcher.exe"), ["d3d11.dll", "vulkan-1.dll"], []);
+        var prefix = Path.Combine(_root, "pfx");
+        var launcher = Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Local", "Ubisoft Game Launcher");
+        Directory.CreateDirectory(launcher);
+        File.WriteAllText(Path.Combine(launcher, "settings.ini"), "Renderer=Vulkan\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot), prefix);
+
+        Assert.Equal(GraphicsApi.DirectX11, found.Primary);
+        Assert.DoesNotContain("Prefix settings", found.Evidence);
+    }
+
+    [Theory]
+    [InlineData("Launcher", "")]
+    [InlineData("Shipping", "")]
+    [InlineData("Hogwarts Legacy-Win64-Shipping", "hogwartslegacy")]
+    [InlineData("Cyberpunk2077", "cyberpunk2077")]
+    public void GameNameToken_DropsGenericNamesAndBuildSuffixes(string name, string token)
+        => Assert.Equal(token, GraphicsApiDetector.GameNameToken(name));
+
+    [Fact]
+    public void DualImports_ExplicitDx11ConfigWins()
+    {
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Dual Game")).FullName;
+        var exe = WritePe(Path.Combine("Dual Game", "DualGame.exe"), ["kernel32.dll", "d3d11.dll", "vulkan-1.dll"], []);
+        File.WriteAllText(Path.Combine(gameRoot, "settings.ini"), "[Video]\nRenderer=DX11\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
+
+        Assert.Equal(GraphicsApi.DirectX11, found.Primary);
+        Assert.StartsWith("Config selection: settings.ini", found.Evidence);
+        Assert.Contains(GraphicsApi.Vulkan, found.Candidates);
+    }
+
+    [Fact]
+    public void DualImports_VulkanConfigSelectsVulkan_ButARendererTheExeCannotUseIsIgnored()
+    {
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Dual Game")).FullName;
+        var exe = WritePe(Path.Combine("Dual Game", "DualGame.exe"), ["d3d11.dll", "vulkan-1.dll"], []);
+        var config = Path.Combine(gameRoot, "settings.ini");
+
+        File.WriteAllText(config, "Renderer=OpenGL\n");
+        var ignored = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
+        Assert.Equal(GraphicsApi.DirectX11, ignored.Primary);
+        Assert.StartsWith("Executable imports:", ignored.Evidence);
+
+        File.WriteAllText(config, "Renderer=Vulkan\n");
+        var vulkan = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
+        Assert.Equal(GraphicsApi.Vulkan, vulkan.Primary);
+        Assert.Equal(GraphicsApiConfidence.Medium, vulkan.Confidence);
+    }
+
+    private const string Rdr2SystemXml =
+        "<rage__fwuiSystemSettingsCollection>\n  <graphics>\n    <API>kSettingAPI_Vulkan</API>\n  </graphics>\n</rage__fwuiSystemSettingsCollection>\n";
+
+    private (string GameRoot, string Exe, string Prefix) Rdr2Layout()
+    {
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Red Dead Redemption 2")).FullName;
+        var exe = WritePe(Path.Combine("Red Dead Redemption 2", "RDR2.exe"), ["kernel32.dll", "dxgi.dll", "amd_ags_x64.dll"], [],
+            "d3d12.dll D3D12CreateDevice d3d11.dll d3d9.dll vulkan-1.dll vkCreateInstance");
+        var prefix = Path.Combine(_root, "pfx");
+        Directory.CreateDirectory(Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents"));
+        return (gameRoot, exe, prefix);
+    }
+
     private string Write(string name, string content)
     {
         var path = Path.Combine(_root, name);
@@ -105,7 +234,7 @@ public sealed class MultiApiDetectionTests : IDisposable
     }
 
     /// <summary>Minimal PE32+ with one section holding the import and delay-load descriptors and names.</summary>
-    private string WritePe(string name, string[] imports, string[] delayImports)
+    private string WritePe(string name, string[] imports, string[] delayImports, string extraStrings = "")
     {
         const int sectionRva = 0x1000, sectionRaw = 0x200, optional = 0x58, optionalSize = 240;
         var data = new List<byte>();
@@ -131,7 +260,8 @@ public sealed class MultiApiDetectionTests : IDisposable
         }
         names.CopyTo(section, namesStart);
 
-        var file = new byte[sectionRaw + section.Length];
+        var extra = Encoding.ASCII.GetBytes(extraStrings);
+        var file = new byte[sectionRaw + section.Length + extra.Length];
         file[0] = (byte)'M'; file[1] = (byte)'Z';
         BitConverter.GetBytes(0x40).CopyTo(file, 0x3C);
         Encoding.ASCII.GetBytes("PE\0\0").CopyTo(file, 0x40);
@@ -153,6 +283,7 @@ public sealed class MultiApiDetectionTests : IDisposable
         BitConverter.GetBytes(section.Length).CopyTo(file, header + 16);
         BitConverter.GetBytes(sectionRaw).CopyTo(file, header + 20);
         section.CopyTo(file, sectionRaw);
+        extra.CopyTo(file, sectionRaw + section.Length); // strings outside the import table (LoadLibrary names)
 
         var path = Path.Combine(_root, name);
         File.WriteAllBytes(path, file);
