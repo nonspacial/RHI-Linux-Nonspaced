@@ -47,9 +47,10 @@ fi
 
 ln -sfn "$DEST/RHI" "$BIN_DIR/rhi-linux"
 
-# Desktop Exec quoting: inside double quotes escape \ " ` $, and double any %.
+# Desktop Exec quoting: inside double quotes escape \ " ` $, and double any %. A backslash needs
+# four: the Desktop Entry string unescape turns \\\\ into \\ before the Exec quoting rule reads it.
 exec_path="$DEST/RHI"
-exec_path="${exec_path//\\/\\\\}"
+exec_path="${exec_path//\\/\\\\\\\\}"
 exec_path="${exec_path//\"/\\\"}"
 exec_path="${exec_path//\`/\\\`}"
 exec_path="${exec_path//\$/\\\$}"
