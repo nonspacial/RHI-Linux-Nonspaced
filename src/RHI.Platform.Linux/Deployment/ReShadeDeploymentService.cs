@@ -371,7 +371,7 @@ public sealed partial class ReShadeDeploymentService
                     {
                         Path = d3dCompilerPlan.TargetPath,
                         ExistedBeforeInstall = d3dCompilerPlan.TargetExistedBefore,
-                        Sha256 = await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
+                        Sha256 = compilerDeploy.Sha256 ?? await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
                     };
                 }
 
@@ -407,7 +407,8 @@ public sealed partial class ReShadeDeploymentService
                 {
                     Path = target,
                     ExistedBeforeInstall = existedBefore,
-                    Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                    // The file service returns the hash of what it placed (#33); no second read of the target.
+                    Sha256 = result.Sha256 ?? await Sha256Async(target, cancellationToken).ConfigureAwait(false)
                 }
             };
             if (compilerFileRecord is not null)
