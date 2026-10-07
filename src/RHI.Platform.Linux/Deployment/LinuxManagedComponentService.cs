@@ -117,24 +117,30 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public void Decorate(DetectedGame game, IReadOnlyList<ManagedComponent> components)
     {
+        // One ledger read per selection (#32): every lookup below is served from this snapshot.
+        var recordsByKind = _records.FindAll(game)
+            .GroupBy(record => record.Component)
+            .ToDictionary(group => group.Key, group => group.First());
+        LinuxDeploymentRecord? Find(ManagedComponentKind kind) => recordsByKind.GetValueOrDefault(kind);
+
         var reShadePresent = components.Any(c => c.Kind == ManagedComponentKind.ReShade && c.Availability == ComponentAvailability.Installed);
-        var managedRenoDx = _records.Find(game, ManagedComponentKind.RenoDX);
-        var managedRenoDxUpgrade = _records.Find(game, ManagedComponentKind.RenoDXUpgrade);
-        var managedReLimiter = _records.Find(game, ManagedComponentKind.ReLimiter);
-        var managedDisplayCommander = _records.Find(game, ManagedComponentKind.DisplayCommander);
-        var managedMfgAdaUnlock = _records.Find(game, ManagedComponentKind.MfgAdaUnlock);
-        var managedDlssg2030 = _records.Find(game, ManagedComponentKind.Dlssg2030Unlock);
-        var managedRtx40Mfg = _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone);
-        var managedDlss5Feeder = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
-        var managedDlss5Bridge = _records.Find(game, ManagedComponentKind.Dlss5Dx11Bridge);
-        var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
-        var managedShortFuse = _records.Find(game, ManagedComponentKind.ShortFuse);
+        var managedRenoDx = Find(ManagedComponentKind.RenoDX);
+        var managedRenoDxUpgrade = Find(ManagedComponentKind.RenoDXUpgrade);
+        var managedReLimiter = Find(ManagedComponentKind.ReLimiter);
+        var managedDisplayCommander = Find(ManagedComponentKind.DisplayCommander);
+        var managedMfgAdaUnlock = Find(ManagedComponentKind.MfgAdaUnlock);
+        var managedDlssg2030 = Find(ManagedComponentKind.Dlssg2030Unlock);
+        var managedRtx40Mfg = Find(ManagedComponentKind.Rtx40MfgStandalone);
+        var managedDlss5Feeder = Find(ManagedComponentKind.Dlss5Feeder);
+        var managedDlss5Bridge = Find(ManagedComponentKind.Dlss5Dx11Bridge);
+        var managedOptiScaler = Find(ManagedComponentKind.OptiScaler);
+        var managedShortFuse = Find(ManagedComponentKind.ShortFuse);
         var detectedDlssNow = components.Any(c => c.Kind == ManagedComponentKind.Dlss && c.Availability == ComponentAvailability.Installed);
         var nativeDlssBeforeManagedMethod = InferNativeDlssBeforeManagedNeuralRendering(
             detectedDlssNow, managedShortFuse, managedDlss5Feeder);
-        var managedDofFix = _records.Find(game, ManagedComponentKind.DofFix);
-        var managedReFramework = _records.Find(game, ManagedComponentKind.REFramework);
-        var managedLumaFramework = _records.Find(game, ManagedComponentKind.LumaFramework);
+        var managedDofFix = Find(ManagedComponentKind.DofFix);
+        var managedReFramework = Find(ManagedComponentKind.REFramework);
+        var managedLumaFramework = Find(ManagedComponentKind.LumaFramework);
 
         // ComponentProbe deliberately refuses to classify a bare external dinput8.dll as REFramework.
         // A valid RHI ownership record is stronger evidence and must be reflected before ReShade's
@@ -163,7 +169,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 continue;
             }
 
-            var record = _records.Find(game, component.Kind);
+            var record = Find(component.Kind);
             component.ManagedByRhi = record is not null;
             if (component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.RenoDX or ManagedComponentKind.RenoDXUpgrade or ManagedComponentKind.OptiScaler or
                 ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or
@@ -297,7 +303,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     }
                     else if (component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable &&
                              record is not null && managedReFramework is not null &&
-                             _records.Find(game, ManagedComponentKind.ReShade) is not null)
+                             Find(ManagedComponentKind.ReShade) is not null)
                     {
                         component.ActionAllowed = false;
                         component.Note = "Remove RHI-managed ReShade first; this RE Engine ReShade path depends on RE Framework.";
@@ -323,13 +329,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                             component.ActionAllowed = false;
                             component.Note = named is null ? reason + GenericLumaMetadataSummary(generic) : reason;
                         }
-                        else if (_records.Find(game, ManagedComponentKind.ReShade) is null && reShadePresent &&
+                        else if (Find(ManagedComponentKind.ReShade) is null && reShadePresent &&
                                  !(managedRenoDx is not null && !_lumaPolicy.GetCachedOrDefault(game).RenoDxCompatible))
                         {
                             component.ActionAllowed = false;
                             component.Note = "Luma Framework exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará nem sobrescreverá automaticamente.";
                         }
-                        else if (_records.Find(game, ManagedComponentKind.ReShade) is null &&
+                        else if (Find(ManagedComponentKind.ReShade) is null &&
                                  !(managedRenoDx is not null && !_lumaPolicy.GetCachedOrDefault(game).RenoDxCompatible))
                         {
                             component.Note = "Luma Framework exige ReShade gerenciado pelo RHI; a instalação do Luma instalará ReShade automaticamente antes do pacote Luma. Em DX9, dgVoodoo2 continua sendo preparado automaticamente quando exigido pelo catálogo.";
@@ -676,12 +682,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar ShortFuse.";
                     }
-                    else if (_records.Find(game, ManagedComponentKind.ReShade) is null && reShadePresent && managedOptiScaler is null)
+                    else if (Find(ManagedComponentKind.ReShade) is null && reShadePresent && managedOptiScaler is null)
                     {
                         component.ActionAllowed = false;
                         component.Note = "ShortFuse exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará automaticamente.";
                     }
-                    else if (_records.Find(game, ManagedComponentKind.ReShade) is null && managedOptiScaler is null)
+                    else if (Find(ManagedComponentKind.ReShade) is null && managedOptiScaler is null)
                     {
                         component.Note = "ShortFuse exige ReShade gerenciado pelo RHI; o ReShade será instalado automaticamente antes do ShortFuse. Se Auto Config estiver ativo, o Ultimate ASI Loader continua sendo instalado automaticamente pelo próprio fluxo do ShortFuse.";
                     }

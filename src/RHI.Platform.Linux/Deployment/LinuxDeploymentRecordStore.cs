@@ -39,36 +39,48 @@ public sealed class LinuxDeploymentRecordStore
     /// <summary>Non-null when the ledger on disk is unreadable; points at the quarantined copy.</summary>
     public string? CorruptLedgerPath
     {
-        get { lock (_gate) { LoadUnsafe(); return _corruptQuarantinePath; } }
+        get { lock (_gate) { ReadUnsafe(); return _corruptQuarantinePath; } }
     }
+
+    /// <summary>Test seam: number of record lookups served (Find, FindAll, All).</summary>
+    internal int LookupsForTesting { get; private set; }
 
     public LinuxDeploymentRecord? Find(DetectedGame game, ManagedComponentKind component)
     {
+        var key = GameKey(game);
         lock (_gate)
         {
-            var record = LoadUnsafe().FirstOrDefault(r => r.GameKey == GameKey(game) && r.Component == component);
+            LookupsForTesting++;
+            var record = ReadUnsafe().FirstOrDefault(r => r.GameKey == key && r.Component == component);
             return record is null ? null : Clone(record);
         }
     }
 
     public IReadOnlyList<LinuxDeploymentRecord> FindAll(DetectedGame game)
     {
+        var key = GameKey(game);
         lock (_gate)
-            return LoadUnsafe().Where(r => r.GameKey == GameKey(game)).Select(Clone).ToArray();
+        {
+            LookupsForTesting++;
+            return ReadUnsafe().Where(r => r.GameKey == key).Select(Clone).ToArray();
+        }
     }
 
     /// <summary>Copies of every record in the ledger (all games).</summary>
     public IReadOnlyList<LinuxDeploymentRecord> All()
     {
         lock (_gate)
-            return LoadUnsafe().Select(Clone).ToArray();
+        {
+            LookupsForTesting++;
+            return ReadUnsafe().Select(Clone).ToArray();
+        }
     }
 
     public void Upsert(LinuxDeploymentRecord record)
     {
         lock (_gate)
         {
-            var records = LoadUnsafe();
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
             EnsureWritable();
             var index = records.FindIndex(r => r.GameKey == record.GameKey && r.Component == record.Component);
             var copy = Clone(record);
@@ -81,7 +93,7 @@ public sealed class LinuxDeploymentRecordStore
     {
         lock (_gate)
         {
-            var records = LoadUnsafe();
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
             EnsureWritable();
             records.RemoveAll(r => r.GameKey == GameKey(game) && r.Component == component);
             SaveUnsafe(records);
@@ -110,7 +122,12 @@ public sealed class LinuxDeploymentRecordStore
                 "Repair or remove it before installing or removing components, otherwise existing backups would be orphaned.");
     }
 
-    private List<LinuxDeploymentRecord> LoadUnsafe()
+    /// <summary>
+    /// The parsed ledger, re-read only when the file's (mtime, length) changed. The returned list is the
+    /// private cache itself: callers under the lock read it (and clone what they hand out) or copy it
+    /// before changing it; it is never mutated in place (#32).
+    /// </summary>
+    private IReadOnlyList<LinuxDeploymentRecord> ReadUnsafe()
     {
         if (!File.Exists(_path))
         {
@@ -123,7 +140,7 @@ public sealed class LinuxDeploymentRecordStore
         var info = new FileInfo(_path);
         var stamp = (info.LastWriteTimeUtc, info.Length);
         if (_cached is not null && _cachedStamp == stamp)
-            return new List<LinuxDeploymentRecord>(_cached);
+            return _cached;
 
         try
         {
@@ -138,7 +155,7 @@ public sealed class LinuxDeploymentRecordStore
             _cached = records;
             _cachedStamp = stamp;
             _corruptQuarantinePath = null;
-            return new List<LinuxDeploymentRecord>(records);
+            return records;
         }
         catch
         {

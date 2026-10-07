@@ -241,6 +241,31 @@ public sealed class ModAuthorCreditTests : IDisposable
     [DllImport("libc", SetLastError = true)]
     private static extern int mkfifo(string path, uint mode);
 
+    // #32 (DEP-13): Decorate used to call Find once per component kind (14 up-front lookups here, each a
+    // stat of the ledger plus a deep copy); it now reads one FindAll snapshot.
+    [Fact]
+    public void Decorate_ReadsTheLedgerOnce()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "bin-once")).FullName;
+        var game = new DetectedGame { Name = "Prey", InstallPath = bin, BinaryDirectory = bin, RequiresExplicitPatchTarget = true };
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments-once.json"));
+        records.Upsert(Record(game, ManagedComponentKind.RenoDX, [Path.Combine(bin, "renodx-prey.addon64")]));
+        records.Upsert(Record(game, ManagedComponentKind.OptiScaler, [Path.Combine(bin, "dxgi.dll")]));
+        using var http = new HttpClient(new OfflineHandler());
+        var service = Service(records, http);
+        var components = new List<ManagedComponent>
+        {
+            new() { Kind = ManagedComponentKind.RenoDX, DisplayName = "RenoDX HDR", Availability = ComponentAvailability.Installed },
+            new() { Kind = ManagedComponentKind.OptiScaler, DisplayName = "OptiScaler", Availability = ComponentAvailability.Installed }
+        };
+        var before = records.LookupsForTesting;
+
+        service.Decorate(game, components);
+
+        Assert.Equal(1, records.LookupsForTesting - before);
+        Assert.Equal(["renodx-prey.addon64"], components[0].InstalledAddonFiles);
+    }
+
     private static LinuxManagedComponentService Service(LinuxDeploymentRecordStore records, HttpClient http)
         // Only the services the credit pass reaches are real; the rest are never touched for an unconfirmed target.
         => new(records, reshade: null!, addonManager: null!,
