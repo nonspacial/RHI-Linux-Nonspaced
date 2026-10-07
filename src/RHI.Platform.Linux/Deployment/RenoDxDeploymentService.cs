@@ -775,8 +775,11 @@ public sealed class RenoDxDeploymentService
             }
             catch (Exception ex)
             {
-                // Rollback must finish: any fault (bad recorded path, refused link, I/O) keeps the bytes and is reported.
-                notes.Add(KeepSnapshot(snapshot, ex, fallbackDirectory));
+                // Rollback must finish: any fault (bad recorded path, refused link, I/O) keeps the bytes and is reported,
+                // in the result and in the app log.
+                var note = KeepSnapshot(snapshot, ex, fallbackDirectory);
+                AppLog.Warn("renodx-rollback", note, ex);
+                notes.Add(note);
             }
         }
         return notes;
