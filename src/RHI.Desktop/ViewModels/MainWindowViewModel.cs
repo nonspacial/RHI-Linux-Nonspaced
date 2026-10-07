@@ -1016,8 +1016,10 @@ public partial class MainWindowViewModel : ObservableObject
         if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
         SelectedGame.UserGraphicsApiOverride = api;
-        _apiOverrideStore.Set(SelectedGame, api);
-        ReevaluateCurrentGameForApiOverride(SelectedGame);
+        var game = SelectedGame;
+        var saved = TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences");
+        ReevaluateCurrentGameForApiOverride(game);
+        if (!saved) StatusText = _lastPersistFailure;
     }
 
     partial void OnSelectedOptiScalerVariantChanged(string value)
@@ -1032,16 +1034,19 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = T("Vm.RemoveCurrentOptiScalerBeforeSwitchingStable");
             return;
         }
-        _optiScalerVariantStore.Set(SelectedGame, ParseOptiScalerVariant(value));
-        StatusText = TF("Vm.OptiScalerVariantSelected", value, SelectedGame.Name);
+        var game = SelectedGame;
+        if (!TryPersist(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value)), "Ui.WhatGamePreferences")) return;
+        StatusText = TF("Vm.OptiScalerVariantSelected", value, game.Name);
     }
 
     partial void OnSelectedLumaModePreferenceChanged(string value)
     {
         if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
-        _managedComponents.SetLumaModePreference(SelectedGame, preference);
-        ReevaluateCurrentGameForLumaPolicy(SelectedGame);
+        var game = SelectedGame;
+        var saved = TryPersist(() => _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences");
+        ReevaluateCurrentGameForLumaPolicy(game);
+        if (!saved) StatusText = _lastPersistFailure;
     }
 
     partial void OnSelectedHdrModeChanged(string value)
@@ -2668,6 +2673,8 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelected();
     }
 
+    private string _lastPersistFailure = "";
+
     /// <summary>
     /// Runs a store write; on failure logs it and reports in the status line instead of letting the exception reach
     /// the dispatcher (UI-05). <paramref name="sessionOnly"/> says the in-memory change stays for this session.
@@ -2682,7 +2689,7 @@ public partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             UiExceptionGuard.Log.TryWrite("save " + whatKey, ex);
-            StatusText = sessionOnly
+            StatusText = _lastPersistFailure = sessionOnly
                 ? UiLocalizationService.Format("Ui.SaveFailedSessionOnly", UiLocalizationService.Text(whatKey), ex.Message)
                 : UiLocalizationService.Format("Ui.SaveFailedNothingChanged", UiLocalizationService.Text(whatKey), ex.Message);
             return false;
@@ -2912,7 +2919,11 @@ public partial class MainWindowViewModel : ObservableObject
         var previous = _managedComponents.GetNeuralAddonVersionPin(game, kind);
         // Loading a game's pins re-sets the same value; only a real change persists or swaps.
         if (string.Equals(previous, pin, StringComparison.OrdinalIgnoreCase)) return;
-        _managedComponents.SetNeuralAddonVersionPin(game, kind, pin);
+        if (!TryPersist(() => _managedComponents.SetNeuralAddonVersionPin(game, kind, pin), "Ui.WhatGamePreferences", sessionOnly: false))
+        {
+            LoadNeuralVersionPins(game);
+            return;
+        }
         if (_managedComponents.IsManaged(game, kind))
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind, previous), "SwapNeuralVersionInPlaceAsync");
     }
@@ -2924,7 +2935,11 @@ public partial class MainWindowViewModel : ObservableObject
         var pin = IsLatestSelection(value) ? null : value;
         var previous = _managedComponents.GetNeuralRenderingDllVersionPin(game);
         if (string.Equals(previous, pin, StringComparison.Ordinal)) return;
-        _managedComponents.SetNeuralRenderingDllVersionPin(game, pin);
+        if (!TryPersist(() => _managedComponents.SetNeuralRenderingDllVersionPin(game, pin), "Ui.WhatGamePreferences", sessionOnly: false))
+        {
+            LoadNeuralVersionPins(game);
+            return;
+        }
         if (OrchestratedDlssStackManaged)
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind: null, previous), "SwapNeuralVersionInPlaceAsync");
     }

@@ -226,6 +226,7 @@ public static class UiLocalizationService
         ["Ui.WhatGameLibrary"] = "a biblioteca de jogos",
         ["Ui.WhatSettings"] = "as configurações",
         ["Ui.WhatHdrProfile"] = "o perfil de inicialização HDR",
+        ["Ui.WhatGamePreferences"] = "as preferências deste jogo",
         ["Ui.CacheNotCleared"] = "O cache não foi totalmente limpo: {0}",
         ["Ui.FolderNotOpened"] = "Não foi possível abrir a pasta: {0}"
     };
@@ -449,6 +450,7 @@ public static class UiLocalizationService
         ["Ui.WhatGameLibrary"] = "the game library",
         ["Ui.WhatSettings"] = "the settings",
         ["Ui.WhatHdrProfile"] = "the HDR launch profile",
+        ["Ui.WhatGamePreferences"] = "this game's preferences",
         ["Ui.CacheNotCleared"] = "The cache was not fully cleared: {0}",
         ["Ui.FolderNotOpened"] = "Could not open the folder: {0}"
     };

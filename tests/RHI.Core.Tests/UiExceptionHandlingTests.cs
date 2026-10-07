@@ -159,6 +159,21 @@ public sealed class UiExceptionHandlingTests : IDisposable
         Assert.Contains(fx.Vm.Games, g => g.Name == "Tunic");
     }
 
+    [Fact]
+    public async Task GameOverride_WithReadOnlyPreferences_DoesNotThrow_AndSaysTheChangeWasNotSaved()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        var prefs = Path.Combine(fx.ConfigDir, "prefs");
+        Directory.CreateDirectory(prefs);
+        File.SetUnixFileMode(prefs, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != fx.Vm.SelectedGraphicsApiOverride);
+
+        fx.Vm.SelectedGraphicsApiOverride = other;
+
+        Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
+    }
+
     private static async Task AddAndSelectAsync(ViewModelFixture fx, DetectedGame game)
     {
         var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
