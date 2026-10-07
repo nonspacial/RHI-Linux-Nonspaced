@@ -124,13 +124,20 @@ public sealed class ComponentUpdateRecorder
             // Copy values: some services mutate the cached record in place before upserting.
             return _records.FindAll(game)
                 .GroupBy(r => r.Component)
-                .ToDictionary(g => g.Key, g => (g.First().Version, g.First().InstalledAtUtc));
+                .ToDictionary(g => g.Key, g => (HistoryVersion(g.First()), g.First().InstalledAtUtc));
         }
         catch
         {
             return [];
         }
     }
+
+    // RenoDX records keep the catalogue mod name in Version; a rebuilt snapshot keeps that name,
+    // so history diffs the add-on file's own version instead (upstream 2.8.0).
+    private static string? HistoryVersion(LinuxDeploymentRecord record)
+        => record.Component == ManagedComponentKind.RenoDX
+            ? RenoDxDeploymentService.InstalledAddonVersion(record) ?? record.Version
+            : record.Version;
 
     private void TryRecord(
         DetectedGame game,

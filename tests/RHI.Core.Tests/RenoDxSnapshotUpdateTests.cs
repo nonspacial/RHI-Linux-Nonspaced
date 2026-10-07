@@ -141,6 +141,43 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
         Assert.Equal(1, _handler.Gets);
     }
 
+    [Fact]
+    public async Task History_InstallAndSameNameRebuild_LogAddonFileVersions()
+    {
+        var history = new ComponentUpdateRecorder(_store, _log);
+        var install = await history.TrackAsync(_game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Install,
+            () => _service.InstallAsync(_game, _files));
+        _handler.Rebuild();
+        await UpdateAll().RunAsync([_game], _ => _files, LinuxUpdateRunMode.Manual);
+
+        Assert.True(install.Success, install.Message);
+        var entries = _log.GetAll().Reverse().ToArray(); // stored newest first
+        Assert.Equal(2, entries.Length);
+        Assert.Equal((ComponentUpdateAction.Install, null, SnapshotHandler.VersionOf(0)), (entries[0].Action, entries[0].FromVersion, entries[0].ToVersion));
+        Assert.Equal((ComponentUpdateAction.Update, SnapshotHandler.VersionOf(0), SnapshotHandler.VersionOf(1)), (entries[1].Action, entries[1].FromVersion, entries[1].ToVersion));
+        Assert.Equal("Generic Unity", _store.Find(_game, ManagedComponentKind.RenoDX)!.Version); // the mod name stays the record identity
+    }
+
+    [Fact]
+    public async Task History_LegacyRecordReadsInstalledFile_FailedUpdateIsLoggedAsFailed()
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        var record = _store.Find(_game, ManagedComponentKind.RenoDX)!;
+        record.Metadata.Remove(RenoDxDeploymentService.AddonVersionMetadataKey);
+        _store.Upsert(record);
+        Assert.Equal(SnapshotHandler.VersionOf(0), RenoDxDeploymentService.InstalledAddonVersion(record));
+
+        var modified = await File.ReadAllBytesAsync(Deployed);
+        modified[^1] ^= 0xFF;
+        await File.WriteAllBytesAsync(Deployed, modified);
+        _handler.Rebuild();
+        await UpdateAll().RunAsync([_game], _ => _files, LinuxUpdateRunMode.Manual);
+
+        var entry = Assert.Single(_log.GetAll());
+        Assert.False(entry.Success);
+        Assert.Equal((ComponentUpdateAction.Update, SnapshotHandler.VersionOf(0)), (entry.Action, entry.FromVersion));
+    }
+
     public void Dispose()
     {
         _http.Dispose();
@@ -198,13 +235,11 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
             LastModified = lastModified ?? LastModified.AddDays(1);
         }
 
+        // RenoDX stamps its build time as the PE FileVersion ("0.YYYY.MMDD.HHMM").
+        public static string VersionOf(int build) => $"26.10{build:00}.0900";
+
         private static byte[] Build(int build)
-        {
-            var bytes = new byte[120 * 1024];
-            bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
-            bytes[^1] = (byte)build;
-            return bytes;
-        }
+            => PeVersionReaderTests.BuildVersionedPe($"0.2026.10{build:00}.0900", null, 120 * 1024);
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

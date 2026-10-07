@@ -113,6 +113,47 @@ public sealed class RenoDxDeploymentService
     }
 
     public const string RemoteStampMetadataKey = "RenoDX.RemoteStamp";
+    public const string AddonVersionMetadataKey = "RenoDX.AddonVersion";
+
+    /// <summary>
+    /// Version shown in the update history (upstream 2.8.0): the add-on's own version recorded at
+    /// install, else read from the installed file (records written before it was recorded).
+    /// </summary>
+    public static string? InstalledAddonVersion(LinuxDeploymentRecord record)
+    {
+        if (record.Metadata.TryGetValue(AddonVersionMetadataKey, out var recorded) && !string.IsNullOrWhiteSpace(recorded))
+            return recorded;
+        var installed = record.Files.FirstOrDefault()?.Path;
+        return installed is not null && File.Exists(installed) ? ReadAddonVersion(installed) : null;
+    }
+
+    /// <summary>
+    /// Upstream AuxInstallService.ReadInstalledVersion for add-ons: PE ProductVersion, else FileVersion,
+    /// with RenoDX's "0.YYYY.MMDD.HHMM" shown as "YY.MMDD.HHMM"; no version resource → file time in
+    /// the same shape. Linux also accepts the fixed VS_FIXEDFILEINFO number before the file time.
+    /// </summary>
+    public static string ReadAddonVersion(string path)
+    {
+        var info = PeVersionReader.Read(path);
+        var raw = !string.IsNullOrWhiteSpace(info?.ProductVersion) ? info.ProductVersion
+            : !string.IsNullOrWhiteSpace(info?.FileVersion) ? info.FileVersion
+            : info?.FixedFileVersion?.ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            var written = File.GetLastWriteTimeUtc(path);
+            return written.ToString("yy'.'MMdd'.'HHmm", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        return FormatAddonVersion(raw);
+    }
+
+    internal static string FormatAddonVersion(string raw)
+    {
+        var parts = raw.Trim().Split('.');
+        if (parts.Length < 2 || parts[0] != "0") return raw.Trim();
+        var remaining = parts[1..];
+        if (remaining[0].Length == 4) remaining[0] = remaining[0][2..];
+        return string.Join('.', remaining);
+    }
 
     internal static RenoDxRemoteStamp? InstalledRemoteStamp(LinuxDeploymentRecord record)
         => record.Metadata.TryGetValue(RemoteStampMetadataKey, out var json) ? RenoDxRemoteStamp.Deserialize(json) : null;
@@ -358,6 +399,7 @@ public sealed class RenoDxDeploymentService
             };
             if (remoteStamp is not null)
                 record.Metadata[RemoteStampMetadataKey] = remoteStamp.Serialize();
+            record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(cached);
             if (iniApply.State is not null)
                 record.Metadata[RenoDxIniOverrideManager.MetadataKey] = RenoDxIniOverrideManager.Serialize(iniApply.State);
             if (engineIniApply.State is not null)
@@ -740,6 +782,9 @@ public sealed class RenoDxDeploymentService
             File.Delete(temp);
             throw new InvalidOperationException("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).");
         }
+        // The snapshot's own time, so a version-less add-on keeps one version across re-downloads.
+        if (stamp.LastModified is { } lastModified)
+            File.SetLastWriteTimeUtc(temp, lastModified.UtcDateTime);
         if (File.Exists(source)) File.Delete(source);
         File.Move(temp, cache, overwrite: true);
         var sourceTemp = source + ".tmp";
