@@ -59,6 +59,8 @@ public sealed class GraphicsApiDetectionTests : IDisposable
         var found = GraphicsApiDetector.Detect(_root, exe);
 
         Assert.Equal(GraphicsApi.DirectX12, found.Primary);
+        // Strings cannot tell which renderer runs: both stay candidates and the pick is not High (Refs #53).
+        Assert.Equal(GraphicsApiConfidence.Medium, found.Confidence);
         Assert.Contains(GraphicsApi.DirectX11, found.Candidates);
         Assert.Contains(GraphicsApi.DirectX12, found.Candidates);
     }
