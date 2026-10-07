@@ -35,7 +35,7 @@
 - **Verification:** Inject a failing file-system seam (or `chmod 0500` the directory after the first restore) in a two-target `RestoreBatchAsync` test. Assert that either `A.original` or a surviving snapshot still holds the original bytes.
 
 ### DEP-03 — No crash journal: a crash mid-operation leaves unowned payloads, orphaned `.original` files and temp copies that are never swept
-- **Status (branch w1/core, #23):** journal + start-up recovery + leftover sweep landed (`ede3e23`, `b0d67ea`, `65dfdfb`); `TransactionalFileDeploymentService` and ReShade install/update are journaled. Other services that change files/overrides before their `Upsert` (OptiScaler, StandaloneDlssEnabler, Dlssg2030, Rtx40Mfg, UltimateAsiLoader, REFramework, ShortFuse, Feeder, Dx9 coordinator, D3DCompiler tools) adopt `DeploymentOperation` in wave 2.
+- **Status (branch w1/core, #23):** journal + start-up recovery + leftover sweep landed (`ede3e23`, `b0d67ea`, `65dfdfb`); `TransactionalFileDeploymentService` and ReShade install/update are journaled. Review corrections (`4f25dec`, `3c582d6`): recovery keeps any file changed after the crash and sets RHI's copy aside in a same-file-system `.rhi-recovered/` (final, not retried); recovery and sweep finish before any deployment service exists; the sweep is skipped while another RHI instance runs, ages by ctime and asks the journal per file. Other services that change files/overrides before their `Upsert` (OptiScaler, StandaloneDlssEnabler, Dlssg2030, Rtx40Mfg, UltimateAsiLoader, REFramework, ShortFuse, Feeder, Dx9 coordinator, D3DCompiler tools) adopt `DeploymentOperation` in wave 2.
 - **Where:**
   - Records are written last: `ReShadeDeploymentService.cs:254` (file replaced) → `:265` (Wine override) → `:375` (`Upsert`); `OptiScalerDeploymentService.cs:277` → `:295`; `StandaloneDlssEnablerDeploymentService.cs:159-164`.
   - Snapshot/temp names that are never swept: `TransactionalFileDeploymentService.cs:29-30,156,231,236` and `ReShadeDeploymentService.cs:216`. A grep for any sweep of `*.rhi-tmp-*`, `*.rhi-rollback-*`, `*.rhi-replace-current-*` or `*.rhi-update-snapshot-*` finds none.
@@ -211,7 +211,7 @@
 - **Verification:** Test: a record created under `/a/game` and a game now at `/b/game`; update must refuse with a repair message rather than write to `/a`.
 
 ### DEP-20 — `DlssManagerService` cache hygiene
-- **Status (branch w1/core, #39):** fixed in `bd1b79e`.
+- **Status (branch w1/core, #39):** fixed in `bd1b79e`; review corrections in `0fdacac` (cache-write failure logged, written with `CancellationToken.None`, `SafeFileEnumeration`).
 - **Where:** `src/RHI.Core/Services/DlssManagerService.cs`:
   - `:54`: the manifest cache is written in place (not atomic);
   - `:318,353`: fixed name `download.zip.part` (concurrent same-version downloads collide);

@@ -370,7 +370,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
         ReleaseLock(deleteLockFile: false);
     }
 
-    /// <summary>Tracks <paramref name="path"/> and declares the content now there as written by this operation (after an in-place edit).</summary>
+    /// <summary>Declares the content now at a tracked <paramref name="path"/> as written by this operation (call right after an in-place edit).</summary>
     public Task RecordWrittenContentAsync(string path, CancellationToken cancellationToken = default)
         => Files.RecordWrittenContentAsync(path, cancellationToken);
 

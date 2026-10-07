@@ -291,7 +291,7 @@ public sealed partial class ReShadeDeploymentService
             }
         }
         await using var operation = journaled;
-        var trackedInis = IniPathsTouchedByInstall(game, existingRecord, coexist).ToArray();
+        string[] trackedInis = [];
         // Crash recovery restores a tracked file only while it holds what this install wrote, so every
         // write is declared: DLL payloads by hash before they are placed, in-place INI edits right after.
         async Task DeclareIniWritesAsync()
@@ -303,6 +303,7 @@ public sealed partial class ReShadeDeploymentService
 
         try
         {
+            trackedInis = IniPathsTouchedByInstall(game, existingRecord, coexist).ToArray();
             if (operation is not null)
             {
                 await operation.TrackFileAsync(target, cancellationToken, includeBackup: false).ConfigureAwait(false);
