@@ -9,22 +9,28 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
     /// <summary>How long a selection waits for a live PCGamingWiki answer before it carries on without it.</summary>
     public static readonly TimeSpan DefaultPcgwSelectionBudget = TimeSpan.FromSeconds(1);
 
+    /// <summary>How long a selection waits for pcgw_data.json (a fresh disk copy loads well within it).</summary>
+    public static readonly TimeSpan DefaultPcgwDataSelectionBudget = TimeSpan.FromSeconds(3);
+
     private readonly UpstreamRhiManifestService? _upstreamManifest;
     private readonly PcGamingWikiGraphicsApiService? _pcGamingWiki;
     private readonly PcgwCentralDataService? _pcgwData;
     private readonly TimeSpan _pcgwSelectionBudget;
+    private readonly TimeSpan _pcgwDataSelectionBudget;
     private readonly Dictionary<string, Task<GraphicsApiDetection>> _pcgwLookups = new(StringComparer.Ordinal);
 
     public LinuxGameRuntimeProbe(
         UpstreamRhiManifestService? upstreamManifest = null,
         PcGamingWikiGraphicsApiService? pcGamingWiki = null,
         PcgwCentralDataService? pcgwData = null,
-        TimeSpan? pcgwSelectionBudget = null)
+        TimeSpan? pcgwSelectionBudget = null,
+        TimeSpan? pcgwDataSelectionBudget = null)
     {
         _upstreamManifest = upstreamManifest;
         _pcGamingWiki = pcGamingWiki;
         _pcgwData = pcgwData;
         _pcgwSelectionBudget = pcgwSelectionBudget ?? DefaultPcgwSelectionBudget;
+        _pcgwDataSelectionBudget = pcgwDataSelectionBudget ?? DefaultPcgwDataSelectionBudget;
     }
 
     public event Action<DetectedGame>? LateMetadataAvailable;
@@ -55,9 +61,10 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
                     game.DofFixSkippedByManifest = gameOverride.DofFixSkipped;
                 }
             }
-            catch when (!cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 // Keep local probing authoritative when upstream metadata is temporarily unavailable.
+                AppLog.Warn("probe", $"Upstream manifest metadata unavailable for {game.Name}", ex);
             }
         }
 
@@ -66,26 +73,31 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
             cancellationToken).ConfigureAwait(false);
 
         // Upstream RHI 2.7.6+: the single pcgw_data.json answers API and engine without any
-        // per-game request. Games it covers never reach the live PCGW fallback below.
+        // per-game request. Games it covers never reach the live PCGW fallback below. The first
+        // download is a shared background load: the selection waits a bounded time and is told
+        // later (LateMetadataAvailable) when the data lands with an entry for this game (Refs #102).
         var inCentralData = false;
+        var centralDataPending = false;
         if (_pcgwData is not null)
         {
+            var load = _pcgwData.GetAsync(CancellationToken.None);
             try
             {
-                var data = await _pcgwData.GetAsync(cancellationToken).ConfigureAwait(false);
-                var hit = data?.TryLookup(game.Name, game.SteamAppId ?? game.ManifestSteamAppIdOverride);
-                if (hit is null && !string.IsNullOrWhiteSpace(game.CanonicalManifestName)
-                    && !game.CanonicalManifestName.Equals(game.Name, StringComparison.OrdinalIgnoreCase))
-                    hit = data?.TryLookup(game.CanonicalManifestName, null);
-                if (hit is { } found)
+                var data = await load.WaitAsync(_pcgwDataSelectionBudget, cancellationToken).ConfigureAwait(false);
+                if (LookupCentralData(data, game) is { } found)
                 {
                     inCentralData = true;
                     ApplyCentralData(game, found.PageTitle, found.Entry);
                 }
             }
-            catch when (!cancellationToken.IsCancellationRequested)
+            catch (TimeoutException)
             {
-                // Fail open, as for the manifest: PCGW data only refines local detection.
+                centralDataPending = true;
+                _ = load.ContinueWith(done =>
+                {
+                    if (done.IsCompletedSuccessfully && LookupCentralData(done.Result, game) is not null)
+                        LateMetadataAvailable?.Invoke(game);
+                }, TaskScheduler.Default);
             }
         }
 
@@ -95,6 +107,7 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
         // native "Vulkan or OpenGL" answer or an ambiguous local one (Refs #54).
         if (_pcGamingWiki is not null
             && !inCentralData
+            && !centralDataPending // the data file may still cover it: no per-game request yet
             && game.GraphicsApi == GraphicsApi.Unknown
             && game.GraphicsApis.Count == 0
             && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
@@ -144,6 +157,15 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
             // Fail open: an unavailable/changed PCGamingWiki page must not break scanning.
             AppLog.Warn("pcgw", $"PCGamingWiki lookup failed for {game.Name}", ex);
         }
+    }
+
+    private static (string PageTitle, PcgwCentralEntry Entry)? LookupCentralData(PcgwCentralData? data, DetectedGame game)
+    {
+        var hit = data?.TryLookup(game.Name, game.SteamAppId ?? game.ManifestSteamAppIdOverride);
+        if (hit is null && !string.IsNullOrWhiteSpace(game.CanonicalManifestName)
+            && !game.CanonicalManifestName.Equals(game.Name, StringComparison.OrdinalIgnoreCase))
+            hit = data?.TryLookup(game.CanonicalManifestName, null);
+        return hit;
     }
 
     private static void ApplyPcgwResult(DetectedGame game, GraphicsApiDetection fallback)
