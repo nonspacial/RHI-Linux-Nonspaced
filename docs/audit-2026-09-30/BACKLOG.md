@@ -9,12 +9,12 @@ Branches: `main` = what Robbie runs. `upstream-sync/2.7.9` for the upstream port
 
 | Milestone | Issues |
 |---|---|
-| `audit-remediation` | 98 |
+| `audit-remediation` | 101 |
 | `upstream-sync/2.7.9` | 14 |
-| `upstream-sync/2.8.5` | 1 |
-| `feature-parity` | 12 |
+| `upstream-sync/2.8.5` | 13 |
+| `feature-parity` | 13 |
 | (none) | 1 (#101 overview) |
-| **Total** | **126** |
+| **Total** | **142** |
 
 ## upstream-sync/2.7.9
 
@@ -42,6 +42,21 @@ Merged into `upstream-sync/2.7.9` (open until Robbie's GUI/Wine check): #22 `a30
 | # | Finding | Title | Labels | Priority |
 |---|---|---|---|---|
 | #116 | — | [2.8.5] Upstream drift inventory RHI-2.7.9 → RHI-2.8.5 | upstream-drift | P2 |
+| #129 | PAR-D (2.8.0) | [2.8.0] RenoDX updates: detect rebuilt snapshots; Update All installs only mods with a real update | upstream-drift | P1 |
+| #130 | PAR-D (2.8.0) | [2.8.0] Update history: log RenoDX updates with the add-on's real version | upstream-drift | P2 |
+| #131 | PAR-D (2.8.0) | [2.8.0] Show manifest install warnings before install, with clickable links | upstream-drift | P2 |
+| #132 | PAR-D (2.8.3) | [2.8.3] ReShade download and update check fail when reshade.me answers HTTP 5xx | upstream-drift | P1 |
+| #133 | PAR-D (2.8.3) | [2.8.3] Revoked GitHub token: stop sending it and fall back to anonymous access | upstream-drift | P1 |
+| #135 | PAR-D22 | [2.8.1] OptiScaler FG: nvngx_dlssg.dll in the Streamline stack; Force Reflex and Use Games Reflex Markers settings | upstream-drift | P2 |
+| #136 | PAR-D (2.8.1) | [2.8.1] Control UE: optional OptiScaler FG install and "Using HDR?" FgSlHdr10 toggle | upstream-drift | P2 |
+| #138 | PAR-D (2.8.2) | [2.8.2] Donate dialog: mod authors, roles and Ko-fi links from the manifest | upstream-drift | P2 |
+| #139 | PAR-D (2.8.1) | [2.8.1] Game detail: installed RenoDX/Luma add-on file names and mod authors | upstream-drift | P3 |
+| #140 | PAR-D (2.8.5) | [2.8.5] Available HDR Mods: readable column headers and ✗ marks | upstream-drift | P3 |
+| #141 | up-139 lane | [2.8.x] RenoDX: wiki-unlinked titles with a snapshot override must stay installable | upstream-drift | P2 |
+
+Closed: #137 (dgVoodoo2 standalone, owner decision). #134 (GitHub sign-in) is parked under `feature-parity`.
+
+Merged into `integration/wave3` (from `integration/wave2` @ `9983d1b`; open until Robbie's GUI check and the install after #142): #133 `bc6150d`, #138 `e5554ac`, #139 `0289955`, #131 `5727d13`, #129/#130/#107 `5cc6454`, #132/#140 `44ffaf6`, #135 `f62ee1d`. Integration: a ReShade source outage in Manual Update All counts as "could not be checked" (`99a04eb`). Re-review minors/nits fixed there: #129 Update All summary names the first failure and its reason (`344b10e`); #138 built-in Ko-fi links pinned, no temp file left on a cancelled cache write (`a208bf5`); #139 snapshot-override engine-author test, Decorate's records reused (`26181da`); #133 notice appended to the current line, busy wiring extracted and tested, no dropped notice (`d7f3195`); #132 setup-download outage flagged, Shaders/Add-ons keeps the cached-copy note (`cffbe7c`); #131 one dependency plan for the warning list and the install, computed off the UI thread (`da75b2e`); #135 Streamline row ignores the OptiScaler stack, panel targets from `LinuxDlssDefaultsService` (`abe070e`), stranded legacy DLSS-swap backups given back, coexistence retry test (`76dd3cd`). Parity notes are consolidated in UPSTREAM.md under `## Parity notes (upstream 2.8.0–2.8.5)`.
 
 ## audit-remediation
 
@@ -152,8 +167,11 @@ Review files: `/mnt/vdo_storage/worktrees/rhi-linux/reviews/sync-*.md`.
 | #124 | fix-16 review 1–3 | Control UE post-install: keep .rhi-control-previous, update re-apply over user changes, missing tests | audit:data-safety | P3 |
 | #125 | fix-50 review 2, 3 | Proton wine path not tied to a Proton install; Winetricks on orphaned Proton prefix uses system wine | audit:detection | P2 |
 | #126 | fix-11 review 1 | Available HDR mods: add RHI Unity database games | upstream-drift | P3 |
+| #127 | fix-header follow-up | Library overlay: dim/cover the status bar while open | audit:ui | P3 |
+| #128 | fix-responsive follow-up | Responsive panels: share invalidation list, watch late children, pin Avalonia internals; tray restore un-maximises | audit:ui, hygiene | P3 |
+| #142 | wave3 (up-129 re-review) | Tests write fake add-ons into the real ~/.cache/rhi-linux (isolate all XDG paths in tests; verify cache before reuse) | audit:data-safety | P0 |
 
-Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, #44 `c4cc212`. Owner decisions (recorded on the tickets): a Lutris entry with no real game folder (Rekordbox) is not listed (`884c716`); games inside Lutris launcher prefixes become their own cards (#119). Integration fixes: scanner merge keeps `RequiresExplicitPatchTarget` (`963059c`, fix-44 review 1); direct-wine Proton prefixes report native-Wayland HDR as Blocked (`327ea7f`, fix-50 review 4).
+Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, #44 `c4cc212`, #127/#128 `9983d1b`. Owner decisions (recorded on the tickets): a Lutris entry with no real game folder (Rekordbox) is not listed (`884c716`); games inside Lutris launcher prefixes become their own cards (#119). Integration fixes: scanner merge keeps `RequiresExplicitPatchTarget` (`963059c`, fix-44 review 1); direct-wine Proton prefixes report native-Wayland HDR as Blocked (`327ea7f`, fix-50 review 4).
 
 ## feature-parity
 
@@ -171,6 +189,7 @@ Merged into `integration/wave2` (open until Robbie's GUI check): #50 `07d6eda`, 
 | #99 | PAR-58 | [parity] Nexus Mods integration (NXM handler, API key, links) | feature-gap, needs-decision | P3 |
 | #100 | PAR-62 | [parity] App self-update check | feature-gap, needs-decision | P3 |
 | #120 | PAR-53 (deferred from #11) | User-chosen proxy DLL name for ReShade/OptiScaler (upstream DLL-naming dropdowns) | feature-gap | P3 |
+| #134 | PAR-D (2.8.1) | [2.8.1] GitHub sign-in (device flow) in Settings | needs-decision, upstream-drift | P2 |
 
 Not filed (already fixed on `main` by `3aa0f21`/`5d431b8`): DET-01, DET-02, DET-04, UI-01, UI-02, add-game `Added` check, DEP-01, DEP-02, DEP-04, PAR-D03, PAR-D13, PAR-D14, Lutris relative-exe / dosdevices indexing, partial rescan.
 Not filed separately: PAR-D07 (moot until Vulkan ReShade, see the Vulkan parity issue), PAR-D15 (arrives through the live manifest), DEP-S2/S3 (inside the toolkit issue), PAR-B03/B09 (informational).
