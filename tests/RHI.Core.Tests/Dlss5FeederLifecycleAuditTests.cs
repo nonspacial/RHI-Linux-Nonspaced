@@ -70,10 +70,11 @@ public sealed class Dlss5FeederLifecycleAuditTests
             using var f = new FeederFixture();
             f.AddManagedHdr();
             var recordsBefore = File.ReadAllBytes(f.RecordsPath);
-            Directory.CreateDirectory(f.RecordsPath + ".tmp");
-            var result = await f.Install(consumer);
+            ComponentOperationResult result;
+            using (LedgerWriteBlocker.Block(f.Records, f.RecordsPath))
+                result = await f.Install(consumer);
             Assert.False(result.Success);
-            Assert.Contains("deployments.json.tmp", result.Message);
+            Assert.Contains("deployments.json", result.Message);
             Assert.DoesNotContain("Object reference", result.Message);
             f.AssertClean();
             Assert.Equal(recordsBefore, File.ReadAllBytes(f.RecordsPath));

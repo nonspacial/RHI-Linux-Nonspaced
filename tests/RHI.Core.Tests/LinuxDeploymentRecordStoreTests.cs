@@ -130,15 +130,24 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         store.Upsert(Seed());
         var ledger = File.ReadAllText(path);
 
-        // The temp file path is occupied by a directory, so the write fails with the cache stamp intact.
-        Directory.CreateDirectory(path + ".tmp");
+        // The ledger directory refuses new files, so the write fails with the cache stamp intact.
+        var directory = Path.GetDirectoryName(path)!;
+        var mode = File.GetUnixFileMode(directory);
         var changed = store.Find(game, ManagedComponentKind.ShortFuse)!;
         Mutate(changed);
-        Assert.ThrowsAny<Exception>(() => store.Upsert(changed));
-        Directory.Delete(path + ".tmp");
+        File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            Assert.ThrowsAny<Exception>(() => store.Upsert(changed));
+        }
+        finally
+        {
+            File.SetUnixFileMode(directory, mode);
+        }
 
         AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
         Assert.Equal(ledger, File.ReadAllText(path));
+        Assert.DoesNotContain(Directory.GetFiles(directory), file => file.Contains(".rhi-tmp-", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 
@@ -143,26 +144,25 @@ public sealed class LinuxDeploymentRecordStore
         try
         {
             var target = _path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            File.Copy(_path, target, overwrite: false);
+            if (!File.Exists(target)) AtomicFile.Copy(_path, target);
             return target;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            // The copy failed; the ledger itself is still untouched (writes are refused), so point at it.
             return _path;
         }
     }
 
+    /// <summary>Test seam: when set, every save fails with this exception before anything is written.</summary>
+    internal Func<Exception>? SaveFaultForTesting { get; set; }
+
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
-        var dir = Path.GetDirectoryName(_path)!;
-        Directory.CreateDirectory(dir);
-        var temp = _path + ".tmp";
-        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            JsonSerializer.Serialize(stream, records, JsonOptions);
-            stream.Flush(flushToDisk: true);
-        }
-        File.Move(temp, _path, overwrite: true);
+        if (SaveFaultForTesting is { } fault) throw fault();
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        // Unique temp, fsync, full verify, rename, directory fsync (#31).
+        AtomicFile.WriteAllBytes(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
         _cached = records;
         var info = new FileInfo(_path);
         _cachedStamp = (info.LastWriteTimeUtc, info.Length);
