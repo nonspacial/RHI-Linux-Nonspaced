@@ -173,6 +173,9 @@ public sealed class GameLibraryScanner
     internal static DetectedGame Merge(DetectedGame[] games)
     {
         var first = games[0];
+        // A fail-closed patch-target verdict (launcher exe) must not be satisfied by another source's
+        // automatic guess: only a user-chosen (manual) executable may confirm the target.
+        var requiresExplicitTarget = games.Any(g => g.RequiresExplicitPatchTarget);
         foreach (var candidate in games.Skip(1))
         {
             if (candidate.IsManuallyAdded && !first.IsManuallyAdded)
@@ -187,11 +190,10 @@ public sealed class GameLibraryScanner
             first.PrefixPath ??= candidate.PrefixPath;
             if (first.ExecutablePath is null && candidate.ExecutablePath is not null)
             {
-                // The binary directory belongs to the executable it was derived from.
+                // The binary directory belongs to the executable it was derived from, never on its own.
                 first.ExecutablePath = candidate.ExecutablePath;
-                first.BinaryDirectory = candidate.BinaryDirectory ?? first.BinaryDirectory;
+                if (!requiresExplicitTarget) first.BinaryDirectory = candidate.BinaryDirectory ?? first.BinaryDirectory;
             }
-            first.BinaryDirectory ??= candidate.BinaryDirectory;
             first.LaunchExecutablePath ??= candidate.LaunchExecutablePath;
             first.LibraryIdentityPath ??= candidate.LibraryIdentityPath;
             first.LibraryProvider ??= candidate.LibraryProvider;

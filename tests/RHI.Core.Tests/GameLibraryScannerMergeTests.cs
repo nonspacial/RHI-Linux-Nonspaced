@@ -92,6 +92,21 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
     }
 
     [Fact]
+    public async Task Merge_DoesNotLetAnotherSourcesGuessConfirmAFailClosedTarget()
+    {
+        var lutris = Game("Game", "Lutris", _root);
+        lutris.RequiresExplicitPatchTarget = true;
+        var wine = Game("Game", "Wine", _root);
+        wine.ExecutablePath = Path.Combine(_root, "Launcher.exe");
+        wine.BinaryDirectory = _root;
+
+        var merged = Assert.Single(await new GameLibraryScanner([new FixedDetector("Lutris", lutris), new FixedDetector("Wine", wine)]).ScanAsync());
+
+        Assert.True(merged.RequiresExplicitPatchTarget);
+        Assert.False(merged.HasConfirmedPatchTarget);
+    }
+
+    [Fact]
     public async Task OneFolderThroughASymlink_IsOneCard_ButCaseVariantsAreTwoFolders()
     {
         var real = Directory.CreateDirectory(Path.Combine(_root, "media", "Games", "Game")).FullName;
