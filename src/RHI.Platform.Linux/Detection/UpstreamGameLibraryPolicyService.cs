@@ -1,4 +1,3 @@
-using System.Text;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
@@ -10,15 +9,33 @@ namespace RHI.Platform.Linux.Detection;
 /// Only filesystem-safe, cross-platform semantics are enacted here. Windows-only driver/admin
 /// settings remain metadata for future platform support.
 /// </summary>
-public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService manifest) : IGameLibraryPolicy
+public sealed class UpstreamGameLibraryPolicyService(
+    UpstreamRhiManifestService manifest,
+    PcgwCentralDataService? pcgwData = null) : IGameLibraryPolicy
 {
+    /// <summary>
+    /// An explicit full library refresh is the user-visible refresh point for upstream data: the
+    /// manifest and pcgw_data.json are revalidated (ETag) once and every other consumer in the session
+    /// reuses them. pcgw_data.json starts loading in the background during the scan. Partial
+    /// refreshes never touch the network for either (Refs #61, #104).
+    /// </summary>
+    public void RefreshSources()
+    {
+        manifest.InvalidateProcessCache();
+        if (pcgwData is null) return;
+        pcgwData.Invalidate();
+        pcgwData.Prefetch();
+    }
+
+    /// <summary>Stable name; the Desktop status line localises it.</summary>
+    public const string PolicyName = "Upstream RHI manifest";
+
+    public string Name => PolicyName;
+
     public async Task<IReadOnlyList<DetectedGame>> ApplyAsync(
         IReadOnlyList<DetectedGame> games,
         CancellationToken cancellationToken = default)
     {
-        // A library refresh is the explicit user-visible policy refresh point until the later
-        // background-update support exists. Other consumers in the same scan reuse this process cache.
-        manifest.InvalidateProcessCache();
         var policy = await manifest.FetchLibraryPolicyAsync(cancellationToken).ConfigureAwait(false);
         var knownNames = policy.KnownGameNames;
         var result = new List<DetectedGame>(games.Count);
@@ -126,7 +143,7 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
         if (TryGet(policy.AuthorOverrides, canonical, out var author))
             game.AuthorOverride = author;
         // Upstream matches install warnings on the card's own title. Like the blacklist, they are a title policy here:
-        // a canonical name recovered only from path evidence (a folder that contains another manifest title) must not
+        // a canonical name recovered only from path evidence (a game folder named after another manifest title) must not
         // attach that game's warning to this one.
         if (IsTitleMatch(game.Name, canonical) && TryGet(policy.InstallWarnings, canonical, out var warnings))
             game.ManifestInstallWarnings = warnings;
@@ -182,55 +199,25 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
 
         if (!string.IsNullOrWhiteSpace(game.Name))
         {
-            var normalizedTitle = NormalizeIdentity(game.Name);
+            var normalizedTitle = GamePathIdentity.Normalize(game.Name);
             var titleMatches = knownNames
-                .Where(name => NormalizeIdentity(name) == normalizedTitle)
+                .Where(name => GamePathIdentity.Normalize(name) == normalizedTitle)
                 .Take(2)
                 .ToArray();
             if (titleMatches.Length == 1) return titleMatches[0];
         }
 
-        var evidence = new[] { game.InstallPath, game.BinaryDirectory, game.ExecutablePath }
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => NormalizeIdentity(x!))
-            .Where(x => x.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (evidence.Length == 0) return null;
+        var evidence = GamePathIdentity.Of(game);
+        if (evidence.IsEmpty) return null;
 
         var matches = knownNames
-            .Where(name =>
-            {
-                var canonical = NormalizeIdentity(name);
-                return canonical.Length > 0 && evidence.Any(item => ContainsIdentityPhrase(item, canonical));
-            })
+            .Where(name => GamePathIdentity.Matches(evidence, name))
             .Take(2)
             .ToArray();
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    private static string NormalizeIdentity(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        var separator = true;
-        foreach (var ch in value)
-        {
-            if (char.IsLetterOrDigit(ch))
-            {
-                builder.Append(char.ToLowerInvariant(ch));
-                separator = false;
-            }
-            else if (!separator)
-            {
-                builder.Append(' ');
-                separator = true;
-            }
-        }
-        return builder.ToString().Trim();
-    }
-
-    private static bool ContainsIdentityPhrase(string evidence, string canonical)
-        => (" " + evidence + " ").Contains(" " + canonical + " ", StringComparison.Ordinal);
+    private static string NormalizeIdentity(string value) => GamePathIdentity.Normalize(value);
 
     private static string? ResolveFirstExistingCandidate(string root, string raw)
     {
@@ -243,33 +230,36 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
         return null;
     }
 
+    /// <summary>
+    /// Resolves a manifest sub-path (installPathOverrides, splitGames) below <paramref name="root"/>.
+    /// A candidate that leaves the game root (<c>..</c>, an absolute path, or a symlink pointing out) is
+    /// rejected: upstream entries such as <c>"Hades II": "Ship|..\\.."</c> would otherwise make a Steam
+    /// <c>steamapps/</c> folder or a whole library the install path and the patch/indexing root.
+    /// </summary>
     private static string? ResolveExistingRelativePath(string root, string relative)
     {
-        try
-        {
-            var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-            var path = Path.GetFullPath(Path.Combine(root, normalized));
-            return Directory.Exists(path) ? path : null;
-        }
-        catch { return null; }
+        var path = CombineManifestPath(root, relative);
+        return path is not null && Directory.Exists(path) && PathIdentity.IsSameOrInside(path, root) ? path : null;
     }
 
+    /// <summary>launchExeOverrides: the executable must exist inside the game root, as for sub-paths.</summary>
     private static string? ResolveExistingFile(string root, string relative)
     {
-        try
-        {
-            var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
-            var path = Path.IsPathRooted(normalized) ? Path.GetFullPath(normalized) : Path.GetFullPath(Path.Combine(root, normalized));
-            return File.Exists(path) ? path : null;
-        }
-        catch { return null; }
+        var path = CombineManifestPath(root, relative);
+        return path is not null && File.Exists(path) && PathIdentity.IsSameOrInside(path, root) ? path : null;
     }
 
-    private static bool PathsEqual(string a, string b)
+    private static string? CombineManifestPath(string root, string relative)
     {
-        try { return Path.GetFullPath(a).Equals(Path.GetFullPath(b), StringComparison.Ordinal); }
-        catch { return a.Equals(b, StringComparison.Ordinal); }
+        var normalized = relative.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        try { return Path.GetFullPath(Path.Combine(root, normalized)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // malformed manifest path: no override, the detected root stays
+        }
     }
+
+    private static bool PathsEqual(string a, string b) => PathIdentity.AreSame(a, b);
 
     private static bool TryGet<T>(IReadOnlyDictionary<string, T> values, string key, out T value)
         => values.TryGetValue(key, out value!);
@@ -290,6 +280,7 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
             PrefixPath = game.PrefixPath,
             ExecutablePath = game.ExecutablePath,
             LibraryIdentityPath = game.LibraryIdentityPath,
+            MergedAliases = game.MergedAliases,
             LibraryProvider = game.LibraryProvider,
             LaunchExecutablePath = game.LaunchExecutablePath,
             LaunchProvider = game.LaunchProvider,

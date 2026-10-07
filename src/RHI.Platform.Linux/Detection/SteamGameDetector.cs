@@ -13,16 +13,28 @@ public sealed partial class SteamGameDetector : IGameDetector
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
     private IReadOnlyList<DetectedGame> Detect(CancellationToken cancellationToken)
+        => DetectIn(LinuxPaths.SteamRoots(), cancellationToken);
+
+    /// <summary>Test seam: scans the given Steam roots instead of the user's.</summary>
+    internal static IReadOnlyList<DetectedGame> DetectIn(IEnumerable<string> steamRoots, CancellationToken cancellationToken)
     {
         var games = new List<DetectedGame>();
-        foreach (var steamRoot in LinuxPaths.SteamRoots())
+        foreach (var steamRoot in steamRoots)
         {
             foreach (var library in FindLibraries(steamRoot))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var steamapps = Path.Combine(library, "steamapps");
                 if (!Directory.Exists(steamapps)) continue;
-                foreach (var acf in Directory.EnumerateFiles(steamapps, "appmanifest_*.acf"))
+                string[] manifests;
+                try { manifests = Directory.GetFiles(steamapps, "appmanifest_*.acf"); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // One unreadable library (EACCES/EIO on a mount) must not hide every other library.
+                    DetectorDiagnostics.Warn($"Steam library skipped: {library}", ex);
+                    continue;
+                }
+                foreach (var acf in manifests)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     try
@@ -74,7 +86,11 @@ public sealed partial class SteamGameDetector : IGameDetector
                         };
                         games.Add(game);
                     }
-                    catch { }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                    catch (Exception ex)
+                    {
+                        DetectorDiagnostics.Warn($"Steam entry skipped: {Path.GetFileName(acf)} in {library}", ex);
+                    }
                 }
             }
         }
@@ -94,7 +110,13 @@ public sealed partial class SteamGameDetector : IGameDetector
         var vdf = Path.Combine(steamRoot, "steamapps", "libraryfolders.vdf");
         if (File.Exists(vdf))
         {
-            var text = File.ReadAllText(vdf);
+            string text;
+            try { text = File.ReadAllText(vdf); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"Steam library list unreadable: {vdf}", ex);
+                return roots;
+            }
             foreach (Match match in LibraryPathRegex().Matches(text))
             {
                 var path = match.Groups[1].Value.Replace("\\\\", "\\");

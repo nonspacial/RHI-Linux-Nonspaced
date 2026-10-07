@@ -42,7 +42,8 @@ public sealed class App : Application
             githubToken.TokenFileExposed += (_, e) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenFileExposed(e.Restricted));
             var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
             var upstreamManifest = new UpstreamRhiManifestService(http);
-            var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest);
+            var pcgwData = new PcgwCentralDataService(http);
+            var libraryPolicy = new UpstreamGameLibraryPolicyService(upstreamManifest, pcgwData);
             var scanner = new GameLibraryScanner(detectors, [libraryPolicy]);
             var launcher = new LinuxGameLauncher();
             var records = new LinuxDeploymentRecordStore();
@@ -53,7 +54,6 @@ public sealed class App : Application
             var recovery = RunDeploymentStartup(desktop, journal, records);
             var deployment = new TransactionalFileDeploymentService(journal);
             var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
-            var pcgwData = new PcgwCentralDataService(http);
             var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
             var reshadeExtractor = new ReShadeArchiveExtractor();
             var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest, journal: journal);

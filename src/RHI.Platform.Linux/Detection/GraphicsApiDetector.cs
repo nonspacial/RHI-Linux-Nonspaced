@@ -169,24 +169,42 @@ internal static class GraphicsApiDetector
                 string.Join("; ", evidence));
         }
 
-        // 2) Quick selected-executable pass. Most ordinary PE imports are found near the
-        // front, so do not scan a huge game binary in full before checking explicit config.
+        // 2) Selected-executable pass. The PE import table is upstream RHI's evidence: the renderer
+        // DLLs the game links against. It decides on its own (High) only when exactly one renderer is
+        // imported and the executable references no other; anything else (dxgi.dll only, delay-loads,
+        // several renderers, other renderer strings) is a DirectX-first Medium guess that config files
+        // and the prefix's settings get to overrule. Most ordinary imports and strings sit near the
+        // front, so the quick string pass stays bounded (Refs #53).
+        GraphicsApiDetection? ambiguous = null;
+        var importsDxgi = false;
         if (hasExecutable)
         {
             var quickExe = ScanBinary(executablePath!, 32L * 1024 * 1024, cancellationToken);
-            if (quickExe.Count > 0)
+            if (PeImportReader.Read(executablePath!) is { } imports && FromImports(imports, quickExe) is { } imported)
             {
-                var ordered = Order(quickExe);
-                return new GraphicsApiDetection(
-                    ordered[0], ordered, GraphicsApiConfidence.High,
-                    $"Executable signature: {string.Join(", ", ordered.Select(ApiDllName))}");
+                if (imported.Confidence == GraphicsApiConfidence.High) return imported;
+                ambiguous = imported;
+                importsDxgi = imports.Regular.Any(dll => dll.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase));
+            }
+            else if (quickExe.Count > 0)
+            {
+                var signature = FromSignatures(quickExe, "Executable signature");
+                if (quickExe.Count == 1) return signature;
+                ambiguous = signature;
             }
         }
 
         // 3) Engines such as RE Engine can LoadLibrary the renderer rather than statically
-        // importing it. A selected config key is better evidence than an expensive blind scan.
-        var config = DetectFromConfigs(gameRoot, executablePath, indexedFiles, cancellationToken);
-        if (config.Primary != GraphicsApi.Unknown) return config;
+        // importing it. A selected config key is better evidence than an expensive blind scan, and
+        // it decides between several renderers an executable imports or references (RDR2 keeps its
+        // choice in the prefix: Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml).
+        // Between candidates only a selection the executable could actually use counts.
+        Func<GraphicsApi, bool> selectable = api => IsSelectable(api, ambiguous, importsDxgi);
+        var config = DetectFromConfigs(gameRoot, executablePath, indexedFiles, selectable, cancellationToken);
+        if (config.Primary == GraphicsApi.Unknown && ambiguous is not null)
+            config = DetectFromPrefixSettings(prefixPath, gameRoot, executablePath, selectable, cancellationToken);
+        if (config.Primary != GraphicsApi.Unknown) return WithCandidates(config, ambiguous);
+        if (ambiguous is not null) return ambiguous;
 
         // 4) If no explicit config exists, perform a deeper executable scan. This remains
         // background/cancellable and covers large binaries whose renderer strings occur late.
@@ -195,10 +213,10 @@ internal static class GraphicsApiDetector
             var deepExe = ScanBinary(executablePath!, 512L * 1024 * 1024, cancellationToken);
             if (deepExe.Count > 0)
             {
-                var ordered = Order(deepExe);
-                return new GraphicsApiDetection(
-                    ordered[0], ordered, GraphicsApiConfidence.High,
-                    $"Executable deep signature: {string.Join(", ", ordered.Select(ApiDllName))}");
+                var signature = FromSignatures(deepExe, "Executable deep signature");
+                if (deepExe.Count == 1) return signature;
+                var settings = DetectFromPrefixSettings(prefixPath, gameRoot, executablePath, api => signature.Candidates.Contains(api), cancellationToken);
+                return settings.Primary != GraphicsApi.Unknown ? WithCandidates(settings, signature) : signature;
             }
         }
 
@@ -247,14 +265,296 @@ internal static class GraphicsApiDetector
     /// </summary>
     internal static bool IsBinarySignatureEvidence(string? evidence)
         => evidence is not null
-           && (evidence.StartsWith("Executable signature:", StringComparison.Ordinal)
+           && (evidence.StartsWith("Executable imports:", StringComparison.Ordinal)
+               || evidence.StartsWith("Executable signature:", StringComparison.Ordinal)
                || evidence.StartsWith("Executable deep signature:", StringComparison.Ordinal)
                || evidence.StartsWith("Nearby engine binary signature:", StringComparison.Ordinal));
+
+    /// <summary>Upstream RHI's import-table priority (higher wins).</summary>
+    private static int UpstreamPriority(GraphicsApi api) => api switch
+    {
+        GraphicsApi.DirectX12 => 7,
+        GraphicsApi.Vulkan => 6,
+        GraphicsApi.DirectX11 => 5,
+        GraphicsApi.DirectX10 => 4,
+        GraphicsApi.OpenGL => 3,
+        GraphicsApi.DirectX9 => 2,
+        GraphicsApi.DirectX8 => 1,
+        _ => 0
+    };
+
+    private static GraphicsApi ImportedApi(string dll) => dll.ToLowerInvariant() switch
+    {
+        "d3d8.dll" => GraphicsApi.DirectX8,
+        "d3d9.dll" => GraphicsApi.DirectX9,
+        "d3d10.dll" or "d3d10_1.dll" => GraphicsApi.DirectX10,
+        "d3d11.dll" => GraphicsApi.DirectX11,
+        "d3d12.dll" => GraphicsApi.DirectX12,
+        "vulkan-1.dll" => GraphicsApi.Vulkan,
+        "opengl32.dll" => GraphicsApi.OpenGL,
+        _ => GraphicsApi.Unknown
+    };
+
+    private static bool IsDirectX(GraphicsApi api)
+        => api is GraphicsApi.DirectX12 or GraphicsApi.DirectX11 or GraphicsApi.DirectX10 or GraphicsApi.DirectX9 or GraphicsApi.DirectX8;
+
+    /// <summary>
+    /// A config or prefix selection may decide between the executable's candidates; one naming a renderer
+    /// the executable neither imports nor references is someone else's setting. dxgi.dll serves every
+    /// DirectX 10-12 renderer, so an executable importing it may select any of those.
+    /// </summary>
+    private static bool IsSelectable(GraphicsApi api, GraphicsApiDetection? executable, bool importsDxgi)
+        => executable is null
+           || executable.Candidates.Contains(api)
+           || (importsDxgi && api is GraphicsApi.DirectX12 or GraphicsApi.DirectX11 or GraphicsApi.DirectX10);
+
+    /// <summary>
+    /// The import table (upstream RHI's GraphicsApiDetector.Detect/DetectAllApis evidence). Returns null when
+    /// the imports do not name a renderer (nothing, or OpenGL only, which Unity/Unreal link as a fallback),
+    /// so string evidence and config selection take over.
+    /// <list type="bullet">
+    /// <item>High only when exactly one renderer is imported, no other is delay-loaded and the executable
+    /// references no other renderer.</item>
+    /// <item>Otherwise Medium with every candidate, and the primary stays DirectX-first: the fork has no
+    /// Vulkan ReShade proxy, so a Vulkan guess would refuse installs that work when the game runs DirectX
+    /// (Robbie's #53 decision). Among DirectX renderers upstream's rule applies: the highest imported one,
+    /// dxgi.dll alone meaning DX12, and a delay-load only below an imported DX11 (UE4 delay-loads d3d12 and
+    /// runs DX11 unless started with -dx12).</item>
+    /// </list>
+    /// </summary>
+    internal static GraphicsApiDetection? FromImports(PeImports imports, IReadOnlyCollection<GraphicsApi> referenced)
+    {
+        var regular = imports.Regular.Select(ImportedApi).Where(api => api != GraphicsApi.Unknown).Distinct().ToArray();
+        var delayed = imports.Delay.Select(ImportedApi).Where(api => api != GraphicsApi.Unknown).Distinct().ToArray();
+        var importsDxgi = imports.Regular.Any(dll => dll.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase));
+        if (!importsDxgi && regular.Concat(delayed).All(api => api == GraphicsApi.OpenGL)) return null;
+
+        if (regular.Length == 1 && regular[0] != GraphicsApi.OpenGL
+            && delayed.All(api => api == regular[0]) && referenced.All(api => api == regular[0]))
+        {
+            return new GraphicsApiDetection(regular[0], [regular[0]], GraphicsApiConfidence.High,
+                $"Executable imports: {ApiDllName(regular[0])} (imports)");
+        }
+
+        var (primary, source) = DirectXChoice(regular, delayed, importsDxgi);
+        var all = regular.Concat(delayed).Concat(referenced).ToHashSet();
+        if (primary == GraphicsApi.Unknown)
+        {
+            primary = Order(all)[0]; // a referenced DirectX renderer still comes first
+            source = regular.Contains(primary) ? "imports" : delayed.Contains(primary) ? "delay-loads" : "referenced";
+        }
+        var ordered = Order(all.Where(api => api != primary)).Prepend(primary).ToArray();
+        var evidence = $"Executable imports: {ApiDllName(primary)} ({source}"
+                       + (ordered.Length > 1 ? $"; also {string.Join(", ", ordered.Skip(1).Select(ApiDllName))}" : "")
+                       + ")";
+        return new GraphicsApiDetection(primary, ordered, GraphicsApiConfidence.Medium, evidence);
+    }
+
+    /// <summary>Upstream's import rule restricted to DirectX; Unknown when no DirectX renderer is imported.</summary>
+    private static (GraphicsApi Api, string Source) DirectXChoice(GraphicsApi[] regular, GraphicsApi[] delayed, bool importsDxgi)
+    {
+        var best = regular.Where(IsDirectX).OrderByDescending(UpstreamPriority).FirstOrDefault();
+        var source = "imports";
+        if (UpstreamPriority(best) < UpstreamPriority(GraphicsApi.DirectX11))
+        {
+            if (importsDxgi) return (GraphicsApi.DirectX12, "imports dxgi.dll");
+            var delayBest = delayed.Where(IsDirectX).OrderByDescending(UpstreamPriority).FirstOrDefault();
+            if (UpstreamPriority(delayBest) > UpstreamPriority(best))
+            {
+                best = delayBest;
+                source = "delay-loads";
+            }
+        }
+        return (best, source);
+    }
+
+    /// <summary>
+    /// String signatures cannot tell an imported renderer from one the executable merely mentions or
+    /// loads on request. One renderer stays High; several keep the old DX-first primary (so a working
+    /// ReShade proxy choice does not change) but report every candidate at lower confidence: Medium for
+    /// two, Low for three or more (the same ambiguity rule as the nearby-binary pass) (Refs #53).
+    /// </summary>
+    private static GraphicsApiDetection FromSignatures(IEnumerable<GraphicsApi> found, string label)
+    {
+        var ordered = Order(found);
+        var names = string.Join(", ", ordered.Select(ApiDllName));
+        return ordered.Count switch
+        {
+            1 => new GraphicsApiDetection(ordered[0], ordered, GraphicsApiConfidence.High, $"{label}: {names}"),
+            2 => new GraphicsApiDetection(ordered[0], ordered, GraphicsApiConfidence.Medium, $"{label}: {names} (two renderers referenced)"),
+            _ => new GraphicsApiDetection(ordered[0], ordered, GraphicsApiConfidence.Low, $"{label}: {names} (several renderers referenced)")
+        };
+    }
+
+    /// <summary>A config selection keeps the executable's other candidates visible.</summary>
+    private static GraphicsApiDetection WithCandidates(GraphicsApiDetection selected, GraphicsApiDetection? referenced)
+        => referenced is null
+            ? selected
+            : selected with
+            {
+                Candidates = selected.Candidates.Concat(referenced.Candidates).Distinct().ToArray(),
+                Evidence = $"{selected.Evidence}; executable references {string.Join(", ", referenced.Candidates.Select(ApiDllName))}"
+            };
+
+    /// <summary>
+    /// Settings a game writes into the Wine prefix rather than its install folder (RDR2's
+    /// <c>Documents/Rockstar Games/Red Dead Redemption 2/Settings/system.xml</c>). Only folders whose
+    /// name carries the game folder or executable name are read, at most two levels below
+    /// Documents/AppData, so another game's settings in a shared prefix do not count.
+    /// </summary>
+    internal static GraphicsApiDetection DetectFromPrefixSettings(
+        string? prefixPath,
+        string gameRoot,
+        string? executablePath,
+        CancellationToken cancellationToken)
+        => DetectFromPrefixSettings(prefixPath, gameRoot, executablePath, static _ => true, cancellationToken);
+
+    internal static GraphicsApiDetection DetectFromPrefixSettings(
+        string? prefixPath,
+        string gameRoot,
+        string? executablePath,
+        Func<GraphicsApi, bool> selectable,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(prefixPath)) return GraphicsApiDetection.Unknown;
+        var users = Path.Combine(prefixPath, "drive_c", "users");
+        if (!Directory.Exists(users)) return GraphicsApiDetection.Unknown;
+        var tokens = new[]
+            {
+                GameNameToken(Path.GetFileName(gameRoot.TrimEnd(Path.DirectorySeparatorChar))),
+                GameNameToken(Path.GetFileNameWithoutExtension(executablePath ?? ""))
+            }
+            .Where(token => token.Length >= 5)
+            .Distinct()
+            .ToArray();
+        if (tokens.Length == 0) return GraphicsApiDetection.Unknown;
+
+        // Symlinked folders are not followed below the base folders: a link can point anywhere (another
+        // game's prefix, the host home, /). Documents itself may be a link to the host's ~/Documents in a
+        // plain Wine prefix; listing it stays read-only and bounded.
+        foreach (var user in RealDirectories(users))
+        {
+            foreach (var baseDir in new[] { "Documents", "My Documents", Path.Combine("AppData", "Local"), Path.Combine("AppData", "Roaming") })
+            {
+                var root = Path.Combine(user, baseDir);
+                if (!Directory.Exists(root)) continue;
+                foreach (var level1 in RealDirectories(root))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var candidates = MatchesToken(level1, tokens) ? [level1] : RealDirectories(level1).Where(dir => MatchesToken(dir, tokens)).ToArray();
+                    foreach (var folder in candidates)
+                    {
+                        var files = new List<string>();
+                        CollectConfigFiles(folder, 2, files, 40, cancellationToken);
+                        foreach (var file in files.OrderBy(f => f, StringComparer.Ordinal))
+                        {
+                            if (ConfigSelection(file, cancellationToken) is { } api && selectable(api))
+                                return new GraphicsApiDetection(api, [api], GraphicsApiConfidence.Medium,
+                                    $"Prefix settings: {EvidenceRelativePath(root, file)} ({ConfigEvidenceToken(api)})");
+                        }
+                    }
+                }
+            }
+        }
+        return GraphicsApiDetection.Unknown;
+    }
+
+    /// <summary>
+    /// Folder/exe names that say nothing about which game they belong to: an exe called Launcher.exe
+    /// must not claim a prefix's "Ubisoft Game Launcher" or "Epic Games Launcher" settings.
+    /// </summary>
+    private static readonly HashSet<string> GenericNameTokens = new(StringComparer.Ordinal)
+    {
+        "launcher", "gamelauncher", "launch", "games", "start", "starter", "startup", "shipping", "client",
+        "binaries", "setup", "player", "program", "application", "engine", "bootstrap", "bootstrapper",
+        "runtime", "common", "content", "windows", "release", "retail", "final", "default", "settings",
+        "config", "win32", "win64", "x86_64", "steam", "proton", "update", "updater", "crashreporter"
+    };
+
+    private static readonly string[] BuildSuffixes = ["win64shipping", "wingdkshipping", "shipping", "win64", "x64", "dx12", "dx11"];
+
+    /// <summary>A loose name token for prefix-settings matching, or "" when the name is generic.</summary>
+    internal static string GameNameToken(string name)
+    {
+        var token = NormalizeLooseToken(name);
+        foreach (var suffix in BuildSuffixes)
+        {
+            if (token.Length > suffix.Length && token.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                token = token[..^suffix.Length];
+                break;
+            }
+        }
+        return GenericNameTokens.Contains(token) ? "" : token;
+    }
+
+    private static bool MatchesToken(string directory, IReadOnlyList<string> tokens)
+    {
+        var name = NormalizeLooseToken(Path.GetFileName(directory));
+        return name.Length > 0 && tokens.Any(token => name.Contains(token, StringComparison.Ordinal));
+    }
+
+    /// <summary>Subdirectories that are not symlinks; unreadable folders yield none.</summary>
+    private static string[] RealDirectories(string path)
+    {
+        try { return Directory.GetDirectories(path).Where(dir => !IsSymlink(dir)).ToArray(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return []; }
+    }
+
+    private static bool IsSymlink(string directory)
+    {
+        try { return new DirectoryInfo(directory).LinkTarget is not null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+    }
+
+    private static void CollectConfigFiles(string root, int maxDepth, List<string> result, int maxResults, CancellationToken cancellationToken)
+    {
+        if (IsSymlink(root)) return;
+        var stack = new Stack<(string Path, int Depth)>();
+        stack.Push((root, 0));
+        while (stack.Count > 0 && result.Count < maxResults)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (dir, depth) = stack.Pop();
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir))
+                {
+                    if (ConfigExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) result.Add(file);
+                    if (result.Count >= maxResults) return;
+                }
+                if (depth >= maxDepth) continue;
+                foreach (var sub in Directory.EnumerateDirectories(dir))
+                    if (!IsSymlink(sub)) stack.Push((sub, depth + 1));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* unreadable folder: skip it */ }
+        }
+    }
+
+    /// <summary>The single renderer a config file selects, or null when it selects none or lists several.</summary>
+    private static GraphicsApi? ConfigSelection(string file, CancellationToken cancellationToken)
+    {
+        if (SafeLength(file) is <= 0 or > 2 * 1024 * 1024) return null;
+        string[] lines;
+        try { lines = File.ReadAllLines(file); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+
+        foreach (var raw in lines.Take(6000))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = NormalizeConfigLine(raw);
+            if (line.Length == 0 || !LooksLikeRendererSetting(line)) continue;
+            var found = APIsInConfigLine(line);
+            if (found.Count == 1) return found[0]; // ambiguous option lists are not evidence.
+        }
+        return null;
+    }
 
     private static GraphicsApiDetection DetectFromConfigs(
         string gameRoot,
         string? executablePath,
         IReadOnlyList<string> indexedFiles,
+        Func<GraphicsApi, bool> selectable,
         CancellationToken cancellationToken)
     {
         var binaryDir = !string.IsNullOrWhiteSpace(executablePath) ? Path.GetDirectoryName(executablePath) : null;
@@ -267,25 +567,10 @@ internal static class GraphicsApiDetector
         foreach (var file in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (SafeLength(file) is <= 0 or > 2 * 1024 * 1024) continue;
-
-            string[] lines;
-            try { lines = File.ReadAllLines(file); }
-            catch { continue; }
-
-            foreach (var raw in lines.Take(6000))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var line = NormalizeConfigLine(raw);
-                if (line.Length == 0 || !LooksLikeRendererSetting(line)) continue;
-
-                var found = APIsInConfigLine(line);
-                if (found.Count != 1) continue; // ambiguous option lists are not evidence.
-                var api = found[0];
-                return new GraphicsApiDetection(
-                    api, [api], GraphicsApiConfidence.Medium,
-                    $"Config selection: {Path.GetFileName(file)} ({ConfigEvidenceToken(api)})");
-            }
+            if (ConfigSelection(file, cancellationToken) is not { } api || !selectable(api)) continue;
+            return new GraphicsApiDetection(
+                api, [api], GraphicsApiConfidence.Medium,
+                $"Config selection: {Path.GetFileName(file)} ({ConfigEvidenceToken(api)})");
         }
 
         return GraphicsApiDetection.Unknown;
@@ -323,7 +608,10 @@ internal static class GraphicsApiDetector
             "defaultgraphicsrhi", "defaultrhi", "preferredrhi", "backend"
         ];
         return keys.Any(k => line.Contains(k + "=", StringComparison.Ordinal) ||
-                             line.Contains(k + ":", StringComparison.Ordinal));
+                             line.Contains(k + ":", StringComparison.Ordinal) ||
+                             line.Contains("<" + k + ">", StringComparison.Ordinal)) ||
+               // XML settings such as RDR2's <API>kSettingAPI_Vulkan</API>.
+               line.Contains("<api>", StringComparison.Ordinal);
     }
 
     private static IReadOnlyList<GraphicsApi> APIsInConfigLine(string line)
@@ -516,11 +804,28 @@ internal static class GraphicsApiDetector
         return GraphicsApiDetection.Unknown;
     }
 
-    private static bool RuntimeLogMatchesGame(string log, string rootToken, string exeToken)
+    /// <summary>
+    /// A shared prefix can hold several games' Unity logs. Attribution uses only the product folders
+    /// below <c>AppData/LocalLow/&lt;Company&gt;/</c>: the prefix directory and user name are not game
+    /// identity (a launcher whose prefix is named after it matched every log inside it), and the company
+    /// folder alone is not either (a "Ubisoft" launcher card must not inherit a Ubisoft game's log) (Refs #52).
+    /// </summary>
+    internal static bool RuntimeLogMatchesGame(string log, string rootToken, string exeToken)
     {
-        var pathToken = NormalizeLooseToken(log);
-        return (rootToken.Length >= 5 && pathToken.Contains(rootToken, StringComparison.OrdinalIgnoreCase)) ||
-               (exeToken.Length >= 5 && pathToken.Contains(exeToken, StringComparison.OrdinalIgnoreCase));
+        var normalized = log.Replace('\\', '/');
+        const string marker = "/AppData/LocalLow/";
+        var at = normalized.LastIndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return false;
+        var folders = normalized[(at + marker.Length)..].Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
+        var productFolders = folders.Length > 1 ? folders.Skip(1) : folders;
+        foreach (var folder in productFolders)
+        {
+            var token = NormalizeLooseToken(folder);
+            if ((rootToken.Length >= 5 && token.Contains(rootToken, StringComparison.Ordinal)) ||
+                (exeToken.Length >= 5 && token.Contains(exeToken, StringComparison.Ordinal)))
+                return true;
+        }
+        return false;
     }
 
     private static string NormalizeLooseToken(string value)

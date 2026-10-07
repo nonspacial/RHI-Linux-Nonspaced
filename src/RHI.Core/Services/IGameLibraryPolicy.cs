@@ -13,4 +13,13 @@ public interface IGameLibraryPolicy
     Task<IReadOnlyList<DetectedGame>> ApplyAsync(
         IReadOnlyList<DetectedGame> games,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Called before <see cref="ApplyAsync"/> on an explicit full library refresh only. Partial refreshes
+    /// (adding, editing or removing one entry) keep whatever policy source the process already holds.
+    /// </summary>
+    void RefreshSources() { }
+
+    /// <summary>Name shown when the stage could not be applied (status line, log).</summary>
+    string Name => GetType().Name;
 }

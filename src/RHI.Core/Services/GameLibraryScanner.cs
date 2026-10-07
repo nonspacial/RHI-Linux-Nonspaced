@@ -7,6 +7,7 @@ public sealed class GameLibraryScanner
     private readonly IGameDetector[] _detectors;
     private readonly IGameLibraryPolicy[] _policies;
     private readonly Dictionary<string, IReadOnlyList<DetectedGame>> _lastRawResults = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, DetectorScanStatus> _lastStatuses = new(StringComparer.Ordinal);
     private readonly object _rawLock = new();
 
     public GameLibraryScanner(
@@ -20,14 +21,22 @@ public sealed class GameLibraryScanner
     public Task<IReadOnlyList<DetectedGame>> ScanAsync(CancellationToken cancellationToken = default)
         => ScanAsync(null, cancellationToken);
 
+    /// <summary>Games only; see <see cref="ScanWithReportAsync"/> for per-detector status.</summary>
+    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(
+        IReadOnlySet<string>? onlyDetectors,
+        CancellationToken cancellationToken = default)
+        => (await ScanWithReportAsync(onlyDetectors, cancellationToken).ConfigureAwait(false)).Games;
+
     /// <summary>
     /// Runs the library scan. When <paramref name="onlyDetectors"/> is given, only those detectors
     /// (by <see cref="IGameDetector.Name"/>) are re-run; every other detector reuses its result from
     /// the previous scan. This keeps cheap library edits (adding/removing a manual game) from
     /// re-walking every Steam/Heroic/Lutris/Wine install on disk. Falls back to a full scan when
     /// no previous result exists for a detector that was not requested.
+    /// A detector that throws, or reports skipped entries, no longer looks like "no games": its status
+    /// says so, and the failure is written to <see cref="AppLog"/> (Refs #56).
     /// </summary>
-    public async Task<IReadOnlyList<DetectedGame>> ScanAsync(
+    public async Task<GameLibraryScanResult> ScanWithReportAsync(
         IReadOnlySet<string>? onlyDetectors,
         CancellationToken cancellationToken = default)
     {
@@ -40,58 +49,79 @@ public sealed class GameLibraryScanner
 
         var tasks = _detectors.Select(async detector =>
         {
-            IReadOnlyList<DetectedGame> raw;
             if (partial && !onlyDetectors!.Contains(detector.Name))
             {
-                lock (_rawLock) raw = _lastRawResults[detector.Name];
+                lock (_rawLock)
+                {
+                    var previous = _lastStatuses.TryGetValue(detector.Name, out var status)
+                        ? status with { Reused = true }
+                        : new DetectorScanStatus(detector.Name, _lastRawResults[detector.Name].Count, null, [], Reused: true);
+                    return (detector.Name, raw: _lastRawResults[detector.Name], status: previous);
+                }
             }
-            else
+
+            try
             {
-                try
-                {
-                    raw = await detector.DetectAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) { throw; }
-                catch
-                {
-                    raw = Array.Empty<DetectedGame>();
-                }
+                var (raw, warnings) = await DetectorDiagnostics
+                    .CollectAsync(() => detector.DetectAsync(cancellationToken))
+                    .ConfigureAwait(false);
+                return (detector.Name, raw, status: new DetectorScanStatus(detector.Name, raw.Count, null, warnings));
             }
-            return (detector.Name, raw);
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                // One detector failing must not empty the whole library; it must not pass for "no games" either.
+                AppLog.Warn("scan", $"{detector.Name} detector failed", ex);
+                return (detector.Name, raw: (IReadOnlyList<DetectedGame>)Array.Empty<DetectedGame>(),
+                    status: new DetectorScanStatus(detector.Name, 0, ex.Message, []));
+            }
         });
 
         var results = await Task.WhenAll(tasks).ConfigureAwait(false);
         lock (_rawLock)
         {
             // Keep pristine snapshots: downstream stages mutate the instances they receive.
-            foreach (var (name, list) in results)
+            foreach (var (name, list, status) in results)
+            {
                 _lastRawResults[name] = list.Select(g => g.ShallowClone()).ToArray();
+                _lastStatuses[name] = status with { Reused = false };
+            }
         }
         IReadOnlyList<DetectedGame> games = results
             .SelectMany(x => x.raw.Select(g => g.ShallowClone()))
             .ToArray();
 
+        if (onlyDetectors is null)
+        {
+            foreach (var policy in _policies)
+                policy.RefreshSources();
+        }
+
+        var policyFailures = new List<PolicyScanStatus>();
         foreach (var policy in _policies)
         {
             try
             {
                 games = await policy.ApplyAsync(games, cancellationToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { throw; }
-            catch
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex)
             {
                 // Policies are metadata/enrichment layers. If an upstream policy source is
-                // unavailable, keep the locally detected library exactly as it was.
+                // unavailable, keep the locally detected library exactly as it was, and say so.
+                AppLog.Warn("scan", $"{policy.Name} not applied", ex);
+                policyFailures.Add(new PolicyScanStatus(policy.Name, ex.Message));
             }
         }
 
-        return games
+        var merged = games
             .Where(g => !string.IsNullOrWhiteSpace(g.Name) && Directory.Exists(g.InstallPath))
-            .GroupBy(GameKey, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(GameKey, StringComparer.Ordinal)
             .SelectMany(SplitDistinctLauncherEntries)
             .Select(Merge)
             .OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+        return new GameLibraryScanResult(merged, results.Select(r => r.status).ToArray(), policyFailures);
     }
 
     private static string GameKey(DetectedGame g)
@@ -101,10 +131,12 @@ public sealed class GameLibraryScanner
             // Normal storefront duplicates still merge by AppID. Manifest splitGames intentionally
             // produces multiple cards from one AppID, so those children need independent keys.
             if (g.IsManifestSplitChild)
-                return $"steam:{id}:split:{g.Name}:{Path.GetFullPath(g.InstallPath)}";
+                return $"steam:{id}:split:{g.Name}:{PathIdentity.Canonicalize(g.InstallPath)}";
             return $"steam:{id}";
         }
-        return $"path:{Path.GetFullPath(g.InstallPath)}";
+        // One folder is one key however it is spelt: symlinks (~/Games -> /media/disk/Games), a
+        // trailing separator, and case (Linux paths are case-sensitive) (Refs #55).
+        return $"path:{PathIdentity.Canonicalize(g.InstallPath)}";
     }
 
     /// <summary>
@@ -120,29 +152,54 @@ public sealed class GameLibraryScanner
 
         var conflict = entries
             .GroupBy(g => g.Source ?? "", StringComparer.OrdinalIgnoreCase)
-            .Any(s => s.Select(IdentityOf).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any());
+            .Any(s => s.Select(IdentityOf).Distinct(StringComparer.Ordinal).Skip(1).Any());
         if (!conflict) return [entries];
 
         return entries
-            .GroupBy(g => (g.Source ?? "") + "|" + IdentityOf(g), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(g => (g.Source ?? "") + "|" + IdentityOf(g), StringComparer.Ordinal)
             .Select(g => g.ToArray());
     }
 
     private static string IdentityOf(DetectedGame g)
-    {
-        var identity = string.IsNullOrWhiteSpace(g.LibraryIdentityPath) ? g.InstallPath : g.LibraryIdentityPath;
-        try { return Path.GetFullPath(identity).TrimEnd(Path.DirectorySeparatorChar); }
-        catch { return identity.Trim(); }
-    }
+        => PathIdentity.Canonicalize(string.IsNullOrWhiteSpace(g.LibraryIdentityPath) ? g.InstallPath : g.LibraryIdentityPath);
 
-    private static DetectedGame Merge(DetectedGame[] games)
+    /// <summary>
+    /// Merges duplicates of one game into the first entry (detector order) without losing anything a
+    /// duplicate knows (Refs #55): every optional field the first lacks is filled, every flag is OR-ed, and
+    /// a manually added duplicate keeps its user-authored fields — the chosen executable (patch target),
+    /// the API override and the launch command — and makes the card removable as a manual entry. The
+    /// first entry keeps its name, path and source so the card's identity does not flip between scans.
+    /// </summary>
+    internal static DetectedGame Merge(DetectedGame[] games)
     {
         var first = games[0];
+        // A fail-closed patch-target verdict (launcher exe) must not be satisfied by another source's
+        // automatic guess: only a user-chosen (manual) executable may confirm the target.
+        var requiresExplicitTarget = games.Any(g => g.RequiresExplicitPatchTarget);
         foreach (var candidate in games.Skip(1))
         {
+            if (candidate.IsManuallyAdded && !first.IsManuallyAdded)
+                ApplyUserAuthoredFields(first, candidate);
+            first.IsManuallyAdded |= candidate.IsManuallyAdded;
+
+            first.SteamAppId ??= candidate.SteamAppId;
+            first.EpicCatalogNamespace ??= candidate.EpicCatalogNamespace;
+            first.EpicAppName ??= candidate.EpicAppName;
+            first.HeroicAppName ??= candidate.HeroicAppName;
+            first.XboxAumid ??= candidate.XboxAumid;
             first.PrefixPath ??= candidate.PrefixPath;
-            first.ExecutablePath ??= candidate.ExecutablePath;
+            if (first.ExecutablePath is null && candidate.ExecutablePath is not null)
+            {
+                // The binary directory belongs to the executable it was derived from, never on its own.
+                first.ExecutablePath = candidate.ExecutablePath;
+                if (!requiresExplicitTarget) first.BinaryDirectory = candidate.BinaryDirectory ?? first.BinaryDirectory;
+            }
             first.LaunchExecutablePath ??= candidate.LaunchExecutablePath;
+            first.MergedAliases = first.MergedAliases.Concat(candidate.MergedAliases)
+                .Append(new LibraryEntryAlias(candidate.Source ?? "",
+                    string.IsNullOrWhiteSpace(candidate.LibraryIdentityPath) ? candidate.InstallPath : candidate.LibraryIdentityPath,
+                    candidate.SteamAppId))
+                .Distinct().ToArray();
             first.LibraryIdentityPath ??= candidate.LibraryIdentityPath;
             first.LibraryProvider ??= candidate.LibraryProvider;
             first.LaunchProvider ??= candidate.LaunchProvider;
@@ -153,10 +210,13 @@ public sealed class GameLibraryScanner
                 first.LaunchCommand = candidate.LaunchCommand;
                 first.ParentLauncherName = candidate.ParentLauncherName;
             }
+            first.ParentLauncherName ??= candidate.ParentLauncherName;
+            if (first.PatchTargetAuthority == "Automatic") first.PatchTargetAuthority = candidate.PatchTargetAuthority;
             first.CompatibilityTool ??= candidate.CompatibilityTool;
             first.CompatibilityLayerType ??= candidate.CompatibilityLayerType;
             first.WineBinaryPath ??= candidate.WineBinaryPath;
             first.WineServerPath ??= candidate.WineServerPath;
+            first.UserGraphicsApiOverride ??= candidate.UserGraphicsApiOverride;
             first.CanonicalManifestName ??= candidate.CanonicalManifestName;
             first.WikiNameOverride ??= candidate.WikiNameOverride;
             first.ManifestInstallRoot ??= candidate.ManifestInstallRoot;
@@ -165,10 +225,11 @@ public sealed class GameLibraryScanner
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
-            if (first.ManifestGraphicsApis.Count == 0) first.ManifestGraphicsApis = candidate.ManifestGraphicsApis;
+            first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);
             first.EngineHint ??= candidate.EngineHint;
             first.ForcedArchitecture ??= candidate.ForcedArchitecture;
             first.EngineIniProjectOverride ??= candidate.EngineIniProjectOverride;
+            first.EngineIniFileOverride ??= candidate.EngineIniFileOverride;
             first.WikiUnlinkedByManifest |= candidate.WikiUnlinkedByManifest;
             first.DlssScanSkippedByManifest |= candidate.DlssScanSkippedByManifest;
             first.UeExtendedByManifest |= candidate.UeExtendedByManifest;
@@ -176,6 +237,8 @@ public sealed class GameLibraryScanner
             first.UeExtendedBlockedByManifest |= candidate.UeExtendedBlockedByManifest;
             first.UeExtendedHdrByManifest ??= candidate.UeExtendedHdrByManifest;
             first.UeExtendedLutByManifest ??= candidate.UeExtendedLutByManifest;
+            first.DofFixForcedByManifest |= candidate.DofFixForcedByManifest;
+            first.DofFixSkippedByManifest |= candidate.DofFixSkippedByManifest;
             first.ReShadeDllNameOverride ??= candidate.ReShadeDllNameOverride;
             first.DisplayCommanderDllNameOverride ??= candidate.DisplayCommanderDllNameOverride;
             first.OptiScalerDllNameOverride ??= candidate.OptiScalerDllNameOverride;
@@ -193,9 +256,36 @@ public sealed class GameLibraryScanner
             first.ManifestGameNoteUrl ??= candidate.ManifestGameNoteUrl;
             first.ManifestGameNoteUrlLabel ??= candidate.ManifestGameNoteUrlLabel;
             if (first.ManifestInstallWarnings.Count == 0) first.ManifestInstallWarnings = candidate.ManifestInstallWarnings;
-            if (first.GraphicsApi == GraphicsApi.Unknown)
+            if (first.GraphicsApi == GraphicsApi.Unknown && candidate.GraphicsApi != GraphicsApi.Unknown)
+            {
+                // Confidence and evidence describe the API they came with.
                 first.GraphicsApi = candidate.GraphicsApi;
+                first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
+                first.GraphicsApiEvidence = candidate.GraphicsApiEvidence;
+            }
+            first.GraphicsApiEvidence ??= candidate.GraphicsApiEvidence;
+            if (first.GraphicsApiConfidence == GraphicsApiConfidence.Unknown) first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
+            first.GraphicsApis = Union(first.GraphicsApis, candidate.GraphicsApis);
         }
         return first;
     }
+
+    /// <summary>The user picked these for the manual entry; a launcher's automatic guess must not replace them.</summary>
+    private static void ApplyUserAuthoredFields(DetectedGame target, DetectedGame manual)
+    {
+        if (!string.IsNullOrWhiteSpace(manual.ExecutablePath))
+        {
+            target.ExecutablePath = manual.ExecutablePath;
+            target.BinaryDirectory = manual.BinaryDirectory ?? Path.GetDirectoryName(manual.ExecutablePath);
+        }
+        if (manual.UserGraphicsApiOverride is not null) target.UserGraphicsApiOverride = manual.UserGraphicsApiOverride;
+        if (!string.IsNullOrWhiteSpace(manual.LaunchCommand))
+        {
+            target.LaunchCommand = manual.LaunchCommand;
+            target.ParentLauncherName = manual.ParentLauncherName;
+        }
+    }
+
+    private static IReadOnlyList<GraphicsApi> Union(IReadOnlyList<GraphicsApi> a, IReadOnlyList<GraphicsApi> b)
+        => b.Count == 0 ? a : a.Count == 0 ? b : a.Concat(b).Distinct().ToArray();
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Detection;
@@ -123,10 +124,14 @@ public sealed class PcgwCentralData
 }
 
 /// <summary>
-/// Loads upstream RHI's single-file PCGamingWiki database once per session, replacing per-game
-/// PCGW requests. Fetched at runtime (not bundled): the file changes several times a week and is
-/// about 5 MB. A fresh disk copy is used without any request; an older copy is revalidated with
-/// its ETag. Any failure falls back to the last good copy, then to the copy pinned at RHI 2.7.9.
+/// Loads upstream RHI's single-file PCGamingWiki database, replacing per-game PCGW requests.
+/// Fetched at runtime (not bundled): the file changes several times a week and is about 5 MB. A fresh
+/// disk copy is used without any request; an older copy is revalidated with its ETag. Any failure falls
+/// back to the last good copy, then to the copy pinned at RHI 2.7.9.
+/// <para>The load is one shared background task with its own timeout: a caller (the selected game's
+/// probe) only waits on it, so changing selection never cancels or restarts the download (Refs #102).
+/// An explicit full library refresh calls <see cref="Invalidate"/>, which revalidates with the ETag
+/// (Refs #104). Every failed source is logged and kept in <see cref="LastError"/> (Refs #103).</para>
 /// </summary>
 public sealed class PcgwCentralDataService
 {
@@ -136,6 +141,8 @@ public sealed class PcgwCentralDataService
         "https://raw.githubusercontent.com/RankFTW/RHI/94da8c3ab0d878db91588fdd2c14bcf4c3b354fd/database/pcgw_data.json";
 
     public static readonly TimeSpan DefaultFreshness = TimeSpan.FromHours(12);
+    /// <summary>Upper bound for one whole load (live attempt plus pinned fallback).</summary>
+    public static readonly TimeSpan DefaultLoadTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
 
     private readonly HttpClient _http;
@@ -145,8 +152,16 @@ public sealed class PcgwCentralDataService
     private readonly string? _fallbackUrl;
     private readonly TimeSpan _freshness;
     private readonly TimeProvider _time;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly TimeSpan _loadTimeout;
+    private readonly object _sync = new();
     private PcgwCentralData? _data;
+    private Task<PcgwCentralData?>? _load;
+    private bool _revalidate;
+    // Invalidate bumps _generation. A load serves the generation it started in (_loadGeneration) and
+    // publishes only if no Invalidate happened meanwhile; otherwise the next caller chains a fresh,
+    // revalidating load behind it instead of joining the stale one.
+    private int _generation;
+    private int _loadGeneration;
     private DateTimeOffset _retryAfterFailure = DateTimeOffset.MinValue;
 
     public PcgwCentralDataService(
@@ -155,7 +170,8 @@ public sealed class PcgwCentralDataService
         string? liveUrl = null,
         string? fallbackUrl = PinnedDataUrl,
         TimeSpan? freshness = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        TimeSpan? loadTimeout = null)
     {
         _http = http;
         _cachePath = cachePath ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "pcgw_data.json");
@@ -164,37 +180,108 @@ public sealed class PcgwCentralDataService
         _fallbackUrl = fallbackUrl;
         _freshness = freshness ?? DefaultFreshness;
         _time = timeProvider ?? TimeProvider.System;
+        _loadTimeout = loadTimeout ?? DefaultLoadTimeout;
     }
 
-    /// <summary>Returns the loaded data, or null when no source is reachable (retried after a pause).</summary>
-    public async Task<PcgwCentralData?> GetAsync(CancellationToken cancellationToken = default)
-    {
-        if (_data is not null) return _data;
+    /// <summary>Why the last load used a fallback or found nothing; null after a clean live/cached load.</summary>
+    public string? LastError { get; private set; }
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    /// <summary>
+    /// Returns the loaded data, or null when no source is reachable (retried after a pause).
+    /// <paramref name="cancellationToken"/> only stops this caller waiting; the shared load carries on.
+    /// </summary>
+    public Task<PcgwCentralData?> GetAsync(CancellationToken cancellationToken = default)
+    {
+        Task<PcgwCentralData?> load;
+        lock (_sync)
+        {
+            if (_data is not null) return Task.FromResult<PcgwCentralData?>(_data);
+            if (_load is null || _loadGeneration != _generation)
+            {
+                if (_load is null && _time.GetUtcNow() < _retryAfterFailure) return Task.FromResult<PcgwCentralData?>(null);
+                var previous = _load;
+                var revalidate = _revalidate;
+                var generation = _generation;
+                _revalidate = false;
+                _loadGeneration = generation;
+                _load = Task.Run(() => LoadAfterAsync(previous, revalidate, generation), CancellationToken.None);
+            }
+            load = _load;
+        }
+        return load.WaitAsync(cancellationToken);
+    }
+
+    /// <summary>Starts (or joins) the load in the background, e.g. while the library scan runs.</summary>
+    public void Prefetch() => _ = GetAsync(CancellationToken.None);
+
+    /// <summary>
+    /// Explicit full library refresh: drop the session copy so the next read revalidates the disk copy
+    /// with upstream (ETag; an unchanged file costs one 304, not another 5 MB download).
+    /// </summary>
+    public void Invalidate()
+    {
+        lock (_sync)
+        {
+            _data = null;
+            _retryAfterFailure = DateTimeOffset.MinValue;
+            _revalidate = true;
+            _generation++;
+        }
+    }
+
+    /// <summary>A load chained behind one an Invalidate superseded: one download at a time.</summary>
+    private async Task<PcgwCentralData?> LoadAfterAsync(Task<PcgwCentralData?>? previous, bool revalidate, int generation)
+    {
+        if (previous is not null) await previous.ConfigureAwait(false); // never faults (LoadSharedAsync catches)
+        return await LoadSharedAsync(revalidate, generation).ConfigureAwait(false);
+    }
+
+    private async Task<PcgwCentralData?> LoadSharedAsync(bool revalidate, int generation)
+    {
+        PcgwCentralData? data = null;
+        using var timeout = new CancellationTokenSource(_loadTimeout);
         try
         {
-            if (_data is not null) return _data;
-            if (_time.GetUtcNow() < _retryAfterFailure) return null;
-
-            _data = await LoadAsync(cancellationToken).ConfigureAwait(false);
-            if (_data is null)
-                _retryAfterFailure = _time.GetUtcNow() + FailureRetryDelay;
-            return _data;
+            data = await LoadAsync(revalidate, timeout.Token).ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException ex)
         {
-            _gate.Release();
+            Fail($"load timed out after {_loadTimeout.TotalSeconds:0} s", ex);
         }
+        catch (Exception ex)
+        {
+            // The shared task must never fault: callers fall back to local detection.
+            Fail("load failed", ex);
+        }
+
+        lock (_sync)
+        {
+            // Superseded by Invalidate: callers already waiting get this copy, but it is not kept, and
+            // _load is left for GetAsync to chain the revalidating load (or to own one it already chained).
+            if (generation != _generation) return data;
+            _load = null;
+            if (data is not null) _data = data;
+            else _retryAfterFailure = _time.GetUtcNow() + FailureRetryDelay;
+        }
+        return data;
     }
 
-    private async Task<PcgwCentralData?> LoadAsync(CancellationToken cancellationToken)
+    private void Fail(string what, Exception? error = null)
+    {
+        LastError = error is null ? what : $"{what}: {error.Message}";
+        AppLog.Warn("pcgw-data", $"pcgw_data.json {what}", error);
+    }
+
+    private async Task<PcgwCentralData?> LoadAsync(bool revalidate, CancellationToken cancellationToken)
     {
         var cacheAge = File.Exists(_cachePath)
             ? _time.GetUtcNow() - File.GetLastWriteTimeUtc(_cachePath)
             : (TimeSpan?)null;
-        if (cacheAge < _freshness && await ReadCacheAsync(cancellationToken).ConfigureAwait(false) is { } fresh)
+        if (!revalidate && cacheAge < _freshness && await ReadCacheAsync(cancellationToken).ConfigureAwait(false) is { } fresh)
+        {
+            LastError = null;
             return fresh;
+        }
 
         try
         {
@@ -206,22 +293,27 @@ public sealed class PcgwCentralDataService
                 if (cached is not null)
                 {
                     TryTouchCache();
+                    LastError = null;
                     return cached;
                 }
                 // 304 against a vanished/corrupt cache: fetch unconditionally once.
                 (_, raw, newEtag) = await DownloadAsync(_liveUrl, null, cancellationToken).ConfigureAwait(false);
             }
 
-            if (raw is not null && Parse(raw) is { } live)
+            string? parseError = null;
+            if (raw is not null && Parse(raw, out parseError) is { } live)
             {
                 await PersistAsync(raw, newEtag, cancellationToken).ConfigureAwait(false);
+                LastError = null;
                 return live;
             }
+            Fail($"live copy unusable ({parseError ?? "no games"}) from {_liveUrl}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch
+        catch (Exception ex)
         {
-            // Network/HTTP/parse failure: fall through to the last good copy.
+            // Network/HTTP failure or the per-download timeout: fall through to the last good copy.
+            Fail($"live download failed from {_liveUrl}", ex);
         }
 
         if (await ReadCacheAsync(cancellationToken).ConfigureAwait(false) is { } stale)
@@ -232,17 +324,20 @@ public sealed class PcgwCentralDataService
         try
         {
             var (_, raw, _) = await DownloadAsync(_fallbackUrl, null, cancellationToken).ConfigureAwait(false);
-            if (raw is not null && Parse(raw) is { } pinned)
+            string? parseError = null;
+            if (raw is not null && Parse(raw, out parseError) is { } pinned)
             {
                 // No ETag: the next session revalidates against the live file.
                 await PersistAsync(raw, null, cancellationToken).ConfigureAwait(false);
                 return pinned;
             }
+            Fail($"pinned copy unusable ({parseError ?? "no games"}) from {_fallbackUrl}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch
+        catch (Exception ex)
         {
             // Both sources unavailable; detection carries on without PCGW data.
+            Fail($"pinned download failed from {_fallbackUrl}", ex);
         }
         return null;
     }
@@ -266,10 +361,15 @@ public sealed class PcgwCentralDataService
         return (false, raw, response.Headers.ETag?.Tag);
     }
 
-    private static PcgwCentralData? Parse(byte[] raw)
+    private static PcgwCentralData? Parse(byte[] raw, out string? error)
     {
+        error = null;
         try { return PcgwCentralData.Parse(raw); }
-        catch (JsonException) { return null; }
+        catch (JsonException ex)
+        {
+            error = ex.Message;
+            return null;
+        }
     }
 
     private async Task<PcgwCentralData?> ReadCacheAsync(CancellationToken cancellationToken)
@@ -277,41 +377,70 @@ public sealed class PcgwCentralDataService
         if (!File.Exists(_cachePath)) return null;
         try
         {
-            return Parse(await File.ReadAllBytesAsync(_cachePath, cancellationToken).ConfigureAwait(false));
+            var data = Parse(await File.ReadAllBytesAsync(_cachePath, cancellationToken).ConfigureAwait(false), out var error);
+            if (data is null) Fail($"cached copy unusable ({error ?? "no games"}): {_cachePath}");
+            return data;
         }
-        catch (OperationCanceledException) { throw; }
-        catch { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Fail($"cached copy unreadable: {_cachePath}", ex);
+            return null;
+        }
     }
 
     private string? ReadEtag()
     {
         try { return File.Exists(_etagPath) ? File.ReadAllText(_etagPath).Trim() : null; }
-        catch { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("pcgw-data", $"ETag unreadable, fetching unconditionally: {_etagPath}", ex);
+            return null;
+        }
     }
 
     private void TryTouchCache()
     {
+        // Freshness only; a failed touch just means an earlier revalidation.
         try { File.SetLastWriteTimeUtc(_cachePath, _time.GetUtcNow().UtcDateTime); }
-        catch { /* Freshness only; a failed touch just means an earlier revalidation. */ }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("pcgw-data", $"Cache timestamp not updated: {_cachePath}", ex);
+        }
     }
 
     private async Task PersistAsync(byte[] raw, string? etag, CancellationToken cancellationToken)
     {
+        string? temp = null;
         try
         {
             var directory = Path.GetDirectoryName(_cachePath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-            var temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await File.WriteAllBytesAsync(temp, raw, cancellationToken).ConfigureAwait(false);
+            // The validator goes first, so a stale ETag never sits next to a new body.
+            if (File.Exists(_etagPath)) File.Delete(_etagPath);
+            temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
+            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await stream.WriteAsync(raw, cancellationToken).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
             File.Move(temp, _cachePath, true);
+            temp = null;
             File.SetLastWriteTimeUtc(_cachePath, _time.GetUtcNow().UtcDateTime);
-            if (string.IsNullOrWhiteSpace(etag)) File.Delete(_etagPath);
-            else await File.WriteAllTextAsync(_etagPath, etag, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(etag))
+                await File.WriteAllTextAsync(_etagPath, etag, CancellationToken.None).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) { throw; }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Persistence is optional; the loaded data stays usable this session.
+            AppLog.Warn("pcgw-data", $"Cache not saved: {_cachePath}", ex);
+        }
+        finally
+        {
+            if (temp is not null)
+            {
+                try { File.Delete(temp); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("pcgw-data", $"Temp file left behind: {temp}", ex); }
+            }
         }
     }
 }

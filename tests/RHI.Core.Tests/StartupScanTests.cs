@@ -1,0 +1,206 @@
+using System.Diagnostics;
+using RHI.Core.Models;
+using RHI.Core.Services;
+using RHI.Desktop.ViewModels;
+using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Launch;
+using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
+
+namespace RHI.Core.Tests;
+
+/// <summary>Start-up: the library scan never waits behind the DLSS manifest (Refs #43).</summary>
+public sealed class StartupScanTests : IDisposable
+{
+    private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-startup-" + Guid.NewGuid().ToString("N"));
+
+    public StartupScanTests() => Directory.CreateDirectory(_root);
+
+    [Fact]
+    public async Task LibraryScanStarts_WhileTheDlssManifestRequestHangs()
+    {
+        var scanStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"));
+        var settings = new LinuxSettingsStore(Path.Combine(_root, "settings.json"), Path.Combine(_root, "cache"), Path.Combine(_root, "data"));
+        var current = settings.Load();
+        current.AutoUpdateComponents = false;
+        settings.Save(current);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var managed = new LinuxManagedComponentService(records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
+
+        var timer = Stopwatch.StartNew();
+        _ = new MainWindowViewModel(
+            new GameLibraryScanner([new SignallingDetector(scanStarted)]),
+            new LinuxGameLauncher(),
+            new NoProbe(),
+            dlss,
+            managed,
+            new GraphicsApiOverrideStore(Path.Combine(_root, "api.json")),
+            new OptiScalerVariantPreferenceStore(Path.Combine(_root, "opti.json")),
+            settings,
+            new LinuxUpdateAllService(records, managed),
+            new LinuxDlssDefaultsService(dlss, records),
+            new LinuxGameLibraryStore(Path.Combine(_root, "library.json")),
+            records);
+
+        await scanStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(timer.ElapsedMilliseconds < 2000, $"scan started after {timer.ElapsedMilliseconds} ms");
+    }
+
+    // w1-policy review finding 4: the manifest failure lands after the scan and must not replace its
+    // problems notice.
+    [Fact]
+    public async Task DlssManifestFailureAfterTheScan_IsAppendedToTheScanProblemsLine()
+    {
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(1500)
+        };
+        var vm = CreateViewModel(dlss, new FailingDetector());
+
+        var timer = Stopwatch.StartNew();
+        while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.Contains("DLSS", StringComparison.Ordinal))
+            await Task.Delay(50);
+
+        // The scan's line stays in front with its problems notice; the failure is appended, not put in its
+        // place (tests have no UI dispatcher, so the notice's settle never runs and only the order shows it).
+        var line = vm.StatusText;
+        Assert.Contains("DLSS", line);
+        Assert.Contains("BrokenLauncher", line);
+        Assert.StartsWith(LibraryScanStatusText.Done(0), line);
+    }
+
+    // w1-policy review finding 7, VM wiring: the scan moves a merged duplicate's saved state to the card.
+    [Fact]
+    public async Task Scan_MergedSymlinkDuplicate_KeepsItsFavouriteAndHidden()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "X")).FullName;
+        var link = Path.Combine(_root, "Games");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "media"));
+        var manual = new DetectedGame { Name = "X", Source = "Manual", InstallPath = Path.Combine(link, "X"), IsManuallyAdded = true };
+        manual.LibraryIdentityPath = manual.InstallPath;
+        var library = new LinuxGameLibraryStore(Path.Combine(_root, "library.json"));
+        var state = library.Load();
+        state.FavouriteGames.Add(LinuxGameLibraryStore.GameKey(manual));
+        state.HiddenGames.Add(LinuxGameLibraryStore.GameKey(manual));
+        library.Save(state);
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(100)
+        };
+
+        var vm = CreateViewModel(dlss, new FixedDetector("Heroic", new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real }),
+            new FixedDetector("Manual", manual));
+        var timer = Stopwatch.StartNew();
+        while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.StartsWith(LibraryScanStatusText.Done(1), StringComparison.Ordinal))
+            await Task.Delay(50);
+
+        // The merged card is Heroic's (detector order); a hidden card is filtered out of Games, so read the store.
+        var saved = library.Load();
+        Assert.StartsWith("heroic|", Assert.Single(saved.FavouriteGames));
+        Assert.StartsWith("heroic|", Assert.Single(saved.HiddenGames));
+    }
+
+    private MainWindowViewModel CreateViewModel(DlssManagerService dlss, params IGameDetector[] detectors)
+    {
+        var settings = new LinuxSettingsStore(Path.Combine(_root, "settings.json"), Path.Combine(_root, "cache"), Path.Combine(_root, "data"));
+        var current = settings.Load();
+        current.AutoUpdateComponents = false;
+        settings.Save(current);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var managed = new LinuxManagedComponentService(records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
+        return new MainWindowViewModel(
+            new GameLibraryScanner(detectors),
+            new LinuxGameLauncher(),
+            new NoProbe(),
+            dlss,
+            managed,
+            new GraphicsApiOverrideStore(Path.Combine(_root, "api.json")),
+            new OptiScalerVariantPreferenceStore(Path.Combine(_root, "opti.json")),
+            settings,
+            new LinuxUpdateAllService(records, managed),
+            new LinuxDlssDefaultsService(dlss, records),
+            new LinuxGameLibraryStore(Path.Combine(_root, "library.json")),
+            records);
+    }
+
+    [Fact]
+    public async Task HangingManifestRequest_FallsBackToTheCachedCopyWithinItsDeadline()
+    {
+        var cache = Directory.CreateDirectory(Path.Combine(_root, "dlss-cache")).FullName;
+        await File.WriteAllTextAsync(Path.Combine(cache, "dlss_manifest.json"), """
+            { "dlss": [ { "version": "310.2.1", "url": "https://github.com/example/dlss/releases/download/v1/dlss.zip" } ],
+              "dlssd": [], "dlssg": [], "dlssnr": [], "streamline": [] }
+            """);
+        var service = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), cache)
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(200)
+        };
+
+        var timer = Stopwatch.StartNew();
+        var manifest = await service.FetchManifestAsync();
+
+        Assert.True(timer.ElapsedMilliseconds < 3000, $"took {timer.ElapsedMilliseconds} ms");
+        Assert.Equal("310.2.1", Assert.Single(manifest.Dlss).Version);
+    }
+
+    [Fact]
+    public async Task HangingManifestRequest_WithoutACache_FailsWithATimeout()
+    {
+        var service = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "empty"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(200)
+        };
+
+        await Assert.ThrowsAsync<TimeoutException>(() => service.FetchManifestAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    private sealed class SignallingDetector(TaskCompletionSource started) : IGameDetector
+    {
+        public string Name => "Manual";
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            started.TrySetResult();
+            return Task.FromResult<IReadOnlyList<DetectedGame>>([]);
+        }
+    }
+
+    private sealed class FixedDetector(string name, params DetectedGame[] games) : IGameDetector
+    {
+        public string Name => name;
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DetectedGame>>(games.Select(g => g.ShallowClone()).ToArray());
+    }
+
+    private sealed class FailingDetector : IGameDetector
+    {
+        public string Name => "BrokenLauncher";
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+            => throw new IOException("library unreadable");
+    }
+
+    private sealed class NoProbe : IGameRuntimeProbe
+    {
+        public Task ProbeAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+}

@@ -95,7 +95,8 @@ public sealed class ManifestInstallWarningTests
     [Fact]
     public async Task Find_IgnoresAManifestTitleFoundOnlyInTheFolderPath()
     {
-        // "Witcher Mod Kit" resolves to the Witcher title from path evidence alone; that game's warning must not attach.
+        // "Witcher Mod Kit" sits in a folder named after the Witcher title. Since #62 a parent folder no
+        // longer gives it that title (its own name is not part of it), and the game's warning must not attach.
         var json = $$"""
         {
           "version": 4,
@@ -109,8 +110,16 @@ public sealed class ManifestInstallWarningTests
         var games = await policy.ApplyAsync([tool]);
 
         var applied = Assert.Single(games);
-        Assert.Equal("The Witcher 3: Wild Hunt — Remastered", applied.CanonicalManifestName);
+        Assert.Equal("Witcher Mod Kit", applied.CanonicalManifestName);
         Assert.Null(ManifestInstallWarning.Find(applied, ManagedComponentKind.RenoDX));
+
+        // A card whose own name is part of the title, inside a folder carrying the whole title, does get the
+        // title from the path (repack layout) — and still not the title's warning, which is a title policy.
+        var repack = Game("Wild Hunt Remastered");
+        repack.InstallPath = Path.Combine(Path.GetTempPath(), "The Witcher 3 Wild Hunt Remastered (GOG)", "game");
+        var fromPath = Assert.Single(await policy.ApplyAsync([repack]));
+        Assert.Equal("The Witcher 3: Wild Hunt — Remastered", fromPath.CanonicalManifestName);
+        Assert.Null(ManifestInstallWarning.Find(fromPath, ManagedComponentKind.RenoDX));
     }
 
     [Theory]

@@ -112,6 +112,50 @@ public sealed class LinuxGameLibraryState
     private static string? NormalizeOptionalPath(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : NormalizePath(value);
 
+    /// <summary>
+    /// Removes the manual entries behind a library card. A card can be a manual entry merged with a
+    /// launcher entry for the same folder spelt differently (symlink, trailing separator) or moved by a
+    /// manifest install-path override, so every path the card stands for is compared by filesystem
+    /// identity (Refs #55). Returns how many entries were removed.
+    /// </summary>
+    public int RemoveManualEntriesFor(RHI.Core.Models.DetectedGame game)
+    {
+        var paths = new[] { game.InstallPath, game.ManifestInstallRoot, game.LibraryIdentityPath }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => RHI.Core.Services.PathIdentity.Canonicalize(path!))
+            .ToHashSet(StringComparer.Ordinal);
+        return ManualGames.RemoveAll(entry => paths.Contains(RHI.Core.Services.PathIdentity.Canonicalize(entry.InstallPath)));
+    }
+
+    /// <summary>
+    /// A card that absorbed duplicates (another launcher's entry, a symlink spelling of its folder) adopts
+    /// the library state saved under their keys: favourite and hidden are carried over, a game edit or HDR
+    /// profile moves when the card has none of its own (an existing one is never overwritten, and the
+    /// duplicate's entry then stays where it is). Returns whether anything moved (Refs #55).
+    /// </summary>
+    public bool AdoptMergedKeys(RHI.Core.Models.DetectedGame game)
+    {
+        var key = LinuxGameLibraryStore.GameKey(game);
+        var changed = false;
+        foreach (var alias in game.MergedAliases)
+        {
+            var old = LinuxGameLibraryStore.GameKey(alias);
+            if (string.Equals(old, key, StringComparison.OrdinalIgnoreCase)) continue;
+            if (FavouriteGames.Remove(old)) { FavouriteGames.Add(key); changed = true; }
+            if (HiddenGames.Remove(old)) { HiddenGames.Add(key); changed = true; }
+            changed |= Move(GameEdits, old, key);
+            changed |= Move(HdrProfiles, old, key);
+        }
+        return changed;
+    }
+
+    private static bool Move<T>(Dictionary<string, T> entries, string from, string to)
+    {
+        if (entries.ContainsKey(to) || !entries.Remove(from, out var value)) return false;
+        entries[to] = value;
+        return true;
+    }
+
     private static string NormalizePath(string value)
     {
         try { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim())); }
@@ -190,13 +234,18 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
         => GameKey(game, string.IsNullOrWhiteSpace(game.LibraryIdentityPath) ? game.InstallPath : game.LibraryIdentityPath);
 
     /// <summary>The key <paramref name="game"/> would have with <paramref name="identityPath"/> as its library folder.</summary>
-    public static string GameKey(DetectedGame game, string identityPath)
+    public static string GameKey(DetectedGame game, string identityPath) => GameKey(game.Source, identityPath, game.SteamAppId);
+
+    /// <summary>The key a card stored under before it was merged into another (see <see cref="DetectedGame.MergedAliases"/>).</summary>
+    public static string GameKey(LibraryEntryAlias alias) => GameKey(alias.Source, alias.IdentityPath, alias.SteamAppId);
+
+    private static string GameKey(string? sourceName, string identityPath, int? steamAppId)
     {
-        var source = (game.Source ?? "").Trim().ToLowerInvariant();
+        var source = (sourceName ?? "").Trim().ToLowerInvariant();
         string path;
         try { path = Path.GetFullPath(identityPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant(); }
         catch { path = (identityPath ?? "").Trim().ToLowerInvariant(); }
-        var app = game.SteamAppId is int id ? $"steam:{id}" : "nosteam";
+        var app = steamAppId is int id ? $"steam:{id}" : "nosteam";
         return $"{source}|{app}|{path}";
     }
 

@@ -684,6 +684,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _scanner = scanner;
         _launcher = launcher;
         _runtimeProbe = runtimeProbe;
+        _runtimeProbe.LateMetadataAvailable += OnLateProbeMetadata;
         _dlss = dlss;
         _managedComponents = managedComponents;
         _apiOverrideStore = apiOverrideStore ?? new GraphicsApiOverrideStore();
@@ -908,10 +909,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task InitializeAsync()
     {
         var neuralVersionCatalogTask = EnsureNeuralVersionCatalogAsync();
-        IsBusy = true;
+        // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
+        var dlssManifestTask = LoadDlssManifestAsync();
+        await RefreshAsync();
+        await dlssManifestTask;
+        await neuralVersionCatalogTask;
+        RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
+    }
+
+    /// <summary>A merged card took over a duplicate's favourite/hidden/edit state; persist the move.</summary>
+    private void SaveAdoptedLibraryState()
+    {
+        try { _libraryStore.Save(_libraryState); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The card already shows the adopted state; the next library-state save persists it.
+            AppLog.Warn("library", "Could not save library state adopted from merged duplicates", ex);
+        }
+    }
+
+    private async Task LoadDlssManifestAsync()
+    {
         try
         {
-            StatusText = L("Carregando o manifesto de DLSS…", "Loading DLSS manifest…");
             var manifest = await _dlss.FetchManifestAsync();
             FillVersions(DlssSrVersions, manifest.Dlss.Select(x => x.Version));
             FillVersions(DlssRrVersions, manifest.Dlssd.Select(x => x.Version));
@@ -932,16 +952,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedDlssFgVersion = DlssFgVersions.FirstOrDefault();
             SelectedDlssNrVersion = DlssNrVersions.FirstOrDefault();
             SelectedStreamlineVersion = StreamlineVersions.FirstOrDefault();
+            NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message);
+            // Appended as a notice: this can land after the scan, whose problems notice or the selected
+            // game's Ready line must stay on screen (Refs #43).
+            StatusText = _statusNotice.Raise(LF("Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}", ex.Message), StatusText);
         }
-        finally { IsBusy = false; }
-
-        await RefreshAsync();
-        await neuralVersionCatalogTask;
-        RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
     // Computed action properties in Extras depend on IsBusy, but the initial full-library
@@ -1323,6 +1341,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// A slow PCGamingWiki answer arrived after the selection finished without it (Refs #54): drop the
+    /// stale probe result and, when that game is still selected and idle, analyse it again (the answer
+    /// is cached by then, so this is quick).
+    /// </summary>
+    private void OnLateProbeMetadata(DetectedGame game) => Dispatcher.UIThread.Post(() =>
+    {
+        _probeCache.Remove(Key(game));
+        if (ReferenceEquals(SelectedGame, game) && !IsBusy && !IsSelectionProbeBusy)
+            OnSelectedGameChanged(game);
+    });
+
     private void ApplyProbeResult(ProbeCacheEntry result)
     {
         Components.Clear();
@@ -1367,7 +1397,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             SelectedGame = null;
 
-            var found = await _scanner.ScanAsync(onlyDetectors);
+            var scan = await _scanner.ScanWithReportAsync(onlyDetectors);
+            var found = scan.Games;
             // Re-key records older builds stored under a Heroic game's folder while the game is still
             // there, so they keep matching after it moves (Refs #38).
             TrySaveStore(() => _deploymentRecords.MigrateGameKeys(found));
@@ -1382,9 +1413,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? null
                 : _allGames.Where(g => _probeCache.ContainsKey(Key(g))).ToDictionary(Key, StringComparer.Ordinal);
             var merged = new List<DetectedGame>(found.Count);
+            var adoptedMergedKeys = false;
             foreach (var game in found)
             {
                 game.LibraryIdentityPath ??= game.InstallPath;
+                adoptedMergedKeys |= _libraryState.AdoptMergedKeys(game);
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
                 if (previous is not null && previous.TryGetValue(libraryKey, out var kept))
                 {
@@ -1400,6 +1433,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                 merged.Add(game);
             }
+            if (adoptedMergedKeys) SaveAdoptedLibraryState();
             _allGames.Clear();
             _allGames.AddRange(merged);
             ApplyFilter();
@@ -1408,7 +1442,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
-            StatusText = LF("Verificação concluída — {0} jogos detectados", "Scan complete — {0} games detected", _allGames.Count);
+            // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
+            var scanProblems = LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath);
+            var scanDone = LibraryScanStatusText.Done(_allGames.Count);
+            StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
         }
         catch (Exception ex)
         {
@@ -3016,14 +3053,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task RemoveManualGameAsync()
     {
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
-        var installPath = Path.GetFullPath(selected.InstallPath);
-        _libraryState = _libraryStore.Load();
-        _libraryState.ManualGames.RemoveAll(entry =>
-        {
-            try { return Path.GetFullPath(entry.InstallPath).Equals(installPath, StringComparison.OrdinalIgnoreCase); }
-            catch { return false; }
-        });
-        if (TrySaveStore(() => _libraryStore.Save(_libraryState)) is not null) return;
+        // Mutate a copy; the live state changes only once the save succeeded.
+        var state = _libraryStore.Load();
+        state.RemoveManualEntriesFor(selected);
+        if (TrySaveStore(() => _libraryStore.Save(state)) is not null) return;
+        _libraryState = state;
         await RefreshAsync(ManualOnly);
         StatusText = LF("{0} removido da biblioteca manual. Os arquivos do jogo não foram alterados.", "{0} removed from the manual library. Game files were not changed.", selected.Name);
     }

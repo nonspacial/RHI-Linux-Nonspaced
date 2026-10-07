@@ -67,4 +67,164 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         Assert.Equal("Wine", merged.Source);
         Assert.True(merged.RequiresExplicitPatchTarget);
     }
+
+    [Fact]
+    public async Task ManualDuplicateOfALauncherEntry_StaysRemovableAndKeepsTheChosenExe()
+    {
+        var manualExe = Path.Combine(_root, "bin", "Game.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(manualExe)!);
+        var heroic = Game("Game", "Heroic", _root);
+        heroic.ExecutablePath = Path.Combine(_root, "Launcher.exe");
+        heroic.HeroicAppName = "abc123";
+        var manual = Game("My Game", "Manual", _root + Path.DirectorySeparatorChar);
+        manual.IsManuallyAdded = true;
+        manual.ExecutablePath = manualExe;
+        manual.BinaryDirectory = Path.GetDirectoryName(manualExe);
+        manual.UserGraphicsApiOverride = GraphicsApi.Vulkan;
+
+        var merged = Assert.Single(await new GameLibraryScanner([new FixedDetector("Heroic", heroic), new FixedDetector("Manual", manual)]).ScanAsync());
+
+        Assert.True(merged.IsManuallyAdded);
+        Assert.Equal(manualExe, merged.ExecutablePath);
+        Assert.Equal(Path.GetDirectoryName(manualExe), merged.BinaryDirectory);
+        Assert.Equal(GraphicsApi.Vulkan, merged.UserGraphicsApiOverride);
+        Assert.Equal(("Game", "Heroic", "abc123"), (merged.Name, merged.Source, merged.HeroicAppName));
+    }
+
+    [Fact]
+    public async Task Merge_DoesNotLetAnotherSourcesGuessConfirmAFailClosedTarget()
+    {
+        var lutris = Game("Game", "Lutris", _root);
+        lutris.RequiresExplicitPatchTarget = true;
+        var wine = Game("Game", "Wine", _root);
+        wine.ExecutablePath = Path.Combine(_root, "Launcher.exe");
+        wine.BinaryDirectory = _root;
+
+        var merged = Assert.Single(await new GameLibraryScanner([new FixedDetector("Lutris", lutris), new FixedDetector("Wine", wine)]).ScanAsync());
+
+        Assert.True(merged.RequiresExplicitPatchTarget);
+        Assert.False(merged.HasConfirmedPatchTarget);
+    }
+
+    [Fact]
+    public async Task OneFolderThroughASymlink_IsOneCard_ButCaseVariantsAreTwoFolders()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "Games", "Game")).FullName;
+        var link = Path.Combine(_root, "home-games");
+        Directory.CreateSymbolicLink(link, Path.GetDirectoryName(real)!);
+        var lower = Directory.CreateDirectory(Path.Combine(_root, "media", "Games", "game")).FullName;
+
+        var games = await new GameLibraryScanner(
+        [
+            new FixedDetector("Heroic", Game("Game", "Heroic", Path.Combine(link, "Game"))),
+            new FixedDetector("Wine", Game("Game", "Wine", real), Game("game", "Wine", lower))
+        ]).ScanAsync();
+
+        Assert.Equal(2, games.Count);
+        Assert.Contains(games, g => g.Source == "Heroic");
+        Assert.Contains(games, g => g.InstallPath == lower);
+    }
+
+    [Fact]
+    public void Merge_FillsEverySettableFieldADuplicateKnows()
+    {
+        // Identity and per-session state are owned by the first entry or applied after the scan.
+        string[] owned = [nameof(DetectedGame.Name), nameof(DetectedGame.InstallPath), nameof(DetectedGame.Source),
+            nameof(DetectedGame.IsFavourite), nameof(DetectedGame.IsHidden)];
+        var properties = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite && !owned.Contains(p.Name)).ToArray();
+        var full = new DetectedGame();
+        foreach (var property in properties) property.SetValue(full, Sample(property.PropertyType));
+        var empty = new DetectedGame();
+
+        var merged = GameLibraryScanner.Merge([empty, full]);
+
+        var lost = properties.Where(p => Equals(p.GetValue(merged), p.GetValue(new DetectedGame()))).Select(p => p.Name).ToArray();
+        Assert.Empty(lost);
+    }
+
+    // w1-policy review finding 7: a renamed/favourite/hidden manual card at a symlink spelling merges into
+    // the launcher's card; its saved library state must follow it, not vanish.
+    [Fact]
+    public async Task MergedDuplicate_LibraryStateSavedUnderItsKey_IsAdoptedByTheMergedCard()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "X")).FullName;
+        var link = Path.Combine(_root, "Games");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "media"));
+        var manual = new DetectedGame { Name = "X", Source = "Manual", InstallPath = Path.Combine(link, "X"), IsManuallyAdded = true };
+        var heroic = Game("X", "Heroic", real);
+        var manualKey = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(manual);
+        var state = new RHI.Platform.Linux.Settings.LinuxGameLibraryState
+        {
+            FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { manualKey },
+            HiddenGames = new(StringComparer.OrdinalIgnoreCase) { manualKey },
+            GameEdits = new(StringComparer.OrdinalIgnoreCase) { [manualKey] = new() { LaunchProvider = "Manual" } }
+        };
+
+        var card = Assert.Single(await new GameLibraryScanner([new FixedDetector("Heroic", heroic), new FixedDetector("Manual", manual)]).ScanAsync());
+        var cardKey = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(card);
+
+        Assert.NotEqual(manualKey, cardKey);
+        Assert.True(state.AdoptMergedKeys(card));
+        Assert.Contains(cardKey, state.FavouriteGames);
+        Assert.Contains(cardKey, state.HiddenGames);
+        Assert.Equal("Manual", state.GameEdits[cardKey].LaunchProvider);
+        Assert.DoesNotContain(manualKey, state.FavouriteGames);
+        Assert.False(state.AdoptMergedKeys(card)); // nothing left to move
+    }
+
+    [Fact]
+    public void AdoptMergedKeys_NeverOverwritesTheCardsOwnEdit()
+    {
+        var card = new DetectedGame
+        {
+            Name = "X", Source = "Heroic", InstallPath = "/games/X",
+            MergedAliases = [new LibraryEntryAlias("Manual", "/home/u/Games/X", null)]
+        };
+        var cardKey = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(card);
+        var aliasKey = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(card.MergedAliases[0]);
+        var state = new RHI.Platform.Linux.Settings.LinuxGameLibraryState
+        {
+            GameEdits = new(StringComparer.OrdinalIgnoreCase)
+            {
+                [cardKey] = new() { LaunchProvider = "Heroic" },
+                [aliasKey] = new() { LaunchProvider = "Manual" }
+            }
+        };
+
+        Assert.False(state.AdoptMergedKeys(card));
+        Assert.Equal("Heroic", state.GameEdits[cardKey].LaunchProvider);
+        Assert.Equal("Manual", state.GameEdits[aliasKey].LaunchProvider); // the duplicate's edit is kept, not deleted
+    }
+
+    [Fact]
+    public void RemoveManualEntriesFor_MatchesTheFolderHoweverItIsSpelt()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_root, "media", "X")).FullName;
+        var link = Path.Combine(_root, "link");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "media"));
+        var state = new RHI.Platform.Linux.Settings.LinuxGameLibraryState
+        {
+            ManualGames = [new() { Name = "X", InstallPath = Path.Combine(link, "X") + "/" }, new() { Name = "Y", InstallPath = _root }]
+        };
+
+        var removed = state.RemoveManualEntriesFor(new DetectedGame { Name = "X", InstallPath = real, IsManuallyAdded = true });
+
+        Assert.Equal(1, removed);
+        Assert.Equal("Y", Assert.Single(state.ManualGames).Name);
+    }
+
+    private static object? Sample(Type type)
+    {
+        var t = Nullable.GetUnderlyingType(type) ?? type;
+        if (t == typeof(string)) return "x";
+        if (t == typeof(bool)) return true;
+        if (t == typeof(int)) return 7;
+        if (t == typeof(GraphicsApi)) return GraphicsApi.DirectX11;
+        if (t == typeof(GraphicsApiConfidence)) return GraphicsApiConfidence.Medium;
+        if (t == typeof(PeArchitecture)) return PeArchitecture.X64;
+        if (t == typeof(IReadOnlyList<GraphicsApi>)) return new[] { GraphicsApi.DirectX11 };
+        if (t == typeof(IReadOnlyDictionary<string, string>)) return new Dictionary<string, string> { ["k"] = "v" };
+        if (t == typeof(IReadOnlyList<LibraryEntryAlias>)) return new[] { new LibraryEntryAlias("Manual", "/x", null) };
+        throw new InvalidOperationException($"Add a sample for {type}");
+    }
 }
