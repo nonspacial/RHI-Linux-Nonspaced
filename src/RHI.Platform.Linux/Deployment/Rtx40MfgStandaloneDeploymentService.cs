@@ -205,6 +205,11 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (IsBinkProxy(selectedProxy))
             return ComponentOperationResult.Fail("Proxy Bink requer preservar/renomear a DLL original para *Hooked.dll. O RHI-Linux ainda não automatiza esse chaining; escolha outro proxy.");
 
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
+
         var binaryDir = ResolveBinaryDirectory(game)!;
         var targetPath = Path.Combine(binaryDir, selectedProxy);
         if (IsRhiManagedPath(game, targetPath))

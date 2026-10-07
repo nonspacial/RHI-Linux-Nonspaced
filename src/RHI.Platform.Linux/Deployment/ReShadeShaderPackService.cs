@@ -923,7 +923,7 @@ public sealed class ReShadeShaderPackService
     private PackSettings LoadPackSettings()
     {
         var settings = _settingsFile.Load().Value ?? new PackSettings();
-        settings.ExcludedFiles = new Dictionary<string, List<string>>(settings.ExcludedFiles ?? new(), StringComparer.OrdinalIgnoreCase);
+        settings.ExcludedFiles = JsonStoreMaps.CaseInsensitive(settings.ExcludedFiles);
         return settings;
     }
 

@@ -7,12 +7,16 @@ namespace RHI.Platform.Linux.Persistence;
 /// rename it over the target (atomic on one filesystem), then fsync the directory so the
 /// rename itself survives a power loss. A reader sees either the old or the new file, never
 /// a truncated one.
+/// <para>A store file that is a symlink (dotfiles kept in a repository, a config folder shared
+/// across machines) stays one: the file it points to is replaced, not the link. The replaced
+/// file keeps its permission bits unless <c>mode</c> asks for others.</para>
 /// </summary>
 public static class DurableFile
 {
     public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode = null)
     {
-        var fullPath = Path.GetFullPath(path);
+        var fullPath = FinalTarget(Path.GetFullPath(path));
+        mode ??= ExistingMode(fullPath);
         var directory = Path.GetDirectoryName(fullPath)
                         ?? throw new IOException($"{fullPath} has no parent directory.");
         Directory.CreateDirectory(directory);
@@ -35,6 +39,9 @@ public static class DurableFile
                 stream.Write(bytes);
                 stream.Flush(flushToDisk: true);
             }
+            // The create mode is filtered by the umask; set the exact bits the old file had.
+            if (mode is { } exact && !OperatingSystem.IsWindows())
+                File.SetUnixFileMode(temp, exact);
             File.Move(temp, fullPath, overwrite: true);
         }
         catch
@@ -57,6 +64,29 @@ public static class DurableFile
         }
         var directory = Path.GetDirectoryName(Path.GetFullPath(path));
         if (directory is not null) FsyncDirectory(directory);
+    }
+
+    /// <summary>The file a symlink chain ends at (absolute), or <paramref name="fullPath"/> itself.</summary>
+    private static string FinalTarget(string fullPath)
+    {
+        try
+        {
+            var info = new FileInfo(fullPath);
+            if (info.LinkTarget is null) return fullPath;
+            return info.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? fullPath;
+        }
+        catch (IOException)
+        {
+            // A link loop or an unreadable link: write the path as given (replaces the link).
+            return fullPath;
+        }
+    }
+
+    private static UnixFileMode? ExistingMode(string fullPath)
+    {
+        if (OperatingSystem.IsWindows()) return null;
+        try { return File.Exists(fullPath) ? File.GetUnixFileMode(fullPath) : null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
     }
 
     private static void TryDeleteTemp(string temp)

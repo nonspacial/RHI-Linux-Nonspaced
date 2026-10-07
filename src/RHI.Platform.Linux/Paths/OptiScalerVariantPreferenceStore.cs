@@ -48,7 +48,7 @@ public sealed class OptiScalerVariantPreferenceStore
     }
 
     private Dictionary<string, OptiScalerVariant> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, OptiScalerVariant>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, OptiScalerVariant> entries) => _file.Save(entries);
 }

@@ -59,8 +59,14 @@ public sealed class Rtx40MfgPreferenceStore
         }
     }
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file is unreadable, so an install can refuse before touching the game.</summary>
+    public void EnsureWritable()
+    {
+        lock (_gate) _file.EnsureWritable();
+    }
+
     private Dictionary<string, Rtx40MfgPreferences> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, Rtx40MfgPreferences>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, Rtx40MfgPreferences> entries) => _file.Save(entries);
 }

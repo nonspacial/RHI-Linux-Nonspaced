@@ -79,7 +79,7 @@ public sealed class LinuxGameLibraryState
         FavouriteGames = new HashSet<string>(FavouriteGames ?? [], StringComparer.OrdinalIgnoreCase);
         HiddenGames = new HashSet<string>(HiddenGames ?? [], StringComparer.OrdinalIgnoreCase);
         ManualGames ??= [];
-        GameEdits = new Dictionary<string, LinuxGameEditOverride>(GameEdits ?? new(), StringComparer.OrdinalIgnoreCase);
+        GameEdits = JsonStoreMaps.CaseInsensitive(GameEdits);
         foreach (var key in GameEdits.Keys.ToArray())
         {
             var normalized = (GameEdits[key] ?? new LinuxGameEditOverride()).Normalize();
@@ -88,7 +88,7 @@ public sealed class LinuxGameLibraryState
             else
                 GameEdits[key] = normalized;
         }
-        HdrProfiles = new Dictionary<string, LinuxHdrGameProfile>(HdrProfiles ?? new(), StringComparer.OrdinalIgnoreCase);
+        HdrProfiles = JsonStoreMaps.CaseInsensitive(HdrProfiles);
         foreach (var key in HdrProfiles.Keys.ToArray()) HdrProfiles[key] = (HdrProfiles[key] ?? new LinuxHdrGameProfile()).Normalize();
         ManualGames = ManualGames
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Name) && !string.IsNullOrWhiteSpace(entry.InstallPath))

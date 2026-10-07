@@ -52,7 +52,7 @@ public sealed class GraphicsApiOverrideStore
     }
 
     private Dictionary<string, GraphicsApi> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, GraphicsApi>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, GraphicsApi> entries) => _file.Save(entries);
 }

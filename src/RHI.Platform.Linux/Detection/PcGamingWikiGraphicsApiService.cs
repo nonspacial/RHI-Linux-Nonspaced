@@ -247,9 +247,7 @@ public sealed partial class PcGamingWikiGraphicsApiService
 
             // A cache only: an unreadable file is copied aside and rebuilt by the next store.
             var parsed = _cacheFile.Load().Value;
-            _cache = parsed is null
-                ? new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, string[]>(parsed, StringComparer.OrdinalIgnoreCase);
+            _cache = JsonStoreMaps.CaseInsensitive(parsed);
 
             return _cache;
         }

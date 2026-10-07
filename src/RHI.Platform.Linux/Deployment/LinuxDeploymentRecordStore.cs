@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -190,7 +191,7 @@ public sealed class LinuxDeploymentRecordStore
             {
                 record.Metadata = record.Metadata is null
                     ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, string>(record.Metadata, StringComparer.OrdinalIgnoreCase);
+                    : JsonStoreMaps.CaseInsensitive(record.Metadata);
             }
             _cached = records;
             _cachedStamp = stamp;

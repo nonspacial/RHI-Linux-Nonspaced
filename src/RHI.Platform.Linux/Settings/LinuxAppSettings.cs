@@ -110,11 +110,14 @@ public sealed class LinuxSettingsStore
         _file.Save(settings);
     }
 
-    /// <summary>Explicit user reset. An unreadable file is still copied aside before it is deleted.</summary>
+    /// <summary>
+    /// Explicit user reset. An unreadable file is copied aside before it is deleted; one that cannot
+    /// even be copied is renamed aside instead, and when that fails too the reset is refused
+    /// (<see cref="JsonStoreUnavailableException"/>) and the file stays untouched.
+    /// </summary>
     public LinuxAppSettings Reset()
     {
-        _file.Load();
-        if (File.Exists(SettingsPath)) File.Delete(SettingsPath);
+        _file.ResetKeepingUnreadable();
         return new LinuxAppSettings();
     }
 

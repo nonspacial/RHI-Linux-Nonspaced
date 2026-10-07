@@ -131,6 +131,11 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (!ProxyNames.Contains(selectedProxy, StringComparer.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Proxy não suportado: {selectedProxy}.");
 
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
+
         var binaryDir = ResolveBinaryDirectory(game)!;
         var targetPath = Path.Combine(binaryDir, selectedProxy);
         if (IsRhiManagedPath(game, targetPath))

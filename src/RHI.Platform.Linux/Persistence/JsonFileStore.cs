@@ -35,10 +35,11 @@ public sealed record JsonStoreQuarantineNotice(string FilePath, string? Quaranti
 /// <summary>A save was refused because the file on disk is unreadable and holds the user's data.</summary>
 public sealed class JsonStoreUnavailableException : IOException
 {
-    public JsonStoreUnavailableException(string filePath, string? quarantinePath)
+    public JsonStoreUnavailableException(string filePath, string? quarantinePath, Exception? inner = null)
         : base(quarantinePath is null
             ? $"{filePath} cannot be read and could not be copied aside. RHI will not overwrite it; fix or delete the file."
-            : $"{filePath} cannot be read; a copy was kept at {quarantinePath}. RHI will not overwrite it; fix or delete the file.")
+            : $"{filePath} cannot be read; a copy was kept at {quarantinePath}. RHI will not overwrite it; fix or delete the file.",
+            inner)
     {
         FilePath = filePath;
         QuarantinePath = quarantinePath;
@@ -51,7 +52,9 @@ public sealed class JsonStoreUnavailableException : IOException
 /// <summary>
 /// Process-wide record of quarantined store files. A file version (path, mtime, length) is copied
 /// aside at most once, an identical earlier copy is reused rather than duplicated, and listeners
-/// hear about it once. Notices raised before the UI attached are replayed to it.
+/// hear about it once. Notices raised while nobody listened are kept (at most 32) and handed to
+/// the next listener only: once delivered they are dropped, so a later listener (another view
+/// model in the same process) never receives them again.
 /// </summary>
 public static class JsonStoreQuarantine
 {
@@ -61,7 +64,10 @@ public static class JsonStoreQuarantine
     private static readonly List<JsonStoreQuarantineNotice> Pending = [];
     private static readonly List<Action<JsonStoreQuarantineNotice>> Listeners = [];
 
-    /// <summary>Attaches a listener (any thread may call it back) and replays notices raised so far.</summary>
+    /// <summary>
+    /// Attaches a listener (any thread may call it back) and hands it the notices nobody has
+    /// received yet. Dispose the result to detach it.
+    /// </summary>
     public static IDisposable Listen(Action<JsonStoreQuarantineNotice> listener)
     {
         ArgumentNullException.ThrowIfNull(listener);
@@ -70,6 +76,7 @@ public static class JsonStoreQuarantine
         {
             Listeners.Add(listener);
             replay = Pending.ToArray();
+            Pending.Clear();
         }
         foreach (var notice in replay) listener(notice);
         return new Subscription(listener);
@@ -103,9 +110,13 @@ public static class JsonStoreQuarantine
             var copy = bytes is null ? null : CopyAside(fullPath, bytes);
             Known[fullPath] = (stamp.Mtime, stamp.Length, copy);
             notice = new JsonStoreQuarantineNotice(fullPath, copy, writesRefused);
-            Pending.Add(notice);
-            if (Pending.Count > MaxPending) Pending.RemoveAt(0);
             listeners = Listeners.ToArray();
+            if (listeners.Length == 0)
+            {
+                // Kept for the first listener to attach (e.g. settings read before the UI exists).
+                Pending.Add(notice);
+                if (Pending.Count > MaxPending) Pending.RemoveAt(0);
+            }
         }
 
         foreach (var listener in listeners) listener(notice);
@@ -117,6 +128,35 @@ public static class JsonStoreQuarantine
     {
         var fullPath = Path.GetFullPath(path);
         lock (Gate) Known.Remove(fullPath);
+    }
+
+    /// <summary>
+    /// Renames a file RHI could not read (or copy) aside to <c>&lt;file&gt;.corrupt-&lt;utc&gt;</c>:
+    /// every byte is kept without having to read it. Returns the new name; throws
+    /// <see cref="JsonStoreUnavailableException"/> when even the rename is impossible.
+    /// </summary>
+    internal static string MoveAside(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var baseName = fullPath + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
+        Exception? last = null;
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var target = attempt == 0 ? baseName : $"{baseName}-{attempt}";
+            if (File.Exists(target)) continue;
+            try
+            {
+                File.Move(fullPath, target, overwrite: false);
+                Forget(fullPath);
+                return target;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                last = ex;
+                if (!File.Exists(target)) break; // not a name race: the rename itself is impossible
+            }
+        }
+        throw new JsonStoreUnavailableException(fullPath, null, last);
     }
 
     private static string? CopyAside(string fullPath, byte[] bytes)
@@ -172,6 +212,12 @@ public static class JsonStoreQuarantine
 /// and, for user data, never overwritten: <see cref="Save"/> throws
 /// <see cref="JsonStoreUnavailableException"/> until the file reads again. Saves are atomic and
 /// durable (<see cref="DurableFile"/>). Callers keep their own lock around load-modify-save.
+/// <para>A leading UTF-8 byte order mark (editors offer to add one) is ignored, as
+/// <see cref="File.ReadAllText(string)"/> did before.</para>
+/// <para>Reading is fail-closed: content the parser or the <c>parse:</c> callback rejects counts as
+/// unreadable. That includes values a newer build may write and this one does not know (an unknown
+/// enum member, a higher schema version): an older build then copies such a file aside and refuses
+/// to save over it rather than silently dropping what it cannot represent.</para>
 /// </summary>
 public sealed class JsonFileStore<T> where T : class
 {
@@ -190,16 +236,22 @@ public sealed class JsonFileStore<T> where T : class
         _kind = kind;
         var serializerOptions = options ?? new JsonSerializerOptions { WriteIndented = true };
         _parse = parse is null
-            ? bytes => JsonSerializer.Deserialize<T>(bytes, serializerOptions)
-            : bytes => parse(Encoding.UTF8.GetString(bytes));
+            ? bytes => JsonSerializer.Deserialize<T>(WithoutBom(bytes), serializerOptions)
+            : bytes => parse(Encoding.UTF8.GetString(WithoutBom(bytes)));
         _serialize = value => JsonSerializer.SerializeToUtf8Bytes(value, serializerOptions);
     }
 
     public string FilePath { get; }
 
-    public JsonStoreLoad<T> Load()
+    public JsonStoreLoad<T> Load() => Read(out _);
+
+    /// <summary>
+    /// Loads the file and hands back the exact bytes the result was parsed from (null when the
+    /// file is missing), so a staged change can later check nothing rewrote the file meanwhile.
+    /// </summary>
+    private JsonStoreLoad<T> Read(out byte[]? bytes)
     {
-        byte[] bytes;
+        bytes = null;
         try
         {
             if (!File.Exists(FilePath))
@@ -218,7 +270,7 @@ public sealed class JsonFileStore<T> where T : class
 
         // Zero bytes or whitespace holds no user data (an interrupted non-atomic write of an older
         // build); treating it as missing loses nothing and avoids blocking every later save.
-        if (IsBlank(bytes))
+        if (IsBlank(WithoutBom(bytes)))
         {
             JsonStoreQuarantine.Forget(FilePath);
             return new(JsonStoreLoadStatus.Missing, null, null);
@@ -261,7 +313,47 @@ public sealed class JsonFileStore<T> where T : class
         JsonStoreQuarantine.Forget(FilePath);
     }
 
+    /// <summary>
+    /// Prepares a change for <see cref="StagedFileCommit"/> (several files written all or nothing):
+    /// <paramref name="change"/> edits the loaded value (null when the file is missing) and returns
+    /// the value to write, or null when there is nothing to change. Nothing is written here.
+    /// Throws <see cref="JsonStoreUnavailableException"/> when the file holds unreadable user data.
+    /// </summary>
+    public StagedFileWrite? Stage(Func<T?, T?> change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+        var current = Read(out var bytes);
+        if (current.IsUnreadable && _kind == JsonStoreKind.UserData)
+            throw new JsonStoreUnavailableException(Path.GetFullPath(FilePath), current.QuarantinePath);
+        var next = change(current.Value);
+        return next is null ? null : new StagedFileWrite(Path.GetFullPath(FilePath), bytes, _serialize(next));
+    }
+
+    /// <summary>
+    /// Removes the file for an explicit user reset without losing it: a file that reads, or whose
+    /// unreadable bytes were already copied aside, is deleted; one that could not even be copied is
+    /// renamed aside instead. Throws <see cref="JsonStoreUnavailableException"/> (nothing deleted)
+    /// when that rename fails too.
+    /// </summary>
+    public void ResetKeepingUnreadable()
+    {
+        var current = Load();
+        if (!File.Exists(FilePath)) return;
+        if (current.IsUnreadable && current.QuarantinePath is null)
+        {
+            JsonStoreQuarantine.MoveAside(FilePath);
+            return;
+        }
+        File.Delete(FilePath);
+        JsonStoreQuarantine.Forget(FilePath);
+    }
+
     private bool WritesRefused => _kind == JsonStoreKind.UserData;
+
+    private static readonly byte[] Utf8Bom = [0xEF, 0xBB, 0xBF];
+
+    private static byte[] WithoutBom(byte[] bytes)
+        => bytes.AsSpan().StartsWith(Utf8Bom) ? bytes[Utf8Bom.Length..] : bytes;
 
     private static bool IsBlank(byte[] bytes)
     {

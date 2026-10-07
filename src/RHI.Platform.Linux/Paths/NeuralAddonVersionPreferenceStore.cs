@@ -93,7 +93,7 @@ public sealed class NeuralAddonVersionPreferenceStore
            && Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._+-]*$", RegexOptions.CultureInvariant);
 
     private Dictionary<string, string> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, string> entries) => _file.Save(entries);
 }

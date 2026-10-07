@@ -139,6 +139,7 @@ public sealed class App : Application
             var dlssDefaults = new LinuxDlssDefaultsService(dlss, records);
             var vm = new MainWindowViewModel(scanner, launcher, runtimeProbe, dlss, managedComponents, apiOverrideStore, optiScalerVariantStore, settingsStore, updateAll, dlssDefaults, libraryStore, records);
             tokenNoticeTarget = vm;
+            desktop.Exit += (_, _) => vm.Dispose();
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

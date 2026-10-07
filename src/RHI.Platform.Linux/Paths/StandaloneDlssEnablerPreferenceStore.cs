@@ -57,8 +57,14 @@ public sealed class StandaloneDlssEnablerPreferenceStore
         }
     }
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file is unreadable, so an install can refuse before touching the game.</summary>
+    public void EnsureWritable()
+    {
+        lock (_gate) _file.EnsureWritable();
+    }
+
     private Dictionary<string, StandaloneDlssEnablerPreferences> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, StandaloneDlssEnablerPreferences>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, StandaloneDlssEnablerPreferences> entries) => _file.Save(entries);
 }

@@ -786,7 +786,7 @@ public sealed class ReShadeAddonManagerService
     private StateDocument LoadState()
     {
         var state = _stateFile.Load().Value ?? new StateDocument();
-        state.Games = new Dictionary<string, GameState>(state.Games ?? new(), StringComparer.OrdinalIgnoreCase);
+        state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
         return state;
     }
 

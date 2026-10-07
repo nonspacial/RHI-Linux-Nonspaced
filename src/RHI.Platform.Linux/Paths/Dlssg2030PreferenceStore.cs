@@ -65,8 +65,14 @@ public sealed class Dlssg2030PreferenceStore
         }
     }
 
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file is unreadable, so an install can refuse before touching the game.</summary>
+    public void EnsureWritable()
+    {
+        lock (_gate) _file.EnsureWritable();
+    }
+
     private Dictionary<string, Dlssg2030Preferences> LoadUnsafe()
-        => new(_file.Load().Value ?? new Dictionary<string, Dlssg2030Preferences>(), StringComparer.OrdinalIgnoreCase);
+        => JsonStoreMaps.CaseInsensitive(_file.Load().Value);
 
     private void SaveUnsafe(Dictionary<string, Dlssg2030Preferences> entries) => _file.Save(entries);
 }

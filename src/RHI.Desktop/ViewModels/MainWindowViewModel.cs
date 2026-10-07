@@ -32,7 +32,7 @@ public sealed record LinuxSettingsUiSnapshot(
     string CacheRoot,
     string DataRoot);
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private static string L(string ptBr, string enUs) => UiLocalizationService.Choose(ptBr, enUs);
     private static string LF(string ptBr, string enUs, params object?[] args) => UiLocalizationService.ChooseFormat(ptBr, enUs, args);
@@ -657,9 +657,9 @@ public partial class MainWindowViewModel : ObservableObject
         _libraryStore = libraryStore ?? new LinuxGameLibraryStore();
         _deploymentRecords = deploymentRecords ?? new LinuxDeploymentRecordStore();
         _hdrProfiles = hdrProfiles ?? new LinuxHdrLaunchProfileService();
-        // Attached before the first load, for the app's lifetime (one view model per process); it
-        // also replays any store set aside earlier (e.g. settings read at startup).
-        JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
+        // Attached before the first load and detached by Dispose; it also receives any store set
+        // aside before a listener existed (e.g. settings read at startup).
+        _quarantineSubscription = JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
         _settings = _settingsStore.Load();
         _libraryState = _libraryStore.Load();
         LibraryFilterMode = _libraryState.FilterMode;
@@ -668,6 +668,22 @@ public partial class MainWindowViewModel : ObservableObject
         ReShadeManageIni = _settings.ReShadeManageIni;
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         _ = InitializeAsync();
+    }
+
+    private readonly IDisposable _quarantineSubscription;
+    private bool _disposed;
+
+    /// <summary>Detaches the process-wide store notices and stops the background update loop.</summary>
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _quarantineSubscription.Dispose();
+        try { _backgroundUpdateCts?.Cancel(); }
+        catch (ObjectDisposedException) { /* already stopped */ }
+        _backgroundUpdateCts?.Dispose();
+        _backgroundUpdateCts = null;
+        GC.SuppressFinalize(this);
     }
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
@@ -719,7 +735,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     public string ResetLinuxSettings()
     {
-        _settings = _settingsStore.Reset();
+        LinuxAppSettings? reset = null;
+        if (TrySaveStore(() => reset = _settingsStore.Reset()) is { } notReset) return notReset;
+        _settings = reset!;
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
         ReShadeManageIni = _settings.ReShadeManageIni;

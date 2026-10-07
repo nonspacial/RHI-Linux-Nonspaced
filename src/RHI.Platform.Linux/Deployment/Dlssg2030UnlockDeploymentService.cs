@@ -192,6 +192,11 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (File.Exists(iniPath))
             return ComponentOperationResult.Fail($"{IniFileName} já existe e não é gerenciado pelo RHI. A instalação foi bloqueada para não adotar/sobrescrever uma configuração externa.");
 
+        // The preference file is written last, after the download, the Wine override and the
+        // record: refuse here when it is unreadable instead of rolling all of that back (Refs #57).
+        try { _preferences.EnsureWritable(); }
+        catch (JsonStoreUnavailableException ex) { return ComponentOperationResult.Fail(ex.Message); }
+
         Dlssg2030SnapshotInfo snapshot;
         Dlssg2030CachedPayload payload;
         try

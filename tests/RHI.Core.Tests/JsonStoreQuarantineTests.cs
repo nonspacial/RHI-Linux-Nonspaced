@@ -8,6 +8,7 @@ using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
+using RHI.Platform.Linux.Ux;
 
 namespace RHI.Core.Tests;
 
@@ -150,6 +151,364 @@ public sealed class JsonStoreQuarantineTests : IDisposable
         Assert.Contains("/x/game-library.json.corrupt-20260101-000000", text);
         Assert.Contains("settings.json", refused);
         Assert.Contains("/x/settings.json.corrupt-1", refused);
+    }
+
+    // ---- Review corrections (w1/stores) ------------------------------------------------------
+
+    private static readonly byte[] Bom = [0xEF, 0xBB, 0xBF];
+
+    [Fact]
+    public void Bom_SettingsFile_LoadsAndStaysWritable()
+    {
+        // Editors offer to save with a UTF-8 BOM; File.ReadAllText (the old loader) skipped it.
+        var dir = Path.Combine(_root, "bom-settings");
+        var store = new LinuxSettingsStore(Path.Combine(dir, "settings.json"), Path.Combine(dir, "cache"), Path.Combine(dir, "data"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(store.SettingsPath, [.. Bom, .. Encoding.UTF8.GetBytes("{\"UiLanguage\":\"en\",\"VerboseLogging\":true}")]);
+
+        var loaded = store.Load();
+        Assert.True(loaded.VerboseLogging);
+        loaded.VerboseLogging = false;
+        store.Save(loaded);
+
+        Assert.False(store.Load().VerboseLogging);
+        Assert.Empty(Quarantined(store.SettingsPath));
+    }
+
+    [Fact]
+    public void Bom_PreferenceStore_LoadsAndStaysWritable()
+    {
+        var path = Path.Combine(_root, "bom-api", "game-api-overrides.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var game = Game(_root);
+        File.WriteAllBytes(path, [.. Bom, .. Encoding.UTF8.GetBytes("{\"steam:4242\":\"Vulkan\"}")]);
+        var store = new GraphicsApiOverrideStore(path);
+
+        Assert.Equal(GraphicsApi.Vulkan, store.Get(game));
+        store.Set(game, GraphicsApi.DirectX11);
+
+        Assert.Equal(GraphicsApi.DirectX11, store.Get(game));
+        Assert.Empty(Quarantined(path));
+    }
+
+    [Fact]
+    public void Bom_Only_IsAnEmptyFile()
+    {
+        var path = Path.Combine(_root, "bom-only.json");
+        File.WriteAllBytes(path, [.. Bom, (byte)'\n']);
+        var store = new JsonFileStore<Dictionary<string, string>>(path);
+
+        Assert.Equal(JsonStoreLoadStatus.Missing, store.Load().Status);
+        store.Save(new() { ["a"] = "b" });
+    }
+
+    public static TheoryData<string, string> CaseOnlyDuplicates => new()
+    {
+        { "api-overrides", "{\"/x/a\":\"DirectX11\",\"/X/A\":\"Vulkan\"}" },
+        { "optiscaler-variants", "{\"/x/a\":\"Stable\",\"/X/A\":\"Nightly\"}" },
+        { "neural-pins", "{\"/x/a|ShortFuse\":\"v1.0\",\"/X/A|shortfuse\":\"v2.0\"}" },
+        { "dlssg2030", "{\"/x/a\":{},\"/X/A\":{}}" },
+        { "rtx40-mfg", "{\"/x/a\":{},\"/X/A\":{}}" },
+        { "dlss-enabler", "{\"/x/a\":{},\"/X/A\":{}}" },
+    };
+
+    [Theory]
+    [MemberData(nameof(CaseOnlyDuplicates))]
+    public async Task CaseOnlyDuplicateKeys_AreMergedNotThrown(string store, string json)
+    {
+        // A hand edit can leave keys that differ only in case; reading and saving must not throw,
+        // and the saved file keeps one merged entry.
+        var dir = Path.Combine(_root, "dup-" + store);
+        Directory.CreateDirectory(dir);
+        var game = Game(dir);
+        var (path, read, write) = Scenario(store, dir, game);
+        File.WriteAllText(path, json);
+
+        read();
+        Assert.True(await write());
+
+        Assert.Empty(Quarantined(path));
+        var saved = File.ReadAllText(path);
+        Assert.Equal(1, System.Text.RegularExpressions.Regex.Count(saved, "\"/x/a", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+    }
+
+    [Fact]
+    public void CaseOnlyDuplicateKeys_LaterEntryWins()
+    {
+        var path = Path.Combine(_root, "dup-order", "game-api-overrides.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{\"steam:4242\":\"DirectX11\",\"STEAM:4242\":\"Vulkan\"}");
+
+        Assert.Equal(GraphicsApi.Vulkan, new GraphicsApiOverrideStore(path).Get(Game(_root)));
+    }
+
+    [Fact]
+    public void CaseOnlyDuplicateKeys_LibraryEditsAndHdr_LoadInsteadOfQuarantine()
+    {
+        var store = new LinuxGameLibraryStore(Path.Combine(_root, "dup-library", "game-library.json"));
+        Directory.CreateDirectory(Path.GetDirectoryName(store.LibraryPath)!);
+        File.WriteAllText(store.LibraryPath, """
+            { "GameEdits": { "steam|steam:1|/g/a": { "LaunchProvider": "One" }, "steam|steam:1|/G/A": { "LaunchProvider": "Two" } },
+              "HdrProfiles": { "k": { }, "K": { } } }
+            """);
+
+        var state = store.Load();
+
+        Assert.Equal("Two", Assert.Single(state.GameEdits).Value.LaunchProvider);
+        Assert.Single(state.HdrProfiles);
+        Assert.Empty(Quarantined(store.LibraryPath));
+        store.Save(state);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void SettingsReset_UnreadableFileThatCannotBeCopied_IsRenamedAsideNotDeleted()
+    {
+        var dir = Path.Combine(_root, "reset-unreadable");
+        var store = new LinuxSettingsStore(Path.Combine(dir, "settings.json"), Path.Combine(dir, "cache"), Path.Combine(dir, "data"));
+        Directory.CreateDirectory(dir);
+        var original = Encoding.UTF8.GetBytes("{\"UiLanguage\":\"pt-BR\"}");
+        File.WriteAllBytes(store.SettingsPath, original);
+        File.SetUnixFileMode(store.SettingsPath, UnixFileMode.None); // unreadable: no copy possible
+        try
+        {
+            store.Reset();
+
+            Assert.False(File.Exists(store.SettingsPath));
+            var aside = Assert.Single(Quarantined(store.SettingsPath));
+            File.SetUnixFileMode(aside, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            Assert.Equal(original, File.ReadAllBytes(aside));
+        }
+        finally
+        {
+            foreach (var file in Directory.GetFiles(dir)) File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void SettingsReset_WhenTheFileCanNeitherBeCopiedNorRenamed_IsRefusedAndKeepsIt()
+    {
+        var dir = Path.Combine(_root, "reset-stuck");
+        var store = new LinuxSettingsStore(Path.Combine(dir, "settings.json"), Path.Combine(dir, "cache"), Path.Combine(dir, "data"));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(store.SettingsPath, "{}");
+        File.SetUnixFileMode(store.SettingsPath, UnixFileMode.None);
+        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute); // no rename, no delete
+        try
+        {
+            Assert.Throws<JsonStoreUnavailableException>(() => store.Reset());
+            Assert.True(File.Exists(store.SettingsPath));
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            File.SetUnixFileMode(store.SettingsPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+    }
+
+    [Fact]
+    public void SettingsReset_UnreadableButCopiedFile_IsDeletedWithItsCopyKept()
+    {
+        var dir = Path.Combine(_root, "reset-garbage");
+        var store = new LinuxSettingsStore(Path.Combine(dir, "settings.json"), Path.Combine(dir, "cache"), Path.Combine(dir, "data"));
+        Directory.CreateDirectory(dir);
+        var original = Garbage("reset");
+        File.WriteAllBytes(store.SettingsPath, original);
+
+        store.Reset();
+
+        Assert.False(File.Exists(store.SettingsPath));
+        Assert.Equal(original, File.ReadAllBytes(Assert.Single(Quarantined(store.SettingsPath))));
+    }
+
+    [Fact]
+    public void QuarantineNotices_RaisedWithoutListener_GoToOneListenerOnly_AndDisposedListenersHearNothing()
+    {
+        // Serialised against other listeners by the notice path filter, not by global state.
+        var path = Path.Combine(_root, "notices.json");
+        var full = Path.GetFullPath(path);
+        var first = new List<string>();
+        var second = new List<string>();
+
+        // Delivered to whoever listens now (or kept for the next listener when nobody does).
+        using (JsonStoreQuarantine.Listen(n => { if (n.FilePath == full) lock (first) first.Add(n.FilePath); }))
+        {
+            File.WriteAllBytes(path, Garbage("notice"));
+            new JsonFileStore<Dictionary<string, string>>(path).Load();
+        }
+        using (JsonStoreQuarantine.Listen(n => { if (n.FilePath == full) lock (second) second.Add(n.FilePath); }))
+        {
+            File.WriteAllBytes(path, Garbage("notice-two-longer"));
+            new JsonFileStore<Dictionary<string, string>>(path).Load();
+        }
+
+        Assert.Equal([full], first);  // the disposed first listener missed the second event
+        Assert.Equal([full], second); // and the second listener was not handed the first again
+    }
+
+    [Fact]
+    public void QuarantineNotices_PendingAreHandedOutOnce()
+    {
+        var path = Path.Combine(_root, "pending.json");
+        var full = Path.GetFullPath(path);
+        File.WriteAllBytes(path, Garbage("pending"));
+        var replays = new List<int>();
+        for (var i = 0; i < 2; i++)
+        {
+            var seen = 0;
+            using (JsonStoreQuarantine.Listen(n => { if (n.FilePath == full) Interlocked.Increment(ref seen); }))
+            {
+                if (i == 0) new JsonFileStore<Dictionary<string, string>>(path).Load();
+            }
+            replays.Add(seen);
+        }
+
+        Assert.Equal([1, 0], replays);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void DurableFile_SymlinkedStoreFile_StaysALinkAndTheTargetKeepsItsMode()
+    {
+        var dir = Path.Combine(_root, "symlink");
+        var target = Path.Combine(dir, "dotfiles", "settings.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "{}");
+        File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var link = Path.Combine(dir, "settings.json");
+        File.CreateSymbolicLink(link, Path.Combine("dotfiles", "settings.json"));
+
+        new JsonFileStore<Dictionary<string, string>>(link).Save(new() { ["k"] = "v" });
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Contains("\"k\"", File.ReadAllText(target));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(target));
+        Assert.Single(Directory.GetFiles(Path.GetDirectoryName(target)!));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void DurableFile_Replace_KeepsAModeWiderThanTheUmaskAllows()
+    {
+        var path = Path.Combine(_root, "mode", "shared.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{}");
+        var shared = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite;
+        File.SetUnixFileMode(path, shared);
+
+        new JsonFileStore<Dictionary<string, string>>(path).Save(new() { ["k"] = "v" });
+
+        Assert.Equal(shared, File.GetUnixFileMode(path));
+    }
+
+    [Fact]
+    public void Motd_UnreadableStateFile_IsCopiedAsideAndReplacedAtomically()
+    {
+        var path = Path.Combine(_root, "motd", "motd-state.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var original = Garbage("motd");
+        File.WriteAllBytes(path, original);
+        using var http = new HttpClient(new RouteHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
+        var motd = new LinuxMotdService(http, path, "https://motd.test/motd.md");
+
+        motd.MarkSeen(new LinuxMotdMessage("hello", "abc123", false));
+
+        Assert.Contains("abc123", File.ReadAllText(path));
+        Assert.Equal(original, File.ReadAllBytes(Assert.Single(Quarantined(path))));
+        Assert.Equal(2, Directory.GetFiles(Path.GetDirectoryName(path)!).Length); // no stray .tmp
+    }
+
+    [Fact]
+    public async Task Motd_SeenHash_IsRemembered()
+    {
+        var path = Path.Combine(_root, "motd-seen", "motd-state.json");
+        using var http = new HttpClient(new RouteHandler(_ => Text("Hello from the fork")));
+        var motd = new LinuxMotdService(http, path, "https://motd.test/motd.md");
+
+        var first = await motd.FetchAsync();
+        motd.MarkSeen(first!);
+
+        Assert.Null(await motd.FetchAsync());
+        Assert.True((await motd.FetchAsync(includeSeen: true))!.AlreadySeen);
+    }
+
+    // ---- Staged multi-file commit (relocation repair) ---------------------------------------
+
+    [Fact]
+    public void StagedCommit_WritesEveryFile()
+    {
+        var a = new JsonFileStore<Dictionary<string, string>>(Path.Combine(_root, "staged-ok", "a.json"));
+        var b = new JsonFileStore<Dictionary<string, string>>(Path.Combine(_root, "staged-ok", "b.json"));
+        a.Save(new() { ["x"] = "1" });
+
+        StagedFileCommit.Commit([
+            a.Stage(map => { map!["x"] = "2"; return map; })!,
+            b.Stage(_ => new() { ["y"] = "3" })!
+        ]);
+
+        Assert.Equal("2", a.Load().Value!["x"]);
+        Assert.Equal("3", b.Load().Value!["y"]);
+    }
+
+    [Fact]
+    public void StagedCommit_FileChangedSinceStaging_WritesNothing()
+    {
+        var a = new JsonFileStore<Dictionary<string, string>>(Path.Combine(_root, "staged-race", "a.json"));
+        var b = new JsonFileStore<Dictionary<string, string>>(Path.Combine(_root, "staged-race", "b.json"));
+        a.Save(new() { ["x"] = "1" });
+        b.Save(new() { ["y"] = "1" });
+        var writes = new[] { a.Stage(_ => new() { ["x"] = "2" })!, b.Stage(_ => new() { ["y"] = "2" })! };
+        b.Save(new() { ["y"] = "someone else" });
+
+        Assert.Throws<StagedFileCommitException>(() => StagedFileCommit.Commit(writes));
+
+        Assert.Equal("1", a.Load().Value!["x"]);
+        Assert.Equal("someone else", b.Load().Value!["y"]);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void StagedCommit_SecondWriteFails_FirstFileGetsItsBytesBack()
+    {
+        var okDir = Path.Combine(_root, "staged-fail", "ok");
+        var lockedDir = Path.Combine(_root, "staged-fail", "locked");
+        var a = new JsonFileStore<Dictionary<string, string>>(Path.Combine(okDir, "a.json"));
+        var created = new JsonFileStore<Dictionary<string, string>>(Path.Combine(okDir, "new.json"));
+        var b = new JsonFileStore<Dictionary<string, string>>(Path.Combine(lockedDir, "b.json"));
+        a.Save(new() { ["x"] = "1" });
+        b.Save(new() { ["y"] = "1" });
+        var before = File.ReadAllBytes(a.FilePath);
+        var writes = new[]
+        {
+            a.Stage(_ => new() { ["x"] = "2" })!,
+            created.Stage(_ => new() { ["n"] = "2" })!,
+            b.Stage(_ => new() { ["y"] = "2" })!
+        };
+        File.SetUnixFileMode(lockedDir, UnixFileMode.UserRead | UnixFileMode.UserExecute); // no temp file there
+        try
+        {
+            var error = Assert.Throws<StagedFileCommitException>(() => StagedFileCommit.Commit(writes));
+
+            Assert.Empty(error.NotRestored);
+            Assert.Equal(before, File.ReadAllBytes(a.FilePath));
+            Assert.False(File.Exists(created.FilePath));
+            Assert.Equal("1", b.Load().Value!["y"]);
+        }
+        finally
+        {
+            File.SetUnixFileMode(lockedDir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
+    public void StagedCommit_UnreadableUserData_RefusesToStage()
+    {
+        var path = Path.Combine(_root, "staged-unreadable.json");
+        File.WriteAllBytes(path, Garbage("staged"));
+
+        Assert.Throws<JsonStoreUnavailableException>(() =>
+            new JsonFileStore<Dictionary<string, string>>(path).Stage(_ => new()));
     }
 
     // ---- Every store -------------------------------------------------------------------------
