@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -23,7 +24,9 @@ internal sealed record RenoDxIniOverrideApplyResult(
 /// Conservative [renodx] manifest override editor. The upstream manifest is allowed to
 /// provide per-game compatibility values, but Linux teardown must remain reversible: original
 /// values are remembered, keys created by RHI are removed on teardown, and user edits made after
-/// deployment are never overwritten during a later update or rollback.
+/// deployment are never overwritten during a later update or rollback. Every write replaces the
+/// owner's ReShade.ini atomically (temp file, fsync, rename, mode kept), so a crash or a full disk
+/// leaves the previous bytes in place (#121).
 /// </summary>
 internal static class RenoDxIniOverrideManager
 {
@@ -33,7 +36,8 @@ internal static class RenoDxIniOverrideManager
     public static RenoDxIniOverrideApplyResult Apply(
         string binaryDirectory,
         IReadOnlyDictionary<string, string> requested,
-        RenoDxIniOverrideState? previousState = null)
+        RenoDxIniOverrideState? previousState = null,
+        Func<Stream, Stream>? wrapOutput = null)
     {
         if (requested.Count == 0)
             return new(previousState, 0, 0);
@@ -120,7 +124,7 @@ internal static class RenoDxIniOverrideManager
         }
 
         if (changed)
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            WriteLines(iniPath, lines, wrapOutput);
 
         var state = new RenoDxIniOverrideState(
             iniPath,
@@ -129,7 +133,7 @@ internal static class RenoDxIniOverrideManager
         return new(state, applied, preservedUserEdits);
     }
 
-    public static void Cleanup(RenoDxIniOverrideState? state)
+    public static void Cleanup(RenoDxIniOverrideState? state, Func<Stream, Stream>? wrapOutput = null)
     {
         if (state is null || !File.Exists(state.IniPath)) return;
 
@@ -168,7 +172,7 @@ internal static class RenoDxIniOverrideManager
         }
 
         if (changed)
-            File.WriteAllLines(state.IniPath, lines, new UTF8Encoding(false));
+            WriteLines(state.IniPath, lines, wrapOutput);
     }
 
 
@@ -219,8 +223,16 @@ internal static class RenoDxIniOverrideManager
             lines.Insert(end, $"{normalizedKey}={normalizedValue}");
         }
 
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+        WriteLines(iniPath, lines, wrapOutput: null);
         return true;
+    }
+
+    // Same bytes File.WriteAllLines produced (UTF-8 without BOM, "\n" after every line), written atomically.
+    private static void WriteLines(string path, IReadOnlyList<string> lines, Func<Stream, Stream>? wrapOutput)
+    {
+        var text = new StringBuilder();
+        foreach (var line in lines) text.Append(line).Append('\n');
+        AtomicFile.WriteAllBytes(path, new UTF8Encoding(false).GetBytes(text.ToString()), wrapOutput);
     }
 
     public static string Serialize(RenoDxIniOverrideState state)

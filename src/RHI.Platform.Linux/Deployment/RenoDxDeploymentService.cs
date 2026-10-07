@@ -352,30 +352,17 @@ public sealed class RenoDxDeploymentService
                     engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
                 }
             }
-            catch
+            catch (Exception failure)
             {
-                try
-                {
-                    if (targetExistedBeforeCopy && targetBeforeCopy is not null)
-                        await File.WriteAllBytesAsync(target, targetBeforeCopy, CancellationToken.None).ConfigureAwait(false);
-                    else if (!targetExistedBeforeCopy && File.Exists(target))
-                        File.Delete(target);
-                    if (iniPathBeforeApply is not null && iniBeforeApply is not null)
-                        await File.WriteAllBytesAsync(iniPathBeforeApply, iniBeforeApply, CancellationToken.None).ConfigureAwait(false);
-                    if (engineIniSnapshotPath is not null)
-                    {
-                        if (engineIniBeforeExisted && engineIniBeforeApply is not null)
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                            await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniBeforeApply, CancellationToken.None).ConfigureAwait(false);
-                        }
-                        else if (File.Exists(engineIniSnapshotPath))
-                        {
-                            File.Delete(engineIniSnapshotPath);
-                        }
-                    }
-                }
-                catch { }
+                // Put every file back as it was; one that cannot be restored keeps its snapshot and is reported (#121).
+                var snapshots = new List<FileSnapshot> { new(target, targetBeforeCopy) };
+                if (iniPathBeforeApply is not null && iniBeforeApply is not null)
+                    snapshots.Add(new(iniPathBeforeApply, iniBeforeApply));
+                if (engineIniSnapshotPath is not null)
+                    snapshots.Add(new(engineIniSnapshotPath, engineIniBeforeApply));
+                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
+                if (notes.Count > 0)
+                    throw new IOException($"{failure.Message} Rollback incomplete: {string.Join(" ", notes)}", failure);
                 throw;
             }
 
@@ -435,11 +422,17 @@ public sealed class RenoDxDeploymentService
             {
                 _records.Upsert(record);
             }
-            catch
+            catch (Exception saveFailure)
             {
-                // Nothing would own the Control UE changes; undo them rather than orphan them.
+                // Nothing would own the Control UE changes; undo them rather than orphan them, and say so if that fails.
                 if (controlApplied is not null)
-                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); } catch { }
+                {
+                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); }
+                    catch (Exception restoreFailure)
+                    {
+                        throw new IOException($"{saveFailure.Message} Control UE changes could not be undone: {restoreFailure.Message}", saveFailure);
+                    }
+                }
                 throw;
             }
             var iniSummary = iniApply.AppliedCount > 0
@@ -701,16 +694,15 @@ public sealed class RenoDxDeploymentService
                 foreach (var file in record.Files)
                     if (File.Exists(file.Path)) File.Delete(file.Path);
             }
-            catch
+            catch (Exception failure)
             {
-                try
-                {
-                    if (iniSnapshotPath is not null && iniSnapshot is not null)
-                        await File.WriteAllBytesAsync(iniSnapshotPath, iniSnapshot, CancellationToken.None).ConfigureAwait(false);
-                    if (engineIniSnapshotPath is not null && engineIniSnapshot is not null)
-                        await File.WriteAllBytesAsync(engineIniSnapshotPath, engineIniSnapshot, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch { }
+                // Only files that existed are put back: a removal never recreates something that was absent.
+                var snapshots = new List<FileSnapshot>();
+                if (iniSnapshotPath is not null && iniSnapshot is not null) snapshots.Add(new(iniSnapshotPath, iniSnapshot));
+                if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(new(engineIniSnapshotPath, engineIniSnapshot));
+                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
+                if (notes.Count > 0)
+                    throw new IOException($"{failure.Message} Restore incomplete: {string.Join(" ", notes)}", failure);
                 throw;
             }
 
@@ -721,6 +713,68 @@ public sealed class RenoDxDeploymentService
         {
             return ComponentOperationResult.Fail($"RenoDX removal failed: {ex.Message}");
         }
+    }
+
+    /// <summary>A file's bytes before an operation; null bytes = the file did not exist.</summary>
+    internal sealed record FileSnapshot(string Path, byte[]? Bytes);
+
+    private string SnapshotFallbackDirectory => System.IO.Path.Combine(_cacheDir, "restore-snapshots");
+
+    /// <summary>
+    /// Puts each snapshot back atomically (or deletes a file that did not exist). A file that cannot be restored
+    /// keeps its previous bytes in a sidecar next to it, else under <paramref name="fallbackDirectory"/>, and the
+    /// returned notes say where; nothing is dropped silently. Runs to completion whatever the caller's token.
+    /// </summary>
+    internal static IReadOnlyList<string> RestoreSnapshots(IEnumerable<FileSnapshot> snapshots, string fallbackDirectory)
+    {
+        var notes = new List<string>();
+        foreach (var snapshot in snapshots)
+        {
+            try
+            {
+                if (snapshot.Bytes is not null)
+                {
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(snapshot.Path)!);
+                    AtomicFile.WriteAllBytes(snapshot.Path, snapshot.Bytes);
+                }
+                else if (File.Exists(snapshot.Path))
+                {
+                    File.Delete(snapshot.Path);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                notes.Add(KeepSnapshot(snapshot, ex, fallbackDirectory));
+            }
+        }
+        return notes;
+    }
+
+    private static string KeepSnapshot(FileSnapshot snapshot, Exception failure, string fallbackDirectory)
+    {
+        if (snapshot.Bytes is null)
+            return $"Could not remove {snapshot.Path}: {failure.Message}";
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        var candidates = new[]
+        {
+            $"{snapshot.Path}.rhi-snapshot-{stamp}",
+            System.IO.Path.Combine(fallbackDirectory, $"{stamp}-{System.IO.Path.GetFileName(snapshot.Path)}")
+        };
+        var errors = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(candidate)!);
+                AtomicFile.WriteAllBytes(candidate, snapshot.Bytes);
+                return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                errors.Add(ex.Message);
+            }
+        }
+        return $"Could not restore {snapshot.Path} ({failure.Message}) nor keep a copy of its previous contents ({string.Join("; ", errors)})";
     }
 
     public static string ResolveAddonDeployPath(string binaryDirectory)

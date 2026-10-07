@@ -104,6 +104,44 @@ public sealed class RenoDxInstallTests : IDisposable
         Assert.False(File.Exists(Path.Combine(bin, "renodx-manifest.addon64")));
     }
 
+    // #121: when removal fails after the [renodx] keys were taken out, ReShade.ini goes back to the installed state,
+    // so the record still describes the disk and a retry finishes the job.
+    [Fact]
+    public async Task Remove_AddonDeleteFails_PutsReShadeIniBackAndKeepsTheRecord()
+    {
+        var bin = Path.Combine(_root, "remove-fail-bin");
+        var addons = Path.Combine(bin, "addons");
+        Directory.CreateDirectory(addons);
+        var exe = Path.Combine(bin, "ManifestGame.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        File.WriteAllText(Path.Combine(bin, "ReShade64.dll"), "MZ ReShade crosire");
+        var ini = Path.Combine(bin, "ReShade.ini");
+        File.WriteAllText(ini, "[ADDON]\nAddonPath=.\\addons\n[renodx]\nSet_Path=0\n");
+        var game = new DetectedGame
+        {
+            Name = "Manifest Game", InstallPath = _root, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Proton", SteamAppId = 434343
+        };
+        using var http = new HttpClient(new ManifestHandler());
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "remove-fail-records.json"));
+        var manifest = new UpstreamRhiManifestService(http, "https://example.test/manifest.json");
+        var service = new RenoDxDeploymentService(http, store, new RenoDxCatalogService(http, manifest), Path.Combine(_root, "remove-fail-cache"), manifest);
+        Assert.True((await service.InstallAsync(game, [exe, Path.Combine(bin, "ReShade64.dll")])).Success);
+        var installed = File.ReadAllBytes(ini);
+
+        File.SetUnixFileMode(addons, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        ComponentOperationResult failed;
+        try { failed = await service.RemoveAsync(game); }
+        finally { File.SetUnixFileMode(addons, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+
+        Assert.False(failed.Success);
+        Assert.Equal(installed, File.ReadAllBytes(ini));
+        Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDX));
+        var retry = await service.RemoveAsync(game);
+        Assert.True(retry.Success, retry.Message);
+        Assert.Contains("Set_Path=0", File.ReadAllText(ini));
+        Assert.False(File.Exists(Path.Combine(addons, "renodx-manifest.addon64")));
+    }
+
     [Fact]
     public async Task InstallAndRemove_EngineIniFileTemplate_IsTransactionalAndOwnedPerKey()
     {
