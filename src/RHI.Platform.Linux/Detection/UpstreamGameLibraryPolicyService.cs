@@ -125,7 +125,10 @@ public sealed class UpstreamGameLibraryPolicyService(UpstreamRhiManifestService 
             game.UltraPlusUrlOverride = ultraPlus;
         if (TryGet(policy.AuthorOverrides, canonical, out var author))
             game.AuthorOverride = author;
-        if (TryGet(policy.InstallWarnings, canonical, out var warnings))
+        // Upstream matches install warnings on the card's own title. Like the blacklist, they are a title policy here:
+        // a canonical name recovered only from path evidence (a folder that contains another manifest title) must not
+        // attach that game's warning to this one.
+        if (IsTitleMatch(game.Name, canonical) && TryGet(policy.InstallWarnings, canonical, out var warnings))
             game.ManifestInstallWarnings = warnings;
         if (TryGet(policy.GameNotes, canonical, out var gameNote))
         {

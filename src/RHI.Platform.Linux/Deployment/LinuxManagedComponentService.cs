@@ -842,6 +842,47 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return DependencySatisfaction.Missing;
     }
 
+    /// <summary>
+    /// The managed dependencies an install of <paramref name="target"/> would add automatically right now, in install
+    /// order (nested first: RE Framework before ReShade on an RE Engine game). Mirrors
+    /// <see cref="EnsureManagedDependenciesAsync"/> without touching anything: dependencies already managed or supplied
+    /// externally are skipped, and a broken managed dependency (the install refuses) adds nothing. Used to show the
+    /// manifest warnings of those components before a user-initiated install (upstream 2.8.0 #131).
+    /// </summary>
+    public IReadOnlyList<ManagedComponentKind> PendingAutoDependencies(
+        DetectedGame game,
+        ManagedComponentKind target,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, target).Count == 0)
+            return Array.Empty<ManagedComponentKind>();
+
+        // Only the RE Framework check reads the file index; build it on first use.
+        IReadOnlyList<string>? index = null;
+        var pending = new List<ManagedComponentKind>();
+        var visiting = new HashSet<ManagedComponentKind>();
+        Walk(target);
+        return pending;
+
+        void Walk(ManagedComponentKind component)
+        {
+            if (!visiting.Add(component)) return;
+            foreach (var dependency in LinuxComponentDependencyPolicy.ManagedDependenciesFor(game, component))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var files = dependency == ManagedComponentKind.REFramework
+                    ? index ??= BuildDependencyIndex(game, indexedFiles)
+                    : indexedFiles ?? Array.Empty<string>();
+                var satisfaction = InspectDependency(game, component, dependency, files, cancellationToken);
+                if (satisfaction is DependencySatisfaction.External or DependencySatisfaction.BrokenManaged) continue;
+                Walk(dependency);
+                if (satisfaction == DependencySatisfaction.Missing && !pending.Contains(dependency)) pending.Add(dependency);
+            }
+            visiting.Remove(component);
+        }
+    }
+
     private async Task<ComponentOperationResult> InstallWithManagedDependenciesAsync(
         DetectedGame game,
         ManagedComponentKind target,
@@ -1081,7 +1122,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return null;
     }
 
-    internal static string DisplayDependencyName(ManagedComponentKind kind) => kind switch
+    public static string DisplayDependencyName(ManagedComponentKind kind) => kind switch
     {
         ManagedComponentKind.ReShade => "ReShade",
         ManagedComponentKind.REFramework => "RE Framework",

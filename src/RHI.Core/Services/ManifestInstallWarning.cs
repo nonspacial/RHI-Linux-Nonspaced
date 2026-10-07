@@ -38,6 +38,34 @@ public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Link
         return null;
     }
 
+    /// <summary>True when an install action on a component in this state adds it (the install upstream warns about).</summary>
+    /// <remarks>Unknown counts as an install: the action falls through to the installer, so it must not skip the prompt.</remarks>
+    public static bool IsFirstInstall(ComponentAvailability availability)
+        => availability is not (ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable);
+
+    /// <summary>
+    /// Every manifest warning a user-initiated install must show: the managed dependencies the install adds
+    /// automatically (in install order, e.g. RE Framework → ReShade for RenoDX on an RE Engine game), then the
+    /// target itself when <paramref name="installsTarget"/>. Empty means no prompt.
+    /// </summary>
+    public static IReadOnlyList<ComponentInstallWarning> ForInstall(
+        DetectedGame game,
+        ManagedComponentKind target,
+        bool installsTarget,
+        IEnumerable<ManagedComponentKind> automaticDependencies)
+    {
+        var result = new List<ComponentInstallWarning>();
+        var seen = new HashSet<ManagedComponentKind> { target };
+        foreach (var dependency in automaticDependencies)
+        {
+            if (seen.Add(dependency) && Find(game, dependency) is { } warning)
+                result.Add(new ComponentInstallWarning(dependency, AddedAutomatically: true, warning));
+        }
+        if (installsTarget && Find(game, target) is { } own)
+            result.Add(new ComponentInstallWarning(target, AddedAutomatically: false, own));
+        return result;
+    }
+
     public static ManifestInstallWarning Parse(string message)
     {
         var text = message.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
@@ -51,13 +79,15 @@ public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Link
             var end = start;
             while (end < text.Length && !char.IsWhiteSpace(text[end])) end++;
             var length = end - start;
-            // Sentence punctuation after an inline link is not part of it ("… at https://x.test/a.").
-            while (length > 0 && ".,;:!?)]}'\"".Contains(text[start + length - 1])) length--;
+            // Sentence punctuation after an inline link is not part of it ("… at https://x.test/a."); a closing
+            // bracket stays when it closes one opened inside the link (Wikipedia-style "/wiki/Foo_(bar)").
+            while (length > 0 && ".,;:!?)]}'\"".Contains(text[start + length - 1]) && !ClosesInnerBracket(text, start, length)) length--;
             if (Uri.TryCreate(text.Substring(start, length), UriKind.Absolute, out var uri)
                 && uri.Scheme is "http" or "https" && !string.IsNullOrEmpty(uri.Host))
             {
                 if (!links.Contains(uri)) links.Add(uri);
-                if (end == text.Length) trailingStart = start;
+                // Only a link that really ends the text moves out of it; "(see https://x.test)" keeps its bracket pair.
+                if (end == text.Length && text.AsSpan(start + length).IndexOfAny(")]}") < 0) trailingStart = start;
             }
             index = end;
         }
@@ -65,6 +95,20 @@ public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Link
         // A link on its own at the end is shown as the link row only; inline links keep their place in the text.
         if (trailingStart >= 0) text = text[..trailingStart].TrimEnd();
         return new ManifestInstallWarning(text, links);
+    }
+
+    private static bool ClosesInnerBracket(string text, int start, int length)
+    {
+        var close = text[start + length - 1];
+        var open = close switch { ')' => '(', ']' => '[', '}' => '{', _ => '\0' };
+        if (open == '\0') return false;
+        var depth = 0;
+        for (var i = start; i < start + length; i++)
+        {
+            if (text[i] == open) depth++;
+            else if (text[i] == close) depth--;
+        }
+        return depth >= 0;
     }
 
     private static int NextLinkStart(string text, int from)
@@ -76,3 +120,6 @@ public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Link
         return Math.Min(http, https);
     }
 }
+
+/// <summary>A manifest warning for one component of an install (the target, or a dependency it adds automatically).</summary>
+public sealed record ComponentInstallWarning(ManagedComponentKind Kind, bool AddedAutomatically, ManifestInstallWarning Warning);
