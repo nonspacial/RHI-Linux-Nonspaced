@@ -658,8 +658,11 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
         ReShadeManageIni = _settings.ReShadeManageIni;
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
-        _ = InitializeAsync();
+        Initialization = InitializeAsync();
     }
+
+    /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
+    internal Task Initialization { get; }
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -2660,20 +2663,21 @@ public partial class MainWindowViewModel : ObservableObject
         NotifySelected();
     }
 
-    public async Task<string> SaveSelectedGameEditAsync(
+    /// <summary>Saves the selected game's edit; <c>Saved</c> is the structural success flag (the message is localised).</summary>
+    public async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
         string patchExecutablePath,
         string gameRootPath,
         string binaryDirectory,
         string? launchProvider)
     {
-        if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
+        if (SelectedGame is null) return (false, L("Selecione um jogo primeiro.", "Select a game first."));
 
         if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
-            return L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications.");
+            return (false, L("Selecione o executável real do jogo que deve receber detecção e modificações.", "Select the real game executable that should receive detection and modifications."));
         if (string.IsNullOrWhiteSpace(gameRootPath) || !Directory.Exists(gameRootPath))
-            return L("A raiz do jogo selecionada não existe.", "The selected game root does not exist.");
+            return (false, L("A raiz do jogo selecionada não existe.", "The selected game root does not exist."));
         if (string.IsNullOrWhiteSpace(binaryDirectory) || !Directory.Exists(binaryDirectory))
-            return L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist.");
+            return (false, L("O diretório de binários/patches selecionado não existe.", "The selected binaries/patches directory does not exist."));
 
         var executable = Path.GetFullPath(patchExecutablePath);
         var root = Path.GetFullPath(gameRootPath);
@@ -2681,11 +2685,11 @@ public partial class MainWindowViewModel : ObservableObject
 
         var executableDirectory = Path.GetDirectoryName(executable);
         if (string.IsNullOrWhiteSpace(executableDirectory))
-            return L("Não foi possível determinar o diretório do executável alvo.", "Could not determine the target executable directory.");
+            return (false, L("Não foi possível determinar o diretório do executável alvo.", "Could not determine the target executable directory."));
         if (!IsPathWithin(root, executable))
-            return L("O executável alvo precisa estar dentro da raiz do jogo selecionada.", "The target executable must be inside the selected game root.");
+            return (false, L("O executável alvo precisa estar dentro da raiz do jogo selecionada.", "The target executable must be inside the selected game root."));
         if (!IsPathWithin(root, binaries))
-            return L("O diretório de binários/patches precisa estar dentro da raiz do jogo selecionada.", "The binaries/patches directory must be inside the selected game root.");
+            return (false, L("O diretório de binários/patches precisa estar dentro da raiz do jogo selecionada.", "The binaries/patches directory must be inside the selected game root."));
 
         var managedRecords = _deploymentRecords.FindAll(SelectedGame);
         if (managedRecords.Count > 0)
@@ -2694,7 +2698,7 @@ public partial class MainWindowViewModel : ObservableObject
                                 || !PathEquals(SelectedGame.InstallPath, root)
                                 || !PathEquals(SelectedGame.BinaryDirectory, binaries);
             if (targetChanged)
-                return L("Remova primeiro os componentes gerenciados pelo RHI antes de trocar o alvo do jogo. Isso evita deixar arquivos e estado gerenciado no destino anterior.", "Remove RHI-managed components before changing the game target. This avoids leaving files and managed state at the previous target.");
+                return (false, L("Remova primeiro os componentes gerenciados pelo RHI antes de trocar o alvo do jogo. Isso evita deixar arquivos e estado gerenciado no destino anterior.", "Remove RHI-managed components before changing the game target. This avoids leaving files and managed state at the previous target."));
         }
 
         _libraryState = _libraryStore.Load();
@@ -2711,14 +2715,15 @@ public partial class MainWindowViewModel : ObservableObject
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         await RefreshAsync(NoDetectors);
-        return LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name);
+        return (true, LF("{0}: alvo de modificações salvo. A inicialização do launcher foi preservada.", "{0}: modification target saved. Launcher startup was preserved.", name));
     }
 
-    public async Task<string> ResetSelectedGameEditAsync()
+    /// <summary>Drops the selected game's manual overrides; <c>Reset</c> is false only when the reset was refused.</summary>
+    public async Task<(bool Reset, string Message)> ResetSelectedGameEditAsync()
     {
-        if (SelectedGame is null) return L("Selecione um jogo primeiro.", "Select a game first.");
+        if (SelectedGame is null) return (false, L("Selecione um jogo primeiro.", "Select a game first."));
         if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
-            return L("Remova primeiro os componentes gerenciados pelo RHI antes de restaurar a detecção automática do alvo.", "Remove RHI-managed components before restoring automatic target detection.");
+            return (false, L("Remova primeiro os componentes gerenciados pelo RHI antes de restaurar a detecção automática do alvo.", "Remove RHI-managed components before restoring automatic target detection."));
         _libraryState = _libraryStore.Load();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         var removed = _libraryState.GameEdits.Remove(key);
@@ -2726,9 +2731,9 @@ public partial class MainWindowViewModel : ObservableObject
         var name = SelectedGame.Name;
         _probeCache.Remove(Key(SelectedGame));
         await RefreshAsync(NoDetectors);
-        return removed
+        return (true, removed
             ? LF("{0}: substituições manuais removidas; a detecção automática foi restaurada.", "{0}: manual overrides removed; automatic detection was restored.", name)
-            : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name);
+            : LF("{0}: nenhuma substituição manual estava salva.", "{0}: no manual overrides were saved.", name));
     }
 
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)

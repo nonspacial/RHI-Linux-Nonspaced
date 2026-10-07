@@ -226,7 +226,10 @@ public sealed partial class MainWindow
                 var (added, result) = await vm.TryAddManualGameAsync(entry);
                 status.Text = result;
                 if (added)
+                {
+                    vm.StatusText = result;
                     dialog.Close();
+                }
             }
             catch (Exception ex)
             {
@@ -421,8 +424,13 @@ public sealed partial class MainWindow
             reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
             try
             {
-                status.Text = await vm.ResetSelectedGameEditAsync();
-                dialog.Close();
+                var (reset, message) = await vm.ResetSelectedGameEditAsync();
+                status.Text = message;
+                if (reset)
+                {
+                    vm.StatusText = message;
+                    dialog.Close();
+                }
             }
             catch (Exception ex)
             {
@@ -439,13 +447,17 @@ public sealed partial class MainWindow
             try
             {
                 var chosenProvider = provider.SelectedItem?.ToString();
-                status.Text = await vm.SaveSelectedGameEditAsync(
+                var (saved, message) = await vm.SaveSelectedGameEditAsync(
                     patchExecutable.Text?.Trim() ?? "",
                     gameRoot.Text?.Trim() ?? "",
                     binaryDirectory.Text?.Trim() ?? "",
                     chosenProvider);
-                if (status.Text.Contains("alvo de modificações salvo", StringComparison.OrdinalIgnoreCase) || status.Text.Contains("modification target saved", StringComparison.OrdinalIgnoreCase))
+                status.Text = message;
+                if (saved)
+                {
+                    vm.StatusText = message;
                     dialog.Close();
+                }
             }
             catch (Exception ex)
             {
