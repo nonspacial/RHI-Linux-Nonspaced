@@ -22,6 +22,8 @@ public sealed record RenoDxRemoteStamp(string? ETag, DateTimeOffset? LastModifie
 
     public static RenoDxRemoteStamp FromResponse(HttpResponseMessage response)
     {
+        // EntityTagHeaderValue.Tag is the quoted tag without the W/ prefix (weakness is IsWeak), so a
+        // weak validator from a compressing proxy is stored and compared as its strong form.
         var etag = response.Headers.ETag?.Tag;
         var length = response.Content.Headers.ContentLength;
         return new RenoDxRemoteStamp(
@@ -38,7 +40,7 @@ public sealed record RenoDxRemoteStamp(string? ETag, DateTimeOffset? LastModifie
     {
         if (recorded is null || remote is null) return RemoteStampComparison.Unknown;
         if (!string.IsNullOrWhiteSpace(recorded.ETag) && !string.IsNullOrWhiteSpace(remote.ETag))
-            return string.Equals(NormalizeETag(recorded.ETag), NormalizeETag(remote.ETag), StringComparison.Ordinal)
+            return string.Equals(recorded.ETag, remote.ETag, StringComparison.Ordinal)
                 ? RemoteStampComparison.Same
                 : RemoteStampComparison.Changed;
         if (recorded.LastModified is { } recordedTime && remote.LastModified is { } remoteTime)
@@ -47,10 +49,6 @@ public sealed record RenoDxRemoteStamp(string? ETag, DateTimeOffset? LastModifie
             return recorded.Length == remote.Length ? RemoteStampComparison.Same : RemoteStampComparison.Changed;
         return RemoteStampComparison.Unknown;
     }
-
-    // A weak validator from a compressing proxy names the same entity as its strong form.
-    private static string NormalizeETag(string etag)
-        => etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase) ? etag[2..] : etag;
 
     public string Serialize() => JsonSerializer.Serialize(new Dto
     {

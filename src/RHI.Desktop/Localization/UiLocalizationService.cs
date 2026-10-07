@@ -15,6 +15,9 @@ public static class UiLocalizationService
         ["Ui.AddGame"] = "Adicionar jogo",
         ["Ui.ShadersAddons"] = "Shaders/Add-ons",
         ["Ui.UpdateAll"] = "Atualizar tudo",
+        ["Ui.UpdateAllSummary"] = "Atualizar tudo: {0} atualizado(s) · {1} em dia · {2} adiado(s) · {3} com falha",
+        ["Ui.UpdateAllUnchecked"] = " · {0} não verificado(s)",
+        ["Ui.UpdateAllNone"] = "Nenhum componente gerenciado pelo RHI participa de Atualizar tudo.",
         ["Ui.BatchDlss"] = "DLSS em lote",
         ["Ui.Links"] = "Links",
         ["Ui.Motd"] = "MOTD",
@@ -217,6 +220,9 @@ public static class UiLocalizationService
         ["Ui.AddGame"] = "Add game",
         ["Ui.ShadersAddons"] = "Shaders/Add-ons",
         ["Ui.UpdateAll"] = "Update all",
+        ["Ui.UpdateAllSummary"] = "Update All: {0} updated · {1} current · {2} deferred · {3} failed",
+        ["Ui.UpdateAllUnchecked"] = " · {0} could not be checked",
+        ["Ui.UpdateAllNone"] = "No RHI-managed Update All components were found.",
         ["Ui.BatchDlss"] = "Batch DLSS",
         ["Ui.Links"] = "Links",
         ["Ui.Motd"] = "MOTD",
@@ -519,6 +525,19 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] PresentationPairs =
     [
+        // RenoDX update check (#129). Mod names, HTTP status and exception text follow the fragments.
+        ("RenoDX is not managed by RHI Linux.", "O RenoDX não é gerenciado pelo RHI Linux."),
+        ("Game executable is unavailable; RenoDX update check skipped.", "Executável do jogo indisponível; a verificação de atualização do RenoDX foi ignorada."),
+        ("Game architecture is unknown; RenoDX update check skipped.", "Arquitetura do jogo desconhecida; a verificação de atualização do RenoDX foi ignorada."),
+        ("No current RenoDX catalog match was found; installed payload was preserved.", "Nenhuma correspondência atual no catálogo RenoDX foi encontrada; o arquivo instalado foi preservado."),
+        ("Current RenoDX catalog match has no compatible payload for this architecture.", "A correspondência atual no catálogo RenoDX não tem arquivo compatível com esta arquitetura."),
+        ("RenoDX catalog update available: ", "Atualização do catálogo RenoDX disponível: "),
+        ("RenoDX update check could not reach the snapshot: ", "A verificação de atualização do RenoDX não conseguiu acessar o snapshot: "),
+        ("the request timed out", "a solicitação expirou"),
+        ("RenoDX snapshot was rebuilt upstream: ", "O snapshot do RenoDX foi recompilado no upstream: "),
+        ("RenoDX snapshot is current: ", "O snapshot do RenoDX está atualizado: "),
+        ("RenoDX update check could not compare the snapshot: the server sent no ETag, Last-Modified or size.", "A verificação de atualização do RenoDX não conseguiu comparar o snapshot: o servidor não enviou ETag, Last-Modified nem tamanho."),
+        ("RenoDX update check failed: ", "A verificação de atualização do RenoDX falhou: "),
         // Control UE RR post-install (upstream 2.7.9). Fragments compose around DLL names, versions and paths.
         ("Control UE restore incomplete; RenoDX was kept:", "Restauração do Control UE incompleta; o RenoDX foi mantido:"),
         ("renderer.ini not found in the game folder; launch the game once, then reinstall RenoDX to set the HDR preset.", "renderer.ini não encontrado na pasta do jogo; abra o jogo uma vez e reinstale o RenoDX para definir o preset HDR."),
@@ -671,6 +690,20 @@ public static class UiLocalizationService
 
     public static string ChooseFormat(string ptBr, string enUs, params object?[] args)
         => string.Format(CultureInfo.CurrentUICulture, Choose(ptBr, enUs), args);
+
+    /// <summary>Update All status line built from the result's counts, so it never depends on parsing English text.</summary>
+    public static string UpdateAllSummary(RHI.Platform.Linux.Deployment.LinuxUpdateAllResult result)
+        => UpdateAllSummaryFor(CurrentLanguage, result);
+
+    public static string UpdateAllSummaryFor(string? language, RHI.Platform.Linux.Deployment.LinuxUpdateAllResult result)
+    {
+        if (result.Items.Count == 0) return TextFor(language, "Ui.UpdateAllNone");
+        var text = string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllSummary"),
+            result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
+        if (result.UncheckedCount > 0)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
+        return text + ".";
+    }
 
     public static bool HasKeyParity => PtBr.Keys.OrderBy(x => x, StringComparer.Ordinal).SequenceEqual(EnUs.Keys.OrderBy(x => x, StringComparer.Ordinal), StringComparer.Ordinal);
 

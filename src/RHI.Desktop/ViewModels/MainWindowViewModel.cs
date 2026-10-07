@@ -1229,7 +1229,7 @@ public partial class MainWindowViewModel : ObservableObject
             _probeCache.Clear();
             if (SelectedGame is { } selected && result.ChangedCount > 0)
                 await ReprobeGameAsync(selected);
-            StatusText = UiLocalizationService.Present(result.Summary);
+            StatusText = UiLocalizationService.UpdateAllSummary(result);
         }
         catch (Exception ex)
         {
@@ -1314,7 +1314,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (result.ChangedCount > 0)
             {
                 _probeCache.Clear();
-                StatusText = UiLocalizationService.Present(result.Summary) + L(" (segundo plano)", " (background)");
+                StatusText = UiLocalizationService.UpdateAllSummary(result) + L(" (segundo plano)", " (background)");
             }
         }
         finally

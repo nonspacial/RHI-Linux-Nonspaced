@@ -1,4 +1,5 @@
 using RHI.Core.Models;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Settings;
 
@@ -69,6 +70,49 @@ public sealed class UpdateAllBackgroundTests
         Assert.Equal([ManagedComponentKind.RenoDX], backend.UpdateCalls);
         Assert.Equal((1, 1, 1), (result.ChangedCount, result.CurrentCount, result.UncheckedCount));
         Assert.EndsWith("· 1 could not be checked.", result.Summary, StringComparison.Ordinal);
+    }
+
+    // Review up-129 #2: a blocked check (no confirmed patch target) is a failure in both modes.
+    [Theory]
+    [InlineData(LinuxUpdateRunMode.Manual)]
+    [InlineData(LinuxUpdateRunMode.Background)]
+    public async Task BlockedCheck_IsCountedFailedAndNeverUpdated(LinuxUpdateRunMode mode)
+    {
+        using var fixture = new Fixture();
+        var game = fixture.Game("blocked");
+        fixture.Record(game, ManagedComponentKind.RenoDX);
+        var backend = new FakeBackend();
+        backend.GameChecks[game.Name] = new(true, false, "blocked", Blocked: true);
+        var service = fixture.Service(backend);
+
+        var result = await service.RunAsync([game], _ => [], mode);
+
+        Assert.Empty(backend.UpdateCalls);
+        Assert.Equal((1, 0, 0), (result.FailedCount, result.CurrentCount, result.UncheckedCount));
+    }
+
+    // Review up-129 #4: the Update All status line is built from counts in the UI language.
+    [Fact]
+    public void Summary_IsLocalisedFromCounts_EnglishMatchesPlatformSummary()
+    {
+        var result = new LinuxUpdateAllResult([
+            new("A", ManagedComponentKind.RenoDX, true, true, false, "updated"),
+            new("B", ManagedComponentKind.RenoDX, true, false, false, "current"),
+            new("C", ManagedComponentKind.RenoDX, true, false, true, "deferred"),
+            new("D", ManagedComponentKind.RenoDX, false, false, false, "failed"),
+            new("E", ManagedComponentKind.RenoDX, true, false, false, "offline", Unchecked: true)
+        ]);
+        var noUnchecked = new LinuxUpdateAllResult(result.Items.Take(4).ToArray());
+        var empty = new LinuxUpdateAllResult([]);
+
+        Assert.Equal("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha · 1 não verificado(s).",
+            UiLocalizationService.UpdateAllSummaryFor("pt-BR", result));
+        Assert.Equal("Atualizar tudo: 1 atualizado(s) · 1 em dia · 1 adiado(s) · 1 com falha.",
+            UiLocalizationService.UpdateAllSummaryFor("pt-BR", noUnchecked));
+        foreach (var r in new[] { result, noUnchecked, empty })
+            Assert.Equal(r.Summary, UiLocalizationService.UpdateAllSummaryFor("en-US", r));
+        Assert.NotEqual(empty.Summary, UiLocalizationService.UpdateAllSummaryFor("pt-BR", empty));
+        Assert.True(UiLocalizationService.HasKeyParity);
     }
 
     [Fact]

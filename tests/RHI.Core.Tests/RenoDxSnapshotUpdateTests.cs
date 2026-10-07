@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using RHI.Core.Models;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -141,6 +142,93 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
         Assert.Equal(1, _handler.Gets);
     }
 
+    // Review up-129 #6 (#107): a server that sends no ETag, Last-Modified or Content-Length keeps the cache.
+    [Fact]
+    public async Task Cache_HeadWithoutValidators_KeepsCachedAddonAndCheckCannotTell()
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        _handler.Rebuild();
+        _handler.HeadWithoutValidators = true;
+
+        var reinstall = await _service.InstallAsync(_game, _files);
+        var check = await _service.CheckUpdateAsync(_game, _files);
+
+        Assert.True(reinstall.Success, reinstall.Message);
+        Assert.Equal(1, _handler.Gets);
+        Assert.False(check.UpdateAvailable);
+        Assert.True(check.CouldNotCheck, check.Message);
+    }
+
+    // Review up-129 #5: a weak validator (W/"…") names the same entity as its strong form.
+    [Fact]
+    public async Task WeakETagOnHead_MatchesStrongETagRecordedAtInstall()
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        _handler.WeakHeadETag = true;
+
+        var check = await _service.CheckUpdateAsync(_game, _files);
+        var reinstall = await _service.InstallAsync(_game, _files);
+
+        Assert.False(check.UpdateAvailable, check.Message);
+        Assert.False(check.CouldNotCheck, check.Message);
+        Assert.True(reinstall.Success, reinstall.Message);
+        Assert.Equal(1, _handler.Gets);
+    }
+
+    // Review up-129 #2: without a confirmed patch target updates are blocked; manual Update All
+    // must report that as a failure (as before the RenoDX pre-check), never as current.
+    [Theory]
+    [InlineData(LinuxUpdateRunMode.Manual)]
+    [InlineData(LinuxUpdateRunMode.Background)]
+    public async Task UnconfirmedPatchTarget_UpdateAll_ReportsFailedNotCurrent(LinuxUpdateRunMode mode)
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        _handler.Rebuild();
+        var unconfirmed = new DetectedGame
+        {
+            Name = _game.Name, InstallPath = _game.InstallPath, BinaryDirectory = null,
+            ExecutablePath = null, Runner = _game.Runner, SteamAppId = _game.SteamAppId,
+            RequiresExplicitPatchTarget = true
+        };
+        Assert.False(unconfirmed.HasConfirmedPatchTarget);
+        var managed = new LinuxManagedComponentService(_store, reshade: null!, addonManager: null!, renodx: _service, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
+
+        var result = await new LinuxUpdateAllService(_store, managed, new NeverRunning()).RunAsync([unconfirmed], _ => _files, mode);
+
+        Assert.Equal((1, 0, 0, 0), (result.FailedCount, result.CurrentCount, result.UncheckedCount, result.ChangedCount));
+        Assert.Equal(1, _handler.Gets);
+    }
+
+    // Review up-129 #4: the check messages behind "could not be checked" are shown in PT-BR too.
+    [Fact]
+    public async Task CheckMessages_ArePresentedInPortuguese()
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        var messages = new List<string> { (await _service.CheckUpdateAsync(_game, _files)).Message };
+        _handler.Rebuild();
+        messages.Add((await _service.CheckUpdateAsync(_game, _files)).Message);
+        _handler.FailHead = true;
+        messages.Add((await _service.CheckUpdateAsync(_game, _files)).Message);
+        _handler.FailHead = false;
+        _handler.HeadWithoutValidators = true;
+        messages.Add((await _service.CheckUpdateAsync(_game, _files)).Message);
+        messages.Add((await _service.CheckUpdateAsync(new DetectedGame { Name = _game.Name, InstallPath = _game.InstallPath, SteamAppId = _game.SteamAppId }, _files)).Message);
+
+        Assert.Equal(5, messages.Distinct().Count());
+        foreach (var message in messages)
+        {
+            var pt = UiLocalizationService.PresentFor("pt-BR", message);
+            Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+            Assert.DoesNotContain("RenoDX snapshot", pt, StringComparison.Ordinal);
+            Assert.DoesNotContain("update check", pt, StringComparison.Ordinal);
+            Assert.DoesNotContain("could not", pt, StringComparison.Ordinal);
+            Assert.Equal(message, UiLocalizationService.PresentFor("en-US", message));
+        }
+    }
+
     [Fact]
     public async Task History_InstallAndSameNameRebuild_LogAddonFileVersions()
     {
@@ -224,6 +312,8 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
         public string ETag { get; private set; } = "\"0x8DF0000000000000\"";
         public DateTimeOffset LastModified { get; private set; } = new(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);
         public bool FailHead { get; set; }
+        public bool HeadWithoutValidators { get; set; }
+        public bool WeakHeadETag { get; set; }
         public int Gets { get; private set; }
 
         // Same URL, same size, new bytes: what a RenoDX CI snapshot rebuild looks like.
@@ -247,9 +337,11 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             if (request.Method == HttpMethod.Head && FailHead)
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+            if (request.Method == HttpMethod.Head && HeadWithoutValidators)
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) });
             if (request.Method == HttpMethod.Get) Gets++;
             var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Payload) };
-            response.Headers.ETag = new EntityTagHeaderValue(ETag);
+            response.Headers.ETag = new EntityTagHeaderValue(ETag, isWeak: request.Method == HttpMethod.Head && WeakHeadETag);
             response.Content.Headers.LastModified = LastModified;
             return Task.FromResult(response);
         }

@@ -99,9 +99,9 @@ public sealed class RenoDxDeploymentService
             return comparison switch
             {
                 RemoteStampComparison.Changed => new ManagedUpdateCheck(true, true,
-                    $"RenoDX snapshot {mod.Name} was rebuilt upstream.", record.Version, mod.Name),
+                    $"RenoDX snapshot was rebuilt upstream: {mod.Name}.", record.Version, mod.Name),
                 RemoteStampComparison.Same => new ManagedUpdateCheck(true, false,
-                    $"RenoDX snapshot {mod.Name} is current.", record.Version, mod.Name),
+                    $"RenoDX snapshot is current: {mod.Name}.", record.Version, mod.Name),
                 _ => new ManagedUpdateCheck(true, false,
                     "RenoDX update check could not compare the snapshot: the server sent no ETag, Last-Modified or size.", record.Version, CouldNotCheck: true)
             };
@@ -159,7 +159,9 @@ public sealed class RenoDxDeploymentService
         => record.Metadata.TryGetValue(RemoteStampMetadataKey, out var json) ? RenoDxRemoteStamp.Deserialize(json) : null;
 
     // Records written before stamps were kept: a remote modified after the install is newer
-    // (catches same-size rebuilds); otherwise fall back to upstream's size comparison.
+    // (catches same-size rebuilds); otherwise fall back to upstream's size comparison. Residual gap:
+    // a dev build with the size-only cache could install a stale same-size file after a rebuild;
+    // that record reads as current until the snapshot is rebuilt again or the mod is reinstalled.
     private static RemoteStampComparison CompareLegacyRecord(LinuxDeploymentRecord record, RenoDxRemoteStamp remote)
     {
         var installedAt = record.InstalledAtUtc.Kind == DateTimeKind.Local

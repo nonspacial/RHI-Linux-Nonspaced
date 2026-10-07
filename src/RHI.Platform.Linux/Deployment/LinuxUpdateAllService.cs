@@ -16,7 +16,9 @@ public sealed record ManagedUpdateCheck(
     string? InstalledVersion = null,
     string? LatestVersion = null,
     // The check could not tell (remote unreachable, no validators, game files missing): no update.
-    bool CouldNotCheck = false);
+    bool CouldNotCheck = false,
+    // Updates are refused for this game (no confirmed patch target): a failure, never "current".
+    bool Blocked = false);
 
 public sealed record LinuxUpdateItemResult(
     string GameName,
@@ -200,6 +202,11 @@ public sealed class LinuxUpdateAllService
                         if (mode == LinuxUpdateRunMode.Background || CheckedInManualMode.Contains(component))
                         {
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
+                            if (check.Blocked)
+                            {
+                                results.Add(new LinuxUpdateItemResult(game.Name, component, false, false, false, check.Message));
+                                continue;
+                            }
                             if (!check.Managed || !check.UpdateAvailable)
                             {
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false,
