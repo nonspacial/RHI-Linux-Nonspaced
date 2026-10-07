@@ -60,6 +60,26 @@ public sealed class ResponsiveLayoutLogicTests
     }
 
     [Fact]
+    public void CreditLineIsShortenedInTheMiddleWhenAsked()
+    {
+        // #139 credit line: the start (file name) and the end (author) both matter.
+        const string credit = "renodx-hogwartslegacy-extended-build.addon64, renodx-hogwartslegacy-lut.addon64 · by Ritsu, ShortFuse, Musa";
+        for (var w = 7; w <= Mono(credit); w += 7)
+        {
+            var result = PathEllipsis.Compact(credit, w, Mono, middleForText: true);
+            Assert.True(Mono(result) <= Math.Max(w, 7), $"{w}: {result}");
+        }
+        var mid = PathEllipsis.Compact(credit, 40 * 7, Mono, middleForText: true);
+        Assert.Equal(40, mid.Length);
+        Assert.StartsWith("renodx-hogwartsleg", mid);
+        Assert.EndsWith("ShortFuse, Musa", mid);
+        Assert.Single(mid.Split('…').Skip(1));
+        // Without the flag the same text keeps the end-trim behaviour.
+        Assert.EndsWith("…", PathEllipsis.Compact(credit, 40 * 7, Mono));
+        Assert.Equal(credit, PathEllipsis.Compact(credit, Mono(credit), Mono, middleForText: true));
+    }
+
+    [Fact]
     public void NonPathTextIsTrimmedAtTheEnd()
     {
         const string status = "nvngx_dlss.dll missing — direct swap blocked";

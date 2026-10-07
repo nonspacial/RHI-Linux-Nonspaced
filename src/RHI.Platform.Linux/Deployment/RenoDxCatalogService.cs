@@ -13,7 +13,8 @@ public sealed record RenoDxModEntry(
     string? SnapshotUrl32,
     string? Notes,
     bool IsGeneric = false,
-    bool IsWorkInProgress = false)
+    bool IsWorkInProgress = false,
+    string? Author = null)
 {
     public string? UrlFor(PeArchitecture architecture)
         => RenoDxCatalogService.ResolveAddonUrl(
@@ -35,6 +36,9 @@ public sealed class RenoDxCatalogService
     private readonly object _resolvedMatchGate = new();
     private readonly Dictionary<string, RenoDxModEntry?> _resolvedMatches = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<RenoDxModEntry>? _cache;
+    // Every RHI database entry that names an author, including those without a download of their own. Upstream
+    // keeps such an entry's maintainer on the card when a manifest snapshot override supplies the URL (CODE VEIN II).
+    private IReadOnlyList<RenoDxModEntry> _authorEntries = [];
 
     public RenoDxCatalogService(HttpClient http, UpstreamRhiManifestService? upstreamManifest = null)
     {
@@ -55,10 +59,12 @@ public sealed class RenoDxCatalogService
             // is intentionally the tertiary source only; it no longer overrides reviewed RHI DB
             // entries when the current database is healthy.
             IReadOnlyList<RenoDxModEntry> structured = Array.Empty<RenoDxModEntry>();
+            IReadOnlyList<RenoDxModEntry> authorEntries = Array.Empty<RenoDxModEntry>();
             try
             {
                 var json = await _http.GetStringAsync(StructuredDbUrl, cancellationToken).ConfigureAwait(false);
                 structured = ParseStructuredDatabase(json);
+                authorEntries = ParseStructuredAuthors(json);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch
@@ -72,6 +78,7 @@ public sealed class RenoDxCatalogService
                 {
                     var json = await _http.GetStringAsync(PinnedStructuredDbUrl, cancellationToken).ConfigureAwait(false);
                     structured = ParseStructuredDatabase(json);
+                    authorEntries = ParseStructuredAuthors(json);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch
@@ -95,6 +102,7 @@ public sealed class RenoDxCatalogService
                 }
             }
 
+            _authorEntries = authorEntries;
             _cache = MergeCatalogs(structured, wikiFallback);
             return _cache;
         }
@@ -135,8 +143,10 @@ public sealed class RenoDxCatalogService
         // Upstream wikiUnlinks is a hard sever from RenoDX matching, including generic fallbacks.
         if (game.WikiUnlinkedByManifest) return null;
 
-        // Upstream RHI manifest snapshot overrides are authoritative over wiki/generic matching.
+        // Upstream RHI manifest snapshot overrides are authoritative over wiki/generic matching for the download.
         // This is what links titles such as Hogwarts Legacy to Marat's UE-Extended build.
+        string? overrideUrl = null;
+        string? overrideEngineHint = null;
         if (_upstreamManifest is not null)
         {
             try
@@ -144,16 +154,8 @@ public sealed class RenoDxCatalogService
                 var gameOverride = await _upstreamManifest.ResolveGameOverrideAsync(game, cancellationToken).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(gameOverride?.SnapshotUrl))
                 {
-                    var url = gameOverride.SnapshotUrl!;
-                    var is32 = url.EndsWith(".addon32", StringComparison.OrdinalIgnoreCase);
-                    var notes = string.IsNullOrWhiteSpace(gameOverride.EngineHint)
-                        ? "Upstream RHI manifest snapshot override"
-                        : $"Upstream RHI manifest snapshot override · {gameOverride.EngineHint}";
-                    return new RenoDxModEntry(
-                        game.Name,
-                        is32 ? null : url,
-                        is32 ? url : null,
-                        notes);
+                    overrideUrl = gameOverride.SnapshotUrl;
+                    overrideEngineHint = gameOverride.EngineHint;
                 }
             }
             catch when (!cancellationToken.IsCancellationRequested)
@@ -162,9 +164,38 @@ public sealed class RenoDxCatalogService
             }
         }
 
+        // UE-Extended is always Marat's build: no catalogue lookup needed for its credit.
+        if (overrideUrl is not null && ModAuthorCredit.IsUeExtendedUrl(overrideUrl))
+            return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, ModAuthorCredit.UeExtendedAuthor);
+
         var mods = await FetchAsync(cancellationToken).ConfigureAwait(false);
         var lookupName = string.IsNullOrWhiteSpace(game.WikiNameOverride) ? game.Name : game.WikiNameOverride;
         var gameNorm = NormalizeName(lookupName!);
+        var named = MatchNamed(mods, gameNorm);
+
+        if (overrideUrl is not null)
+        {
+            // Upstream (MainViewModel.BuildCards.cs, "Manifest snapshot override") only swaps the download URL of the
+            // card's mod and keeps its maintainer: the database author of the named match — also an entry that has
+            // no download of its own — else the generic engine fallback's maintainer.
+            var credited = named ?? MatchNamed(_authorEntries, gameNorm) ?? GenericFallback(indexedFiles);
+            return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author);
+        }
+
+        return named ?? GenericFallback(indexedFiles);
+    }
+
+    private static RenoDxModEntry SnapshotOverrideEntry(DetectedGame game, string url, string? engineHint, string? author)
+    {
+        var is32 = url.EndsWith(".addon32", StringComparison.OrdinalIgnoreCase);
+        var notes = string.IsNullOrWhiteSpace(engineHint)
+            ? "Upstream RHI manifest snapshot override"
+            : $"Upstream RHI manifest snapshot override · {engineHint}";
+        return new RenoDxModEntry(game.Name, is32 ? null : url, is32 ? url : null, notes, Author: author);
+    }
+
+    private static RenoDxModEntry? MatchNamed(IReadOnlyList<RenoDxModEntry> mods, string gameNorm)
+    {
         var normalized = mods.Select(m => (Mod: m, Norm: NormalizeName(m.Name))).ToArray();
         var exact = normalized.FirstOrDefault(x => x.Norm == gameNorm).Mod;
         if (exact is not null) return exact;
@@ -180,11 +211,16 @@ public sealed class RenoDxCatalogService
             var suffix = candidate.Norm[gameNorm.Length..];
             if (!Regex.IsMatch(suffix, "^[ivxlcdm0-9]+$", RegexOptions.IgnoreCase)) return candidate.Mod;
         }
+        return null;
+    }
 
+    // Upstream's generic fallback mods carry their engine maintainer (MainViewModel.Init.cs: ShortFuse / Voosh).
+    private static RenoDxModEntry? GenericFallback(IReadOnlyList<string> indexedFiles)
+    {
         if (LooksLikeUnity(indexedFiles))
-            return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true);
+            return new RenoDxModEntry("Generic Unity", GenericUnityUrl64, GenericUnityUrl32, "Generic RenoDX Unity addon", true, Author: ModAuthorCredit.GenericUnityAuthor);
         if (LooksLikeUnreal(indexedFiles))
-            return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true);
+            return new RenoDxModEntry("Generic Unreal", GenericUnrealUrl, null, "Generic RenoDX Unreal addon", true, Author: ModAuthorCredit.GenericUnrealAuthor);
         return null;
     }
 
@@ -213,10 +249,31 @@ public sealed class RenoDxCatalogService
                 prior.SnapshotUrl32 ?? entry.SnapshotUrl32,
                 prior.Notes ?? entry.Notes,
                 entry.IsGeneric || prior.IsGeneric,
-                prior.IsWorkInProgress);
+                prior.IsWorkInProgress,
+                prior.Author ?? entry.Author);
         }
 
         return merged.Values.ToArray();
+    }
+
+    /// <summary>Every database entry with a name and an author, with or without a download (author lookup only).</summary>
+    internal static IReadOnlyList<RenoDxModEntry> ParseStructuredAuthors(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return [];
+        var result = new List<RenoDxModEntry>();
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            var name = item.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString()?.Trim() : null;
+            var author = item.TryGetProperty("author", out var authorEl) && authorEl.ValueKind == JsonValueKind.String ? authorEl.GetString()?.Trim() : null;
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(author)) continue;
+            result.Add(new RenoDxModEntry(name!, null, null, null, Author: author));
+        }
+        return result
+            .GroupBy(entry => NormalizeName(entry.Name), StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
     }
 
     internal static IReadOnlyList<RenoDxModEntry> ParseStructuredDatabase(string json)
@@ -240,7 +297,11 @@ public sealed class RenoDxCatalogService
             // Upstream RenoDXDbService.MapStatus: only "WIP" marks a mod as work in progress.
             var wip = item.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String
                 && string.Equals(statusEl.GetString()?.Trim(), "WIP", StringComparison.OrdinalIgnoreCase);
-            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip));
+            var author = item.TryGetProperty("author", out var authorEl) && authorEl.ValueKind == JsonValueKind.String
+                ? authorEl.GetString()?.Trim()
+                : null;
+            result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip,
+                Author: string.IsNullOrWhiteSpace(author) ? null : author));
         }
 
         return result

@@ -82,6 +82,15 @@ public static class ComponentProbe
                     StringComparison.Ordinal)))),
         };
 
+        // The detail's credit line lists the recorded add-on files; it keeps only those still found here.
+        foreach (var component in result)
+        {
+            if (component.Kind == ManagedComponentKind.RenoDX)
+                component.DetectedAddonFiles = files.Where(IsPrimaryRenoDxAddonFileName).ToArray();
+            else if (component.Kind == ManagedComponentKind.LumaFramework)
+                component.DetectedAddonFiles = files.Where(IsLumaFrameworkAddonFileName).ToArray();
+        }
+
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
             foreach (var component in result)
