@@ -1,9 +1,16 @@
+using RHI.Core.Deployment;
+
 namespace RHI.Platform.Linux.Deployment;
 
 internal static class OptiScalerIniEditor
 {
-    public static void SetLoadReShade(string binaryDirectory, bool enabled)
-        => SetValue(binaryDirectory, "Plugins", "LoadReshade", enabled ? "true" : "false");
+    /// <param name="readOnly">
+    /// <see cref="ReadOnlyUserFile.Refuse"/> for an install or a settings change (the user locked the file: refused,
+    /// message says so); <see cref="ReadOnlyUserFile.WriteKeepingLock"/> for a removal and its rollback, which a lock
+    /// must never block (the file is written and stays read-only).
+    /// </param>
+    public static void SetLoadReShade(string binaryDirectory, bool enabled, ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
+        => SetValues(binaryDirectory, [("Plugins", "LoadReshade", enabled ? "true" : "false")], readOnly);
 
     public static string? GetValue(string binaryDirectory, string section, string key)
     {
@@ -18,7 +25,8 @@ internal static class OptiScalerIniEditor
 
     public static void SetValues(
         string binaryDirectory,
-        IReadOnlyList<(string Section, string Key, string Value)> updates)
+        IReadOnlyList<(string Section, string Key, string Value)> updates,
+        ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
     {
         ArgumentNullException.ThrowIfNull(updates);
         if (updates.Count == 0) return;
@@ -40,7 +48,7 @@ internal static class OptiScalerIniEditor
             SetValueInLines(lines, update.Section.Trim(), update.Key.Trim(), update.Value ?? "");
         }
 
-        AtomicWrite(path, string.Join(newline, lines));
+        AtomicFile.ReplaceUserFile(path, new System.Text.UTF8Encoding(false).GetBytes(string.Join(newline, lines)), readOnly: readOnly);
     }
 
     private static string? GetValueFromLines(IReadOnlyList<string> lines, string section, string key)
@@ -103,17 +111,4 @@ internal static class OptiScalerIniEditor
         lines.Insert(sectionEnd, $"{key}={value}");
     }
 
-    private static void AtomicWrite(string path, string text)
-    {
-        var temp = path + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllText(temp, text);
-            File.Move(temp, path, overwrite: true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
-    }
 }

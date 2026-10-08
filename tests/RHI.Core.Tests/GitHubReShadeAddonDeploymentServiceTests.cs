@@ -26,8 +26,8 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
           "name": "Latest",
           "body": "**Version in binaries**: 0.15.9.3468",
           "assets": [
-            { "name": "zzz_display_commander.addon32", "browser_download_url": "https://example.test/dc32", "digest": "sha256:{{digest}}" },
-            { "name": "zzz_display_commander.addon64", "browser_download_url": "https://example.test/dc64", "digest": "sha256:{{digest}}" }
+            { "name": "zzz_display_commander.addon32", "browser_download_url": "https://github.com/rhi-tests/dc32", "digest": "sha256:{{digest}}" },
+            { "name": "zzz_display_commander.addon64", "browser_download_url": "https://github.com/rhi-tests/dc64", "digest": "sha256:{{digest}}" }
           ]
         }
         """;
@@ -42,7 +42,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
 
         Assert.Equal("0.15.9.3468", release.Version);
         Assert.Equal("zzz_display_commander.addon64", release.AssetName);
-        Assert.Equal("https://example.test/dc64", release.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/dc64", release.AssetUrl);
         Assert.Equal(digest, release.Sha256);
     }
 
@@ -56,7 +56,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
 
         using var http = new HttpClient(new FakeHandler(req =>
         {
@@ -174,7 +174,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -201,7 +201,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(600 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v0.15.9.3468", "zzz_display_commander.addon64", "https://example.test/dc", digest);
+        var json = ReleaseJson("v0.15.9.3468", "zzz_display_commander.addon64", "https://github.com/rhi-tests/dc", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -228,7 +228,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         File.WriteAllText(ini, custom);
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -253,7 +253,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         File.WriteAllText(existing, custom);
         var payload = MakePePayload(600 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v0.15.9.3468", "zzz_display_commander.addon64", "https://example.test/dc", digest);
+        var json = ReleaseJson("v0.15.9.3468", "zzz_display_commander.addon64", "https://github.com/rhi-tests/dc", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -277,7 +277,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -302,7 +302,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -371,7 +371,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
     {
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v1.4.2", "relimiter-v1.4.2-win64.addon64", "https://example.test/dynamic", digest);
+        var json = ReleaseJson("v1.4.2", "relimiter-v1.4.2-win64.addon64", "https://github.com/rhi-tests/dynamic", digest);
         using var http = new HttpClient(new FakeHandler(_ => JsonResponse(json)));
         var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "dynamic-records.json"));
         var service = NewDynamicReLimiter(http, store);
@@ -380,7 +380,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
 
         Assert.Equal("1.4.2", release.Version);
         Assert.Equal("relimiter-v1.4.2-win64.addon64", release.AssetName);
-        Assert.Equal("https://example.test/dynamic", release.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/dynamic", release.AssetUrl);
     }
 
     [Fact]
@@ -392,21 +392,21 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
             "tag_name": "v2.0.0",
             "draft": false,
             "assets": [
-              { "name": "source.zip", "browser_download_url": "https://example.test/source" }
+              { "name": "source.zip", "browser_download_url": "https://github.com/rhi-tests/source" }
             ]
           },
           {
             "tag_name": "v1.9.0",
             "draft": false,
             "assets": [
-              { "name": "relimiter-v1.9.0-win64.addon64", "browser_download_url": "https://example.test/addon" }
+              { "name": "relimiter-v1.9.0-win64.addon64", "browser_download_url": "https://github.com/rhi-tests/addon" }
             ]
           }
         ]
         """;
         using var http = new HttpClient(new FakeHandler(_ => JsonResponse(json)));
         var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "array-records.json"));
-        var service = NewDynamicReLimiter(http, store, "https://api.github.test/repos/example/releases?per_page=100");
+        var service = NewDynamicReLimiter(http, store, "https://api.github.com/repos/example/releases?per_page=100");
 
         var release = await service.ResolveLatestAsync(PeArchitecture.X64);
 
@@ -421,7 +421,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         WriteFakeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
         var payload = MakePePayload(150 * 1024);
         var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-        var json = ReleaseJson("v1.4.2", "relimiter-v1.4.2-win64.addon64", "https://example.test/dynamic", digest);
+        var json = ReleaseJson("v1.4.2", "relimiter-v1.4.2-win64.addon64", "https://github.com/rhi-tests/dynamic", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -452,7 +452,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
             ("DLSS5-Feeder/addon64/dlss5-feed.addon64", addon64),
             ("DLSS5-Feeder/addon32/dlss5-feed.addon32", addon32));
         var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
-        var json = ReleaseJson("v0.13.1-beta.1", "DLSS5-Feeder-0.13.1-beta.1.zip", "https://example.test/feeder.zip", digest);
+        var json = ReleaseJson("v0.13.1-beta.1", "DLSS5-Feeder-0.13.1-beta.1.zip", "https://github.com/rhi-tests/feeder.zip", digest);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -461,7 +461,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         var service = new GitHubReShadeAddonDeploymentService(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.Dlss5Feeder,
             "DLSS5 Feeder",
-            "https://api.github.test/repos/feeder/releases/latest",
+            "https://api.github.com/repos/feeder/releases/latest",
             null,
             null,
             64 * 1024,
@@ -527,7 +527,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         var cached = Path.Combine(CacheDir, "relimiter", "3.3.5-relimiter.addon64");
         Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
         File.WriteAllBytes(cached, foreign);
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", Sha(genuine).ToLowerInvariant());
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", Sha(genuine).ToLowerInvariant());
         var downloads = 0;
         using var http = new HttpClient(new FakeHandler(req =>
         {
@@ -543,7 +543,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         Assert.Equal(1, downloads);
         Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "relimiter.addon64"))));
         Assert.Equal(Sha(genuine), Sha(File.ReadAllBytes(cached)));
-        Assert.True(CacheStamp.IsValid(cached, "https://example.test/relimiter", "3.3.5"));
+        Assert.True(CacheStamp.IsValid(cached, "https://github.com/rhi-tests/relimiter", "3.3.5"));
     }
 
     [Fact]
@@ -556,7 +556,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
         File.WriteAllBytes(cached, foreign);
         // No published digest, so nothing but the stamp could vouch for the cached file.
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest: null);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest: null);
         using var http = new HttpClient(new FakeHandler(req =>
             req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? JsonResponse(json)
@@ -581,9 +581,9 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(cached)!);
         // A stamp for the genuine bytes, then the file swapped for a foreign one of the same size.
         File.WriteAllBytes(cached, genuine);
-        CacheStamp.Write(cached, "https://example.test/relimiter", "3.3.5");
+        CacheStamp.Write(cached, "https://github.com/rhi-tests/relimiter", "3.3.5");
         File.WriteAllBytes(cached, MakeForeignPePayload(genuine.Length));
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", digest: null);
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", digest: null);
         var downloads = 0;
         using var http = new HttpClient(new FakeHandler(req =>
         {
@@ -604,7 +604,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
     public async Task Install_StampedCachedFile_IsReusedWithoutDownloading()
     {
         var genuine = MakePePayload(150 * 1024);
-        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://example.test/relimiter", Sha(genuine).ToLowerInvariant());
+        var json = ReleaseJson("v3.3.5", "relimiter.addon64", "https://github.com/rhi-tests/relimiter", Sha(genuine).ToLowerInvariant());
         var downloads = 0;
         using var http = new HttpClient(new FakeHandler(req =>
         {
@@ -635,7 +635,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
     {
         var oldPayload = MakePePayload(150 * 1024);
         var newPayload = MakeForeignPePayload(150 * 1024);
-        var url = "https://example.test/relimiter";
+        var url = "https://github.com/rhi-tests/relimiter";
         var json = ReleaseJson("v3.3.5", "relimiter.addon64", url, Sha(oldPayload).ToLowerInvariant());
         var current = oldPayload;
         var downloads = 0;
@@ -667,7 +667,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
     {
         var addon64 = MakePePayload(96 * 1024);
         var zip = MakeZipPayload(("DLSS5-Feeder/addon64/dlss5-feed.addon64", addon64));
-        var json = ReleaseJson("v0.13.1", "DLSS5-Feeder-0.13.1.zip", "https://example.test/feeder.zip", Sha(zip).ToLowerInvariant());
+        var json = ReleaseJson("v0.13.1", "DLSS5-Feeder-0.13.1.zip", "https://github.com/rhi-tests/feeder.zip", Sha(zip).ToLowerInvariant());
         var downloads = 0;
         using var http = new HttpClient(new FakeHandler(req =>
         {
@@ -682,7 +682,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         var service = new GitHubReShadeAddonDeploymentService(http,
             new LinuxDeploymentRecordStore(Path.Combine(_root, "feeder-stamp-records.json")),
             new GitHubReShadeAddonDefinition(
-                ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", "https://api.github.test/repos/feeder/releases/latest",
+                ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", "https://api.github.com/repos/feeder/releases/latest",
                 null, null, 64 * 1024,
                 AssetNamePattern64: @"^DLSS5-Feeder-.*\.zip$", AssetNamePattern32: @"^DLSS5-Feeder-.*\.zip$",
                 DeployFileName64: "dlss5-feed.addon64", DeployFileName32: "dlss5-feed.addon32"),
@@ -753,7 +753,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         => new(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
-            "https://api.github.test/repos/RankFTW/ReLimiter/releases/latest",
+            "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
             "relimiter.addon64",
             "relimiter.addon32",
             100 * 1024,
@@ -763,7 +763,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
     private GitHubReShadeAddonDeploymentService NewDynamicReLimiter(
         HttpClient http,
         LinuxDeploymentRecordStore store,
-        string releaseApiUrl = "https://api.github.test/repos/example/releases/latest")
+        string releaseApiUrl = "https://api.github.com/repos/example/releases/latest")
         => new(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
@@ -782,7 +782,7 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         => new(http, store, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.DisplayCommander,
             "Display Commander",
-            "https://api.github.test/repos/pmnoxx/display-commander/releases/tags/latest",
+            "https://api.github.com/repos/pmnoxx/display-commander/releases/tags/latest",
             "zzz_display_commander.addon64",
             "zzz_display_commander.addon32",
             500 * 1024,

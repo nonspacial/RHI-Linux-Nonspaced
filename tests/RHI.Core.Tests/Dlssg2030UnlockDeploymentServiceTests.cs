@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.Net;
 using System.Text;
 using RHI.Core.Models;
@@ -21,6 +22,34 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         Assert.Equal("SM86", Dlssg2030UnlockDeploymentService.RouterFor(Dlssg2030UnlockDeploymentService.GpuGenRtx30));
         Assert.Equal("SM75", Dlssg2030UnlockDeploymentService.RouterFor(Dlssg2030UnlockDeploymentService.GpuGenRtx20));
         Assert.Contains("sdli1995/dlssg_for_sm86", Dlssg2030UnlockDeploymentService.RepositoryUrl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GitBlobId_MatchesGitHashObject()
+    {
+        // `printf 'hello\n' | git hash-object --stdin`
+        var path = Path.Combine(_root, "blob.txt");
+        File.WriteAllText(path, "hello\n");
+        Assert.Equal("ce013625030ba8dba906f756967f9e9ca394464a", Dlssg2030UnlockDeploymentService.GitBlobSha1(path));
+    }
+
+    [Fact]
+    public async Task Payload_IsFetchedAtTheResolvedCommit_AndMustMatchGitHubsBlobId()
+    {
+        // #41: the version follows upstream's newest commit (as upstream 2.8.5), but the bytes are taken at that exact
+        // commit and must be the blob GitHub reports for it; anything else is refused and nothing is cached.
+        using var fixture = CreateGame("blob-pin", 0x8664, GraphicsApi.DirectX12);
+        using var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x41), UpstreamIni("SM75")) { WrongDllBlob = true };
+        using var http = new HttpClient(handler);
+        var service = CreateService(fixture, http, new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json")));
+
+        var snapshot = await service.ResolveLatestSnapshotAsync(CancellationToken.None);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => service.EnsureCachedPayloadAsync(snapshot, CancellationToken.None));
+
+        Assert.Equal(Commit, snapshot.CommitSha);
+        Assert.Contains("git blob", error.Message, StringComparison.Ordinal);
+        Assert.False(Directory.Exists(Path.Combine(fixture.Root, "cache", Commit)) &&
+                     Directory.EnumerateFiles(Path.Combine(fixture.Root, "cache", Commit)).Any(), "nothing may be cached");
     }
 
     [Fact]
@@ -157,7 +186,9 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
     public async Task Install_Rtx20_WritesSm75RouterAndMetadata()
     {
         using var fixture = CreateGame("rtx20", 0x8664, GraphicsApi.DirectX12);
-        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x32), UpstreamIni("SM86")));
+        var dll = CreatePe(0x8664, 320 * 1024, 0x32);
+        var ini = UpstreamIni("SM86");
+        using var http = new HttpClient(new DlssgHandler(dll, ini));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = CreateService(fixture, http, records);
         var result = await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll");
@@ -167,6 +198,32 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         Assert.Equal("SM75", record.Metadata["FG2030.Router"]);
         Assert.Equal(Dlssg2030UnlockDeploymentService.GpuGenRtx20, record.Metadata["FG2030.GpuGeneration"]);
         Assert.Equal("winmm.dll", record.Metadata["FG2030.ProxyName"]);
+        // Both files matched GitHub's git blob id at the commit (fail-closed), so both count as published-digest.
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(dll), VerifiedDownload.PublishedDigest);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(System.Text.Encoding.UTF8.GetBytes(ini)), VerifiedDownload.PublishedDigest, "Ini");
+    }
+
+    [Fact]
+    public async Task Update_RecordsTheNewCommitsDownloads()
+    {
+        // Review w2-trust minor 6: after an update the record names the bytes it now deploys.
+        using var fixture = CreateGame("update-download", 0x8664, GraphicsApi.DirectX12);
+        var ini = UpstreamIni("SM86");
+        var handler = new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x33), ini);
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
+
+        var newer = CreatePe(0x8664, 320 * 1024, 0x34);
+        handler.CommitSha = "fedcba9876543210fedcba9876543210fedcba98";
+        handler.Dll = newer;
+        var update = await service.UpdateAsync(fixture.Game);
+
+        Assert.True(update.Success, update.Message);
+        var record = records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock)!;
+        Assert.Equal(handler.CommitSha, record.Metadata["FG2030.CommitSha"]);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(newer), VerifiedDownload.PublishedDigest);
     }
 
     [Fact]
@@ -320,19 +377,35 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
 
     private sealed class DlssgHandler(byte[] dll, string ini) : HttpMessageHandler
     {
+        /// <summary>The newest upstream commit and its version.dll (an update moves both).</summary>
+        public string CommitSha { get; set; } = Commit;
+        public byte[] Dll { get; set; } = dll;
+
         public int RequestCount { get; private set; }
+
+        /// <summary>When set, GitHub reports a blob id that does not belong to the served version.dll.</summary>
+        public bool WrongDllBlob { get; init; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             var url = request.RequestUri!.ToString();
             if (url == Dlssg2030UnlockDeploymentService.CommitsApiUrl)
-                return Task.FromResult(JsonResponse($"[{{\"sha\":\"{Commit}\"}}]"));
-            if (url == Dlssg2030UnlockDeploymentService.RawUrl(Commit, Dlssg2030UnlockDeploymentService.DefaultProxyName))
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(dll) });
-            if (url == Dlssg2030UnlockDeploymentService.RawUrl(Commit, Dlssg2030UnlockDeploymentService.IniFileName))
+                return Task.FromResult(JsonResponse($"[{{\"sha\":\"{CommitSha}\"}}]"));
+            // GitHub's contents API reports each file's git blob id at the commit (#41).
+            if (url == Dlssg2030UnlockDeploymentService.ContentsApiUrl(CommitSha, Dlssg2030UnlockDeploymentService.DefaultProxyName))
+                return Task.FromResult(JsonResponse($"{{\"sha\":\"{(WrongDllBlob ? new string('b', 40) : GitBlob(Dll))}\"}}"));
+            if (url == Dlssg2030UnlockDeploymentService.ContentsApiUrl(CommitSha, Dlssg2030UnlockDeploymentService.IniFileName))
+                return Task.FromResult(JsonResponse($"{{\"sha\":\"{GitBlob(Encoding.UTF8.GetBytes(ini))}\"}}"));
+            if (url == Dlssg2030UnlockDeploymentService.RawUrl(CommitSha, Dlssg2030UnlockDeploymentService.DefaultProxyName))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Dll) });
+            if (url == Dlssg2030UnlockDeploymentService.RawUrl(CommitSha, Dlssg2030UnlockDeploymentService.IniFileName))
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ini, Encoding.UTF8, "text/plain") });
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }
+
+        internal static string GitBlob(byte[] content)
+            => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
+                [.. Encoding.ASCII.GetBytes($"blob {content.Length}\0"), .. content])).ToLowerInvariant();
 
         private static HttpResponseMessage JsonResponse(string json)
             => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };

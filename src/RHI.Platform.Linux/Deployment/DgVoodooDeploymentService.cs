@@ -1,17 +1,23 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
 
+/// <param name="Download">The verified release archive the D3D9.dll was extracted from (record metadata of the deploying component, #26).</param>
 public sealed record DgVoodooPreparedPayload(
     string Version,
     string SourceUrl,
     string D3D9Path,
-    string ConfigPath);
+    string ConfigPath,
+    VerifiedDownload? Download = null)
+{
+    /// <summary>Record metadata part name of the dgVoodoo2 download (<c>Download.dgVoodoo.Sha256</c>).</summary>
+    public const string DownloadPart = "dgVoodoo";
+}
 
 /// <summary>
 /// Stages the official dgVoodoo2 D3D9 wrapper used by the upstream RHI DX9 paths.
@@ -76,50 +82,25 @@ public sealed class DgVoodooDeploymentService
         var versionDir = Path.Combine(_cacheDir, safeVersion);
         Directory.CreateDirectory(versionDir);
         var zipPath = Path.Combine(versionDir, assetName);
-        // Reuse only an archive this service stamped for this URL and version (#142).
-        // The stamp re-hashes the archive and must have recorded the published digest, and the archive
-        // was checked against that digest before it was stamped, so it is not hashed a second time.
-        var needsDownload = !CacheStamp.TryValidate(zipPath, url, version, sha256, out var cachedSha256) || new FileInfo(zipPath).Length < 1024 ||
-                            (!string.IsNullOrWhiteSpace(sha256) && !string.Equals(cachedSha256, sha256, StringComparison.OrdinalIgnoreCase));
-
-        if (needsDownload)
-        {
-            CacheStamp.Invalidate(zipPath);
-            var temp = zipPath + $".tmp-{Guid.NewGuid():N}";
-            try
+        // Reuse only an archive this service stamped for this URL, version and published digest (#142);
+        // anything else is downloaded again under the dgVoodoo2 host policy and verified (#26, #42).
+        var download = await TrustedDownload.EnsureVerifiedAsync(
+            _http, url, zipPath, DownloadSources.DgVoodoo, version, sha256,
+            validate: (temp, ct) =>
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
-                await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-                await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous))
-                    await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
                 if (new FileInfo(temp).Length < 1024)
                     throw new InvalidDataException("Downloaded dgVoodoo2 archive is unexpectedly small.");
-                if (!string.IsNullOrWhiteSpace(sha256))
-                {
-                    var actual = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-                    if (!string.Equals(actual, sha256, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException("Downloaded dgVoodoo2 archive failed the GitHub SHA-256 digest.");
-                }
-                using (var archive = ZipFile.OpenRead(temp)) _ = archive.Entries.Count;
-                File.Move(temp, zipPath, overwrite: true);
-                CacheStamp.Write(zipPath, url, version, sha256);
-            }
-            finally
-            {
-                try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            }
-        }
+                return ReShadeArchiveExtractor.RequireReadableZip(temp, ct);
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var archDir = Path.Combine(versionDir, architecture == PeArchitecture.X86 ? "x86" : "x64");
         Directory.CreateDirectory(archDir);
         var d3d9 = Path.Combine(archDir, "D3D9.dll");
-        ExtractD3D9(zipPath, d3d9, architecture);
+        await ExtractD3D9Async(zipPath, d3d9, architecture, cancellationToken).ConfigureAwait(false);
         var config = Path.Combine(archDir, "dgVoodoo.conf");
-        File.WriteAllText(config, BuildConfiguration(), new UTF8Encoding(false));
-        return new DgVoodooPreparedPayload(version, url, d3d9, config);
+        AtomicFile.WriteAllText(config, BuildConfiguration(), new UTF8Encoding(false));
+        return new DgVoodooPreparedPayload(version, url, d3d9, config, download);
     }
 
     internal static bool IsTrustedArchiveUrl(string? value)
@@ -131,7 +112,7 @@ public sealed class DgVoodooDeploymentService
             && uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     }
 
-    internal static string ExtractD3D9(string zipPath, string destination, PeArchitecture architecture)
+    internal static async Task<string> ExtractD3D9Async(string zipPath, string destination, PeArchitecture architecture, CancellationToken cancellationToken)
     {
         var expected = architecture switch
         {
@@ -144,7 +125,7 @@ public sealed class DgVoodooDeploymentService
             item.FullName.Replace('\\', '/').TrimStart('/').Equals(expected, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidDataException($"dgVoodoo2 archive does not contain {expected}.");
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        entry.ExtractToFile(destination, overwrite: true);
+        await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, destination, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         if (!BinarySignatureInspector.HasPeSignature(destination, MinimumDllSize))
             throw new InvalidDataException($"Extracted dgVoodoo2 {expected} is not a plausible PE DLL.");
         return destination;
@@ -160,11 +141,4 @@ public sealed class DgVoodooDeploymentService
         "VideoCard = geforce_9800_gt\r\n" +
         "VRAM = 1024\r\n" +
         "dgVoodooWatermark = false\r\n";
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
 }

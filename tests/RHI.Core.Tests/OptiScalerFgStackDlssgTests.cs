@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -36,6 +37,10 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         var owned = record.Files.Single(file => file.Path == dlssg);
         Assert.False(owned.ExistedBeforeInstall);
         Assert.Equal(Sha256(Dlssg(0x51)), owned.Sha256);
+        // The DLSS Enabler payload is a download of this record (review w2-trust minor 6); gone with the stack.
+        var enabler = Path.Combine(fx.Bin, "OptiScaler", OptiScalerDeploymentService.DlssEnablerHeadlessFileName);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(enabler), VerifiedDownload.PublishedDigest,
+            OptiScalerDeploymentService.FgStackDlssEnablerDownloadPart);
 
         var disabled = await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false");
 
@@ -45,6 +50,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         record = fx.Store.Find(fx.Game, ManagedComponentKind.OptiScaler)!;
         Assert.DoesNotContain(record.Files, file => file.Path == dlssg);
         Assert.False(record.Metadata.ContainsKey(OptiScalerDeploymentService.FgStackDlssgVersionMetadataKey));
+        DownloadRecordAssert.NotRecorded(record, OptiScalerDeploymentService.FgStackDlssEnablerDownloadPart);
     }
 
     [Fact]
@@ -219,7 +225,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
             Component = ManagedComponentKind.OptiScaler,
             BinaryDirectory = bin,
             Version = "1.0",
-            SourceUrl = "https://example.invalid/OptiScaler.7z",
+            SourceUrl = "https://github.com/rhi-tests/OptiScaler.7z",
             Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [OptiScalerDeploymentService.VariantMetadataKey] = variant.ToString()
@@ -297,7 +303,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         private const string StreamlineUrl = "https://github.com/test/streamline-2.12.0.zip";
         private const string DlssgNewUrl = "https://github.com/test/dlssg-310.5.0.zip";
         private const string DlssgOldUrl = "https://github.com/test/dlssg-310.1.0.zip";
-        private const string EnablerUrl = "https://example.invalid/DLSS-Enabler-4.10.0.zip";
+        private const string EnablerUrl = "https://github.com/rhi-tests/DLSS-Enabler-4.10.0.zip";
         private static readonly byte[] EnablerZip = Zip(("version.dll", Pe64(0x44, 160 * 1024)));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

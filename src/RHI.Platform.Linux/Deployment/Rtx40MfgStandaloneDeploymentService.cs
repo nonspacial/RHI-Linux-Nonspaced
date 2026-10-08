@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
@@ -233,19 +232,35 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail($"Universal MFG download/validation failed: {ex.Message}");
         }
 
-        var tempPath = targetPath + $".rhi-install-{Guid.NewGuid():N}";
+        string? tempPath = null;
         WineOverrideRecord? wineOverride = null;
         var moved = false;
         var recordWritten = false;
         try
         {
-            File.Copy(payloadPath, tempPath, overwrite: false);
+            // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
+            var staged = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
+            tempPath = staged.Path;
             ValidatePayload(tempPath);
             wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
-            File.Move(tempPath, targetPath);
+            AtomicFile.MoveIntoPlace(tempPath, targetPath, overwrite: false);
             moved = true;
 
-            var payloadHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            var payloadHash = staged.Sha256;
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [MetaGpuGeneration] = selectedGpu,
+                [MetaProxyName] = selectedProxy,
+                [LegacyMetaProxyName] = selectedProxy,
+                [MetaTag] = release.Tag,
+                [MetaAssetName] = release.AssetName,
+                [MetaAssetSha256] = release.AssetSha256 ?? "",
+                [MetaPayloadSha256] = payloadHash,
+                [MetaExperimental] = "1",
+                [MetaUpstream] = RepositoryUrl,
+            };
+            // Fail-closed source: every payload matched GitHub's digest or the publisher's SHA256SUMS.txt (#26).
+            VerifiedDownload.Record(metadata, payloadHash, digestVerified: true);
             _records.Upsert(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -266,18 +281,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                         AllowUserChanges = false
                     }
                 ],
-                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [MetaGpuGeneration] = selectedGpu,
-                    [MetaProxyName] = selectedProxy,
-                    [LegacyMetaProxyName] = selectedProxy,
-                    [MetaTag] = release.Tag,
-                    [MetaAssetName] = release.AssetName,
-                    [MetaAssetSha256] = release.AssetSha256 ?? "",
-                    [MetaPayloadSha256] = payloadHash,
-                    [MetaExperimental] = "1",
-                    [MetaUpstream] = RepositoryUrl,
-                }
+                Metadata = metadata
             });
             recordWritten = true;
             _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
@@ -288,10 +292,13 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         }
         catch (Exception ex)
         {
-            try { if (moved && File.Exists(targetPath)) File.Delete(targetPath); } catch { }
-            TryDelete(tempPath);
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); } catch { }
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone); } catch { }
+            if (moved && !FileCleanup.TryDelete(targetPath, out var deleteError))
+                AppLog.Warn("universal-mfg", $"Install rollback could not remove {targetPath}", deleteError);
+            if (tempPath is not null) FileCleanup.TryDelete(tempPath);
+            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); }
+            catch (Exception restoreError) { AppLog.Warn("universal-mfg", "Install rollback could not restore the Wine override", restoreError); }
+            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone); }
+            catch (Exception recordError) { AppLog.Warn("universal-mfg", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"Universal MFG install rolled back: {ex.Message}");
         }
     }
@@ -314,7 +321,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
         if (File.Exists(targetPath))
         {
-            var current = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Remoção bloqueada antes de alterar o override Wine.");
         }
@@ -332,7 +339,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             _overrides.Restore(game.PrefixPath!, record.WineOverride);
             overrideRestored = true;
             _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone);
-            TryDelete(tempPath);
+            FileCleanup.TryDelete(tempPath);
             return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado.");
         }
         catch (Exception ex)
@@ -344,7 +351,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                     _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
                 _records.Upsert(record);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("universal-mfg", $"Removal rollback did not complete; the managed proxy may be at {tempPath}", rollbackError);
+            }
             return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -390,7 +400,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (!File.Exists(targetPath))
             return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG não existe mais; update não recriará um slot perdido silenciosamente.");
 
-        var currentHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("A DLL gerenciada do Universal MFG foi modificada externamente; update bloqueado.");
 
@@ -408,15 +418,16 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return ComponentOperationResult.Fail($"Universal MFG update check/download failed: {ex.Message}");
         }
 
-        var staged = targetPath + $".rhi-update-{Guid.NewGuid():N}";
+        string? staged = null;
         var previous = targetPath + $".rhi-previous-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(payloadPath, staged, overwrite: false);
+            var stagedCopy = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
+            staged = stagedCopy.Path;
             ValidatePayload(staged);
-            File.Move(targetPath, previous);
-            File.Move(staged, targetPath);
-            var newHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Rename(targetPath, previous);
+            AtomicFile.MoveIntoPlace(staged, targetPath, overwrite: false);
+            var newHash = stagedCopy.Sha256;
 
             fileRecord.Sha256 = newHash;
             record.Version = latest.Version;
@@ -426,22 +437,27 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             record.Metadata[MetaAssetName] = latest.AssetName;
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
+            VerifiedDownload.Record(record.Metadata, newHash, digestVerified: true);
             _records.Upsert(record);
-            TryDelete(previous);
+            FileCleanup.TryDelete(previous);
             return ComponentOperationResult.Ok($"Universal MFG atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
         }
         catch (Exception ex)
         {
-            try
+            if (staged is not null) FileCleanup.TryDelete(staged);
+            if (File.Exists(previous))
             {
-                TryDelete(staged);
-                if (File.Exists(previous))
+                try
                 {
-                    TryDelete(targetPath);
-                    File.Move(previous, targetPath);
+                    // The previous DLL is moved back over whatever the failed update left, never deleted first.
+                    AtomicFile.Rename(previous, targetPath, overwrite: true);
+                }
+                catch (Exception restoreError)
+                {
+                    AppLog.Warn("universal-mfg", $"Update rollback could not put the previous {proxyName} back; it is kept at {previous}", restoreError);
+                    return ComponentOperationResult.Fail($"Universal MFG update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{previous}");
                 }
             }
-            catch { }
             return ComponentOperationResult.Fail($"Universal MFG update failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -459,13 +475,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
     internal async Task<Rtx40MfgReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApiUrl);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, ReleasesApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Object)
             throw new InvalidDataException("RTX40MFG latest release API returned an unexpected JSON shape.");
 
@@ -553,34 +564,31 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                 ValidatePayload(dllPath);
                 return dllPath;
             }
-            catch
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             {
                 CacheStamp.Invalidate(dllPath);
-                TryDelete(dllPath);
+                FileCleanup.TryDelete(dllPath);
             }
         }
 
-        var assetPath = Path.Combine(versionDir, release.AssetName);
-        var tempAsset = assetPath + $".tmp-{Guid.NewGuid():N}";
-        try
+        // Downloaded under the Universal MFG host policy and checked against GitHub's digest when published; this
+        // source is fail-closed: ResolveLatestReleaseAsync refuses a release with neither that digest nor the
+        // publisher's SHA256SUMS.txt, which is checked here as well (#26).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, release.AssetUrl, Path.Combine(versionDir, release.AssetName), DownloadSources.UniversalMfg,
+            release.AssetSha256, cancellationToken: cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(release.ChecksumsUrl))
         {
-            await DownloadToFileAsync(release.AssetUrl, tempAsset, cancellationToken).ConfigureAwait(false);
-            var actualAssetHash = await Sha256FileAsync(tempAsset, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(release.AssetSha256) &&
-                !string.Equals(actualAssetHash, release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("RTX40MFG release asset failed the GitHub-published SHA-256 digest.");
+            var sums = await TrustedDownload.GetStringAsync(_http, release.ChecksumsUrl, DownloadSources.UniversalMfg, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var expected = TryFindChecksum(sums, release.AssetName);
+            if (string.IsNullOrWhiteSpace(expected))
+                throw new InvalidDataException($"SHA256SUMS.txt does not contain an entry for {release.AssetName}.");
+            if (!string.Equals(download.Sha256, expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("RTX40MFG archive failed the upstream SHA256SUMS.txt verification.");
+        }
 
-            if (!string.IsNullOrWhiteSpace(release.ChecksumsUrl))
-            {
-                var sums = await DownloadTextAsync(release.ChecksumsUrl, cancellationToken).ConfigureAwait(false);
-                var expected = TryFindChecksum(sums, release.AssetName);
-                if (string.IsNullOrWhiteSpace(expected))
-                    throw new InvalidDataException($"SHA256SUMS.txt does not contain an entry for {release.AssetName}.");
-                if (!string.Equals(actualAssetHash, expected, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("RTX40MFG archive failed the upstream SHA256SUMS.txt verification.");
-            }
-
-            using var zip = ZipFile.OpenRead(tempAsset);
+        using (var zip = ZipFile.OpenRead(download.Path))
+        {
             var entries = zip.Entries
                 .Where(entry => entry.Name.Equals(InnerDllName, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
@@ -589,45 +597,17 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                     ? $"{InnerDllName} was not found in the RTX40MFG archive."
                     : $"RTX40MFG archive contains multiple ambiguous {InnerDllName} entries.");
 
-            var extractTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
-            try
-            {
-                // Checked extraction (declared-size cap, fixed mode, length + CRC-32); never ExtractToFile (Refs #42).
-                if (await ReShadeArchiveExtractor.ExtractEntryAsync(entries[0], extractTemp, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false) is { } refused)
-                    throw new InvalidDataException(ReShadeArchiveExtractor.ArchiveRefusedPrefix + refused);
-                ValidatePayload(extractTemp);
-                File.Move(extractTemp, dllPath, overwrite: true);
-            }
-            finally { TryDelete(extractTemp); }
+            // Checked extraction (declared-size cap, fixed mode, length + CRC-32, atomic rename); never ExtractToFile (Refs #42).
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        try { ValidatePayload(dllPath); }
+        catch
         {
-            TryDelete(tempAsset);
+            FileCleanup.TryDelete(dllPath);
+            throw;
         }
-
-        ValidatePayload(dllPath);
         CacheStamp.Write(dllPath, release.AssetUrl, release.Version, release.AssetSha256);
         return dllPath;
-    }
-
-    private async Task DownloadToFileAsync(string url, string path, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using var output = File.Create(path);
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<string> DownloadTextAsync(string url, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static void ValidatePayload(string path)
@@ -780,17 +760,6 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     {
         try { return Path.GetFullPath(left).Equals(Path.GetFullPath(right), StringComparison.Ordinal); }
         catch { return string.Equals(left, right, StringComparison.Ordinal); }
-    }
-
-    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 }
 

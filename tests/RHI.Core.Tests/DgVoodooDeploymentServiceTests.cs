@@ -25,7 +25,7 @@ public sealed class DgVoodooDeploymentServiceTests : IDisposable
     [Theory]
     [InlineData(PeArchitecture.X86, @"MS\x86\D3D9.dll")]
     [InlineData(PeArchitecture.X64, @"MS\x64\D3D9.dll")]
-    public void ExtractD3D9_SelectsMatchingArchitectureAndNormalizesWindowsPaths(PeArchitecture architecture, string expectedEntry)
+    public async Task ExtractD3D9_SelectsMatchingArchitectureAndNormalizesWindowsPaths(PeArchitecture architecture, string expectedEntry)
     {
         var zip = Path.Combine(_root, $"dgvoodoo-{architecture}.zip");
         using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
@@ -43,10 +43,48 @@ public sealed class DgVoodooDeploymentServiceTests : IDisposable
         }
 
         var target = Path.Combine(_root, $"D3D9-{architecture}.dll");
-        var extracted = DgVoodooDeploymentService.ExtractD3D9(zip, target, architecture);
+        var extracted = await DgVoodooDeploymentService.ExtractD3D9Async(zip, target, architecture, CancellationToken.None);
 
         Assert.Equal(target, extracted);
         Assert.Equal(0x5A, File.ReadAllBytes(target)[80]);
+    }
+
+    [Fact]
+    public async Task Prepare_CarriesTheVerifiedArchiveForTheDeployingRecord()
+    {
+        // Review w2-trust minor 6: Luma and the Feeder record dgVoodoo2's download as part "dgVoodoo".
+        const string url = "https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.86/dgVoodoo2_86.zip";
+        byte[] zip;
+        using (var memory = new MemoryStream())
+        {
+            using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var entry = archive.CreateEntry("MS/x64/D3D9.dll", CompressionLevel.NoCompression);
+                using var output = entry.Open();
+                var payload = new byte[96 * 1024];
+                payload[0] = (byte)'M';
+                payload[1] = (byte)'Z';
+                output.Write(payload);
+            }
+            zip = memory.ToArray();
+        }
+        using var http = new HttpClient(new ZipHandler(url, zip));
+        var service = new DgVoodooDeploymentService(http, Path.Combine(_root, "cache"));
+
+        var prepared = await service.PrepareManifestVersionAsync("2.86", url, PeArchitecture.X64);
+
+        Assert.NotNull(prepared.Download);
+        Assert.Equal(DownloadRecordAssert.Sha256Of(zip), prepared.Download!.Sha256, ignoreCase: true);
+        Assert.False(prepared.Download.DigestVerified); // a manifest link publishes no digest
+        Assert.Equal("dgVoodoo", DgVoodooPreparedPayload.DownloadPart);
+    }
+
+    private sealed class ZipHandler(string url, byte[] zip) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(request.RequestUri!.AbsoluteUri == url
+                ? new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(zip), RequestMessage = request }
+                : new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
     }
 
     [Fact]

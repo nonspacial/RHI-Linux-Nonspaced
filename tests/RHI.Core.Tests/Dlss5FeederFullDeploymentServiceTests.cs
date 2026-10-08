@@ -188,7 +188,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
 
 
     [Fact]
-    public void ExtractReleasePayloadByName_HandlesWindowsBackslashEntriesOnLinux()
+    public async Task ExtractReleasePayloadByName_HandlesWindowsBackslashEntriesOnLinux()
     {
         var zip = Path.Combine(_root, "feeder-windows-layout.zip");
         var destination = Path.Combine(_root, "DLSS5_Feed.fx");
@@ -201,8 +201,8 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
             writer.Write(payload);
         }
 
-        var extracted = Dlss5FeederFullDeploymentService.ExtractReleasePayloadByName(
-            zip, "DLSS5_Feed.fx", destination, minimumSize: 256, requirePe: false);
+        var extracted = await Dlss5FeederFullDeploymentService.ExtractReleasePayloadByNameAsync(
+            zip, "DLSS5_Feed.fx", destination, minimumSize: 256, requirePe: false, CancellationToken.None);
 
         Assert.Equal(destination, extracted);
         Assert.Equal(payload, File.ReadAllText(destination));
@@ -744,7 +744,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void ExtractReleasePayloadByName_FindsHost64HelperInWindowsArchiveLayout()
+    public async Task ExtractReleasePayloadByName_FindsHost64HelperInWindowsArchiveLayout()
     {
         var zip = Path.Combine(_root, "feeder-host64.zip");
         var destination = Path.Combine(_root, "dlss5-feed-host64.exe");
@@ -759,8 +759,8 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
             output.Write(payload);
         }
 
-        var extracted = Dlss5FeederFullDeploymentService.ExtractReleasePayloadByName(
-            zip, "dlss5-feed-host64.exe", destination, minimumSize: 64 * 1024, requirePe: true);
+        var extracted = await Dlss5FeederFullDeploymentService.ExtractReleasePayloadByNameAsync(
+            zip, "dlss5-feed-host64.exe", destination, minimumSize: 64 * 1024, requirePe: true, CancellationToken.None);
 
         Assert.Equal(destination, extracted);
         Assert.True(File.Exists(destination));

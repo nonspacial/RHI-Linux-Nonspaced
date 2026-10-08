@@ -1,8 +1,7 @@
-using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 using RHI.Core;
+using RHI.Core.Deployment;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
@@ -57,7 +56,6 @@ public sealed class ReShadeShaderPackService
         public Dictionary<string, List<string>> ExcludedFiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static readonly TimeSpan ExternalExtractionTimeout = TimeSpan.FromMinutes(2);
 
     private static readonly ReShadeShaderPackDefinition CoreHeadersPack = new(
         "ReShadeCoreHeaders",
@@ -312,8 +310,9 @@ public sealed class ReShadeShaderPackService
         RemoveManifestFiles(root, previous);
         if (normalized.Length == 0)
         {
-            try { if (File.Exists(manifestPath)) File.Delete(manifestPath); } catch { }
-            TryDeleteEmptyTree(root, keepRootIfFilesRemain: true);
+            if (!FileCleanup.TryDelete(manifestPath, out var manifestError))
+                AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", manifestError);
+            FileCleanup.TryDeleteEmptyTree(root);
             return new(root, [], [], []);
         }
 
@@ -371,8 +370,9 @@ public sealed class ReShadeShaderPackService
         if (!File.Exists(manifestPath)) return;
         var manifest = LoadManifest(manifestPath);
         RemoveManifestFiles(root, manifest);
-        try { if (File.Exists(manifestPath)) File.Delete(manifestPath); } catch { }
-        TryDeleteEmptyTree(root, keepRootIfFilesRemain: true);
+        if (!FileCleanup.TryDelete(manifestPath, out var removeError))
+            AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
+        FileCleanup.TryDeleteEmptyTree(root);
     }
 
     internal static IReadOnlyList<string> ExpandDependencies(
@@ -516,17 +516,15 @@ public sealed class ReShadeShaderPackService
             downloadUrl.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
             extension = ".tar.gz";
 
-        var temp = Path.Combine(packDir, $"download-{Guid.NewGuid():N}" + (string.IsNullOrWhiteSpace(extension) ? ".tmp" : extension) + ".tmp");
         var raw = Path.Combine(packDir, "raw-" + Guid.NewGuid().ToString("N"));
+        // Shader-pack host policy (GitHub, codeload.github.com, GitLab) on the link and every redirect, size cap (#42).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, downloadUrl, Path.Combine(packDir, "download" + (string.IsNullOrWhiteSpace(extension) ? "" : extension)),
+            DownloadSources.ShaderPacks, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var temp = download.Path;
 
         try
         {
-            using var response = await _http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-
             if (new FileInfo(temp).Length < 512)
                 throw new InvalidOperationException($"Shader pack {pack.DisplayName} download is unexpectedly small.");
 
@@ -534,12 +532,13 @@ public sealed class ReShadeShaderPackService
             if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
                 (pack.AssetExt?.Equals(".zip", StringComparison.OrdinalIgnoreCase) ?? false))
             {
-                ExtractZipSafely(temp, raw);
+                await ExtractZipSafelyAsync(temp, raw, cancellationToken).ConfigureAwait(false);
             }
             else if (downloadUrl.EndsWith(".7z", StringComparison.OrdinalIgnoreCase) ||
                      (pack.AssetExt?.Equals(".7z", StringComparison.OrdinalIgnoreCase) ?? false))
             {
-                await Extract7zAsync(temp, raw, cancellationToken).ConfigureAwait(false);
+                // Host tool through the shared runner: time limit, process-tree kill, link check (#37).
+                await ExternalArchiveRunner.ExtractAsync(temp, raw, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -554,15 +553,18 @@ public sealed class ReShadeShaderPackService
 
             if (Directory.Exists(extracted)) Directory.Delete(extracted, true);
             Directory.Move(normalized, extracted);
-            File.WriteAllText(sourceMarker, sourceIdentity);
-            File.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
+            AtomicFile.WriteAllText(sourceMarker, sourceIdentity);
+            AtomicFile.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
             CacheStamp.Write(extracted, downloadUrl, sourceIdentity);
             return extracted;
         }
         finally
         {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            try { if (Directory.Exists(raw)) Directory.Delete(raw, true); } catch { }
+            try { if (Directory.Exists(raw)) Directory.Delete(raw, true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("shaders", $"Could not remove the extraction folder {raw}", ex);
+            }
         }
     }
 
@@ -603,7 +605,10 @@ public sealed class ReShadeShaderPackService
             Directory.CreateDirectory(Path.Combine(_customRoot, "Shaders"));
             Directory.CreateDirectory(Path.Combine(_customRoot, "Textures"));
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("shaders", $"Could not create the custom shader folders under {_customRoot}", ex);
+        }
     }
 
     private async Task<(string DownloadUrl, string SourceIdentity)> ResolveGitHubReleaseAssetAsync(
@@ -611,12 +616,8 @@ public sealed class ReShadeShaderPackService
         string assetExtension,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        var json = await TrustedDownload.GetStringAsync(_http, apiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         var tag = root.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() ?? "unknown" : "unknown";
         if (!root.TryGetProperty("assets", out var assets))
@@ -634,7 +635,7 @@ public sealed class ReShadeShaderPackService
         throw new InvalidDataException($"GitHub release has no {assetExtension} asset: {apiUrl}");
     }
 
-    private static void ExtractZipSafely(string archivePath, string outputRoot)
+    private static async Task ExtractZipSafelyAsync(string archivePath, string outputRoot, CancellationToken cancellationToken)
     {
         using var archive = ZipFile.OpenRead(archivePath);
         var allowed = Path.GetFullPath(outputRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -657,81 +658,9 @@ public sealed class ReShadeShaderPackService
             if (!destination.StartsWith(allowed, StringComparison.Ordinal))
                 throw new InvalidDataException($"Shader archive entry escapes staging directory: {entry.FullName}");
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            entry.ExtractToFile(destination, overwrite: true);
+            // Checked extraction (declared-size cap, fixed mode, length + CRC-32, atomic rename); never ExtractToFile (#42).
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, destination, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
-    }
-
-    private static async Task Extract7zAsync(string archivePath, string outputRoot, CancellationToken cancellationToken)
-    {
-        var tool = FindExecutable(["7zz", "7z", "7za"])
-            ?? throw new InvalidOperationException("A 7z-compatible extractor is required for this shader pack (install 7zip/7zz/7za).");
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = tool,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
-        psi.ArgumentList.Add("x");
-        psi.ArgumentList.Add("-y");
-        psi.ArgumentList.Add($"-o{outputRoot}");
-        psi.ArgumentList.Add(archivePath);
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Could not start {tool}.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(ExternalExtractionTimeout);
-
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKillProcess(process);
-            try
-            {
-                await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            }
-            catch { }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new TimeoutException("Shader pack 7z extraction exceeded 2 minutes and was terminated to keep the RHI UI responsive.");
-        }
-
-        var stdout = await stdoutTask.ConfigureAwait(false);
-        var stderr = await stderrTask.ConfigureAwait(false);
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"{Path.GetFileName(tool)} extraction failed ({process.ExitCode}): {stderr}\n{stdout}");
-    }
-
-    private static void TryKillProcess(Process process)
-    {
-        try
-        {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-        }
-        catch { }
-    }
-
-    internal static string? FindExecutable(IEnumerable<string> names)
-    {
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var name in names)
-        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(dir, name);
-                if (File.Exists(candidate)) return candidate;
-            }
-            catch { }
-        }
-        return null;
     }
 
     private static int NormalizeExtractedShaderTree(string rawRoot, string outputRoot)
@@ -811,7 +740,7 @@ public sealed class ReShadeShaderPackService
         if (!File.Exists(destination)) return;
         var manifestRelative = Path.GetRelativePath(managedRoot, destination);
         if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
-            !string.Equals(Sha256(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
+            !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new IOException($"Protected shader file in RHI path was modified or is externally owned: {destination}");
     }
 
@@ -828,11 +757,10 @@ public sealed class ReShadeShaderPackService
         if (File.Exists(destination))
             throw new IOException($"Protected shader file already exists in RHI-managed path: {destination}");
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        File.Copy(source, destination);
         manifest.Files.Add(new ManifestFile
         {
             RelativePath = Path.GetRelativePath(managedRoot, destination),
-            Sha256 = Sha256(destination)
+            Sha256 = AtomicFile.Copy(source, destination)
         });
     }
 
@@ -853,7 +781,7 @@ public sealed class ReShadeShaderPackService
             if (!File.Exists(destination)) continue;
             var manifestRelative = Path.GetRelativePath(managedRoot, destination);
             if (!previousByPath.TryGetValue(manifestRelative, out var old) ||
-                !string.Equals(Sha256(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(FileHash.Sha256Hex(destination), old.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new IOException($"Protected shader file in RHI path was modified or is externally owned: {destination}");
         }
     }
@@ -879,11 +807,10 @@ public sealed class ReShadeShaderPackService
             if (File.Exists(destination))
                 throw new IOException($"Protected shader file already exists in RHI-managed path: {destination}");
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(source, destination);
             manifest.Files.Add(new ManifestFile
             {
                 RelativePath = Path.GetRelativePath(managedRoot, destination),
-                Sha256 = Sha256(destination)
+                Sha256 = AtomicFile.Copy(source, destination)
             });
         }
     }
@@ -980,37 +907,21 @@ public sealed class ReShadeShaderPackService
                 var path = Path.GetFullPath(Path.Combine(root, file.RelativePath));
                 var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 if (!path.StartsWith(rootWithSep, StringComparison.Ordinal) || !File.Exists(path)) continue;
-                if (string.Equals(Sha256(path), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(FileHash.Sha256Hex(path), file.Sha256, StringComparison.OrdinalIgnoreCase))
                     File.Delete(path);
             }
-            catch { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                AppLog.Warn("shaders", $"Could not remove the managed shader file {file.RelativePath}", ex);
+            }
         }
 
         if (Directory.Exists(root))
         {
-            foreach (var dir in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
-            {
-                try { if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir); } catch { }
-            }
+            List<string> directories;
+            try { directories = SafeFileEnumeration.Directories(root).ToList(); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return; }
+            FileCleanup.TryDeleteEmptyDirectories(directories);
         }
-    }
-
-    private static void TryDeleteEmptyTree(string root, bool keepRootIfFilesRemain)
-    {
-        try
-        {
-            if (!Directory.Exists(root)) return;
-            foreach (var dir in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
-                if (!Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
-            if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
-            else if (!keepRootIfFilesRemain) Directory.Delete(root, true);
-        }
-        catch { }
-    }
-
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
     }
 }

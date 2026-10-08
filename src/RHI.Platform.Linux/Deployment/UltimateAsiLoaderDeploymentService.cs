@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -186,10 +186,10 @@ public sealed class UltimateAsiLoaderDeploymentService
                 movedOriginal = true;
             }
 
-            File.Copy(stagedDll, targetPath, overwrite: false);
+            // Verified durable copy; never replaces a file that appeared at the proxy name meanwhile.
+            var targetHash = await AtomicFile.CopyAsync(stagedDll, targetPath, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
             copiedProxy = true;
 
-            var targetHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [MetaProxyName] = proxyName,
@@ -197,6 +197,8 @@ public sealed class UltimateAsiLoaderDeploymentService
                 [MetaArchitecture] = architecture.ToString(),
                 [MetaAssetSha256] = release.AssetSha256 ?? "",
             };
+            // The cached DLL (the verified cache entry) is what was copied: its hash is the deployed file's.
+            VerifiedDownload.Record(metadata, targetHash, HasPublishedDigest(release));
             if (hadOriginal)
                 metadata[MetaHookedPath] = hookedPath;
 
@@ -238,14 +240,20 @@ public sealed class UltimateAsiLoaderDeploymentService
                 if (movedOriginal && File.Exists(hookedPath) && !File.Exists(targetPath))
                     File.Move(hookedPath, targetPath);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("ual", $"Install rollback could not put {proxyName} back (the original stays at {hookedPath})", rollbackError);
+            }
 
             try
             {
                 if (wineOverride is not null)
                     _overrides.Restore(game.PrefixPath!, wineOverride);
             }
-            catch { }
+            catch (Exception restoreError)
+            {
+                AppLog.Warn("ual", $"Install rollback could not restore the {proxyName} Wine override", restoreError);
+            }
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}");
         }
@@ -270,7 +278,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (!File.Exists(targetPath))
             return ComponentOperationResult.Fail($"Managed ASI Loader proxy is missing: {targetPath}. RHI will not recreate it without an explicit Remove/reinstall cycle.");
 
-        var currentHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"Managed ASI Loader proxy was modified outside RHI: {targetPath}. Update is blocked to protect the external change.");
 
@@ -293,24 +301,20 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (string.Equals(record.Version, release.Version, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Ok($"Ultimate ASI Loader {record.Version} is already current.");
 
-        var temp = targetPath + $".rhi-update-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(stagedDll, temp, overwrite: false);
-            var stagedHash = await Sha256FileAsync(temp, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, targetPath, overwrite: true);
-
-            fileRecord.Sha256 = stagedHash;
+            // Verified durable replace (temp + fsync + full re-read hash + rename).
+            fileRecord.Sha256 = await AtomicFile.CopyAsync(stagedDll, targetPath, cancellationToken: cancellationToken).ConfigureAwait(false);
             record.Version = release.Version;
             record.SourceUrl = release.AssetUrl;
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata[MetaAssetSha256] = release.AssetSha256 ?? "";
+            VerifiedDownload.Record(record.Metadata, fileRecord.Sha256, HasPublishedDigest(release));
             _records.Upsert(record);
             return ComponentOperationResult.Ok($"Ultimate ASI Loader updated to {release.Version} as {proxyName}.");
         }
         catch (Exception ex)
         {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
             return ComponentOperationResult.Fail($"Ultimate ASI Loader update failed: {ex.Message}");
         }
     }
@@ -339,7 +343,7 @@ public sealed class UltimateAsiLoaderDeploymentService
 
         if (File.Exists(targetPath))
         {
-            var currentHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            var currentHash = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(currentHash, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail(
                     $"Managed ASI Loader proxy was modified outside RHI: {targetPath}. Remove is blocked before teardown.");
@@ -384,7 +388,10 @@ public sealed class UltimateAsiLoaderDeploymentService
                 if (movedManagedAside && File.Exists(tempManaged) && !File.Exists(targetPath))
                     File.Move(tempManaged, targetPath);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("ual", $"Removal rollback did not complete; the managed proxy may be at {tempManaged}", rollbackError);
+            }
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}");
         }
@@ -445,12 +452,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         PeArchitecture architecture,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, GitHubApiUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, GitHubApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         return ParseReleaseJson(json, architecture);
     }
 
@@ -509,73 +511,50 @@ public sealed class UltimateAsiLoaderDeploymentService
 
         Directory.CreateDirectory(versionDir);
         CacheStamp.Invalidate(cachedDll);
-        var zipPath = Path.Combine(versionDir, release.AssetName + $".download-{Guid.NewGuid():N}");
-        var tempDll = cachedDll + $".tmp-{Guid.NewGuid():N}";
+        // The zip is only a carrier: downloaded under the UAL host policy, checked against GitHub's digest when
+        // published (#26), the DLL taken out through the checked extraction, then the zip is dropped.
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, release.AssetUrl, Path.Combine(versionDir, release.AssetName), DownloadSources.UltimateAsiLoader,
+            release.AssetSha256, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var archiveHash = download.Sha256;
 
-        try
+        using (var archive = ZipFile.OpenRead(download.Path))
         {
-            using (var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl))
-            using (var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
-            {
-                response.EnsureSuccessStatusCode();
-                await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                await using var output = File.Create(zipPath);
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            }
+            var entry = archive.Entries.FirstOrDefault(e =>
+                Path.GetFileName(e.FullName).Equals(DefaultInnerDllName, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException($"{DefaultInnerDllName} was not found in {release.AssetName}.");
 
-            var archiveHash = await Sha256FileAsync(zipPath, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(release.AssetSha256) &&
-                !string.Equals(archiveHash, release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException(
-                    $"Ultimate ASI Loader archive SHA256 mismatch for {release.AssetName}: expected {release.AssetSha256}, got {archiveHash}.");
+            if (entry.Length < 32 * 1024)
+                throw new InvalidDataException($"{DefaultInnerDllName} is unexpectedly small ({entry.Length} bytes).");
 
-            using (var archive = ZipFile.OpenRead(zipPath))
-            {
-                var entry = archive.Entries.FirstOrDefault(e =>
-                    Path.GetFileName(e.FullName).Equals(DefaultInnerDllName, StringComparison.OrdinalIgnoreCase))
-                    ?? throw new InvalidDataException($"{DefaultInnerDllName} was not found in {release.AssetName}.");
-
-                if (entry.Length < 32 * 1024)
-                    throw new InvalidDataException($"{DefaultInnerDllName} is unexpectedly small ({entry.Length} bytes).");
-
-                await using var source = entry.Open();
-                await using var destination = File.Create(tempDll);
-                await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (PeArchitectureDetector.Detect(tempDll) != architecture)
-                throw new InvalidDataException(
-                    $"Extracted {DefaultInnerDllName} has the wrong PE architecture for {architecture}.");
-
-            File.Move(tempDll, cachedDll, overwrite: true);
-            CacheStamp.Write(cachedDll, release.AssetUrl, release.Version, release.AssetSha256);
-            File.WriteAllText(metadataPath, JsonSerializer.Serialize(new
-            {
-                release.Version,
-                release.AssetName,
-                release.AssetUrl,
-                release.AssetSha256,
-                DownloadedSha256 = archiveHash,
-                CachedAtUtc = DateTime.UtcNow
-            }, new JsonSerializerOptions { WriteIndented = true }));
-
-            return cachedDll;
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, cachedDll, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
-        finally
+
+        if (PeArchitectureDetector.Detect(cachedDll) != architecture)
         {
-            try { if (File.Exists(tempDll)) File.Delete(tempDll); } catch { }
-            try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
+            FileCleanup.TryDelete(cachedDll);
+            throw new InvalidDataException(
+                $"Extracted {DefaultInnerDllName} has the wrong PE architecture for {architecture}.");
         }
+
+        CacheStamp.Write(cachedDll, release.AssetUrl, release.Version, release.AssetSha256);
+        if (string.IsNullOrWhiteSpace(release.AssetSha256))
+            TrustedDownload.NoteAcceptedWithoutDigest(DownloadSources.UltimateAsiLoader, release.AssetUrl, archiveHash);
+        AtomicFile.WriteAllText(metadataPath, JsonSerializer.Serialize(new
+        {
+            release.Version,
+            release.AssetName,
+            release.AssetUrl,
+            release.AssetSha256,
+            DownloadedSha256 = archiveHash,
+            CachedAtUtc = DateTime.UtcNow
+        }, new JsonSerializerOptions { WriteIndented = true }));
+
+        return cachedDll;
     }
 
-    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
-            1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha = SHA256.Create();
-        var hash = await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    /// <summary>What the cached DLL's integrity rests on: GitHub's digest of the zip, or only HTTPS + host policy (#26).</summary>
+    private static bool HasPublishedDigest(UalReleaseInfo release) => !string.IsNullOrWhiteSpace(release.AssetSha256);
 
     private static string SanitizePathPart(string value)
         => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));

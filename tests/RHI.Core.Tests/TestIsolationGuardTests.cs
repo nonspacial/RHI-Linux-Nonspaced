@@ -152,13 +152,13 @@ public sealed class TestIsolationGuardTests
                 tag_name = "v9.9.9-" + marker,
                 name = marker,
                 body = "",
-                assets = new[] { new { name = "relimiter.addon64", browser_download_url = "https://example.test/" + marker, digest = "sha256:" + digest } }
+                assets = new[] { new { name = "relimiter.addon64", browser_download_url = "https://github.com/rhi-tests/" + marker, digest = "sha256:" + digest } }
             });
             using var http = new HttpClient(new Handler(req => req.RequestUri!.AbsoluteUri.Contains("api.github", StringComparison.OrdinalIgnoreCase)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(release, Encoding.UTF8, "application/json") }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) }));
             var addon = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
-                ManagedComponentKind.ReLimiter, "ReLimiter", "https://api.github.test/repos/x/relimiter/releases/latest",
+                ManagedComponentKind.ReLimiter, "ReLimiter", "https://api.github.com/repos/x/relimiter/releases/latest",
                 "relimiter.addon64", "relimiter.addon32", 100 * 1024));
             var install = await addon.InstallAsync(game);
             Assert.True(install.Success, install.Message);

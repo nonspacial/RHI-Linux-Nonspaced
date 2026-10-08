@@ -17,7 +17,7 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
     {
         var archiveBytes = CreateArchiveBytes();
         var digest = Convert.ToHexString(SHA256.HashData(archiveBytes)).ToLowerInvariant();
-        var assetUrl = "https://downloads.example/Optiscaler_9.9.9.7z";
+        var assetUrl = "https://github.com/rhi-tests/Optiscaler_9.9.9.7z";
         using var http = new HttpClient(new ReleaseHandler(archiveBytes, digest, assetUrl));
         var extractor = new FakeExtractor();
         var provider = new OptiScalerPackageProvider(http, extractor, Path.Combine(_root, "cache"));
@@ -34,6 +34,10 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
         var packageAgain = await provider.GetLatestAsync();
         Assert.Equal(package.RootDirectory, packageAgain.RootDirectory);
         Assert.Equal(1, extractor.CallCount);
+        // The archive the package came from travels with it into the deployment record (review w2-trust minor 6).
+        Assert.Equal(digest, package.Download!.Sha256, ignoreCase: true);
+        Assert.True(package.Download.DigestVerified);
+        Assert.Equal(digest, packageAgain.Download!.Sha256, ignoreCase: true);
     }
 
     [Theory]
@@ -44,7 +48,7 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
     {
         var archiveBytes = CreateArchiveBytes();
         var digest = Convert.ToHexString(SHA256.HashData(archiveBytes)).ToLowerInvariant();
-        var assetUrl = $"https://downloads.example/{assetName}";
+        var assetUrl = $"https://github.com/rhi-tests/{assetName}";
         using var http = new HttpClient(new VariantReleaseHandler(archiveBytes, digest, apiUrl, tag, assetName, assetUrl));
         var provider = new OptiScalerPackageProvider(http, new FakeExtractor(), Path.Combine(_root, "variant-" + variant));
 
@@ -60,12 +64,12 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
     {
         var archiveBytes = CreateArchiveBytes();
         var wrongDigest = new string('0', 64);
-        var assetUrl = "https://downloads.example/Optiscaler_bad.7z";
+        var assetUrl = "https://github.com/rhi-tests/Optiscaler_bad.7z";
         using var http = new HttpClient(new ReleaseHandler(archiveBytes, wrongDigest, assetUrl));
         var extractor = new FakeExtractor();
         var provider = new OptiScalerPackageProvider(http, extractor, Path.Combine(_root, "bad-cache"));
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () => await provider.GetLatestAsync());
+        var error = await Assert.ThrowsAsync<InvalidDataException>(async () => await provider.GetLatestAsync());
 
         Assert.Contains("SHA-256", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, extractor.CallCount);
@@ -78,7 +82,7 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
         // so it cannot outlive the archive it came from even if nothing invalidated it on replacement.
         var archiveBytes = CreateArchiveBytes();
         var digest = Convert.ToHexString(SHA256.HashData(archiveBytes)).ToLowerInvariant();
-        var assetUrl = "https://downloads.example/Optiscaler_9.9.9.7z";
+        var assetUrl = "https://github.com/rhi-tests/Optiscaler_9.9.9.7z";
         using var http = new HttpClient(new ReleaseHandler(archiveBytes, digest, assetUrl));
         var extractor = new FakeExtractor();
         var cache = Path.Combine(_root, "bound-cache");

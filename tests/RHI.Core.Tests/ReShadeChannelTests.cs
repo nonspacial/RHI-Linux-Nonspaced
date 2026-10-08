@@ -685,7 +685,8 @@ public sealed partial class ReShadeChannelTests : IDisposable
         Assert.Equal("Nightly", staged.Version);
         Assert.True(File.Exists(staged.DllPath));
         Assert.True(new FileInfo(staged.DllPath).Length > 1_000_000);
-        Assert.Contains("zip-size:", staged.SourceIdentity);
+        // No GitHub API answer in this fixture: upstream's branch link, identified by the zip's SHA-256 (#27), never its size.
+        Assert.StartsWith("sha256:", staged.SourceIdentity);
     }
 
     [Fact]
@@ -955,6 +956,38 @@ public sealed partial class ReShadeChannelTests : IDisposable
         Assert.False(ReShadeDeploymentService.LooksLikeNativeD3DCompiler(path, PeArchitecture.X64));
 
         WriteNativeD3DCompiler(path, 0x8664);
+        Assert.True(ReShadeDeploymentService.LooksLikeNativeD3DCompiler(path, PeArchitecture.X64));
+    }
+
+    [Theory]
+    [InlineData("Wine builtin DLL")]
+    [InlineData("Wine placeholder DLL")]
+    public void NativeD3DCompilerProbe_RejectsAWineBuiltinPastTheSizeGate(string marker)
+    {
+        // Review w2-trust minor 4: Proton's built-in d3dcompiler_47 (GE-Proton10-22/23, proton-cachyos) has
+        // "Wine builtin DLL" at 0x40, a UTF-16 "Microsoft" version resource and "d3dcompiler_47" in lower case, which
+        // the case-insensitive search counts as native evidence; only the 500 KB gate rejected it (built-ins are
+        // ~360 KB today). An unstripped one past the gate must still be refused.
+        var path = Path.Combine(_root, "wine-builtin", "d3dcompiler_47.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        PeArchitectureDetectorTests.WritePe(path, 0x8664, 1_100_000);
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None))
+        {
+            stream.Position = 0x40;
+            stream.Write(Encoding.ASCII.GetBytes(marker));
+            stream.Position = 4096;
+            stream.Write(Encoding.Unicode.GetBytes("CompanyName\0Microsoft Corporation"));
+            stream.Write(Encoding.ASCII.GetBytes(" d3dcompiler_47.dll"));
+        }
+
+        Assert.False(ReShadeDeploymentService.LooksLikeNativeD3DCompiler(path, PeArchitecture.X64));
+
+        // The same file without the marker is what the string evidence alone accepts.
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None))
+        {
+            stream.Position = 0x40;
+            stream.Write(new byte[marker.Length]);
+        }
         Assert.True(ReShadeDeploymentService.LooksLikeNativeD3DCompiler(path, PeArchitecture.X64));
     }
 

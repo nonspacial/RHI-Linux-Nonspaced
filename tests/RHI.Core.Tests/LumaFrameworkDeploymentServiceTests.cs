@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -159,7 +160,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
             Assert.Equal(
                 GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl),
                 req.RequestUri!.AbsoluteUri);
-            return JsonResponse("[" + ReleaseJson("latest-630", "https://example.test/luma.zip", digest) + "]");
+            return JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma.zip", digest) + "]");
         }));
         var service = NewService(http, "resolve-records.json");
 
@@ -171,7 +172,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void ExtractionPlan_SkipsBundledReShadeDlssAndRoutesAddonPath()
+    public async Task ExtractionPlan_SkipsBundledReShadeDlssAndRoutesAddonPath()
     {
         var game = CreateGame();
         Directory.CreateDirectory(Path.Combine(game.BinaryDirectory!, "addons"));
@@ -181,7 +182,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-layout");
         Directory.CreateDirectory(staging);
 
-        var plan = LumaFrameworkDeploymentService.BuildExtractionPlan(zipPath, game.BinaryDirectory!, staging);
+        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None);
         var targets = plan.Select(x => Path.GetFullPath(x.TargetPath)).ToArray();
 
         Assert.Contains(Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon64"), targets);
@@ -194,7 +195,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void ExtractionPlan_RoutesArchitectureNeutralAddonToConfiguredAddonPath()
+    public async Task ExtractionPlan_RoutesArchitectureNeutralAddonToConfiguredAddonPath()
     {
         var game = CreateGame();
         Directory.CreateDirectory(Path.Combine(game.BinaryDirectory!, "addons"));
@@ -206,13 +207,13 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-neutral-addon");
         Directory.CreateDirectory(staging);
 
-        var plan = LumaFrameworkDeploymentService.BuildExtractionPlan(zipPath, game.BinaryDirectory!, staging);
+        var plan = await LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None);
 
         Assert.Contains(plan, item => item.TargetPath == Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon"));
     }
 
     [Fact]
-    public void PackagePlan_DirectArchitectureNeutralAddonRoutesWithoutZipExtraction()
+    public async Task PackagePlan_DirectArchitectureNeutralAddonRoutesWithoutZipExtraction()
     {
         var game = CreateGame();
         Directory.CreateDirectory(Path.Combine(game.BinaryDirectory!, "addons"));
@@ -225,7 +226,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-direct-addon");
         Directory.CreateDirectory(staging);
 
-        var plan = LumaFrameworkDeploymentService.BuildPackagePlan(package, "Luma.addon", game.BinaryDirectory!, staging);
+        var plan = await LumaFrameworkDeploymentService.BuildPackagePlanAsync(package, "Luma.addon", game.BinaryDirectory!, staging, CancellationToken.None);
 
         var item = Assert.Single(plan);
         Assert.Equal(Path.Combine(game.BinaryDirectory!, "addons", "Luma.addon"), item.TargetPath);
@@ -254,6 +255,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("1", record!.Metadata[LumaFrameworkDeploymentService.MetaLocalPackage]);
         Assert.Null(record.SourceUrl);
+        DownloadRecordAssert.NotRecorded(record); // a local package is not a download
 
         var update = await service.CheckUpdateAsync(game);
         Assert.True(update.Managed);
@@ -286,7 +288,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
     }
 
     [Fact]
-    public void ExtractionPlan_RejectsZipSlip()
+    public async Task ExtractionPlan_RejectsZipSlip()
     {
         var game = CreateGame();
         var zipPath = Path.Combine(_root, "zipslip.zip");
@@ -300,8 +302,8 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         var staging = Path.Combine(_root, "staging-zipslip");
         Directory.CreateDirectory(staging);
 
-        Assert.Throws<InvalidDataException>(() =>
-            LumaFrameworkDeploymentService.BuildExtractionPlan(zipPath, game.BinaryDirectory!, staging));
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            LumaFrameworkDeploymentService.BuildExtractionPlanAsync(zipPath, game.BinaryDirectory!, staging, CancellationToken.None));
         Assert.False(File.Exists(Path.Combine(_root, "escape.txt")));
     }
 
@@ -506,10 +508,12 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.DoesNotContain("DisplayMode=1", after);
     }
 
-    [Fact]
-    public async Task Install_GenericWikiMetadataRecordsFieldsAppliesOwnedEngineIniAndRollsBackOnRemove()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)] // review w2-trust major 2: a locked Engine.ini (upstream locks it) blocks neither install nor removal
+    public async Task Install_GenericWikiMetadataRecordsFieldsAppliesOwnedEngineIniAndRollsBackOnRemove(bool lockedEngineIni)
     {
-        const string wikiUrl = "https://example.test/luma-generic-wiki";
+        const string wikiUrl = "https://github.com/rhi-tests/luma-generic-wiki";
         var root = Path.Combine(_root, "metadata-lifecycle");
         var binary = Path.Combine(root, "GameProject", "Binaries", "Win64");
         var prefix = Path.Combine(root, "pfx");
@@ -536,6 +540,10 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         File.WriteAllText(Path.Combine(binary, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
         var engineIni = Path.Combine(engineConfig, "Engine.ini");
         File.WriteAllText(engineIni, "[SystemSettings]\nUserKeep=42\n");
+        var engineIniMode = lockedEngineIni
+            ? UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead
+            : File.GetUnixFileMode(engineIni);
+        File.SetUnixFileMode(engineIni, engineIniMode);
 
         var records = NewRecords("metadata-records.json");
         SeedManagedReShade(records, game);
@@ -553,8 +561,8 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         {
             wikiUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(wiki, Encoding.UTF8, "text/html") },
             var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
-                => JsonResponse("[" + ReleaseJson("latest-630", "https://example.test/luma-metadata.zip", digest) + "]"),
-            "https://example.test/luma-metadata.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
+                => JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma-metadata.zip", digest) + "]"),
+            "https://github.com/rhi-tests/luma-metadata.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
@@ -572,6 +580,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Equal("0", record.Metadata["LumaFramework.DlssFsrBlocked"]);
         Assert.Equal("4.27.2", record.Metadata["LumaFramework.UeVersion"]);
         Assert.False(string.IsNullOrWhiteSpace(record.Metadata[LumaEngineIniOverrideManager.MetadataKey]));
+        DownloadRecordAssert.Recorded(record, digest, VerifiedDownload.PublishedDigest); // review w2-trust minor 6
         var afterInstall = File.ReadAllText(engineIni);
         Assert.Contains("UserKeep=42", afterInstall);
         Assert.Contains("r.Luma.Metadata=1", afterInstall);
@@ -583,6 +592,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Contains("UserKeep=42", afterRemove);
         Assert.DoesNotContain("r.Luma.Metadata=", afterRemove);
         Assert.Null(records.Find(game, ManagedComponentKind.LumaFramework));
+        Assert.Equal(engineIniMode, File.GetUnixFileMode(engineIni));
     }
 
     [Fact]
@@ -663,8 +673,8 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         {
             var url = req.RequestUri!.AbsoluteUri;
             if (url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl))
-                return JsonResponse("[" + ReleaseJson("latest-630", "https://example.test/luma.zip", digest) + "]");
-            if (url == "https://example.test/luma.zip")
+                return JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma.zip", digest) + "]");
+            if (url == "https://github.com/rhi-tests/luma.zip")
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
             throw new InvalidOperationException("Unexpected URL: " + url);
         }));

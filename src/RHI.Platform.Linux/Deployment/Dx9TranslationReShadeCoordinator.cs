@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -44,7 +44,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             throw new FileNotFoundException("Managed ReShade d3d9.dll is missing.", d3d9);
         if (File.Exists(dxgi))
             throw new InvalidOperationException("dxgi.dll is already occupied; RHI will not overwrite it for DX9 translation.");
-        var hash = await ComputeSha256Async(d3d9, cancellationToken).ConfigureAwait(false);
+        var hash = await FileHash.Sha256HexAsync(d3d9, cancellationToken).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !hash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Managed ReShade d3d9.dll was modified outside RHI; DX9 migration is blocked.");
 
@@ -60,7 +60,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             dxgiOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath, "dxgi", exeName);
             File.Move(d3d9, dxgi);
             file.Path = dxgi;
-            file.Sha256 = await ComputeSha256Async(dxgi, cancellationToken).ConfigureAwait(false);
+            file.Sha256 = await FileHash.Sha256HexAsync(dxgi, cancellationToken).ConfigureAwait(false);
             record.WineOverride = dxgiOverride;
             _records.Upsert(record);
             return new ReShadeDx9MigrationState(d3d9, dxgi, hash, d3d9Override);
@@ -72,7 +72,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             if (originalRecordOverride is null) try { _overrides.Restore(game.PrefixPath, d3d9Override); } catch { }
             record.WineOverride = originalRecordOverride;
             file.Path = d3d9;
-            file.Sha256 = File.Exists(d3d9) ? await ComputeSha256Async(d3d9, cancellationToken).ConfigureAwait(false) : hash;
+            file.Sha256 = File.Exists(d3d9) ? await FileHash.Sha256HexAsync(d3d9, cancellationToken).ConfigureAwait(false) : hash;
             _records.Upsert(record);
             throw;
         }
@@ -91,7 +91,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             throw new FileNotFoundException("Translated ReShade dxgi.dll is missing.", state.TranslatedPath);
         if (File.Exists(state.OriginalPath))
             throw new InvalidOperationException("d3d9.dll is still occupied. Remove the dgVoodoo2 wrapper before restoring ReShade.");
-        var currentHash = await ComputeSha256Async(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !currentHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Translated ReShade dxgi.dll was modified outside RHI; restoration is blocked.");
 
@@ -102,7 +102,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             if (translatedOverride is not null)
                 _overrides.Restore(game.PrefixPath, translatedOverride);
             file.Path = state.OriginalPath;
-            file.Sha256 = await ComputeSha256Async(state.OriginalPath, cancellationToken).ConfigureAwait(false);
+            file.Sha256 = await FileHash.Sha256HexAsync(state.OriginalPath, cancellationToken).ConfigureAwait(false);
             record.WineOverride = state.D3D9Override;
             _records.Upsert(record);
         }
@@ -111,22 +111,10 @@ public sealed class Dx9TranslationReShadeCoordinator
             try { if (File.Exists(state.OriginalPath) && !File.Exists(state.TranslatedPath)) File.Move(state.OriginalPath, state.TranslatedPath); } catch { }
             record.WineOverride = translatedOverride;
             file.Path = state.TranslatedPath;
-            if (File.Exists(state.TranslatedPath)) file.Sha256 = await ComputeSha256Async(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
+            if (File.Exists(state.TranslatedPath)) file.Sha256 = await FileHash.Sha256HexAsync(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
             _records.Upsert(record);
             throw;
         }
     }
 
-    internal static string ComputeSha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
-    }
-
-    private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
 }

@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -87,7 +87,7 @@ public sealed partial class OptiScalerDeploymentService
         {
             if (!File.Exists(file.Path) || string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail($"OptiScaler managed file is missing or has no ownership hash: {file.Path}");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed OptiScaler file was modified outside RHI and will not be updated: {file.Path}");
         }
@@ -135,21 +135,22 @@ public sealed partial class OptiScalerDeploymentService
                     var backup = Path.Combine(backupRoot, $"{backups.Count:D4}-{Path.GetFileName(target)}");
                     File.Copy(target, backup, overwrite: false);
                     backups[target] = backup;
-                    await ReplaceAtomicAsync(source, target, cancellationToken).ConfigureAwait(false);
-                    owned.Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    owned.Sha256 = await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
                 if (File.Exists(target))
                     throw new InvalidOperationException($"New OptiScaler package file collides with an external/untracked file: {target}");
                 EnsureTargetDirectory(binaryDirectory, target, createdDirs);
-                await ReplaceAtomicAsync(source, target, cancellationToken).ConfigureAwait(false);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                var copiedHash = await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
                 newlyCreated.Add(target);
                 var added = new LinuxDeployedFile
                 {
                     Path = target,
                     ExistedBeforeInstall = false,
-                    Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false),
+                    Sha256 = copiedHash,
                     AllowUserChanges = Path.GetFileName(target).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)
                 };
                 record.Files.Add(added);
@@ -164,6 +165,8 @@ public sealed partial class OptiScalerDeploymentService
                 record.Metadata[DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion;
             else
                 record.Metadata.Remove(DlssNrRuntimeVersionMetadataKey);
+            if (package.Download is { } updateDownload) updateDownload.RecordIn(record.Metadata);
+            else VerifiedDownload.Forget(record.Metadata);
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
             _records.Upsert(record);
@@ -291,6 +294,7 @@ public sealed partial class OptiScalerDeploymentService
                     [DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion ?? ""
                 }
             };
+            package.Download?.RecordIn(record.Metadata);
 
             foreach (var (_, target) in requested)
             {
@@ -298,7 +302,7 @@ public sealed partial class OptiScalerDeploymentService
                 {
                     Path = target,
                     ExistedBeforeInstall = existedBefore[target],
-                    Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false),
+                    Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false),
                     AllowUserChanges = Path.GetFileName(target).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)
                 });
             }
@@ -385,14 +389,14 @@ public sealed partial class OptiScalerDeploymentService
                 if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
                     return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler: preserved original is missing for {file.Path}.");
                 if (!File.Exists(file.Path) || file.AllowUserChanges) continue;
-                var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so OptiScaler was not removed.");
             }
 
             if (reShade64 is not null && File.Exists(reShade64.Path))
             {
-                var current = await Sha256Async(reShade64.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(reShade64.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, reShade64.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Managed ReShade64.dll was modified outside RHI. OptiScaler removal is blocked so the ReShade chain is not broken: {reShade64.Path}");
 
@@ -475,8 +479,8 @@ public sealed partial class OptiScalerDeploymentService
             if (file.ExistedBeforeInstall || file.AllowUserChanges || string.IsNullOrWhiteSpace(file.Sha256)) continue;
             var backup = file.Path + TransactionalFileDeploymentService.BackupExtension;
             if (!File.Exists(file.Path) || !File.Exists(backup)) continue;
-            if (string.Equals(await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!string.Equals(await Sha256Async(backup, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(await FileHash.Sha256HexAsync(backup, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
             File.Move(backup, file.Path, overwrite: true);
             restored.Add(file.Path);
         }
@@ -499,7 +503,7 @@ public sealed partial class OptiScalerDeploymentService
         if (File.Exists(reShade64))
             throw new InvalidOperationException("ReShade64.dll already exists, so RHI cannot create the OptiScaler/ReShade coexistence chain safely.");
 
-        var current = await Sha256Async(proxyTarget, cancellationToken).ConfigureAwait(false);
+        var current = await FileHash.Sha256HexAsync(proxyTarget, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Managed ReShade dxgi.dll was modified outside RHI and will not be migrated automatically.");
 
@@ -508,7 +512,7 @@ public sealed partial class OptiScalerDeploymentService
         var oldOverride = record.WineOverride;
         File.Move(proxyTarget, reShade64);
         file.Path = reShade64;
-        file.Sha256 = await Sha256Async(reShade64, cancellationToken).ConfigureAwait(false);
+        file.Sha256 = await FileHash.Sha256HexAsync(reShade64, cancellationToken).ConfigureAwait(false);
         record.WineOverride = null;
         _records.Upsert(record);
         return new ReShadeMigration(record, file, oldPath, oldHash, reShade64, oldOverride);
@@ -522,7 +526,7 @@ public sealed partial class OptiScalerDeploymentService
                 File.Move(migration.NewPath, migration.OldPath);
             migration.File.Path = migration.OldPath;
             migration.File.Sha256 = File.Exists(migration.OldPath)
-                ? await Sha256Async(migration.OldPath, cancellationToken).ConfigureAwait(false)
+                ? await FileHash.Sha256HexAsync(migration.OldPath, cancellationToken).ConfigureAwait(false)
                 : migration.OldHash;
             migration.Record.WineOverride = migration.TransferredOverride;
             _records.Upsert(migration.Record);
@@ -614,32 +618,6 @@ public sealed partial class OptiScalerDeploymentService
             }
             catch { }
         }
-    }
-
-    private static async Task ReplaceAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var temp = target + $".rhi-update-{Guid.NewGuid():N}";
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            if (new FileInfo(source).Length != new FileInfo(temp).Length)
-                throw new IOException($"OptiScaler update copy verification failed for {Path.GetFileName(target)}.");
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
     }
 
     private sealed record ReShadeMigration(

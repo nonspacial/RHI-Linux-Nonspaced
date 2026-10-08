@@ -26,6 +26,24 @@ public sealed class WaveOneMessageLocalizationTests
 
     private static IEnumerable<string> All()
     {
+        // Wave 2 trust lane: per-source download policies (#42), host-tool runner (#37), nightly (#27), blob pin (#41).
+        foreach (var policy in DownloadSources.All)
+            yield return policy.RefusalPrefix + "https://host.invalid/x.zip";
+        yield return ExternalProcess.TimeoutPrefix + "7zz (120 s)";
+        yield return ExternalArchiveRunner.NoToolPrefix + "pacote.7z";
+        yield return ExternalArchiveRunner.SevenZipRequiredPrefix + "pacote.zip";
+        yield return $"{ExternalArchiveRunner.FailedPrefix}7zz (2): {E}";
+        yield return $"{ReShadeArchiveExtractor.ArchiveRefusedPrefix}{ExternalArchiveRunner.SymlinkRefusal}pacote/mal -> /etc/hostname";
+        yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + ReShadeArchiveExtractor.EmptyArchiveRefusal;
+        yield return Dlssg2030UnlockDeploymentService.BlobMismatchPrefix + "version.dll";
+        yield return Dlssg2030UnlockDeploymentService.BlobMissingPrefix + "version.dll@0123abc";
+        yield return ReShadeDeploymentService.NightlyLookupFailedMessage;
+        yield return $"{LumaEngineIniOverrideManager.LinkRefusalPrefix}/prefixo/drive_c/Engine.ini -> /outro/Engine.ini";
+        yield return LumaFrameworkDeploymentService.RollbackIncompletePrefix + E;
+        yield return $"Universal MFG update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
+        yield return $"DLSS Enabler Standalone update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
+        yield return $"RTX 20 FG Unlock legado update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-2";
+        yield return $"RE Framework update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-1";
         // AtomicFile / TrustedDownload (core).
         yield return AtomicFile.NoFolderPrefix + P;
         yield return $"{AtomicFile.SizeLimitPrefix}1024{AtomicFile.SizeLimitMiddle}addon.dll";

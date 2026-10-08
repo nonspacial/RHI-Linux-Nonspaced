@@ -1,5 +1,5 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -91,16 +91,16 @@ public sealed class REFrameworkDeploymentService
             return ComponentOperationResult.Fail("RE Framework is already managed by RHI Linux for this game. Remove it before reinstalling.");
 
         var release = await ResolveLatestAsync(cancellationToken).ConfigureAwait(false);
-        var cachedDll = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
+        var (cachedDll, download) = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
         var applicationName = Path.GetFileName(game.ExecutablePath ?? "");
         WineOverrideRecord? overrideRecord = null;
         var deployed = false;
         try
         {
             overrideRecord = _overrides.EnsureNativeBuiltin(game.PrefixPath!, DllFileName, applicationName);
-            await CopyAtomicAsync(cachedDll, target, cancellationToken).ConfigureAwait(false);
+            // Verified durable copy; never replaces a dinput8.dll that appeared since the check above.
+            var deployedHash = await AtomicFile.CopyAsync(cachedDll, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
             deployed = true;
-            var deployedHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
 
             _records.Upsert(new LinuxDeploymentRecord
             {
@@ -126,17 +126,21 @@ public sealed class REFrameworkDeploymentService
                 {
                     ["REFramework.AssetName"] = release.AssetName,
                     ["REFramework.EngineHint"] = game.EngineHint ?? "",
-                    ["REFramework.ApplicationName"] = applicationName
+                    ["REFramework.ApplicationName"] = applicationName,
+                    [VerifiedDownload.MetadataSha256Key] = download.Sha256,
+                    [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
             });
             return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
         }
         catch
         {
-            if (deployed) TryDelete(target);
+            if (deployed && !FileCleanup.TryDelete(target, out var deleteError))
+                AppLog.Warn("reframework", $"Rollback could not remove {target}", deleteError);
             if (overrideRecord is not null)
             {
-                try { _overrides.Restore(game.PrefixPath!, overrideRecord); } catch { }
+                try { _overrides.Restore(game.PrefixPath!, overrideRecord); }
+                catch (Exception restoreError) { AppLog.Warn("reframework", "Rollback could not restore the dinput8 Wine override", restoreError); }
             }
             throw;
         }
@@ -171,16 +175,17 @@ public sealed class REFrameworkDeploymentService
             Path.GetFileName(file.Path).Equals(DllFileName, StringComparison.OrdinalIgnoreCase));
         if (owned is null || string.IsNullOrWhiteSpace(owned.Sha256) || !File.Exists(owned.Path))
             return ComponentOperationResult.Fail("RE Framework managed dinput8.dll ownership is incomplete; update is blocked conservatively.");
-        var currentHash = await Sha256Async(owned.Path, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(owned.Path, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, owned.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("RHI-managed RE Framework dinput8.dll was modified after installation. Update is blocked to preserve the changed file.");
 
         GitHubResolvedReleaseAsset release;
         string cachedDll;
+        VerifiedDownload download;
         try
         {
             release = await ResolveLatestAsync(cancellationToken).ConfigureAwait(false);
-            cachedDll = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
+            (cachedDll, download) = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -190,22 +195,33 @@ public sealed class REFrameworkDeploymentService
         var backup = owned.Path + $".rhi-update-backup-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(owned.Path, backup, overwrite: false);
-            await ReplaceAtomicAsync(cachedDll, owned.Path, cancellationToken).ConfigureAwait(false);
-            owned.Sha256 = await Sha256Async(owned.Path, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Copy(owned.Path, backup, currentHash);
+            owned.Sha256 = await AtomicFile.CopyAsync(cachedDll, owned.Path, cancellationToken: cancellationToken).ConfigureAwait(false);
             record.SourceUrl = release.AssetUrl;
             record.Version = NormalizeVersion(release.Version);
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata["REFramework.AssetName"] = release.AssetName;
+            download.RecordIn(record.Metadata);
             _records.Upsert(record);
-            TryDelete(backup);
+            FileCleanup.TryDelete(backup);
             return ComponentOperationResult.Ok($"RE Framework updated to {record.Version}; existing Wine override ownership was preserved.", owned.Path);
         }
         catch (Exception ex)
         {
-            try { if (File.Exists(backup)) File.Copy(backup, owned.Path, overwrite: true); } catch { }
-            TryDelete(backup);
-            return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
+            if (!File.Exists(backup))
+                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
+            try
+            {
+                // The backup is the previous dinput8.dll; it is deleted only once it is back in place.
+                AtomicFile.Copy(backup, owned.Path, currentHash);
+                FileCleanup.TryDelete(backup);
+                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
+            }
+            catch (Exception restoreError)
+            {
+                AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}; the previous file is kept at {backup}", restoreError);
+                return ComponentOperationResult.Fail($"RE Framework update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{backup}");
+            }
         }
     }
 
@@ -224,7 +240,7 @@ public sealed class REFrameworkDeploymentService
 
         if (File.Exists(owned.Path))
         {
-            var current = await Sha256Async(owned.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(owned.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, owned.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail("RHI-managed RE Framework dinput8.dll was modified after installation. Remove is blocked to preserve the changed file.");
         }
@@ -253,7 +269,10 @@ public sealed class REFrameworkDeploymentService
                 var app = record.WineOverride?.ApplicationName ?? Path.GetFileName(game.ExecutablePath ?? "");
                 _overrides.EnsureNativeBuiltin(game.PrefixPath!, DllFileName, app);
             }
-            catch { }
+            catch (Exception overrideError)
+            {
+                AppLog.Warn("reframework", "Could not put the dinput8 Wine override back after a failed removal", overrideError);
+            }
             return ComponentOperationResult.Fail($"RE Framework dinput8.dll could not be removed: {ex.Message}");
         }
 
@@ -279,117 +298,56 @@ public sealed class REFrameworkDeploymentService
         return version;
     }
 
-    private async Task<string> DownloadExtractAndValidateAsync(
+    /// <summary>
+    /// The release zip from the stamped download cache under the REFramework host policy (reused while its stamp
+    /// matches URL, version and GitHub digest; verified against the digest when published, #26, #35), and its
+    /// dinput8.dll extracted through the checked extraction into an entry bound to the zip's hash.
+    /// </summary>
+    private async Task<(string Dll, VerifiedDownload Download)> DownloadExtractAndValidateAsync(
         GitHubResolvedReleaseAsset release,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var safeVersion = string.Concat(NormalizeVersion(release.Version).Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_'));
         var zipPath = Path.Combine(_cacheDir, $"{safeVersion}-{MonolithicZipName}");
-        var zipTemp = zipPath + $".tmp-{Guid.NewGuid():N}";
         var dllPath = Path.Combine(_cacheDir, $"{safeVersion}-{DllFileName}");
-        var dllTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
 
-        using (var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl))
-        {
-            request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            await using var output = new FileStream(zipTemp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true);
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(release.Sha256))
+        var download = await TrustedDownload.EnsureVerifiedAsync(
+            _http, release.AssetUrl, zipPath, DownloadSources.REFramework, release.Version, release.Sha256,
+            validate: (temp, _) =>
             {
-                var actual = await Sha256Async(zipTemp, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Downloaded REFramework.zip failed the SHA-256 digest published by GitHub.");
-            }
+                using var archive = ZipFile.OpenRead(temp);
+                var count = archive.Entries.Count(entry => entry.Name.Equals(DllFileName, StringComparison.OrdinalIgnoreCase));
+                if (count != 1)
+                    throw new InvalidDataException($"REFramework.zip must contain exactly one {DllFileName}; found {count}.");
+                return Task.CompletedTask;
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            using (var archive = ZipFile.OpenRead(zipTemp))
-            {
-                var entries = archive.Entries
-                    .Where(entry => entry.Name.Equals(DllFileName, StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-                if (entries.Length != 1)
-                    throw new InvalidDataException($"REFramework.zip must contain exactly one {DllFileName}; found {entries.Length}.");
-                await using var input = entries[0].Open();
-                await using var output = new FileStream(dllTemp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true);
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (!BinarySignatureInspector.HasPeSignature(dllTemp, MinimumDllSize))
-                throw new InvalidDataException("Extracted RE Framework dinput8.dll is not a valid PE payload or is unexpectedly small.");
-            if (PeArchitectureDetector.Detect(dllTemp) != PeArchitecture.X64)
-                throw new InvalidDataException("Extracted RE Framework dinput8.dll is not the expected 64-bit payload.");
-
-            File.Move(zipTemp, zipPath, overwrite: true);
-            File.Move(dllTemp, dllPath, overwrite: true);
-            return dllPath;
-        }
-        catch
+        if (CacheStamp.IsValidBoundTo(dllPath, release.AssetUrl, release.Version, download.Sha256))
+            return (dllPath, download);
+        CacheStamp.Invalidate(dllPath);
+        using (var archive = ZipFile.OpenRead(zipPath))
         {
-            TryDelete(zipTemp);
-            TryDelete(dllTemp);
-            throw;
+            var entries = archive.Entries
+                .Where(entry => entry.Name.Equals(DllFileName, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (entries.Length != 1)
+                throw new InvalidDataException($"REFramework.zip must contain exactly one {DllFileName}; found {entries.Length}.");
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
-    }
 
-    private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
+        string? refusal = null;
+        if (!BinarySignatureInspector.HasPeSignature(dllPath, MinimumDllSize))
+            refusal = "Extracted RE Framework dinput8.dll is not a valid PE payload or is unexpectedly small.";
+        else if (PeArchitectureDetector.Detect(dllPath) != PeArchitecture.X64)
+            refusal = "Extracted RE Framework dinput8.dll is not the expected 64-bit payload.";
+        if (refusal is not null)
         {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            var sourceHash = await Sha256Async(source, cancellationToken).ConfigureAwait(false);
-            var tempHash = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(sourceHash, tempHash, StringComparison.OrdinalIgnoreCase))
-                throw new IOException("RE Framework copy verification failed.");
-            File.Move(temp, target, overwrite: false);
+            FileCleanup.TryDelete(dllPath);
+            throw new InvalidDataException(refusal);
         }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
-    }
-
-    private static async Task ReplaceAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var temp = target + $".rhi-update-{Guid.NewGuid():N}";
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            var sourceHash = await Sha256Async(source, cancellationToken).ConfigureAwait(false);
-            var tempHash = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(sourceHash, tempHash, StringComparison.OrdinalIgnoreCase))
-                throw new IOException("RE Framework update copy verification failed.");
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha = SHA256.Create();
-        var digest = await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(digest).ToLowerInvariant();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
+        CacheStamp.WriteBoundTo(dllPath, release.AssetUrl, release.Version, download.Sha256);
+        return (dllPath, download);
     }
 }

@@ -26,6 +26,9 @@ public static class FileHash
 
     public static string Sha256Hex(string path) => Convert.ToHexString(Sha256(path));
 
+    /// <summary>SHA-256 of in-memory content (upper-case hex), for bytes about to be written.</summary>
+    public static string Sha256HexOf(ReadOnlySpan<byte> content) => Convert.ToHexString(SHA256.HashData(content));
+
     public static async Task<string> Sha256HexAsync(string path, CancellationToken cancellationToken = default)
         => Convert.ToHexString(await Sha256Async(path, cancellationToken).ConfigureAwait(false));
 

@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -284,7 +285,8 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("1.3.2", record!.Version);
         Assert.Equal("winmm.dll", record.Metadata["RTX40MFG.ProxyName"]);
-        Assert.Equal(Sha256(target), record.Files.Single().Sha256);
+        Assert.Equal(Sha256(target), record.Files.Single().Sha256, ignoreCase: true);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
 
         var remove = await service.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
@@ -508,6 +510,7 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         var record = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
         Assert.Equal("1.3.2", record.Version);
         Assert.Equal("wininet.dll", record.Metadata["RTX40MFG.ProxyName"]);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "wininet", "Game.exe"));
     }
@@ -791,8 +794,8 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         }
 
         public string DigestFor(string version) => Sha256(_assets[version]);
-        public static string AssetUrl(string version) => $"https://example.invalid/RTXMFG-v{version}.zip";
-        public static string ChecksumsUrl(string version) => $"https://example.invalid/v{version}/SHA256SUMS.txt";
+        public static string AssetUrl(string version) => $"https://github.com/rhi-tests/RTXMFG-v{version}.zip";
+        public static string ChecksumsUrl(string version) => $"https://github.com/rhi-tests/v{version}/SHA256SUMS.txt";
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

@@ -23,20 +23,27 @@ public static class FileChangeTime
     /// The file's ctime in UTC (the link itself for a symlink), or null where it cannot be read
     /// (not Linux, no statx in the C library, or the call failed).
     /// </summary>
-    public static DateTime? TryGetUtc(string path)
+    public static DateTime? TryGetUtc(string path) => TryGetUtc(path, followLinks: false);
+
+    /// <summary>
+    /// The ctime of <paramref name="path"/>, of the file a symlink chain ends at when <paramref name="followLinks"/>
+    /// (what a reader of the path sees), or null where it cannot be read.
+    /// </summary>
+    public static DateTime? TryGetUtc(string path, bool followLinks)
     {
         if (!OperatingSystem.IsLinux()) return null;
         var buffer = new byte[StatxBufferSize];
+        var flags = followLinks ? 0 : AtSymlinkNoFollow;
         int result;
         try
         {
-            result = Libc.statx(AtFdCwd, path, AtSymlinkNoFollow, StatxCtime, buffer);
+            result = Libc.statx(AtFdCwd, path, flags, StatxCtime, buffer);
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             try
             {
-                result = Glibc.statx(AtFdCwd, path, AtSymlinkNoFollow, StatxCtime, buffer);
+                result = Glibc.statx(AtFdCwd, path, flags, StatxCtime, buffer);
             }
             catch (Exception inner) when (inner is DllNotFoundException or EntryPointNotFoundException)
             {

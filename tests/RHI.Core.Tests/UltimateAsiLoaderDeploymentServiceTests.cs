@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -34,12 +35,12 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
           "assets": [
             {
               "name": "Ultimate-ASI-Loader.zip",
-              "browser_download_url": "https://example.invalid/x86.zip",
+              "browser_download_url": "https://github.com/rhi-tests/x86.zip",
               "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             },
             {
               "name": "Ultimate-ASI-Loader_x64.zip",
-              "browser_download_url": "https://example.invalid/x64.zip",
+              "browser_download_url": "https://github.com/rhi-tests/x64.zip",
               "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             }
           ]
@@ -50,7 +51,7 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
 
         Assert.Equal("9.7.4", release.Version);
         Assert.Equal("Ultimate-ASI-Loader_x64.zip", release.AssetName);
-        Assert.Equal("https://example.invalid/x64.zip", release.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/x64.zip", release.AssetUrl);
         Assert.Equal(new string('b', 64), release.AssetSha256);
     }
 
@@ -75,6 +76,7 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("9.7.4", record!.Version);
         Assert.Equal("version.dll", record.Metadata["UAL.ProxyName"]);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(target), VerifiedDownload.PublishedDigest);
 
         var remove = await service.RemoveAsync(fixture.Game);
 
@@ -174,7 +176,7 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         var result = await service.InstallAsync(fixture.Game, "version.dll");
 
         Assert.False(result.Success);
-        Assert.Contains("SHA256 mismatch", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(RHI.Core.Deployment.AtomicFile.ShaMismatchPrefix, result.Message, StringComparison.Ordinal);
         Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
         Assert.Null(WineDllOverrideService.TryReadOverride(
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
@@ -215,8 +217,8 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         var zip1 = CreateUalZip(0x8664, 0x70);
         var zip2 = CreateUalZip(0x8664, 0x71);
         var handler = new SequenceReleaseHandler(
-            CreateReleaseJson(zip1, "9.7.4", "https://example.invalid/ual-1.zip"), zip1,
-            CreateReleaseJson(zip2, "9.7.5", "https://example.invalid/ual-2.zip"), zip2);
+            CreateReleaseJson(zip1, "9.7.4", "https://github.com/rhi-tests/ual-1.zip"), zip1,
+            CreateReleaseJson(zip2, "9.7.5", "https://github.com/rhi-tests/ual-2.zip"), zip2);
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var service = new UltimateAsiLoaderDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(fixture.Root, "cache"));
@@ -232,6 +234,8 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         Assert.False(firstBytes.SequenceEqual(File.ReadAllBytes(target)));
         Assert.Equal(original, File.ReadAllBytes(Path.Combine(fixture.Bin, "winmmHooked.dll")));
         Assert.Equal("9.7.5", records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.Version);
+        DownloadRecordAssert.Recorded(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!,
+            DownloadRecordAssert.Sha256Of(target), VerifiedDownload.PublishedDigest);
     }
 
     [Fact]
@@ -278,7 +282,7 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
 
     private static HttpMessageHandler CreateReleaseHandler(byte[] zip, string version, string? forcedDigest = null)
     {
-        var assetUrl = "https://example.invalid/ual.zip";
+        var assetUrl = "https://github.com/rhi-tests/ual.zip";
         var json = CreateReleaseJson(zip, version, assetUrl, forcedDigest);
         return new MapHandler(new Dictionary<string, HttpResponseMessage>
         {
@@ -407,9 +411,9 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
             var url = request.RequestUri!.ToString();
             if (url == UltimateAsiLoaderDeploymentService.GitHubApiUrl)
                 return Task.FromResult(JsonResponse(_phase == 0 ? _release1 : _release2));
-            if (url == "https://example.invalid/ual-1.zip")
+            if (url == "https://github.com/rhi-tests/ual-1.zip")
                 return Task.FromResult(BytesResponse(_zip1));
-            if (url == "https://example.invalid/ual-2.zip")
+            if (url == "https://github.com/rhi-tests/ual-2.zip")
                 return Task.FromResult(BytesResponse(_zip2));
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }

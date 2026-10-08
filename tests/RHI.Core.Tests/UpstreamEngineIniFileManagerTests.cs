@@ -110,6 +110,48 @@ public sealed class UpstreamEngineIniFileManagerTests : IDisposable
         Assert.False(File.Exists(applied.State.IniPath));
     }
 
+    [Fact]
+    public void ApplyAndCleanup_ReadOnlyEngineIni_AreWrittenAndTheFileStaysLocked()
+    {
+        // Review w2-trust major 2 (upstream 2.8.5 parity): a locked Engine.ini blocks neither install nor removal.
+        const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        var game = CreateGame("LockedTemplateProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        File.WriteAllText(ini, "[SystemSettings]\nr.HDR.EnableHDROutput=0\nUserKeep=42\n");
+        File.SetUnixFileMode(ini, locked);
+
+        var applied = UpstreamEngineIniFileManager.ApplyTemplate(
+            game, "locked.ini", "[SystemSettings]\nr.HDR.EnableHDROutput=1\n", new string('C', 64), null);
+
+        Assert.Contains("r.HDR.EnableHDROutput=1", File.ReadAllText(ini));
+        Assert.Equal(locked, File.GetUnixFileMode(ini));
+
+        UpstreamEngineIniFileManager.Cleanup(applied.State);
+
+        Assert.Contains("r.HDR.EnableHDROutput=0", File.ReadAllText(ini));
+        Assert.Equal(locked, File.GetUnixFileMode(ini));
+    }
+
+    [Fact]
+    public void RenoDxRollback_RestoresALockedEngineIniAndKeepsItLocked()
+    {
+        const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        var game = CreateGame("RollbackProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        File.WriteAllText(ini, "changed by the failed install");
+        File.SetUnixFileMode(ini, locked);
+
+        var notes = RenoDxDeploymentService.RestoreSnapshots(
+            [RenoDxDeploymentService.FileSnapshot.EngineIni(ini, "[SystemSettings]\nUserKeep=42\n"u8.ToArray())],
+            Path.Combine(_root, "fallback"));
+
+        Assert.Empty(notes);
+        Assert.Equal("[SystemSettings]\nUserKeep=42\n", File.ReadAllText(ini));
+        Assert.Equal(locked, File.GetUnixFileMode(ini));
+    }
+
     private DetectedGame CreateGame(string project)
     {
         var root = Path.Combine(_root, Guid.NewGuid().ToString("N"));

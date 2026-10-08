@@ -1,3 +1,5 @@
+using RHI.Core.Services;
+
 namespace RHI.Core.Deployment;
 
 /// <summary>
@@ -21,6 +23,48 @@ public static class FileCleanup
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             error = ex;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Removes the empty directories among <paramref name="directories"/> (deepest first, so a parent
+    /// emptied by its child goes too). Directories that still hold anything are kept; never recursive.
+    /// Returns the empty directories that could not be removed (logged by the caller if it matters).
+    /// </summary>
+    public static IReadOnlyList<string> TryDeleteEmptyDirectories(IEnumerable<string> directories)
+    {
+        var failed = new List<string>();
+        foreach (var directory in directories.Distinct(StringComparer.Ordinal).OrderByDescending(path => path.Length))
+            if (!TryDeleteEmptyDirectory(directory)) failed.Add(directory);
+        return failed;
+    }
+
+    /// <summary>
+    /// Removes every empty directory under <paramref name="root"/> (symlinked folders are not walked) and then
+    /// <paramref name="root"/> itself when it ended up empty. Anything holding a file is kept; never recursive.
+    /// </summary>
+    public static IReadOnlyList<string> TryDeleteEmptyTree(string root)
+    {
+        if (!Directory.Exists(root)) return [];
+        List<string> under;
+        try { under = SafeFileEnumeration.Directories(root).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return [root]; }
+        under.Add(root);
+        return TryDeleteEmptyDirectories(under);
+    }
+
+    /// <summary>Removes <paramref name="directory"/> if it exists and is empty; false only when an empty one could not be removed.</summary>
+    public static bool TryDeleteEmptyDirectory(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory) || Directory.EnumerateFileSystemEntries(directory).Any()) return true;
+            Directory.Delete(directory);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
             return false;
         }
     }

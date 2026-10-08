@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Diagnostics;
 using System.IO.Compression;
 using RHI.Core.Deployment;
 
@@ -26,17 +25,20 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     /// <summary>Fixed start of a refused downloaded-archive entry (PT-BR presentation pair); the reason follows it.</summary>
     public const string ArchiveRefusedPrefix = "Downloaded archive refused: ";
 
+    /// <summary>Refusal detail (after <see cref="ArchiveRefusedPrefix"/>) for a downloaded ZIP without entries.</summary>
+    public const string EmptyArchiveRefusal = "the archive is empty.";
+
     /// <summary>Largest DLL accepted from the setup (real ones are about 5 MB).</summary>
     internal const long MaxEntryBytes = 64L * 1024 * 1024;
     /// <summary>Largest total written from one setup.</summary>
     internal const long MaxTotalBytes = 96L * 1024 * 1024;
     /// <summary>Mode of every extracted file (less umask); the archive's own mode bits are never applied.</summary>
     private const UnixFileMode FixedFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
-    private readonly Func<(string Command, string Kind)?> _findExternalExtractor;
+    private readonly Func<ExternalArchiveTool?> _findExternalExtractor;
 
-    public ReShadeArchiveExtractor() : this(FindExternalExtractor) { }
+    public ReShadeArchiveExtractor() : this(ExternalArchiveRunner.FindTool) { }
 
-    internal ReShadeArchiveExtractor(Func<(string Command, string Kind)?> findExternalExtractor)
+    internal ReShadeArchiveExtractor(Func<ExternalArchiveTool?> findExternalExtractor)
         => _findExternalExtractor = findExternalExtractor;
 
     public async Task ExtractDllsAsync(string setupExe, string outputDirectory, CancellationToken cancellationToken = default)
@@ -50,42 +52,9 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
             // The reason goes last so the PT-BR presentation pair can translate the fixed text before it.
             throw new InvalidOperationException($"{SetupUnreadablePrefix}{managedFailure}");
 
-        var (command, kind) = extractor.Value;
-        var psi = new ProcessStartInfo(command)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            WorkingDirectory = outputDirectory
-        };
-        if (kind == "7z")
-        {
-            psi.ArgumentList.Add("e");
-            psi.ArgumentList.Add(setupExe);
-            psi.ArgumentList.Add("ReShade64.dll");
-            psi.ArgumentList.Add("ReShade32.dll");
-            psi.ArgumentList.Add($"-o{outputDirectory}");
-            psi.ArgumentList.Add("-y");
-        }
-        else
-        {
-            psi.ArgumentList.Add("-xf");
-            psi.ArgumentList.Add(setupExe);
-            psi.ArgumentList.Add("-C");
-            psi.ArgumentList.Add(outputDirectory);
-            psi.ArgumentList.Add("ReShade64.dll");
-            psi.ArgumentList.Add("ReShade32.dll");
-        }
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {command}.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-        _ = await stdoutTask.ConfigureAwait(false);
-        var error = await stderrTask.ConfigureAwait(false);
-        if (process.ExitCode != 0)
-            throw new InvalidOperationException($"{command} could not extract ReShade setup (exit {process.ExitCode}): {error.Trim()}");
+        // Time limit, process-tree kill and the post-extraction link check (#37) live in the shared runner.
+        await ExternalArchiveRunner.ExtractAsync(setupExe, outputDirectory, cancellationToken, members: PayloadNames, tool: extractor)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -158,6 +127,22 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
         return await ExtractVerifiedAsync(entry, destination, cancellationToken).ConfigureAwait(false) is { } failure
             ? $"{entry.Name}: {failure}"
             : null;
+    }
+
+    /// <summary>Validation callback for a downloaded ZIP: it opens and its central directory reads (throws otherwise).</summary>
+    internal static Task RequireReadableZip(string path, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var archive = ZipFile.OpenRead(path);
+        if (archive.Entries.Count == 0) throw new InvalidDataException(ArchiveRefusedPrefix + EmptyArchiveRefusal);
+        return Task.CompletedTask;
+    }
+
+    /// <summary><see cref="ExtractEntryAsync"/> that throws the refusal (<see cref="ArchiveRefusedPrefix"/> + reason) as an <see cref="InvalidDataException"/>.</summary>
+    internal static async Task ExtractEntryOrThrowAsync(ZipArchiveEntry entry, string destination, long maxBytes, CancellationToken cancellationToken)
+    {
+        if (await ExtractEntryAsync(entry, destination, maxBytes, cancellationToken).ConfigureAwait(false) is { } refused)
+            throw new InvalidDataException(ArchiveRefusedPrefix + refused);
     }
 
     /// <summary>Copies one entry to <paramref name="destination"/>; returns null, or why the entry's bytes were refused.</summary>
@@ -301,29 +286,6 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
             file.ReadExactly(signature);
             if (BinaryPrimitives.ReadUInt32LittleEndian(signature) == centralDirectorySignature)
                 return (zipStart, tailStart + i + eocdSize + commentLength);
-        }
-        return null;
-    }
-
-    internal static (string Command, string Kind)? FindExternalExtractor()
-    {
-        foreach (var candidate in new[] { "7zz", "7z", "7za" })
-            if (FindInPath(candidate) is { } path) return (path, "7z");
-        if (FindInPath("bsdtar") is { } bsdtar) return (bsdtar, "bsdtar");
-        return null;
-    }
-
-    private static string? FindInPath(string command)
-    {
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(dir, command);
-                if (File.Exists(candidate)) return candidate;
-            }
-            catch (ArgumentException) { }
         }
         return null;
     }
