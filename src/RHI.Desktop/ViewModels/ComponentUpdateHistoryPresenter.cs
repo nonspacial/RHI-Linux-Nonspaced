@@ -40,6 +40,15 @@ public static class ComponentUpdateHistoryPresenter
         };
     }
 
+    /// <summary>
+    /// The history dialog's line for a write that failed (disk full, no permission): what happened, how many events wait
+    /// in memory, and the reason in the UI language; null when the history is being written normally (Refs #111).
+    /// </summary>
+    public static string? WriteErrorText(ComponentUpdateLogStore store)
+        => store.WriteError is { } error
+            ? UiLocalizationService.Format("Win.UpdateHistoryNotSaved", UiLocalizationService.Present(error), store.UnsavedCount)
+            : null;
+
     public static string ActionText(ComponentUpdateLogEntry entry) => (entry.Success, entry.Action) switch
     {
         (false, ComponentUpdateAction.Install) => T("Hist.InstallFailed"),

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
@@ -36,6 +37,8 @@ public sealed record ComponentUpdateLogGroup(DateTime LocalDate, IReadOnlyList<C
 /// Bounded, newest-first history of component installs/updates/removals. Writes go through
 /// <c>AtomicFile.WriteStoreFile</c> (unique temp, fsync, verify, rename, directory fsync). An unreadable file is copied aside and the store then refuses
 /// to record until the user clears it, so a parse error never silently drops the history.
+/// A failed write (disk full, no permission) keeps the events in memory, logs the failure once and reports it through
+/// <see cref="WriteError"/>; the next write that succeeds saves them with it and clears the error (Refs #111).
 /// </summary>
 public sealed class ComponentUpdateLogStore : IGameStateStore
 {
@@ -50,6 +53,9 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
     private readonly string _path;
     private readonly object _gate = new();
     private string? _corruptQuarantinePath;
+    // Newest first: events recorded while the file could not be written; saved with the next write that succeeds.
+    private readonly List<ComponentUpdateLogEntry> _unsaved = [];
+    private string? _writeError;
 
     public ComponentUpdateLogStore(string? path = null)
     {
@@ -64,20 +70,39 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
         get { lock (_gate) { LoadUnsafe(); return _corruptQuarantinePath; } }
     }
 
-    /// <summary>Newest first.</summary>
+    /// <summary>
+    /// Why the last write of the history failed, or null once a write succeeded again. The events recorded meanwhile
+    /// (<see cref="UnsavedCount"/>) are listed by <see cref="GetAll"/> and saved with the next successful write.
+    /// </summary>
+    public string? WriteError
+    {
+        get { lock (_gate) return _writeError; }
+    }
+
+    /// <summary>Events kept in memory because the history file could not be written.</summary>
+    public int UnsavedCount
+    {
+        get { lock (_gate) return _unsaved.Count; }
+    }
+
+    /// <summary>Newest first, including events not yet written (see <see cref="WriteError"/>).</summary>
     public IReadOnlyList<ComponentUpdateLogEntry> GetAll()
     {
         lock (_gate)
-            return LoadUnsafe();
+            return WithUnsaved(LoadUnsafe());
     }
 
-    /// <summary>Returns false when the entry was not written (corrupt log, or a repeat of the latest failure).</summary>
+    /// <summary>
+    /// Returns false when the entry was not written: a corrupt log, a repeat of the latest failure, or a write that
+    /// failed (then the entry is kept in memory and saved with the next write that succeeds; see <see cref="WriteError"/>).
+    /// </summary>
     public bool Record(ComponentUpdateLogEntry entry)
     {
         lock (_gate)
         {
-            var entries = LoadUnsafe();
+            var onDisk = LoadUnsafe();
             if (_corruptQuarantinePath is not null) return false;
+            var entries = WithUnsaved(onDisk);
 
             // A background pass retrying the same broken update every few hours must not
             // push the whole history out of the bounded log.
@@ -88,7 +113,21 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
             entries.Insert(0, entry);
             if (entries.Count > MaxEntries)
                 entries.RemoveRange(MaxEntries, entries.Count - MaxEntries);
-            SaveUnsafe(entries);
+            try
+            {
+                SaveUnsafe(entries);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // History is informational: never fail the install, keep the event for the next write, say so once.
+                _unsaved.Insert(0, entry);
+                if (_unsaved.Count > MaxEntries) _unsaved.RemoveRange(MaxEntries, _unsaved.Count - MaxEntries);
+                if (_writeError is null)
+                    AppLog.Warn("update-history", $"The update history could not be written to {_path}; new events are kept in memory until it can be.", ex);
+                _writeError = ex.Message;
+                return false;
+            }
+            WriteSucceeded();
             return true;
         }
     }
@@ -104,7 +143,23 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
                     $"The update history at {_path} is unreadable and could not be copied aside; move it manually before clearing.");
             SaveUnsafe([]);
             _corruptQuarantinePath = null;
+            WriteSucceeded();
         }
+    }
+
+    private void WriteSucceeded()
+    {
+        if (_writeError is not null)
+            AppLog.Warn("update-history", $"The update history at {_path} can be written again; {_unsaved.Count} event(s) kept in memory were saved.");
+        _unsaved.Clear();
+        _writeError = null;
+    }
+
+    /// <summary>The events not yet written, then those on disk (each list is newest first; unsaved ones are newer).</summary>
+    private List<ComponentUpdateLogEntry> WithUnsaved(List<ComponentUpdateLogEntry> onDisk)
+    {
+        if (_unsaved.Count == 0) return onDisk;
+        return _unsaved.Concat(onDisk).Take(MaxEntries).ToList();
     }
 
     /// <summary>
@@ -167,9 +222,13 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
                 .Take(MaxEntries)
                 .ToList();
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            _corruptQuarantinePath ??= Quarantine();
+            if (_corruptQuarantinePath is null)
+            {
+                _corruptQuarantinePath = Quarantine();
+                AppLog.Warn("update-history", $"The update history at {_path} cannot be read; recording stops until it is cleared (copy: {_corruptQuarantinePath}).", ex);
+            }
             return [];
         }
     }
@@ -189,8 +248,9 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
             File.Copy(_path, target, overwrite: false);
             return target;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            AppLog.Warn("update-history", $"The unreadable update history at {_path} could not be copied aside.", ex);
             return _path;
         }
     }

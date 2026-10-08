@@ -192,6 +192,55 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Same(renodx, entries[0]);
     }
 
+    // #111: a write error (here: the folder became read-only) never stops recording silently. The events wait in memory
+    // and are listed, the failure is logged once and shown by the history dialog, and the next write that succeeds saves
+    // them with it.
+    [Fact]
+    public async Task WriteError_IsReportedOnce_AndRecordingResumesWhenWritable()
+    {
+        var dir = Path.Combine(_root, "history");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "update-log.json");
+        var store = new ComponentUpdateLogStore(path);
+        Assert.True(store.Record(Entry(1)));
+        var appLog = new RHI.Core.Services.AppLog(Path.Combine(_root, "rhi.log"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var recorder = new ComponentUpdateRecorder(records, store);
+        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(appLog))
+            {
+                Assert.False(store.Record(Entry(2)));
+                var install = await recorder.TrackAsync(_game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () =>
+                {
+                    Upsert(records, ManagedComponentKind.ReShade, "6.4.0");
+                    return Task.FromResult(ComponentOperationResult.Ok("installed"));
+                });
+                Assert.True(install.Success); // history never fails the install
+
+                Assert.NotNull(store.WriteError);
+                Assert.Equal(2, store.UnsavedCount);
+                Assert.Equal([ManagedComponentKind.ReShade, ManagedComponentKind.RenoDX, ManagedComponentKind.RenoDX],
+                    store.GetAll().Select(e => e.Component));
+                Assert.Single(new ComponentUpdateLogStore(path).GetAll()); // only the first event is on disk
+                Assert.NotNull(ComponentUpdateHistoryPresenter.WriteErrorText(store));
+                Assert.Single(File.ReadAllLines(appLog.FilePath), line => line.Contains("could not be written", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.True(store.Record(Entry(3)));
+
+        Assert.Null(store.WriteError);
+        Assert.Equal(0, store.UnsavedCount);
+        Assert.Null(ComponentUpdateHistoryPresenter.WriteErrorText(store));
+        Assert.Equal(4, new ComponentUpdateLogStore(path).GetAll().Count);
+    }
+
     // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
     // drop the real change and log every other component as installed or removed.
     [Fact]

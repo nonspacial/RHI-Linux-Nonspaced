@@ -1,4 +1,5 @@
 using RHI.Core.Models;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -97,9 +98,10 @@ public sealed class ComponentUpdateRecorder
                     entry = OwnedEntry(game, owner, fileLabel, before, after);
                 if (entry is not null) _log.Record(entry);
             }
-            catch
+            catch (Exception ex)
             {
-                // History is informational; it must never fail or alter the swap.
+                // History is informational; it must never fail or alter the swap (write errors are kept by the store).
+                AppLog.Warn("update-history", $"The {fileLabel} swap for {game.Name} was not recorded in the update history.", ex);
             }
         }
     }
@@ -111,8 +113,9 @@ public sealed class ComponentUpdateRecorder
             var record = _records.Find(game, owner);
             return (true, record is null ? null : versionOf(record));
         }
-        catch
+        catch (Exception ex) // recording never fails the wrapped operation
         {
+            AppLog.Warn("update-history", $"The {owner} record of {game.Name} could not be read for the update history.", ex);
             return (false, null);
         }
     }
@@ -138,8 +141,9 @@ public sealed class ComponentUpdateRecorder
                 .GroupBy(r => r.Component)
                 .ToDictionary(g => g.Key, g => (HistoryVersion(g.First()), g.First().InstalledAtUtc));
         }
-        catch
+        catch (Exception ex) // recording never fails the wrapped operation
         {
+            AppLog.Warn("update-history", $"The records of {game.Name} could not be read for the update history.", ex);
             return [];
         }
     }
@@ -229,9 +233,11 @@ public sealed class ComponentUpdateRecorder
             foreach (var entry in entries.OrderBy(e => e.Component == requested))
                 _log.Record(entry);
         }
-        catch
+        catch (Exception ex)
         {
-            // History is informational; a full disk or corrupt log must not fail an install.
+            // History is informational and must not fail an install; a write error is kept and shown by the store
+            // (ComponentUpdateLogStore.WriteError), anything else is logged here.
+            AppLog.Warn("update-history", $"The {requested} operation for {game.Name} was not recorded in the update history.", ex);
         }
     }
 }
