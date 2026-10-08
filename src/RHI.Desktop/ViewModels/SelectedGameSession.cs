@@ -112,9 +112,17 @@ public sealed class SelectedGameSession
     /// <summary>
     /// Games whose analysis (including the full file index) is kept. Measured (SelectedGameSessionTests): browsing 60
     /// games of 3,000 paths (~125 characters each) retains 6.2 MiB, about 270 bytes per path for the 8 kept; the old
-    /// unbounded cache kept all 60 (~48 MiB) for the whole session.
+    /// unbounded cache kept all 60 (~48 MiB) for the whole session. The game count alone does not bound memory (an index
+    /// may hold up to <see cref="GameFileIndexer.DefaultMaxFiles"/> paths), so <see cref="DefaultMaxCachedPaths"/> bounds
+    /// it too.
     /// </summary>
     public const int DefaultCapacity = 8;
+
+    /// <summary>
+    /// Total file-index paths the cache keeps (~27 MiB at the measured 270 bytes per path). Older analyses are dropped
+    /// first; the newest is always kept, so one game with a capped 200,000-path index (~54 MiB) stays cached alone.
+    /// </summary>
+    public const long DefaultMaxCachedPaths = 100_000;
 
     private readonly IGameRuntimeProbe _probe;
     private readonly LinuxManagedComponentService _managed;
@@ -129,13 +137,14 @@ public sealed class SelectedGameSession
         LinuxManagedComponentService managed,
         LinuxDlssDefaultsService dlssDefaults,
         LinuxHdrLaunchProfileService hdr,
-        int capacity = DefaultCapacity)
+        int capacity = DefaultCapacity,
+        long maxCachedPaths = DefaultMaxCachedPaths)
     {
         _probe = probe;
         _managed = managed;
         _dlssDefaults = dlssDefaults;
         _hdr = hdr;
-        _cache = new LruCache<string, GameAnalysis>(capacity);
+        _cache = new LruCache<string, GameAnalysis>(capacity, weigh: analysis => analysis.Files.Count, maxWeight: maxCachedPaths);
     }
 
     /// <summary>The game the session analyses (the selected game), or null.</summary>
@@ -149,6 +158,9 @@ public sealed class SelectedGameSession
 
     /// <summary>How many analyses the cache holds (tests).</summary>
     public int CachedCount => _cache.Count;
+
+    /// <summary>How many file-index paths the cached analyses hold together (tests).</summary>
+    public long CachedPaths => _cache.Weight;
 
     /// <summary><see cref="Game"/>, <see cref="Analysis"/> or <see cref="IsProbeBusy"/> changed.</summary>
     public event Action? Changed;
@@ -323,21 +335,32 @@ public sealed class SelectedGameSession
     private static string Key(DetectedGame game) => LinuxGameLibraryStore.GameKey(game);
 }
 
-/// <summary>A small least-recently-used map: reading or writing an entry makes it the newest; the oldest goes first.</summary>
+/// <summary>
+/// A small least-recently-used map: reading or writing an entry makes it the newest; the oldest goes first. Bounded by
+/// entry count and, with <c>weigh</c>, by total weight; the newest entry is always kept, even when it alone is heavier.
+/// </summary>
 public sealed class LruCache<TKey, TValue> where TKey : notnull
 {
     private readonly int _capacity;
+    private readonly Func<TValue, long> _weigh;
+    private readonly long _maxWeight;
     private readonly Dictionary<TKey, LinkedListNode<(TKey Key, TValue Value)>> _map;
     private readonly LinkedList<(TKey Key, TValue Value)> _order = new();
 
-    public LruCache(int capacity, IEqualityComparer<TKey>? comparer = null)
+    public LruCache(int capacity, IEqualityComparer<TKey>? comparer = null, Func<TValue, long>? weigh = null, long maxWeight = long.MaxValue)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(capacity, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxWeight, 0);
         _capacity = capacity;
+        _weigh = weigh ?? (_ => 0);
+        _maxWeight = maxWeight;
         _map = new(comparer);
     }
 
     public int Count => _map.Count;
+
+    /// <summary>The entries' total weight (0 without a <c>weigh</c> function).</summary>
+    public long Weight { get; private set; }
 
     public bool TryGet(TKey key, out TValue value)
     {
@@ -354,14 +377,20 @@ public sealed class LruCache<TKey, TValue> where TKey : notnull
 
     public void Set(TKey key, TValue value)
     {
-        if (_map.TryGetValue(key, out var existing)) _order.Remove(existing);
+        if (_map.TryGetValue(key, out var existing))
+        {
+            _order.Remove(existing);
+            Weight -= _weigh(existing.Value.Value);
+        }
         var node = new LinkedListNode<(TKey, TValue)>((key, value));
         _order.AddFirst(node);
         _map[key] = node;
-        while (_map.Count > _capacity && _order.Last is { } oldest)
+        Weight += _weigh(value);
+        while ((_map.Count > _capacity || Weight > _maxWeight) && _order.Count > 1 && _order.Last is { } oldest)
         {
             _order.RemoveLast();
             _map.Remove(oldest.Value.Key);
+            Weight -= _weigh(oldest.Value.Value);
         }
     }
 
@@ -369,6 +398,7 @@ public sealed class LruCache<TKey, TValue> where TKey : notnull
     {
         if (!_map.Remove(key, out var node)) return false;
         _order.Remove(node);
+        Weight -= _weigh(node.Value.Value);
         return true;
     }
 
@@ -376,5 +406,6 @@ public sealed class LruCache<TKey, TValue> where TKey : notnull
     {
         _map.Clear();
         _order.Clear();
+        Weight = 0;
     }
 }

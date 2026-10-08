@@ -216,6 +216,142 @@ public sealed class SelectedGameSessionTests
         Assert.Equal(GraphicsApi.Vulkan, shared.UserGraphicsApiOverride); // the user's choice is not the probe's to change
     }
 
+    // w2/vmsplit review nit 4: the game count alone does not bound memory (one index may hold 200,000 paths), so the
+    // cache is bounded by its total path count too; the newest analysis is always kept.
+    [Fact]
+    public void LruCache_IsBoundedByTotalWeight_AndKeepsTheNewestEntry()
+    {
+        var cache = new LruCache<string, int>(8, weigh: size => size, maxWeight: 100);
+        cache.Set("a", 40);
+        cache.Set("b", 40);
+        Assert.Equal(80, cache.Weight);
+        cache.Set("c", 40);                 // 120 > 100: the oldest goes
+        Assert.False(cache.TryGet("a", out _));
+        Assert.Equal(80, cache.Weight);
+        cache.Set("huge", 500);             // heavier than the bound on its own: kept, everything older goes
+        Assert.Equal(1, cache.Count);
+        Assert.True(cache.TryGet("huge", out _));
+        cache.Set("huge", 10);              // replacing an entry re-weighs it
+        Assert.Equal(10, cache.Weight);
+        Assert.True(cache.Remove("huge"));
+        Assert.Equal(0, cache.Weight);
+    }
+
+    [Fact]
+    public async Task Session_DropsOlderAnalysesBeyondItsPathBudget()
+    {
+        var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"rhi-lru-paths-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            var games = new List<DetectedGame>();
+            for (var i = 0; i < 3; i++)
+            {
+                var dir = Directory.CreateDirectory(Path.Combine(root, $"Paths {i}")).FullName;
+                for (var f = 0; f < 50; f++) File.WriteAllBytes(Path.Combine(dir, $"f{f}.pak"), [1]);
+                var exe = Path.Combine(dir, "game.exe");
+                File.WriteAllBytes(exe, [0x4D, 0x5A]);
+                games.Add(new DetectedGame { Name = $"Paths {i}", Source = "Heroic", InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir, Runner = "Proton" });
+            }
+            using var fx = await ViewModelFixture.StartAsync(games);
+            using var http = new HttpClient();
+            var dlss = new DlssManagerService(http, new TransactionalFileDeploymentService(), Path.Combine(fx.Root, "session-dlss"));
+            var session = new SelectedGameSession(new NoOpProbe(), fx.Managed, new LinuxDlssDefaultsService(dlss, fx.Records),
+                new RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService(), maxCachedPaths: 120);
+            foreach (var game in games)
+            {
+                session.Select(game);
+                for (var i = 0; i < 500 && (session.IsProbeBusy || session.Analysis is null); i++) await Task.Delay(10);
+            }
+
+            Assert.Equal(2, session.CachedCount);        // 3 × 51 paths > 120: the oldest went
+            Assert.True(session.CachedPaths <= 120);
+            Assert.False(session.TryGetCached(games[0], out _));
+            Assert.True(session.TryGetCached(games[2], out _));
+            Assert.Equal(100_000L, SelectedGameSession.DefaultMaxCachedPaths);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // w2/vmsplit review nit 5: a cached analysis published for another instance of the same game (a refresh hands
+    // back fresh detector instances) writes its probed facts onto that instance; without it the fresh instance kept
+    // GraphicsApi Unknown and no binary directory, and every install was refused.
+    [Fact]
+    public async Task CachedAnalysis_SelectedThroughAFreshInstance_AppliesItsProbedFacts()
+    {
+        var probe = new GatedProbe();
+        probe.Release.SetResult();
+        using var fx = await ViewModelFixture.StartAsync([], probe: probe);
+        await AddAsync(fx, "Tunic");
+        await WaitForAnalysisAsync(fx);
+        var shared = fx.Vm.SelectedGame!;
+        Assert.Equal(GraphicsApi.DirectX11, shared.GraphicsApi);
+
+        var fresh = shared.ShallowClone();
+        fresh.GraphicsApi = GraphicsApi.Unknown;
+        fresh.GraphicsApiEvidence = null;
+        fx.Vm.Session.Select(fresh);
+
+        Assert.Same(fresh, fx.Vm.Session.Game);
+        Assert.False(fx.Vm.Session.IsProbeBusy);       // a cache hit, not a new analysis
+        Assert.Equal(GraphicsApi.DirectX11, fresh.GraphicsApi);
+        Assert.Equal("probe evidence", fresh.GraphicsApiEvidence);
+    }
+
+    // w2/vmsplit review nit 6: a probe that ignores cancellation and finishes after the selection moved on publishes
+    // nothing: the new game's analysis stays, the old game's shared instance is untouched and nothing is cached for it.
+    [Fact]
+    public async Task StaleProbe_FinishingAfterTheSelectionMoved_IsDiscarded()
+    {
+        var root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), $"rhi-stale-{Guid.NewGuid():N}")).FullName;
+        try
+        {
+            DetectedGame Make(string name)
+            {
+                var dir = Directory.CreateDirectory(Path.Combine(root, name)).FullName;
+                var exe = Path.Combine(dir, "game.exe");
+                File.WriteAllBytes(exe, [0x4D, 0x5A]);
+                return new DetectedGame { Name = name, Source = "Heroic", InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir, Runner = "Proton" };
+            }
+            var probe = new PerGameProbe();
+            using var fx = await ViewModelFixture.StartAsync([Make("Alpha"), Make("Bravo")], probe: probe);
+            var alpha = fx.Vm.Games.Single(row => row.Game.Name == "Alpha").Game;
+            var bravo = fx.Vm.Games.Single(row => row.Game.Name == "Bravo").Game;
+
+            fx.Vm.SelectedGame = alpha;
+            await probe.Started("Alpha").WaitAsync(TimeSpan.FromSeconds(30));
+            fx.Vm.SelectedGame = bravo;
+            await probe.Started("Bravo").WaitAsync(TimeSpan.FromSeconds(30));
+            probe.Release("Bravo");
+            await WaitForAnalysisAsync(fx);
+            var bravoAnalysis = fx.Vm.Session.Analysis;
+
+            probe.Release("Alpha");
+            await probe.Finished("Alpha").WaitAsync(TimeSpan.FromSeconds(30));
+            await Task.Delay(200); // let the stale continuation run
+
+            Assert.Same(bravo, fx.Vm.Session.Game);
+            Assert.Same(bravoAnalysis, fx.Vm.Session.Analysis);
+            Assert.Equal(GraphicsApi.Unknown, alpha.GraphicsApi);
+            Assert.False(fx.Vm.Session.TryGetCached(alpha, out _));
+            Assert.Equal(GraphicsApi.DirectX11, bravo.GraphicsApi);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    // w2/vmsplit review nit 3: the HDR host is never probed from a getter; before the start-up probe lands the plan
+    // is built for a "not probed yet" host and rebuilt when it lands.
+    [Fact]
+    public void HdrHost_BeforeAnyProbe_IsTheNotProbedStandIn_NeverAProbe()
+    {
+        Assert.Same(LinuxHdrHostSnapshotNotProbed, MainWindowViewModel.HdrHostFor(null, null));
+        Assert.False(MainWindowViewModel.HdrHostFor(null, null).Probed);
+        var startup = new RHI.Platform.Linux.Hdr.LinuxHdrHostSnapshot(true, "KDE", true, "595.1", false);
+        Assert.Same(startup, MainWindowViewModel.HdrHostFor(null, startup));
+        Assert.True(startup.Probed);
+    }
+
+    private static RHI.Platform.Linux.Hdr.LinuxHdrHostSnapshot LinuxHdrHostSnapshotNotProbed => RHI.Platform.Linux.Hdr.LinuxHdrHostSnapshot.NotProbed;
+
     private static void Fill(LruCache<string, IReadOnlyList<string>> cache, List<WeakReference> weak)
     {
         for (var game = 0; game < 60; game++)
@@ -246,6 +382,34 @@ public sealed class SelectedGameSessionTests
             await Task.Delay(10);
         Assert.False(fx.Vm.IsSelectionProbeBusy);
         Assert.NotNull(fx.Vm.Session.Analysis);
+    }
+
+    private sealed class NoOpProbe : IGameRuntimeProbe
+    {
+        public Task ProbeAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    /// <summary>A probe per game name that writes its copy, then waits for the test, ignoring cancellation.</summary>
+    private sealed class PerGameProbe : IGameRuntimeProbe
+    {
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (TaskCompletionSource Started, TaskCompletionSource Release, TaskCompletionSource Finished)> _gates = new();
+
+        private (TaskCompletionSource Started, TaskCompletionSource Release, TaskCompletionSource Finished) Gate(string name)
+            => _gates.GetOrAdd(name, _ => (new(TaskCreationOptions.RunContinuationsAsynchronously),
+                new(TaskCreationOptions.RunContinuationsAsynchronously), new(TaskCreationOptions.RunContinuationsAsynchronously)));
+
+        public Task Started(string name) => Gate(name).Started.Task;
+        public Task Finished(string name) => Gate(name).Finished.Task;
+        public void Release(string name) => Gate(name).Release.TrySetResult();
+
+        public async Task ProbeAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+        {
+            var gate = Gate(game.Name);
+            game.GraphicsApi = GraphicsApi.DirectX11;
+            gate.Started.TrySetResult();
+            await gate.Release.Task; // ignores cancellation on purpose
+            gate.Finished.TrySetResult();
+        }
     }
 
     /// <summary>A probe that writes the game it is given, then waits until the test lets it finish.</summary>

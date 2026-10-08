@@ -37,6 +37,15 @@ public sealed record LinuxHdrHostSnapshot(
     string? NvidiaDriverVersion,
     bool LegacyWsiLikelyRequired)
 {
+    /// <summary>
+    /// Stand-in used before the host has been probed (a getter never probes it on the UI thread); the plan is rebuilt
+    /// once the real probe lands.
+    /// </summary>
+    public static LinuxHdrHostSnapshot NotProbed { get; } = new(false, "desktop unknown", false, null, false) { Probed = false };
+
+    /// <summary>False only for <see cref="NotProbed"/>.</summary>
+    public bool Probed { get; init; } = true;
+
     public string Summary
     {
         get

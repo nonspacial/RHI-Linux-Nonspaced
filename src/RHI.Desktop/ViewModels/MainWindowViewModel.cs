@@ -415,10 +415,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
-    /// analysis has finished, the start-up probe (<see cref="_lastHdrHost"/>) or, in the moment before that lands, one
-    /// direct probe.
+    /// analysis has finished, the start-up probe (<see cref="_lastHdrHost"/>). Never probed from a getter (the probe
+    /// reads /proc and searches PATH): before the start-up probe lands the plan is built for
+    /// <see cref="LinuxHdrHostSnapshot.NotProbed"/> and rebuilt when it lands.
     /// </summary>
-    private LinuxHdrHostSnapshot HdrHost => Facts?.HdrHost ?? (_lastHdrHost ??= _hdrProfiles.ProbeHost());
+    private LinuxHdrHostSnapshot HdrHost => HdrHostFor(Facts, _lastHdrHost);
+
+    internal static LinuxHdrHostSnapshot HdrHostFor(SelectionFacts? facts, LinuxHdrHostSnapshot? startupProbe)
+        => facts?.HdrHost ?? startupProbe ?? LinuxHdrHostSnapshot.NotProbed;
     public string HdrProfileHint
     {
         get
@@ -972,6 +976,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
         var dlssManifestTask = LoadDlssManifestAsync();
         _lastHdrHost ??= await hdrHost;
+        RaiseHdrPlanChanged();
         await RefreshAsync();
         await dlssManifestTask;
         await neuralVersionCatalogTask;
@@ -1301,12 +1306,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ReevaluateCurrentGameForLumaPolicy(game, policy!);
     }
 
-    partial void OnSelectedHdrModeChanged(string value)
+    private void RaiseHdrPlanChanged()
     {
         OnPropertyChanged(nameof(SelectedHdrPlan));
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
+    }
+
+    partial void OnSelectedHdrModeChanged(string value)
+    {
+        RaiseHdrPlanChanged();
         if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
         SaveHdrProfile(SelectedGame, HdrControl.Mode);
     }
