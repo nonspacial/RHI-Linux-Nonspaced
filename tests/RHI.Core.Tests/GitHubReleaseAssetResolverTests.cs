@@ -13,8 +13,8 @@ public sealed class GitHubReleaseAssetResolverTests
         {
           "tag_name": "v0.13.1-beta.1",
           "assets": [
-            { "name": "AUTOMATIC_INSTALLATION_AVAILABLE.txt", "browser_download_url": "https://example.test/info" },
-            { "name": "DLSS5-Feeder-0.13.1-beta.1.zip", "browser_download_url": "https://example.test/feed.zip", "digest": "sha256:0123456789abcdef" }
+            { "name": "AUTOMATIC_INSTALLATION_AVAILABLE.txt", "browser_download_url": "https://github.com/rhi-tests/info" },
+            { "name": "DLSS5-Feeder-0.13.1-beta.1.zip", "browser_download_url": "https://github.com/rhi-tests/feed.zip", "digest": "sha256:0123456789abcdef" }
           ]
         }
         """;
@@ -22,12 +22,12 @@ public sealed class GitHubReleaseAssetResolverTests
         var resolver = new GitHubReleaseAssetResolver(http);
 
         var result = await resolver.ResolveAsync(new GitHubReleaseAssetQuery(
-            "https://api.github.test/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest",
+            "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest",
             AssetNamePattern: @"^DLSS5-Feeder-.*\.zip$"));
 
         Assert.Equal("0.13.1-beta.1", result.Version);
         Assert.Equal("DLSS5-Feeder-0.13.1-beta.1.zip", result.AssetName);
-        Assert.Equal("https://example.test/feed.zip", result.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/feed.zip", result.AssetUrl);
         Assert.Equal("0123456789abcdef", result.Sha256);
     }
 
@@ -52,16 +52,16 @@ public sealed class GitHubReleaseAssetResolverTests
     {
         var json = """
         [
-          { "tag_name": "v3", "draft": true, "assets": [ { "name": "bridge-v3.zip", "browser_download_url": "https://example.test/v3" } ] },
-          { "tag_name": "v2", "draft": false, "assets": [ { "name": "notes.txt", "browser_download_url": "https://example.test/notes" } ] },
-          { "tag_name": "v1", "draft": false, "assets": [ { "name": "bridge-v1.zip", "browser_download_url": "https://example.test/v1" } ] }
+          { "tag_name": "v3", "draft": true, "assets": [ { "name": "bridge-v3.zip", "browser_download_url": "https://github.com/rhi-tests/v3" } ] },
+          { "tag_name": "v2", "draft": false, "assets": [ { "name": "notes.txt", "browser_download_url": "https://github.com/rhi-tests/notes" } ] },
+          { "tag_name": "v1", "draft": false, "assets": [ { "name": "bridge-v1.zip", "browser_download_url": "https://github.com/rhi-tests/v1" } ] }
         ]
         """;
         using var http = new HttpClient(new FakeHandler(JsonResponse(json)));
         var resolver = new GitHubReleaseAssetResolver(http);
 
         var result = await resolver.ResolveAsync(new GitHubReleaseAssetQuery(
-            "https://api.github.test/repos/example/releases?per_page=100",
+            "https://api.github.com/repos/example/releases?per_page=100",
             AssetNamePattern: @"^bridge-.*\.zip$"));
 
         Assert.Equal("1", result.Version);
@@ -75,7 +75,7 @@ public sealed class GitHubReleaseAssetResolverTests
         {
           "tag_name": "v7",
           "assets": [
-            { "name": "dynamic-v7.addon64", "browser_download_url": "https://example.test/dynamic" }
+            { "name": "dynamic-v7.addon64", "browser_download_url": "https://github.com/rhi-tests/dynamic" }
           ]
         }
         """;
@@ -83,7 +83,7 @@ public sealed class GitHubReleaseAssetResolverTests
         var resolver = new GitHubReleaseAssetResolver(http);
 
         var result = await resolver.ResolveAsync(new GitHubReleaseAssetQuery(
-            "https://api.github.test/repos/example/releases/latest",
+            "https://api.github.com/repos/example/releases/latest",
             ExactAssetName: "stable.addon64",
             AssetNamePattern: @"^dynamic-.*\.addon64$"));
 
@@ -98,9 +98,9 @@ public sealed class GitHubReleaseAssetResolverTests
         {
           "tag_name": "v0.5.1",
           "assets": [
-            { "name": "dlss5-feed.addon64", "browser_download_url": "https://example.test/dlss5-feed.addon64", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
-            { "name": "DLSS5_Feed.fx", "browser_download_url": "https://example.test/DLSS5_Feed.fx", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
-            { "name": "feed-vk-layer.zip", "browser_download_url": "https://example.test/feed-vk-layer.zip" }
+            { "name": "dlss5-feed.addon64", "browser_download_url": "https://github.com/rhi-tests/dlss5-feed.addon64", "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+            { "name": "DLSS5_Feed.fx", "browser_download_url": "https://github.com/rhi-tests/DLSS5_Feed.fx", "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+            { "name": "feed-vk-layer.zip", "browser_download_url": "https://github.com/rhi-tests/feed-vk-layer.zip" }
           ]
         }
         """;
@@ -127,11 +127,11 @@ public sealed class GitHubReleaseAssetResolverTests
           "assets": [
             {
               "name": "AUTOMATIC_INSTALLATION_AVAILABLE.txt",
-              "browser_download_url": "https://example.test/AUTOMATIC_INSTALLATION_AVAILABLE.txt"
+              "browser_download_url": "https://github.com/rhi-tests/AUTOMATIC_INSTALLATION_AVAILABLE.txt"
             },
             {
               "name": "DLSS5-Feeder-0.13.1-beta.1.zip",
-              "browser_download_url": "https://example.test/DLSS5-Feeder-0.13.1-beta.1.zip",
+              "browser_download_url": "https://github.com/rhi-tests/DLSS5-Feeder-0.13.1-beta.1.zip",
               "digest": "sha256:8da626ed906a29289f001cb613640015360e36b0c3478348bf097a304b34bb18"
             }
           ]
@@ -144,7 +144,7 @@ public sealed class GitHubReleaseAssetResolverTests
 
         Assert.Equal("0.13.1-beta.1", result.Version);
         Assert.Equal("DLSS5-Feeder-0.13.1-beta.1.zip", result.AssetName);
-        Assert.Equal("https://example.test/DLSS5-Feeder-0.13.1-beta.1.zip", result.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/DLSS5-Feeder-0.13.1-beta.1.zip", result.AssetUrl);
     }
 
 
@@ -156,7 +156,7 @@ public sealed class GitHubReleaseAssetResolverTests
           "tag_name": "v0.12.4-beta.2",
           "prerelease": true,
           "assets": [
-            { "name": "bridge.addon64", "browser_download_url": "https://example.test/bridge.addon64" }
+            { "name": "bridge.addon64", "browser_download_url": "https://github.com/rhi-tests/bridge.addon64" }
           ]
         }
         """;

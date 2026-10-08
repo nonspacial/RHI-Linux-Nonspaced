@@ -174,7 +174,7 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         var record = records.Find(game, ManagedComponentKind.DofFix);
         Assert.NotNull(record);
         Assert.Equal("1.0.2", record!.Version);
-        Assert.Equal(digest, record.Files.Single().Sha256);
+        Assert.Equal(digest, record.Files.Single().Sha256, ignoreCase: true);
 
         var remove = await service.RemoveAsync(game);
 

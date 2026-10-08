@@ -1,9 +1,8 @@
-using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -222,10 +221,12 @@ public sealed class Dlss5FeederFullDeploymentService
             {
                 Directory.CreateDirectory(stageRoot);
                 release = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
-                var zip = await DownloadAssetAsync(release, Path.Combine(stageRoot, "feeder.zip"), cancellationToken).ConfigureAwait(false);
+                // The release zip is cached per version through its stamp (#114): swapping several games, or the
+                // same game again, downloads it once.
+                var zip = (await EnsureCachedReleaseAssetAsync(release, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false)).Path;
                 foreach (var name in payloadNames)
                     items.Add((ManagedFileSwap.FindFile(record, name)!.Path,
-                        ExtractReleasePayloadByName(zip, name, Path.Combine(stageRoot, name), minimumSize: 64 * 1024, requirePe: true)));
+                        await ExtractReleasePayloadByNameAsync(zip, name, Path.Combine(stageRoot, name), minimumSize: 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)));
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
@@ -258,7 +259,7 @@ public sealed class Dlss5FeederFullDeploymentService
         }
         finally
         {
-            try { if (Directory.Exists(stageRoot)) Directory.Delete(stageRoot, true); } catch { }
+            DeleteStage(stageRoot);
         }
     }
 
@@ -433,13 +434,11 @@ public sealed class Dlss5FeederFullDeploymentService
                 renoDxRelease = await _releaseResolver.ResolveAsync(
                     CreateRenoDxDlss5ReleaseQuery(),
                     cancellationToken).ConfigureAwait(false);
-                var consumerAsset = await DownloadAssetAsync(
-                    renoDxRelease,
-                    Path.Combine(stageRoot, renoDxRelease.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "renodx-dlss5.zip" : RenoDx5AddonName),
-                    cancellationToken).ConfigureAwait(false);
-                renoDxPackageSha256 = await Sha256Async(consumerAsset, cancellationToken).ConfigureAwait(false);
+                var consumerDownload = await EnsureCachedReleaseAssetAsync(renoDxRelease, DownloadSources.RhiRepository, cancellationToken).ConfigureAwait(false);
+                var consumerAsset = consumerDownload.Path;
+                renoDxPackageSha256 = consumerDownload.Sha256;
                 renoDxAddon = renoDxRelease.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                    ? ExtractReleasePayloadByName(consumerAsset, RenoDx5AddonName, Path.Combine(stageRoot, RenoDx5AddonName), minimumSize: 32 * 1024, requirePe: true)
+                    ? await ExtractReleasePayloadByNameAsync(consumerAsset, RenoDx5AddonName, Path.Combine(stageRoot, RenoDx5AddonName), minimumSize: 32 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)
                     : ValidateDownloadedPayload(consumerAsset, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
             }
 
@@ -456,37 +455,38 @@ public sealed class Dlss5FeederFullDeploymentService
                 CreateFeederArchiveReleaseQuery(),
                 releaseTag,
                 cancellationToken).ConfigureAwait(false);
-            var feederZip = await DownloadAssetAsync(
-                feederRelease,
-                Path.Combine(stageRoot, "feeder.zip"),
-                cancellationToken).ConfigureAwait(false);
+            var feederDownload = await EnsureCachedReleaseAssetAsync(feederRelease, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
+            var feederZip = feederDownload.Path;
             var feederAssetName = gameArchitecture == PeArchitecture.X86 ? FeederAddon32Name : FeederAddonName;
-            var feederAddon = ExtractReleasePayloadByName(
+            var feederAddon = await ExtractReleasePayloadByNameAsync(
                 feederZip,
                 feederAssetName,
                 Path.Combine(stageRoot, feederAssetName),
                 minimumSize: 64 * 1024,
-                requirePe: true);
+                requirePe: true,
+                cancellationToken).ConfigureAwait(false);
             string? host64Executable = null;
             if (layout.RequiresHost64)
             {
-                host64Executable = ExtractReleasePayloadByName(
+                host64Executable = await ExtractReleasePayloadByNameAsync(
                     feederZip,
                     Host64ExecutableName,
                     Path.Combine(stageRoot, Host64ExecutableName),
                     minimumSize: 64 * 1024,
-                    requirePe: true);
+                    requirePe: true,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             string feederFx;
             try
             {
-                feederFx = ExtractReleasePayloadByName(
+                feederFx = await ExtractReleasePayloadByNameAsync(
                     feederZip,
                     FeederFxName,
                     Path.Combine(stageRoot, FeederFxName),
                     minimumSize: 256,
-                    requirePe: false);
+                    requirePe: false,
+                    cancellationToken).ConfigureAwait(false);
             }
             catch (InvalidDataException ex) when (ex.Message.Contains(FeederFxName, StringComparison.OrdinalIgnoreCase))
             {
@@ -607,7 +607,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 {
                     Path = path,
                     ExistedBeforeInstall = false,
-                    Sha256 = Sha256(path),
+                    Sha256 = FileHash.Sha256Hex(path),
                     AllowUserChanges = Path.GetFileName(path).Equals(PresetName, StringComparison.OrdinalIgnoreCase)
                                        || Path.GetFileName(path).Equals(DeepFriedConfigName, StringComparison.OrdinalIgnoreCase)
                 });
@@ -622,7 +622,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     {
                         Path = shared.Path,
                         ExistedBeforeInstall = false,
-                        Sha256 = await Sha256Async(shared.Path, cancellationToken).ConfigureAwait(false)
+                        Sha256 = await FileHash.Sha256HexAsync(shared.Path, cancellationToken).ConfigureAwait(false)
                     });
                 }
             }
@@ -633,7 +633,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 {
                     Path = deepFriedConfigTarget,
                     ExistedBeforeInstall = true,
-                    Sha256 = Sha256(deepFriedConfigTarget),
+                    Sha256 = FileHash.Sha256Hex(deepFriedConfigTarget),
                     AllowUserChanges = true
                 });
             }
@@ -649,7 +649,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 [MetaDgVoodooVersion] = dgVoodooPayload?.Version ?? ReadDgVoodooVersion(sharedDx9Record),
                 [MetaConsumer] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? "Deep Fried Chicken" : "RenoDX DLSS5",
                 [MetaConsumerVersion] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? dfc!.Version : renoDxRelease!.Version,
-                [MetaConsumerPackageSha256] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? Sha256(consumerPackage!) : renoDxPackageSha256!,
+                [MetaConsumerPackageSha256] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? FileHash.Sha256Hex(consumerPackage!) : renoDxPackageSha256!,
                 ["Feeder.ConsumerConfigPreexisting"] = deepFriedConfigPreexisting ? "1" : "0",
                 ["Feeder.D3DCompilerSource"] = compilerPlan.Description,
                 ["Feeder.D3DCompilerOwned"] = compilerPlan.DeploySourcePath is null ? "0" : "1",
@@ -660,7 +660,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 [MetaIniTextureKeyCreated] = iniResult.TextureKeyCreated ? "1" : "0",
                 [MetaIniEffectAdded] = JsonSerializer.Serialize(iniResult.AddedEffectPaths),
                 [MetaIniTextureAdded] = JsonSerializer.Serialize(iniResult.AddedTexturePaths),
-                [MetaIniHash] = Sha256(iniResult.Path),
+                [MetaIniHash] = FileHash.Sha256Hex(iniResult.Path),
                 [MetaPresetPreviousExists] = presetMutation.PreviousKeyExisted ? "1" : "0",
                 [MetaPresetPreviousValue] = presetMutation.PreviousValue ?? "",
                 [MetaPresetSetValue] = presetMutation.SetValue
@@ -694,36 +694,52 @@ public sealed class Dlss5FeederFullDeploymentService
         catch (Exception ex)
         {
             // Best-effort rollback. Only paths actually copied by this install are removed; a pre-existing user-owned DFC cfg is never added to this list.
-            foreach (var path in copied.AsEnumerable().Reverse()) TryDelete(path);
+            foreach (var leftover in FileCleanup.TryDeleteAll(copied.AsEnumerable().Reverse()))
+                AppLog.Warn("dlss5-feeder", $"Rollback could not remove a file this install copied: {leftover}");
             if (iniResult is not null)
-            {
-                try
-                {
-                    ReShadeIniManager.Cleanup(
-                        iniResult.Path,
-                        iniResult.CreatedByRhi,
-                        File.Exists(iniResult.Path) ? Sha256(iniResult.Path) : null,
-                        iniResult.AddedEffectPaths,
-                        iniResult.AddedTexturePaths,
-                        iniResult.EffectKeyCreated,
-                        iniResult.TextureKeyCreated);
-                }
-                catch { }
-            }
+                RollbackStep("ReShade.ini cleanup", () => ReShadeIniManager.Cleanup(
+                    iniResult.Path,
+                    iniResult.CreatedByRhi,
+                    File.Exists(iniResult.Path) ? FileHash.Sha256Hex(iniResult.Path) : null,
+                    iniResult.AddedEffectPaths,
+                    iniResult.AddedTexturePaths,
+                    iniResult.EffectKeyCreated,
+                    iniResult.TextureKeyCreated));
             if (presetMutation is not null && iniResult is not null)
-                try { RestorePresetPath(iniResult.Path, presetMutation); } catch { }
+                RollbackStep("PresetPath restore", () => RestorePresetPath(iniResult.Path, presetMutation));
             if (earlyLoadMutation is not null && iniResult is not null)
-                try { RemoveLoadFromDllMainToken(iniResult.Path, earlyLoadMutation); } catch { }
+                RollbackStep("LoadFromDllMain restore", () => RemoveLoadFromDllMainToken(iniResult.Path, earlyLoadMutation));
             if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
-                try { await _dx9ReShade.RestoreAsync(game, dx9Migration, cancellationToken).ConfigureAwait(false); } catch { }
-            TryDeleteEmptyTree(integrationRoot);
+            {
+                // Rollback runs to completion even when the install itself was cancelled.
+                try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception restoreError) { AppLog.Warn("dlss5-feeder", "Rollback could not restore the DX9 ReShade translation", restoreError); }
+            }
+            FileCleanup.TryDeleteEmptyTree(integrationRoot);
             if (compilerOverride is not null && _overrides is not null)
-                try { _overrides.Restore(prefix, compilerOverride); } catch { }
+                RollbackStep("d3dcompiler_47 override restore", () => _overrides.Restore(prefix, compilerOverride));
             return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}");
         }
         finally
         {
-            try { if (Directory.Exists(stageRoot)) Directory.Delete(stageRoot, true); } catch { }
+            DeleteStage(stageRoot);
+        }
+    }
+
+    /// <summary>One best-effort rollback step: a failure is logged (rhi.log) and the remaining steps still run.</summary>
+    private static void RollbackStep(string what, Action step)
+    {
+        try { step(); }
+        catch (Exception ex) { AppLog.Warn("dlss5-feeder", $"Rollback step failed: {what}", ex); }
+    }
+
+    /// <summary>Removes a staging folder under the cache (RHI's own temporary files); a failure is logged.</summary>
+    private static void DeleteStage(string stageRoot)
+    {
+        try { if (Directory.Exists(stageRoot)) Directory.Delete(stageRoot, true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss5-feeder", $"Staging folder could not be removed: {stageRoot}", ex);
         }
     }
 
@@ -747,7 +763,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 if (!File.Exists(file.Path)) continue;
                 if (string.IsNullOrWhiteSpace(file.Sha256))
                     return ComponentOperationResult.Fail($"Protected file has no recorded hash: {file.Path}");
-                var currentHash = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var currentHash = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so the full Feeder teardown was not started.");
             }
@@ -810,7 +826,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     continue;
                 if (!File.Exists(file.Path)) continue;
                 var currentHash = file.AllowUserChanges || file.ExistedBeforeInstall
-                    ? await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false)
+                    ? await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false)
                     : null;
                 if (ShouldPreserveOnRemove(file, currentHash))
                 {
@@ -821,7 +837,7 @@ public sealed class Dlss5FeederFullDeploymentService
             }
 
             foreach (var directory in record.DirectoriesCreatedByRhi.OrderByDescending(x => x.Length))
-                TryDeleteEmptyTree(directory);
+                FileCleanup.TryDeleteEmptyTree(directory);
             if (_overrides is not null && game.PrefixPath is { } removePrefix && Directory.Exists(removePrefix))
                 foreach (var wineOverride in record.AdditionalWineOverrides)
                     _overrides.Restore(removePrefix, wineOverride);
@@ -861,7 +877,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (file is null) return $"{name} is not tracked by the component that owns the DX9 translation.";
             if (!File.Exists(file.Path)) return $"{name} is missing at {file.Path}.";
             if (string.IsNullOrWhiteSpace(file.Sha256)) return $"{name} has no ownership hash.";
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return $"{name} no longer matches its managed hash.";
         }
@@ -1059,29 +1075,30 @@ public sealed class Dlss5FeederFullDeploymentService
         File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
     }
 
-    private async Task<string> DownloadAssetAsync(
+    /// <summary>
+    /// A release asset from the stamped download cache (<c>releases/&lt;version&gt;/&lt;asset&gt;</c>): reused while its
+    /// stamp matches the asset URL, version and GitHub digest, otherwise downloaded under <paramref name="policy"/>
+    /// and verified against the digest when GitHub publishes one (#26, #114).
+    /// </summary>
+    private Task<VerifiedDownload> EnsureCachedReleaseAssetAsync(
         GitHubResolvedReleaseAsset asset,
-        string destination,
+        TrustedDownloadPolicy policy,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, asset.AssetUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous))
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        if (new FileInfo(destination).Length < 512)
-            throw new InvalidDataException($"Downloaded asset is unexpectedly small: {asset.AssetName}");
-        if (!string.IsNullOrWhiteSpace(asset.Sha256))
-        {
-            var actual = await Sha256Async(destination, cancellationToken).ConfigureAwait(false);
-            if (!actual.Equals(asset.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException($"Downloaded asset failed GitHub SHA-256 verification: {asset.AssetName}");
-        }
-        NormalizeReadableFile(destination);
-        return destination;
+        var entry = Path.Combine(_cacheDir, "releases", SanitizeSegment(asset.Version), Path.GetFileName(asset.AssetName));
+        return TrustedDownload.EnsureVerifiedAsync(
+            _http, asset.AssetUrl, entry, policy, asset.Version, asset.Sha256,
+            validate: (temp, _) =>
+            {
+                if (new FileInfo(temp).Length < 512)
+                    throw new InvalidDataException($"Downloaded asset is unexpectedly small: {asset.AssetName}");
+                return Task.CompletedTask;
+            },
+            cancellationToken: cancellationToken);
     }
+
+    private static string SanitizeSegment(string value)
+        => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));
 
     private async Task<string> DownloadFeederShaderFromResolvedVersionAsync(
         string version,
@@ -1093,19 +1110,10 @@ public sealed class Dlss5FeederFullDeploymentService
         {
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-                using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
-                {
-                    last = new HttpRequestException($"HTTP {(int)response.StatusCode} while fetching {url}");
-                    continue;
-                }
-                await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-                await using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None, 256 * 1024, FileOptions.Asynchronous))
-                    await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-                ValidateDownloadedPayload(destination, FeederFxName, minimumSize: 256, requirePe: false);
-                NormalizeReadableFile(destination);
+                using var download = await TrustedDownload.DownloadToTempAsync(
+                    _http, url, destination, DownloadSources.Dlss5Feeder, cancellationToken: cancellationToken).ConfigureAwait(false);
+                ValidateDownloadedPayload(download.Path, FeederFxName, minimumSize: 256, requirePe: false);
+                download.MoveTo(destination);
                 return destination;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -1138,14 +1146,13 @@ public sealed class Dlss5FeederFullDeploymentService
         string destination,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous))
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-        if (new FileInfo(zipPath).Length < 1024) throw new InvalidDataException("Shader dependency archive is unexpectedly small.");
+        // Branch archives (codeload.github.com) change under the same link, so they are fetched per install.
+        using (var download = await TrustedDownload.DownloadToTempAsync(
+                   _http, url, zipPath, DownloadSources.Dlss5Feeder, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            if (download.Length < 1024) throw new InvalidDataException("Shader dependency archive is unexpectedly small.");
+            download.MoveTo(zipPath);
+        }
 
         Directory.CreateDirectory(destination);
         using var archive = ZipFile.OpenRead(zipPath);
@@ -1166,8 +1173,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (!target.StartsWith(allowed, StringComparison.Ordinal))
                 throw new InvalidDataException($"Shader dependency archive entry escapes staging directory: {entry.FullName}");
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            entry.ExtractToFile(target, overwrite: true);
-            NormalizeReadableFile(target);
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, target, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1194,15 +1200,17 @@ public sealed class Dlss5FeederFullDeploymentService
         return path;
     }
 
-    internal static string ExtractReleasePayloadByName(string zipPath, string name, string destination, long minimumSize, bool requirePe)
+    internal static async Task<string> ExtractReleasePayloadByNameAsync(
+        string zipPath, string name, string destination, long minimumSize, bool requirePe, CancellationToken cancellationToken)
     {
-        using var archive = ZipFile.OpenRead(zipPath);
-        var entry = archive.Entries.FirstOrDefault(e =>
-            !string.IsNullOrEmpty(e.FullName) &&
-            ArchiveLeafName(e.FullName).Equals(name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidDataException($"Release archive does not contain {name}.");
-        entry.ExtractToFile(destination, overwrite: true);
-        NormalizeReadableFile(destination);
+        using (var archive = ZipFile.OpenRead(zipPath))
+        {
+            var entry = archive.Entries.FirstOrDefault(e =>
+                !string.IsNullOrEmpty(e.FullName) &&
+                ArchiveLeafName(e.FullName).Equals(name, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidDataException($"Release archive does not contain {name}.");
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, destination, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
+        }
         if (new FileInfo(destination).Length < minimumSize)
             throw new InvalidDataException($"Extracted {name} is unexpectedly small.");
         if (requirePe && !BinarySignatureInspector.HasPeSignature(destination, minimumSize))
@@ -1283,13 +1291,13 @@ public sealed class Dlss5FeederFullDeploymentService
         // an AES-encrypted ZIP. Ordinary unencrypted ZIPs stay on the native ZipArchive path;
         // encrypted ZIPs and .7z-labelled packages go through 7-Zip so AES can be handled.
         if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) && !IsAesEncryptedZipArchive(archivePath))
-            return ExtractDeepFriedChickenZipBundle(archivePath, destination);
+            return await ExtractDeepFriedChickenZipBundleAsync(archivePath, destination, cancellationToken).ConfigureAwait(false);
 
         return await ExtractDeepFriedChicken7zBundleAsync(archivePath, destination, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static DeepFriedChickenBundle ExtractDeepFriedChickenZipBundle(string zipPath, string destination)
+    private static async Task<DeepFriedChickenBundle> ExtractDeepFriedChickenZipBundleAsync(string zipPath, string destination, CancellationToken cancellationToken)
     {
         // Do not reject the outer ZIP by compressed file size. Highly compressible but
         // structurally valid packages (including deterministic test fixtures) can be
@@ -1303,14 +1311,13 @@ public sealed class Dlss5FeederFullDeploymentService
         var sumsText = ReadArchiveEntryText(sumsEntry);
         var expected = ParseDeepFriedChickenManifest(sumsText, out var version);
 
-        var addon = ExtractVerifiedDfcEntry(archive, expected, DeepFriedAddonName, Path.Combine(destination, DeepFriedAddonName), 64 * 1024, requirePe: true);
-        var bridge = ExtractVerifiedDfcEntry(archive, expected, DeepFriedBridgeName, Path.Combine(destination, DeepFriedBridgeName), 1024, requirePe: true);
+        var addon = await ExtractVerifiedDfcEntryAsync(archive, expected, DeepFriedAddonName, Path.Combine(destination, DeepFriedAddonName), 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
+        var bridge = await ExtractVerifiedDfcEntryAsync(archive, expected, DeepFriedBridgeName, Path.Combine(destination, DeepFriedBridgeName), 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
 
         var configEntry = FindArchiveEntryByLeaf(archive, DeepFriedConfigName)
             ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {DeepFriedConfigName}.");
         var config = Path.Combine(destination, DeepFriedConfigName);
-        configEntry.ExtractToFile(config, overwrite: true);
-        NormalizeReadableFile(config);
+        await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(configEntry, config, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         ValidateDeepFriedChickenConfig(config);
 
         return new(addon, bridge, config, version);
@@ -1350,7 +1357,7 @@ public sealed class Dlss5FeederFullDeploymentService
         var addon = CopyVerifiedDfcFile(addonSource, expected, DeepFriedAddonName, Path.Combine(destination, DeepFriedAddonName), 64 * 1024, requirePe: true);
         var bridge = CopyVerifiedDfcFile(bridgeSource, expected, DeepFriedBridgeName, Path.Combine(destination, DeepFriedBridgeName), 1024, requirePe: true);
         var config = Path.Combine(destination, DeepFriedConfigName);
-        File.Copy(configSource, config, overwrite: true);
+        AtomicFile.Copy(configSource, config);
         NormalizeReadableFile(config);
         ValidateDeepFriedChickenConfig(config);
 
@@ -1388,10 +1395,9 @@ public sealed class Dlss5FeederFullDeploymentService
         long minimumSize,
         bool requirePe)
     {
-        File.Copy(source, destination, overwrite: true);
+        var actual = AtomicFile.Copy(source, destination);
         NormalizeReadableFile(destination);
         ValidateDownloadedPayload(destination, name, minimumSize, requirePe);
-        var actual = Sha256(destination);
         if (!actual.Equals(expected[name], StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Deep Fried Chicken package failed SHA-256 verification for {name}.");
         return destination;
@@ -1401,110 +1407,34 @@ public sealed class Dlss5FeederFullDeploymentService
         => SafeFileEnumeration.Files(root)
             .FirstOrDefault(path => Path.GetFileName(path).Equals(name, StringComparison.OrdinalIgnoreCase));
 
-    private static async Task ExtractExternalArchiveAsync(
+    /// <summary>
+    /// A .7z (or AES-encrypted ZIP) Deep Fried Chicken package through the shared host-tool runner (time limit,
+    /// process-tree kill, link check; #37). An AES package gets its public upstream password on stdin, never on
+    /// the command line (visible to other local processes through /proc), and therefore needs 7-Zip.
+    /// </summary>
+    private static Task ExtractExternalArchiveAsync(
         string archivePath,
         string outputDirectory,
         CancellationToken cancellationToken)
-    {
-        var extractor = ReShadeArchiveExtractor.FindExternalExtractor();
-        if (extractor is null)
-            throw new InvalidOperationException("A extração do Deep Fried Chicken em .7z exige 7zz/7z/7za ou bsdtar. No CachyOS, instale o pacote '7zip' se nenhum deles estiver disponível.");
+        => ExternalArchiveRunner.ExtractAsync(
+            archivePath, outputDirectory, cancellationToken,
+            password: IsAesEncryptedZipArchive(archivePath) ? DeepFriedChickenArchivePassword : null,
+            timeout: DeepFriedChickenExtractionTimeout);
 
-        var (command, kind) = extractor.Value;
-        var requiresPassword = IsAesEncryptedZipArchive(archivePath);
-        if (requiresPassword && kind != "7z")
-            throw new InvalidOperationException("Este pacote Deep Fried Chicken usa ZIP AES. Instale 7zip (7z/7zz/7za); bsdtar sozinho não é aceito para o pacote criptografado.");
-
-        var psi = new ProcessStartInfo(command)
-        {
-            UseShellExecute = false,
-            RedirectStandardInput = requiresPassword,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-        if (kind == "7z")
-        {
-            psi.ArgumentList.Add("x");
-            psi.ArgumentList.Add(archivePath);
-            psi.ArgumentList.Add($"-o{outputDirectory}");
-            psi.ArgumentList.Add("-y");
-        }
-        else
-        {
-            psi.ArgumentList.Add("-xf");
-            psi.ArgumentList.Add(archivePath);
-            psi.ArgumentList.Add("-C");
-            psi.ArgumentList.Add(outputDirectory);
-        }
-
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start {command} for Deep Fried Chicken extraction.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        if (requiresPassword)
-        {
-            // Do not put the password in ArgumentList: command-line arguments are visible to
-            // other local processes through /proc. Feed the public upstream password via stdin
-            // and close the stream so 7-Zip cannot wait indefinitely for interactive input.
-            await process.StandardInput.WriteLineAsync(DeepFriedChickenArchivePassword).ConfigureAwait(false);
-            process.StandardInput.Close();
-        }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(DeepFriedChickenExtractionTimeout);
-
-        try
-        {
-            await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKillProcess(process);
-            try
-            {
-                await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            }
-            catch { }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            throw new TimeoutException("A extração do Deep Fried Chicken excedeu 2 minutos e foi encerrada para evitar uma instalação presa.");
-        }
-
-        var output = await stdoutTask.ConfigureAwait(false);
-        var error = await stderrTask.ConfigureAwait(false);
-        if (process.ExitCode != 0)
-        {
-            var detail = string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim();
-            if (requiresPassword)
-                throw new InvalidOperationException($"{command} não conseguiu descriptografar/extrair o pacote Deep Fried Chicken (exit {process.ExitCode}). A senha pública conhecida do pacote foi fornecida automaticamente. {detail}");
-            throw new InvalidOperationException($"{command} could not extract Deep Fried Chicken (exit {process.ExitCode}): {detail}");
-        }
-    }
-
-    private static void TryKillProcess(Process process)
-    {
-        try
-        {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
-        }
-        catch { }
-    }
-
-    private static string ExtractVerifiedDfcEntry(
+    private static async Task<string> ExtractVerifiedDfcEntryAsync(
         ZipArchive archive,
         IReadOnlyDictionary<string, string> expected,
         string name,
         string destination,
         long minimumSize,
-        bool requirePe)
+        bool requirePe,
+        CancellationToken cancellationToken)
     {
         var entry = FindArchiveEntryByLeaf(archive, name)
             ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {name}.");
-        entry.ExtractToFile(destination, overwrite: true);
-        NormalizeReadableFile(destination);
+        await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, destination, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         ValidateDownloadedPayload(destination, name, minimumSize, requirePe);
-        var actual = Sha256(destination);
+        var actual = await FileHash.Sha256HexAsync(destination, cancellationToken).ConfigureAwait(false);
         if (!actual.Equals(expected[name], StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Deep Fried Chicken package failed SHA-256 verification for {name}.");
         return destination;
@@ -1596,7 +1526,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     : null;
                 if (found is null) throw new InvalidDataException($"ReShade shader framework header is missing: {name}");
                 Directory.CreateDirectory(Path.Combine(stage, "Shaders"));
-                File.Copy(found, direct, overwrite: true);
+                AtomicFile.Copy(found, direct);
             }
         }
     }
@@ -1605,19 +1535,10 @@ public sealed class Dlss5FeederFullDeploymentService
     {
         if (File.Exists(target)) throw new IOException($"Protected target already exists: {target}");
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            if (new FileInfo(source).Length != new FileInfo(temp).Length)
-                throw new IOException($"Copy verification failed for {Path.GetFileName(target)}.");
-            File.Move(temp, target);
-            NormalizeReadableFile(target);
-            copied.Add(target);
-        }
-        finally { TryDelete(temp); }
+        // Verified durable copy (full re-read hash, never length only); never replaces a file that appeared meanwhile.
+        await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
+        NormalizeReadableFile(target);
+        copied.Add(target);
     }
 
     private static void CopyLumeniteKernel(string sourceRoot, string targetRoot, List<string> copied, CancellationToken cancellationToken)
@@ -1654,7 +1575,8 @@ public sealed class Dlss5FeederFullDeploymentService
     private static void CopyShaderFile(string source, string target, List<string> copied)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        File.Copy(source, target);
+        if (File.Exists(target)) throw new IOException($"Protected target already exists: {target}");
+        AtomicFile.Copy(source, target);
         NormalizeReadableFile(target);
         copied.Add(target);
     }
@@ -1668,7 +1590,10 @@ public sealed class Dlss5FeederFullDeploymentService
                 UnixFileMode.UserRead | UnixFileMode.UserWrite |
                 UnixFileMode.GroupRead | UnixFileMode.OtherRead);
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss5-feeder", $"Could not make {path} readable (0644)", ex);
+        }
     }
 
     private static IReadOnlyList<string> ReadStringList(string? json)
@@ -1703,34 +1628,5 @@ public sealed class Dlss5FeederFullDeploymentService
             if (trimmed[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) return i;
         }
         return -1;
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
-    }
-
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
-
-    private static void TryDeleteEmptyTree(string root)
-    {
-        try
-        {
-            if (!Directory.Exists(root)) return;
-            foreach (var directory in SafeFileEnumeration.Directories(root).OrderByDescending(x => x.Length))
-                if (!Directory.EnumerateFileSystemEntries(directory).Any()) Directory.Delete(directory);
-            if (!Directory.EnumerateFileSystemEntries(root).Any()) Directory.Delete(root);
-        }
-        catch { }
     }
 }

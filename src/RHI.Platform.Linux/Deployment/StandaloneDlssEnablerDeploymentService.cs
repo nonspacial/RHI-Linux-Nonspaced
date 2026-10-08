@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
 using RHI.Core;
 using RHI.Core.Deployment;
@@ -159,19 +158,21 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone download/validation failed: {ex.Message}");
         }
 
-        var tempPath = targetPath + $".rhi-install-{Guid.NewGuid():N}";
+        string? tempPath = null;
         WineOverrideRecord? wineOverride = null;
         var moved = false;
         var recordWritten = false;
         try
         {
-            File.Copy(payloadPath, tempPath, overwrite: false);
+            // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
+            var staged = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
+            tempPath = staged.Path;
             ValidatePayload(tempPath);
             wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
-            File.Move(tempPath, targetPath);
+            AtomicFile.MoveIntoPlace(tempPath, targetPath, overwrite: false);
             moved = true;
 
-            var payloadHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            var payloadHash = staged.Sha256;
             _records.Upsert(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -211,10 +212,13 @@ public sealed class StandaloneDlssEnablerDeploymentService
         }
         catch (Exception ex)
         {
-            try { if (moved && File.Exists(targetPath)) File.Delete(targetPath); } catch { }
-            TryDelete(tempPath);
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); } catch { }
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone); } catch { }
+            if (moved && !FileCleanup.TryDelete(targetPath, out var deleteError))
+                AppLog.Warn("dlss-enabler", $"Install rollback could not remove {targetPath}", deleteError);
+            if (tempPath is not null) FileCleanup.TryDelete(tempPath);
+            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); }
+            catch (Exception restoreError) { AppLog.Warn("dlss-enabler", "Install rollback could not restore the Wine override", restoreError); }
+            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone); }
+            catch (Exception recordError) { AppLog.Warn("dlss-enabler", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone install rolled back: {ex.Message}");
         }
     }
@@ -237,7 +241,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
 
         if (File.Exists(targetPath))
         {
-            var current = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Remoção bloqueada antes de alterar o override Wine.");
         }
@@ -267,7 +271,10 @@ public sealed class StandaloneDlssEnablerDeploymentService
                     _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
                 _records.Upsert(record);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("dlss-enabler", $"Removal rollback did not complete; the managed proxy may be at {tempPath}", rollbackError);
+            }
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -313,7 +320,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
         if (!File.Exists(targetPath))
             return ComponentOperationResult.Fail("A DLL gerenciada do DLSS Enabler Standalone não existe mais; update não recriará um slot perdido silenciosamente.");
 
-        var currentHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(targetPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, fileRecord.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("A DLL gerenciada do DLSS Enabler Standalone foi modificada externamente; update bloqueado.");
 
@@ -331,15 +338,16 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone update check/download failed: {ex.Message}");
         }
 
-        var staged = targetPath + $".rhi-update-{Guid.NewGuid():N}";
+        string? staged = null;
         var previous = targetPath + $".rhi-previous-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(payloadPath, staged, overwrite: false);
+            var stagedCopy = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
+            staged = stagedCopy.Path;
             ValidatePayload(staged);
-            File.Move(targetPath, previous);
-            File.Move(staged, targetPath);
-            var newHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Rename(targetPath, previous);
+            AtomicFile.MoveIntoPlace(staged, targetPath, overwrite: false);
+            var newHash = stagedCopy.Sha256;
 
             fileRecord.Sha256 = newHash;
             record.Version = latest.Version;
@@ -350,21 +358,25 @@ public sealed class StandaloneDlssEnablerDeploymentService
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
             _records.Upsert(record);
-            TryDelete(previous);
+            FileCleanup.TryDelete(previous);
             return ComponentOperationResult.Ok($"DLSS Enabler Standalone atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
         }
         catch (Exception ex)
         {
-            try
+            if (staged is not null) FileCleanup.TryDelete(staged);
+            if (File.Exists(previous))
             {
-                TryDelete(staged);
-                if (File.Exists(previous))
+                try
                 {
-                    TryDelete(targetPath);
-                    File.Move(previous, targetPath);
+                    // The previous DLL is moved back over whatever the failed update left, never deleted first.
+                    AtomicFile.Rename(previous, targetPath, overwrite: true);
+                }
+                catch (Exception restoreError)
+                {
+                    AppLog.Warn("dlss-enabler", $"Update rollback could not put the previous {proxyName} back; it is kept at {previous}", restoreError);
+                    return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{previous}");
                 }
             }
-            catch { }
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -382,13 +394,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
 
     internal async Task<DlssEnablerReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesApiUrl);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, ReleasesApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("rhi-repo release API returned an unexpected JSON shape.");
 
@@ -457,28 +464,22 @@ public sealed class StandaloneDlssEnablerDeploymentService
                 ValidatePayload(dllPath);
                 return dllPath;
             }
-            catch
+            catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
             {
                 CacheStamp.Invalidate(dllPath);
-                TryDelete(dllPath);
+                FileCleanup.TryDelete(dllPath);
             }
         }
 
-        var assetPath = Path.Combine(versionDir, release.AssetName);
-        var tempAsset = assetPath + $".tmp-{Guid.NewGuid():N}";
-        try
+        // Downloaded under the RHI-repository host policy and checked against GitHub's digest when published
+        // (fail-open without one, as upstream: the SHA-256 is recorded in the stamp and rhi.log, #26).
+        using (var download = await TrustedDownload.DownloadToTempAsync(
+                   _http, release.AssetUrl, Path.Combine(versionDir, release.AssetName), DownloadSources.RhiRepository,
+                   release.AssetSha256, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
-            await DownloadToFileAsync(release.AssetUrl, tempAsset, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(release.AssetSha256))
-            {
-                var actualAssetHash = await Sha256FileAsync(tempAsset, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(actualAssetHash, release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("DLSS Enabler release asset failed the GitHub-published SHA-256 digest.");
-            }
-
             if (release.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                using var zip = ZipFile.OpenRead(tempAsset);
+                using var zip = ZipFile.OpenRead(download.Path);
                 var entries = zip.Entries
                     .Where(entry => entry.Name.Equals(InnerDllName, StringComparison.OrdinalIgnoreCase))
                     .ToArray();
@@ -486,42 +487,26 @@ public sealed class StandaloneDlssEnablerDeploymentService
                     throw new InvalidDataException(entries.Length == 0
                         ? $"{InnerDllName} was not found in the DLSS Enabler archive."
                         : $"DLSS Enabler archive contains multiple ambiguous {InnerDllName} entries.");
-                var extractTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
-                try
-                {
-                    // Checked extraction (declared-size cap, fixed mode, length + CRC-32); never ExtractToFile (Refs #42).
-                    if (await ReShadeArchiveExtractor.ExtractEntryAsync(entries[0], extractTemp, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false) is { } refused)
-                        throw new InvalidDataException(ReShadeArchiveExtractor.ArchiveRefusedPrefix + refused);
-                    ValidatePayload(extractTemp);
-                    File.Move(extractTemp, dllPath, overwrite: true);
-                }
-                finally { TryDelete(extractTemp); }
+                // Checked extraction (declared-size cap, fixed mode, length + CRC-32); never ExtractToFile (Refs #42).
+                await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                ValidatePayload(tempAsset);
-                File.Copy(tempAsset, dllPath, overwrite: true);
+                ValidatePayload(download.Path);
+                download.MoveTo(dllPath);
             }
-        }
-        finally
-        {
-            TryDelete(tempAsset);
+            if (string.IsNullOrWhiteSpace(release.AssetSha256))
+                TrustedDownload.NoteAcceptedWithoutDigest(DownloadSources.RhiRepository, release.AssetUrl, download.Sha256);
         }
 
-        ValidatePayload(dllPath);
+        try { ValidatePayload(dllPath); }
+        catch
+        {
+            FileCleanup.TryDelete(dllPath);
+            throw;
+        }
         CacheStamp.Write(dllPath, release.AssetUrl, release.Version, release.AssetSha256);
         return dllPath;
-    }
-
-    private async Task DownloadToFileAsync(string url, string path, CancellationToken cancellationToken)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using var output = File.Create(path);
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
     }
 
     internal static void ValidatePayload(string path)
@@ -568,17 +553,6 @@ public sealed class StandaloneDlssEnablerDeploymentService
     {
         try { return Path.GetFullPath(left).Equals(Path.GetFullPath(right), StringComparison.Ordinal); }
         catch { return string.Equals(left, right, StringComparison.Ordinal); }
-    }
-
-    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 }
 

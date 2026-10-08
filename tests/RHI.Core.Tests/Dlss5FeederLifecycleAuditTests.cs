@@ -184,10 +184,10 @@ public sealed class Dlss5FeederLifecycleAuditTests
             var lumenite = Zip(lumeniteFiles.ToArray());
             var headers = Zip(("Shaders/ReShade.fxh", new byte[1024]), ("Shaders/ReShadeUI.fxh", new byte[1024]), ("Shaders/DrawText.fxh", new byte[1024]));
             var responses = new Dictionary<string, byte[]>(StringComparer.Ordinal) {
-                ["https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1"] = Release("0.13.1-beta.1", "DLSS5-Feeder-0.13.1-beta.1.zip", "https://fixtures.invalid/feeder.zip", feederArchive),
-                ["https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"] = Release("1.2.3", "renodx-dlss5.addon64", "https://fixtures.invalid/renodx.addon64", _renoAddon),
-                ["https://fixtures.invalid/feeder.zip"] = feederArchive,
-                ["https://fixtures.invalid/renodx.addon64"] = _renoAddon,
+                ["https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1"] = Release("0.13.1-beta.1", "DLSS5-Feeder-0.13.1-beta.1.zip", "https://github.com/rhi-tests/feeder.zip", feederArchive),
+                ["https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"] = Release("1.2.3", "renodx-dlss5.addon64", "https://github.com/rhi-tests/renodx.addon64", _renoAddon),
+                ["https://github.com/rhi-tests/feeder.zip"] = feederArchive,
+                ["https://github.com/rhi-tests/renodx.addon64"] = _renoAddon,
                 [DlssManagerService.ManifestUrl] = Encoding.UTF8.GetBytes("{\"dlss\":[{\"version\":\"1.0\",\"url\":\"https://github.com/fixtures/sr.zip\"}],\"dlssnr\":[{\"version\":\"1.0\",\"url\":\"https://github.com/fixtures/nr.zip\"}]}"),
                 ["https://github.com/fixtures/sr.zip"] = Zip(("nvngx_dlss.dll", Pe(128 * 1024))),
                 ["https://github.com/fixtures/nr.zip"] = Zip(("nvngx_dlssnr.dll", Pe(128 * 1024))),
@@ -196,9 +196,9 @@ public sealed class Dlss5FeederLifecycleAuditTests
             };
             _http = new HttpClient(new FixtureHandler(responses, Requests));
             var dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
-            var manifest = new UpstreamRhiManifestService(_http, "https://fixtures.invalid/unused-manifest");
+            var manifest = new UpstreamRhiManifestService(_http, "https://github.com/rhi-tests/unused-manifest");
             var legacy = new UpstreamRhiAddonDeploymentService(_http, Records, manifest, new UpstreamRhiAddonDeploymentOptions(
-                ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://fixtures.invalid/unused-release", 64 * 1024,
+                ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://github.com/rhi-tests/unused-release", 64 * 1024,
                 DeployFileName64: "dlss5-feed.addon64"), Path.Combine(_root, "cache-legacy"));
             Service = new Dlss5FeederFullDeploymentService(_http, Records, dlss, legacy, Path.Combine(_root, "cache-feeder"), new WineDllOverrideService());
         }

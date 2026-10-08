@@ -37,12 +37,12 @@ public sealed class LumaNamedPackageTests : IDisposable
         var zip = MakeNamedZip();
         var digest = Sha256(zip);
         const string asset = "Luma-Named_DX12_Game.zip";
-        const string wikiUrl = "https://example.test/luma-wiki";
+        const string wikiUrl = "https://github.com/rhi-tests/luma-wiki";
         using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
         {
             wikiUrl => Text(WikiRow(game.Name, asset), "text/html"),
             var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
-                => Json("[" + ReleaseJson("latest-631", asset, "https://example.test/named.zip", digest) + "]"),
+                => Json("[" + ReleaseJson("latest-631", asset, "https://github.com/rhi-tests/named.zip", digest) + "]"),
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
@@ -71,13 +71,13 @@ public sealed class LumaNamedPackageTests : IDisposable
         var zip = MakeNamedZip();
         var digest = Sha256(zip);
         const string asset = "Luma-Named_DX12_Game.zip";
-        const string wikiUrl = "https://example.test/luma-wiki";
+        const string wikiUrl = "https://github.com/rhi-tests/luma-wiki";
         using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
         {
             wikiUrl => Text(WikiRow(game.Name, asset), "text/html"),
             var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
-                => Json("[" + ReleaseJson("latest-631", asset, "https://example.test/named.zip", digest) + "]"),
-            "https://example.test/named.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
+                => Json("[" + ReleaseJson("latest-631", asset, "https://github.com/rhi-tests/named.zip", digest) + "]"),
+            "https://github.com/rhi-tests/named.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);

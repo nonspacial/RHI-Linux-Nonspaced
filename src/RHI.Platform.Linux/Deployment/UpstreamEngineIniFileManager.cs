@@ -1,6 +1,6 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 
@@ -179,7 +179,7 @@ internal sealed class UpstreamEngineIniFileManager
         {
             Directory.CreateDirectory(Path.GetDirectoryName(iniPath)
                                       ?? throw new InvalidOperationException("Resolved Engine.ini parent directory is invalid."));
-            WriteAtomic(iniPath, lines);
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
         }
 
         if (owned.Count == 0)
@@ -230,7 +230,7 @@ internal sealed class UpstreamEngineIniFileManager
             File.Delete(state.IniPath);
             return;
         }
-        WriteAtomic(state.IniPath, lines);
+        AtomicFile.ReplaceUserFileLines(state.IniPath, lines);
     }
 
     public static string Serialize(UpstreamEngineIniFileState state)
@@ -266,7 +266,7 @@ internal sealed class UpstreamEngineIniFileManager
             var text = DecodeTemplate(bytes);
             _ = ParseTemplate(text); // Structural validation before cache persistence.
             await PersistCacheAsync(cachePath, bytes, cancellationToken).ConfigureAwait(false);
-            return (text, Sha256(bytes), sourceUrl);
+            return (text, FileHash.Sha256HexOf(bytes), sourceUrl);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -285,7 +285,7 @@ internal sealed class UpstreamEngineIniFileManager
         ValidateTemplateBytes(cached, safeName);
         var cachedText = DecodeTemplate(cached);
         _ = ParseTemplate(cachedText);
-        return (cachedText, Sha256(cached), sourceUrl);
+        return (cachedText, FileHash.Sha256HexOf(cached), sourceUrl);
     }
 
     internal static IReadOnlyList<(string Section, string Key, string Value)> ParseTemplate(string text)
@@ -461,21 +461,4 @@ internal sealed class UpstreamEngineIniFileManager
     {
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1])) lines.RemoveAt(lines.Count - 1);
     }
-
-    private static void WriteAtomic(string path, IReadOnlyList<string> lines)
-    {
-        var temp = path + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllLines(temp, lines, new UTF8Encoding(false));
-            File.Move(temp, path, overwrite: true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
-    }
-
-    private static string Sha256(byte[] bytes)
-        => Convert.ToHexString(SHA256.HashData(bytes));
 }

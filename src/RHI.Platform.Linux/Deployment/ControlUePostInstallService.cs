@@ -1,8 +1,8 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -172,18 +172,18 @@ public sealed class ControlUePostInstallService
         {
             // .original already holds the true original from an earlier DLSS swap. Keep the bytes
             // present right now as well, so removal returns to exactly this state.
-            if (await Sha256Async(source).ConfigureAwait(false) == await Sha256Async(target).ConfigureAwait(false))
+            if (await FileHash.Sha256HexAsync(source).ConfigureAwait(false) == await FileHash.Sha256HexAsync(target).ConfigureAwait(false))
                 return null;
             snapshot = target + PreviousSnapshotSuffix;
             if (File.Exists(snapshot))
                 throw new IOException($"a previous snapshot already exists at {snapshot}; move it aside first.");
-            CopyAtomic(target, snapshot);
+            AtomicFile.Copy(target, snapshot, overwrite: false);
         }
 
         var result = await _files.ReplaceAsync(source, target, CancellationToken.None).ConfigureAwait(false);
         if (!result.Success || !result.Changed)
         {
-            if (snapshot is not null) TryDelete(snapshot);
+            if (snapshot is not null) FileCleanup.TryDelete(snapshot);
             if (!result.Success) throw new IOException(result.Error ?? "replace failed.");
             return null;
         }
@@ -191,7 +191,7 @@ public sealed class ControlUePostInstallService
         return new ControlUeOwnedDll(
             target,
             version,
-            await Sha256Async(target).ConfigureAwait(false),
+            await FileHash.Sha256HexAsync(target).ConfigureAwait(false),
             existed,
             existed && !originalExisted && File.Exists(originalBackup),
             snapshot);
@@ -225,9 +225,9 @@ public sealed class ControlUePostInstallService
 
         var patched = HdrPresetPattern.Replace(text, $"\"m_eHDRPreset\": {HdrPresetValue}");
         var bytes = Encode(patched, bom);
-        WriteAtomic(path, bytes);
+        AtomicFile.ReplaceUserFile(path, bytes);
         notes.Add($"{RendererIniName}: m_eHDRPreset {previous} → {HdrPresetValue}.");
-        return new ControlUeRendererIniEdit(path, Convert.ToBase64String(original), Sha256(bytes), previous);
+        return new ControlUeRendererIniEdit(path, Convert.ToBase64String(original), FileHash.Sha256HexOf(bytes), previous);
     }
 
     /// <summary>
@@ -273,9 +273,9 @@ public sealed class ControlUePostInstallService
     {
         var name = Path.GetFileName(dll.Path);
         var present = File.Exists(dll.Path);
-        if (present && !string.Equals(await Sha256Async(dll.Path).ConfigureAwait(false), dll.AppliedSha256, StringComparison.OrdinalIgnoreCase))
+        if (present && !string.Equals(await FileHash.Sha256HexAsync(dll.Path).ConfigureAwait(false), dll.AppliedSha256, StringComparison.OrdinalIgnoreCase))
         {
-            if (dll.PreviousSnapshotPath is { } stale) TryDelete(stale);
+            if (dll.PreviousSnapshotPath is { } stale) FileCleanup.TryDelete(stale);
             notes.Add($"{name} was changed outside RHI and was left as it is.");
             return;
         }
@@ -321,9 +321,9 @@ public sealed class ControlUePostInstallService
         }
 
         var current = File.ReadAllBytes(ini.Path);
-        if (string.Equals(Sha256(current), ini.AppliedSha256, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(FileHash.Sha256HexOf(current), ini.AppliedSha256, StringComparison.OrdinalIgnoreCase))
         {
-            WriteAtomic(ini.Path, Convert.FromBase64String(ini.OriginalBase64));
+            AtomicFile.ReplaceUserFile(ini.Path, Convert.FromBase64String(ini.OriginalBase64));
             notes.Add($"{RendererIniName}: restored.");
             return;
         }
@@ -337,7 +337,7 @@ public sealed class ControlUePostInstallService
             notes.Add($"{RendererIniName}: m_eHDRPreset was changed outside RHI and was left as it is.");
             return;
         }
-        WriteAtomic(ini.Path, Encode(HdrPresetPattern.Replace(text, $"\"m_eHDRPreset\": {ini.PreviousValue}"), bom));
+        AtomicFile.ReplaceUserFile(ini.Path, Encode(HdrPresetPattern.Replace(text, $"\"m_eHDRPreset\": {ini.PreviousValue}"), bom));
         notes.Add($"{RendererIniName}: m_eHDRPreset restored to {ini.PreviousValue}; other settings kept.");
     }
 
@@ -387,38 +387,4 @@ public sealed class ControlUePostInstallService
         return bom ? [0xEF, 0xBB, 0xBF, .. body] : body;
     }
 
-    private static void WriteAtomic(string path, byte[] bytes)
-    {
-        var temp = path + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllBytes(temp, bytes);
-            File.Move(temp, path, overwrite: true);
-        }
-        finally { TryDelete(temp); }
-    }
-
-    private static void CopyAtomic(string source, string target)
-    {
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.Copy(source, temp);
-            File.Move(temp, target);
-        }
-        finally { TryDelete(temp); }
-    }
-
-    private static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
-
-    private static async Task<string> Sha256Async(string path)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream).ConfigureAwait(false));
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
 }

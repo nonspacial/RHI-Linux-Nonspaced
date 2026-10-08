@@ -78,7 +78,7 @@ public sealed class NeuralRenderingDllVersionTests : IDisposable
         Assert.Equal(Pe(0x21), File.ReadAllBytes(nr));
         Assert.Equal(addonHash, Sha256(addon));
         var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
-        Assert.Equal(Sha256(nr), ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256);
+        Assert.Equal(Sha256(nr), ManagedFileSwap.FindFile(record, "nvngx_dlssnr.dll")!.Sha256, ignoreCase: true);
         Assert.Equal("310.1", record.Metadata["NeuralRendering.DllVersion"]);
         Assert.Equal("1.0", record.Version);
     }

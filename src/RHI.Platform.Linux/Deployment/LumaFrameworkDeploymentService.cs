@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -306,7 +306,8 @@ public sealed class LumaFrameworkDeploymentService
                     return ComponentOperationResult.Fail($"Local Luma add-on architecture ({packageArchitecture}) does not match the game architecture ({architecture}).");
             }
 
-            var hash = await Sha256Async(fullLocalPath, cancellationToken).ConfigureAwait(false);
+            // Lower case keeps the "local-<hash>" version label identical to earlier installs.
+            var hash = (await FileHash.Sha256HexAsync(fullLocalPath, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
             var localRelease = new LumaFrameworkReleaseInfo(
                 $"local-{hash[..Math.Min(12, hash.Length)]}",
                 string.Empty,
@@ -475,7 +476,7 @@ public sealed class LumaFrameworkDeploymentService
                 }
             }
             IReadOnlyList<LumaPlanItem> plan;
-            try { plan = BuildPackagePlan(archivePath, release.AssetName, game.BinaryDirectory, stagingRoot); }
+            try { plan = await BuildPackagePlanAsync(archivePath, release.AssetName, game.BinaryDirectory, stagingRoot, cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) { return ComponentOperationResult.Fail($"Luma package validation failed: {ex.Message}"); }
             if (plan.Count == 0)
                 return ComponentOperationResult.Fail("Luma package did not contain any deployable files after RHI exclusions.");
@@ -545,9 +546,9 @@ public sealed class LumaFrameworkDeploymentService
                     var configTarget = Path.Combine(game.BinaryDirectory, "dgVoodoo.conf");
                     if (File.Exists(configTarget))
                         throw new IOException($"External dgVoodoo.conf already exists: {configTarget}. RHI Linux will not overwrite it automatically.");
-                    await CopyAtomicAsync(preparedDgVoodoo!.D3D9Path, d3d9Target, cancellationToken).ConfigureAwait(false);
+                    await CopyIntoGameAsync(preparedDgVoodoo!.D3D9Path, d3d9Target, cancellationToken).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(d3d9Target));
-                    await CopyAtomicAsync(preparedDgVoodoo.ConfigPath, configTarget, cancellationToken).ConfigureAwait(false);
+                    await CopyIntoGameAsync(preparedDgVoodoo.ConfigPath, configTarget, cancellationToken).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(configTarget));
                 }
 
@@ -571,7 +572,7 @@ public sealed class LumaFrameworkDeploymentService
                             overwrittenBackups[fullExisting] = backup;
                         }
                     }
-                    await CopyAtomicAsync(item.StagingPath, effectiveTarget, cancellationToken).ConfigureAwait(false);
+                    await CopyIntoGameAsync(item.StagingPath, effectiveTarget, cancellationToken).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(effectiveTarget));
                 }
 
@@ -604,7 +605,7 @@ public sealed class LumaFrameworkDeploymentService
                     {
                         Path = target,
                         ExistedBeforeInstall = oldFiles.ContainsKey(target),
-                        Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                        Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false)
                     });
                 }
                 foreach (var target in sharedDx9Targets)
@@ -614,7 +615,7 @@ public sealed class LumaFrameworkDeploymentService
                     {
                         Path = target,
                         ExistedBeforeInstall = false,
-                        Sha256 = await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                        Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false)
                     });
                 }
 
@@ -701,17 +702,27 @@ public sealed class LumaFrameworkDeploymentService
                     }
                     if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
                     {
-                        try { await _dx9ReShade.RestoreAsync(game, dx9Migration, cancellationToken).ConfigureAwait(false); } catch { }
+                        // Rollback runs to completion even when the install itself was cancelled.
+                        try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
+                        catch (Exception restoreError) { AppLog.Warn("luma", "Rollback could not restore the DX9 ReShade translation", restoreError); }
                     }
-                    CleanupEmptyDirectories(createdDirectories);
+                    FileCleanup.TryDeleteEmptyDirectories(createdDirectories);
                 }
-                catch { }
+                catch (Exception rollbackError)
+                {
+                    AppLog.Warn("luma", "Luma Framework rollback did not complete", rollbackError);
+                    return ComponentOperationResult.Fail($"{RollbackIncompletePrefix}{ex.Message}");
+                }
                 return ComponentOperationResult.Fail($"Luma Framework installation rolled back: {ex.Message}");
             }
         }
         finally
         {
-            try { Directory.Delete(stagingRoot, recursive: true); } catch { }
+            try { Directory.Delete(stagingRoot, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("luma", $"Staging folder could not be removed: {stagingRoot}", ex);
+            }
         }
     }
 
@@ -764,7 +775,7 @@ public sealed class LumaFrameworkDeploymentService
                 File.Delete(file.Path);
                 changed.Add(file.Path);
             }
-            CleanupEmptyDirectories(record.DirectoriesCreatedByRhi);
+            FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi);
             _records.Remove(game, ManagedComponentKind.LumaFramework);
             return ComponentOperationResult.Ok("Luma Framework removed. ReShade, DLSS and user/runtime data were preserved; [Luma] and RHI-owned wiki Engine.ini settings were restored.", changed.ToArray());
         }
@@ -780,7 +791,8 @@ public sealed class LumaFrameworkDeploymentService
            && existingRecord.Metadata.TryGetValue(MetaDx9Migration, out var state)
            && !string.IsNullOrWhiteSpace(state);
 
-    internal static IReadOnlyList<LumaPlanItem> BuildExtractionPlan(string archivePath, string binaryDirectory, string stagingRoot)
+    internal static async Task<IReadOnlyList<LumaPlanItem>> BuildExtractionPlanAsync(
+        string archivePath, string binaryDirectory, string stagingRoot, CancellationToken cancellationToken)
     {
         var addonDirectory = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDirectory);
         var result = new List<LumaPlanItem>();
@@ -816,22 +828,23 @@ public sealed class LumaFrameworkDeploymentService
 
             var staging = Path.Combine(stagingRoot, "payload", $"{index++:D4}-{SanitizeFileName(fileName)}");
             Directory.CreateDirectory(Path.GetDirectoryName(staging)!);
-            using (var input = entry.Open())
-            using (var output = new FileStream(staging, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                input.CopyTo(output);
+            if (File.Exists(staging)) throw new IOException($"Staging file already exists: {staging}");
+            // Checked extraction (declared-size cap, fixed mode, length + CRC-32, atomic rename); never a raw copy (#42).
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, staging, DownloadSources.PayloadArchiveMaxBytes, cancellationToken).ConfigureAwait(false);
             result.Add(new LumaPlanItem(staging, fullTarget, normalized));
         }
         return result;
     }
 
-    internal static IReadOnlyList<LumaPlanItem> BuildPackagePlan(
+    internal static async Task<IReadOnlyList<LumaPlanItem>> BuildPackagePlanAsync(
         string packagePath,
         string assetName,
         string binaryDirectory,
-        string stagingRoot)
+        string stagingRoot,
+        CancellationToken cancellationToken)
     {
         if (!IsAddonAssetName(assetName))
-            return BuildExtractionPlan(packagePath, binaryDirectory, stagingRoot);
+            return await BuildExtractionPlanAsync(packagePath, binaryDirectory, stagingRoot, cancellationToken).ConfigureAwait(false);
 
         if (!File.Exists(packagePath))
             throw new FileNotFoundException("Luma package is missing.", packagePath);
@@ -909,49 +922,37 @@ public sealed class LumaFrameworkDeploymentService
             && uri.AbsolutePath.StartsWith("/Filoppi/", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The release package from the stamped download cache under the Luma host policy, verified against GitHub's
+    /// digest when published (#26, #42). A catalogue ("wiki") link has no version identity, so it is fetched again
+    /// every time, as before; versioned release assets are reused while their stamp holds.
+    /// </summary>
     private async Task<string> DownloadAndValidateArchiveAsync(LumaFrameworkReleaseInfo release, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var safeVersion = string.Concat(release.Version.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_'));
-        var cache = Path.Combine(_cacheDir, $"{safeVersion}-{release.AssetName}");
-        var temp = cache + $".tmp-{Guid.NewGuid():N}";
+        var cache = Path.Combine(_cacheDir, $"{safeVersion}-{Path.GetFileName(release.AssetName)}");
+        if (release.Version.Equals("wiki", StringComparison.Ordinal)) CacheStamp.Invalidate(cache);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-        await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-            await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            if (new FileInfo(temp).Length < MinimumArchiveSize)
-                throw new InvalidDataException("Downloaded Luma package is unexpectedly small.");
-            if (!string.IsNullOrWhiteSpace(release.Sha256))
+        var download = await TrustedDownload.EnsureVerifiedAsync(
+            _http, release.AssetUrl, cache, DownloadSources.Luma, release.Version, release.Sha256,
+            validate: (temp, ct) =>
             {
-                var actual = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(actual, release.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("Downloaded Luma package failed the SHA-256 digest published by GitHub.");
-            }
-            if (IsAddonAssetName(release.AssetName))
-            {
-                if (!BinarySignatureInspector.HasPeSignature(temp, MinimumArchiveSize))
-                    throw new InvalidDataException("Downloaded direct Luma add-on failed PE/minimum-size validation.");
-            }
-            else
-            {
-                using var archive = ZipFile.OpenRead(temp);
-                _ = archive.Entries.Count;
-            }
-            File.Move(temp, cache, overwrite: true);
-            return cache;
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
+                if (new FileInfo(temp).Length < MinimumArchiveSize)
+                    throw new InvalidDataException("Downloaded Luma package is unexpectedly small.");
+                if (IsAddonAssetName(release.AssetName))
+                {
+                    if (!BinarySignatureInspector.HasPeSignature(temp, MinimumArchiveSize))
+                        throw new InvalidDataException("Downloaded direct Luma add-on failed PE/minimum-size validation.");
+                }
+                else
+                {
+                    return ReShadeArchiveExtractor.RequireReadableZip(temp, ct);
+                }
+                return Task.CompletedTask;
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return download.Path;
     }
 
     private static ReShadeDx9MigrationState? ReadDx9Migration(LinuxDeploymentRecord? record, string key)
@@ -976,7 +977,7 @@ public sealed class LumaFrameworkDeploymentService
             if (file is null) return $"{name} is not tracked by the component that owns the DX9 translation.";
             if (!File.Exists(file.Path)) return $"{name} is missing at {file.Path}.";
             if (string.IsNullOrWhiteSpace(file.Sha256)) return $"{name} has no ownership hash.";
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return $"{name} no longer matches its managed hash.";
         }
@@ -991,7 +992,7 @@ public sealed class LumaFrameworkDeploymentService
             if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return "Luma Framework ownership hash is missing; update/remove is blocked conservatively.";
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return $"RHI-managed Luma Framework file was modified after installation. Operation is blocked to preserve it: {file.Path}";
         }
@@ -1044,44 +1045,14 @@ public sealed class LumaFrameworkDeploymentService
         }
     }
 
-    private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var parent = Path.GetDirectoryName(target) ?? throw new InvalidOperationException("Luma target directory is invalid.");
-        Directory.CreateDirectory(parent);
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            if (new FileInfo(source).Length != new FileInfo(temp).Length)
-                throw new IOException("Luma copy verification failed.");
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
-    }
+    /// <summary>Verified durable copy into the game folder (full re-read hash, temp + rename); replaces the target.</summary>
+    /// <summary>Fixed start of an install failure whose rollback did not complete (PT-BR pair); the error follows.</summary>
+    public const string RollbackIncompletePrefix = "Luma Framework installation failed and its rollback did not complete (details in rhi.log): ";
 
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
+    private static async Task CopyIntoGameAsync(string source, string target, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha = SHA256.Create();
-        return Convert.ToHexString(await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
-    }
-
-    private static void CleanupEmptyDirectories(IEnumerable<string> directories)
-    {
-        foreach (var dir in directories.Distinct(StringComparer.OrdinalIgnoreCase).OrderByDescending(x => x.Length))
-        {
-            try
-            {
-                if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) Directory.Delete(dir);
-            }
-            catch { }
-        }
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("Luma target directory is invalid."));
+        await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private static string SanitizeFileName(string value)

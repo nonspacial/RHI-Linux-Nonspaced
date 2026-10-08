@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -14,8 +15,13 @@ namespace RHI.Platform.Linux.Deployment;
 /// Legacy experimental Linux/Wine deployment for sdli1995/dlssg_for_sm86.
 /// New RTX 30 installs are retired in favor of Universal MFG; this service remains
 /// available for RTX 20 / SM75 and for safe removal/update of historical managed records.
-/// The payload is a Windows x64 proxy DLL plus dlssg_sm86.ini pinned to an immutable
-/// Git commit with PE validation, per-game Wine native,builtin override and hash guards.
+/// The payload is a Windows x64 proxy DLL plus dlssg_sm86.ini from the repository tree (no releases).
+/// As upstream RHI 2.8.5 (Dlssg20_30Service), the version is the newest commit that touched version.dll,
+/// resolved at install/update time — it is not pinned to a fixed commit, so an update follows upstream's
+/// pushes (#41). Unlike upstream (which reads <c>main</c>), both files are then fetched at that exact commit
+/// SHA, so the bytes are immutable for the recorded version, and each must match the git blob id GitHub
+/// reports for that path at that commit before it is cached (stamped) and deployed. PE/INI validation,
+/// per-game Wine native,builtin override and hash guards as for the other proxies.
 /// </summary>
 public sealed class Dlssg2030UnlockDeploymentService
 {
@@ -23,6 +29,10 @@ public sealed class Dlssg2030UnlockDeploymentService
     public const string RepoName = "dlssg_for_sm86";
     public const string RepositoryUrl = "https://github.com/sdli1995/dlssg_for_sm86";
     public const string CommitsApiUrl = "https://api.github.com/repos/sdli1995/dlssg_for_sm86/commits?path=version.dll&per_page=1";
+
+    /// <summary>GitHub contents API for one file at one commit (its <c>sha</c> is the git blob id of the bytes).</summary>
+    internal static string ContentsApiUrl(string commitSha, string fileName)
+        => $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{fileName}?ref={commitSha}";
     public const string IniFileName = "dlssg_sm86.ini";
     public const string DefaultProxyName = "version.dll";
     public const string GpuGenRtx30 = "RTX 30 Series";
@@ -214,8 +224,8 @@ public sealed class Dlssg2030UnlockDeploymentService
 
         var router = RouterFor(selectedGpu);
         var adjustedIni = WriteRouter(payload.IniText, router);
-        var proxyTemp = proxyPath + $".rhi-install-{Guid.NewGuid():N}";
-        var iniTemp = iniPath + $".rhi-install-{Guid.NewGuid():N}";
+        string? proxyTemp = null;
+        string? iniTemp = null;
         WineOverrideRecord? wineOverride = null;
         var proxyMoved = false;
         var iniMoved = false;
@@ -226,19 +236,25 @@ public sealed class Dlssg2030UnlockDeploymentService
             cancellationToken.ThrowIfCancellationRequested();
             wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
 
-            File.Copy(payload.DllPath, proxyTemp, overwrite: false);
-            await File.WriteAllTextAsync(iniTemp, adjustedIni, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+            // Verified, fsynced copies beside the targets (full re-read hash), placed without replacing anything.
+            var stagedProxy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
+            proxyTemp = stagedProxy.Path;
+            using (var iniContent = new MemoryStream(new UTF8Encoding(false).GetBytes(adjustedIni)))
+            {
+                var stagedIni = await AtomicFile.StageStreamAsync(iniContent, iniPath, null, null, long.MaxValue, cancellationToken).ConfigureAwait(false);
+                iniTemp = stagedIni.Path;
+            }
 
             ValidateCachedDll(proxyTemp);
             ValidateIniText(adjustedIni);
 
-            File.Move(proxyTemp, proxyPath);
+            AtomicFile.MoveIntoPlace(proxyTemp, proxyPath, overwrite: false);
             proxyMoved = true;
-            File.Move(iniTemp, iniPath);
+            AtomicFile.MoveIntoPlace(iniTemp, iniPath, overwrite: false);
             iniMoved = true;
 
-            var proxyHash = await Sha256FileAsync(proxyPath, cancellationToken).ConfigureAwait(false);
-            var iniHash = await Sha256FileAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            var proxyHash = stagedProxy.Sha256;
+            var iniHash = await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false);
 
             _records.Upsert(new LinuxDeploymentRecord
             {
@@ -275,12 +291,16 @@ public sealed class Dlssg2030UnlockDeploymentService
         }
         catch (Exception ex)
         {
-            try { if (proxyMoved && File.Exists(proxyPath)) File.Delete(proxyPath); } catch { }
-            try { if (iniMoved && File.Exists(iniPath)) File.Delete(iniPath); } catch { }
-            try { if (File.Exists(proxyTemp)) File.Delete(proxyTemp); } catch { }
-            try { if (File.Exists(iniTemp)) File.Delete(iniTemp); } catch { }
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); } catch { }
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock); } catch { }
+            var leftovers = FileCleanup.TryDeleteAll(new[]
+            {
+                proxyMoved ? proxyPath : null, iniMoved ? iniPath : null, proxyTemp, iniTemp
+            }.OfType<string>());
+            foreach (var leftover in leftovers)
+                AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
+            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); }
+            catch (Exception restoreError) { AppLog.Warn("fg2030", "Install rollback could not restore the Wine override", restoreError); }
+            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock); }
+            catch (Exception recordError) { AppLog.Warn("fg2030", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}");
         }
     }
@@ -306,7 +326,7 @@ public sealed class Dlssg2030UnlockDeploymentService
 
         if (File.Exists(proxyPath))
         {
-            var currentHash = await Sha256FileAsync(proxyPath, cancellationToken).ConfigureAwait(false);
+            var currentHash = await FileHash.Sha256HexAsync(proxyPath, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(currentHash, proxyRecord.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Remoção bloqueada antes de alterar o override Wine.");
         }
@@ -314,7 +334,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         var preserveIni = false;
         if (File.Exists(iniPath) && iniRecord is not null && !string.IsNullOrWhiteSpace(iniRecord.Sha256))
         {
-            var currentIniHash = await Sha256FileAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            var currentIniHash = await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false);
             preserveIni = !string.Equals(currentIniHash, iniRecord.Sha256, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -358,7 +378,10 @@ public sealed class Dlssg2030UnlockDeploymentService
                     _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
                 _records.Upsert(record);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("fg2030", $"Removal rollback did not complete; the managed files may be at {proxyTemp} / {iniTemp}", rollbackError);
+            }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -405,7 +428,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         if (!File.Exists(iniPath))
             return ComponentOperationResult.Fail($"{IniFileName} foi removido externamente. Atualização bloqueada; use remover/reinstalar para não recriar configuração apagada pelo usuário.");
 
-        var currentHash = await Sha256FileAsync(proxyPath, cancellationToken).ConfigureAwait(false);
+        var currentHash = await FileHash.Sha256HexAsync(proxyPath, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(currentHash, proxyRecord.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Atualização bloqueada.");
 
@@ -423,15 +446,16 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update download/validation failed: {ex.Message}");
         }
 
-        var staged = proxyPath + $".rhi-update-new-{Guid.NewGuid():N}";
+        string? staged = null;
         var previous = proxyPath + $".rhi-update-old-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(payload.DllPath, staged, overwrite: false);
+            var stagedCopy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
+            staged = stagedCopy.Path;
             ValidateCachedDll(staged);
-            var newHash = await Sha256FileAsync(staged, cancellationToken).ConfigureAwait(false);
-            File.Move(proxyPath, previous);
-            File.Move(staged, proxyPath);
+            var newHash = stagedCopy.Sha256;
+            AtomicFile.Rename(proxyPath, previous);
+            AtomicFile.MoveIntoPlace(staged, proxyPath, overwrite: false);
 
             proxyRecord.Sha256 = newHash;
             record.Version = payload.Version;
@@ -442,33 +466,32 @@ public sealed class Dlssg2030UnlockDeploymentService
             record.Metadata[MetaSourceIniSha] = payload.SourceIniSha256;
             _records.Upsert(record);
 
-            File.Delete(previous);
+            FileCleanup.TryDelete(previous);
             return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
         }
         catch (Exception ex)
         {
-            try
+            if (staged is not null) FileCleanup.TryDelete(staged);
+            if (File.Exists(previous))
             {
-                if (File.Exists(staged)) File.Delete(staged);
-                if (File.Exists(previous))
+                try
                 {
-                    if (File.Exists(proxyPath)) File.Delete(proxyPath);
-                    File.Move(previous, proxyPath);
+                    // The previous DLL is moved back over whatever the failed update left, never deleted first.
+                    AtomicFile.Rename(previous, proxyPath, overwrite: true);
+                }
+                catch (Exception restoreError)
+                {
+                    AppLog.Warn("fg2030", $"Update rollback could not put the previous proxy back; it is kept at {previous}", restoreError);
+                    return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{previous}");
                 }
             }
-            catch { }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}");
         }
     }
 
     internal async Task<Dlssg2030SnapshotInfo> ResolveLatestSnapshotAsync(CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, CommitsApiUrl);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, CommitsApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(json);
         var first = document.RootElement.EnumerateArray().FirstOrDefault();
         if (first.ValueKind == JsonValueKind.Undefined || !first.TryGetProperty("sha", out var shaElement))
@@ -498,25 +521,19 @@ public sealed class Dlssg2030UnlockDeploymentService
         {
             CacheStamp.Invalidate(dllPath);
             CacheStamp.Invalidate(iniPath);
-            var dllTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
-            var iniTemp = iniPath + $".tmp-{Guid.NewGuid():N}";
-            try
-            {
-                await DownloadToFileAsync(dllUrl, dllTemp, cancellationToken).ConfigureAwait(false);
-                await DownloadToFileAsync(iniUrl, iniTemp, cancellationToken).ConfigureAwait(false);
-                ValidateCachedDll(dllTemp);
-                var iniText = await File.ReadAllTextAsync(iniTemp, cancellationToken).ConfigureAwait(false);
-                ValidateIniText(iniText);
-                File.Move(dllTemp, dllPath, overwrite: true);
-                File.Move(iniTemp, iniPath, overwrite: true);
-                sourceDllHash = CacheStamp.Write(dllPath, dllUrl, snapshot.CommitSha);
-                sourceIniHash = CacheStamp.Write(iniPath, iniUrl, snapshot.CommitSha);
-            }
-            finally
-            {
-                TryDelete(dllTemp);
-                TryDelete(iniTemp);
-            }
+            var dllBlob = await ResolveBlobShaAsync(snapshot.CommitSha, DefaultProxyName, cancellationToken).ConfigureAwait(false);
+            var iniBlob = await ResolveBlobShaAsync(snapshot.CommitSha, IniFileName, cancellationToken).ConfigureAwait(false);
+            using var dll = await TrustedDownload.DownloadToTempAsync(_http, dllUrl, dllPath, DownloadSources.Dlssg2030, cancellationToken: cancellationToken).ConfigureAwait(false);
+            using var ini = await TrustedDownload.DownloadToTempAsync(_http, iniUrl, iniPath, DownloadSources.Dlssg2030, cancellationToken: cancellationToken).ConfigureAwait(false);
+            VerifyBlob(dll.Path, dllBlob, DefaultProxyName);
+            VerifyBlob(ini.Path, iniBlob, IniFileName);
+            ValidateCachedDll(dll.Path);
+            var iniText = await File.ReadAllTextAsync(ini.Path, cancellationToken).ConfigureAwait(false);
+            ValidateIniText(iniText);
+            dll.MoveTo(dllPath);
+            ini.MoveTo(iniPath);
+            sourceDllHash = CacheStamp.Write(dllPath, dllUrl, snapshot.CommitSha);
+            sourceIniHash = CacheStamp.Write(iniPath, iniUrl, snapshot.CommitSha);
         }
 
         ValidateCachedDll(dllPath);
@@ -526,15 +543,45 @@ public sealed class Dlssg2030UnlockDeploymentService
         return new Dlssg2030CachedPayload(dllPath, iniPath, text, sourceDllHash.ToLowerInvariant(), sourceIniHash.ToLowerInvariant(), version);
     }
 
-    private async Task DownloadToFileAsync(string url, string path, CancellationToken cancellationToken)
+    /// <summary>Fixed start of the refusal of a file whose bytes are not the commit's blob (PT-BR pair); the file name follows.</summary>
+    public const string BlobMismatchPrefix = "Download refused: the file is not the git blob GitHub reports for this commit: ";
+
+    /// <summary>Fixed start of a missing blob id (PT-BR pair); file@commit follows.</summary>
+    public const string BlobMissingPrefix = "GitHub reported no git blob id for this file: ";
+
+    /// <summary>The git blob id GitHub reports for <paramref name="fileName"/> at <paramref name="commitSha"/> (contents API).</summary>
+    private async Task<string> ResolveBlobShaAsync(string commitSha, string fileName, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await using var output = File.Create(path);
-        await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, ContentsApiUrl(commitSha, fileName), DownloadSources.GitHubApi,
+            "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(json);
+        var sha = document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("sha", out var shaElement)
+            ? shaElement.GetString()?.Trim()
+            : null;
+        if (string.IsNullOrWhiteSpace(sha) || sha.Length != 40 || !sha.All(Uri.IsHexDigit))
+            throw new InvalidDataException($"{BlobMissingPrefix}{fileName}@{ShortSha(commitSha)}");
+        return sha;
+    }
+
+    private static void VerifyBlob(string path, string expectedBlobSha, string fileName)
+    {
+        if (!string.Equals(GitBlobSha1(path), expectedBlobSha, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException(BlobMismatchPrefix + fileName);
+    }
+
+    /// <summary>
+    /// Git's object id for a file's bytes: SHA-1 over <c>"blob &lt;length&gt;\0"</c> followed by the content. Used only
+    /// to match a download against the id GitHub publishes for it, not as a security hash on its own.
+    /// </summary>
+    internal static string GitBlobSha1(string path)
+    {
+        using var stream = File.OpenRead(path);
+        using var sha1 = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        sha1.AppendData(Encoding.ASCII.GetBytes($"blob {stream.Length}\0"));
+        var buffer = new byte[81920];
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0) sha1.AppendData(buffer, 0, read);
+        return Convert.ToHexString(sha1.GetHashAndReset()).ToLowerInvariant();
     }
 
     internal static string RawUrl(string commitSha, string fileName)
@@ -629,19 +676,8 @@ public sealed class Dlssg2030UnlockDeploymentService
         catch { return string.Equals(left, right, StringComparison.Ordinal); }
     }
 
-    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
-    }
-
     private static string ShortSha(string? sha)
         => string.IsNullOrWhiteSpace(sha) ? "unknown" : sha.Length > 7 ? sha[..7] : sha;
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
 }
 
 public sealed record Dlssg2030SnapshotInfo(string CommitSha, string Version);

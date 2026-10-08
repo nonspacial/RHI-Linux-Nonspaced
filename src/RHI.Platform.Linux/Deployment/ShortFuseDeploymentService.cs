@@ -1,6 +1,6 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Persistence;
@@ -236,7 +236,7 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail($"{BothNamesPrefix}{dir}{BothNamesSuffix}");
         if (string.IsNullOrWhiteSpace(entry.Sha256))
             return ComponentOperationResult.Fail($"{NoSha256Prefix}{entry.Path}.");
-        if (!string.Equals(await Sha256Async(onDisk[0], ct).ConfigureAwait(false), entry.Sha256, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(await FileHash.Sha256HexAsync(onDisk[0], ct).ConfigureAwait(false), entry.Sha256, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail($"{ModifiedOutsidePrefix}{onDisk[0]}.");
         entry.Path = onDisk[0];
         return ComponentOperationResult.Ok("ShortFuse add-on ownership verified.");
@@ -394,7 +394,7 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail("The RHI-managed ReShade payload is missing; ShortFuse will not repair or adopt ambiguous state.");
         if (!string.IsNullOrWhiteSpace(reshadePayload.Sha256))
         {
-            var hash = await Sha256Async(reshadePayload.Path, cancellationToken).ConfigureAwait(false);
+            var hash = await FileHash.Sha256HexAsync(reshadePayload.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(hash, reshadePayload.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail("The managed ReShade DLL was modified outside RHI. ShortFuse install is blocked to preserve that change.");
         }
@@ -504,7 +504,7 @@ public sealed class ShortFuseDeploymentService
 
             Directory.CreateDirectory(addonDir);
             File.Copy(stagedAddon, addonTarget, overwrite: false);
-            var addonHash = await Sha256Async(addonTarget, cancellationToken).ConfigureAwait(false);
+            var addonHash = await FileHash.Sha256HexAsync(addonTarget, cancellationToken).ConfigureAwait(false);
             deployed.Add(new LinuxDeployedFile { Path = addonTarget, ExistedBeforeInstall = false, Sha256 = addonHash });
             changedFiles.Add(addonTarget);
 
@@ -543,8 +543,13 @@ public sealed class ShortFuseDeploymentService
         catch (Exception ex)
         {
             await RollbackDeployedFilesAsync(deployed, cancellationToken).ConfigureAwait(false);
-            try { if (File.Exists(addonTarget)) File.Delete(addonTarget); } catch { }
-            if (iniSnapshot is not null) try { RestoreIni(iniSnapshot); } catch { }
+            if (!FileCleanup.TryDelete(addonTarget, out var addonError))
+                AppLog.Warn("shortfuse", $"Install rollback could not remove {addonTarget}", addonError);
+            if (iniSnapshot is not null)
+            {
+                try { RestoreIni(iniSnapshot); }
+                catch (Exception iniError) { AppLog.Warn("shortfuse", $"Install rollback could not restore {iniSnapshot.Path}", iniError); }
+            }
             try
             {
                 if (reshadeMoved && File.Exists(asiPath) && !File.Exists(originalReShadePath)) File.Move(asiPath, originalReShadePath);
@@ -553,14 +558,18 @@ public sealed class ShortFuseDeploymentService
                 reshadeRecord.Metadata.Remove(MetaReShadeOverrideSuspended);
                 _records.Upsert(reshadeRecord);
             }
-            catch { }
+            catch (Exception reshadeError) { AppLog.Warn("shortfuse", "Install rollback could not put ReShade back as it was", reshadeError); }
             try
             {
                 if (overrideSuspended && reshadeRecord.WineOverride is not null)
                     _ = _overrides.EnsureNativeBuiltin(game.PrefixPath, reshadeRecord.WineOverride.DllName, reshadeRecord.WineOverride.ApplicationName);
             }
-            catch { }
-            if (ualInstalledByUs) try { await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false); } catch { }
+            catch (Exception overrideError) { AppLog.Warn("shortfuse", "Install rollback could not restore the ReShade Wine override", overrideError); }
+            if (ualInstalledByUs)
+            {
+                try { await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ualError) { AppLog.Warn("shortfuse", "Install rollback could not remove the ASI Loader it installed", ualError); }
+            }
             return ComponentOperationResult.Fail($"ShortFuse install failed and was rolled back as far as possible: {ex.Message}");
         }
     }
@@ -592,7 +601,7 @@ public sealed class ShortFuseDeploymentService
             if (!File.Exists(file.Path)) continue;
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail($"ShortFuse ownership record has no SHA-256 for {file.Path}; Remove is blocked.");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"ShortFuse-owned file was modified outside RHI: {file.Path}. Remove is blocked to protect the external change.");
         }
@@ -620,7 +629,7 @@ public sealed class ShortFuseDeploymentService
                 return ComponentOperationResult.Fail("ShortFuse-managed ReShade64.asi is missing. Remove is blocked to avoid re-enabling a proxy path without a recoverable ReShade payload.");
             if (!string.IsNullOrWhiteSpace(payload.Sha256))
             {
-                var current = await Sha256Async(payload.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(payload.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, payload.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Managed ReShade payload was modified outside RHI: {payload.Path}. ShortFuse Remove is blocked.");
             }
@@ -637,7 +646,7 @@ public sealed class ShortFuseDeploymentService
             {
                 if (!File.Exists(file.Path) || string.IsNullOrWhiteSpace(file.Sha256))
                     return ComponentOperationResult.Fail($"ShortFuse-owned UAL state is incomplete: {file.Path}. Remove is blocked.");
-                var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"ShortFuse-owned UAL proxy was modified outside RHI: {file.Path}. Remove is blocked.");
             }
@@ -857,7 +866,7 @@ public sealed class ShortFuseDeploymentService
         {
             Path = target,
             ExistedBeforeInstall = existed,
-            Sha256 = await Sha256Async(target, ct).ConfigureAwait(false),
+            Sha256 = await FileHash.Sha256HexAsync(target, ct).ConfigureAwait(false),
             AllowUserChanges = false
         });
         changedFiles.Add(target);
@@ -885,11 +894,7 @@ public sealed class ShortFuseDeploymentService
         var url = string.IsNullOrWhiteSpace(releaseTag)
             ? ReleasesApiUrl
             : GitHubReleaseAssetResolver.BuildReleaseTagApiUrl(ReleasesApiUrl, releaseTag);
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, url, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         return ParseReleaseJson(json, releaseTag);
     }
 
@@ -971,66 +976,47 @@ public sealed class ShortFuseDeploymentService
         var target = Path.Combine(dir, AddonFileName);
         Directory.CreateDirectory(dir);
         // Legacy archive provenance sidecar; superseded by the CacheStamp.
-        TryDelete(target + ".source.json");
+        FileCleanup.TryDelete(target + ".source.json");
 
         if (CacheStamp.IsValid(target, release.AssetUrl, release.Version, release.AssetSha256))
             return target;
 
         CacheStamp.Invalidate(target);
-        TryDelete(target);
+        FileCleanup.TryDelete(target);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, release.AssetUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+        // Downloaded under the RHI-repository host policy and checked against GitHub's digest when published
+        // (fail-open without one, as upstream: the SHA-256 is recorded in the stamp and rhi.log, #26).
+        using var download = await TrustedDownload.DownloadToTempAsync(
+            _http, release.AssetUrl, Path.Combine(dir, release.IsArchive ? Path.GetFileName(release.AssetName) : AddonFileName),
+            DownloadSources.RhiRepository, release.AssetSha256, cancellationToken: ct).ConfigureAwait(false);
 
-        var tempAsset = Path.Combine(dir, $"asset.tmp-{Guid.NewGuid():N}");
-        var tempAddon = target + $".tmp-{Guid.NewGuid():N}";
-        try
+        // Do not reject a ZIP based on its compressed byte size. A valid archive can be
+        // very small when its contents compress well; archive safety is established below
+        // by the release SHA-256 (when provided), ZIP parsing, exact payload cardinality,
+        // and the uncompressed add-on size check. Direct .addon64 assets still keep the
+        // conservative minimum-size guard.
+        if (!release.IsArchive && download.Length < 32 * 1024)
+            throw new InvalidDataException("ShortFuse release asset is unexpectedly small.");
+
+        if (release.IsArchive)
         {
-            await using (var input = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-            await using (var output = File.Create(tempAsset))
-                await input.CopyToAsync(output, ct).ConfigureAwait(false);
-
-            // Do not reject a ZIP based on its compressed byte size. A valid archive can be
-            // very small when its contents compress well; archive safety is established below
-            // by the release SHA-256 (when provided), ZIP parsing, exact payload cardinality,
-            // and the uncompressed add-on size check. Direct .addon64 assets still keep the
-            // conservative minimum-size guard.
-            if (!release.IsArchive && new FileInfo(tempAsset).Length < 32 * 1024)
-                throw new InvalidDataException("ShortFuse release asset is unexpectedly small.");
-
-            var assetHash = await Sha256Async(tempAsset, ct).ConfigureAwait(false);
-            if (release.AssetSha256 is not null && !string.Equals(assetHash, release.AssetSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException($"ShortFuse SHA256 mismatch: expected {release.AssetSha256}, got {assetHash}.");
-
-            if (release.IsArchive)
-            {
-                using var zip = ZipFile.OpenRead(tempAsset);
-                var selected = SelectArchiveAddonEntry(zip, release.AssetName);
-                if (selected.Length < 32 * 1024)
-                    throw new InvalidDataException("ShortFuse add-on inside the archive is unexpectedly small.");
-
-                await using var source = selected.Open();
-                await using var destination = File.Create(tempAddon);
-                await source.CopyToAsync(destination, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                File.Move(tempAsset, tempAddon, overwrite: true);
-            }
-
-            File.Move(tempAddon, target, overwrite: true);
-            CacheStamp.Write(target, release.AssetUrl, release.Version, release.AssetSha256);
-            return target;
+            using var zip = ZipFile.OpenRead(download.Path);
+            var selected = SelectArchiveAddonEntry(zip, release.AssetName);
+            if (selected.Length < 32 * 1024)
+                throw new InvalidDataException("ShortFuse add-on inside the archive is unexpectedly small.");
+            // Checked extraction (declared-size cap, fixed mode, length + CRC-32, atomic rename); never a raw copy (#42).
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(selected, target, TrustedDownloadPolicy.AddonMaxBytes, ct).ConfigureAwait(false);
         }
-        finally
+        else
         {
-            TryDelete(tempAsset);
-            TryDelete(tempAddon);
+            download.MoveTo(target);
         }
+
+        CacheStamp.Write(target, release.AssetUrl, release.Version, release.AssetSha256);
+        if (release.AssetSha256 is null)
+            TrustedDownload.NoteAcceptedWithoutDigest(DownloadSources.RhiRepository, release.AssetUrl, download.Sha256);
+        return target;
     }
-
 
     internal static ZipArchiveEntry SelectArchiveAddonEntry(ZipArchive zip, string assetName)
     {
@@ -1055,11 +1041,6 @@ public sealed class ShortFuseDeploymentService
         if (fallback.Length == 0)
             throw new InvalidDataException($"ShortFuse archive '{assetName}' contains no .addon64 payload.");
         throw new InvalidDataException($"ShortFuse archive '{assetName}' contains multiple ambiguous .addon64 payloads.");
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
     }
 
     private static IniSnapshot CaptureAndApplyIni(string path)
@@ -1172,11 +1153,12 @@ public sealed class ShortFuseDeploymentService
         lines.RemoveRange(section.Start, section.End - section.Start);
     }
 
+    /// <summary>ReShade.ini is the user's file: the one user-file write path (mode kept, read-only and links refused, verified).</summary>
     private static void AtomicWriteLines(string path, IReadOnlyList<string> lines)
     {
-        var temp = path + $".rhi-sf-{Guid.NewGuid():N}";
-        File.WriteAllLines(temp, lines);
-        File.Move(temp, path, overwrite: true);
+        var text = new System.Text.StringBuilder();
+        foreach (var line in lines) text.Append(line).Append(Environment.NewLine);
+        AtomicFile.ReplaceUserFile(path, new System.Text.UTF8Encoding(false).GetBytes(text.ToString()));
     }
 
     private static string? FindReShadeIni(string binaryDir)
@@ -1192,13 +1174,6 @@ public sealed class ShortFuseDeploymentService
                name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
                name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
                name.Equals(ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken ct)
-    {
-        await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private static string Sanitize(string value)

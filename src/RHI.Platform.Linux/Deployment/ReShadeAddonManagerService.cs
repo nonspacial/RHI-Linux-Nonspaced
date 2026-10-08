@@ -1,10 +1,9 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
-using RHI.Core;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
@@ -143,7 +142,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         var target = Path.Combine(_customRoot, fileName);
         if (File.Exists(target))
         {
-            if (string.Equals(Sha256(sourcePath), Sha256(target), StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(FileHash.Sha256Hex(sourcePath), FileHash.Sha256Hex(target), StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Ok($"{fileName} is already present in Custom Addons.", target);
             return ComponentOperationResult.Fail($"A different Custom Addon already exists with the name {fileName}; RHI will not overwrite it.");
         }
@@ -242,7 +241,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             foreach (var file in old.Files)
             {
                 if (!File.Exists(file.Path)) continue;
-                var current = Sha256(file.Path);
+                var current = FileHash.Sha256Hex(file.Path);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Managed addon was modified outside RHI and the selection cannot be changed safely: {file.Path}");
             }
@@ -316,7 +315,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                         {
                             AddonId = item.Definition.Id,
                             Path = target,
-                            Sha256 = Sha256(target)
+                            Sha256 = FileHash.Sha256Hex(target)
                         });
                     }
                 }
@@ -391,7 +390,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                     foreach (var target in targets.OfType<string>().Distinct(StringComparer.Ordinal))
                     {
                         if (string.Equals(target, file.Path, StringComparison.Ordinal) || !File.Exists(target)
-                            || !string.Equals(Sha256(target), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                            || !string.Equals(FileHash.Sha256Hex(target), file.Sha256, StringComparison.OrdinalIgnoreCase))
                             continue;
                         file.Path = target;
                         changed = true;
@@ -489,10 +488,10 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         List<ReShadeAddonDefinition> catalog;
         try
         {
-            var text = await _http.GetStringAsync(AddonsIniUrl, cancellationToken).ConfigureAwait(false);
+            var text = await TrustedDownload.GetStringAsync(_http, AddonsIniUrl, TrustedDownloadPolicy.ReShadeAddons, cancellationToken: cancellationToken).ConfigureAwait(false);
             catalog = ParseAddonsIni(text);
             Directory.CreateDirectory(_cacheDir);
-            await File.WriteAllTextAsync(_addonsIniCache, text, cancellationToken).ConfigureAwait(false);
+            await AtomicFile.WriteAllTextAsync(_addonsIniCache, text, cancellationToken).ConfigureAwait(false);
         }
         catch when (!cancellationToken.IsCancellationRequested)
         {
@@ -673,12 +672,8 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         string architectureExtension,
         CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
-        request.Headers.UserAgent.ParseAdd(RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false));
+        var json = await TrustedDownload.GetStringAsync(_http, apiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         if (root.ValueKind == JsonValueKind.Array)
         {
@@ -805,9 +800,4 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
 
     private void SaveState(StateDocument state) => _stateFile.Save(state);
 
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
-    }
 }

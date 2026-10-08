@@ -232,6 +232,19 @@ public static class AtomicFile
     }
 
     /// <summary>
+    /// <see cref="ReplaceUserFile"/> for text kept as lines (INI files): each line followed by
+    /// <see cref="Environment.NewLine"/>, as <see cref="File.WriteAllLines(string, IEnumerable{string})"/> writes them,
+    /// in <paramref name="encoding"/> (default UTF-8 without BOM).
+    /// </summary>
+    public static UserFileWriteResult ReplaceUserFileLines(
+        string path, IEnumerable<string> lines, Encoding? encoding = null, UserFileLinkPolicy? linkPolicy = null)
+    {
+        var text = new StringBuilder();
+        foreach (var line in lines) text.Append(line).Append(Environment.NewLine);
+        return ReplaceUserFile(path, Encode(text.ToString(), encoding ?? new UTF8Encoding(false)), linkPolicy);
+    }
+
+    /// <summary>
     /// The file a write to <paramref name="path"/> replaces: the path itself, or the final target of a symlink the
     /// policy allows (name equal to <see cref="UserFileLinkPolicy.RequiredFileName"/>, inside one of its roots with
     /// every symlink resolved on both sides, not a folder). Throws <see cref="IOException"/> for any other link.
@@ -259,13 +272,14 @@ public static class AtomicFile
     /// (hashed while copying) and verifying the written copy in full.
     /// </summary>
     /// <param name="expectedSha256">When given, the source content must hash to it.</param>
+    /// <param name="overwrite">False refuses (IOException) when <paramref name="target"/> already exists at rename time.</param>
     /// <returns>SHA-256 (upper-case hex) of the content now at <paramref name="target"/>.</returns>
-    public static async Task<string> CopyAsync(string source, string target, string? expectedSha256 = null, CancellationToken cancellationToken = default)
+    public static async Task<string> CopyAsync(string source, string target, string? expectedSha256 = null, CancellationToken cancellationToken = default, bool overwrite = true)
     {
         var staged = await StageCopyAsync(source, target, expectedSha256, null, cancellationToken).ConfigureAwait(false);
         try
         {
-            MoveIntoPlace(staged.Path, target);
+            MoveIntoPlace(staged.Path, target, overwrite);
         }
         catch
         {
@@ -276,14 +290,14 @@ public static class AtomicFile
     }
 
     /// <summary>Synchronous <see cref="CopyAsync"/>.</summary>
-    public static string Copy(string source, string target, string? expectedSha256 = null)
+    public static string Copy(string source, string target, string? expectedSha256 = null, bool overwrite = true)
     {
         EnsureDistinct(source, target);
         using var input = FileHash.OpenRead(source);
         var staged = StageStream(input, target, expectedSha256, null, long.MaxValue);
         try
         {
-            MoveIntoPlace(staged.Path, target);
+            MoveIntoPlace(staged.Path, target, overwrite);
         }
         catch
         {

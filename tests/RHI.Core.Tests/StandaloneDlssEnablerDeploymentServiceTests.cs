@@ -89,7 +89,7 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("4.10.0", record!.Version);
         Assert.Equal("winmm.dll", record.Metadata["DLSSEnabler.ProxyName"]);
-        Assert.Equal(Sha256(target), record.Files.Single().Sha256);
+        Assert.Equal(Sha256(target), record.Files.Single().Sha256, ignoreCase: true);
 
         var remove = await service.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
@@ -483,7 +483,7 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
         }
 
         private static string AssetUrl(string version)
-            => $"https://example.invalid/DLSS-Enabler-{version}.zip";
+            => $"https://github.com/rhi-tests/DLSS-Enabler-{version}.zip";
 
         private static HttpResponseMessage JsonResponse(string json)
             => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };

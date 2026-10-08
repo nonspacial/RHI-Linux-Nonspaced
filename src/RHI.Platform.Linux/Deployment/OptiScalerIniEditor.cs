@@ -1,3 +1,5 @@
+using RHI.Core.Deployment;
+
 namespace RHI.Platform.Linux.Deployment;
 
 internal static class OptiScalerIniEditor
@@ -40,7 +42,7 @@ internal static class OptiScalerIniEditor
             SetValueInLines(lines, update.Section.Trim(), update.Key.Trim(), update.Value ?? "");
         }
 
-        AtomicWrite(path, string.Join(newline, lines));
+        AtomicFile.ReplaceUserFile(path, new System.Text.UTF8Encoding(false).GetBytes(string.Join(newline, lines)));
     }
 
     private static string? GetValueFromLines(IReadOnlyList<string> lines, string section, string key)
@@ -103,17 +105,4 @@ internal static class OptiScalerIniEditor
         lines.Insert(sectionEnd, $"{key}={value}");
     }
 
-    private static void AtomicWrite(string path, string text)
-    {
-        var temp = path + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllText(temp, text);
-            File.Move(temp, path, overwrite: true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
-    }
 }

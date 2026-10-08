@@ -20,14 +20,14 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
     {
         var json = """
         [
-          { "tag_name":"renodx-dlss5-0.9", "assets":[{"name":"renodx-dlss5.addon64","browser_download_url":"https://example.invalid/old"}] },
-          { "tag_name":"renodx-dlss-SF-0.51", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/sf-direct"}] },
-          { "tag_name":"renodx-dlss-SF-0.52", "assets":[{"name":"renodx-dlss_SF_0.52.zip","browser_download_url":"https://example.invalid/sf.zip"}] }
+          { "tag_name":"renodx-dlss5-0.9", "assets":[{"name":"renodx-dlss5.addon64","browser_download_url":"https://github.com/rhi-tests/old"}] },
+          { "tag_name":"renodx-dlss-SF-0.51", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf-direct"}] },
+          { "tag_name":"renodx-dlss-SF-0.52", "assets":[{"name":"renodx-dlss_SF_0.52.zip","browser_download_url":"https://github.com/rhi-tests/sf.zip"}] }
         ]
         """;
         var release = ShortFuseDeploymentService.ParseReleaseJson(json);
         Assert.Equal("0.52", release.Version);
-        Assert.Equal("https://example.invalid/sf.zip", release.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/sf.zip", release.AssetUrl);
         Assert.True(release.IsArchive);
         Assert.Equal("renodx-dlss_SF_0.52.zip", release.AssetName);
     }
@@ -37,8 +37,8 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
     {
         var json = """
         [
-          { "tag_name":"renodx-dlss-SF-0.51", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/sf51"}] },
-          { "tag_name":"renodx-dlss-SF-0.52", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/sf52"}] }
+          { "tag_name":"renodx-dlss-SF-0.51", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf51"}] },
+          { "tag_name":"renodx-dlss-SF-0.52", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf52"}] }
         ]
         """;
 
@@ -46,14 +46,14 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
 
         Assert.Equal("0.51", release.Version);
         Assert.Equal("renodx-dlss-SF-0.51", release.Tag);
-        Assert.Equal("https://example.invalid/sf51", release.AssetUrl);
+        Assert.Equal("https://github.com/rhi-tests/sf51", release.AssetUrl);
     }
 
     [Fact]
     public void ParseRelease_StripsGithubSha256DigestPrefix_AndKeepsDirectAssetCompatibility()
     {
         var digest = new string('a', 64);
-        var json = $$"""[{"tag_name":"renodx-dlss-SF-2.0","assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/sf","digest":"sha256:{{digest}}"}]}]""";
+        var json = $$"""[{"tag_name":"renodx-dlss-SF-2.0","assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf","digest":"sha256:{{digest}}"}]}]""";
         var release = ShortFuseDeploymentService.ParseReleaseJson(json);
         Assert.Equal(digest, release.AssetSha256);
         Assert.False(release.IsArchive);
@@ -407,7 +407,7 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         Assert.Equal(hash, Sha256(zzz));
         var entry = ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!.Files.Single(f => ShortFuseDeploymentService.IsAddonFileName(Path.GetFileName(f.Path)));
         Assert.Equal(zzz, entry.Path);
-        Assert.Equal(hash, entry.Sha256);
+        Assert.Equal(hash, entry.Sha256, ignoreCase: true);
         Assert.True(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
 
         var off = await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false);
@@ -761,8 +761,8 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         var sl = CreateZip(
             ("sl.interposer.dll", CreatePe(0x8664, 80 * 1024, 0x75)),
             ("sl.common.dll", CreatePe(0x8664, 80 * 1024, 0x76)));
-        var sfUrl = "https://example.invalid/renodx-dlss_SF_1.4.2.zip";
-        var ualUrl = "https://example.invalid/ual.zip";
+        var sfUrl = "https://github.com/rhi-tests/renodx-dlss_SF_1.4.2.zip";
+        var ualUrl = "https://github.com/rhi-tests/ual.zip";
         var srUrl = "https://github.com/example/rhi/releases/download/1/sr.zip";
         var rrUrl = "https://github.com/example/rhi/releases/download/1/rr.zip";
         var fgUrl = "https://github.com/example/rhi/releases/download/1/fg.zip";
@@ -817,7 +817,7 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         // #142 review: a direct .addon64 release with no published digest used to be reused by name alone.
         var fixture = CreateGame("foreign-cache");
         var genuine = CreatePe(0x8664, 80 * 1024, 0x5A);
-        const string url = "https://example.invalid/sf/renodx-dlss.addon64";
+        const string url = "https://github.com/rhi-tests/sf/renodx-dlss.addon64";
         var gets = 0;
         using var http = new HttpClient(new CountingHandler(url, genuine, () => Interlocked.Increment(ref gets)));
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));

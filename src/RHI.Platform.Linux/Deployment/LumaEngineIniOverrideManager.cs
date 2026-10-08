@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -109,7 +110,7 @@ internal static class LumaEngineIniOverrideManager
             var parent = Path.GetDirectoryName(iniPath)
                 ?? throw new InvalidOperationException("Resolved Engine.ini parent is invalid.");
             Directory.CreateDirectory(parent);
-            WriteAtomic(iniPath, lines);
+            WriteIni(iniPath, lines);
         }
 
         if (owned.Count == 0) return null;
@@ -146,7 +147,7 @@ internal static class LumaEngineIniOverrideManager
             File.Delete(state.IniPath);
             return;
         }
-        WriteAtomic(state.IniPath, lines);
+        WriteIni(state.IniPath, lines);
     }
 
     internal static string? ResolveEngineIniPath(DetectedGame game)
@@ -401,20 +402,10 @@ internal static class LumaEngineIniOverrideManager
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1])) lines.RemoveAt(lines.Count - 1);
     }
 
-    private static void WriteAtomic(string path, IReadOnlyList<string> lines)
+    /// <summary>Engine.ini is the user's file: the one user-file write path (mode kept, read-only and links refused, verified).</summary>
+    private static void WriteIni(string path, IReadOnlyList<string> lines)
     {
-        var parent = Path.GetDirectoryName(path) ?? throw new InvalidOperationException("Engine.ini parent is invalid.");
-        Directory.CreateDirectory(parent);
-        var temp = path + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            File.WriteAllLines(temp, lines, new UTF8Encoding(false));
-            File.Move(temp, path, overwrite: true);
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? throw new InvalidOperationException("Engine.ini parent is invalid."));
+        AtomicFile.ReplaceUserFileLines(path, lines);
     }
 }

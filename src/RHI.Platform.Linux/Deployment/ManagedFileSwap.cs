@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -45,11 +45,11 @@ public static class ManagedFileSwap
                 throw new FileNotFoundException("Swap source is missing.", source);
             if (!File.Exists(file.Path))
                 throw new InvalidOperationException($"Managed file is missing: {file.Path}. Reinstall the component instead.");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(file.Sha256) &&
                 !string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException($"Managed file was modified outside RHI and will not be replaced: {file.Path}");
-            plan.Add((file, source, await Sha256Async(source, cancellationToken).ConfigureAwait(false), file.Sha256));
+            plan.Add((file, source, await FileHash.Sha256HexAsync(source, cancellationToken).ConfigureAwait(false), file.Sha256));
         }
 
         var swapped = new List<LinuxDeployedFile>();
@@ -87,24 +87,14 @@ public static class ManagedFileSwap
         {
             foreach (var (file, _, _, _) in plan)
             {
-                TryDelete(file.Path + StagingSuffix);
+                FileCleanup.TryDelete(file.Path + StagingSuffix);
                 if (!keptBackups.Contains(file.Path + BackupSuffix))
-                    TryDelete(file.Path + BackupSuffix);
+                    FileCleanup.TryDelete(file.Path + BackupSuffix);
             }
         }
         return swapped.Count;
     }
 
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false)).ToLowerInvariant();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
 }
 
 /// <summary>

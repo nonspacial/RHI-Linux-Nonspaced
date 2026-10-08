@@ -685,7 +685,8 @@ public sealed partial class ReShadeChannelTests : IDisposable
         Assert.Equal("Nightly", staged.Version);
         Assert.True(File.Exists(staged.DllPath));
         Assert.True(new FileInfo(staged.DllPath).Length > 1_000_000);
-        Assert.Contains("zip-size:", staged.SourceIdentity);
+        // No GitHub API answer in this fixture: upstream's branch link, identified by the zip's SHA-256 (#27), never its size.
+        Assert.StartsWith("sha256:", staged.SourceIdentity);
     }
 
     [Fact]

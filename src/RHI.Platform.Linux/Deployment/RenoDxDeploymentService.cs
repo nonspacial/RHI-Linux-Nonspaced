@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
@@ -192,7 +191,7 @@ public sealed class RenoDxDeploymentService
         {
             if (!File.Exists(file.Path) || string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail($"RenoDX managed file is missing or has no ownership hash: {file.Path}");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be updated: {file.Path}");
         }
@@ -284,7 +283,7 @@ public sealed class RenoDxDeploymentService
             if (owned is null)
                 return ComponentOperationResult.Fail($"RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: {sameName}");
             if (string.IsNullOrWhiteSpace(owned.Sha256)
-                || !string.Equals(await Sha256Async(sameName, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
+                || !string.Equals(await FileHash.Sha256HexAsync(sameName, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {sameName}");
         }
 
@@ -305,7 +304,7 @@ public sealed class RenoDxDeploymentService
                 oldManagedFile = existingRecord.Files.First();
                 if (File.Exists(oldManagedFile.Path))
                 {
-                    var oldHash = await Sha256Async(oldManagedFile.Path, cancellationToken).ConfigureAwait(false);
+                    var oldHash = await FileHash.Sha256HexAsync(oldManagedFile.Path, cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(oldHash, oldManagedFile.Sha256, StringComparison.OrdinalIgnoreCase))
                         return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {oldManagedFile.Path}");
                 }
@@ -336,7 +335,8 @@ public sealed class RenoDxDeploymentService
             UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
             try
             {
-                await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
+                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
+                await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
                 var previousIniState = existingRecord is not null &&
                     existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
                     ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
@@ -368,7 +368,7 @@ public sealed class RenoDxDeploymentService
                 throw;
             }
 
-            var newHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+            var newHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
 
             // Only remove a previous RHI-managed filename after the replacement and INI application are safely in place.
             if (oldManagedFile is not null && File.Exists(oldManagedFile.Path))
@@ -670,7 +670,7 @@ public sealed class RenoDxDeploymentService
             foreach (var file in record.Files)
             {
                 if (!File.Exists(file.Path)) continue;
-                var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
@@ -849,30 +849,6 @@ public sealed class RenoDxDeploymentService
     }
 
 
-    private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var directory = Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid.");
-        Directory.CreateDirectory(directory);
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            const int bufferSize = 1024 * 1024;
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, bufferSize, cancellationToken).ConfigureAwait(false);
-
-            if (new FileInfo(source).Length != new FileInfo(temp).Length)
-                throw new IOException("RenoDX copy verification failed.");
-
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-            throw;
-        }
-    }
-
     private static readonly EnumerationOptions CaseInsensitiveTopLevel = new()
     {
         MatchCasing = MatchCasing.CaseInsensitive,
@@ -971,9 +947,4 @@ public sealed class RenoDxDeploymentService
         return false;
     }
 
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
-    }
 }

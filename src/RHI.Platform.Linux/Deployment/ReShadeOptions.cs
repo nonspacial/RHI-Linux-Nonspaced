@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 namespace RHI.Platform.Linux.Deployment;
 
 public enum ReShadeChannel
@@ -38,4 +39,6 @@ internal sealed record ReShadeStagedDll(
     ReShadeChannel Channel,
     bool FromCache = false,
     // Why the cached copy was used (the reshade.me outage message); null for a fresh download.
-    string? FallbackReason = null);
+    string? FallbackReason = null,
+    // The downloaded setup/nightly zip the DLL came from and what its integrity rests on (#26/#27); null for Custom.
+    VerifiedDownload? Download = null);

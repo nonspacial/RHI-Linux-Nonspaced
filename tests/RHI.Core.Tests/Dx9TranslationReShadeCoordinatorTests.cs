@@ -51,7 +51,7 @@ public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
             {
                 Path = d3d9,
                 ExistedBeforeInstall = false,
-                Sha256 = Dx9TranslationReShadeCoordinator.ComputeSha256(d3d9)
+                Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(d3d9)
             }]
         });
         var coordinator = new Dx9TranslationReShadeCoordinator(records, overrides);

@@ -25,7 +25,7 @@ public sealed class DgVoodooDeploymentServiceTests : IDisposable
     [Theory]
     [InlineData(PeArchitecture.X86, @"MS\x86\D3D9.dll")]
     [InlineData(PeArchitecture.X64, @"MS\x64\D3D9.dll")]
-    public void ExtractD3D9_SelectsMatchingArchitectureAndNormalizesWindowsPaths(PeArchitecture architecture, string expectedEntry)
+    public async Task ExtractD3D9_SelectsMatchingArchitectureAndNormalizesWindowsPaths(PeArchitecture architecture, string expectedEntry)
     {
         var zip = Path.Combine(_root, $"dgvoodoo-{architecture}.zip");
         using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
@@ -43,7 +43,7 @@ public sealed class DgVoodooDeploymentServiceTests : IDisposable
         }
 
         var target = Path.Combine(_root, $"D3D9-{architecture}.dll");
-        var extracted = DgVoodooDeploymentService.ExtractD3D9(zip, target, architecture);
+        var extracted = await DgVoodooDeploymentService.ExtractD3D9Async(zip, target, architecture, CancellationToken.None);
 
         Assert.Equal(target, extracted);
         Assert.Equal(0x5A, File.ReadAllBytes(target)[80]);

@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Text;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -48,7 +48,7 @@ internal static class ReShadeIniManager
                        "[OVERLAY]\n" +
                        "TutorialProgress=4\n";
             File.WriteAllText(path, text, new UTF8Encoding(false));
-            return new(path, false, true, true, true, effectAdded, textureAdded, Sha256(path));
+            return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path));
         }
 
         var lines = File.ReadAllLines(path).ToList();
@@ -58,7 +58,7 @@ internal static class ReShadeIniManager
         if (changed)
             File.WriteAllLines(path, lines, new UTF8Encoding(false));
 
-        return new(path, true, false, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, Sha256(path));
+        return new(path, true, false, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
     }
 
     public static void Cleanup(
@@ -74,7 +74,7 @@ internal static class ReShadeIniManager
 
         // If RHI created the file and it has not changed since our last write, remove it entirely.
         if (createdByRhi && !string.IsNullOrWhiteSpace(lastManagedHash) &&
-            string.Equals(Sha256(path), lastManagedHash, StringComparison.OrdinalIgnoreCase))
+            string.Equals(FileHash.Sha256Hex(path), lastManagedHash, StringComparison.OrdinalIgnoreCase))
         {
             File.Delete(path);
             return;
@@ -206,9 +206,4 @@ internal static class ReShadeIniManager
         return -1;
     }
 
-    private static string Sha256(string path)
-    {
-        using var stream = File.OpenRead(path);
-        return Convert.ToHexString(SHA256.HashData(stream));
-    }
 }

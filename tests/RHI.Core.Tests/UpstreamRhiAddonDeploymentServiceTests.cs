@@ -26,8 +26,8 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
           "addonPacks": {
             "mfgunlock": {
               "packageName": "MFG Ada Unlock",
-              "releaseApiUrl": "https://api.github.test/repos/mfg/releases/latest",
-              "repositoryUrl": "https://github.test/mfg"
+              "releaseApiUrl": "https://api.github.com/repos/mfg/releases/latest",
+              "repositoryUrl": "https://github.com/rhi-tests/mfg"
             }
           }
         }
@@ -40,7 +40,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
                 draft = false,
                 assets = new[]
                 {
-                    new { name = "renodx-mfgunlock.addon64", browser_download_url = "https://example.test/mfg.addon64", digest = "sha256:" + digest }
+                    new { name = "renodx-mfgunlock.addon64", browser_download_url = "https://github.com/rhi-tests/mfg.addon64", digest = "sha256:" + digest }
                 }
             }
         });
@@ -49,12 +49,12 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
         {
             var url = req.RequestUri!.AbsoluteUri;
             if (url == "https://manifest.test/current.json") return JsonResponse(manifestJson);
-            if (url == "https://api.github.test/repos/mfg/releases?per_page=1")
+            if (url == "https://api.github.com/repos/mfg/releases?per_page=1")
             {
                 seenReleaseApi = true;
                 return JsonResponse(releaseJson);
             }
-            if (url == "https://example.test/mfg.addon64")
+            if (url == "https://github.com/rhi-tests/mfg.addon64")
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
             throw new InvalidOperationException("Unexpected URL: " + url);
         }));
@@ -64,7 +64,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
             "MFG Ada Unlock",
-            "https://fallback.invalid/releases/latest",
+            "https://api.github.com/repos/rhi-tests/releases/latest",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",
             DeployFileName64: "renodx-mfgunlock.addon64",
@@ -90,7 +90,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
           "addonPacks": {
             "dlss5-feed": {
               "packageName": "DLSS5 Feeder",
-              "releaseApiUrl": "https://api.github.test/repos/feeder/releases/latest",
+              "releaseApiUrl": "https://api.github.com/repos/feeder/releases/latest",
               "disabled": true
             }
           }
@@ -107,7 +107,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
             ManagedComponentKind.Dlss5Feeder,
             "dlss5-feed",
             "DLSS5 Feeder",
-            "https://fallback.invalid/releases/latest",
+            "https://api.github.com/repos/rhi-tests/releases/latest",
             64 * 1024,
             AssetNamePattern64: @"^DLSS5-Feeder-.*\.zip$",
             DeployFileName64: "dlss5-feed.addon64"));
@@ -130,7 +130,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
             "DLSS5 DX11 Bridge",
-            "https://fallback.invalid/releases/latest",
+            "https://api.github.com/repos/rhi-tests/releases/latest",
             128 * 1024,
             ExactAssetName64: "dlss5-bridge.addon64",
             DeployFileName64: "dlss5-bridge.addon64",
@@ -163,7 +163,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
             "DLSS5 DX11 Bridge",
-            "https://fallback.invalid/releases/latest",
+            "https://api.github.com/repos/rhi-tests/releases/latest",
             128 * 1024,
             ExactAssetName64: "dlss5-bridge.addon64",
             DeployFileName64: "dlss5-bridge.addon64",

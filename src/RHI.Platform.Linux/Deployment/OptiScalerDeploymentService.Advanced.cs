@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;

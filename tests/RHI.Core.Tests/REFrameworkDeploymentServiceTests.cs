@@ -38,7 +38,7 @@ public sealed class REFrameworkDeploymentServiceTests : IDisposable
         using var http = new HttpClient(new FakeHandler(req =>
         {
             Assert.Contains("REFramework-nightly/releases", req.RequestUri!.AbsoluteUri, StringComparison.OrdinalIgnoreCase);
-            return JsonResponse(ReleaseJson("nightly-01302-deadbeef", "https://example.test/ref.zip", digest));
+            return JsonResponse(ReleaseJson("nightly-01302-deadbeef", "https://github.com/rhi-tests/ref.zip", digest));
         }));
         var service = NewService(http, "resolve-records.json");
 
@@ -76,8 +76,8 @@ public sealed class REFrameworkDeploymentServiceTests : IDisposable
         {
             var url = req.RequestUri!.AbsoluteUri;
             if (url.Contains("REFramework-nightly/releases", StringComparison.OrdinalIgnoreCase))
-                return JsonResponse(ReleaseJson("nightly-01302-deadbeef", "https://example.test/ref.zip", digest));
-            if (url == "https://example.test/ref.zip")
+                return JsonResponse(ReleaseJson("nightly-01302-deadbeef", "https://github.com/rhi-tests/ref.zip", digest));
+            if (url == "https://github.com/rhi-tests/ref.zip")
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
             throw new InvalidOperationException("Unexpected URL: " + url);
         }));

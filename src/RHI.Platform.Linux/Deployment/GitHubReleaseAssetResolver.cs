@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -50,13 +51,7 @@ public sealed class GitHubReleaseAssetResolver
         var requestUrl = string.IsNullOrWhiteSpace(releaseTag)
             ? NormalizeReleaseApiUrl(query.ReleaseApiUrl)
             : BuildReleaseTagApiUrl(query.ReleaseApiUrl, releaseTag);
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var doc = await GetJsonAsync(requestUrl, cancellationToken).ConfigureAwait(false);
 
         if (doc.RootElement.ValueKind == JsonValueKind.Object)
             return ResolveFromRelease(doc.RootElement, query)
@@ -84,13 +79,7 @@ public sealed class GitHubReleaseAssetResolver
         if (string.IsNullOrWhiteSpace(releaseApiUrl))
             throw new ArgumentException("GitHub release API URL is required.", nameof(releaseApiUrl));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, BuildReleaseListApiUrl(releaseApiUrl));
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        using var doc = await GetJsonAsync(BuildReleaseListApiUrl(releaseApiUrl), cancellationToken).ConfigureAwait(false);
         if (doc.RootElement.ValueKind != JsonValueKind.Array)
             throw new InvalidOperationException("GitHub releases endpoint did not return a release list.");
 
@@ -106,6 +95,16 @@ public sealed class GitHubReleaseAssetResolver
         }
         // Newest first by version, not publish date, so rc10 lists above rc5 (upstream 2.7.9).
         return ReleaseVersionOrdering.NewestFirst(result);
+    }
+
+    /// <summary>
+    /// Release metadata from api.github.com only (the GitHub API host policy, checked on redirects too, size cap). The
+    /// app's HttpClient revalidates these with ETags for the session, so repeated lookups cost no rate limit (#35).
+    /// </summary>
+    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken cancellationToken)
+    {
+        var json = await TrustedDownload.GetStringAsync(_http, url, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        return JsonDocument.Parse(json);
     }
 
     internal static string BuildReleaseTagApiUrl(string releaseApiUrl, string releaseTag)
@@ -188,9 +187,10 @@ public sealed class GitHubReleaseAssetResolver
             if (string.IsNullOrWhiteSpace(name) || !Matches(name, query)) continue;
             var url = asset.TryGetProperty("browser_download_url", out var urlEl) ? urlEl.GetString() : null;
             if (string.IsNullOrWhiteSpace(url)) continue;
+            // Only a sha256 digest counts; GitHub publishes "sha256:<hex>" for assets uploaded since mid-2025 (#26).
             var digest = asset.TryGetProperty("digest", out var digestEl) ? digestEl.GetString() : null;
             var sha = digest is not null && digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)
-                ? digest["sha256:".Length..].Trim()
+                ? TrustedDownload.NormalizeDigest(digest)
                 : null;
             return new GitHubResolvedReleaseAsset(
                 ReadVersion(release, query.BodyVersionPattern),

@@ -1,5 +1,3 @@
-using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using System.Text.Json;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
@@ -137,7 +135,7 @@ public sealed class DofFixDeploymentService
                 Path.GetFullPath(file.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal));
             if (owned?.Sha256 is not { Length: > 0 })
                 return ComponentOperationResult.Fail("Existing RHI DOF Fix record has no ownership hash. Update is blocked conservatively.");
-            var currentHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+            var currentHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(currentHash, owned.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Update is blocked to preserve the changed file.");
         }
@@ -145,8 +143,8 @@ public sealed class DofFixDeploymentService
         var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         var cached = await DownloadAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
 
-        await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
-        var deployedHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
+        var deployedHash = await AtomicFile.CopyAsync(cached.Path, target, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         _records.Upsert(new LinuxDeploymentRecord
         {
@@ -172,7 +170,9 @@ public sealed class DofFixDeploymentService
                 ["DofFix.TagPrefix"] = TagPrefix,
                 ["DofFix.AssetName"] = release.AssetName,
                 ["DofFix.ManifestForced"] = game.DofFixForcedByManifest ? "1" : "0",
-                ["DofFix.EngineHint"] = game.EngineHint ?? ""
+                ["DofFix.EngineHint"] = game.EngineHint ?? "",
+                [VerifiedDownload.MetadataSha256Key] = cached.Sha256,
+                [VerifiedDownload.MetadataIntegrityKey] = cached.Integrity
             }
         });
 
@@ -196,7 +196,7 @@ public sealed class DofFixDeploymentService
             if (!File.Exists(file.Path)) continue;
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail("DOF Fix ownership hash is missing; removal is blocked conservatively.");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Remove is blocked to preserve the changed file.");
         }
@@ -218,13 +218,8 @@ public sealed class DofFixDeploymentService
 
     public async Task<DofFixReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, GitHubApiUrl);
-        request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
-        request.Headers.Accept.ParseAdd("application/vnd.github+json");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var json = await TrustedDownload.GetStringAsync(_http, GitHubApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
             throw new InvalidDataException("RHI DOF Fix release API returned an unexpected JSON shape.");
 
@@ -265,10 +260,11 @@ public sealed class DofFixDeploymentService
         {
             overrideUrl = await _manifest.FetchComponentUrlAsync("ueDofFix", cancellationToken).ConfigureAwait(false);
         }
-        catch when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             // Manifest enrichment is fail-open upstream: the GitHub release asset remains authoritative
             // when the pinned manifest cannot be reached.
+            AppLog.Warn("dof-fix", "The upstream manifest's ueDofFix link could not be read; using the GitHub release asset", ex);
         }
         var usingOverride = !string.IsNullOrWhiteSpace(overrideUrl);
         var finalUrl = usingOverride
@@ -300,59 +296,23 @@ public sealed class DofFixDeploymentService
             .FirstOrDefault(path => Path.GetFileName(path).Equals(AddonFileName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private async Task<string> DownloadAndValidateAsync(DofFixReleaseInfo release, CancellationToken cancellationToken)
+    /// <summary>
+    /// The add-on from the stamped download cache under the GitHub policy (reused while its stamp matches URL, version
+    /// and digest; #35). GitHub's digest is verified when published; a manifest override link names another file, so
+    /// GitHub's digest does not apply to it and it is accepted on HTTPS + host policy, its SHA-256 recorded (#26).
+    /// </summary>
+    private Task<VerifiedDownload> DownloadAndValidateAsync(DofFixReleaseInfo release, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var safeVersion = string.Concat(release.Version.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_'));
         var cache = Path.Combine(_cacheDir, $"{safeVersion}-{AddonFileName}");
 
         // DEP-06: the release asset or the manifest's ueDofFix template must be HTTPS on GitHub (request and redirects).
-        using var download = await TrustedDownload.DownloadToTempAsync(
-            _http, release.AssetUrl, cache, TrustedDownloadPolicy.GitHub,
-            userAgent: ProductInfoHeaderValue.Parse(RHI.Core.RhiProductInfo.UserAgent),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!BinarySignatureInspector.HasPeSignature(download.Path, MinimumPayloadSize))
-            throw new InvalidDataException("Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small.");
-        // The digest GitHub publishes; the download already hashed the bytes it wrote.
-        if (!string.IsNullOrWhiteSpace(release.Sha256) && !string.Equals(download.Sha256, release.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Downloaded Universal UE DOF Fix failed the SHA-256 digest published by GitHub.");
-        download.MoveTo(cache);
-        return cache;
-    }
-
-    private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        var directory = Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid.");
-        Directory.CreateDirectory(directory);
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            var sourceHash = await Sha256Async(source, cancellationToken).ConfigureAwait(false);
-            var tempHash = await Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-            if (!string.Equals(sourceHash, tempHash, StringComparison.OrdinalIgnoreCase))
-                throw new IOException("DOF Fix copy verification failed.");
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var sha = SHA256.Create();
-        var digest = await sha.ComputeHashAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(digest).ToLowerInvariant();
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
+        return TrustedDownload.EnsureVerifiedAsync(
+            _http, release.AssetUrl, cache, TrustedDownloadPolicy.GitHub, release.Version, release.Sha256,
+            validate: (temp, _) => BinarySignatureInspector.HasPeSignature(temp, MinimumPayloadSize)
+                ? Task.CompletedTask
+                : throw new InvalidDataException("Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small."),
+            cancellationToken: cancellationToken);
     }
 }

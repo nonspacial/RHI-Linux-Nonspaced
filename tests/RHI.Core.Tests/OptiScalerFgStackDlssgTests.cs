@@ -219,7 +219,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
             Component = ManagedComponentKind.OptiScaler,
             BinaryDirectory = bin,
             Version = "1.0",
-            SourceUrl = "https://example.invalid/OptiScaler.7z",
+            SourceUrl = "https://github.com/rhi-tests/OptiScaler.7z",
             Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [OptiScalerDeploymentService.VariantMetadataKey] = variant.ToString()
@@ -297,7 +297,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         private const string StreamlineUrl = "https://github.com/test/streamline-2.12.0.zip";
         private const string DlssgNewUrl = "https://github.com/test/dlssg-310.5.0.zip";
         private const string DlssgOldUrl = "https://github.com/test/dlssg-310.1.0.zip";
-        private const string EnablerUrl = "https://example.invalid/DLSS-Enabler-4.10.0.zip";
+        private const string EnablerUrl = "https://github.com/rhi-tests/DLSS-Enabler-4.10.0.zip";
         private static readonly byte[] EnablerZip = Zip(("version.dll", Pe64(0x44, 160 * 1024)));
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

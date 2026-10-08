@@ -65,6 +65,9 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
         Assert.True(File.Exists(CacheStamp.StampPath(c.Entry())), $"{consumer}: replacement must be stamped again");
     }
 
+    private static string GitBlob(byte[] content)
+        => Convert.ToHexString(SHA1.HashData([.. Encoding.ASCII.GetBytes($"blob {content.Length}\0"), .. content])).ToLowerInvariant();
+
     private sealed record Case(Func<Task> Fetch, Func<string> Entry, Func<int> Work, Action? BeforeRefetch = null);
 
     private Case Build(string consumer, string dir)
@@ -83,7 +86,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             {
                 var addon = Pe(0x8664, 80 * 1024, 0x21);
                 var archive = consumer == "ShortFuseArchive";
-                var url = archive ? "https://example.test/sf/renodx-dlss_SF_2.0.zip" : "https://example.test/sf/renodx-dlss.addon64";
+                var url = archive ? "https://github.com/rhi-tests/sf/renodx-dlss_SF_2.0.zip" : "https://github.com/rhi-tests/sf/renodx-dlss.addon64";
                 var body = archive ? Zip(("payload/renodx-dlss.addon64", addon)) : addon;
                 http.Serve(url, body);
                 var digest = archive ? Hex(body) : null;
@@ -97,7 +100,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "Ual":
             {
-                var url = "https://example.test/ual/Ultimate-ASI-Loader_x64.zip";
+                var url = "https://github.com/rhi-tests/ual/Ultimate-ASI-Loader_x64.zip";
                 http.Serve(url, Zip(("dinput8.dll", Pe(0x8664, 80 * 1024, 0x31))));
                 var ual = new UltimateAsiLoaderDeploymentService(client, records, overrides, cache);
                 var release = new UalReleaseInfo("9.7.4", "Ultimate-ASI-Loader_x64.zip", url, null);
@@ -105,7 +108,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "Rtx40Mfg":
             {
-                var url = "https://example.test/rtx40/RTX40MFG.zip";
+                var url = "https://github.com/rhi-tests/rtx40/RTX40MFG.zip";
                 http.Serve(url, Zip((Rtx40MfgStandaloneDeploymentService.InnerDllName, Pe(0x8664, 300 * 1024, 0x41))));
                 var svc = new Rtx40MfgStandaloneDeploymentService(client, records, overrides, new Rtx40MfgPreferenceStore(Path.Combine(dir, "rtx40.json")), cache);
                 var release = new Rtx40MfgReleaseInfo("1.0", "v1.0", "RTX40MFG.zip", url, null, null);
@@ -113,7 +116,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "DlssEnabler":
             {
-                var url = "https://example.test/enabler/version.dll";
+                var url = "https://github.com/rhi-tests/enabler/version.dll";
                 http.Serve(url, Pe(0x8664, 200 * 1024, 0x51));
                 var svc = new StandaloneDlssEnablerDeploymentService(client, records, overrides, new StandaloneDlssEnablerPreferenceStore(Path.Combine(dir, "enabler.json")), cache);
                 var release = new DlssEnablerReleaseInfo("1.0", "v1.0", "version.dll", url, null);
@@ -124,8 +127,15 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
                 const string sha = "0123456789abcdef0123456789abcdef01234567";
                 var dllUrl = Dlssg2030UnlockDeploymentService.RawUrl(sha, Dlssg2030UnlockDeploymentService.DefaultProxyName);
                 var iniUrl = Dlssg2030UnlockDeploymentService.RawUrl(sha, Dlssg2030UnlockDeploymentService.IniFileName);
-                http.Serve(dllUrl, Pe(0x8664, 300 * 1024, 0x61));
-                http.Serve(iniUrl, Encoding.UTF8.GetBytes("; Native 1.2.3\n[Compatibility]\nRouter=SM86\n[FrameGeneration]\nMaxGeneratedFrames=3\n"));
+                var dll = Pe(0x8664, 300 * 1024, 0x61);
+                var ini = Encoding.UTF8.GetBytes("; Native 1.2.3\n[Compatibility]\nRouter=SM86\n[FrameGeneration]\nMaxGeneratedFrames=3\n");
+                http.Serve(dllUrl, dll);
+                http.Serve(iniUrl, ini);
+                // The git blob ids GitHub reports for both files at that commit (#41).
+                http.Serve(Dlssg2030UnlockDeploymentService.ContentsApiUrl(sha, Dlssg2030UnlockDeploymentService.DefaultProxyName),
+                    Encoding.UTF8.GetBytes($"{{\"sha\":\"{GitBlob(dll)}\"}}"));
+                http.Serve(Dlssg2030UnlockDeploymentService.ContentsApiUrl(sha, Dlssg2030UnlockDeploymentService.IniFileName),
+                    Encoding.UTF8.GetBytes($"{{\"sha\":\"{GitBlob(ini)}\"}}"));
                 var svc = new Dlssg2030UnlockDeploymentService(client, records, overrides, new Dlssg2030PreferenceStore(Path.Combine(dir, "fg2030.json")), cache);
                 return new(async () => entry = (await svc.EnsureCachedPayloadAsync(new Dlssg2030SnapshotInfo(sha, "1.2.3"), CancellationToken.None)).DllPath,
                     () => entry!, () => http.Count(dllUrl));
@@ -158,7 +168,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             {
                 var archiveBytes = new byte[1_200_000];
                 new Random(4242).NextBytes(archiveBytes);
-                var assetUrl = "https://example.test/opti/Optiscaler_9.9.9.7z";
+                var assetUrl = "https://github.com/rhi-tests/opti/Optiscaler_9.9.9.7z";
                 http.Serve(OptiScalerPackageProvider.LatestReleaseApi, Encoding.UTF8.GetBytes(
                     $$"""{"tag_name":"v9.9.9","assets":[{"name":"Optiscaler_9.9.9.7z","browser_download_url":"{{assetUrl}}","size":{{archiveBytes.Length}},"digest":"sha256:{{Hex(archiveBytes)}}"}]}"""));
                 http.Serve(assetUrl, archiveBytes);
@@ -186,7 +196,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             }
             case "ShaderPack":
             {
-                var url = "https://example.test/shaders/pack.zip";
+                var url = "https://github.com/rhi-tests/shaders/pack.zip";
                 var fx = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat("// genuine shader body\n", 64)));
                 http.Serve(url, Zip(("pack-main/Shaders/Genuine.fx", fx), ("pack-main/Textures/Genuine.png", Pe(0x8664, 4096, 0xA1))));
                 var svc = new ReShadeShaderPackService(client, cache, null, Path.Combine(dir, "custom-shaders"));

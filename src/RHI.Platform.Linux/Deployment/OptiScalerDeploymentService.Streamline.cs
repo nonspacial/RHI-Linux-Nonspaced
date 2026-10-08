@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -213,8 +214,8 @@ public sealed partial class OptiScalerDeploymentService
                         throw new InvalidOperationException($"OptiScaler FG stack target belongs to the OptiScaler package itself and will not be replaced: {target}");
                     // A foreign file already identical to the payload is what the stack needs: it is left
                     // untouched and unowned, so an existing .original next to it does not matter.
-                    if (string.Equals(await Sha256Async(target, cancellationToken).ConfigureAwait(false),
-                            await Sha256Async(sourceRaw, cancellationToken).ConfigureAwait(false), StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false),
+                            await FileHash.Sha256HexAsync(sourceRaw, cancellationToken).ConfigureAwait(false), StringComparison.OrdinalIgnoreCase))
                     {
                         leftUnowned.Add(target);
                         continue;
@@ -231,7 +232,7 @@ public sealed partial class OptiScalerDeploymentService
                     throw new InvalidOperationException($"OptiScaler FG stack target is unexpectedly user-editable and will not be overwritten: {target}");
                 if (!string.IsNullOrWhiteSpace(ownedFile.Sha256))
                 {
-                    var currentHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+                    var currentHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(currentHash, ownedFile.Sha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException($"Managed OptiScaler FG stack file was modified outside RHI: {target}");
                 }
@@ -264,7 +265,8 @@ public sealed partial class OptiScalerDeploymentService
                 {
                     newFiles.Add(target);
                 }
-                await ReplaceAtomicAsync(source, target, cancellationToken).ConfigureAwait(false);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
             var ownedRelative = new HashSet<string>(previousOwned, StringComparer.Ordinal);
@@ -274,7 +276,7 @@ public sealed partial class OptiScalerDeploymentService
                 if (leftUnowned.Contains(target)) continue;
                 var relative = RelativeToBinary(binaryDirectory, target);
                 ownedRelative.Add(relative);
-                var hash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+                var hash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
                 if (fileByPath.TryGetValue(target, out var file))
                 {
                     file.Sha256 = hash;
@@ -420,7 +422,7 @@ public sealed partial class OptiScalerDeploymentService
                 if (!File.Exists(file.Path)) continue;
                 if (string.IsNullOrWhiteSpace(file.Sha256))
                     return ComponentOperationResult.Fail($"OptiScaler FG stack ownership hash is missing for {file.Path}; removal is blocked.");
-                var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"OptiScaler FG stack file was modified outside RHI and will not be removed: {file.Path}");
             }

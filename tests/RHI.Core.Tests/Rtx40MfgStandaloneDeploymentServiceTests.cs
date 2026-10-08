@@ -284,7 +284,7 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("1.3.2", record!.Version);
         Assert.Equal("winmm.dll", record.Metadata["RTX40MFG.ProxyName"]);
-        Assert.Equal(Sha256(target), record.Files.Single().Sha256);
+        Assert.Equal(Sha256(target), record.Files.Single().Sha256, ignoreCase: true);
 
         var remove = await service.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
@@ -791,8 +791,8 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         }
 
         public string DigestFor(string version) => Sha256(_assets[version]);
-        public static string AssetUrl(string version) => $"https://example.invalid/RTXMFG-v{version}.zip";
-        public static string ChecksumsUrl(string version) => $"https://example.invalid/v{version}/SHA256SUMS.txt";
+        public static string AssetUrl(string version) => $"https://github.com/rhi-tests/RTXMFG-v{version}.zip";
+        public static string ChecksumsUrl(string version) => $"https://github.com/rhi-tests/v{version}/SHA256SUMS.txt";
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {

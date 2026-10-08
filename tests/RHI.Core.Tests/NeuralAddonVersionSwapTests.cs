@@ -32,8 +32,8 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
     {
         var json = """
         [
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc5"}] },
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc10"}] }
         ]
         """;
 
@@ -58,7 +58,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var ledger = Path.Combine(_root, "rollback-deployments.json");
         var records = new LinuxDeploymentRecordStore(ledger);
         var seeded = Record(game, ManagedComponentKind.ShortFuse, "OLD", target, other);
-        seeded.SourceUrl = "https://example.invalid/old";
+        seeded.SourceUrl = "https://github.com/rhi-tests/old";
         seeded.Metadata["GitHub.ReleaseTagPin"] = "vOLD";
         records.Upsert(seeded);
         var oldHash = Sha256(target);
@@ -71,7 +71,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
             await Assert.ThrowsAnyAsync<Exception>(() => ManagedFileSwap.ReplaceAsync(record, [(target, source)], updated =>
             {
                 updated.Version = "NEW";
-                updated.SourceUrl = "https://example.invalid/new";
+                updated.SourceUrl = "https://github.com/rhi-tests/new";
                 updated.Metadata["GitHub.ReleaseTagPin"] = "vNEW";
                 records.Upsert(updated);
             }));
@@ -85,7 +85,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         foreach (var stored in new[] { records.Find(game, ManagedComponentKind.ShortFuse)!, new LinuxDeploymentRecordStore(ledger).Find(game, ManagedComponentKind.ShortFuse)! })
         {
             Assert.Equal("OLD", stored.Version);
-            Assert.Equal("https://example.invalid/old", stored.SourceUrl);
+            Assert.Equal("https://github.com/rhi-tests/old", stored.SourceUrl);
             Assert.Equal("vOLD", stored.Metadata["GitHub.ReleaseTagPin"]);
             Assert.Equal(oldHash, ManagedFileSwap.FindFile(stored, "addon.addon64")!.Sha256);
         }
@@ -99,7 +99,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         }));
         Assert.Equal([9, 9, 9], File.ReadAllBytes(target));
         Assert.Equal([4, 5, 6], File.ReadAllBytes(other));
-        Assert.Equal(Sha256(target), ManagedFileSwap.FindFile(records.Find(game, ManagedComponentKind.ShortFuse)!, "addon.addon64")!.Sha256);
+        Assert.Equal(Sha256(target), ManagedFileSwap.FindFile(records.Find(game, ManagedComponentKind.ShortFuse)!, "addon.addon64")!.Sha256, ignoreCase: true);
         Assert.Equal(oldHash, ManagedFileSwap.FindFile(record, "addon.addon64")!.Sha256);
         Assert.Equal(1, persisted);
         Assert.Single(Directory.EnumerateFiles(bin, "addon.addon64*"));
@@ -153,7 +153,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var ledger = Path.Combine(_root, "sf-fail-deployments.json");
         var records = new LinuxDeploymentRecordStore(ledger);
         var seeded = Record(game, ManagedComponentKind.ShortFuse, "8.5.0-rc5", addon);
-        seeded.SourceUrl = "https://example.invalid/rc5";
+        seeded.SourceUrl = "https://github.com/rhi-tests/rc5";
         seeded.Metadata["GitHub.ReleaseTagPin"] = "renodx-dlss-SF-8.5.0-rc5";
         seeded.Metadata["ShortFuse.AddonSha256"] = Sha256(addon);
         records.Upsert(seeded);
@@ -170,7 +170,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal(oldBytes, File.ReadAllBytes(addon));
         var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
         Assert.Equal("8.5.0-rc5", record.Version);
-        Assert.Equal("https://example.invalid/rc5", record.SourceUrl);
+        Assert.Equal("https://github.com/rhi-tests/rc5", record.SourceUrl);
         Assert.Equal("renodx-dlss-SF-8.5.0-rc5", record.Metadata["GitHub.ReleaseTagPin"]);
         Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"]);
         Assert.Equal(Sha256(addon), record.Files[0].Sha256);
@@ -198,22 +198,22 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
         Assert.Equal("8.5.0-rc10", record.Version);
         Assert.Equal(addon, Assert.Single(record.Files).Path);
-        Assert.Equal(Sha256(addon), record.Files[0].Sha256);
-        Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"]);
+        Assert.Equal(Sha256(addon), record.Files[0].Sha256, ignoreCase: true);
+        Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"], ignoreCase: true);
     }
 
     private static HttpClient ShortFuseHttp(byte[] rc10Addon)
     {
         var json = """
         [
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc5"}] },
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc10"}] }
         ]
         """;
         return new HttpClient(new MapHandler(new()
         {
             [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes(json),
-            ["https://example.invalid/rc10"] = rc10Addon
+            ["https://github.com/rhi-tests/rc10"] = rc10Addon
         }));
     }
 
@@ -227,12 +227,12 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         {
             [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes("""
                 [
-                  { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
-                  { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+                  { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc5"}] },
+                  { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc10"}] }
                 ]
                 """),
             [GitHubReleaseAssetResolver.BuildReleaseTagApiUrl(ShortFuseDeploymentService.ReleasesApiUrl, pinned)] = Encoding.UTF8.GetBytes(
-                """{ "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] }""")
+                """{ "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc5"}] }""")
         }));
         var pins = new NeuralAddonVersionPreferenceStore(Path.Combine(_root, "sf-pin-pins.json"));
         pins.Set(game, ManagedComponentKind.ShortFuse, pinned);
@@ -276,14 +276,14 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var newAddon = Payload(0x30, 40 * 1024);
         var json = """
         [
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc5"}] },
-          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://example.invalid/rc10"}] }
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc5", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc5"}] },
+          { "tag_name":"renodx-dlss-SF-8.5.0-rc10", "assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/rc10"}] }
         ]
         """;
         using var http = new HttpClient(new MapHandler(new()
         {
             [ShortFuseDeploymentService.ReleasesApiUrl] = Encoding.UTF8.GetBytes(json),
-            ["https://example.invalid/rc10"] = newAddon
+            ["https://github.com/rhi-tests/rc10"] = newAddon
         }));
         var files = new TransactionalFileDeploymentService();
         var overrides = new WineDllOverrideService();
@@ -299,7 +299,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal(dlssHash, Sha256(dlss));
         var record = records.Find(game, ManagedComponentKind.ShortFuse)!;
         Assert.Equal("8.5.0-rc10", record.Version);
-        Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, ShortFuseDeploymentService.AddonFileName)!.Sha256);
+        Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, ShortFuseDeploymentService.AddonFileName)!.Sha256, ignoreCase: true);
         Assert.Equal(dlssHash, ManagedFileSwap.FindFile(record, "nvngx_dlss.dll")!.Sha256);
     }
 
@@ -320,7 +320,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var responses = new Dictionary<string, byte[]>
         {
             ["https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/tags/v1.1"] = Encoding.UTF8.GetBytes(
-                """{"tag_name":"v1.1","assets":[{"name":"DLSS5-Feeder-1.1.zip","browser_download_url":"https://example.invalid/feeder-1.1.zip"}]}""")
+                """{"tag_name":"v1.1","assets":[{"name":"DLSS5-Feeder-1.1.zip","browser_download_url":"https://github.com/rhi-tests/feeder-1.1.zip"}]}""")
         };
         using var http = new HttpClient(new MapHandler(responses));
         var feeder = Feeder(http, records);
@@ -330,7 +330,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal("1.0", records.Find(game, ManagedComponentKind.Dlss5Feeder)!.Version);
         Assert.Equal(Pe(0x40), File.ReadAllBytes(addon));
 
-        responses["https://example.invalid/feeder-1.1.zip"] = Zip(("DLSS5-Feeder/dlss5-feed.addon64", newAddon));
+        responses["https://github.com/rhi-tests/feeder-1.1.zip"] = Zip(("DLSS5-Feeder/dlss5-feed.addon64", newAddon));
         var result = await feeder.SwapFeederVersionAsync(game, "v1.1");
 
         Assert.True(result.Success, result.Message);
@@ -339,7 +339,48 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var record = records.Find(game, ManagedComponentKind.Dlss5Feeder)!;
         Assert.Equal("1.1", record.Version);
         Assert.Equal("v1.1", record.Metadata["GitHub.ReleaseTagPin"]);
-        Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, "dlss5-feed.addon64")!.Sha256);
+        Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, "dlss5-feed.addon64")!.Sha256, ignoreCase: true);
+    }
+
+    [Fact]
+    public async Task FeederSwap_DownloadsTheReleaseZipOncePerVersion_ForEveryGame()
+    {
+        // #114: swapping several games (or one game twice) to the same Feeder release reuses the stamped zip.
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "feeder-cache-deployments.json"));
+        var games = new List<(DetectedGame Game, string Addon)>();
+        foreach (var name in new[] { "one", "two" })
+        {
+            var bin = Directory.CreateDirectory(Path.Combine(_root, "feeder-cache", name)).FullName;
+            var game = Game(bin);
+            game.Name = name;
+            game.InstallPath = bin;
+            var addon = Write(Path.Combine(bin, "dlss5-feed.addon64"), Pe(0x40));
+            var seeded = Record(game, ManagedComponentKind.Dlss5Feeder, "1.0", addon, Write(Path.Combine(bin, "nvngx_dlssnr.dll"), Pe(0x50)));
+            seeded.Metadata["Feeder.FullStack"] = "1";
+            records.Upsert(seeded);
+            games.Add((game, addon));
+        }
+        const string zipUrl = "https://github.com/rhi-tests/feeder-1.2.zip";
+        var newAddon = Pe(0x61);
+        var handler = new MapHandler(new Dictionary<string, byte[]>
+        {
+            ["https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/tags/v1.2"] = Encoding.UTF8.GetBytes(
+                $$"""{"tag_name":"v1.2","assets":[{"name":"DLSS5-Feeder-1.2.zip","browser_download_url":"{{zipUrl}}"}]}"""),
+            [zipUrl] = Zip(("DLSS5-Feeder/dlss5-feed.addon64", newAddon))
+        });
+        using var http = new HttpClient(handler);
+        var feeder = Feeder(http, records);
+
+        foreach (var (game, addon) in games)
+        {
+            var result = await feeder.SwapFeederVersionAsync(game, "v1.2");
+            Assert.True(result.Success, result.Message);
+            Assert.Equal(newAddon, File.ReadAllBytes(addon));
+        }
+        var again = await feeder.SwapFeederVersionAsync(games[0].Game, "v1.2");
+
+        Assert.True(again.Success, again.Message);
+        Assert.Equal(1, handler.Gets[zipUrl]);
     }
 
     private Dlss5FeederFullDeploymentService Feeder(HttpClient http, LinuxDeploymentRecordStore records)
@@ -347,7 +388,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         var files = new TransactionalFileDeploymentService();
         var manifest = new UpstreamRhiManifestService(http, "https://manifest.invalid/rhi.json");
         var legacy = new UpstreamRhiAddonDeploymentService(http, records, manifest, new UpstreamRhiAddonDeploymentOptions(
-            ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://release.invalid/latest", 64 * 1024,
+            ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://github.com/rhi-tests/latest", 64 * 1024,
             DeployFileName64: "dlss5-feed.addon64"), Path.Combine(_root, "cache-legacy"));
         return new Dlss5FeederFullDeploymentService(http, records,
             new DlssManagerService(http, files, Path.Combine(_root, "cache-dlss")), legacy, Path.Combine(_root, "cache-feeder"));
@@ -401,9 +442,15 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
 
     private sealed class MapHandler(Dictionary<string, byte[]> responses) : HttpMessageHandler
     {
+        public Dictionary<string, int> Gets { get; } = new(StringComparer.Ordinal);
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(responses.TryGetValue(request.RequestUri!.ToString(), out var body)
+        {
+            var url = request.RequestUri!.ToString();
+            Gets[url] = Gets.GetValueOrDefault(url) + 1;
+            return Task.FromResult(responses.TryGetValue(url, out var body)
                 ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(body) }
                 : new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
     }
 }

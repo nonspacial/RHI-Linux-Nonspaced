@@ -1,6 +1,5 @@
 using System.IO.Compression;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
@@ -18,8 +17,23 @@ public sealed partial class ReShadeDeploymentService
     // The one setup URL for a stable/legacy version: what EnsureSetupStagedAsync stamps and what the
     // outage fallback looks the stamp up with must be byte-identical (#142).
     internal static string StableSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}_Addon.exe";
+    // Upstream 2.8.5's nightly links (ReShadeNightlyService): the newest successful build.yml run on main, served by
+    // nightly.link because GitHub's own artifact download needs a login. Used as is only when the GitHub API lookup
+    // below is unavailable (#27).
     internal const string Nightly64Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(64-bit).zip";
     internal const string Nightly32Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(32-bit).zip";
+
+    /// <summary>Newest successful build.yml run on main — the run nightly.link's branch link serves.</summary>
+    internal const string NightlyRunsApiUrl = "https://api.github.com/repos/crosire/reshade/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1";
+
+    /// <summary>The artifacts of one run; each carries the SHA-256 digest GitHub computed when it was uploaded.</summary>
+    internal static string NightlyArtifactsApiUrl(long runId) => $"https://api.github.com/repos/crosire/reshade/actions/runs/{runId}/artifacts?per_page=100";
+
+    /// <summary>nightly.link's link for one run's artifact (fixed content, unlike the branch link).</summary>
+    internal static string NightlyRunUrl(long runId, bool is32)
+        => $"https://nightly.link/crosire/reshade/actions/runs/{runId}/ReShade%20%28{(is32 ? "32" : "64")}-bit%29.zip";
+
+    internal static string NightlyArtifactName(bool is32) => is32 ? "ReShade (32-bit)" : "ReShade (64-bit)";
     private const long MinDllSize = 1_000_000;
 
     private const string MetaChannel = "ReShade.Channel";
@@ -164,7 +178,7 @@ public sealed partial class ReShadeDeploymentService
                     return ComponentOperationResult.Fail($"An OptiScaler record exists, but it does not own {directTarget}. RHI treats the current proxy as external and will not build a ReShade chain on top of it.");
                 if (!string.IsNullOrWhiteSpace(managedProxy.Sha256))
                 {
-                    var currentProxyHash = await Sha256Async(directTarget, cancellationToken).ConfigureAwait(false);
+                    var currentProxyHash = await FileHash.Sha256HexAsync(directTarget, cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(currentProxyHash, managedProxy.Sha256, StringComparison.OrdinalIgnoreCase))
                         return ComponentOperationResult.Fail($"Managed OptiScaler proxy was modified outside RHI. ReShade coexistence is blocked: {directTarget}");
                 }
@@ -242,7 +256,7 @@ public sealed partial class ReShadeDeploymentService
             var originalBackup = backupBasePath + TransactionalFileDeploymentService.BackupExtension;
             if (File.Exists(target) && !string.IsNullOrWhiteSpace(previousPayload.Sha256))
             {
-                var currentManagedHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+                var currentManagedHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(currentManagedHash, previousPayload.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Managed ReShade DLL was modified outside RHI; update is blocked to protect the current file: {target}");
             }
@@ -264,7 +278,7 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Fail($"The RHI-managed D3DCompiler_47.dll is missing, so ReShade update is blocked until the compiler state is repaired or ReShade is removed safely: {previousCompilerFile.Path}");
             if (!string.IsNullOrWhiteSpace(previousCompilerFile.Sha256))
             {
-                var currentCompilerHash = await Sha256Async(previousCompilerFile.Path, cancellationToken).ConfigureAwait(false);
+                var currentCompilerHash = await FileHash.Sha256HexAsync(previousCompilerFile.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(currentCompilerHash, previousCompilerFile.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Managed D3DCompiler_47.dll was modified outside RHI; update is blocked to protect the current file: {previousCompilerFile.Path}");
             }
@@ -345,7 +359,7 @@ public sealed partial class ReShadeDeploymentService
                 File.Delete(target);
 
             if (operation is not null)
-                await operation.RecordWriteAsync(target, await Sha256Async(staged.DllPath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                await operation.RecordWriteAsync(target, await FileHash.Sha256HexAsync(staged.DllPath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
             var result = await _files.ReplaceAsync(staged.DllPath, target, cancellationToken).ConfigureAwait(false);
             if (!result.Success) throw new IOException(result.Error ?? "Failed to deploy ReShade DLL.");
             fileReplaced = true;
@@ -389,7 +403,7 @@ public sealed partial class ReShadeDeploymentService
                 {
                     if (operation is not null)
                         await operation.RecordWriteAsync(d3dCompilerPlan.TargetPath,
-                            await Sha256Async(d3dCompilerPlan.DeploySourcePath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                            await FileHash.Sha256HexAsync(d3dCompilerPlan.DeploySourcePath, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var compilerDeploy = await _files.ReplaceAsync(
                         d3dCompilerPlan.DeploySourcePath,
                         d3dCompilerPlan.TargetPath,
@@ -401,7 +415,7 @@ public sealed partial class ReShadeDeploymentService
                     {
                         Path = d3dCompilerPlan.TargetPath,
                         ExistedBeforeInstall = d3dCompilerPlan.TargetExistedBefore,
-                        Sha256 = compilerDeploy.Sha256 ?? await Sha256Async(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
+                        Sha256 = compilerDeploy.Sha256 ?? await FileHash.Sha256HexAsync(d3dCompilerPlan.TargetPath, cancellationToken).ConfigureAwait(false)
                     };
                 }
 
@@ -439,7 +453,7 @@ public sealed partial class ReShadeDeploymentService
                     Path = target,
                     ExistedBeforeInstall = existedBefore,
                     // The file service returns the hash of what it placed (#33); no second read of the target.
-                    Sha256 = result.Sha256 ?? await Sha256Async(target, cancellationToken).ConfigureAwait(false)
+                    Sha256 = result.Sha256 ?? await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false)
                 }
             };
             if (compilerFileRecord is not null)
@@ -460,6 +474,12 @@ public sealed partial class ReShadeDeploymentService
                 : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             metadata[MetaChannel] = staged.Channel.ToString();
             metadata[MetaSourceIdentity] = staged.SourceIdentity;
+            if (staged.Download is { } download) download.RecordIn(metadata);
+            else
+            {
+                metadata.Remove(VerifiedDownload.MetadataSha256Key);
+                metadata.Remove(VerifiedDownload.MetadataIntegrityKey);
+            }
             metadata[MetaShaderPacks] = JsonSerializer.Serialize(shaderResult.PackIds);
             SetOrRemove(metadata, MetaCustomSource, options.Channel == ReShadeChannel.Custom ? staged.SourceUrl : null);
             SetOrRemove(metadata, MetaLegacyVersion, options.Channel == ReShadeChannel.Legacy ? options.LegacyVersion?.Trim() : null);
@@ -569,7 +589,7 @@ public sealed partial class ReShadeDeploymentService
             {
                 if (!File.Exists(file.Path)) continue;
                 if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension)) continue;
-                var currentHash = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+                var currentHash = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
@@ -642,11 +662,11 @@ public sealed partial class ReShadeDeploymentService
                 case ReShadeChannel.Nightly:
                 {
                     var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
-                    var url = architecture == PeArchitecture.X86 ? Nightly32Url : Nightly64Url;
-                    var remote = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
-                    if (remote <= 0) return new(true, false, "Could not determine the current nightly artifact size.", record.Version, null, channel, CouldNotCheck: true);
-                    var identity = $"zip-size:{remote}";
-                    var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.Ordinal);
+                    // Identity is the GitHub Actions run (and the artifact digest GitHub published for it), never the zip size (#27).
+                    var artifact = await ResolveNightlyArtifactAsync(architecture == PeArchitecture.X86, cancellationToken).ConfigureAwait(false);
+                    if (artifact is null) return new(true, false, NightlyLookupFailedMessage, record.Version, null, channel, CouldNotCheck: true);
+                    var identity = NightlyIdentity(artifact);
+                    var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.OrdinalIgnoreCase);
                     return new(true, update, update ? "A newer/different ReShade nightly artifact is available." : "ReShade nightly is current.", record.Version, "Nightly", channel);
                 }
                 case ReShadeChannel.Legacy:
@@ -656,7 +676,7 @@ public sealed partial class ReShadeDeploymentService
                     var source = record.Metadata.GetValueOrDefault(MetaCustomSource);
                     if (string.IsNullOrWhiteSpace(source) || !File.Exists(source))
                         return new(true, false, "Custom ReShade source file is unavailable; installed DLL remains untouched.", record.Version, null, channel, CouldNotCheck: true);
-                    var identity = "sha256:" + await Sha256Async(source, cancellationToken).ConfigureAwait(false);
+                    var identity = "sha256:" + await FileHash.Sha256HexAsync(source, cancellationToken).ConfigureAwait(false);
                     var update = !string.Equals(record.Metadata.GetValueOrDefault(MetaSourceIdentity), identity, StringComparison.OrdinalIgnoreCase);
                     return new(true, update, update ? "The custom ReShade DLL changed since it was applied." : "Custom ReShade source matches the installed profile.", record.Version, update ? "custom changed" : record.Version, channel);
                 }
@@ -738,12 +758,10 @@ public sealed partial class ReShadeDeploymentService
             if (PeArchitectureDetector.Detect(path) != architecture) return false;
 
             // Native Windows SDK/system D3DCompiler binaries identify both Microsoft and the HLSL compiler.
-            // Wine's built-in d3dcompiler does not carry these native product strings.
-            var bytes = File.ReadAllBytes(path);
-            var microsoft = ContainsAscii(bytes, "Microsoft") || ContainsUtf16Le(bytes, "Microsoft");
-            var compiler = ContainsAscii(bytes, "HLSL Shader Compiler") || ContainsUtf16Le(bytes, "HLSL Shader Compiler") ||
-                           ContainsAscii(bytes, "D3DCompiler_47") || ContainsUtf16Le(bytes, "D3DCompiler_47");
-            return microsoft && compiler;
+            // Wine's built-in d3dcompiler does not carry these native product strings. One bounded streaming pass
+            // that stops once both are seen, cached per file version (#34), instead of File.ReadAllBytes + 6 naive scans.
+            var found = BinaryStringSearch.Find(path, NativeCompilerStrings, IsNativeCompilerEvidence);
+            return IsNativeCompilerEvidence(found);
         }
         catch
         {
@@ -821,37 +839,11 @@ public sealed partial class ReShadeDeploymentService
         return Path.GetFullPath(expanded);
     }
 
-    private static bool ContainsUtf16Le(byte[] bytes, string value)
-    {
-        var needle = System.Text.Encoding.Unicode.GetBytes(value);
-        return ContainsBytes(bytes, needle);
-    }
+    /// <summary>"Microsoft" (0) plus "HLSL Shader Compiler" (1) or "D3DCompiler_47" (2) identify a native D3DCompiler.</summary>
+    private static readonly string[] NativeCompilerStrings = ["Microsoft", "HLSL Shader Compiler", "D3DCompiler_47"];
 
-    private static bool ContainsAscii(byte[] bytes, string value)
-    {
-        var needle = System.Text.Encoding.ASCII.GetBytes(value);
-        return ContainsBytes(bytes, needle);
-    }
-
-    private static bool ContainsBytes(byte[] bytes, byte[] needle)
-    {
-        if (needle.Length == 0 || bytes.Length < needle.Length) return false;
-        for (var i = 0; i <= bytes.Length - needle.Length; i++)
-        {
-            var match = true;
-            for (var j = 0; j < needle.Length; j++)
-            {
-                var a = bytes[i + j];
-                var b = needle[j];
-                if (a == b) continue;
-                if (a >= (byte)'A' && a <= (byte)'Z') a = (byte)(a + 32);
-                if (b >= (byte)'A' && b <= (byte)'Z') b = (byte)(b + 32);
-                if (a != b) { match = false; break; }
-            }
-            if (match) return true;
-        }
-        return false;
-    }
+    private static bool IsNativeCompilerEvidence(IReadOnlySet<int> found)
+        => found.Contains(0) && (found.Contains(1) || found.Contains(2));
 
     private static bool IsD3DCompilerPath(string path)
         => Path.GetFileName(path).Equals(D3DCompilerFileName, StringComparison.OrdinalIgnoreCase);
@@ -948,47 +940,101 @@ public sealed partial class ReShadeDeploymentService
         return await EnsureSetupStagedAsync(version, url, architecture, Path.Combine("legacy", version), ReShadeChannel.Legacy, $"version:{version}", cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Fixed text of a failed nightly lookup (PT-BR presentation pair).</summary>
+    public const string NightlyLookupFailedMessage = "Could not look up the current ReShade nightly build on GitHub.";
+
+    /// <summary>One ReShade nightly artifact: the Actions run it came from, its nightly.link URL and GitHub's digest.</summary>
+    internal sealed record NightlyArtifact(long RunId, string Url, string? Sha256);
+
+    internal static string NightlyIdentity(NightlyArtifact artifact)
+        => string.IsNullOrWhiteSpace(artifact.Sha256) ? $"nightly-run:{artifact.RunId}" : $"nightly-run:{artifact.RunId}|sha256:{artifact.Sha256}";
+
+    /// <summary>
+    /// The newest successful nightly on main and the digest GitHub's Actions API publishes for its artifact
+    /// (two GitHub API calls, revalidated with ETags for the session). Null when GitHub cannot be asked (offline,
+    /// rate-limited, no such artifact); the caller then falls back to upstream's branch link without a digest.
+    /// </summary>
+    internal async Task<NightlyArtifact?> ResolveNightlyArtifactAsync(bool is32, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var runsJson = await TrustedDownload.GetStringAsync(_http, NightlyRunsApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+            long runId;
+            using (var runs = JsonDocument.Parse(runsJson))
+            {
+                if (!runs.RootElement.TryGetProperty("workflow_runs", out var list) || list.ValueKind != JsonValueKind.Array ||
+                    list.GetArrayLength() == 0 || !list[0].TryGetProperty("id", out var idElement) || !idElement.TryGetInt64(out runId))
+                    throw new InvalidDataException("GitHub listed no successful ReShade nightly run.");
+            }
+
+            var artifactsJson = await TrustedDownload.GetStringAsync(_http, NightlyArtifactsApiUrl(runId), DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+            using var artifacts = JsonDocument.Parse(artifactsJson);
+            if (!artifacts.RootElement.TryGetProperty("artifacts", out var items) || items.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("GitHub returned no artifact list for the ReShade nightly run.");
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!string.Equals(item.TryGetProperty("name", out var name) ? name.GetString() : null, NightlyArtifactName(is32), StringComparison.Ordinal)) continue;
+                if (item.TryGetProperty("expired", out var expired) && expired.ValueKind == JsonValueKind.True)
+                    throw new InvalidDataException("The newest ReShade nightly artifact has expired.");
+                var digest = TrustedDownload.NormalizeDigest(item.TryGetProperty("digest", out var digestElement) ? digestElement.GetString() : null);
+                return new NightlyArtifact(runId, NightlyRunUrl(runId, is32), digest);
+            }
+            throw new InvalidDataException($"The ReShade nightly run {runId} has no {NightlyArtifactName(is32)} artifact.");
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested &&
+                                   ex is HttpRequestException or InvalidDataException or JsonException or UntrustedDownloadException or TaskCanceledException or IOException)
+        {
+            AppLog.Warn("reshade-nightly", "GitHub could not be asked for the current ReShade nightly; using upstream's branch link without a digest", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Stages the nightly DLL (#27). The artifact zip is identified by its GitHub Actions run and verified against the
+    /// SHA-256 digest GitHub published for it (a mismatch is refused), then cached through its stamp; the DLL is
+    /// extracted through the checked extraction into an entry bound to the zip's SHA-256, so two zips of equal size
+    /// but different content never share a staged DLL. Without the GitHub lookup the branch link (upstream 2.8.5) is
+    /// downloaded every time and accepted on HTTPS + host policy, its SHA-256 recorded (fail-open, as upstream).
+    /// </summary>
     internal async Task<ReShadeStagedDll> EnsureNightlyStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
     {
         var is32 = architecture == PeArchitecture.X86;
-        var url = is32 ? Nightly32Url : Nightly64Url;
         var dllName = is32 ? "ReShade32.dll" : "ReShade64.dll";
         var dir = Path.Combine(_cacheDir, "nightly", is32 ? "x86" : "x64");
         Directory.CreateDirectory(dir);
         var staged = Path.Combine(dir, dllName);
-        var marker = Path.Combine(dir, "zip-size.txt");
-        var remoteSize = await GetRemoteLengthAsync(url, cancellationToken).ConfigureAwait(false);
-        // The size marker alone is only a change hint; the staged DLL must also carry the stamp this
-        // service wrote when it extracted that artifact (#142).
-        if (remoteSize > 0 && File.Exists(marker) && long.TryParse(File.ReadAllText(marker).Trim(), out var known) && known == remoteSize &&
-            CacheStamp.IsValid(staged, url, $"zip-size:{remoteSize}") && IsValidReShadeDll(staged))
-            return new(staged, "Nightly", url, $"zip-size:{remoteSize}", ReShadeChannel.Nightly);
+        FileCleanup.TryDelete(Path.Combine(dir, "zip-size.txt")); // pre-#27 size marker
+
+        var artifact = await ResolveNightlyArtifactAsync(is32, cancellationToken).ConfigureAwait(false);
+        var url = artifact?.Url ?? (is32 ? Nightly32Url : Nightly64Url);
+        var version = artifact is null ? null : $"run:{artifact.RunId}";
+        var zipEntry = Path.Combine(dir, is32 ? "ReShade32-nightly.zip" : "ReShade64-nightly.zip");
+        // The branch link has no identity of its own (new builds appear under it), so it is never reused.
+        if (artifact is null) CacheStamp.Invalidate(zipEntry);
+        var zip = await TrustedDownload.EnsureVerifiedAsync(
+            _http, url, zipEntry, DownloadSources.ReShadeNightly, version, artifact?.Sha256,
+            validate: ReShadeArchiveExtractor.RequireReadableZip,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var identity = artifact is null ? $"sha256:{zip.Sha256}" : NightlyIdentity(artifact);
+
+        if (CacheStamp.IsValidBoundTo(staged, url, version, zip.Sha256) && IsValidReShadeDll(staged))
+            return new(staged, "Nightly", url, identity, ReShadeChannel.Nightly, Download: zip);
 
         CacheStamp.Invalidate(staged);
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        var tempZip = Path.Combine(dir, $"nightly-{Guid.NewGuid():N}.zip.tmp");
-        try
+        using (var archive = ZipFile.OpenRead(zip.Path))
         {
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (var output = new FileStream(tempZip, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            var actualZipSize = new FileInfo(tempZip).Length;
-            using var archive = ZipFile.OpenRead(tempZip);
             var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals(dllName, StringComparison.OrdinalIgnoreCase))
                         ?? archive.Entries.FirstOrDefault(e => e.FullName.EndsWith(dllName, StringComparison.OrdinalIgnoreCase));
             if (entry is null) throw new InvalidDataException($"{dllName} was not found in the nightly artifact.");
-            if (await ReShadeArchiveExtractor.ExtractEntryAsync(entry, staged, ReShadeArchiveExtractor.MaxEntryBytes, cancellationToken).ConfigureAwait(false) is { } refused)
-                throw new InvalidDataException($"{ReShadeArchiveExtractor.ArchiveRefusedPrefix}{refused}");
-            if (!IsValidReShadeDll(staged)) throw new InvalidDataException($"Extracted nightly {dllName} is invalid or too small.");
-            CacheStamp.Write(staged, url, $"zip-size:{actualZipSize}");
-            File.WriteAllText(marker, actualZipSize.ToString());
-            return new(staged, "Nightly", url, $"zip-size:{actualZipSize}", ReShadeChannel.Nightly);
+            await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, staged, ReShadeArchiveExtractor.MaxEntryBytes, cancellationToken).ConfigureAwait(false);
         }
-        finally
+        if (!IsValidReShadeDll(staged))
         {
-            try { if (File.Exists(tempZip)) File.Delete(tempZip); } catch { }
+            FileCleanup.TryDelete(staged);
+            throw new InvalidDataException($"Extracted nightly {dllName} is invalid or too small.");
         }
+        CacheStamp.WriteBoundTo(staged, url, version, zip.Sha256);
+        return new(staged, "Nightly", url, identity, ReShadeChannel.Nightly, Download: zip);
     }
 
     internal async Task<ReShadeStagedDll> EnsureCustomStagedAsync(string? sourcePath, PeArchitecture architecture, CancellationToken cancellationToken = default)
@@ -1005,12 +1051,13 @@ public sealed partial class ReShadeDeploymentService
         var customArch = PeArchitectureDetector.Detect(full);
         if (customArch != architecture)
             throw new InvalidOperationException($"Custom ReShade architecture mismatch: game is {architecture}, DLL is {customArch}.");
-        var hash = await Sha256Async(full, cancellationToken).ConfigureAwait(false);
+        var hash = await FileHash.Sha256HexAsync(full, cancellationToken).ConfigureAwait(false);
         var dir = Path.Combine(_cacheDir, "custom", hash[..16]);
         Directory.CreateDirectory(dir);
         var name = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
         var staged = Path.Combine(dir, name);
-        File.Copy(full, staged, overwrite: true);
+        // The copy must still be the file just hashed (it could change in between): verified against that hash.
+        await AtomicFile.CopyAsync(full, staged, hash, cancellationToken).ConfigureAwait(false);
         return new(staged, $"Custom {hash[..12]}", full, "sha256:" + hash, ReShadeChannel.Custom);
     }
 
@@ -1032,26 +1079,16 @@ public sealed partial class ReShadeDeploymentService
         if (CacheStamp.IsValid(staged, url, version) && IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
 
         var setup = Path.Combine(versionDir, $"ReShade_Setup_{version}_Addon.exe");
-        if (!CacheStamp.IsValid(setup, url, version) || new FileInfo(setup).Length < 500_000 || !BinarySignatureInspector.HasPeSignature(setup, 500_000))
-        {
-            CacheStamp.Invalidate(setup);
-            try { if (File.Exists(setup)) File.Delete(setup); } catch { }
-            var temp = setup + $".tmp-{Guid.NewGuid():N}";
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Referrer = new Uri(HomeUrl + "/");
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
-            await using (var output = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, true))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            if (!BinarySignatureInspector.HasPeSignature(temp, 500_000))
-            {
-                File.Delete(temp);
-                throw new InvalidOperationException("reshade.me returned a file that is not a valid ReShade setup executable.");
-            }
-            File.Move(temp, setup, overwrite: true);
-            CacheStamp.Write(setup, url, version);
-        }
+        // reshade.me publishes no digest and upstream pins none: the setup is accepted on HTTPS + the reshade.me host
+        // policy (redirects included) and a PE check, its SHA-256 recorded in the stamp and rhi.log (#27). A stamped
+        // copy is reused only while it still hashes to the recorded value.
+        var setupDownload = await TrustedDownload.EnsureVerifiedAsync(
+            _http, url, setup, DownloadSources.ReShadeSetup, version,
+            validate: (temp, _) => BinarySignatureInspector.HasPeSignature(temp, 500_000)
+                ? Task.CompletedTask
+                : throw new InvalidOperationException("reshade.me returned a file that is not a valid ReShade setup executable."),
+            cancellationToken: cancellationToken,
+            configureRequest: request => request.Headers.Referrer = new Uri(HomeUrl + "/")).ConfigureAwait(false);
 
         var extractDir = Path.Combine(versionDir, "extract");
         Directory.CreateDirectory(extractDir);
@@ -1070,12 +1107,12 @@ public sealed partial class ReShadeDeploymentService
             var source = Path.Combine(extractDir, name);
             if (!IsValidReShadeDll(source)) continue;
             var target = Path.Combine(versionDir, name);
-            File.Copy(source, target, overwrite: true);
+            AtomicFile.Copy(source, target);
             CacheStamp.Write(target, url, version);
         }
         if (!CacheStamp.IsValid(staged, url, version) || !IsValidReShadeDll(staged))
             throw new InvalidOperationException($"{desiredName} was not extracted from the ReShade setup.");
-        return new(staged, version, url, identity, channel);
+        return new(staged, version, url, identity, channel, Download: setupDownload);
     }
 
     // reshade.me intermittently answers HTTP 5xx while still rendering the full page (upstream 2.8.3).
@@ -1124,18 +1161,6 @@ public sealed partial class ReShadeDeploymentService
         return (version, StableSetupUrl(version));
     }
 
-    private async Task<long> GetRemoteLengthAsync(string url, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            if (response.IsSuccessStatusCode && response.Content.Headers.ContentLength is long length && length > 0) return length;
-        }
-        catch { }
-        return -1;
-    }
-
     private void CleanupManagedIni(LinuxDeploymentRecord record)
     {
         var ini = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
@@ -1177,7 +1202,7 @@ public sealed partial class ReShadeDeploymentService
         if (record is null) return;
         var ini = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase));
         if (ini is null || !File.Exists(ini.Path)) return;
-        ini.Sha256 = await Sha256Async(ini.Path, cancellationToken).ConfigureAwait(false);
+        ini.Sha256 = await FileHash.Sha256HexAsync(ini.Path, cancellationToken).ConfigureAwait(false);
         ini.AllowUserChanges = true;
         _records.Upsert(record);
     }
@@ -1208,17 +1233,10 @@ public sealed partial class ReShadeDeploymentService
     {
         if (existedBefore && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
             await _files.RestoreAsync(target, cancellationToken).ConfigureAwait(false);
-        else
+        else if (!FileCleanup.TryDelete(target, out var error))
         {
-            try { if (File.Exists(target)) File.Delete(target); } catch { }
+            AppLog.Warn("reshade", $"Rollback could not remove {target}", error);
         }
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-        return Convert.ToHexString(hash);
     }
 
     internal const string CachedCopyNote = " reshade.me was unavailable, so the cached copy was used.";

@@ -1,5 +1,4 @@
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
@@ -94,7 +93,7 @@ public sealed class RenoDxUpgradeDeploymentService
         {
             if (string.IsNullOrWhiteSpace(owned.Sha256))
                 return ComponentOperationResult.Fail("Existing RHI RenoDX Upgrade record has no ownership hash. Update is blocked conservatively.");
-            var currentHash = await Sha256Async(owned.Path, cancellationToken).ConfigureAwait(false);
+            var currentHash = await FileHash.Sha256HexAsync(owned.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(currentHash, owned.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX Upgrade file was modified outside RHI and will not be replaced: {owned.Path}");
         }
@@ -102,8 +101,9 @@ public sealed class RenoDxUpgradeDeploymentService
         try
         {
             var cached = await DownloadAndValidateAsync(sourceUrl, architecture, cancellationToken).ConfigureAwait(false);
-            await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
-            var targetHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX Upgrade target directory is invalid."));
+            // The verified copy returns the hash of what it placed: no second read of the target.
+            var targetHash = await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             if (owned is not null && !PathsEqual(owned.Path, target) && File.Exists(owned.Path))
                 File.Delete(owned.Path);
@@ -157,7 +157,7 @@ public sealed class RenoDxUpgradeDeploymentService
             if (!File.Exists(file.Path)) continue;
             if (string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail("RenoDX Upgrade ownership hash is missing; removal is blocked conservatively.");
-            var current = await Sha256Async(file.Path, cancellationToken).ConfigureAwait(false);
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
         }
@@ -249,34 +249,4 @@ public sealed class RenoDxUpgradeDeploymentService
     private static bool PathsEqual(string left, string right)
         => Path.GetFullPath(left).Equals(Path.GetFullPath(right), StringComparison.Ordinal);
 
-    private static async Task CopyAtomicAsync(string source, string target, CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX Upgrade target directory is invalid."));
-        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                await input.CopyToAsync(output, cancellationToken).ConfigureAwait(false);
-            if (new FileInfo(source).Length != new FileInfo(temp).Length)
-                throw new IOException("RenoDX Upgrade copy verification failed.");
-            File.Move(temp, target, overwrite: true);
-        }
-        catch
-        {
-            TryDelete(temp);
-            throw;
-        }
-    }
-
-    private static async Task<string> Sha256Async(string path, CancellationToken cancellationToken)
-    {
-        await using var stream = File.OpenRead(path);
-        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false));
-    }
-
-    private static void TryDelete(string path)
-    {
-        try { if (File.Exists(path)) File.Delete(path); } catch { }
-    }
 }
