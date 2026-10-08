@@ -2110,11 +2110,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task RefreshLibraryFactsAsync()
     {
         var games = _library.AllGames.ToArray();
-        var (managed, batch) = await Task.Run(() => (
-            _updateAll.HasManagedTargets(games),
-            games.Any(game => game.HasConfirmedPatchTarget &&
-                              !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
-                              !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath))));
+        bool managed, batch;
+        try
+        {
+            (managed, batch) = await Task.Run(() => (
+                _updateAll.HasManagedTargets(games),
+                games.Any(game => game.HasConfirmedPatchTarget &&
+                                  !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
+                                  !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath))));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // An unreadable ledger is reported by every operation that needs it; the buttons keep their last state.
+            AppLog.Warn("library-facts", "Could not work out Update All / DLSS batch availability", ex);
+            return;
+        }
         _libraryHasManagedTargets = managed;
         _libraryHasDlssBatchCandidates = batch;
         OnPropertyChanged(nameof(CanUpdateAll));
