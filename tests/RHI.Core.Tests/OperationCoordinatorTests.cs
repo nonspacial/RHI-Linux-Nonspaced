@@ -105,6 +105,8 @@ public sealed class OperationCoordinatorTests
             Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
         });
         Assert.True(added, message);
+        // The selection's analysis writes its own "Ready" line; let it land before asserting the status line.
+        await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy && fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal));
         using var running = fx.Vm.Operations.TryBegin("background-update")!;
 
         Assert.False(fx.Vm.SetOptiScalerAdvancedSetting("x", "y").Success);

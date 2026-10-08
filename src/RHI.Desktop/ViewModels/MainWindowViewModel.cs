@@ -1326,6 +1326,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SyncSelectedRow(value);
         _session.Cancel();
         Components.Clear();
+        _shownAnalysis = null;
         _dlssDetection = new();
         IsSelectionProbeBusy = false;
         CheckRepairAfterMove(force: false);
@@ -1360,16 +1361,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_session.IsProbeBusy) StatusText = TF("Vm.AnalyzingBackground", value.Name);
     }
 
+    private GameAnalysis? _shownAnalysis;
+
     /// <summary>The session published an analysis or started/ended one: the panels follow it.</summary>
     private void OnSessionChanged()
     {
         var game = SelectedGame;
         var analysis = CurrentAnalysis;
-        Components.Clear();
-        if (analysis is not null)
-            foreach (var item in analysis.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
+        var published = !ReferenceEquals(analysis, _shownAnalysis);
+        _shownAnalysis = analysis;
+        if (published)
+        {
+            Components.Clear();
+            if (analysis is not null)
+                foreach (var item in analysis.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
+        }
         _dlssDetection = analysis?.Dlss ?? new();
-        if (analysis is not null)
+        if (analysis is not null && published)
         {
             _lastHdrHost = analysis.Facts.HdrHost;
             if (game is not null)
