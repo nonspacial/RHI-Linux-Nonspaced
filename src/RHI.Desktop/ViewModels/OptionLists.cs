@@ -1,0 +1,170 @@
+using System.Collections.ObjectModel;
+using RHI.Core.Models;
+using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
+
+namespace RHI.Desktop.ViewModels;
+
+/// <summary>
+/// One option of a dropdown: the value RHI stores, and its label — a <see cref="UiStrings"/> key (localised) or a fixed
+/// label (product names, "DirectX 11"). <paramref name="Aliases"/> are labels older builds showed or stored.
+/// </summary>
+public sealed record OptionEntry<T>(T Value, string? TextKey = null, string? FixedLabel = null, params string[] Aliases);
+
+/// <summary>
+/// The single display↔value mapping of one option list (UI-20, Refs #87). Labels are read in the current UI language;
+/// a label is read back in either language (a dialog or dropdown can outlive a language switch), as the stored value
+/// itself, or as an older label. Anything else reads as the fallback value.
+/// </summary>
+public sealed class OptionList<T>
+{
+    private readonly OptionEntry<T>[] _entries;
+    private readonly IEqualityComparer<T> _comparer;
+
+    public OptionList(T fallback, IEqualityComparer<T>? comparer, params OptionEntry<T>[] entries)
+    {
+        if (entries.Length == 0) throw new ArgumentException("An option list needs options.", nameof(entries));
+        _entries = entries;
+        _comparer = comparer ?? EqualityComparer<T>.Default;
+        Fallback = fallback;
+        if (!entries.Any(e => _comparer.Equals(e.Value, fallback)))
+            throw new ArgumentException("The fallback must be one of the options.", nameof(fallback));
+    }
+
+    public T Fallback { get; }
+
+    /// <summary>The stored values, in display order.</summary>
+    public IReadOnlyList<T> Values => _entries.Select(e => e.Value).ToArray();
+
+    /// <summary>The labels in the current UI language, in display order.</summary>
+    public IReadOnlyList<string> Items => _entries.Select(Label).ToArray();
+
+    /// <summary>The label of <paramref name="value"/> in the current UI language (the fallback's for an unknown value).</summary>
+    public string Display(T value) => Label(Find(value) ?? Find(Fallback)!);
+
+    /// <summary>The value behind <paramref name="display"/> (see the class summary); the fallback when nothing matches.</summary>
+    public T Value(string? display)
+    {
+        if (string.IsNullOrWhiteSpace(display)) return Fallback;
+        var text = display.Trim();
+        foreach (var entry in _entries)
+            if (Labels(entry).Any(label => string.Equals(label, text, StringComparison.OrdinalIgnoreCase)))
+                return entry.Value;
+        return Fallback;
+    }
+
+    /// <summary>Every label <paramref name="entry"/> is read back from (both languages, the value, aliases).</summary>
+    internal IEnumerable<string> Labels(OptionEntry<T> entry)
+    {
+        yield return Label(entry);
+        if (entry.TextKey is { } key)
+            foreach (var language in OptionLists.Languages)
+                yield return UiLocalizationService.TextFor(language, key);
+        if (entry.Value?.ToString() is { Length: > 0 } stored) yield return stored;
+        foreach (var alias in entry.Aliases) yield return alias;
+    }
+
+    internal IReadOnlyList<OptionEntry<T>> Entries => _entries;
+
+    /// <summary>Replaces <paramref name="target"/>'s items with the labels in the current UI language.</summary>
+    public void Fill(ObservableCollection<string> target)
+    {
+        target.Clear();
+        foreach (var item in Items) target.Add(item);
+    }
+
+    private OptionEntry<T>? Find(T value) => _entries.FirstOrDefault(e => _comparer.Equals(e.Value, value));
+
+    private static string Label(OptionEntry<T> entry)
+        => entry.TextKey is { } key ? UiLocalizationService.Text(key) : entry.FixedLabel ?? entry.Value?.ToString() ?? "";
+}
+
+/// <summary>
+/// Every option list the main window and its dialogs show, each with its one display↔value mapping (UI-20, Refs #87).
+/// The view model and the Settings / Edit game dialogs read labels and values only through these.
+/// </summary>
+public static class OptionLists
+{
+    /// <summary>The UI languages a label is read back in.</summary>
+    internal static readonly string[] Languages = ["pt-BR", "en-US"];
+
+    public static readonly OptionList<string> ReShadeChannel = new("Stable", StringComparer.OrdinalIgnoreCase,
+        new("Stable", "Ui.OptionStable"),
+        new("Nightly", "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
+        new("Legacy", "Ui.OptionLegacy", null, "Legado"),
+        new("Custom", "Ui.OptionCustom", null, "Personalizado"));
+
+    /// <summary>UI languages are listed by their own (untranslated) names.</summary>
+    public static readonly OptionList<string> UiLanguage = new("pt-BR", StringComparer.OrdinalIgnoreCase,
+        new("pt-BR", null, "Português (Brasil)"),
+        new("en-US", null, "English (United States)"));
+
+    public static readonly OptionList<string> ViewMode = new("Detail", StringComparer.OrdinalIgnoreCase,
+        new("Detail", "Win.Detailed"),
+        new("Compact", "Win.Compact"));
+
+    public static readonly OptionList<OptiScalerVariant> OptiScalerVariant = new(Platform.Linux.Deployment.OptiScalerVariant.Stable, null,
+        new(Platform.Linux.Deployment.OptiScalerVariant.Stable, "Ui.OptionStable"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.Nightly, "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"));
+
+    public static readonly OptionList<LumaModePreference> LumaMode = new(LumaModePreference.Auto, null,
+        new(LumaModePreference.Auto, "Ui.OptionAutomatic"),
+        new(LumaModePreference.Enabled, "Ui.OptionEnabled", null, "Ativado"),
+        new(LumaModePreference.Disabled, "Ui.OptionDisabled", null, "Desativado"));
+
+    public static readonly OptionList<string> HdrMode = new(LinuxHdrModes.Off, StringComparer.OrdinalIgnoreCase,
+        new(LinuxHdrModes.Off, "Ui.HdrOff"),
+        new(LinuxHdrModes.NativeWayland, "Ui.HdrNativeWayland"),
+        new(LinuxHdrModes.Gamescope, "Ui.HdrGamescope"));
+
+    /// <summary>null is "Automatic" (no override).</summary>
+    public static readonly OptionList<GraphicsApi?> GraphicsApiOverride = new(null, null,
+        new(null, "Ui.OptionAutomatic"),
+        new(GraphicsApi.DirectX8, null, "DirectX 8"),
+        new(GraphicsApi.DirectX9, null, "DirectX 9"),
+        new(GraphicsApi.DirectX10, null, "DirectX 10"),
+        new(GraphicsApi.DirectX11, null, "DirectX 11"),
+        new(GraphicsApi.DirectX12, null, "DirectX 12"),
+        new(GraphicsApi.Vulkan, null, "Vulkan"),
+        new(GraphicsApi.OpenGL, null, "OpenGL"));
+
+    /// <summary>Library filter names (the chips pass the stored value; the game count shows the label).</summary>
+    public static readonly OptionList<string> LibraryFilter = new("All Games", StringComparer.OrdinalIgnoreCase,
+        new("All Games", "Ui.All"),
+        new("Favourites", "Ui.Favourites"),
+        new("Installed", "Ui.Installed"),
+        new("Unreal", null, "Unreal"),
+        new("Unity", null, "Unity"),
+        new("Other", "Ui.Other"),
+        new("RenoDX", null, "RenoDX"),
+        new("Luma", null, "Luma"),
+        new("Hidden", "Ui.Hidden"));
+
+    /// <summary>Edit game's launcher badge: stored tokens stay canonical (PT-BR "Automático"/"Outro" in older files).</summary>
+    public static readonly OptionList<string> LaunchProvider = new(LinuxGameIdentityService.AutomaticLaunchProvider, StringComparer.OrdinalIgnoreCase,
+        LinuxGameIdentityService.LaunchProviderOptions.Select(value =>
+            value == LinuxGameIdentityService.AutomaticLaunchProvider ? new OptionEntry<string>(value, "Ui.OptionAutomatic", null, "Automatic")
+            : value == LinuxGameIdentityService.OtherLaunchProvider ? new OptionEntry<string>(value, "Win.ProviderOther", null, "Other")
+            : new OptionEntry<string>(value, null, value)).ToArray());
+
+    /// <summary>The "Latest" entry heading every version list.</summary>
+    public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");
+
+    /// <summary>True for the "Latest" entry in either language (a list can outlive a language switch).</summary>
+    public static bool IsLatest(string? value) => IsKeyText(value, "Ui.OptionLatest");
+
+    /// <summary>The "Do not change" entry of the DLSS default-version lists.</summary>
+    public static string DoNotChangeDisplay() => UiLocalizationService.Text("Win.DoNotChange");
+
+    /// <summary>True for the "Do not change" entry in either language.</summary>
+    public static bool IsDoNotChange(string? value) => IsKeyText(value, "Win.DoNotChange");
+
+    private static bool IsKeyText(string? value, string key)
+        => !string.IsNullOrWhiteSpace(value) &&
+           OptionLists.Languages.Any(language =>
+               string.Equals(value.Trim(), UiLocalizationService.TextFor(language, key), StringComparison.OrdinalIgnoreCase));
+}

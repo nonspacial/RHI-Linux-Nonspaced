@@ -94,16 +94,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<string> DlssFgVersions { get; } = [];
     public ObservableCollection<string> DlssNrVersions { get; } = [];
     public ObservableCollection<string> StreamlineVersions { get; } = [];
-    public ObservableCollection<string> ReShadeChannels { get; } =
-        [UiLocalizationService.Text("Ui.OptionStable"), UiLocalizationService.Text("Ui.OptionNightly"), UiLocalizationService.Text("Ui.OptionLegacy"), UiLocalizationService.Text("Ui.OptionCustom")];
-    public ObservableCollection<string> GraphicsApiOverrideOptions { get; } =
-        [UiLocalizationService.Text("Ui.OptionAutomatic"), "DirectX 8", "DirectX 9", "DirectX 10", "DirectX 11", "DirectX 12", "Vulkan", "OpenGL"];
-    public ObservableCollection<string> OptiScalerVariantOptions { get; } =
-        [UiLocalizationService.Text("Ui.OptionStable"), UiLocalizationService.Text("Ui.OptionNightly"), "DLSS NR"];
-    public ObservableCollection<string> LumaModeOptions { get; } =
-        [UiLocalizationService.Text("Ui.OptionAutomatic"), UiLocalizationService.Text("Ui.OptionEnabled"), UiLocalizationService.Text("Ui.OptionDisabled")];
-    public ObservableCollection<string> HdrModeOptions { get; } =
-        [UiLocalizationService.Text("Ui.HdrOff"), UiLocalizationService.Text("Ui.HdrNativeWayland"), UiLocalizationService.Text("Ui.HdrGamescope")];
+    // Labels and values of every option list come from OptionLists (one mapping, shared with the dialogs; Refs #87).
+    public ObservableCollection<string> ReShadeChannels { get; } = [.. OptionLists.ReShadeChannel.Items];
+    public ObservableCollection<string> GraphicsApiOverrideOptions { get; } = [.. OptionLists.GraphicsApiOverride.Items];
+    public ObservableCollection<string> OptiScalerVariantOptions { get; } = [.. OptionLists.OptiScalerVariant.Items];
+    public ObservableCollection<string> LumaModeOptions { get; } = [.. OptionLists.LumaMode.Items];
+    public ObservableCollection<string> HdrModeOptions { get; } = [.. OptionLists.HdrMode.Items];
     public ObservableCollection<string> Dlss5FeederConsumerOptions { get; } = ["RenoDX DLSS5", "Deep Fried Chicken"];
     public ObservableCollection<string> Dlss5FeederVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
     public ObservableCollection<string> Dlss5BridgeVersionOptions { get; } = [UiLocalizationService.Text("Ui.OptionLatest")];
@@ -154,14 +150,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _loadingShortFuseZzzLoadOrder;
     [ObservableProperty] private string shortFuseLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
 
-    private static string LibraryFilterDisplay(string value) => value switch
-    {
-        "Favourites" => UiLocalizationService.Text("Ui.Favourites"),
-        "Installed" => UiLocalizationService.Text("Ui.Installed"),
-        "Other" => UiLocalizationService.Text("Ui.Other"),
-        "Hidden" => UiLocalizationService.Text("Ui.Hidden"),
-        _ => UiLocalizationService.Text("Ui.All")
-    };
+    private static string LibraryFilterDisplay(string value) => OptionLists.LibraryFilter.Display(value);
 
     public string GameCountText => $"{Games.Count} / {_allGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}";
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
@@ -456,28 +445,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             { SteamAppId: null, PrefixPath: not null } => T("Vm.StandaloneSystemWineTargetWinetricksRuns"),
             _ => T("Vm.NoInitializedWineProtonPrefixWas")
         };
-    private static string ReShadeChannelDisplay(string value) => value switch
-    {
-        "Nightly" => UiLocalizationService.Text("Ui.OptionNightly"),
-        "Legacy" => UiLocalizationService.Text("Ui.OptionLegacy"),
-        "Custom" => UiLocalizationService.Text("Ui.OptionCustom"),
-        _ => UiLocalizationService.Text("Ui.OptionStable")
-    };
+    private static string ReShadeChannelDisplay(string value) => OptionLists.ReShadeChannel.Display(value);
 
-    private static string ReShadeChannelValue(string? display)
-    {
-        if (string.Equals(display, UiLocalizationService.Text("Ui.OptionNightly"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Nightly", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Desenvolvimento", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Desenvolvimento (Nightly)", StringComparison.OrdinalIgnoreCase)) return "Nightly";
-        if (string.Equals(display, UiLocalizationService.Text("Ui.OptionLegacy"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Legacy", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Legado", StringComparison.OrdinalIgnoreCase)) return "Legacy";
-        if (string.Equals(display, UiLocalizationService.Text("Ui.OptionCustom"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Custom", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(display, "Personalizado", StringComparison.OrdinalIgnoreCase)) return "Custom";
-        return "Stable";
-    }
+    private static string ReShadeChannelValue(string? display) => OptionLists.ReShadeChannel.Value(display);
 
     public bool IsReShadeLegacy => ReShadeChannelValue(SelectedReShadeChannel).Equals("Legacy", StringComparison.OrdinalIgnoreCase);
     public bool IsReShadeCustom => ReShadeChannelValue(SelectedReShadeChannel).Equals("Custom", StringComparison.OrdinalIgnoreCase);
@@ -841,21 +811,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var shortFusePin = IsLatestSelection(SelectedShortFuseVersion) ? null : SelectedShortFuseVersion;
         var nrDllPin = IsLatestSelection(SelectedNeuralRenderingDllVersion) ? null : SelectedNeuralRenderingDllVersion;
 
-        ReShadeChannels.Clear();
-        foreach (var item in new[] { "Ui.OptionStable", "Ui.OptionNightly", "Ui.OptionLegacy", "Ui.OptionCustom" })
-            ReShadeChannels.Add(UiLocalizationService.Text(item));
-        GraphicsApiOverrideOptions[0] = UiLocalizationService.Text("Ui.OptionAutomatic");
-        OptiScalerVariantOptions.Clear();
-        OptiScalerVariantOptions.Add(UiLocalizationService.Text("Ui.OptionStable"));
-        OptiScalerVariantOptions.Add(UiLocalizationService.Text("Ui.OptionNightly"));
-        OptiScalerVariantOptions.Add("DLSS NR");
-        HdrModeOptions.Clear();
-        HdrModeOptions.Add(UiLocalizationService.Text("Ui.HdrOff"));
-        HdrModeOptions.Add(UiLocalizationService.Text("Ui.HdrNativeWayland"));
-        HdrModeOptions.Add(UiLocalizationService.Text("Ui.HdrGamescope"));
-        LumaModeOptions.Clear();
-        foreach (var item in new[] { "Ui.OptionAutomatic", "Ui.OptionEnabled", "Ui.OptionDisabled" })
-            LumaModeOptions.Add(UiLocalizationService.Text(item));
+        OptionLists.ReShadeChannel.Fill(ReShadeChannels);
+        GraphicsApiOverrideOptions[0] = OptionLists.GraphicsApiOverride.Display(null); // only "Automatic" is translated
+        OptionLists.OptiScalerVariant.Fill(OptiScalerVariantOptions);
+        OptionLists.HdrMode.Fill(HdrModeOptions);
+        OptionLists.LumaMode.Fill(LumaModeOptions);
 
         SelectedReShadeChannel = ReShadeChannelDisplay(channel);
         _loadingGraphicsApiOverride = true;
@@ -3760,24 +3720,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         finally { _loadingOptiScalerVariant = false; }
     }
 
-    private static OptiScalerVariant ParseOptiScalerVariant(string? value)
-    {
-        var normalized = value?.Trim();
-        if (string.Equals(normalized, "DLSS NR", StringComparison.OrdinalIgnoreCase)) return OptiScalerVariant.DlssNr;
-        if (string.Equals(normalized, UiLocalizationService.Text("Ui.OptionNightly"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "Nightly", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "Desenvolvimento", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(normalized, "Desenvolvimento (Nightly)", StringComparison.OrdinalIgnoreCase)) return OptiScalerVariant.Nightly;
-        return OptiScalerVariant.Stable;
-    }
+    private static OptiScalerVariant ParseOptiScalerVariant(string? value) => OptionLists.OptiScalerVariant.Value(value);
 
-    private static string FormatOptiScalerVariant(OptiScalerVariant variant)
-        => variant switch
-        {
-            OptiScalerVariant.DlssNr => "DLSS NR",
-            OptiScalerVariant.Nightly => UiLocalizationService.Text("Ui.OptionNightly"),
-            _ => UiLocalizationService.Text("Ui.OptionStable")
-        };
+    private static string FormatOptiScalerVariant(OptiScalerVariant variant) => OptionLists.OptiScalerVariant.Display(variant);
 
     private void LoadLumaModePreference(DetectedGame game)
     {
@@ -3821,24 +3766,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         StatusText = $"{game.Name}: {UiLocalizationService.Present(_managedComponents.GetLumaPolicy(game).Summary)}.";
     }
 
-    private static string ParseHdrMode(string? value)
-    {
-        if (string.Equals(value, UiLocalizationService.Text("Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, LinuxHdrModes.NativeWayland, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, UiLocalizationService.TextFor("en-US", "Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Ui.HdrNativeWayland"), StringComparison.OrdinalIgnoreCase)) return LinuxHdrModes.NativeWayland;
-        if (string.Equals(value, UiLocalizationService.Text("Ui.HdrGamescope"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, LinuxHdrModes.Gamescope, StringComparison.OrdinalIgnoreCase)) return LinuxHdrModes.Gamescope;
-        return LinuxHdrModes.Off;
-    }
+    private static string ParseHdrMode(string? value) => OptionLists.HdrMode.Value(value);
 
-    private static string FormatHdrMode(string? mode)
-        => mode switch
-        {
-            LinuxHdrModes.NativeWayland => UiLocalizationService.Text("Ui.HdrNativeWayland"),
-            LinuxHdrModes.Gamescope => UiLocalizationService.Text("Ui.HdrGamescope"),
-            _ => UiLocalizationService.Text("Ui.HdrOff")
-        };
+    private static string FormatHdrMode(string? mode) => OptionLists.HdrMode.Display(mode ?? LinuxHdrModes.Off);
 
     private void LoadHdrProfile(DetectedGame game)
     {
@@ -3923,17 +3853,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             : TF("Vm.ExplicitGraphicsAPIOverrideSet", game.Name, FormatApi(game.UserGraphicsApiOverride.Value));
     }
 
-    private static GraphicsApi? ParseGraphicsApiOverride(string? value) => value switch
-    {
-        "DirectX 8" => GraphicsApi.DirectX8,
-        "DirectX 9" => GraphicsApi.DirectX9,
-        "DirectX 10" => GraphicsApi.DirectX10,
-        "DirectX 11" => GraphicsApi.DirectX11,
-        "DirectX 12" => GraphicsApi.DirectX12,
-        "Vulkan" => GraphicsApi.Vulkan,
-        "OpenGL" => GraphicsApi.OpenGL,
-        _ => null
-    };
+    private static GraphicsApi? ParseGraphicsApiOverride(string? value) => OptionLists.GraphicsApiOverride.Value(value);
 
     private static string FormatGraphicsApiConfidence(GraphicsApiConfidence confidence) => confidence switch
     {
@@ -3943,42 +3863,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ => T("Vm.UnknownConfidence")
     };
 
-    private static string FormatGraphicsApiOverride(GraphicsApi? api) => api switch
-    {
-        GraphicsApi.DirectX8 => "DirectX 8",
-        GraphicsApi.DirectX9 => "DirectX 9",
-        GraphicsApi.DirectX10 => "DirectX 10",
-        GraphicsApi.DirectX11 => "DirectX 11",
-        GraphicsApi.DirectX12 => "DirectX 12",
-        GraphicsApi.Vulkan => "Vulkan",
-        GraphicsApi.OpenGL => "OpenGL",
-        _ => UiLocalizationService.Text("Ui.OptionAutomatic")
-    };
+    private static string FormatGraphicsApiOverride(GraphicsApi? api) => OptionLists.GraphicsApiOverride.Display(api);
 
-    private static LumaModePreference ParseLumaModePreference(string? value)
-    {
-        if (string.Equals(value, UiLocalizationService.Text("Ui.OptionEnabled"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Ativado", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Enabled", StringComparison.OrdinalIgnoreCase)) return LumaModePreference.Enabled;
-        if (string.Equals(value, UiLocalizationService.Text("Ui.OptionDisabled"), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Desativado", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "Disabled", StringComparison.OrdinalIgnoreCase)) return LumaModePreference.Disabled;
-        return LumaModePreference.Auto;
-    }
+    private static LumaModePreference ParseLumaModePreference(string? value) => OptionLists.LumaMode.Value(value);
 
-    private static string FormatLumaModePreference(LumaModePreference value) => value switch
-    {
-        LumaModePreference.Enabled => UiLocalizationService.Text("Ui.OptionEnabled"),
-        LumaModePreference.Disabled => UiLocalizationService.Text("Ui.OptionDisabled"),
-        _ => UiLocalizationService.Text("Ui.OptionAutomatic")
-    };
+    private static string FormatLumaModePreference(LumaModePreference value) => OptionLists.LumaMode.Display(value);
 
-    private static bool IsLatestSelection(string? value)
-        => string.Equals(value, UiLocalizationService.TextFor("en-US", "Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase) ||
-           string.Equals(value, UiLocalizationService.Text("Ui.OptionLatest"), StringComparison.OrdinalIgnoreCase);
+    private static bool IsLatestSelection(string? value) => OptionLists.IsLatest(value);
 
-    private static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");
+    private static string LatestDisplay() => OptionLists.LatestDisplay();
 
     private void NotifySelected()
     {

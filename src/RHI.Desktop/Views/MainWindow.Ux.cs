@@ -249,11 +249,11 @@ public sealed partial class MainWindow
         var game = vm.SelectedGame;
 
         // Stored provider values stay the canonical tokens; only the labels are localised.
-        var providerValues = LinuxGameIdentityService.LaunchProviderOptions;
+        var providerValues = OptionLists.LaunchProvider.Values;
         var providerIndex = providerValues.ToList().FindIndex(value => string.Equals(value, game.LaunchProvider, StringComparison.OrdinalIgnoreCase));
         var provider = new ComboBox
         {
-            ItemsSource = providerValues.Select(LaunchProviderLabel).ToArray(),
+            ItemsSource = OptionLists.LaunchProvider.Items,
             SelectedIndex = providerIndex >= 0 ? providerIndex : 0,
             MinWidth = 220
         };
@@ -472,11 +472,6 @@ public sealed partial class MainWindow
 
         await ShowFittedDialogAsync(dialog);
     });
-
-    private static string LaunchProviderLabel(string value)
-        => value == LinuxGameIdentityService.AutomaticLaunchProvider ? T("Ui.OptionAutomatic")
-            : value == LinuxGameIdentityService.OtherLaunchProvider ? T("Win.ProviderOther")
-            : value;
 
     private void GameFiles_DragOver(object? sender, DragEventArgs e)
     {
