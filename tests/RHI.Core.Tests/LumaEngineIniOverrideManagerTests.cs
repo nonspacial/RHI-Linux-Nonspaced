@@ -188,6 +188,60 @@ public sealed class LumaEngineIniOverrideManagerTests : IDisposable
         Assert.Equal("victim", File.ReadAllText(outside));
     }
 
+    // w2-trust re-review, finding 1: every component of the path counts, not only the file. A config folder linked to a
+    // folder outside the prefix used to have the outside Engine.ini written.
+    [Fact]
+    public void Apply_EngineIniBehindASymlinkedFolderLeavingThePrefix_IsRefusedAndTheTargetLeftAlone()
+    {
+        var game = CreateGameWithPrefixOverride("FolderEscapeProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        var configFolder = Path.GetDirectoryName(ini)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(configFolder)!);
+        var outsideFolder = Directory.CreateDirectory(Path.Combine(_root, "elsewhere-folder")).FullName;
+        var outside = Path.Combine(outsideFolder, "Engine.ini");
+        File.WriteAllText(outside, "victim");
+        Directory.CreateSymbolicLink(configFolder, outsideFolder);
+
+        var refused = Assert.Throws<IOException>(() =>
+            LumaEngineIniOverrideManager.Apply(game, [new LumaEngineIniEntry("SystemSettings", "r.Luma.Escape", "1")]));
+
+        Assert.Equal($"{LumaEngineIniOverrideManager.LinkRefusalPrefix}{ini} -> {outside}", refused.Message);
+        Assert.Equal("victim", File.ReadAllText(outside));
+    }
+
+    [Fact]
+    public void Apply_PrefixThatIsItselfASymlink_IsWrittenInside()
+    {
+        // A compatdata prefix moved to another drive and linked back: the roots resolve through the same link.
+        var game = CreateGameWithPrefixOverride("LinkedPrefixProject");
+        var realPrefix = Path.Combine(_root, "other-drive", "pfx");
+        Directory.CreateDirectory(Path.GetDirectoryName(realPrefix)!);
+        Directory.Move(game.PrefixPath!, realPrefix);
+        Directory.CreateSymbolicLink(game.PrefixPath!, realPrefix);
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+
+        LumaEngineIniOverrideManager.Apply(game, [new LumaEngineIniEntry("SystemSettings", "r.Luma.Moved", "1")]);
+
+        Assert.Contains("r.Luma.Moved=1", File.ReadAllText(ini));
+        Assert.Null(new FileInfo(ini).LinkTarget);
+    }
+
+    // w2-trust re-review, nit 2: the allowed roots are the nearest project folder and the prefix; the walk stops at the
+    // prefix, so a library under a folder named Saved never makes its parent a root.
+    [Fact]
+    public void LinkPolicy_Roots_AreTheNearestProjectFolderAndThePrefix_Only()
+    {
+        var ini = "/mnt/Saved/library/pfx/drive_c/users/u/AppData/Local/Game/Saved/Config/Windows/Engine.ini";
+
+        var policy = LumaEngineIniOverrideManager.LinkPolicy(ini);
+
+        Assert.Equal(["/mnt/Saved/library/pfx/drive_c/users/u/AppData/Local/Game", "/mnt/Saved/library/pfx"], policy.AllowedRoots);
+        Assert.Equal(["/mnt/Saved/library/pfx"],
+            LumaEngineIniOverrideManager.LinkPolicy("/mnt/Saved/library/pfx/drive_c/Game/Engine.ini").AllowedRoots);
+        Assert.Equal(["/games/Saved/Native/Project"],
+            LumaEngineIniOverrideManager.LinkPolicy("/games/Saved/Native/Project/Saved/Config/Linux/Engine.ini").AllowedRoots);
+    }
+
     private DetectedGame CreateGameWithPrefixOverride(string projectOverride)
     {
         var gameRoot = Path.Combine(_root, Guid.NewGuid().ToString("N"));

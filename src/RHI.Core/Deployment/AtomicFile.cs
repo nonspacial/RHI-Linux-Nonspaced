@@ -268,13 +268,23 @@ public static class AtomicFile
     /// The file a write to <paramref name="path"/> replaces: the path itself, or the final target of a symlink the
     /// policy allows (name equal to <see cref="UserFileLinkPolicy.RequiredFileName"/>, inside one of its roots with
     /// every symlink resolved on both sides, not a folder). Throws <see cref="IOException"/> for any other link.
+    /// With a policy, every component of the path counts, not only the last: a symlinked parent folder that takes the
+    /// file outside the policy's roots (<c>Saved/Config/Windows</c> linked to a folder outside the prefix) is refused
+    /// like a symlinked file (w2-trust re-review, finding 1). Links that keep it inside (a whole prefix or games folder
+    /// on another drive, which the roots resolve through as well) are fine.
     /// </summary>
     public static string ResolveUserFileTarget(string path, UserFileLinkPolicy? linkPolicy)
     {
-        if (new FileInfo(path).LinkTarget is null) return path;
-        if (linkPolicy is null) throw new IOException(LinkRefusalPrefix + path);
+        var fileIsLink = new FileInfo(path).LinkTarget is not null;
+        if (linkPolicy is null)
+        {
+            if (fileIsLink) throw new IOException(LinkRefusalPrefix + path);
+            return path;
+        }
 
         var final = PathIdentity.Canonicalize(path);
+        // No link anywhere on the path: nothing to contain.
+        if (!fileIsLink && final.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)), StringComparison.Ordinal)) return path;
         var nameAllowed = Path.GetFileName(final).Equals(linkPolicy.RequiredFileName, StringComparison.OrdinalIgnoreCase);
         var inside = linkPolicy.AllowedRoots
             .Where(root => !string.IsNullOrWhiteSpace(root))
@@ -282,7 +292,7 @@ public static class AtomicFile
         // A link loop leaves a link at the end of the "canonical" path: refused like any other unresolvable link.
         if (!nameAllowed || !inside || Directory.Exists(final) || new FileInfo(final).LinkTarget is not null)
             throw new IOException($"{linkPolicy.RefusalPrefix}{path} -> {final}");
-        return final;
+        return fileIsLink ? final : path;
     }
 
     // ---- copies ----------------------------------------------------------------------------------

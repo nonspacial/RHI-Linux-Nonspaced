@@ -409,7 +409,10 @@ internal static class LumaEngineIniOverrideManager
         WriteUserEngineIni(path, lines);
     }
 
-    /// <summary>Fixed text before "link -> target" when a symlinked Engine.ini is refused (localisation key).</summary>
+    /// <summary>
+    /// Fixed text before "path -> target" when an Engine.ini reached through a symlink (the file or a folder above it)
+    /// lands outside <see cref="LinkPolicy"/> (localisation key).
+    /// </summary>
     internal const string LinkRefusalPrefix =
         "Engine.ini link not followed: its target must be a file named Engine.ini inside the same Wine prefix or game project folder. Link: ";
 
@@ -417,25 +420,38 @@ internal static class LumaEngineIniOverrideManager
     /// Every Engine.ini write (Luma tweaks, upstream templates, their removal and rollback) goes through here, as
     /// upstream 2.8.5 does it: a read-only Engine.ini is written and stays read-only (users lock it so the game cannot
     /// rewrite it on launch; upstream clears read-only, writes, locks again), so the lock never blocks install or
-    /// removal. A symlinked Engine.ini is written through when <see cref="LinkPolicy"/> allows its target.
+    /// removal. An Engine.ini reached through symlinks (the file itself or any folder on its path) is written only
+    /// where <see cref="LinkPolicy"/> allows the resolved file: inside the same prefix or UE project folder.
     /// </summary>
     internal static UserFileWriteResult WriteUserEngineIni(string path, IEnumerable<string> lines)
         => AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: LinkPolicy(path), readOnly: ReadOnlyUserFile.WriteKeepingLock);
 
     /// <summary>
-    /// The only Engine.ini symlinks RHI writes through: final target named Engine.ini (any case) inside the Wine prefix
-    /// the path is in (the folder holding <c>drive_c</c>) or the UE project folder (the folder holding <c>Saved</c>).
+    /// Where an Engine.ini write may land once every symlink on its path is resolved (the file itself or any folder
+    /// above it): a file named Engine.ini (any case) inside the Wine prefix the path is in (the folder holding the
+    /// nearest <c>drive_c</c>) or the UE project folder (the folder holding the nearest <c>Saved</c>). The walk up stops
+    /// at the prefix, so a library under, say, <c>/mnt/Saved/…</c> never makes <c>/mnt</c> a root. A path through no
+    /// link at all is written as it is.
     /// </summary>
     internal static UserFileLinkPolicy LinkPolicy(string iniPath)
     {
         var roots = new List<string>();
+        var savedFound = false;
         for (var dir = Path.GetDirectoryName(Path.GetFullPath(iniPath)); !string.IsNullOrEmpty(dir); dir = Path.GetDirectoryName(dir))
         {
             var name = Path.GetFileName(dir);
             var parent = Path.GetDirectoryName(dir);
             if (string.IsNullOrEmpty(parent)) break;
-            if (name.Equals("drive_c", StringComparison.Ordinal) || name.Equals("Saved", StringComparison.OrdinalIgnoreCase))
+            if (!savedFound && name.Equals("Saved", StringComparison.OrdinalIgnoreCase))
+            {
                 roots.Add(parent);
+                savedFound = true;
+            }
+            if (name.Equals("drive_c", StringComparison.Ordinal))
+            {
+                roots.Add(parent);
+                break;
+            }
         }
         if (roots.Count == 0) roots.Add(Path.GetDirectoryName(Path.GetFullPath(iniPath))!);
         return new UserFileLinkPolicy("Engine.ini", roots, LinkRefusalPrefix);
