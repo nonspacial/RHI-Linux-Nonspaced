@@ -294,6 +294,52 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
     }
 
+    // w2 wine review, minor 2 (N9): refused while Wine runs in the prefix, before the download or any change.
+    [Fact]
+    public async Task Install_WhileWineRunsInThePrefix_IsRefusedBeforeTheDownload()
+    {
+        using var fixture = CreateGame("wine-running", 0x8664, GraphicsApi.DirectX12);
+        using var handler = Rtx40Handler.WithVersions(("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x42)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var userReg = File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg"));
+        var service = new Rtx40MfgStandaloneDeploymentService(http, records, new WineDllOverrideService(new WineRegistryEditor(_ => true)),
+            new Rtx40MfgPreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"));
+
+        var install = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.False(install.Success);
+        Assert.Equal(WineRegistryEditor.PrefixInUseRefusalPrefix + fixture.Prefix, install.Message);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.Equal(userReg, File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")));
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
+    }
+
+    // w2 wine review, minor 2 (N6): a removal failing after it restored the override puts RHI's value back (the record stays).
+    [Fact]
+    public async Task Remove_FailingAfterTheOverrideWasRestored_PutsRhisOverrideBack()
+    {
+        using var fixture = CreateGame("remove-fails", 0x8664, GraphicsApi.DirectX12);
+        using var handler = Rtx40Handler.WithVersions(("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x43)))));
+        using var http = new HttpClient(handler);
+        var ledger = Path.Combine(fixture.Root, "deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        var target = Path.Combine(fixture.Bin, "winmm.dll");
+        var proxyBytes = File.ReadAllBytes(target);
+
+        ComponentOperationResult remove;
+        using (LedgerWriteBlocker.Block(records, ledger))
+            remove = await service.RemoveAsync(fixture.Game);
+
+        Assert.False(remove.Success);
+        Assert.Equal(proxyBytes, File.ReadAllBytes(target));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "winmm", "Game.exe"));
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
+    }
+
     [Fact]
     public async Task Install_UnreadablePreferenceFile_RefusesBeforeDownloadOrOverride()
     {

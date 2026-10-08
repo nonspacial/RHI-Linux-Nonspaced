@@ -85,6 +85,23 @@ public sealed class WineRegistryEditorTests : IDisposable
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(Read(prefix), "d3d9", "Game.exe"));
     }
 
+    // w2 wine review, minor 2 (N8): a wineserver of a sibling prefix whose path shares a prefix with ours (Steam
+    // compatdata ids, pfx vs pfx2) does not block; the identity is the whole path, not a string prefix of it.
+    [Theory]
+    [InlineData("compatdata/39754/pfx", "compatdata/397540/pfx")]
+    [InlineData("compatdata/397540/pfx", "compatdata/39754/pfx")]
+    [InlineData("library/pfx", "library/pfx2")]
+    [InlineData("library/pfx2", "library/pfx")]
+    public void WineserverOfASiblingPrefixSharingAPathPrefix_DoesNotBlock(string mine, string running)
+    {
+        var prefix = NewPrefix(mine);
+        var sibling = Path.Combine(_root, running);
+        Directory.CreateDirectory(sibling);
+
+        Assert.False(WineServerProbe.IsRunningFor(prefix, FakeProc(sibling)));
+        Assert.True(WineServerProbe.IsRunningFor(sibling, FakeProc(sibling)));
+    }
+
     [Fact]
     public void WineserverReachedThroughASymlinkedLibraryPath_IsStillFound()
     {

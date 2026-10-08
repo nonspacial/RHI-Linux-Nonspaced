@@ -74,6 +74,47 @@ public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
         Assert.Equal("d3d9", restored.WineOverride!.DllName, ignoreCase: true);
     }
 
+    // w2 wine review, minor 2 (N4): a restoration failing after it restored the translated (dxgi) override puts RHI's
+    // value back, since the record keeps the translated state.
+    [Fact]
+    public async Task RestoreFailingAfterTheOverrideWasRestored_PutsTheTranslatedOverrideBack()
+    {
+        var bin = Path.Combine(_root, "game-fails");
+        var prefix = Path.Combine(_root, "prefix-fails");
+        Directory.CreateDirectory(bin);
+        Directory.CreateDirectory(prefix);
+        File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x14c, 128 * 1024);
+        var d3d9 = Path.Combine(bin, "d3d9.dll");
+        PeArchitectureDetectorTests.WritePe(d3d9, 0x14c, 2 * 1024 * 1024);
+        var game = new DetectedGame
+        {
+            Name = "DX9 Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix,
+            GraphicsApi = GraphicsApi.DirectX9, Source = "Test", Runner = "Wine"
+        };
+        var ledger = Path.Combine(_root, "records-fails.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var overrides = new WineDllOverrideService();
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = bin, WineOverride = overrides.EnsureNativeBuiltin(prefix, "d3d9", "Game.exe"),
+            Files = [new LinuxDeployedFile { Path = d3d9, Sha256 = Dx9TranslationReShadeCoordinator.ComputeSha256(d3d9) }]
+        });
+        var coordinator = new Dx9TranslationReShadeCoordinator(records, overrides);
+        var state = await coordinator.MigrateAsync(game);
+        var dxgi = Path.Combine(bin, "dxgi.dll");
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+
+        using (LedgerWriteBlocker.Block(records, ledger))
+            await Assert.ThrowsAnyAsync<IOException>(() => coordinator.RestoreAsync(game, state));
+
+        Assert.True(File.Exists(dxgi));
+        Assert.False(File.Exists(d3d9));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

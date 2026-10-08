@@ -144,6 +144,22 @@ public sealed class WineRegistryJournalTests : IDisposable
         Assert.Equal(undone ? null : "native,builtin", after);
     }
 
+    // A value set since RHI's write is kept, and saying so needs no stopped Wine (read only).
+    [Fact]
+    public void Compensator_ALaterValue_IsKeptWithoutWaitingForWine()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"));
+        var reg = Path.Combine(prefix, "user.reg");
+        File.WriteAllText(reg, WineDllOverrideService.SetOverride(File.ReadAllText(reg), "winmm", "builtin", "Game.exe"));
+
+        var result = new WineOverrideCompensator(new WineDllOverrideService(new WineRegistryEditor(_ => true)), _ => true).Compensate(step);
+
+        Assert.Equal(CompensationStatus.KeptLaterChange, result.Status);
+        Assert.Equal("builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(reg), "winmm", "Game.exe"));
+    }
+
     // w2 wine review, major 1: the app's journal sees the ledger, or a deferred undo cannot tell a later install apart.
     [Fact]
     public void App_BindsTheRecoveryJournalToTheLedger()

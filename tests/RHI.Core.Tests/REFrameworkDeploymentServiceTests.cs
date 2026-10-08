@@ -140,6 +140,74 @@ public sealed class REFrameworkDeploymentServiceTests : IDisposable
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(reg, "dinput8", Path.GetFileName(game.ExecutablePath)));
     }
 
+    // w2 wine review, minor 2 (N10): refused while Wine runs in the prefix, before the release is looked up.
+    [Fact]
+    public async Task Install_WhileWineRunsInThePrefix_IsRefusedBeforeNetwork()
+    {
+        var game = CreateGame();
+        game.EngineHint = "RE Engine";
+        var requests = 0;
+        using var http = new HttpClient(new FakeHandler(_ =>
+        {
+            Interlocked.Increment(ref requests);
+            throw new InvalidOperationException("Network must not be used.");
+        }));
+        var userReg = File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "wine-running-records.json"));
+        var service = new REFrameworkDeploymentService(http, records, new WineDllOverrideService(new WineRegistryEditor(_ => true)),
+            Path.Combine(_root, "cache-wine-running"));
+
+        var result = await service.InstallAsync(game);
+
+        Assert.False(result.Success);
+        Assert.Equal(WineRegistryEditor.PrefixInUseRefusalPrefix + game.PrefixPath, result.Message);
+        Assert.Equal(0, requests);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, REFrameworkDeploymentService.DllFileName)));
+        Assert.Equal(userReg, File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")));
+    }
+
+    // w2 wine review, minor 2 (N5): when dinput8.dll cannot be deleted after the override was restored, RHI's value
+    // goes back so the game keeps loading the framework the record still owns.
+    [Fact]
+    public async Task Remove_FailingToDeleteDinput8_PutsRhisOverrideBack()
+    {
+        var game = CreateGame();
+        game.EngineHint = "RE Engine";
+        var zip = MakeFrameworkZip();
+        var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            var url = req.RequestUri!.AbsoluteUri;
+            if (url.Contains("REFramework-nightly/releases", StringComparison.OrdinalIgnoreCase))
+                return JsonResponse(ReleaseJson("nightly-01303-deadbeef", "https://example.test/ref.zip", digest));
+            if (url == "https://example.test/ref.zip")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
+            throw new InvalidOperationException("Unexpected URL: " + url);
+        }));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "delete-fails-records.json"));
+        var service = new REFrameworkDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(_root, "cache-delete-fails"));
+        Assert.True((await service.InstallAsync(game)).Success);
+        var target = Path.Combine(game.BinaryDirectory!, REFrameworkDeploymentService.DllFileName);
+        var mode = File.GetUnixFileMode(game.BinaryDirectory!);
+
+        ComponentOperationResult remove;
+        File.SetUnixFileMode(game.BinaryDirectory!, UnixFileMode.UserRead | UnixFileMode.UserExecute); // the delete fails
+        try
+        {
+            remove = await service.RemoveAsync(game);
+        }
+        finally
+        {
+            File.SetUnixFileMode(game.BinaryDirectory!, mode);
+        }
+
+        Assert.False(remove.Success);
+        Assert.True(File.Exists(target));
+        var reg = File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg"));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(reg, "dinput8", Path.GetFileName(game.ExecutablePath)));
+        Assert.NotNull(records.Find(game, ManagedComponentKind.REFramework));
+    }
+
     [Fact]
     public void ComponentProbe_ExternalRefNeedsRuntimeFootprintNotBareDinput8()
     {
