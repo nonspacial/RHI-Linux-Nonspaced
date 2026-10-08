@@ -99,6 +99,91 @@ public sealed class UpstreamVersionCatalogTests
         Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.EnsureAsync());
         Assert.True(catalog.IsLoaded);
     }
+
+    // w2 merge review, minor 2: the shared load runs on its starter's token ("Load versions" passes the operation's).
+
+    [Fact]
+    public async Task NeuralVersionLists_AJoinerCancelling_DoesNotCancelTheStartersLoad()
+    {
+        var lists = new BlockingLists();
+        var applied = 0;
+        var catalog = new NeuralVersionCatalog(lists.List, _ => applied++);
+        var starter = catalog.EnsureAsync();
+        using var joinerCancel = new CancellationTokenSource();
+        var joiner = catalog.EnsureAsync(cancellationToken: joinerCancel.Token);
+
+        joinerCancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => joiner);
+        Assert.All(lists.Tokens, token => Assert.False(token.IsCancellationRequested));
+        lists.Release("v1");
+
+        Assert.Equal(NeuralCatalogOutcome.Loaded, await starter.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True(catalog.IsLoaded);
+        Assert.Equal(1, applied);
+        Assert.Equal(3, lists.Calls);
+    }
+
+    [Fact]
+    public async Task NeuralVersionLists_ACancelledStarter_DoesNotStopAForcedJoinerFromLoading()
+    {
+        var lists = new BlockingLists();
+        NeuralVersionLists? applied = null;
+        var catalog = new NeuralVersionCatalog(lists.List, value => applied = value);
+        using var starterCancel = new CancellationTokenSource();
+        var starter = catalog.EnsureAsync(cancellationToken: starterCancel.Token);
+        var forced = catalog.EnsureAsync(forceRefresh: true); // Full Refresh joins with no token of its own
+
+        starterCancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter);
+        for (var i = 0; i < 200 && lists.Calls < 6; i++) await Task.Delay(10);
+        Assert.Equal(6, lists.Calls); // the forced joiner started its own load
+        lists.Release("v2");
+
+        Assert.Equal(NeuralCatalogOutcome.Loaded, await forced.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.True(catalog.IsLoaded);
+        Assert.Equal("v2", applied!.Dlss5Feeder.Single().Tag);
+    }
+
+    [Fact]
+    public async Task NeuralVersionLists_ACancelledStarter_LeavesThemUnloadedAndUnapplied()
+    {
+        var lists = new BlockingLists();
+        var applied = 0;
+        var catalog = new NeuralVersionCatalog(lists.List, _ => applied++);
+        using var cancel = new CancellationTokenSource();
+        var starter = catalog.EnsureAsync(cancellationToken: cancel.Token);
+
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter);
+        lists.Release("late");
+        await Task.Delay(50);
+
+        Assert.False(catalog.IsLoaded);
+        Assert.Equal(0, applied);
+        Assert.Equal(NeuralCatalogOutcome.Loaded, await catalog.EnsureAsync()); // the next caller loads them again
+        Assert.Equal(1, applied);
+    }
+
+    /// <summary>List calls that wait until released (or their token is cancelled), recording each call's token.</summary>
+    private sealed class BlockingLists
+    {
+        private readonly TaskCompletionSource<string> _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly System.Collections.Concurrent.ConcurrentQueue<CancellationToken> _tokens = new();
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+        public IReadOnlyList<CancellationToken> Tokens => _tokens.ToArray();
+
+        public void Release(string tag) => _release.TrySetResult(tag);
+
+        public async Task<IReadOnlyList<GitHubReleaseVersion>> List(ManagedComponentKind kind, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            _tokens.Enqueue(cancellationToken);
+            var tag = await _release.Task.WaitAsync(cancellationToken);
+            return [new GitHubReleaseVersion(tag, tag.TrimStart('v'), false)];
+        }
+    }
 }
 
 // #117: the view model's Full Refresh re-fetches the NR version lists (DLSS5 Feeder, DX11 Bridge, ShortFuse); a partial
