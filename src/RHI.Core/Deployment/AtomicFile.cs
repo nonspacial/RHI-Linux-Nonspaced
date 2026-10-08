@@ -42,31 +42,15 @@ public static class AtomicFile
 
     public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes) => WriteVerified(path, bytes, null, null);
 
-    public static async Task WriteAllBytesAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// <see cref="WriteAllBytes"/> off the calling thread: the same single write path (<see cref="WriteVerified"/>:
+    /// unique temp, fsync, full verify, rename, directory fsync, a temp that cannot be removed reported), so the
+    /// async variant has no second implementation. Cancellation is honoured before the write starts.
+    /// </summary>
+    public static Task WriteAllBytesAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default)
     {
-        var temp = TempPathFor(path);
-        try
-        {
-            var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, FileOptions.Asynchronous);
-            await using (file.ConfigureAwait(false))
-            {
-                var output = IoMeter.Wrap(file);
-                await output.WriteAsync(bytes, cancellationToken).ConfigureAwait(false);
-                await output.FlushAsync(cancellationToken).ConfigureAwait(false);
-                file.Flush(flushToDisk: true);
-                await output.DisposeAsync().ConfigureAwait(false);
-            }
-            var expected = SHA256.HashData(bytes.Span);
-            var written = await FileHash.Sha256Async(temp, cancellationToken).ConfigureAwait(false);
-            if (!CryptographicOperations.FixedTimeEquals(expected, written))
-                throw new IOException(VerifyFailurePrefix + path);
-            MoveIntoPlace(temp, path);
-        }
-        catch
-        {
-            FileCleanup.TryDelete(temp);
-            throw;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.Run(() => { WriteVerified(path, bytes.Span, null, null); }, cancellationToken);
     }
 
     /// <summary>Same encoding semantics as <see cref="File.WriteAllText(string, string?)"/> (UTF-8, no BOM).</summary>
@@ -108,19 +92,36 @@ public static class AtomicFile
 
     /// <summary>
     /// Writes <paramref name="bytes"/> to a new file that must not exist yet (a quarantine copy), fsyncs and
-    /// verifies it and fsyncs its folder. A copy that does not verify is removed and the write fails.
+    /// verifies it and fsyncs its folder. The file is created with <paramref name="mode"/> when given (a copy of a
+    /// 0600 store stays private) and gets exactly those bits. Any failure after the file was created (write, flush,
+    /// verify) removes it, so no partial copy is left; an existing file at <paramref name="path"/> is never touched.
     /// </summary>
-    public static void WriteNew(string path, ReadOnlySpan<byte> bytes)
+    public static void WriteNew(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode = null)
+        => WriteNew(path, bytes, mode, null);
+
+    /// <param name="wrapOutput">Test seam: wraps the file stream (e.g. to fail mid-write like a full disk).</param>
+    internal static void WriteNew(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode, Func<Stream, Stream>? wrapOutput)
     {
-        using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        if (mode is { } createMode && !OperatingSystem.IsWindows()) options.UnixCreateMode = createMode;
+        var file = new FileStream(path, options); // throws when the name is taken: nothing of ours to remove
+        try
         {
-            file.Write(bytes);
-            file.Flush(flushToDisk: true);
+            using (file)
+            {
+                var output = wrapOutput?.Invoke(file) ?? file;
+                output.Write(bytes);
+                output.Flush();
+                file.Flush(flushToDisk: true);
+            }
+            if (mode is { } exact && !OperatingSystem.IsWindows()) File.SetUnixFileMode(path, exact);
+            if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(path)))
+                throw new IOException(VerifyFailurePrefix + path);
         }
-        if (!CryptographicOperations.FixedTimeEquals(SHA256.HashData(bytes), FileHash.Sha256(path)))
+        catch
         {
             FileCleanup.TryDelete(path);
-            throw new IOException(VerifyFailurePrefix + path);
+            throw;
         }
         FsyncDirectoryOf(path);
     }

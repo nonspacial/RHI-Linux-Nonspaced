@@ -87,6 +87,20 @@ public sealed class JsonStoreQuarantineTests : IDisposable
     }
 
     [Fact]
+    public void Helper_QuarantineCopyOfAPrivateStore_StaysPrivate()
+    {
+        // integration w1 deploy review 5 (P12): the copy aside keeps the store's 0600, not the default 0644.
+        var path = Path.Combine(_root, "private.json");
+        File.WriteAllBytes(path, Garbage("private"));
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        var load = new JsonFileStore<Dictionary<string, string>>(path).Load();
+
+        Assert.NotNull(load.QuarantinePath);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(load.QuarantinePath!));
+    }
+
+    [Fact]
     public void Helper_GarbageFile_IsWrittenToTheAppLog_WithItsCopy()
     {
         var path = Path.Combine(_root, "logged.json");
