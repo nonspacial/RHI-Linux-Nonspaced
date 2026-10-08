@@ -51,6 +51,9 @@ public sealed class ErrorPresentationTests
             var game = fx.Game("Exemplo");
             var (added, message) = await fx.Vm.TryAddManualGameAsync(new() { Name = game.Name, InstallPath = game.InstallPath, Runner = "Manual Windows" });
             Assert.True(added, message);
+            // The selection's analysis ends with its own status line; under load it used to land after the refusal.
+            for (var i = 0; i < 500 && (fx.Vm.IsSelectionProbeBusy || fx.Vm.Session.Analysis is null); i++) await Task.Delay(10);
+            Assert.False(fx.Vm.IsSelectionProbeBusy);
             var mode = File.GetUnixFileMode(fx.DataDir);
             File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             try { fx.Vm.ToggleFavouriteCommand.Execute(null); }
