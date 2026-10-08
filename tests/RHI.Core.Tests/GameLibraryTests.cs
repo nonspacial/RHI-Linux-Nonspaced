@@ -122,6 +122,39 @@ public sealed class GameLibraryTests : IDisposable
         Assert.True(listed.FolderMissing);
     }
 
+    // Final detect-deploy review, nit 3: a missing folder fails closed even when something else supplies a target (an
+    // executable saved outside the folder, a manifest exe override setting ExecutablePath/BinaryDirectory).
+    [Fact]
+    public async Task ManualDetector_MissingFolder_TakesNoExecutable_EvenOneThatExistsElsewhere()
+    {
+        var store = NewStore();
+        var elsewhere = Directory.CreateDirectory(Path.Combine(_root, "elsewhere")).FullName;
+        var exe = Path.Combine(elsewhere, "Gone.exe");
+        File.WriteAllBytes(exe, [0x4D, 0x5A]);
+        store.Save(new LinuxGameLibraryState
+        {
+            ManualGames = [new LinuxManualGameEntry { Name = "Gone", InstallPath = Path.Combine(_root, "missing"), ExecutablePath = exe }]
+        });
+
+        var gone = Assert.Single(await new ManualGameDetector(store).DetectAsync());
+
+        Assert.True(gone.FolderMissing);
+        Assert.Null(gone.ExecutablePath);
+        Assert.Null(gone.BinaryDirectory);
+    }
+
+    [Fact]
+    public void FolderMissing_HasNoPatchTarget_EvenWithAnExecutableAndBinaryDirectorySet()
+    {
+        var game = new DetectedGame
+        {
+            Name = "Gone", Source = "Manual", InstallPath = "/missing/Gone", FolderMissing = true, RequiresExplicitPatchTarget = true,
+            ExecutablePath = "/elsewhere/Gone.exe", BinaryDirectory = "/elsewhere"
+        };
+
+        Assert.False(game.HasConfirmedPatchTarget);
+    }
+
     [Fact]
     public void LibraryKey_DistinguishesManifestSplitChildrenSharingSteamAppId()
     {
