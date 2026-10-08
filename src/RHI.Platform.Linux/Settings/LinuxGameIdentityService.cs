@@ -60,9 +60,11 @@ public static class LinuxGameIdentityService
             game.BinaryDirectory = null;
             game.RequiresExplicitPatchTarget = true;
             game.PatchTargetAuthority = "Manual";
+            game.PatchTargetFolderMissing = true;
             return;
         }
 
+        game.PatchTargetFolderMissing = false;
         if (edit?.HasPatchTarget == true)
         {
             game.InstallPath = edit.GameRootPath!;

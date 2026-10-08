@@ -32,6 +32,12 @@ public sealed class DetectedGame
     /// nothing is indexed, probed or patched (Refs #145).
     /// </summary>
     public bool FolderMissing { get; set; }
+    /// <summary>
+    /// The patch target chosen in Edit game names a folder that no longer exists (the game or its library moved). The
+    /// card has no patch target — never an automatic guess in place of the user's choice — until "Repair after move"
+    /// re-points the edit or Edit game sets a new one (Refs #147).
+    /// </summary>
+    public bool PatchTargetFolderMissing { get; set; }
     public string LibraryBadge => (IsFavourite ? "★" : "") + (IsHidden ? "◌" : "") + (GameRootNotAllowed || FolderMissing ? "⚠" : "");
     public int? SteamAppId { get; set; }
     /// <summary>Upstream Steam AppID policy metadata without changing a non-Steam launcher's identity.</summary>

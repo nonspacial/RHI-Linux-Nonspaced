@@ -146,6 +146,7 @@ public sealed class LibraryStateRelocationTests : IDisposable
         LinuxGameIdentityService.ApplyDetectedIdentity(moved, edit);
 
         Assert.False(moved.HasConfirmedPatchTarget);
+        Assert.True(moved.PatchTargetFolderMissing);
         Assert.Null(moved.BinaryDirectory);
         Assert.Equal(Path.Combine(_root, "b", "lib", "steamapps", "common", "Game"), moved.InstallPath);
         Assert.Equal("Steam", moved.LaunchProvider);
@@ -321,6 +322,7 @@ public sealed class LibraryStateRelocationViewModelTests
             });
             fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
             Assert.False(fx.Vm.SelectedGame!.HasConfirmedPatchTarget); // the old target is not replaced by a guess
+            Assert.Contains("Repair after move", fx.Vm.PatchTargetStatusText, StringComparison.Ordinal);
             await WaitAsync(() => fx.Vm.ShowRepairAfterMove);
 
             var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
@@ -333,6 +335,7 @@ public sealed class LibraryStateRelocationViewModelTests
             var edit = fx.Library.Load().GameEdits["steam:553420"];
             Assert.Equal(Path.Combine(install, "Game"), edit.GameRootPath);
             Assert.True(fx.Vm.SelectedGame!.HasConfirmedPatchTarget);
+            Assert.False(fx.Vm.SelectedGame.PatchTargetFolderMissing);
             Assert.Equal(binaries, fx.Vm.SelectedGame.BinaryDirectory);
             await WaitAsync(() => !fx.Vm.ShowRepairAfterMove);
         }

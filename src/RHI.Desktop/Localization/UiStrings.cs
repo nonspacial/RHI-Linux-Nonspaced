@@ -587,6 +587,7 @@ internal static class UiStrings
         ("Vm.UseTheseRecords", "Usar estes registros", "Use these records"),
         ("Vm.RepairAfterMoveCancelledNothingWas", "Reparar após mover cancelado; nada foi alterado.", "Repair after move cancelled; nothing was changed."),
         ("Vm.CheckingRHISFilesNewFolder", "{0}: verificando os arquivos do RHI na nova pasta…", "{0}: checking RHI's files in the new folder…"),
+        ("Vm.ModificationTargetFolderGoneUseRepair", "O alvo de modificações escolhido em Editar jogo está numa pasta que não existe mais — use Reparar após mover (ou escolha outro em Editar jogo)", "The modification target chosen in Edit game is in a folder that no longer exists — use Repair after move (or choose another in Edit game)"),
         ("Vm.GameSettingsNowPointNewFolder", "{0}: as configurações do RHI agora apontam para a nova pasta.", "{0}: RHI's settings now point to the new folder."),
         ("Vm.RHISRecordsSettingsNowPoint", "{0}: registros e configurações do RHI atualizados para a nova pasta ({1}).", "{0}: RHI's records and settings now point to the new folder ({1})."),
         ("Vm.SavedManualEntryWasNotFound", "{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed."),

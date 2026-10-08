@@ -234,6 +234,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         null => T("Vm.NoGameSelected"),
         { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
         { FolderMissing: true } game => FolderMissingText(game),
+        { PatchTargetFolderMissing: true } => T("Vm.ModificationTargetFolderGoneUseRepair"), // Refs #147
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
             => T("Vm.ModificationTargetManualExecutableMissing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)

@@ -273,6 +273,7 @@ public sealed class UpstreamGameLibraryPolicyService(
             IsManuallyAdded = game.IsManuallyAdded,
             GameRootNotAllowed = game.GameRootNotAllowed,
             FolderMissing = game.FolderMissing,
+            PatchTargetFolderMissing = game.PatchTargetFolderMissing,
             SteamAppId = game.SteamAppId,
             ManifestSteamAppIdOverride = game.ManifestSteamAppIdOverride,
             EpicCatalogNamespace = game.EpicCatalogNamespace,

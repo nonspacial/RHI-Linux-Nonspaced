@@ -226,6 +226,7 @@ public sealed class GameLibraryScanner
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
             first.GameRootNotAllowed |= candidate.GameRootNotAllowed;
             first.FolderMissing |= candidate.FolderMissing;
+            first.PatchTargetFolderMissing |= candidate.PatchTargetFolderMissing;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
             first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);
