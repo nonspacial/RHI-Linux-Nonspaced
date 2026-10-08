@@ -117,6 +117,56 @@ public sealed class ExternalArchiveRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ToolLeavingAnUnreadableFolder_IsNotTakenAsClean()
+    {
+        // The link walk cannot see inside a folder it cannot read; skipping it (the enumeration default) would let a
+        // link hidden there through.
+        var output = Path.Combine(_root, "out-hidden");
+        var locked = Path.Combine(output, "locked");
+        var tool = Script("hide-tool", """
+            mkdir -p "$4/locked"
+            ln -s /etc/hostname "$4/locked/OptiScaler.dll"
+            chmod 000 "$4/locked"
+            """);
+        try
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ExternalArchiveRunner.ExtractAsync(
+                Archive(), output, CancellationToken.None, tool: new ExternalArchiveTool(tool, ExternalArchiveToolKind.BsdTar)));
+        }
+        finally
+        {
+            if (Directory.Exists(locked))
+                File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
+    public async Task HungToolLeavingAnUnreadableFolder_StillReportsItsTimeout()
+    {
+        // Review w2-trust nit 9: the link walk in the failure path threw (unreadable folder) in place of the timeout.
+        var output = Path.Combine(_root, "out-unreadable");
+        var locked = Path.Combine(output, "locked");
+        var tool = Script("unreadable-tool", """
+            mkdir -p "$4/locked"
+            chmod 000 "$4/locked"
+            sleep 60
+            """);
+        try
+        {
+            var error = await Assert.ThrowsAsync<TimeoutException>(() => ExternalArchiveRunner.ExtractAsync(
+                Archive(), output, CancellationToken.None, timeout: TimeSpan.FromSeconds(1),
+                tool: new ExternalArchiveTool(tool, ExternalArchiveToolKind.BsdTar)));
+
+            Assert.StartsWith(ExternalProcess.TimeoutPrefix, error.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(locked))
+                File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
     public async Task Cancellation_StopsTheToolAndThrowsCancelled()
     {
         var pidFile = Path.Combine(_root, "cancel.pid");

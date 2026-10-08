@@ -81,8 +81,17 @@ public static class ExternalArchiveRunner
         }
         catch
         {
-            // A killed or failed tool may already have written a link: removed before the failure propagates.
-            VerifyContained(outputDirectory, removeLinks: true, throwOnRefusal: false);
+            // A killed or failed tool may already have written a link: removed before the failure propagates. The
+            // walk can fail itself (a folder the tool left unreadable); that is logged, never thrown in place of the
+            // tool's own failure.
+            try
+            {
+                VerifyContained(outputDirectory, removeLinks: true, throwOnRefusal: false);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                RHI.Core.Services.AppLog.Warn("external-archive", $"Could not check {outputDirectory} for links after {Path.GetFileName(tool.Command)} failed", cleanup);
+            }
             throw;
         }
         // The link check comes first: a link is refused even when the tool reports success.
@@ -124,6 +133,8 @@ public static class ExternalArchiveRunner
     /// path because both tools refuse those member names. Returns the
     /// refusal detail (null when the tree is clean); throws it as an <see cref="InvalidDataException"/> when
     /// <paramref name="throwOnRefusal"/> is set. With <paramref name="removeLinks"/> every link found is unlinked.
+    /// A folder the walk cannot read is never taken as clean (.NET's enumeration would skip it silently): its
+    /// <see cref="UnauthorizedAccessException"/> propagates and the extraction fails.
     /// </summary>
     internal static string? VerifyContained(string outputDirectory, bool removeLinks, bool throwOnRefusal)
     {
@@ -135,7 +146,7 @@ public static class ExternalArchiveRunner
         while (pending.Count > 0)
         {
             var directory = pending.Pop();
-            foreach (var entry in new DirectoryInfo(directory).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, RecurseSubdirectories = false }))
+            foreach (var entry in new DirectoryInfo(directory).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, RecurseSubdirectories = false, IgnoreInaccessible = false }))
             {
                 var relative = Path.GetRelativePath(root, entry.FullName);
                 if (entry.LinkTarget is not null)
