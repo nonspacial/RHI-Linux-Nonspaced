@@ -36,6 +36,13 @@ public static class ExternalProcess
     private static readonly TimeSpan DrainAfterKill = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// How long the output pipes of a tool that exited are drained before the run returns what it has. A daemon the
+    /// tool started (wineserver under winetricks/protontricks) inherits the pipes and holds them open for as long as
+    /// it lives, so an unbounded read would outlast the time limit.
+    /// </summary>
+    private static readonly TimeSpan DrainAfterExit = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Starts <paramref name="startInfo"/> (stdin/stdout/stderr are redirected here, whatever the caller set)
     /// and waits for it. Throws <see cref="TimeoutException"/> (message <see cref="TimeoutPrefix"/> + tool and
     /// limit) after <paramref name="timeout"/>, <see cref="OperationCanceledException"/> when
@@ -56,8 +63,10 @@ public static class ExternalProcess
 
         var tool = Path.GetFileName(startInfo.FileName);
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Failed to start {tool}.");
-        var stdoutTask = ReadBoundedAsync(process.StandardOutput);
-        var stderrTask = ReadBoundedAsync(process.StandardError);
+        var stdout = new BoundedCapture();
+        var stderr = new BoundedCapture();
+        var stdoutTask = stdout.ReadAsync(process.StandardOutput);
+        var stderrTask = stderr.ReadAsync(process.StandardError);
 
         using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         limit.CancelAfter(timeout);
@@ -93,7 +102,16 @@ public static class ExternalProcess
             throw new TimeoutException($"{TimeoutPrefix}{tool} ({(int)timeout.TotalSeconds} s)");
         }
 
-        return new ExternalProcessResult(process.ExitCode, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false));
+        try
+        {
+            await Task.WhenAll(stdoutTask, stderrTask).WaitAsync(DrainAfterExit, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // The tool exited but something it started still holds its output open: keep what was printed so far.
+            AppLog.Warn("external-process", $"{tool} exited but a process it started kept its output open; continuing with the output read so far");
+        }
+        return new ExternalProcessResult(process.ExitCode, stdout.Text, stderr.Text);
     }
 
     /// <summary>First executable named in <paramref name="names"/> found on PATH (in that order), or null.</summary>
@@ -132,17 +150,38 @@ public static class ExternalProcess
         }
     }
 
-    /// <summary>Reads a stream to its end, keeping at most <see cref="MaxCapturedChars"/> (the tail).</summary>
-    private static async Task<string> ReadBoundedAsync(StreamReader reader)
+    /// <summary>
+    /// One output stream read to its end, keeping at most <see cref="MaxCapturedChars"/> (the tail); what was read so
+    /// far stays available when the run stops waiting for the end.
+    /// </summary>
+    private sealed class BoundedCapture
     {
-        var kept = new StringBuilder();
-        var buffer = new char[8192];
-        int read;
-        while ((read = await reader.ReadAsync(buffer.AsMemory(), CancellationToken.None).ConfigureAwait(false)) > 0)
+        private readonly StringBuilder _kept = new();
+
+        public string Text
         {
-            kept.Append(buffer, 0, read);
-            if (kept.Length > MaxCapturedChars) kept.Remove(0, kept.Length - MaxCapturedChars);
+            get { lock (_kept) return _kept.ToString(); }
         }
-        return kept.ToString();
+
+        public async Task ReadAsync(StreamReader reader)
+        {
+            var buffer = new char[8192];
+            try
+            {
+                int read;
+                while ((read = await reader.ReadAsync(buffer.AsMemory(), CancellationToken.None).ConfigureAwait(false)) > 0)
+                {
+                    lock (_kept)
+                    {
+                        _kept.Append(buffer, 0, read);
+                        if (_kept.Length > MaxCapturedChars) _kept.Remove(0, _kept.Length - MaxCapturedChars);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is ObjectDisposedException or IOException)
+            {
+                // The run stopped waiting and disposed the process (pipe closed under the read): nothing more to keep.
+            }
+        }
     }
 }

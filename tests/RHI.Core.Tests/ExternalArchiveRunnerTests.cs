@@ -87,6 +87,36 @@ public sealed class ExternalArchiveRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ToolThatExitsLeavingADaemonOnItsOutput_ReturnsWithoutWaitingForTheDaemon()
+    {
+        // Review w2-trust minor 5: winetricks/protontricks start wineserver, which inherits the pipes; the read after
+        // a normal exit waited for it (up to its lifetime) past the time limit.
+        var pidFile = Path.Combine(_root, "daemon.pid");
+        var tool = Script("daemon-tool", $"""
+            sleep 60 &
+            echo $! > '{pidFile}'
+            echo "installed d3dcompiler_47"
+            echo "last words" >&2
+            exit 0
+            """);
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            var result = await ExternalProcess.RunAsync(new ProcessStartInfo(tool), TimeSpan.FromMinutes(10), CancellationToken.None);
+
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(15), $"took {watch.Elapsed}");
+            Assert.Equal(0, result.ExitCode);
+            Assert.Contains("installed d3dcompiler_47", result.StandardOutput, StringComparison.Ordinal);
+            Assert.Equal("last words", result.LastMeaningfulLine());
+        }
+        finally
+        {
+            if (File.Exists(pidFile) && int.TryParse(File.ReadAllText(pidFile).Trim(), out var daemon))
+                try { Process.GetProcessById(daemon).Kill(); } catch (ArgumentException) { } catch (InvalidOperationException) { }
+        }
+    }
+
+    [Fact]
     public async Task Cancellation_StopsTheToolAndThrowsCancelled()
     {
         var pidFile = Path.Combine(_root, "cancel.pid");
