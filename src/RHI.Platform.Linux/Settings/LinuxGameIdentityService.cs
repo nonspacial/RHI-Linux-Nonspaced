@@ -111,13 +111,12 @@ public static class LinuxGameIdentityService
         if (source.Contains("Heroic/GOG", StringComparison.OrdinalIgnoreCase)) return "GOG";
         if (source.Contains("Steam", StringComparison.OrdinalIgnoreCase)) return "Steam";
 
+        // The same hand-off classification the launcher and HDR profile use (#106): Heroic/Amazon and
+        // Heroic/Sideload games (xdg-open heroic://…) are launched by Heroic; the old Source == "Heroic" test
+        // matched no detector source.
         var command = game.LaunchCommand ?? string.Empty;
         if (command.Contains("steam://", StringComparison.OrdinalIgnoreCase)) return "Steam";
-        if (command.Contains("heroic://", StringComparison.OrdinalIgnoreCase) &&
-            source.Equals("Heroic", StringComparison.OrdinalIgnoreCase))
-            return "Heroic";
-
-        return null;
+        return Launch.LaunchHandoffClassifier.Classify(game) == Launch.LaunchHandoff.Heroic ? "Heroic" : null;
     }
 
     public static bool IsSharedLauncherExecutable(string? executablePath)

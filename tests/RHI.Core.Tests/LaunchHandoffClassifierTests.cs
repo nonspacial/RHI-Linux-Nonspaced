@@ -69,6 +69,20 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     public void WithoutCommand_TheSourceDecides(string source, LaunchHandoff expected)
         => Assert.Equal(expected, LaunchHandoffClassifier.Classify(Game(source, null)));
 
+    [Theory]
+    [InlineData("Heroic/Amazon", "xdg-open 'heroic://launch?appName=amzn1&runner=nile'", "Heroic")]
+    [InlineData("Heroic/Sideload", "xdg-open 'heroic://launch?appName=side&runner=sideload'", "Heroic")]
+    [InlineData("Heroic/Epic", "xdg-open 'heroic://launch?appName=x&runner=legendary'", "Epic")]
+    [InlineData("Manual", "xdg-open steam://rungameid/1", "Steam")]
+    [InlineData("Lutris", "lutris lutris:rungame/x", null)]
+    public void LaunchProvider_UsesTheSameHeroicClassification(string source, string command, string? expected)
+    {
+        // The provider rule required Source == "Heroic", which no detector emits (#106).
+        var game = Game(source, command);
+        game.LaunchExecutablePath = null;
+        Assert.Equal(expected, RHI.Platform.Linux.Settings.LinuxGameIdentityService.InferLaunchProvider(game));
+    }
+
     [Fact]
     public void ShellWords_HonourQuotesAndStopAtSeparators()
     {
