@@ -213,6 +213,97 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(bin, "ReShade64.dll")));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; installs and removals never stop half-way.
+    private (DetectedGame Game, string Bin, string Prefix) CancelGame(string name, bool prefixExists = true)
+    {
+        var gameRoot = Path.Combine(_root, name);
+        var bin = Path.Combine(gameRoot, "bin");
+        var prefix = Path.Combine(_root, name + "-pfx");
+        Directory.CreateDirectory(bin);
+        if (prefixExists)
+        {
+            Directory.CreateDirectory(prefix);
+            File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Other] 1\n\"x\"=\"y\"\n");
+        }
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        return (new DetectedGame
+        {
+            Name = name, InstallPath = gameRoot, BinaryDirectory = bin, ExecutablePath = exe,
+            PrefixPath = prefix, Runner = "Proton", GraphicsApi = GraphicsApi.DirectX12
+        }, bin, prefix);
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (game, bin, prefix) = CancelGame("cancel-install");
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-install.json"));
+        var service = NewService(store, Path.Combine(_root, "cancel-install-cache"));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [bin, prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_ThenAFailure_LeavesNoProxyAndNoOriginal()
+    {
+        // The prefix is missing, so the install fails right after placing dxgi.dll: the fresh-file rollback must run
+        // with its own token, not the cancelled one.
+        var (game, bin, _) = CancelGame("cancel-rollback", prefixExists: false);
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-rollback.json"));
+        var service = NewService(store, Path.Combine(_root, "cancel-rollback-cache"));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [bin]);
+
+        Assert.False(run.Result.Success);
+        CancelAtWritePhase.AssertUnchanged(run.Before, bin);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var (game, bin, prefix) = CancelGame("cancel-remove");
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-remove.json"));
+        var service = NewService(store, Path.Combine(_root, "cancel-remove-cache"));
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [bin, prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.False(File.Exists(Path.Combine(bin, "dxgi.dll")));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+    }
+
+    [Fact]
+    public async Task Remove_CancelledBeforeAnyChange_ChangesNothing_AndARetrySucceeds()
+    {
+        var (game, bin, prefix) = CancelGame("cancel-retry");
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-retry.json"));
+        var service = NewService(store, Path.Combine(_root, "cancel-retry-cache"));
+        Assert.True((await service.InstallAsync(game)).Success);
+        var before = CancelAtWritePhase.Snapshot(bin, prefix);
+
+        using (var cancel = new RHI.Core.Deployment.OperationCancellation())
+        {
+            Assert.True(cancel.TryCancel());
+            var cancelled = await service.RemoveAsync(game, cancel.Token);
+            Assert.False(cancelled.Success);
+        }
+        CancelAtWritePhase.AssertUnchanged(before, bin, prefix);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.ReShade));
+
+        var retry = await service.RemoveAsync(game);
+        Assert.True(retry.Success, retry.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.False(File.Exists(Path.Combine(bin, "dxgi.dll")));
+    }
+
     private static string Sha256(string path)
     {
         using var stream = File.OpenRead(path);

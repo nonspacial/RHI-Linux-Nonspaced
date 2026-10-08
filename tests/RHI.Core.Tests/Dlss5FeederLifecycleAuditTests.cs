@@ -127,6 +127,47 @@ public sealed class Dlss5FeederLifecycleAuditTests
         f.AssertClean();
     }
 
+    // w2/vmsplit review finding 1: the Feeder install honours Cancel only until its first change; a failure after that
+    // rolls everything back with its own token, the DX9 translation migration included (it used to be skipped when the
+    // operation's token was cancelled).
+    [Fact]
+    public async Task FullStack_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var f = new FeederFixture();
+
+        var run = await CancelAtWritePhase.RunAsync(ct => f.Install(Dlss5FeederConsumer.RenoDxDlss5, ct), [f.Bin, f.Game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        f.AssertInstalled(Dlss5FeederConsumer.RenoDxDlss5, expectedEarlyLoad: "0");
+    }
+
+    [Fact]
+    public async Task FullStackDx9_CancelAfterTheFirstWrite_ThenAFailure_RestoresTheDx9Migration()
+    {
+        using var f = new FeederFixture(missingIncludes: true, dx9: true);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => f.Install(Dlss5FeederConsumer.RenoDxDlss5, ct), [f.Bin, f.Game.PrefixPath!]);
+
+        Assert.False(run.Result.Success);
+        Assert.Contains("LumeniteFX include directory is missing", run.Result.Message);
+        CancelAtWritePhase.AssertUnchanged(run.Before, f.Bin, f.Game.PrefixPath!);
+        Assert.Null(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder));
+        var reshade = f.Records.Find(f.Game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(Path.Combine(f.Bin, "d3d9.dll"), Assert.Single(reshade.Files).Path);
+    }
+
+    [Fact]
+    public async Task FullStack_Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        using var f = new FeederFixture();
+        Assert.True((await f.Install(Dlss5FeederConsumer.RenoDxDlss5)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => f.Service.RemoveAsync(f.Game, ct), [f.Bin, f.Game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        f.AssertClean();
+    }
+
     private sealed class FeederFixture : IDisposable
     {
         private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-feeder-lifecycle-audit-" + Guid.NewGuid().ToString("N"));
@@ -146,7 +187,7 @@ public sealed class Dlss5FeederLifecycleAuditTests
         public Dlss5FeederFullDeploymentService Service { get; }
         public List<string> Requests { get; } = [];
 
-        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false)
+        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false)
         {
             Bin = Path.Combine(_root, "game");
             var prefix = Path.Combine(_root, "prefix");
@@ -156,7 +197,7 @@ public sealed class Dlss5FeederLifecycleAuditTests
             File.WriteAllBytes(exe, Pe(128 * 1024));
             var reshade = Pe(2 * 1024 * 1024);
             Encoding.ASCII.GetBytes("ReShade reshade.me crosire").CopyTo(reshade, 4096);
-            File.WriteAllBytes(Path.Combine(Bin, "dxgi.dll"), reshade);
+            File.WriteAllBytes(Path.Combine(Bin, dx9 ? "d3d9.dll" : "dxgi.dll"), reshade);
             var compiler = Pe(1_100_000);
             Encoding.ASCII.GetBytes("Microsoft (R) HLSL Shader Compiler 10.1 D3DCompiler_47.dll").CopyTo(compiler, 4096);
             File.WriteAllBytes(Path.Combine(Bin, "d3dcompiler_47.dll"), compiler);
@@ -164,9 +205,18 @@ public sealed class Dlss5FeederLifecycleAuditTests
             File.WriteAllText(IniPath, "[GENERAL]\nPresetPath=" + UserPreset + "\nEffectSearchPaths=.\\user\\Shaders\\**\nTextureSearchPaths=.\\user\\Textures\\**\n[ADDON]\n" +
                 (preexistingEarlyLoad ? "LoadFromDllMain=deep-fried-chicken.addon64\n" : ""));
             Game = new DetectedGame { Name = "Synthetic Feeder audit", InstallPath = Bin, BinaryDirectory = Bin,
-                ExecutablePath = exe, PrefixPath = prefix, Source = "Audit", Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
+                ExecutablePath = exe, PrefixPath = prefix, Source = "Audit", Runner = "Wine", GraphicsApi = dx9 ? GraphicsApi.DirectX9 : GraphicsApi.DirectX12 };
             RecordsPath = Path.Combine(_root, "deployments.json");
             Records = new LinuxDeploymentRecordStore(RecordsPath);
+            if (dx9)
+            {
+                // RHI-managed ReShade as d3d9.dll, which the DX9 translation moves to dxgi.dll while dgVoodoo2 owns d3d9.dll.
+                var d3d9 = Path.Combine(Bin, "d3d9.dll");
+                Records.Upsert(new LinuxDeploymentRecord { GameKey = LinuxDeploymentRecordStore.GameKey(Game), GameName = Game.Name,
+                    Component = ManagedComponentKind.ReShade, BinaryDirectory = Bin, Version = "6.5.1",
+                    WineOverride = new WineDllOverrideService().EnsureNativeBuiltin(prefix, "d3d9", "Game.exe"),
+                    Files = [new LinuxDeployedFile { Path = d3d9, Sha256 = Hash(reshade), ExistedBeforeInstall = false }] });
+            }
 
             var addon = Pe(70 * 1024);
             var bridge = Pe(4 * 1024);
@@ -194,17 +244,25 @@ public sealed class Dlss5FeederLifecycleAuditTests
                 ["https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline"] = lumenite,
                 ["https://github.com/crosire/reshade-shaders/archive/refs/heads/slim.zip"] = headers
             };
+            var dgVoodooZip = Zip(("MS/x64/D3D9.dll", Pe(128 * 1024)), ("MS/x86/D3D9.dll", Pe(128 * 1024)));
+            const string dgVoodooUrl = "https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.86/dgVoodoo2_86.zip";
+            responses[GitHubReleaseAssetResolver.NormalizeReleaseApiUrl("https://api.github.com/repos/dege-diosg/dgVoodoo2/releases/latest")]
+                = Release("2.86", "dgVoodoo2_86.zip", dgVoodooUrl, dgVoodooZip);
+            responses[dgVoodooUrl] = dgVoodooZip;
             _http = new HttpClient(new FixtureHandler(responses, Requests));
             var dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
             var manifest = new UpstreamRhiManifestService(_http, "https://fixtures.invalid/unused-manifest");
             var legacy = new UpstreamRhiAddonDeploymentService(_http, Records, manifest, new UpstreamRhiAddonDeploymentOptions(
                 ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://fixtures.invalid/unused-release", 64 * 1024,
                 DeployFileName64: "dlss5-feed.addon64"), Path.Combine(_root, "cache-legacy"));
-            Service = new Dlss5FeederFullDeploymentService(_http, Records, dlss, legacy, Path.Combine(_root, "cache-feeder"), new WineDllOverrideService());
+            var overrides = new WineDllOverrideService();
+            Service = new Dlss5FeederFullDeploymentService(_http, Records, dlss, legacy, Path.Combine(_root, "cache-feeder"), overrides,
+                dgVoodoo: new DgVoodooDeploymentService(_http, Path.Combine(_root, "cache-dgvoodoo")),
+                dx9ReShade: new Dx9TranslationReShadeCoordinator(Records, overrides));
         }
 
-        public Task<ComponentOperationResult> Install(Dlss5FeederConsumer consumer)
-            => Service.InstallAsync(Game, consumer, consumer == Dlss5FeederConsumer.DeepFriedChicken ? _package : null, null);
+        public Task<ComponentOperationResult> Install(Dlss5FeederConsumer consumer, CancellationToken cancellationToken = default)
+            => Service.InstallAsync(Game, consumer, consumer == Dlss5FeederConsumer.DeepFriedChicken ? _package : null, null, cancellationToken);
 
         public void AddManagedHdr()
         {

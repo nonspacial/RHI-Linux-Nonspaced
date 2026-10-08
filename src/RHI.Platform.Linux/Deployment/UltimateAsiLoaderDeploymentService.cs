@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -176,6 +177,8 @@ public sealed class UltimateAsiLoaderDeploymentService
         var movedOriginal = false;
         var copiedProxy = false;
 
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath));
@@ -294,6 +297,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             return ComponentOperationResult.Ok($"Ultimate ASI Loader {record.Version} is already current.");
 
         var temp = targetPath + $".rhi-update-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             File.Copy(stagedDll, temp, overwrite: false);

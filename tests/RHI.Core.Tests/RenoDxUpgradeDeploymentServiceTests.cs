@@ -201,6 +201,39 @@ public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
         Assert.Null(store.Find(game, ManagedComponentKind.RenoDXUpgrade));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var game = CreateGame(0x8664, withReShade: true);
+        var store = NewStore();
+        using var http = NewInstallHttp(CreatePe(0x8664, 96 * 1024, 0x82));
+        var service = NewService(http, store);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [game.InstallPath]);
+
+        // A late cancel used to throw after the copy and leave the add-on in the game folder with no record.
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDXUpgrade));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var game = CreateGame(0x8664, withReShade: true);
+        var store = NewStore();
+        using var http = NewInstallHttp(CreatePe(0x8664, 96 * 1024, 0x83));
+        var service = NewService(http, store);
+        Assert.True((await service.InstallAsync(game)).Success);
+        var target = store.Find(game, ManagedComponentKind.RenoDXUpgrade)!.Files.Single().Path;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.RenoDXUpgrade));
+        Assert.False(File.Exists(target));
+    }
+
     private RenoDxUpgradeDeploymentService NewService(HttpClient http, LinuxDeploymentRecordStore store)
         => new(http, store, new UpstreamRhiManifestService(http, "https://example.test/manifest.json"), Path.Combine(_root, "cache-" + Guid.NewGuid().ToString("N")));
 

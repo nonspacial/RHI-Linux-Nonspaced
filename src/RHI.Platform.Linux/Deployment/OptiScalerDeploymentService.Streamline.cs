@@ -1,4 +1,5 @@
 using System.Text.Json;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -237,9 +238,10 @@ public sealed partial class OptiScalerDeploymentService
                 }
             }
 
+            // Preflighted: from the first file on, the deployment runs to completion or full rollback.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var (source, targetRaw) in requested)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 var target = Path.GetFullPath(targetRaw);
                 if (leftUnowned.Contains(target)) continue;
                 if (foreign.Contains(target))
@@ -425,9 +427,10 @@ public sealed partial class OptiScalerDeploymentService
                     return ComponentOperationResult.Fail($"OptiScaler FG stack file was modified outside RHI and will not be removed: {file.Path}");
             }
 
+            // Cancel is honoured only up to here: the teardown never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var (relative, file) in ownedFiles.OrderByDescending(item => item.File.Path.Length))
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall)
                 {
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);

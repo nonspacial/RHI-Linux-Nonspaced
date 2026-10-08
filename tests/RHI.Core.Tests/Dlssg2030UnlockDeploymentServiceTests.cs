@@ -269,6 +269,23 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         Assert.DoesNotContain(probe, component => component.Kind == ManagedComponentKind.Dlssg2030Unlock && component.Availability == ComponentAvailability.Installed);
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-install", 0x8664, GraphicsApi.DirectX12);
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x34), UpstreamIni("SM86")));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var run = await CancelAtWritePhase.RunAsync(
+            ct => service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll", ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.IniFileName)));
+    }
+
     private Dlssg2030UnlockDeploymentService CreateService(GameFixture fixture, HttpClient http, LinuxDeploymentRecordStore records)
         => new(http, records, new WineDllOverrideService(), new Dlssg2030PreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"));
 

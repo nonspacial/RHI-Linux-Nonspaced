@@ -237,6 +237,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         WineOverrideRecord? wineOverride = null;
         var moved = false;
         var recordWritten = false;
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             File.Copy(payloadPath, tempPath, overwrite: false);
@@ -410,6 +412,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
         var staged = targetPath + $".rhi-update-{Guid.NewGuid():N}";
         var previous = targetPath + $".rhi-previous-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             File.Copy(payloadPath, staged, overwrite: false);

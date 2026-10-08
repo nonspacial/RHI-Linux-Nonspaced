@@ -656,6 +656,61 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         Assert.Equal(zzz, AddonEntryPath(new LinuxDeploymentRecordStore(LedgerPath(fixture)), fixture));
     }
 
+    // w2/vmsplit review finding 1: Cancel must never break a rollback, and is honoured only before the first write.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-install");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        File.WriteAllText(Path.Combine(fixture.Bin, "ReShade.ini"), "[INSTALL]\nHookStreamline=0\n");
+
+        var run = await CancelAtWritePhase.RunAsync(
+            ct => ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true, cancellationToken: ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Equal("winmm.dll", ctx.Ual.InstalledProxyName(fixture.Game));
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_ThenAFailure_RollsEveryGameFileBack()
+    {
+        using var fixture = CreateGame("cancel-rollback");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        // A game DLL the DLSS stack replaces (kept as .original): the rollback must put it back, not leave RHI's copy.
+        File.WriteAllBytes(Path.Combine(fixture.Bin, "nvngx_dlss.dll"), CreatePe(0x8664, 80 * 1024, 0x21));
+
+        var run = await CancelAtWritePhase.RunAsync(
+            ct => ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: false, cancellationToken: ct), [fixture.Bin, fixture.Prefix],
+            atWritePhase: () => ctx.Records.SaveFaultForTesting = () => new IOException("Simulated ledger failure"));
+        ctx.Records.SaveFaultForTesting = null;
+
+        Assert.False(run.Result.Success);
+        CancelAtWritePhase.AssertUnchanged(run.Before, fixture.Bin, fixture.Prefix);
+        Assert.Null(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        using var fixture = CreateGame("cancel-remove");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        var reshadePath = AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        var reshadeBytes = File.ReadAllBytes(reshadePath);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => ctx.ShortFuse.RemoveAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Null(ctx.Ual.GetRecord(fixture.Game));
+        Assert.Equal(reshadeBytes, File.ReadAllBytes(reshadePath));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
+    }
+
     private static string LedgerPath(GameFixture fixture) => Path.Combine(fixture.Root, "deployments.json");
 
     private static string AddonEntryPath(LinuxDeploymentRecordStore store, GameFixture fixture)

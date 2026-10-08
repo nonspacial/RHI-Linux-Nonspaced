@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -98,7 +99,7 @@ public sealed class D3DCompilerToolInstaller
         return RunAndVerifyAsync(game, startInfo, toolLabel, applyOverride: false, cancellationToken: cancellationToken);
     }
 
-    private async Task<ComponentOperationResult> RunAndVerifyAsync(
+    internal async Task<ComponentOperationResult> RunAndVerifyAsync(
         DetectedGame game,
         ProcessStartInfo startInfo,
         string toolName,
@@ -116,6 +117,9 @@ public sealed class D3DCompilerToolInstaller
 
         try
         {
+            // The tool writes into the prefix as soon as it starts, and a cancelled wait would leave it running behind an
+            // idle RHI: from here on the install runs to the end (Cancel is refused).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             using var process = Process.Start(startInfo);
             if (process is null)
                 return ComponentOperationResult.Fail($"Could not start {toolName}.");

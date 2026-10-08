@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -443,11 +444,6 @@ public sealed class Dlss5FeederFullDeploymentService
                     : ValidateDownloadedPayload(consumerAsset, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
             }
 
-            if (compilerPlan.DeploySourcePath is not null)
-                await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
-
-            if (_overrides is not null)
-                compilerOverride = _overrides.EnsureNativeBuiltin(prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath));
             // Current upstream publishes a single DLSS5-Feeder-*.zip release asset.
             // The archive is produced by Windows tooling, so entries may carry either '/' or '\\'
             // separators. Linux must normalize both before matching leaf names. The tagged raw
@@ -530,9 +526,22 @@ public sealed class Dlss5FeederFullDeploymentService
                     var dgConfigTarget = Path.Combine(binaryDir, "dgVoodoo.conf");
                     if (File.Exists(dgConfigTarget))
                         throw new IOException($"External dgVoodoo.conf already exists: {dgConfigTarget}. RHI Linux will not overwrite it automatically.");
-                    dx9Migration = await _dx9ReShade.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
-                    dx9TranslationCreatedThisAttempt = true;
                 }
+            }
+
+            // Every download and extraction above is done: from the first game file on, the install runs to completion
+            // or full rollback (Cancel is refused). The compiler copy and its override used to run before the downloads.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            if (compilerPlan.DeploySourcePath is not null)
+                await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
+
+            if (_overrides is not null)
+                compilerOverride = _overrides.EnsureNativeBuiltin(prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath));
+
+            if (dgVoodooPayload is not null)
+            {
+                dx9Migration = await _dx9ReShade!.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
+                dx9TranslationCreatedThisAttempt = true;
             }
 
             Directory.CreateDirectory(addonDir);
@@ -715,7 +724,12 @@ public sealed class Dlss5FeederFullDeploymentService
             if (earlyLoadMutation is not null && iniResult is not null)
                 try { RemoveLoadFromDllMainToken(iniResult.Path, earlyLoadMutation); } catch { }
             if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
-                try { await _dx9ReShade.RestoreAsync(game, dx9Migration, cancellationToken).ConfigureAwait(false); } catch { }
+                // Compensation: never cancellable, or a cancelled install leaves the DX9 translation migration in place.
+                try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception dx9Error) when (dx9Error is IOException or UnauthorizedAccessException or InvalidOperationException)
+                {
+                    AppLog.Warn("feeder-rollback", $"Could not restore the DX9 ReShade migration for {game.Name}", dx9Error);
+                }
             TryDeleteEmptyTree(integrationRoot);
             if (compilerOverride is not null && _overrides is not null)
                 try { _overrides.Restore(prefix, compilerOverride); } catch { }
@@ -770,6 +784,8 @@ public sealed class Dlss5FeederFullDeploymentService
                 dx9RestoreCoordinator = dx9ReShade;
             }
 
+            // Cancel is honoured only up to here: the teardown never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             if (record.Metadata.TryGetValue(MetaIniPath, out var iniPath) && !string.IsNullOrWhiteSpace(iniPath))
             {
                 var mutation = new PresetPathMutation(

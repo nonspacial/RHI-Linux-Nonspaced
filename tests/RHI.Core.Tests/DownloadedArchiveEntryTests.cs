@@ -75,6 +75,19 @@ public sealed class DownloadedArchiveEntryTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon64", SearchOption.AllDirectories));
     }
 
+    // w2/vmsplit review finding 1: the Addon Manager prepares every payload first, then ends the cancellable phase
+    // before it touches the game and runs the selection change to completion.
+    [Fact]
+    public async Task AddonManager_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (manager, game, id, _) = await AddonManager(Zip("Thing.addon64", CacheForeignFileRejectionTests.Pe(0x8664, 64 * 1024, 0x43), 0));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => manager.ApplySelectionAsync(game, [id], ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Single(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon64", SearchOption.AllDirectories));
+    }
+
     private (ReShadeDeploymentService Service, string Cache) Nightly(byte[] zip)
     {
         var http = new HttpClient(new Routes(new() { [ReShadeDeploymentService.Nightly64Url] = zip }));

@@ -157,6 +157,55 @@ public sealed class REFrameworkDeploymentServiceTests : IDisposable
         Assert.Equal(ComponentAvailability.Installed, withFootprint.Single(c => c.Kind == ManagedComponentKind.REFramework).Availability);
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    private (REFrameworkDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, HttpClient Http) CancelFixture(string name)
+    {
+        var game = CreateGame();
+        game.EngineHint = "RE Engine";
+        var zip = MakeFrameworkZip();
+        var digest = Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+        var http = new HttpClient(new FakeHandler(req =>
+        {
+            var url = req.RequestUri!.AbsoluteUri;
+            if (url.Contains("REFramework-nightly/releases", StringComparison.OrdinalIgnoreCase))
+                return JsonResponse(ReleaseJson("nightly-01302-deadbeef", "https://example.test/ref.zip", digest));
+            if (url == "https://example.test/ref.zip")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };
+            throw new InvalidOperationException("Unexpected URL: " + url);
+        }));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, name + "-records.json"));
+        return (new REFrameworkDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(_root, "cache-" + name)), records, game, http);
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (service, records, game, http) = CancelFixture("cancel-install");
+        using var _ = http;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(game, ManagedComponentKind.REFramework));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(
+            File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")), "dinput8", Path.GetFileName(game.ExecutablePath)));
+    }
+
+    [Fact]
+    public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (service, records, game, http) = CancelFixture("cancel-update");
+        using var _ = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.UpdateAsync(game, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        var record = records.Find(game, ManagedComponentKind.REFramework)!;
+        Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.rhi-update-backup-*"));
+        Assert.Equal(record.Files.Single().Sha256, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(record.Files.Single().Path))), ignoreCase: true);
+    }
+
     private REFrameworkDeploymentService NewService(HttpClient http, string recordsName)
         => new(http,
             new LinuxDeploymentRecordStore(Path.Combine(_root, recordsName)),

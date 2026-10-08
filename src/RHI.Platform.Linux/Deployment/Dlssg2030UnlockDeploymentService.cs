@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core;
 using RHI.Core.Models;
 using RHI.Core.Services;
@@ -221,9 +222,10 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniMoved = false;
         var recordWritten = false;
 
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
             wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
 
             File.Copy(payload.DllPath, proxyTemp, overwrite: false);
@@ -425,6 +427,7 @@ public sealed class Dlssg2030UnlockDeploymentService
 
         var staged = proxyPath + $".rhi-update-new-{Guid.NewGuid():N}";
         var previous = proxyPath + $".rhi-update-old-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             File.Copy(payload.DllPath, staged, overwrite: false);

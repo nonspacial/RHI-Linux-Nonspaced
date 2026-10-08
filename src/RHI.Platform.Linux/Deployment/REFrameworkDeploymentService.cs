@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -95,6 +96,8 @@ public sealed class REFrameworkDeploymentService
         var applicationName = Path.GetFileName(game.ExecutablePath ?? "");
         WineOverrideRecord? overrideRecord = null;
         var deployed = false;
+        // Downloaded and validated: from the override on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             overrideRecord = _overrides.EnsureNativeBuiltin(game.PrefixPath!, DllFileName, applicationName);
@@ -188,6 +191,7 @@ public sealed class REFrameworkDeploymentService
         }
 
         var backup = owned.Path + $".rhi-update-backup-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             File.Copy(owned.Path, backup, overwrite: false);

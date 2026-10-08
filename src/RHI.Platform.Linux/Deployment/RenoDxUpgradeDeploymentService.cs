@@ -102,6 +102,8 @@ public sealed class RenoDxUpgradeDeploymentService
         try
         {
             var cached = await DownloadAndValidateAsync(sourceUrl, architecture, cancellationToken).ConfigureAwait(false);
+            // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the add-on with no record).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
             var targetHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
 
@@ -162,10 +164,11 @@ public sealed class RenoDxUpgradeDeploymentService
                 return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
         }
 
+        // Cancel is honoured only up to here: the removal never stops half-way.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         var changed = new List<string>();
         foreach (var file in record.Files)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             if (!File.Exists(file.Path)) continue;
             File.Delete(file.Path);
             changed.Add(file.Path);

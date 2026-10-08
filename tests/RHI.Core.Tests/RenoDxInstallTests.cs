@@ -192,6 +192,52 @@ public sealed class RenoDxInstallTests : IDisposable
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; a late cancel used to throw after
+    // the add-on and its INI keys were in place, leaving them with no record.
+    private (RenoDxDeploymentService Service, LinuxDeploymentRecordStore Store, DetectedGame Game, string[] Files) CancelFixture(string name)
+    {
+        var gameRoot = Path.Combine(_root, name, "game");
+        var bin = Path.Combine(gameRoot, "bin");
+        Directory.CreateDirectory(bin);
+        var exe = Path.Combine(bin, "StreetFighter6.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        File.WriteAllText(Path.Combine(bin, "ReShade64.dll"), "MZ ReShade crosire");
+        var game = new DetectedGame
+        {
+            Name = "Street Fighter™ 6", InstallPath = gameRoot, BinaryDirectory = bin,
+            ExecutablePath = exe, Runner = "Proton", SteamAppId = 1364780
+        };
+        var http = new HttpClient(new Handler());
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, name, "records.json"));
+        var service = new RenoDxDeploymentService(http, store, new RenoDxCatalogService(http), Path.Combine(_root, name, "cache"));
+        return (service, store, game, [exe, Path.Combine(bin, "ReShade64.dll")]);
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (service, store, game, files) = CancelFixture("cancel-install");
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, files, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDX));
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-sf6.addon64")));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var (service, store, game, files) = CancelFixture("cancel-remove");
+        Assert.True((await service.InstallAsync(game, files)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-sf6.addon64")));
+    }
+
     private sealed class EngineTemplateHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

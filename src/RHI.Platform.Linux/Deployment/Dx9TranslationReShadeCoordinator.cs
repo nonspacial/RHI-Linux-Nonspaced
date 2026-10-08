@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -48,6 +49,8 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !hash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Managed ReShade d3d9.dll was modified outside RHI; DX9 migration is blocked.");
 
+        // From the first override on, the migration (or its undo) runs to the end whatever Cancel says.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var exeName = Path.GetFileName(game.ExecutablePath);
         var originalRecordOverride = record.WineOverride;
         var d3d9Override = originalRecordOverride is not null &&
@@ -95,6 +98,7 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !currentHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Translated ReShade dxgi.dll was modified outside RHI; restoration is blocked.");
 
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var translatedOverride = record.WineOverride;
         File.Move(state.TranslatedPath, state.OriginalPath);
         try

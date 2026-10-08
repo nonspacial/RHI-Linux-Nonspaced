@@ -145,6 +145,8 @@ public sealed class DofFixDeploymentService
         var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         var cached = await DownloadAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
 
+        // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the add-on with no record).
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
         var deployedHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
 
@@ -201,10 +203,11 @@ public sealed class DofFixDeploymentService
                 return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Remove is blocked to preserve the changed file.");
         }
 
+        // Cancel is honoured only up to here: the removal never stops half-way.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         var changed = new List<string>();
         foreach (var file in paths)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(file.Path))
             {
                 File.Delete(file.Path);

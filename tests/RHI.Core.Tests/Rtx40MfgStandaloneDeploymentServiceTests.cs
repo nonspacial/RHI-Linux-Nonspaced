@@ -652,6 +652,42 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
             }
         };
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-install", 0x8664, GraphicsApi.DirectX12);
+        using var handler = Rtx40Handler.WithVersions(("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x4A)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(fixture.Game, "winmm.dll", ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
+    }
+
+    [Fact]
+    public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-update", 0x8664, GraphicsApi.DirectX12);
+        using var handler = Rtx40Handler.WithVersions(
+            ("1.3.1", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x4B)))),
+            ("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x4C)))));
+        handler.ActiveVersion = "1.3.1";
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "wininet.dll")).Success);
+        handler.ActiveVersion = "1.3.2";
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.UpdateAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Equal("1.3.2", records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!.Version);
+    }
+
     private Rtx40MfgStandaloneDeploymentService CreateService(GameFixture fixture, HttpClient http, LinuxDeploymentRecordStore records)
         => new(
             http,

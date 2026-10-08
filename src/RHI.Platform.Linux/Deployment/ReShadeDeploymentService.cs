@@ -219,6 +219,9 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Unavailable($"ReShade server unavailable: {staged.FallbackReason} The cached copy ({staged.Version}) is older than the installed version ({existingRecord.Version}); nothing was changed; try again later.");
         }
 
+        // Last point Cancel is honoured: from the update snapshot on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+
         var previousPayload = existingRecord?.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
         var existedBefore = previousPayload?.ExistedBeforeInstall ?? File.Exists(target);
         var previousOverride = existingRecord?.WineOverride;
@@ -504,7 +507,7 @@ public sealed partial class ReShadeDeploymentService
             // so do not restore it over the previous managed ReShade. Instead the update is blocked before
             // destructive operations where possible; for a fresh install, restore/remove normally.
             if (existingRecord is null && fileReplaced)
-                await RollbackFreshFileAsync(target, existedBefore, cancellationToken).ConfigureAwait(false);
+                await RollbackFreshFileAsync(target, existedBefore).ConfigureAwait(false);
             if (existingRecord is null && overrideCreatedThisAttempt && game.PrefixPath is { } prefix && Directory.Exists(prefix))
                 _overrides.Restore(prefix, appliedOverride);
             if (compilerOverrideCreatedThisAttempt && game.PrefixPath is { } compilerPrefix && Directory.Exists(compilerPrefix))
@@ -574,6 +577,9 @@ public sealed partial class ReShadeDeploymentService
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
 
+            // Cancel is honoured only up to here: a removal that stopped half-way would be refused on retry by the
+            // hash check above (restored originals no longer match RHI's hash), so it always runs to the end.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             if (coexist)
             {
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false);
@@ -586,7 +592,6 @@ public sealed partial class ReShadeDeploymentService
 
             foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
                 {
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -1204,10 +1209,11 @@ public sealed partial class ReShadeDeploymentService
     private static bool IsValidReShadeDll(string path)
         => File.Exists(path) && new FileInfo(path).Length > MinDllSize && BinarySignatureInspector.HasPeSignature(path, MinDllSize);
 
-    private async Task RollbackFreshFileAsync(string target, bool existedBefore, CancellationToken cancellationToken)
+    // Compensation: never cancellable, or the .original the replace created stays beside the game's file.
+    private async Task RollbackFreshFileAsync(string target, bool existedBefore)
     {
         if (existedBefore && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
-            await _files.RestoreAsync(target, cancellationToken).ConfigureAwait(false);
+            await _files.RestoreAsync(target, CancellationToken.None).ConfigureAwait(false);
         else
         {
             try { if (File.Exists(target)) File.Delete(target); } catch { }

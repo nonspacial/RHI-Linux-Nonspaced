@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -155,6 +156,8 @@ public sealed class GitHubReShadeAddonDeploymentService
         try
         {
             var cached = await DownloadAsync(release, architecture, deployFileName, cancellationToken).ConfigureAwait(false);
+            // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the copied add-on with no record).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             await CopyAtomicAsync(cached, target, cancellationToken).ConfigureAwait(false);
             var targetHash = await Sha256Async(target, cancellationToken).ConfigureAwait(false);
             var auxiliaryConfig = TryEnsureAuxiliaryConfigIfAbsent(deployDir);
@@ -213,6 +216,8 @@ public sealed class GitHubReShadeAddonDeploymentService
 
         try
         {
+            // The removal never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var file in record.Files)
             {
                 if (!File.Exists(file.Path)) continue;

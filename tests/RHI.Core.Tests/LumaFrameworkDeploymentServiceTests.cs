@@ -620,6 +620,100 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
             withAddon.Single(c => c.Kind == ManagedComponentKind.LumaFramework).Availability);
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; the rollback never uses the
+    // cancelled token (it used to throw on the ReShade.ini write and leave Luma's keys in ReShade.ini and Engine.ini).
+    private sealed record LumaCancelFixture(
+        LumaFrameworkDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, string Root, string EngineIni, HttpClient Http);
+
+    private LumaCancelFixture CreateLumaCancelFixture(string name)
+    {
+        const string wikiUrl = "https://example.test/luma-generic-wiki";
+        var root = Path.Combine(_root, name);
+        var binary = Path.Combine(root, "GameProject", "Binaries", "Win64");
+        var prefix = Path.Combine(root, "pfx");
+        var engineConfig = Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Local", "MetaProject", "Saved", "Config", "Windows");
+        Directory.CreateDirectory(binary);
+        Directory.CreateDirectory(engineConfig);
+        var exe = Path.Combine(binary, "GameProject-Win64-Shipping.exe");
+        File.WriteAllBytes(exe, MakePePayload(0x8664, 4096));
+        var game = new DetectedGame
+        {
+            Name = "Generic UE Metadata Test", InstallPath = root, BinaryDirectory = binary, ExecutablePath = exe,
+            PrefixPath = prefix, Source = "Steam", Runner = "Proton", GraphicsApi = GraphicsApi.DirectX11,
+            EngineHint = "Unreal Engine 4.27", EngineIniProjectOverride = "MetaProject"
+        };
+        Directory.CreateDirectory(Path.Combine(binary, "addons"));
+        File.WriteAllText(Path.Combine(binary, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
+        var engineIni = Path.Combine(engineConfig, "Engine.ini");
+        File.WriteAllText(engineIni, "[SystemSettings]\nUserKeep=42\n");
+        var records = NewRecords(name + "-records.json");
+        SeedManagedReShade(records, game);
+        var zip = MakeLumaZip();
+        var digest = Sha256(zip);
+        var wiki = """
+        <table>
+          <tr><th>Name</th><th>HDR</th><th>DLSS / FSR</th><th>Notes</th><th>UE Version</th></tr>
+          <tr><td>Generic UE Metadata Test</td><td>✅</td><td>✅</td>
+          <td>Launch argument: <code>-dx11</code><details><summary>Modify Engine.ini</summary><code>[SystemSettings]</code><br/><code>r.Luma.Metadata=1</code></details></td>
+          <td>4.27.2</td></tr>
+        </table>
+        """;
+        var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
+        {
+            wikiUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(wiki, Encoding.UTF8, "text/html") },
+            var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
+                => JsonResponse("[" + ReleaseJson("latest-630", "https://example.test/luma-metadata.zip", digest) + "]"),
+            "https://example.test/luma-metadata.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
+            var url => throw new InvalidOperationException("Unexpected URL: " + url)
+        }));
+        var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
+        return new(new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, "cache-" + name), catalog), records, game, root, engineIni, http);
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var fx = CreateLumaCancelFixture("cancel-install");
+        using var http = fx.Http;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => fx.Service.InstallAsync(fx.Game, ct), [fx.Root]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(fx.Records.Find(fx.Game, ManagedComponentKind.LumaFramework));
+        Assert.Contains("r.Luma.Metadata=1", File.ReadAllText(fx.EngineIni));
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_ThenAFailure_RestoresReShadeIniAndEngineIni()
+    {
+        var fx = CreateLumaCancelFixture("cancel-rollback");
+        using var http = fx.Http;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => fx.Service.InstallAsync(fx.Game, ct), [fx.Root],
+            atWritePhase: () => fx.Records.SaveFaultForTesting = () => new IOException("Simulated ledger failure"));
+        fx.Records.SaveFaultForTesting = null;
+
+        Assert.False(run.Result.Success);
+        CancelAtWritePhase.AssertUnchanged(run.Before, fx.Root);
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.LumaFramework));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var fx = CreateLumaCancelFixture("cancel-remove");
+        using var http = fx.Http;
+        var engineBefore = File.ReadAllText(fx.EngineIni);
+        Assert.True((await fx.Service.InstallAsync(fx.Game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => fx.Service.RemoveAsync(fx.Game, ct), [fx.Root]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.LumaFramework));
+        Assert.DoesNotContain("r.Luma.Metadata=", File.ReadAllText(fx.EngineIni));
+        Assert.Contains("UserKeep=42", engineBefore);
+    }
+
     private LumaFrameworkDeploymentService NewService(HttpClient http, string recordsName)
         => new(http, NewRecords(recordsName), Path.Combine(_root, "cache-" + recordsName));
 
