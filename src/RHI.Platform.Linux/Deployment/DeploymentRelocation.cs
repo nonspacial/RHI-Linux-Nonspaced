@@ -192,12 +192,19 @@ public sealed class DeploymentRelocation
 
     /// <summary>
     /// A moved game without RHI records whose per-game entries still name its old folder (an Edit game patch target):
-    /// re-points them once every named path is found under the game's current folder (Refs #147).
+    /// re-points them once every named path is found under the game's current folder (Refs #147). Only the stores
+    /// holding those entries take part: no record key changes here, so the others have nothing of this game to move
+    /// (and one of them being unreadable must not block it).
     /// </summary>
     private RelocationRepairResult RepairStoresOnly(DetectedGame game, IReadOnlyList<IGameStateStore> stores)
     {
+        IReadOnlyList<IGameStateStore> involved;
         IReadOnlyList<string> paths;
-        try { paths = MovedPaths(game, stores); }
+        try
+        {
+            involved = stores.Distinct().Where(store => MovedPaths(game, [store]).Count > 0).ToArray();
+            paths = MovedPaths(game, involved);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return new(false, 0, RepairNotSavedPrefix + ex.Message);
@@ -219,7 +226,7 @@ public sealed class DeploymentRelocation
             if (!Path.Exists(mapped))
                 return new(false, 0, $"{RepairMissingAfterMovePrefix}{mapped}");
         }
-        return Commit(move, stores) ?? new(true, 0, RepairSettingsDone);
+        return Commit(move, involved) ?? new(true, 0, RepairSettingsDone);
     }
 
     /// <summary>Stages <paramref name="records"/> (if any) and every store's part of <paramref name="move"/>, then writes them all or none; null when written.</summary>

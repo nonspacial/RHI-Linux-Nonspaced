@@ -188,6 +188,30 @@ public sealed class LibraryStateRelocationTests : IDisposable
         Assert.Equal(newGame, moved.InstallPath);
     }
 
+    // Harness finding: an unrelated unreadable per-game store (here the graphics API overrides) must not block re-pointing
+    // the edit — without records no record key changes, so that store has nothing of this game to move — and stays as it is.
+    [Fact]
+    public void MovedSteamLibrary_WithoutComponents_AnUnrelatedUnreadableStoreDoesNotBlockTheRepair()
+    {
+        var store = new LinuxGameLibraryStore(Path.Combine(_root, "game-library.json"));
+        var (game, edit) = SteamWithEdit(Path.Combine(_root, "a", "lib"));
+        var state = store.Load();
+        state.GameEdits[LinuxGameLibraryStore.GameKey(game)] = edit;
+        store.Save(state);
+        var apiPath = Path.Combine(_root, "game-api-overrides.json");
+        File.WriteAllText(apiPath, "{ broken");
+        var api = new RHI.Platform.Linux.Paths.GraphicsApiOverrideStore(apiPath);
+        Directory.Move(Path.Combine(_root, "a"), Path.Combine(_root, "b"));
+        var moved = Steam(Path.Combine(_root, "b", "lib"));
+
+        var result = new DeploymentRelocation(new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json")))
+            .Repair(moved, [api, store], out _);
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(Path.Combine(moved.InstallPath, "Game"), store.Load().GameEdits[LinuxGameLibraryStore.GameKey(moved)].GameRootPath);
+        Assert.Equal("{ broken", File.ReadAllText(apiPath));
+    }
+
     [Fact]
     public void MovedEditTarget_MissingAtTheNewLocation_RepairChangesNothing()
     {
