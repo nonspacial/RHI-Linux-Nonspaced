@@ -212,6 +212,9 @@ public sealed class WineDllOverrideServiceTests : IDisposable
     [InlineData("\"dxgi\"=hex(2):6e,00,61,00,74,00,69,00,76,00,65,00,2c,00,62,00,75,00,69,00,6c,00,74,00,\\\n  69,00,6e,00,00,00\n")]
     [InlineData("\"dxgi\"=dword:00000001\n")]
     [InlineData("\"dxgi\"=hex:01,02\n")]
+    // w2 final review, nit 4: the name keeps the hive's spelling (Wine compares names without case), typed or string.
+    [InlineData("\"DXGI\"=dword:00000001\n")]
+    [InlineData("\"Dxgi\"=hex(2):6e,00,61,00,\\\n  00,00\n")]
     public void EnsureThenRestore_ANonStringEarlierValue_ComesBackInItsOwnType(string value)
     {
         foreach (var newline in new[] { "\n", "\r\n" })
@@ -236,6 +239,24 @@ public sealed class WineDllOverrideServiceTests : IDisposable
             Assert.Equal(original, File.ReadAllText(reg));
             Assert.Equal(WineOverrideRestoreOutcome.AlreadyRestored, service.Restore(prefix, record).Outcome);
         }
+    }
+
+    // w2 final review, nit 4: a string earlier value under an upper-case name comes back byte for byte.
+    [Fact]
+    public void EnsureThenRestore_AnUpperCaseName_KeepsItsSpelling()
+    {
+        var prefix = Path.Combine(_root, "pfx-case-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(prefix);
+        var reg = Path.Combine(prefix, "user.reg");
+        const string original = "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\DllOverrides] 1\n\"D3D9\"=\"builtin\"\n\"x\"=\"y\"\n";
+        File.WriteAllText(reg, original);
+        var service = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+
+        var record = service.EnsureNativeBuiltin(prefix, "d3d9.dll");
+        Assert.Contains("\"D3D9\"=\"native,builtin\"", File.ReadAllText(reg), StringComparison.Ordinal);
+        Assert.Equal(WineOverrideRestoreOutcome.Restored, service.Restore(prefix, record).Outcome);
+
+        Assert.Equal(original, File.ReadAllText(reg));
     }
 
     // w2 merge review, nit 3: a rollback's restore/reapply never lets an exception escape the rollback, whatever its

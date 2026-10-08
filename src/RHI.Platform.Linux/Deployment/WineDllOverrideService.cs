@@ -276,9 +276,12 @@ public sealed class WineDllOverrideService
         var prefix = $"\"{dllName}\"=";
         for (var i = start + 1; i < end; i++)
         {
-            if (!lines[i].TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            var existing = lines[i].TrimStart();
+            if (!existing.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
             lines.RemoveRange(i + 1, ContinuationLines(lines, i, end));
-            lines[i] = entry;
+            // Wine compares value names without case; the name keeps the spelling the hive has ("DXGI"), so a restore
+            // gives back the user's line byte for byte (w2 final review, nit 4).
+            lines[i] = existing[..prefix.Length] + entry[prefix.Length..];
             return string.Join(newline, lines);
         }
         // After the section's last value, not after the blank separator line (or the empty string that follows a
