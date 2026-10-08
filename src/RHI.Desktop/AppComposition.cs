@@ -40,6 +40,27 @@ internal sealed class AppComposition
         => new(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
             UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
 
+    /// <summary>The Wine override service every registry edit goes through, and the deployment journal over it.</summary>
+    internal sealed record WineRecovery(WineDllOverrideService Overrides, DeploymentJournal Journal);
+
+    /// <summary>
+    /// The app's Wine override service and deployment journal (built before start-up recovery, which uses both). A
+    /// registry edit started on the UI thread never waits long for another RHI's lock (w2 wine review, nit 9), and the
+    /// journal sees the ledger, so a deferred override undo can tell a later install that depends on it (major 1).
+    /// </summary>
+    /// <param name="isUiThread">Whether the calling thread is the UI thread (default: Avalonia's dispatcher).</param>
+    /// <param name="journalDirectory">Test seam (default: the app's journal folder).</param>
+    /// <param name="isPrefixInUse">Test seam (default: a wineserver runs for the prefix).</param>
+    /// <param name="lockTimeout">Test seam (default: the editor's lock wait).</param>
+    public static WineRecovery CreateWineRecovery(
+        LinuxDeploymentRecordStore records, Func<bool>? isUiThread = null, string? journalDirectory = null,
+        Func<string, bool>? isPrefixInUse = null, TimeSpan? lockTimeout = null)
+    {
+        isUiThread ??= () => Avalonia.Threading.Dispatcher.UIThread.CheckAccess();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(isPrefixInUse, lockTimeout, mayBlock: () => !isUiThread()));
+        return new WineRecovery(overrides, LinuxDeploymentRecovery.CreateJournal(overrides, journalDirectory, isPrefixInUse, records));
+    }
+
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal)
     {
         var libraryStore = new LinuxGameLibraryStore();

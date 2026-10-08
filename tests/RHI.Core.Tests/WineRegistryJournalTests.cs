@@ -261,12 +261,29 @@ public sealed class WineRegistryJournalTests : IDisposable
     }
 
     // w2 wine review, major 1: the app's journal sees the ledger, or a deferred undo cannot tell a later install apart.
+    // The app's composition (what App builds), not a source pattern (w2 wine re-review, nit 4): its journal sees the
+    // ledger, so an interrupted install's undo leaves the override a later install of the game depends on.
     [Fact]
-    public void App_BindsTheRecoveryJournalToTheLedger()
+    public async Task App_BindsTheRecoveryJournalToTheLedger()
     {
-        var app = File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "App.axaml.cs"));
+        var prefix = Prefix();
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "app-ledger.json"));
+        var journalDir = Path.Combine(_root, "app-journal");
+        var (overrides, journal) = RHI.Desktop.AppComposition.CreateWineRecovery(records, isUiThread: () => false,
+            journalDirectory: journalDir, isPrefixInUse: _ => false);
+        var operation = await journal.BeginAsync("UAL install: Game", "record|UltimateAsiLoader|steam:7");
+        await overrides.EnsureNativeBuiltinAsync(operation, prefix, "winmm.dll", "Game.exe");
+        operation.AbandonAsIfCrashed();
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = "steam:7", Component = RHI.Core.Models.ManagedComponentKind.ReShade,
+            WineOverride = new WineOverrideRecord { DllName = "winmm", ApplicationName = "Game.exe", PreviousValue = "native,builtin", ChangedByRhi = false }
+        });
 
-        Assert.Matches(@"LinuxDeploymentRecovery\.CreateJournal\(wineOverrides,\s*records:\s*records\)", app);
+        await LinuxDeploymentRecovery.RecoverAsync(journal, records);
+
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe"));
+        Assert.True(records.All().Single().WineOverride!.ChangedByRhi);
     }
 
     public static TheoryData<string> Messages() => new()

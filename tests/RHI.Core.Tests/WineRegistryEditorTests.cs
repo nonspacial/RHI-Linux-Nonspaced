@@ -156,12 +156,29 @@ public sealed class WineRegistryEditorTests : IDisposable
         }
     }
 
+    // The app's composition (what App builds), not a source pattern (w2 wine re-review, nit 4): on the UI thread a busy
+    // lock is refused at once; off it the editor waits as usual.
     [Fact]
     public void App_RegistryEditsOnTheUiThreadDoNotWaitLong()
     {
-        var app = File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "App.axaml.cs"));
+        var prefix = NewPrefix("app-ui-thread");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "app-ui-ledger.json"));
+        var onUiThread = RHI.Desktop.AppComposition.CreateWineRecovery(records, isUiThread: () => true,
+            journalDirectory: Path.Combine(_root, "app-ui-journal"), isPrefixInUse: _ => false, lockTimeout: TimeSpan.FromSeconds(15));
+        var offUiThread = RHI.Desktop.AppComposition.CreateWineRecovery(records, isUiThread: () => false,
+            journalDirectory: Path.Combine(_root, "app-ui-journal"), isPrefixInUse: _ => false, lockTimeout: TimeSpan.FromSeconds(2));
 
-        Assert.Matches(@"new WineRegistryEditor\(mayBlock: \(\) => !Dispatcher\.UIThread\.CheckAccess\(\)\)", app);
+        using (new FileStream(Path.Combine(prefix, "user.reg" + WineRegistryEditor.LockSuffix), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var refused = Assert.Throws<WineRegistryEditRefusedException>(() => onUiThread.Overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe"));
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(1), $"the UI thread waited {clock.Elapsed}");
+            Assert.Equal(WineRegistryEditor.BusyRefusalPrefix + prefix, refused.Message);
+
+            clock.Restart();
+            Assert.Throws<WineRegistryEditRefusedException>(() => offUiThread.Overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe"));
+            Assert.True(clock.Elapsed >= TimeSpan.FromSeconds(1.5), $"a background edit gave up after {clock.Elapsed}");
+        }
     }
 
     [Fact]

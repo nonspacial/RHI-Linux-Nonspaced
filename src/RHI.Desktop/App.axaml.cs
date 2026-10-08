@@ -36,12 +36,9 @@ public sealed class App : Application
             // GitHub API answers are revalidated with ETags for the session (#35): a 304 costs no rate limit.
             var http = new HttpClient(new GitHubConditionalCacheHandler(githubToken)) { Timeout = TimeSpan.FromMinutes(5) };
             var records = new LinuxDeploymentRecordStore();
-            // Registry edits started on the UI thread never wait long for another RHI's lock (w2 wine review, nit 9).
-            var wineOverrides = new WineDllOverrideService(new WineRegistryEditor(mayBlock: () => !Dispatcher.UIThread.CheckAccess()));
             // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
             // service exists that could deploy (installs, start-up auto-update).
-            // The ledger lets a deferred override undo see a later install that depends on it (w2 wine review, major 1).
-            var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides, records: records);
+            var (wineOverrides, journal) = AppComposition.CreateWineRecovery(records);
             var recovery = RunDeploymentStartup(desktop, journal, records);
             var services = AppComposition.Create(http, records, wineOverrides, journal);
             UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);
