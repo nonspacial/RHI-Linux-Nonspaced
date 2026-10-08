@@ -35,7 +35,8 @@ public sealed class App : Application
             githubToken.TokenFileExposed += (_, e) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenFileExposed(e.Restricted));
             var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
             var records = new LinuxDeploymentRecordStore();
-            var wineOverrides = new WineDllOverrideService();
+            // Registry edits started on the UI thread never wait long for another RHI's lock (w2 wine review, nit 9).
+            var wineOverrides = new WineDllOverrideService(new WineRegistryEditor(mayBlock: () => !Dispatcher.UIThread.CheckAccess()));
             // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
             // service exists that could deploy (installs, start-up auto-update).
             // The ledger lets a deferred override undo see a later install that depends on it (w2 wine review, major 1).

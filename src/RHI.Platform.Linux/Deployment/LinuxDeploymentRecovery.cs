@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using RHI.Core.Deployment;
@@ -110,12 +111,18 @@ public sealed class WineOverrideCompensator(
     }
 }
 
-/// <summary>Finds a running wineserver for a Wine prefix from <c>/proc</c> (its <c>WINEPREFIX</c>, default <c>~/.wine</c>).</summary>
+/// <summary>
+/// Finds a running wineserver for a Wine prefix from <c>/proc</c>. A wineserver matches when its <c>WINEPREFIX</c>
+/// (default <c>~/.wine</c>) is the prefix's path, or when its working directory is the prefix's server directory:
+/// wineserver runs in <c>/tmp/.wine-&lt;uid&gt;/server-&lt;dev&gt;-&lt;inode&gt;</c> of the prefix folder, an identity
+/// that also holds for a relative <c>WINEPREFIX</c> or a prefix reached through a bind mount.
+/// </summary>
 public static class WineServerProbe
 {
     public static bool IsRunningFor(string prefixPath, string procRoot = "/proc")
     {
         var wanted = Normalise(prefixPath);
+        var serverDirectory = FileIdentity.TryGet(prefixPath) is { } identity ? ServerDirectoryName(identity) : null;
         IEnumerable<string> processes;
         try
         {
@@ -132,6 +139,8 @@ public static class WineServerProbe
             {
                 var comm = File.ReadAllText(Path.Combine(process, "comm")).Trim();
                 if (!comm.StartsWith("wineserver", StringComparison.Ordinal)) continue;
+                if (serverDirectory is not null && string.Equals(Path.GetFileName(WorkingDirectory(process)), serverDirectory, StringComparison.Ordinal))
+                    return true;
                 var environment = File.ReadAllText(Path.Combine(process, "environ")).Split('\0');
                 string? Variable(string name) => environment.FirstOrDefault(entry => entry.StartsWith(name + "=", StringComparison.Ordinal))?[(name.Length + 1)..];
                 var prefix = Variable("WINEPREFIX") is { Length: > 0 } explicitPrefix
@@ -146,6 +155,12 @@ public static class WineServerProbe
         }
         return false;
     }
+
+    /// <summary>The name of the server directory wineserver works in for a prefix folder with this identity.</summary>
+    public static string ServerDirectoryName(FileIdentity prefix)
+        => string.Create(CultureInfo.InvariantCulture, $"server-{prefix.Device:x}-{prefix.Inode:x}");
+
+    private static string? WorkingDirectory(string process) => new FileInfo(Path.Combine(process, "cwd")).LinkTarget;
 
     // compatdata folders are often reached through a symlinked library path: resolve every component.
     private static string Normalise(string path) => PathIdentity.Canonicalize(path);

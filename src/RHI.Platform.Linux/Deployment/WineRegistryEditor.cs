@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
 using RHI.Core.Services;
 
@@ -18,9 +20,12 @@ namespace RHI.Platform.Linux.Deployment;
 /// tasks or processes never read-modify-write the same hive at once;</item>
 /// <item>reads and rewrites the file byte-exactly (Latin-1 maps every byte to one char; Wine itself writes ASCII and
 /// escapes everything else, see <see cref="EscapeKeyName"/>);</item>
-/// <item>copies the hive as it was to <c>user.reg.rhi-backup-&lt;utc&gt;</c> before each change (the newest
-/// <see cref="BackupsKept"/> are kept), then replaces it through <see cref="AtomicFile.ReplaceUserFile"/>: unique
-/// temp, fsync, full read-back verify, rename, folder fsync. The hive is never truncated in place.</item>
+/// <item>copies the hive as it was to <c>user.reg.rhi-backup-&lt;utc&gt;</c> before a change whenever it holds content
+/// RHI did not write (consecutive RHI edits share one backup), then replaces it through
+/// <see cref="AtomicFile.ReplaceUserFile"/>: unique temp, fsync, full read-back verify, rename, folder fsync. The hive is
+/// never truncated in place. Older backups beyond the newest <see cref="BackupsKept"/> are removed only after the
+/// replace succeeded, so refused edits never push them out.</item>
+/// <item>reports (log) a wineserver that started for the prefix during the edit: it may have read the old hive.</item>
 /// </list>
 /// </summary>
 public sealed class WineRegistryEditor
@@ -41,18 +46,38 @@ public sealed class WineRegistryEditor
     /// <summary>How long an edit waits for another RHI task or process to finish with the same prefix.</summary>
     public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// The wait on a thread that must not block (the UI thread): an edit takes milliseconds, so a lock still held after
+    /// this is refused with <see cref="BusyRefusalPrefix"/> instead of freezing the window for <see cref="DefaultLockTimeout"/>.
+    /// </summary>
+    public static readonly TimeSpan NonBlockingLockTimeout = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Logged (prefix last) when a wineserver for the prefix is found right after RHI replaced its hive.</summary>
+    public const string WineStartedDuringEditWarning =
+        "Wine started in this prefix while RHI was changing its registry; Wine may have read the registry from before the change and can write it back when it stops. Check the change after closing the game. Prefix: ";
+
+    private static readonly Regex BackupName = new(@"^(?<stamp>\d{8}T\d{9}Z)(?:-(?<n>\d{1,9}))?$", RegexOptions.CultureInvariant);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
     private static readonly Encoding ByteExact = Encoding.Latin1;
 
     private readonly Func<string, bool> _isPrefixInUse;
     private readonly TimeSpan _lockTimeout;
+    private readonly Func<bool>? _mayBlock;
 
     /// <param name="isPrefixInUse">Test seam; default: a wineserver for the prefix in <c>/proc</c> (<see cref="WineServerProbe"/>).</param>
-    public WineRegistryEditor(Func<string, bool>? isPrefixInUse = null, TimeSpan? lockTimeout = null)
+    /// <param name="mayBlock">
+    /// False on a thread that must not block (the app passes "not the UI thread"): the lock wait is then capped at
+    /// <see cref="NonBlockingLockTimeout"/>. Null: always the full timeout.
+    /// </param>
+    public WineRegistryEditor(Func<string, bool>? isPrefixInUse = null, TimeSpan? lockTimeout = null, Func<bool>? mayBlock = null)
     {
         _isPrefixInUse = isPrefixInUse ?? (prefix => WineServerProbe.IsRunningFor(prefix));
         _lockTimeout = lockTimeout ?? DefaultLockTimeout;
+        _mayBlock = mayBlock;
     }
+
+    private TimeSpan LockTimeoutOnThisThread
+        => _mayBlock?.Invoke() == false && _lockTimeout > NonBlockingLockTimeout ? NonBlockingLockTimeout : _lockTimeout;
 
     /// <summary>Test seam: runs inside the lock, after the in-use check, before the hive is read.</summary>
     internal Action<string>? InsideLockForTesting { get; set; }
@@ -103,8 +128,9 @@ public sealed class WineRegistryEditor
         var hive = UserHivePath(prefixPath);
         if (!File.Exists(hive)) throw new FileNotFoundException(MissingHiveMessage, hive); // no lock file in an uninitialised prefix
         var gate = Gates.GetOrAdd(PathIdentity.Canonicalize(prefixPath), _ => new SemaphoreSlim(1, 1));
-        var deadline = DateTime.UtcNow + _lockTimeout;
-        if (!gate.Wait(_lockTimeout))
+        var lockTimeout = LockTimeoutOnThisThread;
+        var deadline = DateTime.UtcNow + lockTimeout;
+        if (!gate.Wait(lockTimeout))
             throw new WineRegistryEditRefusedException(BusyRefusalPrefix + prefixPath, inUse: false);
         try
         {
@@ -119,13 +145,64 @@ public sealed class WineRegistryEditor
             var (updated, result) = edit(text);
             if (updated is null || string.Equals(updated, text, StringComparison.Ordinal)) return result;
 
-            WriteBackup(hive, before);
-            AtomicFile.ReplaceUserFile(hive, ByteExact.GetBytes(updated));
+            var written = ByteExact.GetBytes(updated);
+            var backup = BackupNeeded(hive, fileLock, before) ? WriteBackup(hive, before) : null;
+            try
+            {
+                AtomicFile.ReplaceUserFile(hive, written);
+            }
+            catch
+            {
+                // A refused replace changed nothing: drop this copy of the unchanged hive, keep every older backup.
+                if (backup is not null && !FileCleanup.TryDelete(backup, out var error))
+                    AppLog.Warn("wine-registry", $"Could not remove the backup of a registry edit that was not made: {backup}", error);
+                throw;
+            }
+            RememberWritten(fileLock, written);
+            if (backup is not null) RotateBackups(hive);
+            if (_isPrefixInUse(prefixPath))
+                AppLog.Warn("wine-registry", WineStartedDuringEditWarning + prefixPath);
             return result;
         }
         finally
         {
             gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// A backup is taken when the hive holds content RHI did not write: its hash differs from the hive RHI last wrote
+    /// (kept in the lock file), or no RHI backup is left. Consecutive RHI edits (one operation often makes two) then
+    /// share the backup of the hive as it was before the first of them, so the <see cref="BackupsKept"/> slots hold
+    /// states someone else wrote (Wine, the user) instead of RHI's own intermediate steps, which Remove undoes anyway.
+    /// </summary>
+    private static bool BackupNeeded(string hive, FileStream fileLock, byte[] before)
+    {
+        if (Backups(hive).Length == 0) return true;
+        try
+        {
+            fileLock.Position = 0;
+            using var reader = new StreamReader(fileLock, Encoding.ASCII, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            return !string.Equals(reader.ReadToEnd().Trim(), Convert.ToHexString(SHA256.HashData(before)), StringComparison.Ordinal);
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
+
+    private static void RememberWritten(FileStream fileLock, byte[] written)
+    {
+        try
+        {
+            fileLock.SetLength(0);
+            fileLock.Write(Encoding.ASCII.GetBytes(Convert.ToHexString(SHA256.HashData(written))));
+            fileLock.Flush(flushToDisk: true);
+        }
+        catch (IOException ex)
+        {
+            // Only costs an extra backup at the next edit.
+            AppLog.Warn("wine-registry", "Could not note the registry hive RHI wrote in its lock file", ex);
         }
     }
 
@@ -147,22 +224,42 @@ public sealed class WineRegistryEditor
         }
     }
 
-    /// <summary>The hive as it was before this edit; older RHI backups beyond <see cref="BackupsKept"/> are removed.</summary>
-    private static void WriteBackup(string hive, byte[] before)
+    /// <summary>The hive as it was before this edit, next to it; returns the backup's path.</summary>
+    private static string WriteBackup(string hive, byte[] before)
     {
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture);
         var backup = hive + BackupMarker + stamp;
         for (var n = 2; File.Exists(backup); n++) backup = $"{hive}{BackupMarker}{stamp}-{n}";
         UnixFileMode? mode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(hive);
         AtomicFile.WriteNew(backup, before, mode);
+        return backup;
+    }
 
-        var directory = Path.GetDirectoryName(hive)!;
-        var older = Directory.EnumerateFiles(directory, Path.GetFileName(hive) + BackupMarker + "*")
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        foreach (var stale in older.Take(Math.Max(0, older.Length - BackupsKept)))
+    /// <summary>Removes RHI backups beyond the newest <see cref="BackupsKept"/>; runs only after a successful replace.</summary>
+    private static void RotateBackups(string hive)
+    {
+        var backups = Backups(hive);
+        foreach (var stale in backups.Take(Math.Max(0, backups.Length - BackupsKept)))
             if (!FileCleanup.TryDelete(stale, out var error))
                 AppLog.Warn("wine-registry", $"Could not remove an older registry backup: {stale}", error);
+    }
+
+    /// <summary>
+    /// RHI's backups of <paramref name="hive"/>, oldest first: only names RHI writes (<c>user.reg.rhi-backup-</c>, a UTC
+    /// stamp, an optional <c>-n</c> collision suffix compared as a number), so a file the user named alike is never
+    /// counted or removed.
+    /// </summary>
+    internal static string[] Backups(string hive)
+    {
+        var directory = Path.GetDirectoryName(hive)!;
+        var stem = Path.GetFileName(hive) + BackupMarker;
+        return Directory.EnumerateFiles(directory, stem + "*")
+            .Select(path => (Path: path, Match: BackupName.Match(Path.GetFileName(path)[stem.Length..])))
+            .Where(item => item.Match.Success)
+            .OrderBy(item => item.Match.Groups["stamp"].Value, StringComparer.Ordinal)
+            .ThenBy(item => item.Match.Groups["n"].Success ? int.Parse(item.Match.Groups["n"].Value, CultureInfo.InvariantCulture) : 1)
+            .Select(item => item.Path)
+            .ToArray();
     }
 
     /// <summary>

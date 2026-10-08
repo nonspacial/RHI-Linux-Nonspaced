@@ -11,43 +11,18 @@ namespace RHI.Core.Deployment;
 /// </summary>
 public static class FileChangeTime
 {
-    private const int AtFdCwd = -100;
-    private const int AtSymlinkNoFollow = 0x100;
-    private const uint StatxCtime = 0x80;
-    private const int StatxBufferSize = 256;
-    private const int MaskOffset = 0;
-    private const int CtimeSecondsOffset = 96;
-    private const int CtimeNanosecondsOffset = 104;
-
     /// <summary>
     /// The file's ctime in UTC (the link itself for a symlink), or null where it cannot be read
     /// (not Linux, no statx in the C library, or the call failed).
     /// </summary>
     public static DateTime? TryGetUtc(string path)
     {
-        if (!OperatingSystem.IsLinux()) return null;
-        var buffer = new byte[StatxBufferSize];
-        int result;
-        try
-        {
-            result = Libc.statx(AtFdCwd, path, AtSymlinkNoFollow, StatxCtime, buffer);
-        }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
-        {
-            try
-            {
-                result = Glibc.statx(AtFdCwd, path, AtSymlinkNoFollow, StatxCtime, buffer);
-            }
-            catch (Exception inner) when (inner is DllNotFoundException or EntryPointNotFoundException)
-            {
-                return null;
-            }
-        }
-        if (result != 0) return null;
-        var mask = MemoryMarshal.Read<uint>(buffer.AsSpan(MaskOffset));
-        if ((mask & StatxCtime) == 0) return null;
-        var seconds = MemoryMarshal.Read<long>(buffer.AsSpan(CtimeSecondsOffset));
-        var nanoseconds = MemoryMarshal.Read<uint>(buffer.AsSpan(CtimeNanosecondsOffset));
+        var buffer = new byte[Statx.BufferSize];
+        if (!Statx.TryRead(path, followSymlinks: false, Statx.MaskCtime, buffer)) return null;
+        var mask = MemoryMarshal.Read<uint>(buffer.AsSpan(Statx.MaskOffset));
+        if ((mask & Statx.MaskCtime) == 0) return null;
+        var seconds = MemoryMarshal.Read<long>(buffer.AsSpan(Statx.CtimeSecondsOffset));
+        var nanoseconds = MemoryMarshal.Read<uint>(buffer.AsSpan(Statx.CtimeNanosecondsOffset));
         return DateTime.UnixEpoch.AddSeconds(seconds).AddTicks(nanoseconds / 100);
     }
 
@@ -60,17 +35,5 @@ public static class FileChangeTime
         if (TryGetUtc(path) is { } ctime) return ctime;
         var info = new FileInfo(path);
         return info.LastWriteTimeUtc > info.CreationTimeUtc ? info.LastWriteTimeUtc : info.CreationTimeUtc;
-    }
-
-    private static class Libc
-    {
-        [DllImport("libc", SetLastError = true)]
-        public static extern int statx(int dirfd, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, [In, Out] byte[] buffer);
-    }
-
-    private static class Glibc
-    {
-        [DllImport("libc.so.6", SetLastError = true)]
-        public static extern int statx(int dirfd, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, [In, Out] byte[] buffer);
     }
 }

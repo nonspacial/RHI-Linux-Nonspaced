@@ -1,4 +1,6 @@
 using System.Text;
+using RHI.Core.Deployment;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -23,13 +25,14 @@ public sealed class WineRegistryEditorTests : IDisposable
     }
 
     /// <summary>A /proc with one wineserver whose environment names <paramref name="winePrefix"/>.</summary>
-    private string FakeProc(string winePrefix, string comm = "wineserver")
+    private string FakeProc(string winePrefix, string comm = "wineserver", string? workingDirectory = null)
     {
         var proc = Path.Combine(_root, "proc-" + Guid.NewGuid().ToString("N"));
         var process = Path.Combine(proc, "4242");
         Directory.CreateDirectory(process);
         File.WriteAllText(Path.Combine(process, "comm"), comm + "\n");
         File.WriteAllText(Path.Combine(process, "environ"), $"HOME=/home/someone\0WINEPREFIX={winePrefix}\0");
+        if (workingDirectory is not null) File.CreateSymbolicLink(Path.Combine(process, "cwd"), workingDirectory);
         Directory.CreateDirectory(Path.Combine(proc, "self"));
         return proc;
     }
@@ -41,6 +44,10 @@ public sealed class WineRegistryEditorTests : IDisposable
 
     private static string[] Backups(string prefix)
         => Directory.GetFiles(prefix, "user.reg" + WineRegistryEditor.BackupMarker + "*").Order(StringComparer.Ordinal).ToArray();
+
+    /// <summary>Wine (or the user) rewrites the hive: content RHI did not write.</summary>
+    private static void SomeoneElseWrites(string prefix, int n)
+        => File.AppendAllText(Path.Combine(prefix, "user.reg"), $"\n[Software\\\\Wine\\\\Elsewhere{n}] 1\n\"n\"=\"{n}\"\n");
 
     [Fact]
     public void Ensure_WhileAWineserverOwnsThePrefix_IsRefusedAndChangesNothing()
@@ -100,6 +107,61 @@ public sealed class WineRegistryEditorTests : IDisposable
 
         Assert.False(WineServerProbe.IsRunningFor(prefix, FakeProc(sibling)));
         Assert.True(WineServerProbe.IsRunningFor(sibling, FakeProc(sibling)));
+    }
+
+    // w2 wine review, nit 6: wineserver works in /tmp/.wine-<uid>/server-<dev>-<inode> of the prefix folder, so a
+    // relative WINEPREFIX (or a bind-mount alias) is still found; another folder's server directory is not.
+    [Fact]
+    public void WineserverWithARelativePrefix_IsFoundByItsServerDirectory()
+    {
+        var prefix = NewPrefix("relative");
+        var other = NewPrefix("relative-other");
+        var serverDir = "/tmp/.wine-1000/" + WineServerProbe.ServerDirectoryName(FileIdentity.TryGet(prefix)!.Value);
+        var otherServerDir = "/tmp/.wine-1000/" + WineServerProbe.ServerDirectoryName(FileIdentity.TryGet(other)!.Value);
+
+        Assert.True(WineServerProbe.IsRunningFor(prefix, FakeProc("relative", workingDirectory: serverDir)));
+        Assert.False(WineServerProbe.IsRunningFor(prefix, FakeProc("relative", workingDirectory: otherServerDir)));
+    }
+
+    [Fact]
+    public void FileIdentity_IsTheDeviceAndInodeStatReports()
+    {
+        var prefix = NewPrefix("identity");
+        var stat = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("stat", ["-L", "-c", "%d %i", prefix])
+        {
+            RedirectStandardOutput = true
+        })!;
+        var expected = stat.StandardOutput.ReadToEnd().Trim().Split(' ');
+        stat.WaitForExit();
+
+        var identity = FileIdentity.TryGet(prefix)!.Value;
+
+        Assert.Equal(ulong.Parse(expected[0], System.Globalization.CultureInfo.InvariantCulture), identity.Device);
+        Assert.Equal(ulong.Parse(expected[1], System.Globalization.CultureInfo.InvariantCulture), identity.Inode);
+    }
+
+    // w2 wine review, nit 9: on a thread that must not block (the UI thread) a busy lock is refused at once, not after 15 s.
+    [Fact]
+    public void OnAThreadThatMustNotBlock_ABusyLockIsRefusedWithoutTheLongWait()
+    {
+        var prefix = NewPrefix("ui-thread");
+        var service = new WineDllOverrideService(new WineRegistryEditor(_ => false, TimeSpan.FromSeconds(15), mayBlock: () => false));
+
+        using (new FileStream(Path.Combine(prefix, "user.reg" + WineRegistryEditor.LockSuffix), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var refused = Assert.Throws<WineRegistryEditRefusedException>(() => service.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe"));
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"waited {clock.Elapsed}");
+            Assert.Equal(WineRegistryEditor.BusyRefusalPrefix + prefix, refused.Message);
+        }
+    }
+
+    [Fact]
+    public void App_RegistryEditsOnTheUiThreadDoNotWaitLong()
+    {
+        var app = File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "App.axaml.cs"));
+
+        Assert.Matches(@"new WineRegistryEditor\(mayBlock: \(\) => !Dispatcher\.UIThread\.CheckAccess\(\)\)", app);
     }
 
     [Fact]
@@ -175,15 +237,17 @@ public sealed class WineRegistryEditorTests : IDisposable
     }
 
     [Fact]
-    public void EveryChange_KeepsTheHiveAsItWasBeforeIt_NewestThreeKept()
+    public void EveryHiveSomeoneElseWrote_IsBackedUpBeforeRhiChangesIt_NewestThreeKept()
     {
         var prefix = NewPrefix("backups");
         var hive = Path.Combine(prefix, "user.reg");
         var service = new WineDllOverrideService();
         var states = new List<byte[]>();
 
+        var n = 0;
         foreach (var dll in new[] { "dxgi", "d3d9", "d3d11", "winmm", "version" })
         {
+            SomeoneElseWrites(prefix, n++);
             states.Add(File.ReadAllBytes(hive));
             service.EnsureNativeBuiltin(prefix, dll, "Game.exe");
         }
@@ -196,6 +260,86 @@ public sealed class WineRegistryEditorTests : IDisposable
         // A no-op (already native,builtin) writes nothing, so it adds no backup.
         service.EnsureNativeBuiltin(prefix, "dxgi", "Game.exe");
         Assert.Equal(backups, Backups(prefix));
+    }
+
+    // w2 wine review, nit 5: one operation often makes two edits; RHI's own consecutive edits share the backup of the
+    // hive as it was before the first of them, so the three slots keep states someone else wrote.
+    [Fact]
+    public void ConsecutiveRhiEdits_ShareOneBackupOfTheHiveBeforeThem()
+    {
+        var prefix = NewPrefix("one-backup");
+        var original = File.ReadAllBytes(Path.Combine(prefix, "user.reg"));
+        var service = new WineDllOverrideService();
+
+        var record = service.EnsureNativeBuiltin(prefix, "dxgi", "Game.exe");
+        service.EnsureNativeBuiltin(prefix, "d3dcompiler_47", "Game.exe");
+        service.Restore(prefix, record);
+        service.EnsureNativeBuiltin(prefix, "winmm", "Game.exe");
+
+        var backup = Assert.Single(Backups(prefix));
+        Assert.Equal(original, File.ReadAllBytes(backup));
+    }
+
+    // w2 wine review, minor 3: a refused replace (read-only hive, failed verify) keeps every older backup.
+    [Fact]
+    public void RefusedReplaces_NeverPushOutOlderBackups()
+    {
+        var prefix = NewPrefix("refused-rotation");
+        var hive = Path.Combine(prefix, "user.reg");
+        var older = new[] { "20200101T000000000Z", "20200102T000000000Z", "20200103T000000000Z" }
+            .Select(stamp => hive + WineRegistryEditor.BackupMarker + stamp).ToArray();
+        for (var i = 0; i < older.Length; i++) File.WriteAllText(older[i], "older hive " + i);
+        File.SetUnixFileMode(hive, UnixFileMode.UserRead | UnixFileMode.GroupRead);
+        try
+        {
+            for (var attempt = 0; attempt < 3; attempt++)
+                Assert.ThrowsAny<IOException>(() => new WineDllOverrideService().EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(hive, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        Assert.Equal(older, Backups(prefix));
+        Assert.Equal(new[] { "older hive 0", "older hive 1", "older hive 2" }, older.Select(File.ReadAllText).ToArray());
+    }
+
+    // w2 wine review, nit 4: rotation counts only names RHI writes and orders collision suffixes as numbers.
+    [Fact]
+    public void BackupRotation_CountsOnlyRhisStampedNames_AndOrdersCollisionSuffixesAsNumbers()
+    {
+        var prefix = NewPrefix("rotation-names");
+        var hive = Path.Combine(prefix, "user.reg");
+        var userCopy = hive + WineRegistryEditor.BackupMarker + "keep";
+        var second = hive + WineRegistryEditor.BackupMarker + "20200101T000000000Z-2";
+        var tenth = hive + WineRegistryEditor.BackupMarker + "20200101T000000000Z-10";
+        foreach (var file in new[] { userCopy, second, tenth }) File.WriteAllText(file, Path.GetFileName(file));
+        var service = new WineDllOverrideService();
+
+        service.EnsureNativeBuiltin(prefix, "dxgi", "Game.exe");
+        SomeoneElseWrites(prefix, 1);
+        service.EnsureNativeBuiltin(prefix, "d3d9", "Game.exe");
+
+        Assert.True(File.Exists(userCopy)); // not RHI's: never counted, never removed
+        Assert.False(File.Exists(second));  // -2 is older than -10
+        Assert.True(File.Exists(tenth));
+        Assert.Equal(WineRegistryEditor.BackupsKept + 1, Backups(prefix).Length);
+    }
+
+    // w2 wine review, nit 7: a wineserver that started while the hive was replaced may have read the old one: reported.
+    [Fact]
+    public void WineStartingDuringTheEdit_IsReported()
+    {
+        var prefix = NewPrefix("started-meanwhile");
+        var checks = 0;
+        var service = new WineDllOverrideService(new WineRegistryEditor(_ => Interlocked.Increment(ref checks) > 1));
+        var log = new AppLog(Path.Combine(_root, "rhi.log"));
+
+        using (AppLog.UseInThisFlow(log))
+            service.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(Read(prefix), "dxgi", "Game.exe"));
+        Assert.Contains(WineRegistryEditor.WineStartedDuringEditWarning + prefix, File.ReadAllText(log.FilePath), StringComparison.Ordinal);
     }
 
     [Fact]
