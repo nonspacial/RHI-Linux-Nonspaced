@@ -68,13 +68,25 @@ public sealed class DetectorSkipReportTests : IDisposable
         foreach (var fileError in new Exception[]
                  {
                      new IOException("io"), new UnauthorizedAccessException("denied"), new JsonException("broken"),
-                     new InvalidOperationException("wrong kind"), new FormatException("not a number"), new ArgumentException("bad path")
+                     Thrown(() => JsonDocument.Parse("1").RootElement.GetString()), // a JSON value of the wrong kind
+                     Thrown(() => JsonDocument.Parse("1.5").RootElement.GetInt32()), new FormatException("not a number")
                  })
             Assert.Equal("Heroic file f skipped", HeroicGameDetector.SkipMessage("Heroic file f skipped", fileError));
 
-        var defect = HeroicGameDetector.SkipMessage("Heroic file f skipped", new NullReferenceException());
-        Assert.StartsWith("Heroic file f skipped after an unexpected NullReferenceException", defect, StringComparison.Ordinal);
-        Assert.Contains("defect in RHI", defect, StringComparison.Ordinal);
+        // w2-launch re-review, nit 5: InvalidOperationException outside the JSON reader and ArgumentException are the
+        // usual LINQ/null-argument programming errors, not a bad file.
+        foreach (var defectError in new Exception[]
+                 {
+                     new NullReferenceException(), Thrown(() => Array.Empty<int>().First()),
+                     Thrown(() => ArgumentNullException.ThrowIfNull((object?)null, "path")), new ArgumentException("bad path")
+                 })
+        {
+            var defect = HeroicGameDetector.SkipMessage("Heroic file f skipped", defectError);
+            Assert.StartsWith($"Heroic file f skipped after an unexpected {defectError.GetType().Name}", defect, StringComparison.Ordinal);
+            Assert.Contains("defect in RHI", defect, StringComparison.Ordinal);
+        }
+
+        static Exception Thrown(Action action) => Assert.ThrowsAny<Exception>(action);
     }
 
     [Fact]

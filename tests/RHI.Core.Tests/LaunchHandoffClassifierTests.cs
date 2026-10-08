@@ -92,6 +92,13 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     [InlineData("Manual", "flatpak run --branch stable com.valvesoftware.Steam -applaunch 1", LaunchHandoff.Steam)]
     [InlineData("Manual", "flatpak run --user --arch x86_64 net.lutris.Lutris lutris:rungame/x", LaunchHandoff.Lutris)]
     [InlineData("Manual", "flatpak run com.usebottles.bottles -b Games -p Game", LaunchHandoff.Other)]
+    // w2-launch re-review, nit 3: a Flatpak ref with its branch, bash's --rcfile value, gamescope without `--`.
+    [InlineData("Manual", "flatpak run com.valvesoftware.Steam//beta -applaunch 1", LaunchHandoff.Steam)]
+    [InlineData("Manual", "flatpak run net.lutris.Lutris/x86_64/stable lutris:rungame/x", LaunchHandoff.Lutris)]
+    [InlineData("Manual", "bash --rcfile /home/u/.steamrc -c 'steam -applaunch 1'", LaunchHandoff.Steam)]
+    [InlineData("Manual", "bash --init-file x -ic 'heroic --no-gui'", LaunchHandoff.Heroic)]
+    [InlineData("Steam", "gamescope -W 1920 steam -applaunch 1", LaunchHandoff.Steam)]
+    [InlineData("Steam", "gamescope -W 2560 -H 1440 -F fsr --backend sdl -f --hdr-enabled steam -applaunch 1", LaunchHandoff.Steam)]
     public void StoreHandoffs_AreHandoffsForTheLauncherAndForHdr(string source, string command, LaunchHandoff expected)
     {
         var game = Game(source, command);
@@ -126,6 +133,10 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     // A game shipped as a Flatpak is run (and waited for) by flatpak run itself; gamescope can wrap it (nit 11).
     [InlineData("Manual", "flatpak run org.example.Game")]
     [InlineData("Manual", "flatpak run --branch stable org.example.Game")]
+    [InlineData("Manual", "flatpak run org.example.Game//beta")]
+    // gamescope without `--` in front of a direct launch stays direct (w2-launch re-review, nit 3).
+    [InlineData("Steam", "gamescope -W 1920 -f wine '/games/Game.exe'")]
+    [InlineData("Manual", "bash --rcfile /home/u/.steamrc -c 'wine Game.exe'")]
     public void DirectCommands_AreNotHandoffs(string source, string command)
     {
         var game = Game(source, command);

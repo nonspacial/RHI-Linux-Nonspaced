@@ -78,8 +78,22 @@ public static class LaunchHandoffClassifier
         ["stdbuf"] = new(["-i", "-o", "-e", "--input", "--output", "--error"]),
         // `strangle [opts] FPS [FPS-on-battery] PROGRAM`
         ["strangle"] = new([], NumericArguments: true),
-        // `gamescope [opts] -- PROGRAM`: its options take values, so only `--` marks the program.
-        ["gamescope"] = new([], AfterDoubleDash: true),
+        // `gamescope [opts] -- PROGRAM`: `--` marks the program; without it (`gamescope -W 1920 steam`, which gamescope
+        // also runs) its options are skipped by the value-taking ones `gamescope --help` lists.
+        ["gamescope"] = new(
+        [
+            "-W", "-H", "-w", "-h", "-r", "-m", "-S", "-F", "-s", "-R", "-T", "-C", "-o", "-O",
+            "--output-width", "--output-height", "--nested-width", "--nested-height", "--nested-refresh", "--max-scale",
+            "--scaler", "--filter", "--sharpness", "--fsr-sharpness", "--mouse-sensitivity", "--backend", "--cursor",
+            "--ready-fd", "--stats-path", "--hide-cursor-delay", "--xwayland-count", "--prefer-vk-device",
+            "--force-orientation", "--cursor-scale-height", "--virtual-connector-strategy", "--sdr-gamut-wideness",
+            "--hdr-sdr-content-nits", "--hdr-itm-sdr-nits", "--hdr-itm-target-nits", "--framerate-limit",
+            "--nested-unfocused-refresh", "--prefer-output", "--default-touch-mode", "--generate-drm-mode",
+            "--display-index", "--reshade-effect", "--reshade-technique-idx", "--mura-map", "--vr-overlay-key",
+            "--vr-app-overlay-key", "--vr-overlay-explicit-name", "--vr-overlay-default-name", "--vr-overlay-icon",
+            "--vr-overlay-physical-width", "--vr-overlay-physical-curvature", "--vr-overlay-physical-pre-curve-pitch",
+            "--vr-scrolls-speed"
+        ], AfterDoubleDash: true),
     };
 
     private const int MaxNesting = 4;
@@ -197,9 +211,9 @@ public static class LaunchHandoffClassifier
     {
         if (wrapper.AfterDoubleDash)
         {
-            for (; index < words.Count; index++)
-                if (words[index] == "--") return index + 1;
-            return words.Count;
+            // `--` decides when present (its options may take values the table does not know).
+            for (var i = index; i < words.Count; i++)
+                if (words[i] == "--") return i + 1;
         }
         while (index < words.Count && words[index].Length > 1 && words[index].StartsWith('-'))
         {
@@ -221,7 +235,8 @@ public static class LaunchHandoffClassifier
         {
             var option = words[index];
             if (option == "--") { index++; break; }
-            if (option is "-o" or "+o" or "-O" or "+O") index++;
+            // `-o OPT`, `-O OPT` and bash's `--rcfile FILE`/`--init-file FILE` take the next word.
+            if (option is "-o" or "+o" or "-O" or "+O" or "--rcfile" or "--init-file") index++;
             else if (option[0] == '-' && !option.StartsWith("--", StringComparison.Ordinal) && option.Contains('c')) hasCommandOption = true;
             index++;
         }
@@ -253,7 +268,9 @@ public static class LaunchHandoffClassifier
             index++;
         }
         if (index >= words.Count) return LaunchHandoff.None;
+        // `APP-ID//BRANCH` and `APP-ID/ARCH/BRANCH` name the same app (`com.valvesoftware.Steam//beta`).
         var app = words[index];
+        if (app.IndexOf('/') is > 0 and var slash) app = app[..slash];
         if (app.Equals("com.valvesoftware.Steam", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
         if (app.Equals("net.lutris.Lutris", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
         if (app.Equals("com.heroicgameslauncher.hgl", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Heroic;

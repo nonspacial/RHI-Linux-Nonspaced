@@ -92,15 +92,22 @@ public sealed class HeroicGameDetector : IGameDetector
 
     /// <summary>
     /// What an unreadable Heroic file is reported as. A file Heroic left unreadable or malformed (I/O, permissions,
-    /// broken JSON, a value of the wrong kind) is "skipped"; anything else is a defect in RHI's reading, so the
-    /// report says so instead of passing it off as a bad file. Either way only that file is skipped: one Heroic
-    /// file must never take every Heroic game out of the library (w2-launch review, nit 12).
+    /// broken JSON, a value of the wrong kind or format) is "skipped"; anything else is a defect in RHI's reading, so
+    /// the report says so instead of passing it off as a bad file. <see cref="InvalidOperationException"/> counts as
+    /// the file's only when System.Text.Json threw it (a JSON value of the wrong kind): elsewhere it, like an
+    /// <see cref="ArgumentException"/>, is the usual LINQ/null-argument programming error (w2-launch re-review,
+    /// nit 5). Either way only that file is skipped: one Heroic file must never take every Heroic game out of the
+    /// library (w2-launch review, nit 12).
     /// </summary>
     internal static string SkipMessage(string skipped, Exception error)
-        => error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException
-            or FormatException or ArgumentException
+        => error is IOException or UnauthorizedAccessException or JsonException or FormatException
+           || (error is InvalidOperationException && ThrownByJsonReader(error))
             ? skipped
             : $"{skipped} after an unexpected {error.GetType().Name} (a defect in RHI, please report it)";
+
+    private static bool ThrownByJsonReader(Exception error)
+        => error.TargetSite?.DeclaringType?.Namespace is { } ns
+           && (ns == "System.Text.Json" || ns.StartsWith("System.Text.Json.", StringComparison.Ordinal));
 
     private static IEnumerable<string> SafeJsonFiles(string root)
     {
