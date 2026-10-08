@@ -231,6 +231,48 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         Assert.Equal("v1.0", record.Metadata["github.releasetagpin"]);
     }
 
+    // ---- integration w1 deploy review nit 7: the ledger and the update log use the store-file writer ----
+
+    [Fact]
+    public void Save_ThroughASymlinkedLedger_KeepsTheLinkAndTheTargetsMode()
+    {
+        var real = Path.Combine(_root, "dotfiles", "deployments.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(real)!);
+        File.WriteAllText(real, "[]");
+        File.SetUnixFileMode(real, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var link = Path.Combine(_root, "state", "deployments.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        File.CreateSymbolicLink(link, real);
+        var store = new LinuxDeploymentRecordStore(link);
+
+        store.Upsert(new LinuxDeploymentRecord { GameKey = "steam:1", GameName = "Game", Component = ManagedComponentKind.ReShade, BinaryDirectory = "/tmp/game" });
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Contains("steam:1", File.ReadAllText(real));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(real));
+        Assert.Single(new LinuxDeploymentRecordStore(link).FindAll(new DetectedGame { Name = "Game", SteamAppId = 1, InstallPath = "/tmp/game" }));
+    }
+
+    [Fact]
+    public void UpdateLog_ThroughASymlink_KeepsTheLinkAndTheTargetsMode_AndLeavesNoTemp()
+    {
+        var real = Path.Combine(_root, "dotfiles", "update-log.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(real)!);
+        File.WriteAllText(real, "[]");
+        File.SetUnixFileMode(real, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var link = Path.Combine(_root, "data", "update-log.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        File.CreateSymbolicLink(link, real);
+        var log = new ComponentUpdateLogStore(link);
+
+        Assert.True(log.Record(new ComponentUpdateLogEntry { TimestampUtc = DateTime.UtcNow, GameName = "Game", GameKey = "steam:1", Component = ManagedComponentKind.ReShade, ComponentName = "ReShade", Action = ComponentUpdateAction.Install, ToVersion = "6.4.1" }));
+
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Contains("6.4.1", File.ReadAllText(real));
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(real));
+        Assert.Equal(["update-log.json"], Directory.GetFiles(Path.GetDirectoryName(link)!).Select(Path.GetFileName));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch { }
