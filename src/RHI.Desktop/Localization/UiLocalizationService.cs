@@ -1003,8 +1003,10 @@ public static class UiLocalizationService
         }
         else
         {
+            // PT→EN runs over English text that may hold a game name or path: a fragment is rewritten only where it
+            // stands as words of its own, never glued inside a path segment or a word (Refs #149).
             foreach (var pair in PresentationPairs.OrderByDescending(pair => pair.Pt.Length))
-                result = result.Replace(pair.Pt, pair.En, StringComparison.Ordinal);
+                result = ReplaceAnchored(result, pair.Pt, pair.En);
         }
 
         // Never leak a clearly opposite-language backend sentence into the selected UI.
@@ -1018,6 +1020,34 @@ public static class UiLocalizationService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Replaces each occurrence of <paramref name="fragment"/> that is not glued to what surrounds it: when the fragment
+    /// starts with a letter or digit, the character before it must not be a letter, digit or path separator ("/", "\"),
+    /// and when it ends with one, the character after it must not be a letter or digit. A folder named after a message
+    /// ("/mnt/Jogos/A pasta não existe: x") is therefore left as it is.
+    /// </summary>
+    internal static string ReplaceAnchored(string text, string fragment, string replacement)
+    {
+        if (fragment.Length == 0 || !text.Contains(fragment, StringComparison.Ordinal)) return text;
+        var checkStart = char.IsLetterOrDigit(fragment[0]);
+        var checkEnd = char.IsLetterOrDigit(fragment[^1]);
+        var builder = new StringBuilder(text.Length);
+        var from = 0;
+        while (true)
+        {
+            var at = text.IndexOf(fragment, from, StringComparison.Ordinal);
+            if (at < 0) break;
+            var end = at + fragment.Length;
+            var gluedBefore = checkStart && at > 0 && (char.IsLetterOrDigit(text[at - 1]) || text[at - 1] is '/' or '\\');
+            var gluedAfter = checkEnd && end < text.Length && char.IsLetterOrDigit(text[end]);
+            builder.Append(text, from, at - from);
+            builder.Append(gluedBefore || gluedAfter ? fragment : replacement);
+            from = end;
+        }
+        builder.Append(text, from, text.Length - from);
+        return builder.ToString();
     }
 
     /// <summary>

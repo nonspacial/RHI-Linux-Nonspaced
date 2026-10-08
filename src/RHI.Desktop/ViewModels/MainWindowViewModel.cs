@@ -1229,7 +1229,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
         if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
-        SaveHdrProfile(SelectedGame);
+        SaveHdrProfile(SelectedGame, HdrControl.Mode);
     }
 
     partial void OnHdrLegacyWsiChanged(bool value)
@@ -1239,7 +1239,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
         if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
-        SaveHdrProfile(SelectedGame);
+        SaveHdrProfile(SelectedGame, HdrControl.LegacyWsi);
     }
 
     partial void OnSelectedGameChanged(DetectedGame? value)
@@ -2895,19 +2895,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void ToggleFavourite()
     {
         if (SelectedGame is null || LibraryWritesPaused()) return;
-        AdoptRestoredLibraryFile();
         var game = SelectedGame;
+        // The target is the opposite of what the card showed: a library file restored meanwhile is adopted below, and
+        // flipping its value instead would undo a restored favourite the user never saw (Refs #149).
+        var favourite = !game.IsFavourite;
+        AdoptRestoredLibraryFile();
         var key = LinuxGameLibraryStore.GameKey(game);
-        if (_libraryState.FavouriteGames.Contains(key))
-        {
-            _libraryState.FavouriteGames.Remove(key);
-            game.IsFavourite = false;
-        }
-        else
-        {
-            _libraryState.FavouriteGames.Add(key);
-            game.IsFavourite = true;
-        }
+        if (favourite) _libraryState.FavouriteGames.Add(key);
+        else _libraryState.FavouriteGames.Remove(key);
+        game.IsFavourite = favourite;
         // Kept for this session even when the save is refused; the status line says it was not saved.
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
@@ -2918,19 +2914,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void ToggleHidden()
     {
         if (SelectedGame is null || LibraryWritesPaused()) return;
-        AdoptRestoredLibraryFile();
         var game = SelectedGame;
+        var hidden = !game.IsHidden; // what the card showed, as for favourites (Refs #149)
+        AdoptRestoredLibraryFile();
         var key = LinuxGameLibraryStore.GameKey(game);
-        if (_libraryState.HiddenGames.Contains(key))
-        {
-            _libraryState.HiddenGames.Remove(key);
-            game.IsHidden = false;
-        }
-        else
-        {
-            _libraryState.HiddenGames.Add(key);
-            game.IsHidden = true;
-        }
+        if (hidden) _libraryState.HiddenGames.Add(key);
+        else _libraryState.HiddenGames.Remove(key);
+        game.IsHidden = hidden;
         // Kept for this session even when the save is refused; the status line says it was not saved.
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
@@ -2954,23 +2944,30 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// once, whatever the calling operation then does, and the cards' favourite/hidden flags follow it. Saving the
     /// stand-in instead would overwrite what the user restored. The filter shown keeps its value (it is saved with the
     /// state), and the selected game's HDR controls are reloaded unless the caller is saving them
-    /// (<paramref name="reloadHdrControls"/> false).
+    /// (<paramref name="reloadHdrControls"/> false). True when a restored file was adopted.
     /// </summary>
-    private void AdoptRestoredLibraryFile(bool reloadHdrControls = true)
+    private bool AdoptRestoredLibraryFile(bool reloadHdrControls = true)
     {
-        if (!_libraryStateUnreadable) return;
+        if (!_libraryStateUnreadable) return false;
         var fresh = _libraryStore.Load(out var stillUnreadable);
-        if (stillUnreadable) return;
-        _libraryState = fresh;
+        if (stillUnreadable) return false;
+        AdoptLibraryState(fresh, keepFilter: true);
+        if (reloadHdrControls && SelectedGame is { } selected) LoadHdrProfile(selected);
+        return true;
+    }
+
+    /// <summary>Makes <paramref name="state"/> the in-memory library state and syncs the cards' favourite/hidden flags.</summary>
+    private void AdoptLibraryState(LinuxGameLibraryState state, bool keepFilter)
+    {
+        _libraryState = state;
         _libraryStateUnreadable = false;
-        _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(LibraryFilterMode);
+        if (keepFilter) _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(LibraryFilterMode);
         foreach (var game in _allGames)
         {
             var key = LinuxGameLibraryStore.GameKey(game);
             game.IsFavourite = _libraryState.FavouriteGames.Contains(key);
             game.IsHidden = _libraryState.HiddenGames.Contains(key);
         }
-        if (reloadHdrControls && SelectedGame is { } selected) LoadHdrProfile(selected);
     }
 
     private bool _libraryStateUnreadable;
@@ -2979,18 +2976,35 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// True while Repair after move rewrites the library file in the background: a favourite, hidden, HDR or filter
     /// save then would write the pre-repair state over the repaired file, so those changes wait (review nit 9), and
     /// Add game is refused. A filter chosen meanwhile is shown at once and saved when the repair ends, over the library
-    /// state the repair left.
+    /// state the repair left. Setting it to false ends a repair that succeeded (<see cref="EndLibraryRepair"/>).
     /// </summary>
     internal bool LibraryRepairRunning
     {
         get => _libraryRepairRunning;
         set
         {
-            _libraryRepairRunning = value;
-            if (value || !_filterChangedDuringRepair) return;
-            _filterChangedDuringRepair = false;
-            PersistLibraryFilter(LibraryFilterMode);
+            if (value) _libraryRepairRunning = true;
+            else EndLibraryRepair(repaired: true);
         }
+    }
+
+    /// <summary>
+    /// Ends a repair. A filter chosen meanwhile is saved now; after a repair that failed part-way the library file may
+    /// hold part of the repair while memory holds the pre-repair state, so the file is read again first and its state
+    /// adopted, and only the filter is changed on top of it (Refs #149).
+    /// </summary>
+    internal void EndLibraryRepair(bool repaired)
+    {
+        _libraryRepairRunning = false;
+        if (!_filterChangedDuringRepair) return;
+        _filterChangedDuringRepair = false;
+        if (!repaired)
+        {
+            var onDisk = _libraryStore.Load(out var unreadable);
+            if (!unreadable) AdoptLibraryState(onDisk, keepFilter: true);
+            else _libraryStateUnreadable = true;
+        }
+        PersistLibraryFilter(LibraryFilterMode);
     }
 
     private bool _libraryRepairRunning;
@@ -3267,7 +3281,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            LibraryRepairRunning = false;
+            EndLibraryRepair(repaired);
             IsBusy = false;
             NotifySelected();
         }
@@ -3933,7 +3947,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyHdrProfile();
     }
 
-    private void SaveHdrProfile(DetectedGame game)
+    private void SaveHdrProfile(DetectedGame game, HdrControl touched)
     {
         if (LibraryWritesPaused())
         {
@@ -3941,13 +3955,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
         var key = LinuxGameLibraryStore.GameKey(game);
-        var profile = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
-        AdoptRestoredLibraryFile(reloadHdrControls: false);
+        var shown = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
+        var adopted = AdoptRestoredLibraryFile(reloadHdrControls: false);
+        var profile = shown;
+        if (adopted)
+        {
+            // The controls showed the stand-in, not the restored profile: change only the control the user touched in
+            // the restored profile, then show the result (Refs #149).
+            var restored = _libraryState.HdrProfiles.TryGetValue(key, out var saved) ? saved.Normalize() : new LinuxHdrGameProfile();
+            profile = touched == HdrControl.Mode
+                ? new LinuxHdrGameProfile { Mode = shown.Mode, EnableLegacyWsi = restored.EnableLegacyWsi }.Normalize()
+                : new LinuxHdrGameProfile { Mode = restored.Mode, EnableLegacyWsi = shown.EnableLegacyWsi }.Normalize();
+        }
         if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);
         else _libraryState.HdrProfiles[key] = profile;
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatHdrProfile");
-        NotifyHdrProfile();
+        if (adopted) LoadHdrProfile(game);
+        else NotifyHdrProfile();
     }
+
+    /// <summary>The HDR control a save comes from (<see cref="SaveHdrProfile"/>).</summary>
+    private enum HdrControl { Mode, LegacyWsi }
 
     private void NotifyHdrProfile()
     {
