@@ -171,7 +171,9 @@ public sealed class Dlss5FeederFullDeploymentService
         var record = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
         if (record is null) return new ManagedUpdateCheck(false, false, "DLSS5 Feeder is not managed by RHI Linux.");
         if (!record.Metadata.TryGetValue(FullStackMetadata, out var full) || full != "1")
-            return new ManagedUpdateCheck(true, false, "Legacy DLSS5 Feeder add-on-only deployment; remove and reinstall to update.", record.Version);
+            // Not checked against a release, so not known to be current (w2-launch review, minor 4).
+            return new ManagedUpdateCheck(true, false, "Legacy DLSS5 Feeder add-on-only deployment; remove and reinstall to update.", record.Version,
+                CouldNotCheck: true);
         try
         {
             var target = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);

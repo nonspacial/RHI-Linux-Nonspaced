@@ -369,6 +369,8 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
             var item = Assert.Single(result.Items);
             Assert.True(item.Success, item.Message);
             Assert.Equal((0, 0), (result.FailedCount, result.ChangedCount));
+            // Not compared against any release: "could not be checked", never "current" (w2-launch review, minor 4).
+            Assert.Equal((0, 1), (result.CurrentCount, result.UncheckedCount));
         }
         Assert.Equal(Pe(0x50), File.ReadAllBytes(addon));
         Assert.Equal("0.9", records.Find(game, ManagedComponentKind.Dlss5Feeder)!.Version);

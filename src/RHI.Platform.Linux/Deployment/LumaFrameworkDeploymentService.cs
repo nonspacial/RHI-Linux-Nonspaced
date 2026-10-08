@@ -91,12 +91,14 @@ public sealed class LumaFrameworkDeploymentService
         if (record.Metadata.GetValueOrDefault(MetaLocalPackage) == "1")
             return new ManagedUpdateCheck(true, false,
                 "This Luma package was installed from a local drag/drop file. Drop a Luma archive/add-on onto the game again to reinstall or change it; automatic update has no trusted source URL.",
-                record.Version);
+                record.Version, CouldNotCheck: true);
         try
         {
             var selection = await ResolvePackageAsync(game, cancellationToken).ConfigureAwait(false);
             if (selection is null)
-                return new ManagedUpdateCheck(true, false, "No current trusted Luma package matches this game; installed payload was preserved.", record.Version);
+                // Nothing to compare the install against: not known to be current (w2-launch review, minor 4).
+                return new ManagedUpdateCheck(true, false, "No current trusted Luma package matches this game; installed payload was preserved.", record.Version,
+                    CouldNotCheck: true);
             var latest = selection.Release;
             var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase)
                          || !string.Equals(record.SourceUrl, latest.AssetUrl, StringComparison.OrdinalIgnoreCase)
