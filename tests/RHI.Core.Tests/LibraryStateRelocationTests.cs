@@ -181,6 +181,46 @@ public sealed class LibraryStateRelocationTests : IDisposable
         Assert.Equal([gone, gone, Path.Combine(gone, "Battle.net.exe")], store.MovedPaths(Redetected(game)));
     }
 
+    // When the game folder itself is the symlink, the resolved key this branch wrote has another last component; it is
+    // still adopted.
+    [Fact]
+    public void ResolvedFolderKey_WhenTheGameFolderItselfIsALink_IsAdopted()
+    {
+        var target = Directory.CreateDirectory(Path.Combine(_root, "disk", "bnet")).FullName;
+        var path = Path.Combine(Directory.CreateDirectory(Path.Combine(_root, "Games")).FullName, "battlenet");
+        Directory.CreateSymbolicLink(path, target);
+        var game = new DetectedGame { Name = "Battle.net", Source = "Lutris", InstallPath = path, LibraryIdentityPath = path };
+        var state = new LinuxGameLibraryState();
+        state.HiddenGames.Add("folder:lutris|" + target);
+
+        Assert.True(state.AdoptOlderKeys(game));
+        Assert.Equal(["folder:lutris|" + path], state.HiddenGames);
+    }
+
+    // The other direction of a spelling change: the launcher now spells the folder without the symlink (or the merged
+    // duplicate whose spelling the card used is gone). A key of the same source naming the same folder today is adopted;
+    // a same-named folder elsewhere and another source's key are not.
+    [Fact]
+    public void FolderKeyInAnotherSpellingOfTheSameFolder_IsAdopted_OnlyForTheSameSourceAndFolder()
+    {
+        var (viaLink, _) = LutrisBehindSymlink();
+        var real = Path.Combine(_root, "diskA", "Games", "battlenet");
+        var elsewhere = Directory.CreateDirectory(Path.Combine(_root, "other", "battlenet")).FullName;
+        var card = new DetectedGame { Name = "Battle.net", Source = "Lutris", InstallPath = real, LibraryIdentityPath = real };
+        Assert.Null(LinuxGameLibraryStore.ResolvedFolderKey(card)); // no symlink in the card's own spelling
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add(LinuxGameLibraryStore.GameKey(viaLink));
+        state.HdrProfiles[LinuxGameLibraryStore.GameKey(viaLink)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+        state.HiddenGames.Add("folder:lutris|" + elsewhere);
+        state.HiddenGames.Add("folder:wine|" + viaLink.InstallPath);
+
+        Assert.True(state.AdoptOlderKeys(card));
+
+        Assert.Equal([LinuxGameLibraryStore.GameKey(card)], state.FavouriteGames);
+        Assert.Equal(LinuxHdrModes.Gamescope, state.HdrProfiles[LinuxGameLibraryStore.GameKey(card)].Mode);
+        Assert.Equal(new[] { "folder:lutris|" + elsewhere, "folder:wine|" + viaLink.InstallPath }.Order(), state.HiddenGames.Order());
+    }
+
     // Review w2-stores #1: a folder-keyed game whose resolved-form key this branch wrote moves (not a re-pointed link):
     // Repair after move carries that key too.
     [Fact]

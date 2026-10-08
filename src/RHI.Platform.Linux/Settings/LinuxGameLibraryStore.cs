@@ -135,7 +135,10 @@ public sealed class LinuxGameLibraryState
     /// <item>for a Steam game, that older key at the same <c>steamapps/common/…</c> folder of another library (the
     /// library was moved before the key changed) — same source and AppID, so it is this game;</item>
     /// <item>the keys, old and current, of duplicates merged into the card (another launcher's entry, a symlink
-    /// spelling of its folder).</item>
+    /// spelling of its folder);</item>
+    /// <item>for a folder-keyed game, a key of the same source naming its folder in another spelling today
+    /// (<see cref="LinuxGameLibraryStore.SameFolderKeys"/>), and the symlink-resolved key earlier builds of this
+    /// branch wrote (<see cref="LinuxGameLibraryStore.ResolvedFolderKey(RHI.Core.Models.DetectedGame)"/>).</item>
     /// </list>
     /// Favourite and hidden are carried over; a game edit or HDR profile moves when the card has none of its own (an
     /// existing one is never overwritten, and the older entry then stays where it is). Keys no detected card claims are
@@ -174,6 +177,7 @@ public sealed class LinuxGameLibraryState
             keys.Add(LinuxGameLibraryStore.LegacyGameKey(alias));
             if (LinuxGameLibraryStore.ResolvedFolderKey(alias) is { } aliasResolved) keys.Add(aliasResolved);
         }
+        keys.AddRange(LinuxGameLibraryStore.SameFolderKeys(game, FavouriteGames.Concat(HiddenGames).Concat(GameEdits.Keys).Concat(HdrProfiles.Keys)).ToArray());
         if (game.SteamAppId is int appId && LinuxGameLibraryStore.SteamLibraryTail(LinuxGameLibraryStore.IdentityPath(game)) is { } tail)
         {
             var prefix = LinuxGameLibraryStore.LegacyKeyPrefix(game.Source, appId);
@@ -417,6 +421,29 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     {
         var resolved = $"folder:{Source(sourceName)}|{PathIdentity.Canonicalize(identityPath ?? "")}";
         return string.Equals(resolved, FolderKey(sourceName, identityPath), StringComparison.Ordinal) ? null : resolved;
+    }
+
+    /// <summary>
+    /// Stored folder keys of <paramref name="game"/>'s source that name its folder in another spelling today (the launcher
+    /// now spells the path through a symlink, or no longer does, or the merged duplicate whose spelling the card used is
+    /// gone): same source, same last path component, and the same <see cref="PathIdentity"/> now. Empty for a store-keyed game.
+    /// </summary>
+    internal static IEnumerable<string> SameFolderKeys(DetectedGame game, IEnumerable<string> stored)
+    {
+        if (StoreKey(game.SteamAppId, game.HeroicAppName, game.IsManifestSplitChild ? game.Name : null) is not null) yield break;
+        var identity = IdentityPath(game);
+        var own = FolderKey(game.Source, identity);
+        var prefix = $"folder:{Source(game.Source)}|";
+        var leaf = Path.GetFileName(AsWritten(identity));
+        string? canonical = null;
+        foreach (var key in stored)
+        {
+            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || string.Equals(key, own, StringComparison.OrdinalIgnoreCase)) continue;
+            var path = key[prefix.Length..];
+            if (!string.Equals(Path.GetFileName(path), leaf, StringComparison.Ordinal)) continue; // cheap filter before any readlink
+            canonical ??= PathIdentity.Canonicalize(identity);
+            if (string.Equals(PathIdentity.Canonicalize(path), canonical, StringComparison.Ordinal)) yield return key;
+        }
     }
 
     private static string AsWritten(string? path)

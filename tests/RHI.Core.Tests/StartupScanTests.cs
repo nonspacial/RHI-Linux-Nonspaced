@@ -98,9 +98,10 @@ public sealed class StartupScanTests : IDisposable
         while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.StartsWith(LibraryScanStatusText.Done(1), StringComparison.Ordinal))
             await Task.Delay(50);
 
-        // The merged card is Heroic's (detector order); a hidden card is filtered out of Games, so read the store.
+        // The merged card is Heroic's (detector order) and takes the manual duplicate's identity folder (the scanner fills
+        // LibraryIdentityPath from it), spelt as written; a hidden card is filtered out of Games, so read the store.
         var saved = library.Load();
-        var cardKey = LinuxGameLibraryStore.GameKey(new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real });
+        var cardKey = "folder:heroic|" + Path.Combine(link, "X");
         Assert.Equal(cardKey, Assert.Single(saved.FavouriteGames));
         Assert.Equal(cardKey, Assert.Single(saved.HiddenGames));
     }
