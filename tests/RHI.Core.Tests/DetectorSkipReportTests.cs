@@ -77,21 +77,33 @@ public sealed class DetectorSkipReportTests : IDisposable
         Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null));
     }
 
-    [Fact]
-    public async Task Wine_UnreadableRuntimeMarker_SkipsThePrefix_InsteadOfLaunchingItWithHostWine()
+    [Theory]
+    [InlineData("unreadable")]
+    [InlineData("dangling")]
+    public async Task Wine_UnreadableRuntimeMarker_KeepsTheGamesListed_WithoutALaunchCommand(string marker)
     {
         // An unreadable config_info used to read as "no markers" = plain Wine, launched with host `wine`, which runs
-        // wineboot over a Proton prefix.
+        // wineboot over a Proton prefix. Skipping the prefix instead made its games vanish from the library (w2-launch
+        // review, major 2): they stay listed and moddable, with no launch command, and the warning names the prefix.
+        // A dangling config_info symlink exists for File.Exists but cannot be read: same case.
         var home = Path.Combine(_root, "home");
         var prefix = Prefix(Path.Combine(home, "Games", "proton-built"));
         Exe(prefix, "Program Files/Game/Game.exe");
-        var marker = Write(Path.Combine(prefix, "config_info"), "GE-Proton10-32\n/opt/ge/files/share/fonts/\n");
-        File.SetUnixFileMode(marker, UnixFileMode.None);
+        Write(Path.Combine(prefix, "version"), "GE-Proton10-32\n");
+        var configInfo = Path.Combine(prefix, "config_info");
+        if (marker == "dangling") File.CreateSymbolicLink(configInfo, Path.Combine(_root, "gone", "config_info"));
+        else File.SetUnixFileMode(Write(configInfo, "GE-Proton10-32\n/opt/ge/files/share/fonts/\n"), UnixFileMode.None);
 
         var scan = await new GameLibraryScanner([new WinePrefixDetector(home, [])]).ScanWithReportAsync(null);
 
-        Assert.Empty(scan.Games);
+        var game = Assert.Single(scan.Games);
+        Assert.Equal("Game", game.Name);
+        Assert.Equal(prefix, game.PrefixPath);
+        Assert.Null(game.LaunchCommand);
+        Assert.Null(game.WineBinaryPath);
+        Assert.False(new RHI.Platform.Linux.Launch.LinuxGameLauncher().CanLaunch(game));
         Assert.Contains(prefix, Assert.Single(scan.Detectors.Single().Warnings), StringComparison.Ordinal);
+        Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null));
     }
 
     private static string Write(string path, string content)

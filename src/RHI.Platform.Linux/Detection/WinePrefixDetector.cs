@@ -49,14 +49,15 @@ public sealed class WinePrefixDetector : IGameDetector
                 if (DetectionHelpers.IsLauncherManagedPrefix(prefix) || owned.Owns(prefix))
                     continue;
 
-                PrefixRuntime runtime;
+                // Without its runtime markers RHI cannot tell a Proton prefix from a Wine one, and host wine would run
+                // wineboot over a Proton prefix. The games stay listed (and moddable) without a launch command, like a
+                // Proton prefix whose Wine is gone; the warning names the prefix (Refs #144, w2-launch review major 2).
+                PrefixRuntime? runtime;
                 try { runtime = PrefixRuntime.Read(prefix); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    // Without its runtime markers RHI cannot tell a Proton prefix from a Wine one, and host
-                    // wine would run wineboot over a Proton prefix: skip it rather than guess (Refs #144).
-                    DetectorDiagnostics.Warn($"Wine prefix {prefix} skipped: its runtime markers are unreadable", ex);
-                    continue;
+                    DetectorDiagnostics.Warn($"Wine prefix {prefix}: runtime markers unreadable; its games are listed without a launch command", ex);
+                    runtime = null;
                 }
                 foreach (var entry in PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")))
                 {
@@ -78,12 +79,12 @@ public sealed class WinePrefixDetector : IGameDetector
                         PrefixPath = prefix,
                         ExecutablePath = exe,
                         LaunchExecutablePath = exe,
-                        Runner = runtime.IsProton ? "Proton" : "Wine",
-                        CompatibilityTool = runtime.Version,
-                        CompatibilityLayerType = runtime.IsProton ? "proton" : null,
-                        WineBinaryPath = runtime.WineBinary,
-                        WineServerPath = runtime.WineServer,
-                        LaunchCommand = BuildLaunchCommand(prefix, exe, runtime)
+                        Runner = runtime is null ? null : runtime.IsProton ? "Proton" : "Wine",
+                        CompatibilityTool = runtime?.Version,
+                        CompatibilityLayerType = runtime is { IsProton: true } ? "proton" : null,
+                        WineBinaryPath = runtime?.WineBinary,
+                        WineServerPath = runtime?.WineServer,
+                        LaunchCommand = runtime is null ? null : BuildLaunchCommand(prefix, exe, runtime)
                     });
                 }
             }
@@ -212,7 +213,7 @@ public sealed class WinePrefixDetector : IGameDetector
                 .Select(dir => Path.Combine(dir, program))
                 .FirstOrDefault(File.Exists);
 
-        /// <summary>Null when the file does not exist; an unreadable one throws (the caller skips the prefix).</summary>
+        /// <summary>Null when the file does not exist; an unreadable one throws (the caller lists the prefix's games without a launch command).</summary>
         private static string[]? ReadLines(string path)
             => File.Exists(path) ? File.ReadAllLines(path) : null;
     }
