@@ -58,9 +58,11 @@ public static class LinuxGameIdentityService
             game.BinaryDirectory = edit.BinaryDirectory!;
             game.RequiresExplicitPatchTarget = true;
             game.PatchTargetAuthority = "Manual";
-            // A refused manual folder is repaired by editing the game onto its own folder.
+            // A refused or missing manual folder is repaired by editing the game onto its own (existing) folder.
             if (game.GameRootNotAllowed && Detection.GameRootGuard.IsAcceptable(edit.GameRootPath))
                 game.GameRootNotAllowed = false;
+            if (game.FolderMissing && Directory.Exists(edit.GameRootPath))
+                game.FolderMissing = false;
             return;
         }
 

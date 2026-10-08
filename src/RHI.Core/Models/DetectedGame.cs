@@ -26,7 +26,13 @@ public sealed class DetectedGame
     /// It stays listed so the user can see and remove it, but nothing indexes or patches that folder.
     /// </summary>
     public bool GameRootNotAllowed { get; set; }
-    public string LibraryBadge => (IsFavourite ? "★" : "") + (IsHidden ? "◌" : "") + (GameRootNotAllowed ? "⚠" : "");
+    /// <summary>
+    /// A saved manual entry whose folder no longer exists (unmounted drive, moved or deleted game). It stays
+    /// listed as "folder missing" so the user can remove it or point it at the new folder with Edit game;
+    /// nothing is indexed, probed or patched (Refs #145).
+    /// </summary>
+    public bool FolderMissing { get; set; }
+    public string LibraryBadge => (IsFavourite ? "★" : "") + (IsHidden ? "◌" : "") + (GameRootNotAllowed || FolderMissing ? "⚠" : "");
     public int? SteamAppId { get; set; }
     /// <summary>Upstream Steam AppID policy metadata without changing a non-Steam launcher's identity.</summary>
     public int? ManifestSteamAppIdOverride { get; set; }
@@ -166,7 +172,7 @@ public sealed class DetectedGame
     /// confirmed separately from the launcher.
     /// </summary>
     public bool HasConfirmedPatchTarget =>
-        !GameRootNotAllowed && (!RequiresExplicitPatchTarget ||
+        !GameRootNotAllowed && !FolderMissing && (!RequiresExplicitPatchTarget ||
         (!string.IsNullOrWhiteSpace(ExecutablePath) && !string.IsNullOrWhiteSpace(BinaryDirectory)));
 
     public bool UsesProton => !string.IsNullOrWhiteSpace(PrefixPath) && SteamAppId.HasValue;

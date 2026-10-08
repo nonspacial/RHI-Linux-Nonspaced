@@ -33,8 +33,8 @@ public sealed record ComponentUpdateLogEntry
 public sealed record ComponentUpdateLogGroup(DateTime LocalDate, IReadOnlyList<ComponentUpdateLogEntry> Entries);
 
 /// <summary>
-/// Bounded, newest-first history of component installs/updates/removals. Writes are atomic
-/// (temp file, fsync, rename). An unreadable file is copied aside and the store then refuses
+/// Bounded, newest-first history of component installs/updates/removals. Writes go through
+/// <c>AtomicFile.WriteStoreFile</c> (unique temp, fsync, verify, rename, directory fsync). An unreadable file is copied aside and the store then refuses
 /// to record until the user clears it, so a parse error never silently drops the history.
 /// </summary>
 public sealed class ComponentUpdateLogStore : IGameStateStore
@@ -195,15 +195,10 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
         }
     }
 
+    /// <summary>
+    /// The store-file writer: a unique temp per write (two instances never share one), fsync, full verify, rename,
+    /// directory fsync; a symlinked log stays a link and keeps its mode.
+    /// </summary>
     private void SaveUnsafe(List<ComponentUpdateLogEntry> entries)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        var temp = _path + ".tmp";
-        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            JsonSerializer.Serialize(stream, entries, JsonOptions);
-            stream.Flush(flushToDisk: true);
-        }
-        File.Move(temp, _path, overwrite: true);
-    }
+        => RHI.Core.Deployment.AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(entries, JsonOptions));
 }

@@ -267,9 +267,9 @@ public sealed class LinuxDeploymentRecordStore
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
         if (SaveFaultForTesting is { } fault) throw fault();
-        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-        // Unique temp, fsync, full verify, rename, directory fsync (#31).
-        AtomicFile.WriteAllBytes(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
+        // The store-file writer (#31, #57): unique temp, fsync, full verify, rename, directory fsync; a symlinked
+        // deployments.json stays a link (its target is replaced) and keeps its mode, as every other store does.
+        AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
         _cached = records;
         var info = new FileInfo(_path);
         _cachedStamp = (info.LastWriteTimeUtc, info.Length);

@@ -570,7 +570,7 @@ public sealed class ReShadeShaderPackService
     {
         EnsureCustomDirectories();
         foreach (var link in LinkedFoldersNotDeployed(_customRoot))
-            Trace.TraceWarning($"[RHI shaders] {link} is a folder symlink in the custom shader folder; its files are not deployed (links are never followed into a game). Copy the files in instead.");
+            AppLog.Warn("shaders", $"{link} is a folder symlink in the custom shader folder; its files are not deployed (links are never followed into a game). Copy the files in instead.");
         return _customRoot;
     }
 
@@ -591,7 +591,7 @@ public sealed class ReShadeShaderPackService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"[RHI shaders] custom shader folder {customRoot} not fully readable ({ex.Message})");
+            AppLog.Warn("shaders", $"custom shader folder {customRoot} not fully readable", ex);
             return [];
         }
     }

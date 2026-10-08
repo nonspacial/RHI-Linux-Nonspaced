@@ -73,6 +73,52 @@ public sealed class DeploymentToolkitTests : IDisposable
         Assert.Equal("fresh", File.ReadAllText(P("fresh.json")));
     }
 
+    [Fact]
+    public void WriteNew_GivenAMode_CreatesTheCopyWithExactlyThatMode()
+    {
+        // A quarantine copy of a 0600 store stays private (integration w1 deploy review 5, P12).
+        AtomicFile.WriteNew(P("private.json"), "secret token"u8, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(P("private.json")));
+        Assert.Equal("secret token", File.ReadAllText(P("private.json")));
+
+        // Exactly: a bit the umask (022) would drop is kept, as for the source being copied.
+        const UnixFileMode shared = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead;
+        AtomicFile.WriteNew(P("shared.json"), "x"u8, shared);
+        Assert.Equal(shared, File.GetUnixFileMode(P("shared.json")));
+    }
+
+    [Fact]
+    public void WriteNew_AFailedWrite_LeavesNoPartialCopy()
+    {
+        Assert.Throws<IOException>(() => AtomicFile.WriteNew(P("partial.json"), new byte[64 * 1024], null, inner => new FailAfterStream(inner, 4096)));
+
+        Assert.False(File.Exists(P("partial.json")));
+    }
+
+    /// <summary>Writes the first <paramref name="limit"/> bytes, then fails like a full disk.</summary>
+    private sealed class FailAfterStream(Stream inner, int limit) : Stream
+    {
+        private int _written;
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => Write(buffer.AsSpan(offset, count));
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            var allowed = Math.Max(0, Math.Min(buffer.Length, limit - _written));
+            inner.Write(buffer[..allowed]);
+            _written += allowed;
+            if (allowed < buffer.Length) throw new IOException("No space left on device");
+        }
+    }
+
     // ---- TrustedDownload ---------------------------------------------------------------------------
 
     [Theory]

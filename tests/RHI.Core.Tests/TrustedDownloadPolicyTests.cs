@@ -232,6 +232,176 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
         Assert.DoesNotContain(handler.Requested, url => url.Contains("evil", StringComparison.Ordinal));
     }
 
+    // ---- integration w1 deploy review 1: each service's own policy, its size cap, and the RenoDX HEAD check ----
+
+    /// <summary>The add-on cap as a product value, not the constant: a test that reads the constant moves with it.</summary>
+    private const long AddonCap = 256L * 1024 * 1024;
+
+    [Theory]
+    [InlineData("https://someone.github.io/{version}/renodx-universal_ue-dof-fix.addon64")]
+    [InlineData("https://renodx.com/{version}/renodx-universal_ue-dof-fix.addon64")]
+    public async Task DofFix_UsesTheGitHubPolicy_NotAWiderOne(string template)
+    {
+        var (game, _) = CreateGame("Dof Pages Game");
+        game.DofFixForcedByManifest = true;
+        game.EngineHint = "Unreal Engine 5";
+        var handler = new GuardHandler(url =>
+            url.Contains("rhi-repo/releases", StringComparison.Ordinal)
+                ? Json("""[ { "tag_name": "ue-dof-fix-1.0.2", "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "https://github.com/RankFTW/rhi-repo/releases/download/ue-dof-fix-1.0.2/renodx-universal_ue-dof-fix.addon64" } ] } ]""")
+                : url == "https://manifest.test/manifest.json"
+                    ? Json($$"""{ "version": 2, "componentUrls": { "ueDofFix": "{{template}}" } }""")
+                    : null);
+        using var http = new HttpClient(handler);
+        var service = new DofFixDeploymentService(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "dof-pages-records.json")),
+            new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"), Path.Combine(_root, "dof-pages-cache"));
+
+        var refused = await Assert.ThrowsAsync<UntrustedDownloadException>(() => service.InstallAsync(game));
+
+        Assert.StartsWith(TrustedDownloadPolicy.GitHub.RefusalPrefix, refused.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(handler.Requested, url => url.Contains("dof-fix.addon64", StringComparison.Ordinal) && !url.Contains("github.com", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReShadeAddonManager_UsesTheReShadeAddonPolicy_SoRenoDxComIsRefused()
+    {
+        var (game, _) = CreateGame("Addon Policy Game");
+        const string link = "https://renodx.com/some-addon.addon64";
+        var handler = new GuardHandler(url => url switch
+        {
+            ReShadeAddonManagerService.AddonsIniUrl => Text($"[01]\nPackageName=Policy Addon\nDownloadUrl64={link}\n"),
+            "https://manifest.test/manifest.json" => Json("""{"version":2}"""),
+            _ => null
+        });
+        using var http = new HttpClient(handler);
+        var manager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json", null, Path.Combine(_root, "policy-manifest.json")),
+            Path.Combine(_root, "policy-cache"), Path.Combine(_root, "policy-custom"), Path.Combine(_root, "policy-state.json"));
+        var id = (await manager.RefreshCatalogItemsAsync()).Single(x => x.DisplayName.Contains("Policy", StringComparison.Ordinal)).Id;
+
+        var result = await manager.ApplySelectionAsync(game, [id]);
+
+        Assert.False(result.Success);
+        Assert.Contains(TrustedDownloadPolicy.ReShadeAddons.RefusalPrefix + link, result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(handler.Requested, url => url == link);
+    }
+
+    [Fact]
+    public async Task ReShadeAddonManager_AnnouncedSizeOverItsCap_IsRefused()
+    {
+        var (game, _) = CreateGame("Addon Size Game");
+        const string link = "https://github.com/someone/big/releases/download/v1/Big.addon64";
+        var handler = new GuardHandler(url => url switch
+        {
+            ReShadeAddonManagerService.AddonsIniUrl => Text($"[01]\nPackageName=Big Addon\nDownloadUrl64={link}\n"),
+            "https://manifest.test/manifest.json" => Json("""{"version":2}"""),
+            link => Announced(Pe(), AddonCap + 1),
+            _ => null
+        });
+        using var http = new HttpClient(handler);
+        var manager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json", null, Path.Combine(_root, "size-manifest.json")),
+            Path.Combine(_root, "size-cache"), Path.Combine(_root, "size-custom"), Path.Combine(_root, "size-state.json"));
+        var id = (await manager.RefreshCatalogItemsAsync()).Single(x => x.DisplayName.Contains("Big", StringComparison.Ordinal)).Id;
+
+        var result = await manager.ApplySelectionAsync(game, [id]);
+
+        Assert.False(result.Success);
+        Assert.Contains(TrustedDownloadPolicy.TooLargePrefix + $"{AddonCap} / {AddonCap + 1}", result.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon*", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task RenoDxInstall_AnnouncedSizeOverItsCap_IsRefused()
+    {
+        var (game, files) = CreateGame("Size Game");
+        const string addon = "https://clshortfuse.github.io/renodx/renodx-size.addon64";
+        var handler = new GuardHandler(url => url switch
+        {
+            RenoDxCatalogService.WikiUrl => Html($"<table><tr><td>Size Game</td><td><a href=\"{addon}\">snapshot</a></td></tr></table>"),
+            addon => Announced(Pe(), AddonCap + 1),
+            _ => null
+        });
+        using var http = new HttpClient(handler);
+        var service = new RenoDxDeploymentService(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "size-records.json")), new RenoDxCatalogService(http), Path.Combine(_root, "renodx-size-cache"));
+
+        var result = await service.InstallAsync(game, files);
+
+        Assert.False(result.Success);
+        Assert.Contains(TrustedDownloadPolicy.TooLargePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon*"));
+    }
+
+    [Fact]
+    public async Task DofFix_AnnouncedSizeOverItsCap_IsRefused()
+    {
+        var (game, _) = CreateGame("Dof Size Game");
+        game.DofFixForcedByManifest = true;
+        game.EngineHint = "Unreal Engine 5";
+        const string asset = "https://github.com/RankFTW/rhi-repo/releases/download/ue-dof-fix-1.0.2/renodx-universal_ue-dof-fix.addon64";
+        var handler = new GuardHandler(url =>
+            url == asset ? Announced(Pe(), AddonCap + 1)
+            : url.Contains("rhi-repo/releases", StringComparison.Ordinal)
+                ? Json($$"""[ { "tag_name": "ue-dof-fix-1.0.2", "assets": [ { "name": "renodx-universal_ue-dof-fix.addon64", "browser_download_url": "{{asset}}" } ] } ]""")
+                : url == "https://manifest.test/manifest.json" ? Json("""{ "version": 2 }""") : null);
+        using var http = new HttpClient(handler);
+        var service = new DofFixDeploymentService(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "dof-size-records.json")),
+            new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"), Path.Combine(_root, "dof-size-cache"));
+
+        var refused = await Assert.ThrowsAsync<InvalidDataException>(() => service.InstallAsync(game));
+
+        Assert.StartsWith(TrustedDownloadPolicy.TooLargePrefix + $"{AddonCap} /", refused.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StreamedBodyOverThePolicyCap_IsRefusedAndLeavesNothing()
+    {
+        // No Content-Length: the cap is enforced while the body streams (AtomicFile.StageStreamAsync).
+        var dir = Directory.CreateDirectory(Path.Combine(_root, "streamed")).FullName;
+        var handler = new GuardHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new UnseekableStream(new byte[8192])) });
+        using var http = new HttpClient(handler);
+
+        var refused = await Assert.ThrowsAsync<InvalidDataException>(() => TrustedDownload.DownloadToTempAsync(
+            http, "https://github.com/o/r/releases/download/v1/x.addon64", Path.Combine(dir, "x.addon64"), TrustedDownloadPolicy.GitHub with { MaxBytes = 4096 }));
+
+        Assert.StartsWith(AtomicFile.OverLimitPrefix + "4096 ", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
+    }
+
+    [Fact]
+    public async Task RenoDxInstall_CachedAddonWhoseHeadIsRedirectedOffTheList_Fails()
+    {
+        // A refused HEAD redirect must not read as "could not ask" (which reuses the cache) (deploy review 1, M22).
+        var (first, firstFiles) = CreateGame("Head Game One");
+        var (second, secondFiles) = CreateGame("Head Game Two");
+        const string addon = "https://clshortfuse.github.io/renodx/renodx-head.addon64";
+        var redirectHead = false;
+        var handler = new GuardHandler((url, method) => url switch
+        {
+            RenoDxCatalogService.WikiUrl => Html($"<table><tr><td>Head Game One</td><td><a href=\"{addon}\">snapshot</a></td></tr><tr><td>Head Game Two</td><td><a href=\"{addon}\">snapshot</a></td></tr></table>"),
+            addon when method == HttpMethod.Head && redirectHead => RedirectedHead("https://mirror.evil.example/renodx-head.addon64"),
+            addon => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Pe()) { Headers = { LastModified = DateTimeOffset.UnixEpoch.AddDays(20000) } } },
+            _ => null
+        });
+        using var http = new HttpClient(handler);
+        var service = new RenoDxDeploymentService(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "head-records.json")), new RenoDxCatalogService(http), Path.Combine(_root, "head-cache"));
+        var installed = await service.InstallAsync(first, firstFiles);
+        Assert.True(installed.Success, installed.Message);
+
+        redirectHead = true;
+        var result = await service.InstallAsync(second, secondFiles);
+
+        Assert.False(result.Success);
+        Assert.EndsWith("Refused link: https://mirror.evil.example/renodx-head.addon64", result.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFiles(second.BinaryDirectory!, "*.addon*"));
+    }
+
+    [Fact]
+    public void SizeRefusals_ArePresentedInPortuguese()
+    {
+        var announced = $"{TrustedDownloadPolicy.TooLargePrefix}268435456 / 268435457";
+        Assert.Equal("Download recusado: maior que o limite de tamanho deste download. Limite / tamanho anunciado em bytes: 268435456 / 268435457",
+            UiLocalizationService.PresentFor("pt-BR", announced));
+        Assert.StartsWith("Conteúdo recusado:", UiLocalizationService.PresentFor("pt-BR", AtomicFile.OverLimitPrefix + "4096 x.addon64"), StringComparison.Ordinal);
+    }
+
     [Fact]
     public void RefusalMessages_ArePresentedInPortuguese()
     {
@@ -269,6 +439,25 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
         return bytes;
     }
 
+    /// <summary>A response announcing <paramref name="length"/> bytes (the body itself stays small).</summary>
+    private static HttpResponseMessage Announced(byte[] bytes, long length)
+    {
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentLength = length;
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
+
+    private static HttpResponseMessage RedirectedHead(string finalUrl) => new(HttpStatusCode.OK)
+    {
+        Content = new ByteArrayContent([]),
+        RequestMessage = new HttpRequestMessage(HttpMethod.Head, finalUrl)
+    };
+
+    private sealed class UnseekableStream(byte[] data) : MemoryStream(data)
+    {
+        public override bool CanSeek => false;
+    }
+
     private static HttpResponseMessage Html(string html) => new(HttpStatusCode.OK) { Content = new StringContent(html) };
     private static HttpResponseMessage Text(string text) => new(HttpStatusCode.OK) { Content = new StringContent(text) };
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
@@ -283,15 +472,17 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     // Serves the routes given; any other URL is 404. Records every request so tests can prove an untrusted link was never fetched.
-    private sealed class GuardHandler(Func<string, HttpResponseMessage?> route) : HttpMessageHandler
+    private sealed class GuardHandler(Func<string, HttpMethod, HttpResponseMessage?> route) : HttpMessageHandler
     {
+        public GuardHandler(Func<string, HttpResponseMessage?> route) : this((url, _) => route(url)) { }
+
         public List<string> Requested { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var url = request.RequestUri!.OriginalString;
             lock (Requested) Requested.Add(url);
-            return Task.FromResult(route(url) ?? new HttpResponseMessage(HttpStatusCode.NotFound));
+            return Task.FromResult(route(url, request.Method) ?? new HttpResponseMessage(HttpStatusCode.NotFound));
         }
     }
 }

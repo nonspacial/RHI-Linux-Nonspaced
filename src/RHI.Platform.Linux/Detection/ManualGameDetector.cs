@@ -19,15 +19,16 @@ public sealed class ManualGameDetector : IGameDetector
     {
         cancellationToken.ThrowIfCancellationRequested();
         var games = _store.Load().ManualGames
-            // Unchanged from main: an entry whose folder no longer exists is not listed (it stays saved).
-            .Where(entry => Directory.Exists(entry.InstallPath))
             .Select(entry =>
             {
-                // Add/Edit refuse $HOME, /, a whole Wine prefix… as a game folder. An older entry saved with
-                // one stays listed (never hidden: it is the user's entry) as "folder not allowed", with no
-                // patch target, so nothing indexes or patches that folder; Remove or Edit repairs it.
-                var notAllowed = !GameRootGuard.IsAcceptable(entry.InstallPath);
-                var exe = !notAllowed && File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null;
+                // Never hidden: it is the user's entry. One whose folder no longer exists is listed as "folder
+                // missing" (Refs #145); one saved with a folder Add/Edit now refuse ($HOME, /, a whole Wine
+                // prefix…) as "folder not allowed". Either way there is no patch target, so nothing indexes or
+                // patches that path; Remove or Edit repairs it.
+                var missing = string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath);
+                var notAllowed = !missing && !GameRootGuard.IsAcceptable(entry.InstallPath);
+                var unusable = missing || notAllowed;
+                var exe = !unusable && File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null;
                 return new DetectedGame
                 {
                     Name = entry.Name,
@@ -35,10 +36,11 @@ public sealed class ManualGameDetector : IGameDetector
                     Source = "Manual",
                     IsManuallyAdded = true,
                     GameRootNotAllowed = notAllowed,
-                    RequiresExplicitPatchTarget = notAllowed,
+                    FolderMissing = missing,
+                    RequiresExplicitPatchTarget = unusable,
                     ExecutablePath = exe,
                     LaunchExecutablePath = File.Exists(entry.ExecutablePath) ? entry.ExecutablePath : null,
-                    BinaryDirectory = notAllowed
+                    BinaryDirectory = unusable
                         ? null
                         : exe is not null ? Path.GetDirectoryName(exe) : entry.InstallPath,
                     PrefixPath = Directory.Exists(entry.PrefixPath) ? entry.PrefixPath : null,

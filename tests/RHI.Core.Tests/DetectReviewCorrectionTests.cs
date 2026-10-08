@@ -239,6 +239,27 @@ public sealed class DetectReviewCorrectionTests
     }
 
     [Fact]
+    public async Task CustomShaderFolder_LinkWarning_ReachesTheAppLog()
+    {
+        // Trace output is invisible in Release; the warning must be in rhi.log (integration w1 detect review 5).
+        using var tree = new DetectionTestTree();
+        var custom = tree.Dir("Custom", "Shaders");
+        var shared = tree.Dir("shared-collection");
+        tree.File("// fx", "shared-collection", "Shared.fx");
+        var link = tree.Link(shared, "Custom", "Shaders", "Shaders", "Shared");
+        using var http = new HttpClient();
+        var service = new ReShadeShaderPackService(http, tree.Dir("cache"), customRoot: custom);
+        var log = new AppLog(tree.Path_("state", "rhi.log"));
+
+        using (AppLog.UseInThisFlow(log))
+            await service.ListPackFilesAsync(service.AvailablePacks.Single(p => p.IsCustom).Id);
+
+        var text = await File.ReadAllTextAsync(log.FilePath);
+        Assert.Contains("[shaders]", text);
+        Assert.Contains(link, text);
+    }
+
+    [Fact]
     public void StateHome_FollowsXdgStateHome()
         => Assert.Equal(Environment.GetEnvironmentVariable("XDG_STATE_HOME"), LinuxPaths.StateHome);
 }

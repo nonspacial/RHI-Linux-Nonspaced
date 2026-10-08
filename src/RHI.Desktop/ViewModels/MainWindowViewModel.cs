@@ -248,6 +248,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         null => T("Vm.NoGameSelected"),
         { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
+        { FolderMissing: true } game => FolderMissingText(game),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
             => T("Vm.ModificationTargetManualExecutableMissing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)
@@ -263,6 +264,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         null => "",
         { GameRootNotAllowed: true } game => TF("Vm.FolderNotAllowed", game.InstallPath),
+        { FolderMissing: true } game => TF("Vm.FolderMissing", game.InstallPath),
         { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedSelectRealGameExecutable"),
         _ => SelectedGame.InstallPath
     };
@@ -944,16 +946,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
-    /// <summary>A merged card took over a duplicate's favourite/hidden/edit state; persist the move.</summary>
-    private void SaveAdoptedLibraryState()
-    {
-        try { _libraryStore.Save(_libraryState); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The card already shows the adopted state; the next library-state save persists it.
-            AppLog.Warn("library", "Could not save library state adopted from merged duplicates", ex);
-        }
-    }
+    /// <summary>
+    /// A merged card took over a duplicate's favourite/hidden/edit state; persist the move through the one
+    /// store-write helper. Automatic, so a refusal is only reported (returned for the scan's status line):
+    /// the card already shows the adopted state and the next library save retries it. The move is one-way:
+    /// if the duplicates later stop merging, the adopted keys stay on the card's key.
+    /// </summary>
+    private string? SaveAdoptedLibraryState()
+        => TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
 
     private async Task LoadDlssManifestAsync()
     {
@@ -1292,7 +1292,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ApplyProbeResult(pending);
                 StatusText = game.GameRootNotAllowed
                     ? GameRootNotAllowedText(game)
-                    : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
+                    : game.FolderMissing
+                        ? FolderMissingText(game)
+                        : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
                 return;
             }
 
@@ -1377,7 +1379,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private Task RefreshAsync() => RefreshAsync(null);
 
     /// <summary>
-    /// Refresh that waits for the current busy operation (startup DLSS fetch, Update All…) instead of
+    /// Refresh that waits for the current busy operation (Update All, an install…) instead of
     /// being skipped, for changes the user just saved. True when the refresh ran and succeeded.
     /// </summary>
     private async Task<bool> RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors)
@@ -1450,7 +1452,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                 merged.Add(game);
             }
-            if (adoptedMergedKeys) SaveAdoptedLibraryState();
+            var adoptRefused = adoptedMergedKeys ? SaveAdoptedLibraryState() : null;
             _allGames.Clear();
             _allGames.AddRange(merged);
             ApplyFilter();
@@ -1460,7 +1462,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
-            var scanProblems = LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath);
+            var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
+                .Where(text => !string.IsNullOrEmpty(text)));
+            string? scanProblems = problems.Length == 0 ? null : problems;
             var scanDone = LibraryScanStatusText.Done(_allGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             return true;
@@ -3044,6 +3048,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         => TF("Vm.FolderNotAllowedRemoveManualEntry",
             game.Name, GameRootRefusal(game.LibraryIdentityPath ?? game.InstallPath) ?? string.Empty);
 
+    /// <summary>Plain state of a saved manual entry whose folder no longer exists (listed, never probed; Refs #145).</summary>
+    private static string FolderMissingText(DetectedGame game)
+        => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
+
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
         => (await TryAddManualGameAsync(entry)).Message;
 
@@ -3064,14 +3072,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
             return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
 
-        var normalizedPath = Path.GetFullPath(entry.InstallPath);
-        if (_allGames.Any(game => Path.GetFullPath(game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
+        // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a
+        // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
+        var identity = PathIdentity.Canonicalize(entry.InstallPath);
+        bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
+        if (_allGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
             return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
         var state = _libraryStore.Load();
-        if (state.ManualGames.Any(existing =>
-                Path.GetFullPath(existing.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)))
+        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
             return (false, T("Vm.ManualGameAlreadySaved"));
 
         state.ManualGames.Add(entry);
@@ -3083,8 +3093,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         string message;
         if (!await RefreshWhenIdleAsync(ManualOnly))
             message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);
-        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded &&
-                     Path.GetFullPath(game.LibraryIdentityPath ?? game.InstallPath).Equals(normalizedPath, StringComparison.OrdinalIgnoreCase)) is { } added)
+        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded && SameFolder(game.LibraryIdentityPath ?? game.InstallPath)) is { } added)
         {
             SelectedGame = added;
             message = TF("Vm.AddedManualLibrary", entry.Name);

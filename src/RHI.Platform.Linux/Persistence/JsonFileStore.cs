@@ -164,6 +164,12 @@ public static class JsonStoreQuarantine
         throw new JsonStoreUnavailableException(fullPath, null, last);
     }
 
+    private static UnixFileMode? TryGetMode(string path)
+    {
+        try { return File.GetUnixFileMode(path); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
     private static string? CopyAside(string fullPath, byte[] bytes)
     {
         try
@@ -185,7 +191,8 @@ public static class JsonStoreQuarantine
                 if (File.Exists(target)) continue;
                 try
                 {
-                    AtomicFile.WriteNew(target, bytes);
+                    // The copy keeps the store's own mode: a private (0600) store must not get a world-readable copy.
+                    AtomicFile.WriteNew(target, bytes, TryGetMode(fullPath));
                     return target;
                 }
                 catch (IOException) when (File.Exists(target))

@@ -130,7 +130,54 @@ public sealed partial class ReShadeChannelTests
         Assert.Empty(Directory.GetFiles(journalDir)); // final: not retried at every start
     }
 
-    private sealed class HangOnSecondReplace(IFileDeploymentService inner) : IFileDeploymentService
+    [Fact]
+    public async Task CrashAfterAnUpdateEditedReShadeIni_RollsTheIniBackToItsPreUpdateBytes()
+    {
+        // The update's in-place INI edit is declared (RecordWrittenContentAsync), so recovery knows the half-applied
+        // INI is RHI's and restores the pre-update bytes instead of keeping it as "changed by someone else"
+        // (integration w1 deploy review 2).
+        var (game, store) = CreateGame("crash-ini-edit");
+        var cache = Path.Combine(_root, "crash-ini-edit-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var compiler = Path.Combine(_root, "crash-ini-edit-native", "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        var options = new ReShadeInstallOptions { ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = ["CrosireMaster"] };
+        // The user's own ReShade.ini, which RHI then extends with its shader paths: the update's cleanup edits it in place.
+        File.WriteAllText(ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!), "[GENERAL]\nEffectSearchPaths=.\\user-shaders\nPreprocessorDefinitions=USER\n");
+        var first = await NewService(store, new MutableHandler(), cache).InstallAsync(game, options);
+        Assert.True(first.Success, first.Message);
+        var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!);
+        var before = File.ReadAllBytes(ini);
+
+        var journalDir = Path.Combine(_root, "crash-ini-edit-journal");
+        var overrides = new WineDllOverrideService();
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, isPrefixInUse: _ => false);
+        DeploymentOperation? started = null;
+        journal.OperationStartedForTesting = operation => started = operation;
+        // The update edits ReShade.ini first, then replaces the proxy: the process dies right after that write.
+        var files = new HangOnSecondReplace(new TransactionalFileDeploymentService(), hangAt: 1);
+        var http = new HttpClient(new MutableHandler());
+        var service = new ReShadeDeploymentService(http, files, store, overrides, new FakeExtractor(), cache,
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")),
+            journal: journal);
+
+        _ = service.InstallAsync(game, options);
+        await files.Reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(File.Exists(ini));
+        Assert.NotEqual(before, File.ReadAllBytes(ini)); // the update removed RHI's previous INI entries
+        started!.AbandonAsIfCrashed(); // the process dies here
+
+        var report = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(), journalDir, isPrefixInUse: _ => false), store);
+
+        var entry = Assert.Single(report!.Entries);
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, entry.Outcome);
+        Assert.Equal(before, File.ReadAllBytes(ini));
+        Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, ".rhi-recovered")));
+    }
+
+    /// <summary>Lets the first <paramref name="hangAt"/> - 1 replaces through; the next one writes and then never returns.</summary>
+    private sealed class HangOnSecondReplace(IFileDeploymentService inner, int hangAt = 2) : IFileDeploymentService
     {
         private int _calls;
         public TaskCompletionSource Reached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -139,7 +186,7 @@ public sealed partial class ReShadeChannelTests
         public async Task<FileDeploymentResult> ReplaceAsync(string sourcePath, string targetPath, CancellationToken cancellationToken = default)
         {
             var result = await inner.ReplaceAsync(sourcePath, targetPath, cancellationToken);
-            if (Interlocked.Increment(ref _calls) < 2) return result;
+            if (Interlocked.Increment(ref _calls) < hangAt) return result;
             SecondTarget = targetPath;
             Reached.TrySetResult();
             return await new TaskCompletionSource<FileDeploymentResult>().Task; // abandoned, as in a crash

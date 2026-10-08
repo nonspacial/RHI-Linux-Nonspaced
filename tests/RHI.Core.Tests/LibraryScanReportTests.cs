@@ -115,6 +115,32 @@ public sealed class LibraryScanReportTests : IDisposable
         Assert.Contains("after rotation", await File.ReadAllTextAsync(log.FilePath));
     }
 
+    [Fact]
+    public async Task DetectorDiagnosticsWarnings_AreWrittenToTheAppLog_AndCollected()
+    {
+        // A detector's recovered-from failure (one unreadable library) is both a scan warning and an app-log line.
+        var log = new AppLog(Path.Combine(_root, "state", "rhi-linux", "rhi.log"));
+        GameLibraryScanResult report;
+        using (AppLog.UseInThisFlow(log))
+            report = await new GameLibraryScanner([new Warning("Steam", "Steam library /x/steamapps skipped")]).ScanWithReportAsync(null);
+
+        Assert.Contains("Steam library /x/steamapps skipped: Permission denied", Assert.Single(report.Detectors).Warnings);
+        var text = await File.ReadAllTextAsync(log.FilePath);
+        Assert.Contains("[scan]", text);
+        Assert.Contains("Steam library /x/steamapps skipped", text);
+        Assert.Contains("Permission denied", text);
+    }
+
+    private sealed class Warning(string name, string message) : IGameDetector
+    {
+        public string Name => name;
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            DetectorDiagnostics.Warn(message, new UnauthorizedAccessException("Permission denied"));
+            return Task.FromResult<IReadOnlyList<DetectedGame>>([]);
+        }
+    }
+
     private DetectedGame Game(string name, string source)
         => new() { Name = name, Source = source, InstallPath = _root };
 

@@ -17,6 +17,13 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <summary>Per-launch stderr logs kept in the log folder; older ones are deleted when a launch starts.</summary>
     internal const int KeptLaunchLogs = 20;
 
+    /// <summary>
+    /// Size cap of one per-launch stderr log. A direct Wine launch prints <c>fixme:</c> lines for the whole
+    /// session and a Steam client started by <c>steam -applaunch</c> keeps writing for days; past the cap
+    /// the rest is read and discarded (never refused, so the game's writes keep succeeding).
+    /// </summary>
+    internal const long MaxLaunchLogBytes = 1024 * 1024;
+
     private readonly TimeSpan _earlyExitWindow;
     private readonly string _logDirectory;
 
@@ -39,7 +46,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <summary>
     /// Starts the launch command and watches it briefly: a command that ends at once with a failure exit
     /// code (program missing, store client refused) throws <see cref="GameLaunchFailedException"/> with its
-    /// last stderr line. The command's stderr goes to a per-launch file under
+    /// last stderr line. The command's stderr goes to a per-launch file (capped, see <see cref="WithCappedStderrLog"/>) under
     /// <see cref="DefaultLogDirectory"/>, never to a pipe: a pipe would tie the game to RHI's lifetime
     /// (every stderr write fails once RHI exits, and a <c>set -e</c> wrapper that logs to stderr aborts).
     /// A command still running after the window is left to run and its process handle is released when
@@ -104,8 +111,40 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         if (userCommand) AddUserBinDirectories(psi);
         psi.ArgumentList.Add(userCommand ? "-lc" : "-c");
         var command = BuildShellCommand(game.LaunchCommand!, options.CommandPrefix);
-        psi.ArgumentList.Add(stderrLog is null ? command : $"exec 2>>{ShellQuote(stderrLog)}\n{command}");
+        psi.ArgumentList.Add(stderrLog is null ? command : WithCappedStderrLog(command, stderrLog));
         return psi;
+    }
+
+    /// <summary>
+    /// Sends the command's stderr to <paramref name="stderrLog"/> through a FIFO read by a small reader the
+    /// launch shell starts (not RHI, so the game never depends on RHI's lifetime): it copies the first
+    /// <see cref="MaxLaunchLogBytes"/>, appends a note when there is more, then drains the rest to
+    /// /dev/null for as long as anything writes. The command runs in a subshell so an <c>exit</c> or
+    /// <c>exec</c> in it still lets the shell close its own stderr and wait for the reader before exiting
+    /// with the command's status: an early failure's last line is in the file before RHI reads it.
+    /// Without mkfifo the file is appended to directly, uncapped.
+    /// </summary>
+    internal static string WithCappedStderrLog(string command, string stderrLog)
+    {
+        var log = ShellQuote(stderrLog);
+        var fifo = ShellQuote(stderrLog + ".fifo");
+        return
+            $"if mkfifo -m 600 {fifo} 2>/dev/null; then\n" +
+            $"  {{ head -c {MaxLaunchLogBytes}; if [ \"$(head -c 1 | wc -c)\" -gt 0 ]; then " +
+            $"printf '\\n[RHI] stderr log capped at {MaxLaunchLogBytes / (1024 * 1024)} MiB; later output was discarded.\\n'; cat >/dev/null; fi; }} " +
+            $"<{fifo} >>{log} 2>/dev/null &\n" +
+            "  rhi_stderr_reader=$!\n" +
+            $"  exec 2>{fifo}\n" +
+            $"  rm -f {fifo}\n" +
+            "else\n" +
+            $"  exec 2>>{log}\n" +
+            "  rhi_stderr_reader=\n" +
+            "fi\n" +
+            $"(\n{command}\n)\n" +
+            "rhi_status=$?\n" +
+            "exec 2>&-\n" +
+            "[ -n \"$rhi_stderr_reader\" ] && wait \"$rhi_stderr_reader\"\n" +
+            "exit $rhi_status";
     }
 
     /// <summary>A launch command the user typed (Add game dialog), as opposed to one a detector built.</summary>
@@ -194,13 +233,17 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
                          .OrderByDescending(Path.GetFileName, StringComparer.Ordinal)
                          .Skip(KeptLaunchLogs - 1))
                 File.Delete(old);
+            // A FIFO is unlinked as soon as both ends are open; one is left only by a shell killed in between.
+            foreach (var fifo in Directory.EnumerateFiles(_logDirectory, "*.log.fifo")
+                         .Where(fifo => File.GetLastWriteTimeUtc(fifo) < DateTime.UtcNow.AddHours(-1)))
+                RHI.Core.Deployment.FileCleanup.TryDelete(fifo);
             var path = Path.Combine(_logDirectory, $"{DateTime.UtcNow:yyyyMMdd-HHmmss-fff}-{FileSafe(game.Name)}-{Guid.NewGuid():N}.log");
             using (new FileStream(path, FileMode.CreateNew, FileAccess.Write)) { }
             return path;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"[RHI launch] no stderr log in {_logDirectory} ({ex.Message}); a failed launch is reported without its stderr");
+            AppLog.Warn("launch", $"no stderr log in {_logDirectory}; a failed launch is reported without its stderr", ex);
             return null;
         }
     }
@@ -230,7 +273,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Trace.TraceWarning($"[RHI launch] stderr log {stderrLog} unreadable ({ex.Message})");
+            AppLog.Warn("launch", $"stderr log {stderrLog} unreadable", ex);
             return null;
         }
     }

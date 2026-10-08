@@ -89,10 +89,45 @@ public sealed class UserLaunchCommandTests : IDisposable
 
         await Launcher(TimeSpan.FromMilliseconds(200)).LaunchAsync(game);
 
+        // stderr is the launch log's FIFO (read by the launch shell's own capped reader), never a pipe of RHI's.
         var target = (await ReadWhenWritten(marker)).Trim();
         Assert.StartsWith(_tree.Path_("logs") + "/", target);
-        Assert.EndsWith(".log", target);
-        Assert.Contains("late", await File.ReadAllTextAsync(target));
+        Assert.Contains(".log.fifo", target);
+        var log = Assert.Single(Directory.GetFiles(_tree.Path_("logs"), "*.log"));
+        Assert.Contains("late", await ReadWhenWritten(log));
+    }
+
+    [Fact]
+    public async Task TheLaunchLog_IsCappedWithANote_AndTheGamesWritesKeepSucceeding()
+    {
+        var marker = _tree.Path_("writes-ok");
+        var game = new DetectedGame
+        {
+            Name = "Chatty", Source = "Wine", InstallPath = _tree.Dir("game"),
+            LaunchCommand = $"yes 0123456789abcdef | head -c 3000000 >&2 && yes x | head -c 100000 >&2 && echo ok > '{marker}'"
+        };
+
+        await Launcher(TimeSpan.FromSeconds(20)).LaunchAsync(game);
+
+        Assert.Equal("ok", (await ReadWhenWritten(marker)).Trim());
+        var log = Assert.Single(Directory.GetFiles(_tree.Path_("logs"), "*.log"));
+        var text = await File.ReadAllTextAsync(log);
+        Assert.StartsWith("0123456789abcdef\n", text);
+        Assert.InRange(new FileInfo(log).Length, LinuxGameLauncher.MaxLaunchLogBytes, LinuxGameLauncher.MaxLaunchLogBytes + 200);
+        Assert.EndsWith("[RHI] stderr log capped at 1 MiB; later output was discarded.\n", text);
+        Assert.Empty(Directory.GetFiles(_tree.Path_("logs"), "*.fifo"));
+    }
+
+    [Fact]
+    public async Task AnEarlyFailure_ThatExitsOrExecsItself_StillReportsItsLastStderrLine()
+    {
+        var failure = await Assert.ThrowsAsync<GameLaunchFailedException>(() => Launcher(TimeSpan.FromSeconds(10)).LaunchAsync(
+            new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = "echo 'wine: not found' >&2; exit 127" }));
+        Assert.Equal((127, "wine: not found"), (failure.ExitCode, failure.Detail));
+
+        var exec = await Assert.ThrowsAsync<GameLaunchFailedException>(() => Launcher(TimeSpan.FromSeconds(10)).LaunchAsync(
+            new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = "exec sh -c 'echo last words >&2; exit 4'" }));
+        Assert.Equal((4, "last words"), (exec.ExitCode, exec.Detail));
     }
 
     [Fact]
@@ -108,6 +143,28 @@ public sealed class UserLaunchCommandTests : IDisposable
         Assert.Equal(LinuxGameLauncher.KeptLaunchLogs, remaining.Length);
         Assert.DoesNotContain(remaining, f => Path.GetFileName(f) == "20000101-000000-000-old.log");
         Assert.True(File.Exists(keep));
+    }
+
+    [Fact]
+    public async Task LaunchLogProblems_AreWrittenToTheAppLog()
+    {
+        // Trace output is invisible in Release (integration w1 detect review 5).
+        var log = new AppLog(_tree.Path_("state", "rhi.log"));
+        var notADirectory = _tree.File("x", "logs-is-a-file");
+        using (AppLog.UseInThisFlow(log))
+        {
+            await new LinuxGameLauncher(TimeSpan.FromSeconds(10), notADirectory)
+                .LaunchAsync(new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = "true" });
+
+            var logs = _tree.Dir("logs");
+            var failure = await Assert.ThrowsAsync<GameLaunchFailedException>(() => Launcher(TimeSpan.FromSeconds(10)).LaunchAsync(
+                new DetectedGame { Name = "G", Source = "Wine", InstallPath = _tree.Dir("game"), LaunchCommand = $"echo boom >&2; chmod 000 '{logs}'/*.log; exit 3" }));
+            Assert.Null(failure.Detail);
+        }
+
+        var text = await File.ReadAllTextAsync(log.FilePath);
+        Assert.Contains($"[launch] no stderr log in {notADirectory}", text);
+        Assert.Contains("unreadable", text);
     }
 
     private static async Task<string> ReadWhenWritten(string path)

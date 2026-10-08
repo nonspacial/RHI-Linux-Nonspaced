@@ -978,7 +978,8 @@ public sealed partial class ReShadeDeploymentService
             var entry = archive.Entries.FirstOrDefault(e => e.Name.Equals(dllName, StringComparison.OrdinalIgnoreCase))
                         ?? archive.Entries.FirstOrDefault(e => e.FullName.EndsWith(dllName, StringComparison.OrdinalIgnoreCase));
             if (entry is null) throw new InvalidDataException($"{dllName} was not found in the nightly artifact.");
-            entry.ExtractToFile(staged, overwrite: true);
+            if (await ReShadeArchiveExtractor.ExtractEntryAsync(entry, staged, ReShadeArchiveExtractor.MaxEntryBytes, cancellationToken).ConfigureAwait(false) is { } refused)
+                throw new InvalidDataException($"{ReShadeArchiveExtractor.ArchiveRefusedPrefix}{refused}");
             if (!IsValidReShadeDll(staged)) throw new InvalidDataException($"Extracted nightly {dllName} is invalid or too small.");
             CacheStamp.Write(staged, url, $"zip-size:{actualZipSize}");
             File.WriteAllText(marker, actualZipSize.ToString());
