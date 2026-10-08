@@ -121,7 +121,11 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <see cref="MaxLaunchLogBytes"/>, appends a note when there is more, then drains the rest to
     /// /dev/null for as long as anything writes. The command runs in a subshell so an <c>exit</c> or
     /// <c>exec</c> in it still lets the shell close its own stderr and wait for the reader before exiting
-    /// with the command's status: an early failure's last line is in the file before RHI reads it.
+    /// with the command's status: an early failure's last line is in the file before RHI reads it (the copy is
+    /// unbuffered, so a line is there as soon as the reader has it). That wait is bounded (<see cref="ReaderWaitTenths"/>): a background child the command started (a wrapper's
+    /// daemon, the Steam client after <c>steam -applaunch</c>) keeps the FIFO open, so the reader only ends when
+    /// that child does. The shell then exits with the command's status anyway, inside RHI's early-exit window and
+    /// without lingering for the whole session; the reader stays behind, still draining the child's stderr.
     /// Without mkfifo the file is appended to directly, uncapped.
     /// </summary>
     internal static string WithCappedStderrLog(string command, string stderrLog)
@@ -130,7 +134,11 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         var fifo = ShellQuote(stderrLog + ".fifo");
         return
             $"if mkfifo -m 600 {fifo} 2>/dev/null; then\n" +
-            $"  {{ head -c {MaxLaunchLogBytes}; if [ \"$(head -c 1 | wc -c)\" -gt 0 ]; then " +
+            // GNU head writes through stdio: unbuffered, each line is in the file as soon as it is read, even while
+            // a background child keeps the FIFO open (busybox head has no stdio buffer and no stdbuf).
+            "  rhi_unbuffered=\n" +
+            "  command -v stdbuf >/dev/null 2>&1 && rhi_unbuffered='stdbuf -o0'\n" +
+            $"  {{ $rhi_unbuffered head -c {MaxLaunchLogBytes}; if [ \"$(head -c 1 | wc -c)\" -gt 0 ]; then " +
             $"printf '\\n[RHI] stderr log capped at {MaxLaunchLogBytes / (1024 * 1024)} MiB; later output was discarded.\\n'; cat >/dev/null; fi; }} " +
             $"<{fifo} >>{log} 2>/dev/null &\n" +
             "  rhi_stderr_reader=$!\n" +
@@ -143,9 +151,25 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
             $"(\n{command}\n)\n" +
             "rhi_status=$?\n" +
             "exec 2>&-\n" +
-            "[ -n \"$rhi_stderr_reader\" ] && wait \"$rhi_stderr_reader\"\n" +
+            "if [ -n \"$rhi_stderr_reader\" ]; then\n" +
+            "  rhi_waited=0\n" +
+            $"  while [ \"$rhi_waited\" -lt {ReaderWaitTenths} ]; do\n" +
+            // Reader gone or a zombie (shells that reap lazily, e.g. dash, keep it as Z until `wait`).
+            "    rhi_stat=\n" +
+            "    read -r rhi_stat 2>/dev/null <\"/proc/$rhi_stderr_reader/stat\"\n" +
+            "    case \"${rhi_stat##*) }\" in ''|Z*|X*) break ;; esac\n" +
+            "    sleep 0.1\n" +
+            "    rhi_waited=$((rhi_waited + 1))\n" +
+            "  done\n" +
+            "fi\n" +
             "exit $rhi_status";
     }
+
+    /// <summary>
+    /// How long, in tenths of a second, the launch shell waits for its stderr reader after the command ended: long
+    /// enough for the last line to reach the file, well inside <see cref="DefaultEarlyExitWindow"/>.
+    /// </summary>
+    internal const int ReaderWaitTenths = 10;
 
     /// <summary>A launch command the user typed (Add game dialog), as opposed to one a detector built.</summary>
     internal static bool IsUserCommand(DetectedGame game)
