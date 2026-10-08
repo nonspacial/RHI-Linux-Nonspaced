@@ -678,6 +678,26 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
     }
 
+    // w2 merge review, minor 1: the automatic UAL install's download is staged with ShortFuse's own downloads, before
+    // the write gate; nothing is fetched once game files change.
+    [Fact]
+    public async Task Install_WithAutoSetup_DownloadsNothingAfterTheWriteGate()
+    {
+        using var fixture = CreateGame("gate-network");
+        GateWatchingHandler? watch = null;
+        var ctx = CreateContext(fixture, fullNetwork: true, wrapHandler: inner => watch = new GateWatchingHandler(inner));
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        File.WriteAllText(Path.Combine(fixture.Bin, "ReShade.ini"), "[INSTALL]\nHookStreamline=0\n");
+
+        var run = await CancelAtWritePhase.RunAsync(
+            ct => ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true, cancellationToken: ct), [fixture.Bin, fixture.Prefix],
+            atWritePhase: watch!.CloseGate);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Equal("winmm.dll", ctx.Ual.InstalledProxyName(fixture.Game));
+        Assert.Empty(watch.LateRequests);
+    }
+
     // w2/vmsplit re-review, minor 2: the ZZZ load-order rename closes the Cancel gate before it renames, both with an
     // installed add-on and when only the preference changes, so a Cancel pressed meanwhile never replaces its outcome.
     [Fact]
@@ -767,12 +787,14 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
         return (Path.Combine(dir, ShortFuseDeploymentService.AddonFileName), Path.Combine(dir, ShortFuseDeploymentService.ZzzAddonFileName));
     }
 
-    private Context CreateContext(GameFixture fixture, bool fullNetwork = false, WineDllOverrideService? wineOverrides = null)
+    private Context CreateContext(GameFixture fixture, bool fullNetwork = false, WineDllOverrideService? wineOverrides = null,
+        Func<HttpMessageHandler, HttpMessageHandler>? wrapHandler = null)
     {
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var deployment = new TransactionalFileDeploymentService();
         var overrides = wineOverrides ?? new WineDllOverrideService();
-        var handler = fullNetwork ? CreateFullHandler() : new MapHandler(new Dictionary<string, ResponseTemplate>());
+        HttpMessageHandler handler = fullNetwork ? CreateFullHandler() : new MapHandler(new Dictionary<string, ResponseTemplate>());
+        if (wrapHandler is not null) handler = wrapHandler(handler);
         var http = new HttpClient(handler);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(fixture.Root, "cache-dlss"));
         var ual = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache-ual"));

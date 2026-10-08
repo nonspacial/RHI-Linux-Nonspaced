@@ -133,10 +133,31 @@ public sealed class UltimateAsiLoaderDeploymentService
         }
     }
 
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         string dllName,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, dllName, staged: null, cancellationToken);
+
+    /// <summary>
+    /// Downloads and validates the payload <see cref="InstallAsync(DetectedGame, string, CancellationToken)"/> would
+    /// deploy for <paramref name="game"/>, changing nothing in the game: a component that installs UAL as part of its
+    /// own install (ShortFuse's auto-setup) stages it before its write gate, so no download runs after its first change.
+    /// </summary>
+    internal async Task<UalStagedPayload> StageAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var architecture = ResolveArchitecture(game);
+        var release = await FetchLatestReleaseAsync(architecture, cancellationToken).ConfigureAwait(false);
+        var stagedDll = await EnsureCachedDllAsync(release, architecture, cancellationToken).ConfigureAwait(false);
+        return new UalStagedPayload(release, stagedDll, architecture);
+    }
+
+    /// <param name="staged">A payload <see cref="StageAsync"/> prepared for this game: used instead of downloading.</param>
+    internal async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        string dllName,
+        UalStagedPayload? staged,
+        CancellationToken cancellationToken)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("Ultimate ASI Loader is a Windows DLL proxy and is not applicable to a native Linux target.");
@@ -167,14 +188,21 @@ public sealed class UltimateAsiLoaderDeploymentService
 
         UalReleaseInfo release;
         string stagedDll;
-        try
+        if (staged is not null && staged.Architecture == architecture && File.Exists(staged.StagedDll))
         {
-            release = await FetchLatestReleaseAsync(architecture, cancellationToken).ConfigureAwait(false);
-            stagedDll = await EnsureCachedDllAsync(release, architecture, cancellationToken).ConfigureAwait(false);
+            (release, stagedDll) = (staged.Release, staged.StagedDll);
         }
-        catch (Exception ex)
+        else
         {
-            return ComponentOperationResult.Fail($"Ultimate ASI Loader download/validation failed: {ex.Message}");
+            try
+            {
+                release = await FetchLatestReleaseAsync(architecture, cancellationToken).ConfigureAwait(false);
+                stagedDll = await EnsureCachedDllAsync(release, architecture, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                return ComponentOperationResult.Fail($"Ultimate ASI Loader download/validation failed: {ex.Message}");
+            }
         }
 
         WineOverrideRecord? wineOverride = null;
@@ -577,6 +605,9 @@ public sealed class UltimateAsiLoaderDeploymentService
     private static string SanitizePathPart(string value)
         => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));
 }
+
+/// <summary>A downloaded, validated UAL payload ready to deploy (<see cref="UltimateAsiLoaderDeploymentService.StageAsync"/>).</summary>
+internal sealed record UalStagedPayload(UalReleaseInfo Release, string StagedDll, PeArchitecture Architecture);
 
 public sealed record UalReleaseInfo(
     string Version,

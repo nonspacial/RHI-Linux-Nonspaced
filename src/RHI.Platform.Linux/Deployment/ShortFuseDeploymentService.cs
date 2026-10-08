@@ -436,8 +436,14 @@ public sealed class ShortFuseDeploymentService
         string stagedAddon;
         Dictionary<DlssComponentKind, string?> cachedDlss;
         string? cachedStreamline;
+        var ualWasPresent = _ual.GetRecord(game) is not null;
+        UalStagedPayload? stagedUal = null;
         try
         {
+            // The automatic UAL install downloads its release too: staged here, with the rest, so nothing is
+            // downloaded once game files change (w2 merge review, minor 1).
+            if (!ualWasPresent && autoConfigEnabled)
+                stagedUal = await _ual.StageAsync(game, cancellationToken).ConfigureAwait(false);
             release = await FetchReleaseAsync(releaseTag, cancellationToken).ConfigureAwait(false);
             stagedAddon = await EnsureCachedAddonAsync(release, cancellationToken).ConfigureAwait(false);
             cachedDlss = new()
@@ -454,7 +460,6 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail($"ShortFuse download/staging failed before any game files were changed: {ex.Message}");
         }
 
-        var ualWasPresent = _ual.GetRecord(game) is not null;
         var ualInstalledByUs = false;
         string? ualProxy = _ual.InstalledProxyName(game);
         var overrideSuspended = false;
@@ -473,7 +478,7 @@ public sealed class ShortFuseDeploymentService
                 foreach (var candidate in PreferredUalNames)
                 {
                     if (!UltimateAsiLoaderDeploymentService.IsSupportedProxyName(game, candidate)) continue;
-                    last = await _ual.InstallAsync(game, candidate, cancellationToken).ConfigureAwait(false);
+                    last = await _ual.InstallAsync(game, candidate, stagedUal, cancellationToken).ConfigureAwait(false);
                     if (last.Success)
                     {
                         ualInstalledByUs = true;
