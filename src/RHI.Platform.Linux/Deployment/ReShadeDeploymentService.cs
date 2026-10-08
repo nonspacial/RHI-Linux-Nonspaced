@@ -23,8 +23,19 @@ public sealed partial class ReShadeDeploymentService
     internal const string Nightly64Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(64-bit).zip";
     internal const string Nightly32Url = "https://nightly.link/crosire/reshade/workflows/build/main/ReShade%20(32-bit).zip";
 
-    /// <summary>Newest successful build.yml run on main — the run nightly.link's branch link serves.</summary>
-    internal const string NightlyRunsApiUrl = "https://api.github.com/repos/crosire/reshade/actions/workflows/build.yml/runs?branch=main&status=success&per_page=1";
+    /// <summary>The repository whose own builds are the nightly; a run built from any other head repository is never used.</summary>
+    internal const string NightlyRepository = "crosire/reshade";
+
+    /// <summary>
+    /// The trigger events nightly.link's branch link reads (oprypin/nightly.link <c>get_latest_run</c>: push, then
+    /// schedule, the newer of the two wins). A <c>pull_request</c> run is never one of them: GitHub's <c>branch</c>
+    /// filter matches the head branch, so a fork's pull request from its own <c>main</c> passes it.
+    /// </summary>
+    internal static readonly IReadOnlyList<string> NightlyRunEvents = ["push", "schedule"];
+
+    /// <summary>Successful build.yml runs on main for one trigger event, newest first.</summary>
+    internal static string NightlyRunsApiUrl(string triggerEvent)
+        => $"https://api.github.com/repos/crosire/reshade/actions/workflows/build.yml/runs?branch=main&event={triggerEvent}&status=success&per_page=10";
 
     /// <summary>The artifacts of one run; each carries the SHA-256 digest GitHub computed when it was uploaded.</summary>
     internal static string NightlyArtifactsApiUrl(long runId) => $"https://api.github.com/repos/crosire/reshade/actions/runs/{runId}/artifacts?per_page=100";
@@ -950,22 +961,25 @@ public sealed partial class ReShadeDeploymentService
         => string.IsNullOrWhiteSpace(artifact.Sha256) ? $"nightly-run:{artifact.RunId}" : $"nightly-run:{artifact.RunId}|sha256:{artifact.Sha256}";
 
     /// <summary>
-    /// The newest successful nightly on main and the digest GitHub's Actions API publishes for its artifact
-    /// (two GitHub API calls, revalidated with ETags for the session). Null when GitHub cannot be asked (offline,
-    /// rate-limited, no such artifact); the caller then falls back to upstream's branch link without a digest.
+    /// The newest successful nightly on main, chosen as nightly.link's branch link chooses it (newest push or
+    /// schedule run, never a pull request), and the digest GitHub's Actions API publishes for its artifact
+    /// (GitHub API calls revalidated with ETags for the session). Only a run built from crosire/reshade's own
+    /// <c>main</c> counts. Null when GitHub cannot be asked (offline, rate-limited, no such run or artifact); the
+    /// caller then falls back to upstream's branch link without a digest.
     /// </summary>
     internal async Task<NightlyArtifact?> ResolveNightlyArtifactAsync(bool is32, CancellationToken cancellationToken)
     {
         try
         {
-            var runsJson = await TrustedDownload.GetStringAsync(_http, NightlyRunsApiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
-            long runId;
-            using (var runs = JsonDocument.Parse(runsJson))
+            NightlyRun? newest = null;
+            foreach (var triggerEvent in NightlyRunEvents)
             {
-                if (!runs.RootElement.TryGetProperty("workflow_runs", out var list) || list.ValueKind != JsonValueKind.Array ||
-                    list.GetArrayLength() == 0 || !list[0].TryGetProperty("id", out var idElement) || !idElement.TryGetInt64(out runId))
-                    throw new InvalidDataException("GitHub listed no successful ReShade nightly run.");
+                var runsJson = await TrustedDownload.GetStringAsync(_http, NightlyRunsApiUrl(triggerEvent), DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+                var run = FirstOwnRun(runsJson, triggerEvent);
+                if (run is not null && (newest is null || run.UpdatedAt > newest.UpdatedAt)) newest = run;
             }
+            if (newest is null) throw new InvalidDataException("GitHub listed no successful ReShade nightly run on crosire/reshade main.");
+            var runId = newest.Id;
 
             var artifactsJson = await TrustedDownload.GetStringAsync(_http, NightlyArtifactsApiUrl(runId), DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
             using var artifacts = JsonDocument.Parse(artifactsJson);
@@ -987,6 +1001,37 @@ public sealed partial class ReShadeDeploymentService
             AppLog.Warn("reshade-nightly", "GitHub could not be asked for the current ReShade nightly; using upstream's branch link without a digest", ex);
             return null;
         }
+    }
+
+    private sealed record NightlyRun(long Id, DateTimeOffset UpdatedAt);
+
+    /// <summary>
+    /// The first (newest) run in a GitHub workflow-runs answer that crosire/reshade built from its own <c>main</c>
+    /// for <paramref name="triggerEvent"/>: head repository, head branch and event are all checked on the run itself,
+    /// so a fork's pull request (head branch also named <c>main</c>) is skipped whatever the query returned.
+    /// </summary>
+    private static NightlyRun? FirstOwnRun(string runsJson, string triggerEvent)
+    {
+        using var runs = JsonDocument.Parse(runsJson);
+        if (!runs.RootElement.TryGetProperty("workflow_runs", out var list) || list.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("GitHub returned no run list for the ReShade nightly.");
+        foreach (var run in list.EnumerateArray())
+        {
+            if (!string.Equals(StringOf(run, "event"), triggerEvent, StringComparison.Ordinal)) continue;
+            if (!string.Equals(StringOf(run, "head_branch"), "main", StringComparison.Ordinal)) continue;
+            if (!string.Equals(StringOf(run, "conclusion"), "success", StringComparison.Ordinal)) continue;
+            var headRepository = run.TryGetProperty("head_repository", out var repo) && repo.ValueKind == JsonValueKind.Object
+                ? StringOf(repo, "full_name") : null;
+            if (!string.Equals(headRepository, NightlyRepository, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!run.TryGetProperty("id", out var idElement) || !idElement.TryGetInt64(out var id)) continue;
+            var updated = DateTimeOffset.TryParse(StringOf(run, "updated_at"), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at : DateTimeOffset.MinValue;
+            return new NightlyRun(id, updated);
+        }
+        return null;
+
+        static string? StringOf(JsonElement element, string name)
+            => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
     /// <summary>

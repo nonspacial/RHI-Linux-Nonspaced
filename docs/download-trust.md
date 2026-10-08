@@ -19,7 +19,7 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | Source | Policy (`DownloadSources.*`) | Hosts | Digest authority | Without one |
 |---|---|---|---|---|
 | ReShade stable/legacy setup | `ReShadeSetup` | reshade.me | none published; upstream pins none | fail-open, SHA-256 stamped |
-| ReShade nightly | `ReShadeNightly` | nightly.link, `productionresultssa<n>.blob.core.windows.net` | GitHub Actions artifact `digest` (API) for the newest successful `build.yml` run on main; the zip is fetched by that run's nightly.link URL | API unavailable: upstream's branch link, fail-open, never reused, identity = zip SHA-256 |
+| ReShade nightly | `ReShadeNightly` | nightly.link, `productionresultssa<n>.blob.core.windows.net` | GitHub Actions artifact `digest` (API) for the newest successful `build.yml` run that crosire/reshade built from its own `main` on a `push` or `schedule` event (as nightly.link's branch link chooses; pull-request runs, including a fork's branch named `main`, are never used); the zip is fetched by that run's nightly.link URL | API unavailable: upstream's branch link, fail-open, never reused, identity = zip SHA-256 |
 | GitHub API metadata | `GitHubApi` | api.github.com | n/a (16 MiB cap; ETag revalidation, #35) | n/a |
 | ReLimiter, Display Commander, other GitHub add-ons | `GitHubAddonRelease` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | OptiScaler (stable, nightly, DLSS-NR) | `OptiScaler` | GitHub release hosts | GitHub asset `digest` | fail-open |

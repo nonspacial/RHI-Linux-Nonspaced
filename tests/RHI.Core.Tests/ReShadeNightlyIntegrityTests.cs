@@ -101,6 +101,77 @@ public sealed class ReShadeNightlyIntegrityTests : IDisposable
         Assert.Equal(ReShadeDeploymentService.NightlyLookupFailedMessage, unknown.Message);
     }
 
+    [Theory]
+    [InlineData("pull_request", "main", "evil/reshade")]    // a fork's pull request from its own branch named main
+    [InlineData("pull_request", "main", "crosire/reshade")] // a pull request run, even from the repository itself
+    [InlineData("push", "main", "evil/reshade")]            // built from another head repository
+    [InlineData("push", "feature", "crosire/reshade")]      // another branch
+    public async Task RunNotBuiltByCrosireMainPush_IsSkipped_EvenWhenListedFirst(string triggerEvent, string headBranch, string headRepository)
+    {
+        // Review w2-trust blocker 1: GitHub's branch filter matches head_branch, so a fork's pull request named
+        // main passed it and its artifact (digest = that same untrusted zip) would have been injected.
+        var site = new FakeSite();
+        var good = NightlyZip(0x61);
+        var forged = NightlyZip(0x62);
+        site.Runs("push",
+            FakeSite.Run(9999, triggerEvent, headBranch, headRepository, "2026-09-25T00:00:00Z"),
+            FakeSite.Run(7000, "push", "main", "crosire/reshade", "2026-09-24T00:00:00Z"));
+        site.Runs("schedule");
+        site.Artifacts(9999, forged, digestOf: forged);
+        site.Artifacts(7000, good, digestOf: good);
+        var svc = Service(site);
+
+        var staged = await svc.EnsureNightlyStagedAsync(PeArchitecture.X64);
+
+        Assert.Equal(ReShadeDeploymentService.NightlyRunUrl(7000, false), staged.SourceUrl);
+        Assert.StartsWith("nightly-run:7000|", staged.SourceIdentity, StringComparison.Ordinal);
+        Assert.Equal(0, site.Gets(ReShadeDeploymentService.NightlyRunUrl(9999, false)));
+        Assert.Equal(0, site.Gets(ReShadeDeploymentService.NightlyArtifactsApiUrl(9999)));
+        // The query itself asks for push runs only (literal, so a dropped filter cannot move with the constant).
+        Assert.Equal(1, site.Gets("https://api.github.com/repos/crosire/reshade/actions/workflows/build.yml/runs?branch=main&event=push&status=success&per_page=10"));
+    }
+
+    [Fact]
+    public async Task OnlyForeignRuns_FallBackToTheBranchLink_NotTheForeignRun()
+    {
+        var site = new FakeSite();
+        var forged = NightlyZip(0x63);
+        site.Runs("push", FakeSite.Run(9998, "pull_request", "main", "evil/reshade", "2026-09-25T00:00:00Z"));
+        site.Runs("schedule");
+        site.Artifacts(9998, forged, digestOf: forged);
+        site.Bodies[ReShadeDeploymentService.Nightly64Url] = NightlyZip(0x64);
+        var svc = Service(site);
+
+        var staged = await svc.EnsureNightlyStagedAsync(PeArchitecture.X64);
+
+        Assert.Equal(ReShadeDeploymentService.Nightly64Url, staged.SourceUrl);
+        Assert.Equal(VerifiedDownload.RecordedOnly, staged.Download!.Integrity);
+        Assert.Equal(0, site.Gets(ReShadeDeploymentService.NightlyRunUrl(9998, false)));
+    }
+
+    [Fact]
+    public async Task NewerScheduledRun_WinsOverAnOlderPushRun_AsNightlyLinkChooses()
+    {
+        var site = new FakeSite();
+        var pushed = NightlyZip(0x65);
+        var scheduled = NightlyZip(0x66);
+        site.Runs("push", FakeSite.Run(8000, "push", "main", "crosire/reshade", "2026-09-01T10:00:00Z"));
+        site.Runs("schedule", FakeSite.Run(8001, "schedule", "main", "crosire/reshade", "2026-09-02T10:00:00Z"));
+        site.Artifacts(8000, pushed, digestOf: pushed);
+        site.Artifacts(8001, scheduled, digestOf: scheduled);
+        var svc = Service(site);
+
+        var staged = await svc.EnsureNightlyStagedAsync(PeArchitecture.X64);
+
+        Assert.Equal(ReShadeDeploymentService.NightlyRunUrl(8001, false), staged.SourceUrl);
+
+        // A newer push beats the scheduled run again.
+        site.Runs("push", FakeSite.Run(8002, "push", "main", "crosire/reshade", "2026-09-03T10:00:00Z"));
+        site.Artifacts(8002, pushed, digestOf: pushed);
+        var later = await svc.EnsureNightlyStagedAsync(PeArchitecture.X64);
+        Assert.Equal(ReShadeDeploymentService.NightlyRunUrl(8002, false), later.SourceUrl);
+    }
+
     [Fact]
     public async Task SetupDownloadRedirectedOffReShadeMe_IsRefused()
     {
@@ -153,12 +224,26 @@ public sealed class ReShadeNightlyIntegrityTests : IDisposable
 
         public void Publish(long runId, byte[] zip, byte[] digestOf)
         {
-            Bodies[ReShadeDeploymentService.NightlyRunsApiUrl] = Encoding.UTF8.GetBytes($"{{\"workflow_runs\":[{{\"id\":{runId}}}]}}");
+            Runs("push", Run(runId, "push", "main", ReShadeDeploymentService.NightlyRepository, "2026-09-24T11:31:39Z"));
+            Runs("schedule");
+            Artifacts(runId, zip, digestOf);
+        }
+
+        public void Runs(string triggerEvent, params string[] runs)
+            => Bodies[ReShadeDeploymentService.NightlyRunsApiUrl(triggerEvent)] = Encoding.UTF8.GetBytes($"{{\"workflow_runs\":[{string.Join(',', runs)}]}}");
+
+        public void Artifacts(long runId, byte[] zip, byte[] digestOf)
+        {
             Bodies[ReShadeDeploymentService.NightlyArtifactsApiUrl(runId)] = Encoding.UTF8.GetBytes(
                 $"{{\"artifacts\":[{{\"name\":\"ReShade (32-bit)\",\"digest\":\"sha256:{new string('0', 64)}\"}}," +
                 $"{{\"name\":\"ReShade (64-bit)\",\"expired\":false,\"digest\":\"sha256:{Hex(digestOf).ToLowerInvariant()}\"}}]}}");
             Bodies[ReShadeDeploymentService.NightlyRunUrl(runId, false)] = zip;
         }
+
+        /// <summary>One run as GitHub's workflow-runs API lists it (the fields the lookup reads).</summary>
+        public static string Run(long id, string triggerEvent, string headBranch, string headRepository, string updatedAt)
+            => $"{{\"id\":{id},\"event\":\"{triggerEvent}\",\"head_branch\":\"{headBranch}\",\"status\":\"completed\",\"conclusion\":\"success\"," +
+               $"\"updated_at\":\"{updatedAt}\",\"head_repository\":{{\"full_name\":\"{headRepository}\"}}}}";
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
