@@ -225,6 +225,7 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         if (t == typeof(IReadOnlyList<GraphicsApi>)) return new[] { GraphicsApi.DirectX11 };
         if (t == typeof(IReadOnlyDictionary<string, string>)) return new Dictionary<string, string> { ["k"] = "v" };
         if (t == typeof(IReadOnlyList<LibraryEntryAlias>)) return new[] { new LibraryEntryAlias("Manual", "/x", null) };
+        if (t == typeof(DetectedLaunch)) return new DetectedLaunch("x", "y");
         throw new InvalidOperationException($"Add a sample for {type}");
     }
 }

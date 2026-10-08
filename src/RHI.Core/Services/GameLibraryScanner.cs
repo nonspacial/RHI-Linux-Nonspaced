@@ -212,6 +212,9 @@ public sealed class GameLibraryScanner
                 first.ParentLauncherName = candidate.ParentLauncherName;
             }
             first.ParentLauncherName ??= candidate.ParentLauncherName;
+            // Identity resolution sets these after the scan (Edit game's command); carried like every other field.
+            first.UserLaunchCommand ??= candidate.UserLaunchCommand;
+            first.DetectedLaunch ??= candidate.DetectedLaunch;
             if (first.PatchTargetAuthority == "Automatic") first.PatchTargetAuthority = candidate.PatchTargetAuthority;
             first.CompatibilityTool ??= candidate.CompatibilityTool;
             first.CompatibilityLayerType ??= candidate.CompatibilityLayerType;
