@@ -124,13 +124,13 @@ public sealed class SelectedGameSessionTests
             using var fx = await ViewModelFixture.StartAsync(games);
             foreach (var row in fx.Vm.Games.ToArray())
             {
-                fx.Vm.SelectedGame = row;
+                fx.Vm.SelectedGame = row.Game;
                 await WaitForAnalysisAsync(fx);
             }
 
             Assert.Equal(SelectedGameSession.DefaultCapacity, fx.Vm.Session.CachedCount);
             Assert.True(fx.Vm.Session.TryGetCached(fx.Vm.SelectedGame!, out _)); // the selected game is the newest
-            Assert.False(fx.Vm.Session.TryGetCached(fx.Vm.Games[0], out _));    // the first visited was dropped
+            Assert.False(fx.Vm.Session.TryGetCached(fx.Vm.Games[0].Game, out _));    // the first visited was dropped
         }
         finally { Directory.Delete(root, recursive: true); }
     }

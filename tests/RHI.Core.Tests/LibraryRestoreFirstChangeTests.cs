@@ -23,7 +23,7 @@ public sealed class LibraryRestoreFirstChangeTests
         try
         {
             using var fx = await ViewModelFixture.StartAsync([tunic], seed: store => File.WriteAllText(store.LibraryPath, "{ not json"));
-            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
             var card = fx.Vm.SelectedGame;
             var key = LinuxGameLibraryStore.GameKey(card);
             Assert.False(flag == "favourite" ? card.IsFavourite : card.IsHidden);
@@ -51,7 +51,7 @@ public sealed class LibraryRestoreFirstChangeTests
         try
         {
             using var fx = await ViewModelFixture.StartAsync([tunic], seed: store => File.WriteAllText(store.LibraryPath, "{ not json"));
-            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
             var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame);
             Assert.Equal(UiLocalizationService.Text("Ui.HdrOff"), fx.Vm.SelectedHdrMode);
             var restored = new LinuxGameLibraryState();

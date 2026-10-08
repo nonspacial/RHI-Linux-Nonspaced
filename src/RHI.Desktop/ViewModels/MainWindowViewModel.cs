@@ -71,7 +71,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _loadingOptiScalerVariant;
     private bool _loadingLumaModePreference;
     private bool _loadingHdrProfile;
-    private readonly List<DetectedGame> _allGames = [];
     private readonly SelectedGameSession _session;
     private DlssDetectionResult _dlssDetection = new();
     // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
@@ -88,7 +87,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     // GitHub token notice (Refs #133); the settle check runs after queued UI work.
     private readonly OneShotStatusNotice _statusNotice = new(action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
 
-    public ObservableCollection<DetectedGame> Games { get; } = [];
+    private readonly LibraryViewModel _library = new();
+
+    /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
+    public ObservableCollection<GameRowViewModel> Games => _library.Games;
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     public ObservableCollection<string> DlssSrVersions { get; } = [];
     public ObservableCollection<string> DlssRrVersions { get; } = [];
@@ -114,6 +116,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string ProductVersionText => $"RHI-Linux v{RhiProductInfo.Version} · {UiLocalizationService.Text("Ui.ProductRuntime")}";
 
     [ObservableProperty] private DetectedGame? selectedGame;
+    /// <summary>The library list's selected card; kept in step with <see cref="SelectedGame"/>.</summary>
+    [ObservableProperty] private GameRowViewModel? selectedGameRow;
     [ObservableProperty] private string searchText = "";
     [ObservableProperty] private string libraryFilterMode = "All Games";
     [ObservableProperty] private string viewMode = "Detail";
@@ -183,7 +187,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ => UiLocalizationService.Text("Ui.All")
     };
 
-    public string GameCountText => $"{Games.Count} / {_allGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}";
+    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}";
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
     public string ViewToggleText => IsCompactView ? UiLocalizationService.Text("Ui.ViewDetail") : UiLocalizationService.Text("Ui.ViewCompact");
     public bool TrayIconEnabled => _settings.TrayIconEnabled;
@@ -1032,7 +1036,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsBusy));
         // An operation may have installed or removed managed components: re-work Update All / DLSS batch off the UI thread.
-        if (!value) UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
+        if (!value)
+        {
+            _filterFacts.Clear();
+            UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
+        }
         _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
@@ -1144,7 +1152,45 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyDlss();
     }
 
-    partial void OnSearchTextChanged(string value) => ApplyFilter();
+    /// <summary>How long the search waits after the last keystroke before it filters the list (Refs #75).</summary>
+    internal static TimeSpan SearchDebounce { get; set; } = TimeSpan.FromMilliseconds(200);
+
+    private CancellationTokenSource? _searchDebounce;
+
+    /// <summary>Completes when the pending search has been applied (tests).</summary>
+    internal Task SearchApplied { get; private set; } = Task.CompletedTask;
+
+    partial void OnSearchTextChanged(string value)
+    {
+        _searchDebounce?.Cancel();
+        var debounce = new CancellationTokenSource();
+        _searchDebounce = debounce;
+        SearchApplied = ApplySearchAfterPauseAsync(debounce);
+    }
+
+    private async Task ApplySearchAfterPauseAsync(CancellationTokenSource debounce)
+    {
+        try { await Task.Delay(SearchDebounce, debounce.Token); }
+        catch (OperationCanceledException) { return; } // another keystroke (or a filter change) came first
+        if (!ReferenceEquals(_searchDebounce, debounce)) return;
+        _searchDebounce = null;
+        ApplyFilter();
+    }
+
+    private bool _syncingSelectedRow;
+
+    partial void OnSelectedGameRowChanged(GameRowViewModel? value)
+    {
+        if (_syncingSelectedRow) return;
+        SelectedGame = value?.Game;
+    }
+
+    private void SyncSelectedRow(DetectedGame? game)
+    {
+        _syncingSelectedRow = true;
+        try { SelectedGameRow = _library.RowFor(game); }
+        finally { _syncingSelectedRow = false; }
+    }
 
     partial void OnLibraryFilterModeChanged(string value)
     {
@@ -1251,6 +1297,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = failure;
             return;
         }
+        _filterFacts.Remove(game); // the Luma filter follows the new preference
         ReevaluateCurrentGameForLumaPolicy(game, policy!);
     }
 
@@ -1276,6 +1323,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedGameChanged(DetectedGame? value)
     {
+        SyncSelectedRow(value);
         _session.Cancel();
         Components.Clear();
         _dlssDetection = new();
@@ -1447,7 +1495,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // hit is never applied to an un-probed game. Everything else takes the normal path.
             var previous = onlyDetectors is null
                 ? null
-                : _allGames.Where(g => _session.TryGetCached(g, out _)).ToDictionary(Key, StringComparer.Ordinal);
+                : _library.AllGames.Where(g => _session.TryGetCached(g, out _)).ToDictionary(Key, StringComparer.Ordinal);
             var merged = new List<DetectedGame>(found.Count);
             var adoptedMergedKeys = false;
             foreach (var game in found)
@@ -1457,8 +1505,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
                 if (previous is not null && previous.TryGetValue(libraryKey, out var kept))
                 {
-                    kept.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
-                    kept.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
+                    _library.SetLibraryFlags(kept, _libraryState.FavouriteGames.Contains(libraryKey), _libraryState.HiddenGames.Contains(libraryKey));
                     merged.Add(kept);
                     continue;
                 }
@@ -1470,12 +1517,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 merged.Add(game);
             }
             var adoptRefused = adoptedMergedKeys ? SaveAdoptedLibraryState() : null;
-            _allGames.Clear();
-            _allGames.AddRange(merged);
+            _filterFacts.Clear();
+            _library.SetGames(merged);
             ApplyFilter();
             SelectedGame = currentKey is null
-                ? Games.FirstOrDefault()
-                : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
+                ? Games.FirstOrDefault()?.Game
+                : (Games.FirstOrDefault(row => Key(row.Game) == currentKey) ?? Games.FirstOrDefault())?.Game;
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
             await RefreshLibraryFactsAsync();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
@@ -1483,7 +1530,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
                 .Where(text => !string.IsNullOrEmpty(text)));
             string? scanProblems = problems.Length == 0 ? null : problems;
-            var scanDone = LibraryScanStatusText.Done(_allGames.Count);
+            var scanDone = LibraryScanStatusText.Done(_library.AllGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             return true;
         }
@@ -1491,7 +1538,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             // The library list is unchanged; put the selection back.
             StatusText = OperationCancelledText();
-            SelectedGame = currentKey is null ? Games.FirstOrDefault() : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
+            SelectedGame = currentKey is null
+                ? Games.FirstOrDefault()?.Game
+                : (Games.FirstOrDefault(row => Key(row.Game) == currentKey) ?? Games.FirstOrDefault())?.Game;
             return false;
         }
         catch (Exception ex)
@@ -1510,7 +1559,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task UpdateAllAsync()
     {
         if (!CanUpdateAll) return;
-        var games = _allGames.ToArray();
+        var games = _library.AllGames.ToArray();
         using var op = BeginOperation("update-all");
         if (op is null) return;
         try
@@ -1601,7 +1650,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
     {
         if (!_settings.AutoUpdateComponents || IsBusy) return;
-        var games = _allGames.ToArray();
+        var games = _library.AllGames.ToArray();
         if (!await Task.Run(() => _updateAll.HasManagedTargets(games), cancellationToken)) return;
         using var op = _operations.TryBegin("background-update", linkedToken: cancellationToken);
         if (op is null) return;
@@ -2052,7 +2101,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     private async Task RefreshLibraryFactsAsync()
     {
-        var games = _allGames.ToArray();
+        var games = _library.AllGames.ToArray();
         var (managed, batch) = await Task.Run(() => (
             _updateAll.HasManagedTargets(games),
             games.Any(game => game.HasConfirmedPatchTarget &&
@@ -2486,7 +2535,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (op is null) return null;
         try
         {
-            var games = _allGames.ToArray();
+            var games = _library.AllGames.ToArray();
             var indexes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
             foreach (var game in games)
             {
@@ -2966,23 +3015,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ => "DLSS"
     };
 
+    /// <summary>
+    /// Shows the cards matching the filter and search, updating the list in place (Refs #75): a selected game that
+    /// still matches stays selected without passing through null, so its analysis is not restarted.
+    /// </summary>
     private void ApplyFilter()
     {
+        _searchDebounce?.Cancel(); // a pending search is applied now
         var selected = SelectedGame;
-        Games.Clear();
         var mode = ParseLibraryFilterMode(LibraryFilterMode);
         var needsManagedFacts = mode is GameLibraryFilterMode.Installed or GameLibraryFilterMode.RenoDX or GameLibraryFilterMode.Luma;
-        foreach (var game in _allGames
-                     .Where(game => GameLibraryFilter.Matches(
-                         game,
-                         mode,
-                         SearchText,
-                         needsManagedFacts ? GetLibraryFilterFacts(game) : default))
-                     .OrderBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase))
-            Games.Add(game);
+        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null);
         OnPropertyChanged(nameof(GameCountText));
-        if (selected is not null && Games.Contains(selected)) SelectedGame = selected;
-        else SelectedGame = Games.FirstOrDefault();
+        if (selected is not null && _library.IsShown(selected))
+        {
+            if (!ReferenceEquals(SelectedGameRow, _library.RowFor(selected))) SyncSelectedRow(selected);
+        }
+        else SelectedGame = Games.FirstOrDefault()?.Game;
+    }
+
+    // Filter facts read deployment records and folders: worked out once per game and kept until the next scan or
+    // operation (RefreshLibraryFactsAsync), not on every keystroke.
+    private readonly Dictionary<DetectedGame, GameLibraryFilterFacts> _filterFacts = new(ReferenceEqualityComparer.Instance);
+
+    private GameLibraryFilterFacts CachedLibraryFilterFacts(DetectedGame game)
+    {
+        if (!_filterFacts.TryGetValue(game, out var facts)) _filterFacts[game] = facts = GetLibraryFilterFacts(game);
+        return facts;
     }
 
     private GameLibraryFilterFacts GetLibraryFilterFacts(DetectedGame game)
@@ -3056,7 +3115,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var key = LinuxGameLibraryStore.GameKey(game);
         if (favourite) _libraryState.FavouriteGames.Add(key);
         else _libraryState.FavouriteGames.Remove(key);
-        game.IsFavourite = favourite;
+        _library.SetLibraryFlags(game, favourite, game.IsHidden); // the card's badge follows in place (Refs #85)
         // Kept for this session even when the save is refused; the status line says it was not saved.
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
@@ -3073,7 +3132,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var key = LinuxGameLibraryStore.GameKey(game);
         if (hidden) _libraryState.HiddenGames.Add(key);
         else _libraryState.HiddenGames.Remove(key);
-        game.IsHidden = hidden;
+        _library.SetLibraryFlags(game, game.IsFavourite, hidden);
         // Kept for this session even when the save is refused; the status line says it was not saved.
         TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
         ApplyFilter();
@@ -3115,11 +3174,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _libraryState = state;
         _libraryStateUnreadable = false;
         if (keepFilter) _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(LibraryFilterMode);
-        foreach (var game in _allGames)
+        foreach (var game in _library.AllGames)
         {
             var key = LinuxGameLibraryStore.GameKey(game);
-            game.IsFavourite = _libraryState.FavouriteGames.Contains(key);
-            game.IsHidden = _libraryState.HiddenGames.Contains(key);
+            _library.SetLibraryFlags(game, _libraryState.FavouriteGames.Contains(key), _libraryState.HiddenGames.Contains(key));
         }
     }
 
@@ -3351,7 +3409,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
         var identity = PathIdentity.Canonicalize(entry.InstallPath);
         bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
-        if (_allGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
+        if (_library.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
             return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
@@ -3368,7 +3426,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         string message;
         if (!await RefreshWhenIdleAsync(ManualOnly))
             message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);
-        else if (_allGames.FirstOrDefault(game => game.IsManuallyAdded && SameFolder(game.LibraryIdentityPath ?? game.InstallPath)) is { } added)
+        else if (_library.AllGames.FirstOrDefault(game => game.IsManuallyAdded && SameFolder(game.LibraryIdentityPath ?? game.InstallPath)) is { } added)
         {
             SelectedGame = added;
             message = TF("Vm.AddedManualLibrary", entry.Name);
@@ -3424,8 +3482,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);
-            game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
-            game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
+            _library.SetLibraryFlags(game, _libraryState.FavouriteGames.Contains(libraryKey), _libraryState.HiddenGames.Contains(libraryKey));
             if (_libraryState.GameEdits.TryGetValue(libraryKey, out var edit))
                 LinuxGameIdentityService.ApplyDetectedIdentity(game, edit);
         }
