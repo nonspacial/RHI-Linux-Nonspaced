@@ -144,6 +144,32 @@ public sealed class WineRegistryJournalTests : IDisposable
         Assert.Equal(undone ? null : "native,builtin", after);
     }
 
+    // A ledger that cannot be written while the step hands its ownership over keeps the step for the next start.
+    [Fact]
+    public async Task OwnershipHandOver_ToAnUnwritableLedger_KeepsTheStep()
+    {
+        var prefix = Prefix();
+        var journalDir = Path.Combine(_root, "journal-handover");
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, isPrefixInUse: _ => false);
+        var operation = await journal.BeginAsync("UAL install: Game", "record|UltimateAsiLoader|steam:7");
+        await overrides.EnsureNativeBuiltinAsync(operation, prefix, "winmm.dll", "Game.exe");
+        operation.AbandonAsIfCrashed();
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "ledger-handover.json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = "steam:7", Component = RHI.Core.Models.ManagedComponentKind.UltimateAsiLoader, InstalledAtUtc = DateTime.UtcNow.AddMinutes(1),
+            WineOverride = new WineOverrideRecord { DllName = "winmm", ApplicationName = "Game.exe", PreviousValue = "native,builtin", ChangedByRhi = false }
+        });
+        records.SaveFaultForTesting = () => new InvalidOperationException("The RHI deployment ledger is unreadable.");
+
+        var report = await LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, _ => false, records).RecoverAsync();
+
+        Assert.Equal(JournalRecoveryOutcome.RollbackFailed, Assert.Single(report.Entries).Outcome);
+        Assert.Single(Directory.GetFiles(journalDir, "*.json"));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe"));
+    }
+
     // A value set since RHI's write is kept, and saying so needs no stopped Wine (read only).
     [Fact]
     public void Compensator_ALaterValue_IsKeptWithoutWaitingForWine()

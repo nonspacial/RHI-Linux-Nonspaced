@@ -90,7 +90,15 @@ public sealed class WineOverrideCompensator(
             adopted.PreviousValue = step.PreviousValue;
             adopted.SectionCreatedByRhi = step.SectionCreatedByRhi;
             adopted.WrittenValue = WineDllOverrideService.WrittenBy(step);
-            records.Upsert(record); // a failure keeps the step for the next start
+            try
+            {
+                records.Upsert(record);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Unreadable ledger: the journal keeps the step (an I/O failure) and the next start tries again.
+                throw new IOException(ex.Message, ex);
+            }
         }
         return true;
     }
