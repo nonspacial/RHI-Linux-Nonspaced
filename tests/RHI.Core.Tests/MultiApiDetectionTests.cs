@@ -129,6 +129,11 @@ public sealed class MultiApiDetectionTests : IDisposable
         Assert.Equal([GraphicsApi.DirectX12, GraphicsApi.DirectX11, GraphicsApi.DirectX9, GraphicsApi.Vulkan], withoutSettings.Candidates);
         var noPrefix = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
         Assert.Equal((GraphicsApi.DirectX12, GraphicsApiConfidence.Medium), (noPrefix.Primary, noPrefix.Confidence));
+        // The evidence names the helper that implies DX12, never a d3d12.dll import RDR2 does not have (final
+        // detect-deploy review, nit 4).
+        Assert.StartsWith("Executable imports: ffx_fsr2_api_dx12", noPrefix.Evidence);
+        Assert.Contains(", a helper for d3d12.dll (renderer helper imports", noPrefix.Evidence);
+        Assert.DoesNotContain("Executable imports: d3d12.dll", noPrefix.Evidence);
 
         var settings = Path.Combine(prefix, "drive_c", "users", "steamuser", "Documents", "Rockstar Games", "Red Dead Redemption 2", "Settings");
         Directory.CreateDirectory(settings);
@@ -189,6 +194,27 @@ public sealed class MultiApiDetectionTests : IDisposable
         // Upstream order: an imported DX11 is not outranked by a DX12 that is only a helper or delay-load.
         var dx11 = GraphicsApiDetector.Detect(_root, WritePe("Helper11.exe", ["dxgi.dll", "d3d11.dll", "ffx_fsr2_api_dx12_x64.dll"], []));
         Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.Medium), (dx11.Primary, dx11.Confidence));
+    }
+
+    // Final detect-deploy review, minor 2 (surviving mutant G8): game-folder configs skip run-record folders too, not
+    // only the prefix walk. The log sorts ahead of the real setting (shallower), so only the skip lets the setting win.
+    [Theory]
+    [InlineData("Logs")]
+    [InlineData("BenchmarkData")]
+    [InlineData("Crashes")]
+    public void GameFolderConfigs_InARunRecordFolder_AreNotEvidence(string folder)
+    {
+        var gameRoot = Directory.CreateDirectory(Path.Combine(_root, "Run Records")).FullName;
+        var exe = WritePe(Path.Combine("Run Records", "RunRecords.exe"), ["kernel32.dll", "d3d11.dll", "vulkan-1.dll"], []);
+        Directory.CreateDirectory(Path.Combine(gameRoot, folder));
+        File.WriteAllText(Path.Combine(gameRoot, folder, "render.ini"), "[Video]\nRenderer=Vulkan\n");
+        var config = Directory.CreateDirectory(Path.Combine(gameRoot, "Config", "Game")).FullName;
+        File.WriteAllText(Path.Combine(config, "settings.ini"), "[Video]\nRenderer=DX11\n");
+
+        var found = GraphicsApiDetector.Detect(gameRoot, exe, GameFileIndexer.Build(gameRoot));
+
+        Assert.Equal(GraphicsApi.DirectX11, found.Primary);
+        Assert.StartsWith("Config selection: settings.ini", found.Evidence);
     }
 
     [Fact]

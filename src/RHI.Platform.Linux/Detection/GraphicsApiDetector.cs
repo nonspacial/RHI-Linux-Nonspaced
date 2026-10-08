@@ -355,11 +355,24 @@ internal static class GraphicsApiDetector
                 : helpers.Contains(primary) ? "renderer helper imports" : "referenced";
         }
         var ordered = Order(all.Where(api => api != primary)).Prepend(primary).ToArray();
-        var evidence = $"Executable imports: {ApiDllName(primary)} ({source}"
+        var evidence = $"Executable imports: {ImportEvidence(primary, source, imports)} ({source}"
                        + (ordered.Length > 1 ? $"; also {string.Join(", ", ordered.Skip(1).Select(ApiDllName))}" : "")
                        + ")";
         return new GraphicsApiDetection(primary, ordered, GraphicsApiConfidence.Medium, evidence);
     }
+
+    /// <summary>
+    /// What the import evidence names for the chosen renderer: its own DLL when it is imported or delay-loaded; the
+    /// helper library that implies it when only a helper does (RDR2 imports ffx_fsr2_api_dx12, not d3d12.dll); or that
+    /// the file only names it. Never claims an import the executable does not have.
+    /// </summary>
+    private static string ImportEvidence(GraphicsApi primary, string source, PeImports imports) => source switch
+    {
+        "renderer helper imports" when imports.Regular.Concat(imports.Delay).FirstOrDefault(dll => HelperApi(dll) == primary) is { } helper
+            => $"{helper}, a helper for {ApiDllName(primary)}",
+        "referenced" => $"no {ApiDllName(primary)}, the file names it",
+        _ => ApiDllName(primary)
+    };
 
     /// <summary>
     /// The renderer an imported helper library is built for, or Unknown: vendor back ends name it
