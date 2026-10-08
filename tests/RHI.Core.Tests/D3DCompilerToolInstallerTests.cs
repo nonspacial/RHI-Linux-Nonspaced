@@ -117,4 +117,56 @@ public sealed class D3DCompilerToolInstallerTests
             Directory.Delete(root, true);
         }
     }
+
+    // w2/vmsplit re-review, minor 1: Cancel is refused once the helper runs, so a hung helper (stalled download, stuck
+    // wineserver) would hold the busy overlay for ever. Its time limit is generous (10 min) and, once past it, the
+    // helper and every process it started are killed and the install fails saying so.
+    [Fact]
+    public void ToolTimeLimit_IsTenMinutes()
+        => Assert.Equal(TimeSpan.FromMinutes(10), new D3DCompilerToolInstaller(new WineDllOverrideService()).ToolTimeout);
+
+    [Fact]
+    public async Task ToolRun_PastItsTimeLimit_IsStoppedWithEveryProcessItStarted_AndSaysSo()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-d3dcompiler-timeout-" + Guid.NewGuid().ToString("N"));
+        var bin = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
+        var prefix = Directory.CreateDirectory(Path.Combine(root, "pfx")).FullName;
+        var childPid = Path.Combine(root, "child.pid");
+        try
+        {
+            var exe = Path.Combine(bin, "Game.exe");
+            PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+            var game = new RHI.Core.Models.DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix };
+            // A helper that starts a long-lived child (like winetricks' wineserver) and hangs waiting for it.
+            var tool = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            tool.ArgumentList.Add("-c");
+            tool.ArgumentList.Add($"sleep 120 & echo $! > '{childPid}'; wait");
+            var installer = new D3DCompilerToolInstaller(new WineDllOverrideService()) { ToolTimeout = TimeSpan.FromSeconds(1) };
+
+            var run = await CancelAtWritePhase.RunAsync(ct => installer.RunAndVerifyAsync(game, tool, "winetricks", applyOverride: false, ct), [bin])
+                .WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.False(run.Result.Success);
+            Assert.Equal(D3DCompilerToolInstaller.ToolTimedOutPrefix + "winetricks (1 s)", run.Result.Message);
+            var pid = int.Parse(File.ReadAllText(childPid).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+            for (var i = 0; i < 100 && IsAlive(pid); i++) await Task.Delay(50);
+            Assert.False(IsAlive(pid), $"the helper's child {pid} was left running");
+            Assert.EndsWith("Ferramenta: winetricks (1 s)", RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", run.Result.Message), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    /// <summary>A process that exists and is not a zombie waiting to be reaped.</summary>
+    private static bool IsAlive(int pid)
+    {
+        try
+        {
+            var stat = File.ReadAllText($"/proc/{pid}/stat");
+            return stat[(stat.LastIndexOf(')') + 2)] != 'Z';
+        }
+        catch (IOException) { return false; }
+    }
 }

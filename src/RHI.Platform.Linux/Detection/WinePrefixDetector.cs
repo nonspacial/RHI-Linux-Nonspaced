@@ -1,5 +1,6 @@
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Detection;
@@ -81,7 +82,10 @@ public sealed class WinePrefixDetector : IGameDetector
                         LaunchExecutablePath = exe,
                         Runner = runtime is null ? null : runtime.IsProton ? "Proton" : "Wine",
                         CompatibilityTool = runtime?.Version,
-                        CompatibilityLayerType = runtime is { IsProton: true } ? "proton" : null,
+                        // Unknown runtime: every Wine-running path (Winetricks, the D3DCompiler step) refuses it.
+                        CompatibilityLayerType = runtime is null
+                            ? D3DCompilerToolInstaller.UnknownRuntimeLayer
+                            : runtime.IsProton ? "proton" : null,
                         WineBinaryPath = runtime?.WineBinary,
                         WineServerPath = runtime?.WineServer,
                         LaunchCommand = runtime is null ? null : BuildLaunchCommand(prefix, exe, runtime)

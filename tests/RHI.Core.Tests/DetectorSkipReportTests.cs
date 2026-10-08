@@ -131,6 +131,9 @@ public sealed class DetectorSkipReportTests : IDisposable
         Assert.Null(game.LaunchCommand);
         Assert.Null(game.WineBinaryPath);
         Assert.False(new RHI.Platform.Linux.Launch.LinuxGameLauncher().CanLaunch(game));
+        // Nor any other host-Wine route (w2-launch re-review, major 1): the Winetricks button and the automatic
+        // D3DCompiler step refuse it (RuntimeUnknownPrefixTests runs them).
+        Assert.False(RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.CanInstallWithWinetricks(game));
         Assert.Contains(prefix, Assert.Single(scan.Detectors.Single().Warnings), StringComparison.Ordinal);
         Assert.Contains("Wine", LibraryScanStatusText.Problems(scan, null));
     }

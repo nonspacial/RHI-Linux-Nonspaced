@@ -104,6 +104,8 @@ public sealed class WaveOneMessageLocalizationTests
         // Policy, Winetricks route, Repair after move.
         yield return $"Upstream RHI manifest unavailable: {E}";
         yield return "No safe Winetricks route is available for this prefix.";
+        yield return D3DCompilerToolInstaller.RuntimeUnknownMessagePrefix + P; // w2-launch re-review, major 1
+        yield return D3DCompilerToolInstaller.ToolTimedOutPrefix + "winetricks (600 s)"; // w2-vmsplit re-review, minor 1
         yield return DeploymentRelocation.RepairDonePrefix + "3";
         yield return DeploymentRelocation.RepairMissingAfterMovePrefix + P; // #147, Repair after move without records
         yield return DeploymentRelocation.RepairSettingsDone;

@@ -1431,7 +1431,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ? await _d3dCompilerTools.InstallDependencyWithProtontricksAsync(game, cancellationToken).ConfigureAwait(false)
             : D3DCompilerToolInstaller.CanInstallWithWinetricks(game)
                 ? await _d3dCompilerTools.InstallDependencyWithWinetricksAsync(game, cancellationToken).ConfigureAwait(false)
-                : ComponentOperationResult.Fail("No safe Protontricks/Winetricks route is available for this prefix.");
+                : D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game)
+                    ? ComponentOperationResult.Fail(D3DCompilerToolInstaller.RuntimeUnknownMessagePrefix + game.PrefixPath)
+                    : ComponentOperationResult.Fail("No safe Protontricks/Winetricks route is available for this prefix.");
 
         return install.Success
             ? null

@@ -440,6 +440,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         { LaunchCommand: null or "" } game when Facts is { OrphanedProtonPrefix: true }
             => TF("Vm.UnavailablePrefixWasBuiltByProton",
                   game.CompatibilityTool ?? "?"),
+        // Play stays visible but disabled on a card without a launch command (the reason shows after ~2 s, like the
+        // orphaned-Proton case): it becomes applicable once Edit game gives the card a command (w2-launch re-review 2).
+        { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game)
+            => T("Vm.LaunchRuntimeUnknownSetCommandInEdit"),
+        { LaunchCommand: null or "" } => T("Vm.NoLaunchCommandSetOneInEdit"),
         _ => null
     };
 
@@ -460,6 +465,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             null => T("Vm.SelectGameDetermineCorrectD3DCompilerHelper"),
             { UsesProton: true } => T("Vm.SteamProtonTargetProtontricksUsedSteam"),
             { } game when Facts is { OrphanedProtonPrefix: true } => OrphanedProtonText(game),
+            { } game when D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game) => T("Vm.WinetricksUnavailableRuntimeUnknown"),
             { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
                 => TF("Vm.TargetWinetricksUsesActiveMatchingPrefix", game.Source, game.CompatibilityTool ?? game.Runner ?? T("Vm.LauncherRunner")),
             { SteamAppId: null, PrefixPath: not null } => T("Vm.StandaloneSystemWineTargetWinetricksRuns"),

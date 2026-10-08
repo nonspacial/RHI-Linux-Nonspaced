@@ -585,6 +585,12 @@ public static class UiLocalizationService
     [
         ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
          "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
+        // The D3DCompiler helper stopped at its time limit (w2-vmsplit re-review, minor 1); tool and limit follow.
+        (RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.ToolTimedOutPrefix,
+         "O auxiliar do D3DCompiler demorou demais e foi interrompido junto com todos os processos que iniciou; o prefixo pode ter uma instalação parcial do d3dcompiler_47, então execute a instalação novamente. Ferramenta: "),
+        // A prefix whose runtime markers could not be read (w2-launch re-review, major 1); the prefix path follows.
+        (RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.RuntimeUnknownMessagePrefix,
+         "Winetricks indisponível: o RHI não conseguiu ler os marcadores de Wine/Proton deste prefixo (config_info), então não sabe qual Wine pode ser executado nele, e o Wine do sistema poderia danificar um prefixo do Proton. Torne o config_info do prefixo legível novamente e atualize a biblioteca. Prefixo: "),
         // ReShade setup without a host extractor (#3); the reader's reason follows the fragment.
         (RHI.Platform.Linux.Deployment.ReShadeArchiveExtractor.SetupUnreadablePrefix,
          "O instalador do ReShade não pôde ser lido, e nenhum 7z/7zz/7za ou bsdtar está instalado para tentar. Motivo: "),

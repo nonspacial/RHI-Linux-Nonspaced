@@ -22,6 +22,22 @@ public sealed class D3DCompilerToolInstaller
     /// <summary>wineserver stays a few seconds after the tool's last Wine process; this is how long RHI waits for it.</summary>
     internal TimeSpan WineServerExitWait { get; init; } = TimeSpan.FromSeconds(20);
 
+    /// <summary>
+    /// winetricks/protontricks download d3dcompiler_47 and run Wine. Once started they run to the end (Cancel is
+    /// refused: the prefix is never left mid-install by a user), so a stuck run (a dialog nobody sees, a hung
+    /// wineserver, a stalled download) is what this limit is for: after it the tool's whole process tree is killed and
+    /// the install fails with <see cref="ToolTimedOutPrefix"/>. Generous on purpose (a slow mirror still finishes).
+    /// </summary>
+    internal TimeSpan ToolTimeout { get; init; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>Starts the helper tool. Tests replace it to prove a refused route never starts one.</summary>
+    internal Func<ProcessStartInfo, TimeSpan, CancellationToken, Task<ExternalProcessResult>> RunTool { get; init; }
+        = (startInfo, timeout, ct) => ExternalProcess.RunAsync(startInfo, timeout, ct);
+
+    /// <summary>The helper ran past <see cref="ToolTimeout"/> and was stopped; the tool name and limit follow.</summary>
+    public const string ToolTimedOutPrefix =
+        "The D3DCompiler helper took too long and was stopped with every process it started; the prefix may hold a partial d3dcompiler_47 install, so run the install again. Tool: ";
+
     private readonly WineDllOverrideService _overrides;
 
     public D3DCompilerToolInstaller(WineDllOverrideService overrides)
@@ -48,6 +64,8 @@ public sealed class D3DCompilerToolInstaller
         {
             if (IsOrphanedProtonPrefix(game))
                 return Task.FromResult(ComponentOperationResult.Fail(OrphanedProtonMessage(game)));
+            if (IsRuntimeUnknownPrefix(game))
+                return Task.FromResult(ComponentOperationResult.Fail(RuntimeUnknownMessagePrefix + game.PrefixPath));
             if (game.SteamAppId.HasValue)
                 return Task.FromResult(ComponentOperationResult.Fail("This is a Steam/Proton game. Use the Protontricks button instead of Winetricks."));
             if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
@@ -93,7 +111,9 @@ public sealed class D3DCompilerToolInstaller
         if (!CanInstallWithWinetricks(game))
             return Task.FromResult(ComponentOperationResult.Fail(IsOrphanedProtonPrefix(game)
                 ? OrphanedProtonMessage(game)
-                : "No safe Winetricks route is available for this prefix."));
+                : IsRuntimeUnknownPrefix(game)
+                    ? RuntimeUnknownMessagePrefix + game.PrefixPath
+                    : "No safe Winetricks route is available for this prefix."));
 
         var launcherManaged = IsLauncherManagedPrefix(game);
         if (launcherManaged && (string.IsNullOrWhiteSpace(game.WineBinaryPath) || !File.Exists(game.WineBinaryPath)))
@@ -133,7 +153,7 @@ public sealed class D3DCompilerToolInstaller
             // idle RHI: from here on the install runs to the end (Cancel is refused). The shared runner (#37) still
             // applies its time limit, process-tree kill on timeout and closed stdin.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            var run = await ExternalProcess.RunAsync(startInfo, ToolTimeout, cancellationToken).ConfigureAwait(false);
+            var run = await RunTool(startInfo, ToolTimeout, cancellationToken).ConfigureAwait(false);
             if (run.ExitCode != 0)
                 return ComponentOperationResult.Fail($"{toolName} could not install {Verb}: {run.LastMeaningfulLine()}");
 
@@ -163,7 +183,8 @@ public sealed class D3DCompilerToolInstaller
         }
         catch (TimeoutException ex)
         {
-            return ComponentOperationResult.Fail($"{toolName} D3DCompiler installation failed: {ex.Message}");
+            AppLog.Warn("d3dcompiler", $"{toolName} ran past its {(int)ToolTimeout.TotalSeconds} s limit and was stopped with its process tree", ex);
+            return ComponentOperationResult.Fail($"{ToolTimedOutPrefix}{toolName} ({(int)ToolTimeout.TotalSeconds} s)");
         }
         catch (Win32Exception ex)
         {
@@ -225,7 +246,27 @@ public sealed class D3DCompilerToolInstaller
            && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(game.PrefixPath)
            && Directory.Exists(game.PrefixPath)
-           && !IsOrphanedProtonPrefix(game);
+           && !IsOrphanedProtonPrefix(game)
+           && !IsRuntimeUnknownPrefix(game);
+
+    /// <summary>
+    /// <see cref="DetectedGame.CompatibilityLayerType"/> of a prefix whose runtime markers (config_info, version) could
+    /// not be read: RHI cannot tell a Proton-built prefix from a Wine one, so no Wine of any kind may run in it.
+    /// </summary>
+    public const string UnknownRuntimeLayer = "unknown";
+
+    /// <summary>
+    /// A prefix whose runtime RHI could not read (<see cref="UnknownRuntimeLayer"/>). It may be Proton-built, and host
+    /// Wine (winetricks without a WINE binary) would run wineboot over it: Winetricks, the automatic D3DCompiler step
+    /// and direct launches are refused, like an orphaned Proton prefix (w2-launch re-review, major 1).
+    /// </summary>
+    public static bool IsRuntimeUnknownPrefix(DetectedGame game)
+        => !game.SteamAppId.HasValue
+           && string.Equals(game.CompatibilityLayerType, UnknownRuntimeLayer, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Refusal for a runtime-unknown prefix; the prefix path follows.</summary>
+    public const string RuntimeUnknownMessagePrefix =
+        "Winetricks is unavailable: RHI could not read this prefix's Wine/Proton markers (config_info), so it cannot tell which Wine may run in it, and system Wine could damage a Proton prefix. Make the prefix's config_info readable again and refresh the library. Prefix: ";
 
     /// <summary>
     /// A Proton-built prefix (outside Steam) whose Proton build is no longer installed. Only that
@@ -256,9 +297,4 @@ public sealed class D3DCompilerToolInstaller
             CreateNoWindow = true
         };
 
-    /// <summary>
-    /// winetricks/protontricks download d3dcompiler_47 and run Wine; a stuck run (a dialog nobody sees, a hung
-    /// wineserver) is stopped after this long instead of blocking the install forever.
-    /// </summary>
-    internal static readonly TimeSpan ToolTimeout = TimeSpan.FromMinutes(10);
 }
