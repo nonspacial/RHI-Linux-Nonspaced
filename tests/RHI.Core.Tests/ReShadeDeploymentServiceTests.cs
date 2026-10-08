@@ -341,6 +341,33 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
     }
 
+    // w2/vmsplit re-review, minor 3: the shader-pack cleanup and the managed ReShade.ini cleanup are game-folder
+    // changes, so they must come after the write gate; with no shader packs in the fixture, moving them before it went
+    // unseen. Here RHI-managed shader packs (manifest + a file) and RHI's ReShade.ini are present.
+    [Fact]
+    public async Task Remove_WithShaderPacks_CleansThemOnlyOnceTheWritePhaseBegan()
+    {
+        var (game, bin, prefix) = CancelGame("cancel-remove-packs");
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-remove-packs.json"));
+        var service = NewService(store, Path.Combine(_root, "cancel-remove-packs-cache"));
+        Assert.True((await service.InstallAsync(game)).Success);
+        var packRoot = Path.Combine(bin, "reshade-shaders", "RHI");
+        var shader = Path.Combine(packRoot, "TestPack", "Shaders", "Test.fx");
+        Directory.CreateDirectory(Path.GetDirectoryName(shader)!);
+        File.WriteAllText(shader, "// RHI-managed test shader\n");
+        File.WriteAllText(Path.Combine(packRoot, ".rhi-manifest.json"),
+            "{\"Schema\":2,\"PackIds\":[\"TestPack\"],\"Files\":[{\"RelativePath\":\"TestPack/Shaders/Test.fx\",\"Sha256\":\"" + Sha256(shader) + "\"}]}");
+        var ini = Path.Combine(bin, "ReShade.ini");
+        Assert.True(File.Exists(ini), "the fixture's install should have written RHI's ReShade.ini");
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [bin, prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.False(File.Exists(shader));
+        Assert.False(Directory.Exists(packRoot));
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+    }
+
     [Fact]
     public async Task Remove_CancelledBeforeAnyChange_ChangesNothing_AndARetrySucceeds()
     {
