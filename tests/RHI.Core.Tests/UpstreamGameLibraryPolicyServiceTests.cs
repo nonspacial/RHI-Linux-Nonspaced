@@ -153,6 +153,25 @@ public sealed class UpstreamGameLibraryPolicyServiceTests
     }
 
     [Fact]
+    public async Task ApplyAsync_SplitChild_KeepsTheFolderMissingState()
+    {
+        // The clone helper copies every state flag (synthetic input: a detector-set FolderMissing, Refs #145).
+        var json = """
+        { "version": 3, "splitGames": { "Bundle": [ { "name": "Bundle Part One", "subPath": "One" } ] } }
+        """;
+        using var http = Http(json);
+        var policy = new UpstreamGameLibraryPolicyService(
+            new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json"));
+        using var root = new TempTree();
+        var bundle = root.Dir("Bundle");
+        Directory.CreateDirectory(Path.Combine(bundle, "One"));
+        var game = Game("Bundle", bundle);
+        game.FolderMissing = true;
+
+        Assert.True(Assert.Single(await policy.ApplyAsync([game])).FolderMissing);
+    }
+
+    [Fact]
     public async Task ApplyAsync_AppliesInstallPathLaunchAndCrossPlatformMetadata()
     {
         var json = """

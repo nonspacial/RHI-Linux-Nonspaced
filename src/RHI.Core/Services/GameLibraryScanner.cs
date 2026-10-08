@@ -115,7 +115,8 @@ public sealed class GameLibraryScanner
         }
 
         var merged = games
-            .Where(g => !string.IsNullOrWhiteSpace(g.Name) && Directory.Exists(g.InstallPath))
+            // A saved manual entry whose folder is gone stays listed as "folder missing" (Refs #145).
+            .Where(g => !string.IsNullOrWhiteSpace(g.Name) && (g.FolderMissing || Directory.Exists(g.InstallPath)))
             .GroupBy(GameKey, StringComparer.Ordinal)
             .SelectMany(SplitDistinctLauncherEntries)
             .Select(Merge)
@@ -224,6 +225,7 @@ public sealed class GameLibraryScanner
             // A fail-closed patch-target verdict from any source survives the merge.
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
             first.GameRootNotAllowed |= candidate.GameRootNotAllowed;
+            first.FolderMissing |= candidate.FolderMissing;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
             first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);

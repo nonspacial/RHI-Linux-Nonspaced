@@ -177,6 +177,68 @@ public sealed class GameRootDialogGuardTests
         Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Whole Home");
     }
 
+    // ---- #145: a saved manual entry whose folder is gone stays listed as "folder missing" ----
+
+    private static Task<ViewModelFixture> WithMissingFolderEntry(out string missing)
+    {
+        var gone = Path.Combine(Path.GetTempPath(), "rhi-gone-" + Guid.NewGuid().ToString("N"), "Old Drive", "Gone Game");
+        missing = gone;
+        return ViewModelFixture.StartAsync([], seed: store =>
+        {
+            var state = store.Load();
+            state.ManualGames.Add(new LinuxManualGameEntry
+            {
+                Name = "Gone Game", InstallPath = gone, ExecutablePath = Path.Combine(gone, "Gone.exe"), LaunchCommand = "true"
+            });
+            store.Save(state);
+        });
+    }
+
+    [Fact]
+    public async Task MissingFolderEntry_IsListedAsFolderMissing_NotProbed_AndRemovable()
+    {
+        using var fixture = await WithMissingFolderEntry(out var missing);
+
+        var game = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        Assert.True(game.FolderMissing);
+        Assert.False(game.GameRootNotAllowed);
+        Assert.False(game.HasConfirmedPatchTarget);
+        Assert.Null(game.ExecutablePath);
+        Assert.Null(game.BinaryDirectory);
+        Assert.Contains("⚠", game.LibraryBadge);
+        Assert.Equal("true", game.LaunchCommand);
+
+        fixture.Vm.SelectedGame = game;
+        Assert.Equal($"Gone Game: folder missing ({missing}). Remove the manual entry or use Edit game to point it at the new folder; nothing was indexed or changed.",
+            fixture.Vm.PatchTargetStatusText);
+        Assert.Equal($"{missing} — folder missing", fixture.Vm.SelectedInstallPath);
+        // Not probed: with no patch target the selection analysis indexes nothing and detects no API.
+        await Task.Delay(300);
+        Assert.Equal(GraphicsApi.Unknown, game.GraphicsApi);
+        Assert.Null(game.BinaryDirectory);
+
+        Assert.True(fixture.Vm.CanRemoveManualGame);
+        await fixture.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+        Assert.Empty(fixture.Library.Load().ManualGames);
+        Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Gone Game");
+    }
+
+    [Fact]
+    public async Task MissingFolderEntry_EditedOntoTheNewFolder_IsUsableAgain()
+    {
+        using var fixture = await WithMissingFolderEntry(out _);
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        var exe = Exe(Path.Combine(fixture.Root, "New Drive", "Gone Game"), "Gone.exe");
+
+        var (saved, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
+
+        Assert.True(saved, message);
+        var repointed = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        Assert.False(repointed.FolderMissing);
+        Assert.True(repointed.HasConfirmedPatchTarget);
+        Assert.Equal(Path.GetDirectoryName(exe), repointed.InstallPath);
+    }
+
     [Fact]
     public async Task EditingARefusedEntryOntoTheGamesOwnFolder_ClearsTheState()
     {

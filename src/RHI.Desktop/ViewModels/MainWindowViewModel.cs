@@ -248,6 +248,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         null => T("Vm.NoGameSelected"),
         { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
+        { FolderMissing: true } game => FolderMissingText(game),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
             => T("Vm.ModificationTargetManualExecutableMissing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)
@@ -263,6 +264,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         null => "",
         { GameRootNotAllowed: true } game => TF("Vm.FolderNotAllowed", game.InstallPath),
+        { FolderMissing: true } game => TF("Vm.FolderMissing", game.InstallPath),
         { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedSelectRealGameExecutable"),
         _ => SelectedGame.InstallPath
     };
@@ -1290,7 +1292,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ApplyProbeResult(pending);
                 StatusText = game.GameRootNotAllowed
                     ? GameRootNotAllowedText(game)
-                    : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
+                    : game.FolderMissing
+                        ? FolderMissingText(game)
+                        : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
                 return;
             }
 
@@ -3043,6 +3047,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private static string GameRootNotAllowedText(DetectedGame game)
         => TF("Vm.FolderNotAllowedRemoveManualEntry",
             game.Name, GameRootRefusal(game.LibraryIdentityPath ?? game.InstallPath) ?? string.Empty);
+
+    /// <summary>Plain state of a saved manual entry whose folder no longer exists (listed, never probed; Refs #145).</summary>
+    private static string FolderMissingText(DetectedGame game)
+        => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
 
     public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
         => (await TryAddManualGameAsync(entry)).Message;

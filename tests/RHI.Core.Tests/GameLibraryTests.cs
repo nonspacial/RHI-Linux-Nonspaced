@@ -104,14 +104,22 @@ public sealed class GameLibraryTests : IDisposable
     }
 
     [Fact]
-    public async Task ManualDetector_SkipsStaleMissingInstallDirectory()
+    public async Task ManualDetector_ListsAMissingInstallDirectory_AsFolderMissing_WithNoTarget()
     {
+        // Never hide the user's saved entry (Refs #145): listed, no patch target, nothing to index.
         var store = NewStore();
         store.Save(new LinuxGameLibraryState
         {
-            ManualGames = [new LinuxManualGameEntry { Name = "Gone", InstallPath = Path.Combine(_root, "missing") }]
+            ManualGames = [new LinuxManualGameEntry { Name = "Gone", InstallPath = Path.Combine(_root, "missing"), ExecutablePath = Path.Combine(_root, "missing", "Gone.exe") }]
         });
-        Assert.Empty(await new ManualGameDetector(store).DetectAsync());
+
+        var gone = Assert.Single(await new ManualGameDetector(store).DetectAsync());
+
+        Assert.True(gone.FolderMissing);
+        Assert.False(gone.HasConfirmedPatchTarget);
+        Assert.Null(gone.BinaryDirectory);
+        var listed = Assert.Single(await new GameLibraryScanner([new ManualGameDetector(store)]).ScanAsync());
+        Assert.True(listed.FolderMissing);
     }
 
     [Fact]
