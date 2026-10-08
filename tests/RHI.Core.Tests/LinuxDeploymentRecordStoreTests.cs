@@ -219,9 +219,10 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         {
             GameKey = "steam:42", GameName = "Game", Component = ManagedComponentKind.ShortFuse, BinaryDirectory = "/g/bin",
             SourceUrl = "https://example.invalid/a", Version = "1.2", InstalledAtUtc = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc),
+            SavedAtUtc = new DateTime(2026, 1, 3, 3, 4, 5, DateTimeKind.Utc),
             Files = [new LinuxDeployedFile { Path = "/g/bin/a.dll", ExistedBeforeInstall = true, Sha256 = "AB", AllowUserChanges = true }],
             DirectoriesCreatedByRhi = ["/g/bin/d"],
-            WineOverride = new WineOverrideRecord { DllName = "dxgi", PreviousValue = "builtin", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "game.exe", WrittenValue = "native,builtin" },
+            WineOverride = new WineOverrideRecord { DllName = "dxgi", PreviousValue = "builtin", PreviousValueIsRaw = true, ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "game.exe", WrittenValue = "native,builtin" },
             AdditionalWineOverrides = [new WineOverrideRecord { DllName = "d3dcompiler_47", PreviousValue = "b", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "g.exe", WrittenValue = "native,builtin" }],
             Metadata = new(StringComparer.OrdinalIgnoreCase) { ["Key"] = "Value" }
         };

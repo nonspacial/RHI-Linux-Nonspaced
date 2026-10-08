@@ -115,6 +115,64 @@ public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
     }
 
+    // w2 wine re-review, finding 1 (reviewer's probe R1): a migration whose ledger save fails while the game starts
+    // leaves its dxgi undo deferred; the user retries once the game closed and the retry succeeds, updating the ReShade
+    // record in place (its install time stays older than the step). The next start must not remove the dxgi override
+    // the record now depends on (ReShade-as-dxgi would stop loading).
+    [Fact]
+    public async Task DeferredUndo_OfAFailedMigration_LeavesTheOverrideASuccessfulRetryDependsOn()
+    {
+        var bin = Path.Combine(_root, "game-retry");
+        var prefix = Path.Combine(_root, "prefix-retry");
+        var journalDir = Path.Combine(_root, "journal-retry");
+        Directory.CreateDirectory(bin);
+        Directory.CreateDirectory(prefix);
+        File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x14c, 128 * 1024);
+        var d3d9 = Path.Combine(bin, "d3d9.dll");
+        PeArchitectureDetectorTests.WritePe(d3d9, 0x14c, 2 * 1024 * 1024);
+        var game = new DetectedGame
+        {
+            Name = "DX9 Retry Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix,
+            GraphicsApi = GraphicsApi.DirectX9, Source = "Test", Runner = "Wine"
+        };
+        var ledger = Path.Combine(_root, "records-retry.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var running = false;
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => running));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = bin, InstalledAtUtc = DateTime.UtcNow.AddDays(-1), WineOverride = overrides.EnsureNativeBuiltin(prefix, "d3d9", "Game.exe"),
+            Files = [new LinuxDeployedFile { Path = d3d9, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(d3d9) }]
+        });
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, _ => running, records);
+        var coordinator = new Dx9TranslationReShadeCoordinator(records, overrides, journal);
+        records.SaveFaultForTesting = () =>
+        {
+            records.SaveFaultForTesting = null;
+            running = true; // the game starts in the prefix as the commit fails
+            return new IOException("disk full");
+        };
+
+        await Assert.ThrowsAnyAsync<IOException>(() => coordinator.MigrateAsync(game));
+        Assert.Single(Directory.GetFiles(journalDir, "*.json", SearchOption.AllDirectories).Where(f => !f.EndsWith(".lock", StringComparison.Ordinal)));
+        running = false;
+        await coordinator.MigrateAsync(game);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+
+        var restarted = new LinuxDeploymentRecordStore(ledger);
+        await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(new WineRegistryEditor(_ => false)), journalDir, _ => false, restarted), restarted);
+
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
+        Assert.True(File.Exists(Path.Combine(bin, "dxgi.dll")));
+        var dxgiOwner = restarted.Find(game, ManagedComponentKind.ReShade)!.WineOverride!;
+        Assert.Equal("dxgi", dxgiOwner.DllName);
+        Assert.True(dxgiOwner.ChangedByRhi); // the record took the step's ownership, so removal restores the old value
+    }
+
     // w2/vmsplit review finding 1: once the migration (or its undo) starts changing overrides and files it runs to the
     // end; a late cancel used to throw between the move and the record update.
     [Fact]

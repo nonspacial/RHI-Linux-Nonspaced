@@ -44,9 +44,9 @@ public sealed class WineOverrideCompensator(
 
         var current = WineDllOverrideService.CurrentValue(prefix, record);
         // Never written (refused edit) or already undone: nothing to do, whether or not Wine runs now.
-        if (WineDllOverrideService.SameValue(current, record.PreviousValue)) return CompensationResult.Done;
+        if (WineDllOverrideService.IsPreviousValue(current, record)) return CompensationResult.Done;
         if (!WineDllOverrideService.SameValue(current, WineDllOverrideService.WrittenBy(record)))
-            return KeptLaterValue(record, prefix, current);
+            return KeptLaterValue(record, prefix, current?.Text);
         if (SupersededByLaterRecord(payload, record)) return CompensationResult.Done;
         if (_isPrefixInUse(prefix)) return DeferredWhileWineRuns(record, prefix);
 
@@ -70,17 +70,24 @@ public sealed class WineOverrideCompensator(
             $"This Wine override was changed after the interruption and was left as it is: {record.DllName} ({prefix}) = '{current ?? "-"}'");
 
     /// <summary>
-    /// True when a record of the step's game, installed after the step was journaled, holds the same override: the
-    /// user installed again while this undo waited, and that install depends on RHI's value. A record that found the
-    /// value already there (<see cref="WineOverrideRecord.ChangedByRhi"/> false) takes over the step's ownership.
+    /// True when a record of the step's game, saved after the step was journaled, holds the same override: the user
+    /// installed again (or an operation such as the DX9 migration updated its record in place, keeping its install
+    /// time) while this undo waited, and that record depends on RHI's value. "After" is the record's last save
+    /// (<see cref="LinuxDeploymentRecord.SavedAtUtc"/>; install time for records saved before that existed). A record
+    /// that found the value already there (<see cref="WineOverrideRecord.ChangedByRhi"/> false) takes over the step's
+    /// ownership; with several, the earliest installed does, as an uninterrupted first install would have. An
+    /// unreadable ledger cannot say, so the step is kept for the next start (an I/O failure).
     /// </summary>
     private bool SupersededByLaterRecord(Payload payload, WineOverrideRecord step)
     {
         if (records is null || payload.GameKey is not { Length: > 0 } gameKey || payload.JournaledUtc is not { } journaled) return false;
+        if (records.CorruptLedgerPath is { } corrupt)
+            throw new IOException(UnreadableLedgerPrefix + corrupt);
         var later = records.All()
-            .Where(record => string.Equals(record.GameKey, gameKey, StringComparison.Ordinal) && record.InstalledAtUtc >= journaled)
+            .Where(record => string.Equals(record.GameKey, gameKey, StringComparison.Ordinal) && LastSaved(record) >= journaled)
             .Select(record => (Record: record, Override: OverridesOf(record).FirstOrDefault(o => WineDllOverrideService.SameOverride(o, step))))
             .Where(claim => claim.Override is not null)
+            .OrderBy(claim => claim.Record.InstalledAtUtc)
             .ToList();
         if (later.Count == 0) return false;
         if (later.All(claim => !claim.Override!.ChangedByRhi))
@@ -88,6 +95,7 @@ public sealed class WineOverrideCompensator(
             var (record, adopted) = later[0];
             adopted!.ChangedByRhi = true;
             adopted.PreviousValue = step.PreviousValue;
+            adopted.PreviousValueIsRaw = step.PreviousValueIsRaw;
             adopted.SectionCreatedByRhi = step.SectionCreatedByRhi;
             adopted.WrittenValue = WineDllOverrideService.WrittenBy(step);
             try
@@ -102,6 +110,19 @@ public sealed class WineOverrideCompensator(
         }
         return true;
     }
+
+    /// <summary>Fixed text of the refusal when the ledger cannot be read; its quarantine copy's path follows.</summary>
+    public const string UnreadableLedgerPrefix =
+        "The deployment ledger cannot be read, so this Wine override undo is kept for the next start. Ledger copy: ";
+
+    private static DateTime LastSaved(LinuxDeploymentRecord record) => Utc(record.SavedAtUtc ?? record.InstalledAtUtc);
+
+    private static DateTime Utc(DateTime time) => time.Kind switch
+    {
+        DateTimeKind.Local => time.ToUniversalTime(),
+        DateTimeKind.Unspecified => DateTime.SpecifyKind(time, DateTimeKind.Utc),
+        _ => time
+    };
 
     private static IEnumerable<WineOverrideRecord> OverridesOf(LinuxDeploymentRecord record)
         => record.WineOverride is { } main ? record.AdditionalWineOverrides.Prepend(main) : record.AdditionalWineOverrides;

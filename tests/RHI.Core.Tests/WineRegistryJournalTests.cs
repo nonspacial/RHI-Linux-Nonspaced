@@ -127,7 +127,8 @@ public sealed class WineRegistryJournalTests : IDisposable
     {
         var prefix = Prefix();
         var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
-        var journaled = DateTime.UtcNow;
+        // The record is saved now; the step was journaled a minute before (a later record) or after (an earlier one).
+        var journaled = DateTime.UtcNow.AddMinutes(-recordAgeSign);
         var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"), "steam:1", journaled);
         var owned = overrides.EnsureNativeBuiltin(prefix, "winmm.dll", "Game.exe"); // the later install wrote it itself
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "ledger-" + Guid.NewGuid().ToString("N") + ".json"));
@@ -142,6 +143,79 @@ public sealed class WineRegistryJournalTests : IDisposable
         Assert.Equal(CompensationStatus.Done, result.Status);
         var after = WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe");
         Assert.Equal(undone ? null : "native,builtin", after);
+    }
+
+    // w2 wine re-review, finding 1: "later" is when the record was last saved, not its install time. An operation that
+    // updates a record in place (the DX9 migration keeps InstalledAtUtc) after the step was journaled still counts.
+    [Fact]
+    public void Compensator_RecordInstalledBeforeTheStepButSavedAfterIt_KeepsTheOverride()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var journaled = DateTime.UtcNow.AddMinutes(-1);
+        var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"), "steam:1", journaled);
+        var owned = overrides.EnsureNativeBuiltin(prefix, "winmm.dll", "Game.exe");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "ledger-" + Guid.NewGuid().ToString("N") + ".json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = "steam:1", Component = RHI.Core.Models.ManagedComponentKind.ReShade,
+            InstalledAtUtc = journaled.AddHours(-1), WineOverride = owned
+        });
+
+        var result = new WineOverrideCompensator(overrides, _ => false, records).Compensate(step);
+
+        Assert.Equal(CompensationStatus.Done, result.Status);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe"));
+    }
+
+    // w2 wine re-review, nit 2: an unreadable ledger cannot say whether a later record depends on the override, so the
+    // step is kept (an I/O failure the journal retries at the next start) and the override left in place.
+    [Fact]
+    public void Compensator_WithAnUnreadableLedger_KeepsTheStep_AndTheOverride()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"), "steam:1", DateTime.UtcNow);
+        overrides.EnsureNativeBuiltin(prefix, "winmm.dll", "Game.exe");
+        var ledger = Path.Combine(_root, "ledger-corrupt-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(ledger, "{ not a ledger");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        Assert.Empty(records.All());
+        Assert.NotNull(records.CorruptLedgerPath);
+
+        var refused = Assert.Throws<IOException>(() => new WineOverrideCompensator(overrides, _ => false, records).Compensate(step));
+
+        Assert.StartsWith(WineOverrideCompensator.UnreadableLedgerPrefix, refused.Message, StringComparison.Ordinal);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe"));
+    }
+
+    // w2 wine re-review, nit 5: with several later records that found RHI's value already there, the earliest installed
+    // takes the step's ownership (what an uninterrupted first install would have owned), whatever the ledger order.
+    [Fact]
+    public void OwnershipHandOver_GoesToTheEarliestInstalledLaterRecord()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var journaled = DateTime.UtcNow.AddMinutes(-10);
+        var plan = overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe");
+        var step = WineOverrideCompensator.Describe(prefix, plan, "steam:1", journaled);
+        overrides.EnsureNativeBuiltin(prefix, "winmm.dll", "Game.exe");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "ledger-" + Guid.NewGuid().ToString("N") + ".json"));
+        WineOverrideRecord Found() => new() { DllName = "winmm", ApplicationName = "Game.exe", PreviousValue = "native,builtin", ChangedByRhi = false };
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = "steam:1", Component = RHI.Core.Models.ManagedComponentKind.ShortFuse, InstalledAtUtc = journaled.AddMinutes(5), WineOverride = Found()
+        });
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = "steam:1", Component = RHI.Core.Models.ManagedComponentKind.UltimateAsiLoader, InstalledAtUtc = journaled.AddMinutes(1), WineOverride = Found()
+        });
+
+        Assert.Equal(CompensationStatus.Done, new WineOverrideCompensator(overrides, _ => false, records).Compensate(step).Status);
+
+        var owner = records.All().Single(r => r.WineOverride!.ChangedByRhi);
+        Assert.Equal(RHI.Core.Models.ManagedComponentKind.UltimateAsiLoader, owner.Component);
+        Assert.Null(owner.WineOverride!.PreviousValue);
     }
 
     // A ledger that cannot be written while the step hands its ownership over keeps the step for the next start.

@@ -75,12 +75,14 @@ public sealed class WineDllOverrideService
     private static WineOverrideRecord Plan(string text, string dllName, string? applicationName)
     {
         var sectionExistedBefore = FindSection(SplitLines(text), SectionFor(applicationName)).Start >= 0;
-        var previous = TryReadOverride(text, dllName, applicationName);
-        var alreadyNative = string.Equals(previous, RhiValue, StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(previous, "native", StringComparison.OrdinalIgnoreCase);
+        var read = ReadOverride(text, dllName, applicationName);
+        var previous = read?.Text;
+        var alreadyNative = read is { Raw: false } &&
+                            (string.Equals(previous, RhiValue, StringComparison.OrdinalIgnoreCase) ||
+                             string.Equals(previous, "native", StringComparison.OrdinalIgnoreCase));
         return new WineOverrideRecord
         {
-            DllName = dllName, PreviousValue = previous, ChangedByRhi = !alreadyNative,
+            DllName = dllName, PreviousValue = previous, PreviousValueIsRaw = read?.Raw == true, ChangedByRhi = !alreadyNative,
             SectionCreatedByRhi = !alreadyNative && !sectionExistedBefore, ApplicationName = applicationName,
             WrittenValue = alreadyNative ? null : RhiValue
         };
@@ -97,15 +99,16 @@ public sealed class WineDllOverrideService
         if (!WineRegistryEditor.HasUserHive(prefixPath)) return new(WineOverrideRestoreOutcome.NothingToRestore, record.DllName, null);
         var result = Registry.EditUserHive(prefixPath, text =>
         {
-            var current = TryReadOverride(text, record.DllName, record.ApplicationName);
-            if (SameValue(current, record.PreviousValue))
-                return ((string?)null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.AlreadyRestored, record.DllName, current));
+            var current = ReadOverride(text, record.DllName, record.ApplicationName);
+            if (IsPreviousValue(current, record))
+                return ((string?)null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.AlreadyRestored, record.DllName, current?.Text));
             if (!SameValue(current, WrittenBy(record)))
-                return (null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.KeptLaterValue, record.DllName, current));
+                return (null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.KeptLaterValue, record.DllName, current?.Text));
 
+            // A non-string earlier value (hex(2):…, dword:…) goes back as it was, type and continuation lines included.
             var updated = record.PreviousValue is null
                 ? RemoveOverride(text, record.DllName, record.ApplicationName)
-                : SetOverride(text, record.DllName, record.PreviousValue, record.ApplicationName);
+                : SetOverride(text, record.DllName, record.PreviousValue, record.ApplicationName, raw: record.PreviousValueIsRaw);
             // Only remove a now-empty section when this install explicitly recorded that
             // RHI created it. Older deployment records deserialize this flag as false,
             // which intentionally favors leaving an empty section over deleting a key that
@@ -130,21 +133,22 @@ public sealed class WineDllOverrideService
         if (!WineRegistryEditor.HasUserHive(prefixPath)) return new(WineOverrideRestoreOutcome.NothingToRestore, record.DllName, null);
         return Registry.EditUserHive(prefixPath, text =>
         {
-            var current = TryReadOverride(text, record.DllName, record.ApplicationName);
+            var current = ReadOverride(text, record.DllName, record.ApplicationName);
             var written = WrittenBy(record);
             if (SameValue(current, written))
-                return ((string?)null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.AlreadyRestored, record.DllName, current));
-            if (!SameValue(current, record.PreviousValue))
-                return (null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.KeptLaterValue, record.DllName, current));
+                return ((string?)null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.AlreadyRestored, record.DllName, current?.Text));
+            if (!IsPreviousValue(current, record))
+                return (null, new WineOverrideRestoreResult(WineOverrideRestoreOutcome.KeptLaterValue, record.DllName, current?.Text));
             return (SetOverride(text, record.DllName, written, record.ApplicationName),
                 new WineOverrideRestoreResult(WineOverrideRestoreOutcome.Restored, record.DllName, written));
         });
     }
 
     /// <summary>
-    /// <see cref="Restore"/> for a rollback path: a failure (Wine started meanwhile, lock busy, I/O) is logged and
-    /// returned as null instead of hiding behind an empty catch; a journaled operation's own rollback retries it,
-    /// and start-up recovery after that.
+    /// <see cref="Restore"/> for a rollback path: any failure (Wine started meanwhile, lock busy, I/O, or anything
+    /// unexpected) is logged and returned as null instead of escaping the rollback or hiding behind an empty catch, so
+    /// the rollback's remaining steps still run; a journaled operation's own rollback retries it, and start-up recovery
+    /// after that.
     /// </summary>
     public WineOverrideRestoreResult? TryRestore(string? prefixPath, WineOverrideRecord? record)
     {
@@ -153,14 +157,14 @@ public sealed class WineDllOverrideService
         {
             return Restore(prefixPath, record);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
             AppLog.Warn("wine-registry", $"Rollback could not undo the Wine override {record.DllName} in {prefixPath}", ex);
             return null;
         }
     }
 
-    /// <summary><see cref="Reapply"/> for a rollback path; failures are logged and returned as null.</summary>
+    /// <summary><see cref="Reapply"/> for a rollback path; any failure is logged and returned as null.</summary>
     public WineOverrideRestoreResult? TryReapply(string? prefixPath, WineOverrideRecord? record)
     {
         if (record is null || string.IsNullOrWhiteSpace(prefixPath)) return null;
@@ -168,7 +172,7 @@ public sealed class WineDllOverrideService
         {
             return Reapply(prefixPath, record);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex)
         {
             AppLog.Warn("wine-registry", $"Rollback could not put back the Wine override {record.DllName} in {prefixPath}", ex);
             return null;
@@ -178,7 +182,7 @@ public sealed class WineDllOverrideService
     /// <summary>Whether the override still holds the value RHI wrote for <paramref name="record"/> (read only).</summary>
     public static bool HoldsWrittenValue(string? prefixPath, WineOverrideRecord record)
         => record.ChangedByRhi && WineRegistryEditor.HasUserHive(prefixPath)
-           && SameValue(TryReadOverride(WineRegistryEditor.ReadUserHive(prefixPath!), record.DllName, record.ApplicationName), WrittenBy(record));
+           && SameValue(ReadOverride(WineRegistryEditor.ReadUserHive(prefixPath!), record.DllName, record.ApplicationName), WrittenBy(record));
 
     /// <summary>The note a removal appends for every override it kept (empty when none was kept).</summary>
     public static string KeptValueNotes(params WineOverrideRestoreResult?[] results)
@@ -186,8 +190,28 @@ public sealed class WineDllOverrideService
             .Select(result => $"{KeptUserValueNotePrefix}{result!.DllName} = '{result.CurrentValue ?? "-"}'."));
 
     /// <summary>The override's current value in the prefix's hive (read only, no lock).</summary>
-    internal static string? CurrentValue(string prefixPath, WineOverrideRecord record)
-        => TryReadOverride(WineRegistryEditor.ReadUserHive(prefixPath), record.DllName, record.ApplicationName);
+    internal static OverrideValue? CurrentValue(string prefixPath, WineOverrideRecord record)
+        => ReadOverride(WineRegistryEditor.ReadUserHive(prefixPath), record.DllName, record.ApplicationName);
+
+    /// <summary>
+    /// An override's value as the hive holds it: a string value unquoted (<see cref="Raw"/> false), any other type
+    /// (<c>hex(2):…</c>, <c>dword:…</c>) as its raw right-hand side with its continuation lines (joined with a line feed).
+    /// </summary>
+    internal readonly record struct OverrideValue(string Text, bool Raw);
+
+    /// <summary>Whether <paramref name="current"/> is the value the override had before RHI set it.</summary>
+    internal static bool IsPreviousValue(OverrideValue? current, WineOverrideRecord record)
+    {
+        if (current is null || record.PreviousValue is null) return current is null && record.PreviousValue is null;
+        if (record.PreviousValueIsRaw) return current.Value.Raw && string.Equals(current.Value.Text, record.PreviousValue, StringComparison.Ordinal);
+        // A string earlier value, or one an older build recorded without its type (its first line only).
+        var text = current.Value.Raw ? current.Value.Text.Split('\n')[0] : current.Value.Text;
+        return SameValue(text, record.PreviousValue);
+    }
+
+    /// <summary>Whether <paramref name="current"/> is the string value <paramref name="value"/> (a typed value never is).</summary>
+    internal static bool SameValue(OverrideValue? current, string value)
+        => current is { Raw: false } read && SameValue(read.Text, value);
 
     internal static string WrittenBy(WineOverrideRecord record) => record.WrittenValue ?? RhiValue;
 
@@ -200,6 +224,9 @@ public sealed class WineDllOverrideService
         => a is null || b is null ? a is null && b is null : string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
     public static string? TryReadOverride(string text, string dllName, string? applicationName = null)
+        => ReadOverride(text, dllName, applicationName)?.Text;
+
+    internal static OverrideValue? ReadOverride(string text, string dllName, string? applicationName = null)
     {
         dllName = NormalizeDllName(dllName);
         var sectionName = SectionFor(NormalizeApplicationName(applicationName));
@@ -212,13 +239,16 @@ public sealed class WineDllOverrideService
             var line = lines[i].Trim();
             if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
             var rhs = line[(line.IndexOf('=') + 1)..].Trim();
-            if (rhs.Length >= 2 && rhs[0] == '"' && rhs[^1] == '"') return rhs[1..^1];
-            return rhs;
+            if (rhs.Length >= 2 && rhs[0] == '"' && rhs[^1] == '"') return new OverrideValue(rhs[1..^1], Raw: false);
+            // Not a string: keep it exactly, continuation lines included, so it can be written back as it was.
+            var continuation = lines.Skip(i + 1).Take(ContinuationLines(lines, i, end));
+            return new OverrideValue(string.Join('\n', continuation.Prepend(lines[i][(lines[i].IndexOf('=') + 1)..])), Raw: true);
         }
         return null;
     }
 
-    internal static string SetOverride(string text, string dllName, string value, string? applicationName = null)
+    /// <param name="raw">Write <paramref name="value"/> as a raw right-hand side (<see cref="OverrideValue.Raw"/>), not as a string.</param>
+    internal static string SetOverride(string text, string dllName, string value, string? applicationName = null, bool raw = false)
     {
         dllName = NormalizeDllName(dllName);
         applicationName = NormalizeApplicationName(applicationName);
@@ -226,7 +256,9 @@ public sealed class WineDllOverrideService
         var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var lines = SplitLines(text).ToList();
         var (start, end) = FindSection(lines, sectionName);
-        var entry = $"\"{dllName}\"=\"{value}\"";
+        var entry = raw
+            ? $"\"{dllName}\"=" + value.Replace("\n", newline, StringComparison.Ordinal)
+            : $"\"{dllName}\"=\"{value}\"";
         if (start < 0)
         {
             // A hive without a final newline (Wine always writes one) gets none after the new section either, so

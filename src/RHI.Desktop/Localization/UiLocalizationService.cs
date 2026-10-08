@@ -585,6 +585,9 @@ public static class UiLocalizationService
     [
         ("Winetricks is unavailable: this prefix was built by a Proton build that is no longer installed, and system Wine could damage it. Reinstall that Proton (or choose an installed one in the launcher) and refresh the library. Missing Proton: ",
          "Winetricks indisponível: este prefixo foi criado por um Proton que não está mais instalado, e o Wine do sistema poderia danificá-lo. Reinstale esse Proton (ou escolha um instalado no launcher) e atualize a biblioteca. Proton ausente: "),
+        // Start-up recovery keeps a Wine override undo while the ledger cannot be read (w2-wine re-review, nit 2).
+        (RHI.Platform.Linux.Deployment.WineOverrideCompensator.UnreadableLedgerPrefix,
+         "O registro de implantações não pode ser lido, então esta reversão de override do Wine fica para a próxima inicialização. Cópia do registro: "),
         // The D3DCompiler helper stopped at its time limit (w2-vmsplit re-review, minor 1); tool and limit follow.
         (RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.ToolTimedOutPrefix,
          "O auxiliar do D3DCompiler demorou demais e foi interrompido junto com todos os processos que iniciou; o prefixo pode ter uma instalação parcial do d3dcompiler_47, então execute a instalação novamente. Ferramenta: "),

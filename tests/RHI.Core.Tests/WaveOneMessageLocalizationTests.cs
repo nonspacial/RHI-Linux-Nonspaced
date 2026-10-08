@@ -106,6 +106,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "No safe Winetricks route is available for this prefix.";
         yield return D3DCompilerToolInstaller.RuntimeUnknownMessagePrefix + P; // w2-launch re-review, major 1
         yield return D3DCompilerToolInstaller.ToolTimedOutPrefix + "winetricks (600 s)"; // w2-vmsplit re-review, minor 1
+        yield return WineOverrideCompensator.UnreadableLedgerPrefix + P + ".corrupt-20261008T120000Z"; // w2-wine re-review, nit 2
         yield return DeploymentRelocation.RepairDonePrefix + "3";
         yield return DeploymentRelocation.RepairMissingAfterMovePrefix + P; // #147, Repair after move without records
         yield return DeploymentRelocation.RepairSettingsDone;

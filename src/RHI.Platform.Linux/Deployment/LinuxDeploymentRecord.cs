@@ -11,6 +11,12 @@ public sealed class LinuxDeploymentRecord
     public string? SourceUrl { get; set; }
     public string? Version { get; set; }
     public DateTime InstalledAtUtc { get; set; } = DateTime.UtcNow;
+    /// <summary>
+    /// When the ledger last saved this record (stamped by <see cref="LinuxDeploymentRecordStore.Upsert"/>): an update in
+    /// place (DX9 migration, swaps) keeps <see cref="InstalledAtUtc"/> but moves this, so start-up recovery can tell a
+    /// record committed after a journaled step. Records saved before this field existed read null.
+    /// </summary>
+    public DateTime? SavedAtUtc { get; set; }
     public List<LinuxDeployedFile> Files { get; set; } = [];
     public List<string> DirectoriesCreatedByRhi { get; set; } = [];
     public WineOverrideRecord? WineOverride { get; set; }
@@ -49,6 +55,11 @@ public sealed class WineOverrideRecord
 {
     public string DllName { get; set; } = "";
     public string? PreviousValue { get; set; }
+    /// <summary>
+    /// True when <see cref="PreviousValue"/> is a non-string value's raw registry text (<c>hex(2):…</c> with its
+    /// continuation lines, <c>dword:…</c>): restored in its original type. Older records read false (a string).
+    /// </summary>
+    public bool PreviousValueIsRaw { get; set; }
     public bool ChangedByRhi { get; set; }
     /// <summary>True only when RHI had to create the target DllOverrides registry section.</summary>
     public bool SectionCreatedByRhi { get; set; }

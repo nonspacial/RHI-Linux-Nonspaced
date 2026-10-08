@@ -164,6 +164,7 @@ public sealed class LinuxDeploymentRecordStore
             EnsureWritable();
             var index = records.FindIndex(r => r.GameKey == record.GameKey && r.Component == record.Component);
             var copy = Clone(record);
+            copy.SavedAtUtc = DateTime.UtcNow;
             if (index >= 0) records[index] = copy; else records.Add(copy);
             SaveUnsafe(records);
         }

@@ -205,6 +205,65 @@ public sealed class WineDllOverrideServiceTests : IDisposable
         Assert.Equal("WINE REGISTRY Version 2\n\n" + section + "\"x\"=\"y\"\n", removed);
     }
 
+    // w2 wine re-review, nit 3: a non-string earlier value (multi-line hex(2), dword, single-line hex) goes back in its
+    // own type, continuation lines included, so the hive is byte for byte what it was; it used to come back as an
+    // unterminated REG_SZ ("hex(2):6e,00,61,00,\") or a string "dword:00000001".
+    [Theory]
+    [InlineData("\"dxgi\"=hex(2):6e,00,61,00,74,00,69,00,76,00,65,00,2c,00,62,00,75,00,69,00,6c,00,74,00,\\\n  69,00,6e,00,00,00\n")]
+    [InlineData("\"dxgi\"=dword:00000001\n")]
+    [InlineData("\"dxgi\"=hex:01,02\n")]
+    public void EnsureThenRestore_ANonStringEarlierValue_ComesBackInItsOwnType(string value)
+    {
+        foreach (var newline in new[] { "\n", "\r\n" })
+        {
+            var prefix = Path.Combine(_root, "pfx-typed-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(prefix);
+            var reg = Path.Combine(prefix, "user.reg");
+            var original = ("WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\AppDefaults\\\\Game.exe\\\\DllOverrides] 1\n" + value + "\"x\"=\"y\"\n")
+                .Replace("\n", newline, StringComparison.Ordinal);
+            File.WriteAllText(reg, original);
+            var service = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+
+            var record = service.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+            Assert.True(record.ChangedByRhi);
+            Assert.True(record.PreviousValueIsRaw);
+            Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(reg), "dxgi", "Game.exe"));
+
+            // Through the ledger, as removal and recovery see it.
+            var restored = service.Restore(prefix, System.Text.Json.JsonSerializer.Deserialize<WineOverrideRecord>(System.Text.Json.JsonSerializer.Serialize(record))!);
+
+            Assert.Equal(WineOverrideRestoreOutcome.Restored, restored.Outcome);
+            Assert.Equal(original, File.ReadAllText(reg));
+            Assert.Equal(WineOverrideRestoreOutcome.AlreadyRestored, service.Restore(prefix, record).Outcome);
+        }
+    }
+
+    // w2 merge review, nit 3: a rollback's restore/reapply never lets an exception escape the rollback, whatever its
+    // type (trust's rule); it is logged and the caller goes on with its remaining steps.
+    [Fact]
+    public void TryRestoreAndTryReapply_AnyFailure_IsLoggedAndReturnedAsNull()
+    {
+        var prefix = Path.Combine(_root, "pfx-try-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(prefix);
+        File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+        var editor = new WineRegistryEditor(_ => false);
+        var service = new WineDllOverrideService(editor);
+        var record = service.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+        editor.InsideLockForTesting = _ => throw new InvalidOperationException("simulated defect");
+        var logPath = Path.Combine(_root, "try-" + Guid.NewGuid().ToString("N") + ".log");
+
+        using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(logPath)))
+        {
+            Assert.Null(service.TryRestore(prefix, record));
+            Assert.Null(service.TryReapply(prefix, record));
+        }
+
+        var log = File.ReadAllText(logPath);
+        Assert.Contains("Rollback could not undo the Wine override dxgi", log, StringComparison.Ordinal);
+        Assert.Contains("Rollback could not put back the Wine override dxgi", log, StringComparison.Ordinal);
+        Assert.Contains("InvalidOperationException", log, StringComparison.Ordinal);
+    }
+
     // w2 wine review, nit 8: create + remove of a section gives back the exact bytes, final newline or not, and a value
     // added to the hive's last section goes after its last value (no blank line, final newline kept).
     [Theory]
