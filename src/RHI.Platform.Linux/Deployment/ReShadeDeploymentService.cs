@@ -768,6 +768,9 @@ public sealed partial class ReShadeDeploymentService
             if (!File.Exists(path) || new FileInfo(path).Length < 500_000) return false;
             if (!BinarySignatureInspector.HasPeSignature(path, 500_000)) return false;
             if (PeArchitectureDetector.Detect(path) != architecture) return false;
+            // Wine's built-in carries a UTF-16 "Microsoft" and its own lower-case name, which the case-insensitive
+            // search matches; its winebuild marker rules it out whatever its size.
+            if (BinarySignatureInspector.IsWineBuiltinDll(path)) return false;
 
             // Native Windows SDK/system D3DCompiler binaries identify both Microsoft and the HLSL compiler.
             // Wine's built-in d3dcompiler does not carry these native product strings. One bounded streaming pass
