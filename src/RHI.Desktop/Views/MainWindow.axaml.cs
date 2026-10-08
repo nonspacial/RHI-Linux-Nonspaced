@@ -156,7 +156,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), TF("Win.CouldNotAnalyzeLibrary", ex.Message));
+            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), TF("Win.CouldNotAnalyzeLibrary", UiLocalizationService.Present(ex.Message)));
             return;
         }
 
@@ -326,7 +326,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.BatchOperationFailed", ex.Message);
+                status.Text = TF("Win.BatchOperationFailed", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -691,7 +691,7 @@ public sealed partial class MainWindow : Window
                 SyncTrayIcon();
                 status.Text = vm.ApplyGlobalReShadeSettingsToSelectedGame(current);
             }
-            catch (Exception ex) { status.Text = TF("Win.CouldNotApplyReShadeDefaults", ex.Message); }
+            catch (Exception ex) { status.Text = TF("Win.CouldNotApplyReShadeDefaults", UiLocalizationService.Present(ex.Message)); }
         };
 
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Margin = new Avalonia.Thickness(12) };
@@ -755,7 +755,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            vm.StatusText = TF("Win.CouldNotLoadShadersAddOns", ex.Message);
+            vm.StatusText = TF("Win.CouldNotLoadShadersAddOns", UiLocalizationService.Present(ex.Message));
             return;
         }
 
@@ -803,7 +803,7 @@ public sealed partial class MainWindow : Window
                 filesButton.Click += (_, _) => RunUiSafe(async () =>
                 {
                     try { await ShowShaderPackFilesDialogAsync(vm, pack); }
-                    catch (Exception ex) { vm.StatusText = TF("Win.CouldNotOpenFiles", pack.DisplayName, ex.Message); }
+                    catch (Exception ex) { vm.StatusText = TF("Win.CouldNotOpenFiles", pack.DisplayName, UiLocalizationService.Present(ex.Message)); }
                 });
                 packRow.Children.Add(filesButton);
                 Grid.SetColumn(filesButton, 1);
@@ -1938,7 +1938,7 @@ public sealed partial class MainWindow : Window
             if (DataContext is MainWindowViewModel vm)
                 vm.StatusText = ex is JsonStoreUnavailableException
                     ? MainWindowViewModel.StoreSaveFailedText(ex)
-                    : TF("Win.CouldNotSaveSectionLayout", ex.Message);
+                    : TF("Win.CouldNotSaveSectionLayout", UiLocalizationService.Present(ex.Message));
         }
     }
 

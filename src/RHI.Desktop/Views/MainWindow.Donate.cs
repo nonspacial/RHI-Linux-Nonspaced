@@ -92,7 +92,7 @@ public sealed partial class MainWindow
                 status.Text = "";
                 list.Children.Add(new TextBlock
                 {
-                    Text = TF("Win.CouldNotLoadAuthorList", ex.Message),
+                    Text = TF("Win.CouldNotLoadAuthorList", UiLocalizationService.Present(ex.Message)),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brushes.OrangeRed,
                     Margin = new Thickness(0, 8, 0, 0)

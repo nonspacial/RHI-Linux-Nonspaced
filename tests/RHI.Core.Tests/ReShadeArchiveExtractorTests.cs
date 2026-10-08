@@ -121,13 +121,16 @@ public sealed class ReShadeArchiveExtractorTests : IDisposable
     [Fact]
     public void SetupUnreadableError_HasAPortuguesePresentation_KeepingTheReason()
     {
-        const string reason = "no ZIP archive found in the setup";
+        // A reason RHI has no text for (exception text) is kept as is; the extractor's own reasons are translated too.
+        const string reason = "E/S negada";
         var shown = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", ReShadeArchiveExtractor.SetupUnreadablePrefix + reason);
 
         Assert.StartsWith("O instalador do ReShade não pôde ser lido", shown);
         Assert.EndsWith(reason, shown);
         Assert.Equal(ReShadeArchiveExtractor.SetupUnreadablePrefix + reason,
             RHI.Desktop.Localization.UiLocalizationService.PresentFor("en-US", ReShadeArchiveExtractor.SetupUnreadablePrefix + reason));
+        Assert.EndsWith("Motivo: nenhum arquivo ZIP encontrado no instalador",
+            RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", ReShadeArchiveExtractor.SetupUnreadablePrefix + "no ZIP archive found in the setup"));
     }
 
     [Fact]

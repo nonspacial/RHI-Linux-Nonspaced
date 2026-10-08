@@ -23,7 +23,7 @@ public static class LibraryScanStatusText
         foreach (var detector in scan.Detectors)
         {
             if (detector.Failed)
-                problems.Add(UiLocalizationService.Format("Scan.DetectorFailed", detector.Name, detector.Error));
+                problems.Add(UiLocalizationService.Format("Scan.DetectorFailed", detector.Name, UiLocalizationService.Present(detector.Error)));
             else if (detector.Warnings.Count > 0)
                 problems.Add(UiLocalizationService.Format("Scan.DetectorSkippedItems", detector.Name, detector.Warnings.Count));
         }
@@ -32,7 +32,7 @@ public static class LibraryScanStatusText
             var name = policy.Name == RHI.Platform.Linux.Detection.UpstreamGameLibraryPolicyService.PolicyName
                 ? UiLocalizationService.Text("Scan.UpstreamManifest")
                 : policy.Name;
-            problems.Add(UiLocalizationService.Format("Scan.PolicyNotApplied", name, policy.Error));
+            problems.Add(UiLocalizationService.Format("Scan.PolicyNotApplied", name, UiLocalizationService.Present(policy.Error)));
         }
 
         var text = UiLocalizationService.Format("Scan.Problems", string.Join("; ", problems));

@@ -764,7 +764,7 @@ public sealed class RenoDxDeploymentService
                         continue;
                     var directory = System.IO.Path.GetDirectoryName(snapshot.Path);
                     if (string.IsNullOrEmpty(directory))
-                        throw new IOException($"Cannot resolve the folder of {snapshot.Path}.");
+                        throw new IOException(AtomicFile.NoFolderPrefix + snapshot.Path);
                     Directory.CreateDirectory(directory);
                     AtomicFile.ReplaceUserFile(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
                 }

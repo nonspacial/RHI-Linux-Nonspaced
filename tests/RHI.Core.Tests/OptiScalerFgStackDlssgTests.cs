@@ -137,7 +137,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         var presented = UiLocalizationService.PresentFor("pt-BR", enabled.Message);
 
         Assert.Contains("implantados em OptiScaler/", presented);
-        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), presented);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), presented);
         foreach (var setting in fx.Service.GetAdvancedSettings(fx.Game).Settings.Where(s => s.Id is "ForceReflex" or "UseGamesReflexMarkers"))
         {
             Assert.NotEqual(setting.Label, UiLocalizationService.PresentFor("pt-BR", setting.Label));

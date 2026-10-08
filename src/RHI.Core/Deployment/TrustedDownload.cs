@@ -133,6 +133,9 @@ public sealed class UntrustedDownloadException : Exception
 /// </summary>
 public static class TrustedDownload
 {
+    /// <summary>Fixed start of the announced-size refusal (PT-BR presentation pair key); the cap and size follow.</summary>
+    public const string SizeLimitPrefix = "The download is larger than the size limit (";
+
     /// <summary>Parses <paramref name="url"/> and refuses it (<see cref="UntrustedDownloadException"/>) unless the policy allows it.</summary>
     public static Uri Validate(string url, TrustedDownloadPolicy policy) => policy.Validate(url);
 
@@ -179,7 +182,7 @@ public static class TrustedDownload
         policy.ValidateFinal(response, url);
         onResponse?.Invoke(response);
         if (response.Content.Headers.ContentLength is long announced && announced > policy.MaxBytes)
-            throw new InvalidDataException($"Download is larger than the {policy.MaxBytes}-byte limit: {announced} bytes.");
+            throw new InvalidDataException($"{SizeLimitPrefix}{policy.MaxBytes}{AtomicFile.SizeLimitMiddle}{announced} bytes");
 
         await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var staged = await AtomicFile.StageStreamAsync(body, targetPath, expectedSha256, null, policy.MaxBytes, cancellationToken).ConfigureAwait(false);

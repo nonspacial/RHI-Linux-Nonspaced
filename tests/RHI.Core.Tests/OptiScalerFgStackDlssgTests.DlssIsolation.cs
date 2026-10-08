@@ -218,7 +218,7 @@ public sealed partial class OptiScalerFgStackDlssgTests
         var presented = UiLocalizationService.PresentFor("pt-BR", warning);
 
         Assert.NotEqual(warning, presented);
-        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), presented);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), presented);
     }
 
     private static Dictionary<string, string> Snapshot(string directory)

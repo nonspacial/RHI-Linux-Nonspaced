@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core;
+using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Paths;
@@ -230,7 +231,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotAddGame", ex.Message);
+                status.Text = TF("Win.CouldNotAddGame", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -435,7 +436,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", ex.Message);
+                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -459,7 +460,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotSave", ex.Message);
+                status.Text = TF("Win.CouldNotSave", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -715,7 +716,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             if (DataContext is MainWindowViewModel vm)
-                vm.StatusText = TF("Win.MOTDWasShownButSeenState", ex.Message);
+                vm.StatusText = TF("Win.MOTDWasShownButSeenState", UiLocalizationService.Present(ex.Message));
         }
     }
 
@@ -758,7 +759,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             RemoveTrayIcon();
-            vm.StatusText = TF("Win.TrayIconUnavailableSession", ex.Message);
+            vm.StatusText = TF("Win.TrayIconUnavailableSession", UiLocalizationService.Present(ex.Message));
         }
     }
 

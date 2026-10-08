@@ -41,10 +41,10 @@ public sealed class LocalizationAndFeederDefaultsTests
         => Assert.Equal(expected, UiLocalizationService.PresentFor(language, source));
 
     [Theory]
-    [InlineData("pt-BR", "This legacy platform message is still available but has not been mapped for localization yet.", "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário.")]
-    [InlineData("en-US", "Esta mensagem antiga do componente ainda não possui tradução para a interface selecionada.", "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed.")]
-    public void Localization_PresentationBoundary_FailsClosedInsteadOfMixingLanguages(string language, string source, string expected)
-        => Assert.Equal(expected, UiLocalizationService.PresentFor(language, source));
+    [InlineData("pt-BR", "This legacy platform message is still available but has not been mapped for localization yet.")]
+    [InlineData("en-US", "Esta mensagem antiga do componente ainda não possui tradução para a interface selecionada.")]
+    public void Localization_PresentationBoundary_FailsClosedInsteadOfMixingLanguages(string language, string source)
+        => Assert.Equal(UiLocalizationService.UnlocalizedFallbackFor(language), UiLocalizationService.PresentFor(language, source));
 
     [Theory]
     [InlineData("ShortFuse in-place swap failed; the previous add-on was kept: Managed file was modified outside RHI and will not be replaced: /g/zzz_renodx-dlss.addon64",

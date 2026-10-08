@@ -145,7 +145,7 @@ public sealed class DeploymentJournal
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
-                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Recovery of journal entry {id} failed: {ex.Message}"], []));
+                    results.Add(new(id, "", JournalRecoveryOutcome.RollbackFailed, [$"Journal entry recovery failed: {id}: {ex.Message}"], []));
                 }
             }
             if (!File.Exists(entryPath)) FileCleanup.TryDelete(LockPath(id));
@@ -209,7 +209,7 @@ public sealed class DeploymentJournal
         {
             if (!_compensators.TryGetValue(compensation.Kind, out var compensator))
             {
-                failures.Add($"No handler is registered for the '{compensation.Kind}' step; it was left for the next start.");
+                failures.Add($"No handler is registered for this step; it was left for the next start: {compensation.Kind}");
                 remaining.Add(compensation);
                 continue;
             }
@@ -219,17 +219,17 @@ public sealed class DeploymentJournal
                 switch (result.Status)
                 {
                     case CompensationStatus.KeptLaterChange:
-                        kept.Add(result.Note ?? $"'{compensation.Kind}' was changed after the interruption and left as it is.");
+                        kept.Add(result.Note ?? $"Changed after the interruption and left as it is: {compensation.Kind}");
                         break;
                     case CompensationStatus.Deferred:
-                        deferred.Add(result.Note ?? $"Undoing '{compensation.Kind}' was deferred to the next start.");
+                        deferred.Add(result.Note ?? $"Undo deferred to the next start: {compensation.Kind}");
                         remaining.Add(compensation);
                         break;
                 }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or JsonException)
             {
-                failures.Add($"Undoing '{compensation.Kind}' failed: {ex.Message}");
+                failures.Add($"Could not undo this step: {compensation.Kind} ({ex.Message})");
                 remaining.Add(compensation);
             }
         }
@@ -325,7 +325,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            problems.Add($"Journal entry {Id} could not be finalised ({ex.Message}); it is cleaned on the next start.");
+            problems.Add($"The journal entry could not be finalised; it is cleaned on the next start: {Id} ({ex.Message})");
         }
         // The lock file only matters while the entry exists; snapshots that could not be removed are swept later.
         ReleaseLock(deleteLockFile: !File.Exists(_journal.EntryPath(Id)));
@@ -351,7 +351,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                failures = [$"Rolled back, but journal entry {Id} could not be removed ({ex.Message})."];
+                failures = [$"Rolled back, but the journal entry could not be removed: {Id} ({ex.Message})"];
             }
         }
         ReleaseLock(deleteLockFile: failures.Count == 0);

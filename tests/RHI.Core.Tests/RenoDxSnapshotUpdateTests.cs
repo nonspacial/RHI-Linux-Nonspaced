@@ -221,7 +221,7 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
         foreach (var message in messages)
         {
             var pt = UiLocalizationService.PresentFor("pt-BR", message);
-            Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+            Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
             Assert.DoesNotContain("RenoDX snapshot", pt, StringComparison.Ordinal);
             Assert.DoesNotContain("update check", pt, StringComparison.Ordinal);
             Assert.DoesNotContain("could not", pt, StringComparison.Ordinal);

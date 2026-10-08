@@ -985,7 +985,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             // Appended as a notice: this can land after the scan, whose problems notice or the selected
             // game's Ready line must stay on screen (Refs #43).
-            StatusText = _statusNotice.Raise(TF("Vm.DLSSManifestUnavailable", ex.Message), StatusText);
+            StatusText = _statusNotice.Raise(TF("Vm.DLSSManifestUnavailable", UiLocalizationService.Present(ex.Message)), StatusText);
         }
     }
 
@@ -1068,7 +1068,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         JsonStoreUnavailableException refused when refused.QuarantinePath is not null => TF("Vm.NotSavedCouldNotReadCopy",
             Path.GetFileName(refused.FilePath), refused.QuarantinePath),
         JsonStoreUnavailableException refused => TF("Vm.NotSavedCouldNotReadFix", refused.FilePath),
-        _ => TF("Win.CouldNotSave", error.Message)
+        _ => TF("Win.CouldNotSave", UiLocalizationService.Present(error.Message))
     };
 
     /// <summary>
@@ -1332,7 +1332,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             if (generation == _selectionGeneration && ReferenceEquals(SelectedGame, game))
-                StatusText = TF("Vm.FailedAnalyze", game.Name, ex.Message);
+                StatusText = TF("Vm.FailedAnalyze", game.Name, UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -1467,7 +1467,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.ScanFailed", ex.Message);
+            StatusText = TF("Vm.ScanFailed", UiLocalizationService.Present(ex.Message));
             return false;
         }
         finally
@@ -1499,7 +1499,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UpdateAllFailed", ex.Message);
+            StatusText = TF("Vm.UpdateAllFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -1559,7 +1559,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", ex.Message);
+            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", UiLocalizationService.Present(ex.Message));
         }
     }
 
@@ -1644,7 +1644,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
-            StatusText = TF("Vm.CouldNotLaunch", game.Name, ex.Message);
+            StatusText = TF("Vm.CouldNotLaunch", game.Name, UiLocalizationService.Present(ex.Message));
         }
         return false;
     }
@@ -1669,7 +1669,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(TF("Vm.RenoDXSettings", ex.Message)));
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(TF("Vm.RenoDXSettings", UiLocalizationService.Present(ex.Message))));
         }
     }
 
@@ -1697,7 +1697,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(TF("Vm.OptiScalerSettings", ex.Message)));
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(TF("Vm.OptiScalerSettings", UiLocalizationService.Present(ex.Message))));
         }
     }
 
@@ -1946,7 +1946,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.Symbol", component.DisplayName, ex.Message);
+            StatusText = TF("Vm.Symbol", component.DisplayName, UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -1990,7 +1990,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            UalLatestVersionText = TF("Vm.UpdateCheckFailed", ex.Message);
+            UalLatestVersionText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
             StatusText = UalLatestVersionText;
         }
         finally
@@ -2040,7 +2040,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UltimateASILoader", ex.Message);
+            StatusText = TF("Vm.UltimateASILoader", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2069,7 +2069,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UltimateASILoaderRemovalFailed", ex.Message);
+            StatusText = TF("Vm.UltimateASILoaderRemovalFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2099,7 +2099,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
             StatusText = UiLocalizationService.Present(status.Message);
         }
-        catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", ex.Message); StatusText = ShortFuseLatestVersionText; }
+        catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", UiLocalizationService.Present(ex.Message)); StatusText = ShortFuseLatestVersionText; }
         finally { IsBusy = false; NotifyShortFuse(); }
     }
 
@@ -2127,7 +2127,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 RefreshShortFuseState(game);
             }
         }
-        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
         finally { IsBusy = false; NotifyShortFuse(); NotifyUal(); NotifyDlss(); }
     }
 
@@ -2204,7 +2204,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2224,7 +2224,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2244,7 +2244,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2268,7 +2268,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", ex.Message);
+            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
             StatusText = ReShadeUpdateText;
         }
         finally { IsBusy = false; }
@@ -2293,7 +2293,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.QuickApplyFailed", ex.Message);
+            StatusText = TF("Vm.QuickApplyFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2321,7 +2321,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.RestoreAllFailed", ex.Message);
+            StatusText = TF("Vm.RestoreAllFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2477,12 +2477,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwap", displayName, result.Error);
+                StatusText = TF("Vm.FailedSwap", displayName, UiLocalizationService.Present(result.Error));
             }
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2516,12 +2516,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var result = await _dlss.RestoreAsync(kind, paths);
             StatusText = result.Success
                 ? TF("Vm.OriginalDLLRestored", displayName)
-                : TF("Vm.RestoreUnavailable", displayName, result.Error);
+                : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2564,12 +2564,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwapStreamline", result.Error);
+                StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(result.Error));
             }
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwapStreamline", ex.Message);
+            StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2598,12 +2598,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var result = await _dlss.RestoreStreamlineAsync(streamlineFolders);
             StatusText = result.Success
                 ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
-                : TF("Vm.StreamlineRestoreUnavailable", result.Error);
+                : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.StreamlineRestoreFailed", ex.Message);
+            StatusText = TF("Vm.StreamlineRestoreFailed", UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2740,7 +2740,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", ex.Message)));
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", UiLocalizationService.Present(ex.Message))));
         }
         finally
         {
@@ -3205,7 +3205,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", ex.Message));
+            var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", UiLocalizationService.Present(ex.Message)));
             StatusText = UiLocalizationService.Present(result.Message);
             return result;
         }
@@ -3333,7 +3333,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwapNRVersion", ex.Message);
+            StatusText = TF("Vm.FailedSwapNRVersion", UiLocalizationService.Present(ex.Message));
             try { RevertPin(); } catch { /* the status line already reports the failure */ }
         }
         finally
@@ -3614,7 +3614,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     ? T("Vm.ShortFuseWillLoadLastZzzRenodx")
                     : T("Vm.ShortFuseUsesDefaultNameRenodxDlss");
         }
-        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
         finally
         {
             IsBusy = false;

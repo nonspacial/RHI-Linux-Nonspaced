@@ -29,6 +29,15 @@ public static class AtomicFile
     public const string LinkRefusalPrefix = "Symbolic link not followed (RHI does not write through this link): ";
     public const string VerifyFailurePrefix = "Written content did not verify; the original file was kept: ";
     public const string TempLeftoverFragment = " A temporary file could not be removed: ";
+    public const string NoFolderPrefix = "Cannot resolve the folder of this path: ";
+    public const string SizeLimitPrefix = "Content is over the size limit (";
+    public const string SizeLimitMiddle = " bytes): ";
+    public const string CopyVerifyFailurePrefix = "Copy verification failed (the written file does not match what was read): ";
+    public const string ShaMismatchPrefix = "SHA-256 mismatch (expected ";
+    public const string ShaMismatchMiddle = ", actual ";
+    public const string SameFilePrefix = "Source and target are the same file: ";
+    public const string MoveTargetExistsPrefix = "Move refused, the target already exists: ";
+    public const string MoveFailedPrefix = "Could not move the file (errno ";
 
     private const int BufferSize = FileHash.BufferSize;
 
@@ -98,7 +107,7 @@ public static class AtomicFile
     {
         var target = FinalLinkTarget(Path.GetFullPath(path));
         mode ??= ExistingMode(target);
-        var directory = Path.GetDirectoryName(target) ?? throw new IOException($"{target} has no parent directory.");
+        var directory = Path.GetDirectoryName(target) ?? throw new IOException(NoFolderPrefix + target);
         CreateDirectoryDurable(directory);
         WriteVerified(target, bytes, mode, null);
     }
@@ -200,7 +209,7 @@ public static class AtomicFile
         string path, byte[] bytes, UserFileLinkPolicy? linkPolicy = null, Func<Stream, Stream>? wrapOutput = null)
     {
         var target = ResolveUserFileTarget(path, linkPolicy);
-        if (string.IsNullOrEmpty(Path.GetDirectoryName(target))) throw new IOException($"Cannot resolve the folder of {path}.");
+        if (string.IsNullOrEmpty(Path.GetDirectoryName(target))) throw new IOException(NoFolderPrefix + path);
         UnixFileMode? mode = null;
         if (File.Exists(target))
         {
@@ -324,7 +333,7 @@ public static class AtomicFile
                     {
                         length += read;
                         if (length > maxBytes)
-                            throw new InvalidDataException($"Content for {Path.GetFileName(target)} exceeds the {maxBytes}-byte limit.");
+                            throw new InvalidDataException($"{SizeLimitPrefix}{maxBytes}{SizeLimitMiddle}{Path.GetFileName(target)}");
                         hash.AppendData(buffer, 0, read);
                         await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                     }
@@ -342,7 +351,7 @@ public static class AtomicFile
             CheckExpected(target, sha, expectedSha256);
             var written = await FileHash.Sha256HexAsync(temp, cancellationToken).ConfigureAwait(false);
             if (!FileHash.HexEquals(sha, written))
-                throw new IOException($"Copy verification failed for {target}: the written file does not match what was read.");
+                throw new IOException(CopyVerifyFailurePrefix + target);
             return new StagedFile(temp, sha, length);
         }
         catch
@@ -369,7 +378,7 @@ public static class AtomicFile
                 {
                     length += read;
                     if (length > maxBytes)
-                        throw new InvalidDataException($"Content for {Path.GetFileName(target)} exceeds the {maxBytes}-byte limit.");
+                        throw new InvalidDataException($"{SizeLimitPrefix}{maxBytes}{SizeLimitMiddle}{Path.GetFileName(target)}");
                     hash.AppendData(buffer, 0, read);
                     output.Write(buffer, 0, read);
                 }
@@ -385,7 +394,7 @@ public static class AtomicFile
             var sha = Convert.ToHexString(hash.GetHashAndReset());
             CheckExpected(target, sha, expectedSha256);
             if (!FileHash.HexEquals(sha, FileHash.Sha256Hex(temp)))
-                throw new IOException($"Copy verification failed for {target}: the written file does not match what was read.");
+                throw new IOException(CopyVerifyFailurePrefix + target);
             return new StagedFile(temp, sha, length);
         }
         catch
@@ -413,13 +422,13 @@ public static class AtomicFile
     private static void CheckExpected(string target, string actual, string? expected)
     {
         if (!string.IsNullOrWhiteSpace(expected) && !FileHash.HexEquals(actual, expected))
-            throw new InvalidDataException($"SHA-256 mismatch for {Path.GetFileName(target)}: expected {expected}, got {actual}.");
+            throw new InvalidDataException($"{ShaMismatchPrefix}{expected}{ShaMismatchMiddle}{actual}): {Path.GetFileName(target)}");
     }
 
     private static void EnsureDistinct(string source, string target)
     {
         if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(target), StringComparison.Ordinal))
-            throw new ArgumentException($"Source and target are the same file: {source}");
+            throw new ArgumentException(SameFilePrefix + source);
     }
 
     // ---- placing and renaming --------------------------------------------------------------------
@@ -452,7 +461,7 @@ public static class AtomicFile
     public static void MoveDurable(string from, string to)
     {
         if (File.Exists(to) || Directory.Exists(to))
-            throw new IOException($"Refusing to move {from}: {to} already exists.");
+            throw new IOException($"{MoveTargetExistsPrefix}{from} -> {to}");
         if (!SimulateCrossDeviceForTesting.Value && TryRenameNoCopy(from, to))
         {
             FsyncDirectoryOf(to);
@@ -500,7 +509,7 @@ public static class AtomicFile
             }
             if (result == 0) return true;
             if (errno == exdev) return false;
-            throw new IOException($"Could not move {from} to {to} (errno {errno}).");
+            throw new IOException($"{MoveFailedPrefix}{errno}): {from} -> {to}");
         }
         if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(from)), Path.GetDirectoryName(Path.GetFullPath(to)), StringComparison.Ordinal))
             return false;
