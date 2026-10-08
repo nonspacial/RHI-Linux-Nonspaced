@@ -61,6 +61,23 @@ public sealed class DetectorSkipReportTests : IDisposable
     }
 
     [Fact]
+    public void Heroic_UnexpectedError_IsReportedAsADefect_NotAsABrokenFile()
+    {
+        // w2-launch review, nit 12: the broad catch (one file never drops every Heroic game) reported a programming
+        // error as "file skipped". Errors a bad file causes still read so; anything else names itself as a defect.
+        foreach (var fileError in new Exception[]
+                 {
+                     new IOException("io"), new UnauthorizedAccessException("denied"), new JsonException("broken"),
+                     new InvalidOperationException("wrong kind"), new FormatException("not a number"), new ArgumentException("bad path")
+                 })
+            Assert.Equal("Heroic file f skipped", HeroicGameDetector.SkipMessage("Heroic file f skipped", fileError));
+
+        var defect = HeroicGameDetector.SkipMessage("Heroic file f skipped", new NullReferenceException());
+        Assert.StartsWith("Heroic file f skipped after an unexpected NullReferenceException", defect, StringComparison.Ordinal);
+        Assert.Contains("defect in RHI", defect, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Wine_UnreadableFolderInAPrefix_IsReportedOnce_AndTheOtherGamesStillList()
     {
         var home = Path.Combine(_root, "home");

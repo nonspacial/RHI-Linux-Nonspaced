@@ -86,9 +86,21 @@ public sealed class HeroicGameDetector : IGameDetector
         {
             // Some Heroic caches are transient or truncated: the file is skipped, not the whole Heroic scan,
             // and the skip is named in the scan's problems notice and rhi.log (Refs #144).
-            DetectorDiagnostics.Warn($"Heroic metadata file {file} skipped", ex);
+            DetectorDiagnostics.Warn(SkipMessage($"Heroic metadata file {file} skipped", ex), ex);
         }
     }
+
+    /// <summary>
+    /// What an unreadable Heroic file is reported as. A file Heroic left unreadable or malformed (I/O, permissions,
+    /// broken JSON, a value of the wrong kind) is "skipped"; anything else is a defect in RHI's reading, so the
+    /// report says so instead of passing it off as a bad file. Either way only that file is skipped: one Heroic
+    /// file must never take every Heroic game out of the library (w2-launch review, nit 12).
+    /// </summary>
+    internal static string SkipMessage(string skipped, Exception error)
+        => error is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException
+            or FormatException or ArgumentException
+            ? skipped
+            : $"{skipped} after an unexpected {error.GetType().Name} (a defect in RHI, please report it)";
 
     private static IEnumerable<string> SafeJsonFiles(string root)
     {
@@ -284,7 +296,7 @@ public sealed class HeroicGameDetector : IGameDetector
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     // That game keeps the name-matched fallback prefix (or none).
-                    DetectorDiagnostics.Warn($"Heroic game settings {file} skipped", ex);
+                    DetectorDiagnostics.Warn(SkipMessage($"Heroic game settings {file} skipped", ex), ex);
                 }
             }
         }
