@@ -180,6 +180,48 @@ public sealed class OperationCoordinatorTests
         Assert.False(op.Token.IsCancellationRequested);
     }
 
+    // w2/vmsplit review finding 2: "Repair after move" rewrites every record and store in one commit, so it is never
+    // cancellable: while it runs (here held at its confirmation) Cancel is hidden and pressing it changes nothing.
+    [Fact]
+    public async Task RepairAfterMove_IsNotCancellable_WhileItRuns()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = fx.Game("Moved Game");
+        var addon = Path.Combine(game.InstallPath, "ue-dof-fix.addon64");
+        File.WriteAllBytes(addon, [1, 2, 3, 4]);
+        var oldFolder = Path.Combine(fx.Root, "old-library", "Moved Game");
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = oldFolder, GameName = "Moved Game", Component = ManagedComponentKind.DofFix, BinaryDirectory = oldFolder, Version = "1",
+            Files = [new LinuxDeployedFile
+            {
+                Path = Path.Combine(oldFolder, "ue-dof-fix.addon64"), ExistedBeforeInstall = false,
+                Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(addon)))
+            }]
+        });
+        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        {
+            Name = "Moved Game", InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
+        });
+        Assert.True(added, message);
+        await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy);
+        var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        fx.Vm.ConfirmAsync = (_, _, _) => { asked.TrySetResult(); return answer.Task; };
+
+        var repair = fx.Vm.RepairAfterMoveCommand.ExecuteAsync(null);
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal("repair-after-move", fx.Vm.Operations.CurrentKind);
+        Assert.False(fx.Vm.Operations.CanCancel);
+        fx.Vm.Operations.Cancel();
+        answer.SetResult(true);
+        await repair.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.DoesNotContain("cancelled", fx.Vm.StatusText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(game.InstallPath, fx.Records.Find(fx.Vm.SelectedGame!, ManagedComponentKind.DofFix)?.BinaryDirectory);
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 200 && !condition(); i++) await Task.Delay(10);
