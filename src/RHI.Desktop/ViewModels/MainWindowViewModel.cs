@@ -3206,7 +3206,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             repaired = true;
-            StatusText = result.Repaired == 0 ? TF("Vm.GameSettingsNowPointNewFolder", game.Name) : TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
+            // Raised as a notice: the new folder's probe starts right after the repair and its "Ready" line would replace a
+            // plain status line within milliseconds; the notice rides on that line instead (review w2-stores #3).
+            StatusText = _statusNotice.Raise(result.Repaired == 0
+                ? TF("Vm.GameSettingsNowPointNewFolder", game.Name)
+                : TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired));
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);

@@ -536,13 +536,11 @@ public sealed class LibraryStateRelocationViewModelTests
             Assert.Contains("Repair after move", fx.Vm.PatchTargetStatusText, StringComparison.Ordinal);
             await WaitAsync(() => fx.Vm.ShowRepairAfterMove);
 
-            var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
-            fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
-
             await fx.Vm.RepairAfterMoveCommand.ExecuteAsync(null);
 
-            // A later "Ready" line from the new probe may replace it, so look for it among the lines shown.
-            Assert.Contains(lines, line => line.Contains("Tunic: RHI's settings now point to the new folder.", StringComparison.Ordinal));
+            // The new folder's probe follows the repair; its "Ready" line carries the outcome instead of replacing it.
+            await WaitAsync(() => !fx.Vm.IsSelectionProbeBusy && fx.Vm.StatusText.StartsWith("Ready — Tunic", StringComparison.Ordinal));
+            Assert.Contains("Tunic: RHI's settings now point to the new folder.", fx.Vm.StatusText, StringComparison.Ordinal);
             var edit = fx.Library.Load().GameEdits["steam:553420"];
             Assert.Equal(Path.Combine(install, "Game"), edit.GameRootPath);
             Assert.True(fx.Vm.SelectedGame!.HasConfirmedPatchTarget);
