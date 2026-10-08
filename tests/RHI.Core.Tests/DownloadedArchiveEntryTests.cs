@@ -119,7 +119,7 @@ public sealed class DownloadedArchiveEntryTests : IDisposable
     }
 
     /// <summary>One stored entry; optional Unix mode in the external attributes and a forged declared (uncompressed) size.</summary>
-    private static byte[] Zip(string name, byte[] content, int externalAttributes, long? declaredLength = null)
+    internal static byte[] Zip(string name, byte[] content, int externalAttributes, long? declaredLength = null)
     {
         using var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))

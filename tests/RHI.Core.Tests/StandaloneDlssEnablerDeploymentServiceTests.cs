@@ -337,6 +337,48 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
         });
     }
 
+    // Final detect-deploy review, nit 5 (Refs #42): the DLSS Enabler payload leaves its downloaded ZIP through the checked
+    // extraction, never ExtractToFile: the archive's Unix mode bits are not applied, and an entry declaring more than
+    // the 256 MiB add-on cap is refused before anything is written.
+    private static readonly int SetUidAndAllPermissions = Convert.ToInt32("104777", 8) << 16;
+    private const UnixFileMode Dangerous = UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute
+                                           | UnixFileMode.SetUser | UnixFileMode.OtherWrite | UnixFileMode.GroupWrite;
+
+    [Fact]
+    public async Task ArchivePayload_ModeBitsAreNotApplied()
+    {
+        using var fixture = CreateGame("archive-mode", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(("4.10.0", DownloadedArchiveEntryTests.Zip("version.dll", CreatePe(0x8664, 256 * 1024, 0x5A), SetUidAndAllPermissions)));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var result = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.True(result.Success, result.Message);
+        var written = Directory.EnumerateFiles(Path.Combine(fixture.Root, "cache"), "*.dll", SearchOption.AllDirectories)
+            .Append(Path.Combine(fixture.Bin, "winmm.dll")).ToList();
+        Assert.All(written, file => Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(file) & Dangerous));
+    }
+
+    [Fact]
+    public async Task ArchivePayload_DeclaringMoreThanTheCap_IsRefusedBeforeWriting()
+    {
+        const long cap = 256L * 1024 * 1024;
+        using var fixture = CreateGame("archive-cap", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(("4.10.0", DownloadedArchiveEntryTests.Zip("version.dll", CreatePe(0x8664, 256 * 1024, 0x5B), 0, declaredLength: cap + 1)));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var result = await service.InstallAsync(fixture.Game, "winmm.dll");
+
+        Assert.False(result.Success);
+        Assert.Contains($"version.dll: declared size over the limit ({cap + 1} > {cap} bytes)", result.Message);
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(fixture.Root, "cache"), "*.dll", SearchOption.AllDirectories));
+    }
+
     private static byte[] CreatePe(ushort machine, int size, byte marker)
     {
         var bytes = Enumerable.Repeat(marker, size).ToArray();

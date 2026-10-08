@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -591,7 +592,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             var extractTemp = dllPath + $".tmp-{Guid.NewGuid():N}";
             try
             {
-                entries[0].ExtractToFile(extractTemp, overwrite: false);
+                // Checked extraction (declared-size cap, fixed mode, length + CRC-32); never ExtractToFile (Refs #42).
+                if (await ReShadeArchiveExtractor.ExtractEntryAsync(entries[0], extractTemp, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false) is { } refused)
+                    throw new InvalidDataException(ReShadeArchiveExtractor.ArchiveRefusedPrefix + refused);
                 ValidatePayload(extractTemp);
                 File.Move(extractTemp, dllPath, overwrite: true);
             }
