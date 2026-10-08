@@ -1,5 +1,7 @@
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RHI.Core.Deployment;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -8,7 +10,9 @@ namespace RHI.Desktop.ViewModels;
 /// long-running state claims the gate with <see cref="TryBegin"/> and holds it until its <see cref="OperationScope"/> is
 /// disposed; while one is held every other claim is refused (null), so two operations can never clear each other's
 /// gate and the overlay can never drop while one is still writing. Each operation gets its own cancellation token,
-/// cancelled by <see cref="CancelCommand"/> (the Cancel button in the busy overlay). Work that must run after the
+/// cancelled by <see cref="CancelCommand"/> (the Cancel button in the busy overlay) only while the operation is still
+/// preparing: once it starts changing game files (<see cref="OperationCancellation.BeginWrites"/>) Cancel is refused and
+/// hidden, so it runs to completion or to its full rollback (Refs #77). Work that must run after the
 /// current operation (a library refresh after an edit) waits with <see cref="WhenIdleAsync"/>. UI thread only.
 /// </summary>
 public sealed partial class OperationCoordinator : ObservableObject
@@ -22,8 +26,11 @@ public sealed partial class OperationCoordinator : ObservableObject
     /// <summary>What the running operation is (diagnostics and tests), or null when idle.</summary>
     public string? CurrentKind => _current?.Kind;
 
-    /// <summary>True while the running operation can be cancelled and has not been asked to stop yet.</summary>
-    public bool CanCancel => _current is { Cancellable: true, CancelRequested: false };
+    /// <summary>
+    /// True while the running operation can be cancelled: it is cancellable, has not been asked to stop yet and has not
+    /// started changing game files.
+    /// </summary>
+    public bool CanCancel => _current is { Cancellable: true, CancelRequested: false, WritesStarted: false };
 
     /// <summary>
     /// Claims the gate for <paramref name="kind"/>; null when another operation holds it. The caller disposes the scope
@@ -39,7 +46,10 @@ public sealed partial class OperationCoordinator : ObservableObject
         return scope;
     }
 
-    /// <summary>Asks the running operation to stop; its token is cancelled and it ends on its own.</summary>
+    /// <summary>
+    /// Asks the running operation to stop; its token is cancelled and it ends on its own. Refused (nothing happens) once
+    /// the operation has started changing game files.
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanCancel))]
     public void Cancel()
     {
@@ -68,7 +78,7 @@ public sealed partial class OperationCoordinator : ObservableObject
         idle?.TrySetResult();
     }
 
-    private void RaiseStateChanged()
+    internal void RaiseStateChanged()
     {
         OnPropertyChanged(nameof(IsBusy));
         OnPropertyChanged(nameof(CurrentKind));
@@ -81,7 +91,7 @@ public sealed partial class OperationCoordinator : ObservableObject
 public sealed class OperationScope : IDisposable
 {
     private readonly OperationCoordinator _owner;
-    private readonly CancellationTokenSource _cts;
+    private readonly OperationCancellation _cancel;
     private bool _disposed;
 
     internal OperationScope(OperationCoordinator owner, string kind, bool cancellable, CancellationToken linkedToken)
@@ -89,32 +99,38 @@ public sealed class OperationScope : IDisposable
         _owner = owner;
         Kind = kind;
         Cancellable = cancellable;
-        _cts = linkedToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(linkedToken) : new CancellationTokenSource();
-        Token = _cts.Token; // read once: work that outlives the scope may still check it after Dispose
+        _cancel = new OperationCancellation(linkedToken);
+        // Raised on the service's thread: the Cancel button hides once the first game file is about to change.
+        _cancel.WritesStarting += () => Dispatcher.UIThread.Post(owner.RaiseStateChanged);
+        Token = _cancel.Token; // read once: work that outlives the scope may still check it after Dispose
     }
 
     public string Kind { get; }
     public bool Cancellable { get; }
+
+    /// <summary>True once the user's Cancel was accepted (it is refused after the operation started changing files).</summary>
     public bool CancelRequested { get; private set; }
 
-    /// <summary>Cancelled when the user presses Cancel (or the linked token is cancelled).</summary>
+    /// <summary>True once the operation has started changing game files; Cancel is refused from then on.</summary>
+    public bool WritesStarted => _cancel.WritesStarted;
+
+    /// <summary>
+    /// Cancelled when the user presses Cancel (or the linked token is cancelled) before the operation starts changing
+    /// game files; never afterwards.
+    /// </summary>
     public CancellationToken Token { get; }
 
     /// <summary>True when the operation stopped because it was asked to (Cancel or the linked token).</summary>
     public bool WasCancelled(Exception error) => error is OperationCanceledException && Token.IsCancellationRequested;
 
-    internal void RequestCancel()
-    {
-        CancelRequested = true;
-        _cts.Cancel();
-    }
+    internal void RequestCancel() => CancelRequested = _cancel.TryCancel();
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         _owner.End(this);
-        _cts.Dispose();
+        _cancel.Dispose();
     }
 }
 

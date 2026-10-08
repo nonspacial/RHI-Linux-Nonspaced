@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -200,11 +201,14 @@ public sealed class LinuxUpdateAllService
                 foreach (var component in targets)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    // One component of one game is one unit: Cancel stops the pass between units, and once a unit
+                    // starts changing files it runs to completion or full rollback.
+                    using var unit = new OperationCancellation(cancellationToken);
                     try
                     {
                         if (mode == LinuxUpdateRunMode.Background || CheckedInManualMode.Contains(component))
                         {
-                            var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
+                            var check = await _backend.CheckManagedUpdateAsync(game, component, files, unit.Token).ConfigureAwait(false);
                             if (check.Blocked)
                             {
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, false, false, false, check.Message, Blocked: true));
@@ -218,7 +222,7 @@ public sealed class LinuxUpdateAllService
                             }
                         }
 
-                        var update = await _backend.UpdateManagedAsync(game, component, files, cancellationToken).ConfigureAwait(false);
+                        var update = await _backend.UpdateManagedAsync(game, component, files, unit.Token).ConfigureAwait(false);
                         // The component's source was unreachable (e.g. a reshade.me outage) and nothing was changed:
                         // "could not be checked", not a failure and never an update (#132).
                         results.Add(update.SourceUnavailable

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -52,13 +53,14 @@ public static class ManagedFileSwap
             plan.Add((file, source, await Sha256Async(source, cancellationToken).ConfigureAwait(false), file.Sha256));
         }
 
+        // Verified: from the first swap on, Cancel is refused and the swap runs to completion or full rollback.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         var swapped = new List<LinuxDeployedFile>();
         var keptBackups = new List<string>();
         try
         {
             foreach (var (file, source, newHash, oldHash) in plan)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (string.Equals(newHash, oldHash, StringComparison.OrdinalIgnoreCase)) continue;
                 var staging = file.Path + StagingSuffix;
                 File.Copy(file.Path, file.Path + BackupSuffix, overwrite: true);

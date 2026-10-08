@@ -228,6 +228,33 @@ public sealed class LinuxDlssDefaultsServiceTests : IDisposable
         Assert.True(File.Exists(goodSr + ".original"));
     }
 
+    // w2/vmsplit review finding 1: one game is one unit of the batch. A Cancel pressed while a game's DLLs are being
+    // swapped lets that game finish and stops the batch before the next one.
+    [Fact]
+    public async Task Batch_CancelDuringAGamesSwap_FinishesThatGame_ThenStops()
+    {
+        var first = Game("batch-cancel-first");
+        var firstSr = Path.Combine(first.InstallPath, "nvngx_dlss.dll");
+        await File.WriteAllBytesAsync(firstSr, Bytes(0x11, 70_000));
+        var second = Game("batch-cancel-second");
+        var secondSr = Path.Combine(second.InstallPath, "nvngx_dlss.dll");
+        await File.WriteAllBytesAsync(secondSr, Bytes(0x11, 70_000));
+        var service = NewService(new GateHandler(Manifest(), PayloadZip()));
+        var indexes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal) { [first.Name] = [firstSr], [second.Name] = [secondSr] };
+        using var outer = new RHI.Core.Deployment.OperationCancellation();
+        var accepted = new List<bool>();
+        RHI.Core.Deployment.OperationCancellation.WritePhaseObserverForTesting = _ => accepted.Add(outer.TryCancel());
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ApplyBatchAsync(
+            [first, second], new LinuxDlssVersionDefaults(SuperResolution: "9.9.9"), game => indexes[game.Name], outer.Token));
+
+        Assert.Equal([true], accepted);
+        Assert.Equal(80_000L, new FileInfo(firstSr).Length);
+        Assert.True(File.Exists(firstSr + ".original"));
+        Assert.Equal(70_000L, new FileInfo(secondSr).Length);
+        Assert.False(File.Exists(secondSr + ".original"));
+    }
+
     [Fact]
     public void Inspect_DoesNotInventTargetsForEmptyGame()
     {

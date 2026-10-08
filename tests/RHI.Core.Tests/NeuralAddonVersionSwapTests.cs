@@ -342,6 +342,33 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, "dlss5-feed.addon64")!.Sha256);
     }
 
+    // w2/vmsplit review finding 1: the in-place swap (ShortFuse/Feeder add-on, NR DLL) ends the cancellable phase
+    // before its first file and then swaps every file (a cancel between files used to roll the swap back mid-way).
+    [Fact]
+    public async Task ManagedFileSwap_CancelAfterTheFirstWrite_SwapsEveryFile()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "cancel-swap", "game")).FullName;
+        var game = Game(bin);
+        var first = Write(Path.Combine(bin, "addon.addon64"), [1, 2, 3]);
+        var second = Write(Path.Combine(bin, "helper.exe"), [4, 5, 6]);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-swap-deployments.json"));
+        records.Upsert(Record(game, ManagedComponentKind.Dlss5Feeder, "OLD", first, second));
+        var record = records.Find(game, ManagedComponentKind.Dlss5Feeder)!;
+        var newFirst = Write("cancel-new-addon.addon64", [7, 7, 7]);
+        var newSecond = Write("cancel-new-helper.exe", [8, 8, 8]);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => ManagedFileSwap.ReplaceAsync(record, [(first, newFirst), (second, newSecond)], updated =>
+        {
+            updated.Version = "NEW";
+            records.Upsert(updated);
+        }, ct), [bin]);
+
+        Assert.Equal(2, run.Result);
+        Assert.Equal([7, 7, 7], File.ReadAllBytes(first));
+        Assert.Equal([8, 8, 8], File.ReadAllBytes(second));
+        Assert.Equal("NEW", records.Find(game, ManagedComponentKind.Dlss5Feeder)!.Version);
+    }
+
     private Dlss5FeederFullDeploymentService Feeder(HttpClient http, LinuxDeploymentRecordStore records)
     {
         var files = new TransactionalFileDeploymentService();

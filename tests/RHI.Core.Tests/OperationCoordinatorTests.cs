@@ -161,6 +161,25 @@ public sealed class OperationCoordinatorTests
         Assert.StartsWith("Operation cancelled.", fx.Vm.StatusText);
     }
 
+    // w2/vmsplit review finding 1: once the operation starts changing game files, Cancel is hidden and refused, so the
+    // operation runs to completion or full rollback and its real result is shown.
+    [Fact]
+    public void OnceTheOperationStartsWriting_CancelIsHiddenAndRefused()
+    {
+        var gate = new OperationCoordinator();
+        using var op = gate.TryBegin("component")!;
+        Assert.True(gate.CanCancel);
+
+        RHI.Core.Deployment.OperationCancellation.BeginWrites(op.Token);
+
+        Assert.True(op.WritesStarted);
+        Assert.False(gate.CanCancel);
+        Assert.False(gate.CancelCommand.CanExecute(null));
+        gate.Cancel();
+        Assert.False(op.CancelRequested);
+        Assert.False(op.Token.IsCancellationRequested);
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         for (var i = 0; i < 200 && !condition(); i++) await Task.Delay(10);
