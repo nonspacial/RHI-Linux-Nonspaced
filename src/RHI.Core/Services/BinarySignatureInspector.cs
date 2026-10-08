@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace RHI.Core.Services;
 
 /// <summary>Small binary-string classifier used for conservative foreign-DLL protection.</summary>
@@ -26,30 +24,6 @@ public static class BinarySignatureInspector
         catch { return false; }
     }
 
-    private static bool ContainsAny(string path, params string[] needles)
-    {
-        if (!File.Exists(path)) return false;
-        try
-        {
-            // ReShade/OptiScaler identification strings are normally present in PE string tables.
-            // Cap reads to 32 MiB so a malformed/huge file never blocks the UI indefinitely.
-            const int maxBytes = 32 * 1024 * 1024;
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var length = (int)Math.Min(stream.Length, maxBytes);
-            var bytes = new byte[length];
-            var read = 0;
-            while (read < length)
-            {
-                var n = stream.Read(bytes, read, length - read);
-                if (n <= 0) break;
-                read += n;
-            }
-            var ascii = Encoding.Latin1.GetString(bytes, 0, read);
-            foreach (var needle in needles)
-                if (ascii.Contains(needle, StringComparison.OrdinalIgnoreCase)) return true;
-            var unicode = Encoding.Unicode.GetString(bytes, 0, read - (read % 2));
-            return needles.Any(n => unicode.Contains(n, StringComparison.OrdinalIgnoreCase));
-        }
-        catch { return false; }
-    }
+    /// <summary>Bounded streaming search (no whole-file buffers, early exit, cached per file version; #34).</summary>
+    private static bool ContainsAny(string path, params string[] needles) => BinaryStringSearch.ContainsAny(path, needles);
 }
