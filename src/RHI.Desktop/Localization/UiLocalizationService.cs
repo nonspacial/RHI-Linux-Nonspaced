@@ -590,7 +590,7 @@ public static class UiLocalizationService
          "O registro de implantações não pode ser lido, então esta reversão de override do Wine fica para a próxima inicialização. Cópia do registro: "),
         // The D3DCompiler helper stopped at its time limit (w2-vmsplit re-review, minor 1); tool and limit follow.
         (RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.ToolTimedOutPrefix,
-         "O auxiliar do D3DCompiler demorou demais e foi interrompido junto com todos os processos que iniciou; o prefixo pode ter uma instalação parcial do d3dcompiler_47, então execute a instalação novamente. Ferramenta: "),
+         "O auxiliar do D3DCompiler demorou demais e foi interrompido; o prefixo pode ter uma instalação parcial do d3dcompiler_47, então execute a instalação novamente. Ferramenta: "),
         // A prefix whose runtime markers could not be read (w2-launch re-review, major 1); the prefix path follows.
         (RHI.Platform.Linux.Deployment.D3DCompilerToolInstaller.RuntimeUnknownMessagePrefix,
          "Winetricks indisponível: o RHI não conseguiu ler os marcadores de Wine/Proton deste prefixo (config_info), então não sabe qual Wine pode ser executado nele, e o Wine do sistema poderia danificar um prefixo do Proton. Torne o config_info do prefixo legível novamente e atualize a biblioteca. Prefixo: "),

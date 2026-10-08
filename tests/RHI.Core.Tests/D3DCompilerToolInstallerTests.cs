@@ -126,7 +126,7 @@ public sealed class D3DCompilerToolInstallerTests
         => Assert.Equal(TimeSpan.FromMinutes(10), new D3DCompilerToolInstaller(new WineDllOverrideService()).ToolTimeout);
 
     [Fact]
-    public async Task ToolRun_PastItsTimeLimit_IsStoppedWithEveryProcessItStarted_AndSaysSo()
+    public async Task ToolRun_PastItsTimeLimit_IsStoppedWithItsChildProcesses_AndSaysSo()
     {
         var root = Path.Combine(Path.GetTempPath(), "rhi-d3dcompiler-timeout-" + Guid.NewGuid().ToString("N"));
         var bin = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
@@ -152,6 +152,11 @@ public sealed class D3DCompilerToolInstallerTests
             for (var i = 0; i < 100 && IsAlive(pid); i++) await Task.Delay(50);
             Assert.False(IsAlive(pid), $"the helper's child {pid} was left running");
             Assert.EndsWith("Ferramenta: winetricks (1 s)", RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", run.Result.Message), StringComparison.Ordinal);
+            // w2 final review, nit 2: the tree kill reaches only the helper's remaining descendants (a daemonised
+            // wineserver ends on its own), so the message says the helper was stopped, in both languages.
+            Assert.StartsWith("The D3DCompiler helper took too long and was stopped; the prefix may hold a partial d3dcompiler_47 install", run.Result.Message, StringComparison.Ordinal);
+            Assert.StartsWith("O auxiliar do D3DCompiler demorou demais e foi interrompido; o prefixo",
+                RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", run.Result.Message), StringComparison.Ordinal);
         }
         finally
         {

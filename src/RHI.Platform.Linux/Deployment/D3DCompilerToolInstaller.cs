@@ -34,9 +34,13 @@ public sealed class D3DCompilerToolInstaller
     internal Func<ProcessStartInfo, TimeSpan, CancellationToken, Task<ExternalProcessResult>> RunTool { get; init; }
         = (startInfo, timeout, ct) => ExternalProcess.RunAsync(startInfo, timeout, ct);
 
-    /// <summary>The helper ran past <see cref="ToolTimeout"/> and was stopped; the tool name and limit follow.</summary>
+    /// <summary>
+    /// The helper ran past <see cref="ToolTimeout"/> and was stopped; the tool name and limit follow. It says the helper
+    /// was stopped, not every process: the tree kill reaches only the descendants still under it, and a daemonised
+    /// wineserver (reparented) ends on its own idle timeout (w2 final review, nit 2).
+    /// </summary>
     public const string ToolTimedOutPrefix =
-        "The D3DCompiler helper took too long and was stopped with every process it started; the prefix may hold a partial d3dcompiler_47 install, so run the install again. Tool: ";
+        "The D3DCompiler helper took too long and was stopped; the prefix may hold a partial d3dcompiler_47 install, so run the install again. Tool: ";
 
     private readonly WineDllOverrideService _overrides;
 
@@ -183,7 +187,7 @@ public sealed class D3DCompilerToolInstaller
         }
         catch (TimeoutException ex)
         {
-            AppLog.Warn("d3dcompiler", $"{toolName} ran past its {(int)ToolTimeout.TotalSeconds} s limit and was stopped with its process tree", ex);
+            AppLog.Warn("d3dcompiler", $"{toolName} ran past its {(int)ToolTimeout.TotalSeconds} s limit and was stopped (its remaining process tree was killed)", ex);
             return ComponentOperationResult.Fail($"{ToolTimedOutPrefix}{toolName} ({(int)ToolTimeout.TotalSeconds} s)");
         }
         catch (Win32Exception ex)
