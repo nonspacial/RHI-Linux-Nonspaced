@@ -85,6 +85,74 @@ public sealed class WineRegistryJournalTests : IDisposable
         Assert.Contains("d3d9", journaledBeforeWrite);
     }
 
+    // w2 wine review, major 1: a refused write never leaves an undo step behind.
+    [Fact]
+    public async Task EnsureWhileWineRuns_IsRefusedBeforeTheStepIsJournaled()
+    {
+        var prefix = Prefix();
+        var journalDir = Path.Combine(_root, "journal-refused");
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => true));
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, isPrefixInUse: _ => false);
+        var operation = await journal.BeginAsync("UAL install: Game");
+
+        var refused = await Assert.ThrowsAsync<WineRegistryEditRefusedException>(
+            () => overrides.EnsureNativeBuiltinAsync(operation, prefix, "winmm.dll", "Game.exe"));
+
+        Assert.True(refused.PrefixInUse);
+        Assert.DoesNotContain(WineOverrideCompensator.KindName, File.ReadAllText(Path.Combine(journalDir, operation.Id + ".json")));
+        operation.AbandonAsIfCrashed();
+    }
+
+    // w2 wine review, major 1: a step whose override is still at its earlier value was never written (or is undone):
+    // done at once, even while Wine runs, so it never stays to undo a later install.
+    [Fact]
+    public void Compensator_StepNeverWritten_IsDoneEvenWhileWineRuns()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => true));
+        var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"));
+
+        var result = new WineOverrideCompensator(overrides, _ => true).Compensate(step);
+
+        Assert.Equal(CompensationStatus.Done, result.Status);
+    }
+
+    // w2 wine review, major 1: a step whose override now belongs to a record of the same game installed after it was
+    // journaled is left alone; a record of another game, or one installed before the step, does not count.
+    [Theory]
+    [InlineData("steam:1", 1, false)]  // later record of the step's game: kept
+    [InlineData("steam:2", 1, true)]   // another game's record: undone
+    [InlineData("steam:1", -1, true)]  // a record from before the step: undone
+    public void Compensator_OverrideALaterRecordOfTheGameOwns_IsKept(string recordGameKey, int recordAgeSign, bool undone)
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var journaled = DateTime.UtcNow;
+        var step = WineOverrideCompensator.Describe(prefix, overrides.PlanNativeBuiltin(prefix, "winmm.dll", "Game.exe"), "steam:1", journaled);
+        var owned = overrides.EnsureNativeBuiltin(prefix, "winmm.dll", "Game.exe"); // the later install wrote it itself
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "ledger-" + Guid.NewGuid().ToString("N") + ".json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = recordGameKey, Component = RHI.Core.Models.ManagedComponentKind.UltimateAsiLoader,
+            InstalledAtUtc = journaled.AddMinutes(recordAgeSign), WineOverride = owned
+        });
+
+        var result = new WineOverrideCompensator(overrides, _ => false, records).Compensate(step);
+
+        Assert.Equal(CompensationStatus.Done, result.Status);
+        var after = WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "winmm", "Game.exe");
+        Assert.Equal(undone ? null : "native,builtin", after);
+    }
+
+    // w2 wine review, major 1: the app's journal sees the ledger, or a deferred undo cannot tell a later install apart.
+    [Fact]
+    public void App_BindsTheRecoveryJournalToTheLedger()
+    {
+        var app = File.ReadAllText(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "App.axaml.cs"));
+
+        Assert.Matches(@"LinuxDeploymentRecovery\.CreateJournal\(wineOverrides,\s*records:\s*records\)", app);
+    }
+
     public static TheoryData<string> Messages() => new()
     {
         WineRegistryEditor.PrefixInUseRefusalPrefix + "/jogos/prefixo",

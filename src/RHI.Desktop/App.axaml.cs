@@ -38,7 +38,8 @@ public sealed class App : Application
             var wineOverrides = new WineDllOverrideService();
             // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
             // service exists that could deploy (installs, start-up auto-update).
-            var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides);
+            // The ledger lets a deferred override undo see a later install that depends on it (w2 wine review, major 1).
+            var journal = LinuxDeploymentRecovery.CreateJournal(wineOverrides, records: records);
             var recovery = RunDeploymentStartup(desktop, journal, records);
             var services = AppComposition.Create(http, records, wineOverrides, journal);
             UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);

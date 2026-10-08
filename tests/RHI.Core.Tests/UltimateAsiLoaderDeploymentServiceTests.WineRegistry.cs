@@ -142,6 +142,95 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests
         Assert.Empty(Directory.GetFiles(journalDir));
     }
 
+    // w2 wine review, major 1 (reviewer's repro): Wine starts after the preflight, before the journaled override write.
+    // The edit is refused; the user closes the game and installs again. The next start must not undo that install.
+    [Fact]
+    public async Task RefusedOverrideWrite_LeavesNoStepThatUndoesTheNextSuccessfulInstall()
+    {
+        using var fixture = CreateGame("review-stale", 0x8664);
+        using var http = new HttpClient(CreateReleaseHandler(CreateUalZip(0x8664, 0x7a), "9.7.4"));
+        var ledger = Path.Combine(fixture.Root, "deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var journalDir = Path.Combine(fixture.Root, "journal");
+        var running = false;
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => Volatile.Read(ref running)));
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir);
+        journal.OperationStartedForTesting = _ => Volatile.Write(ref running, true); // the user launches the game
+        var service = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache"), journal);
+
+        var first = await service.InstallAsync(fixture.Game, "version.dll");
+        Assert.False(first.Success);
+        Assert.Contains(WineRegistryEditor.PrefixInUseRefusalPrefix, first.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.GetFiles(journalDir, "*.json"));
+
+        Volatile.Write(ref running, false); // game closed
+        journal.OperationStartedForTesting = null;
+        var second = await service.InstallAsync(fixture.Game, "version.dll");
+        Assert.True(second.Success, second.Message);
+
+        // Next start.
+        var report = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(new WineRegistryEditor(_ => false)), journalDir, isPrefixInUse: _ => false),
+            new LinuxDeploymentRecordStore(ledger));
+
+        Assert.Equal(0, report!.RolledBack);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(fixture), "version", "Game.exe"));
+        Assert.True(new LinuxDeploymentRecordStore(ledger).Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.WineOverride!.ChangedByRhi);
+    }
+
+    // w2 wine review, major 1 (rarer variant): the override is written, the install fails and its in-process undo is
+    // deferred because Wine started; the user installs again (finds RHI's value, so the new record does not own it).
+    // The next start keeps the override the new install depends on and hands it the ownership, so Remove still
+    // restores the value the override had before either install.
+    [Fact]
+    public async Task DeferredUndo_ThenAReinstall_KeepsTheOverrideAndTheReinstallTakesItsOwnership()
+    {
+        using var fixture = CreateGame("deferred-reinstall", 0x8664);
+        using var http = new HttpClient(CreateReleaseHandler(CreateUalZip(0x8664, 0x7b), "9.7.4"));
+        var ledger = Path.Combine(fixture.Root, "deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var journalDir = Path.Combine(fixture.Root, "journal");
+        var running = false;
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => Volatile.Read(ref running)));
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, records: records);
+        var service = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache"), journal);
+        records.SaveFaultForTesting = () =>
+        {
+            Volatile.Write(ref running, true); // the game starts after the override was written
+            return new IOException("ledger write failed");
+        };
+
+        var first = await service.InstallAsync(fixture.Game, "version.dll");
+        Assert.False(first.Success);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(fixture), "version", "Game.exe"));
+        Assert.Single(Directory.GetFiles(journalDir, "*.json")); // the deferred undo step
+
+        records.SaveFaultForTesting = null;
+        Volatile.Write(ref running, false);
+        var second = await service.InstallAsync(fixture.Game, "version.dll");
+        Assert.True(second.Success, second.Message);
+        Assert.False(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.WineOverride!.ChangedByRhi);
+
+        // Next start.
+        var restarted = new LinuxDeploymentRecordStore(ledger);
+        var report = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(new WineRegistryEditor(_ => false)), journalDir, _ => false, restarted),
+            restarted);
+
+        Assert.Equal(0, report!.Failed);
+        Assert.Empty(Directory.GetFiles(journalDir, "*.json"));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(fixture), "version", "Game.exe"));
+        var owned = restarted.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.WineOverride!;
+        Assert.True(owned.ChangedByRhi);
+        Assert.Null(owned.PreviousValue);
+        Assert.Equal(WineDllOverrideService.RhiValue, owned.WrittenValue);
+
+        var remove = await new UltimateAsiLoaderDeploymentService(http, restarted, new WineDllOverrideService(new WineRegistryEditor(_ => false)),
+            Path.Combine(fixture.Root, "cache")).RemoveAsync(fixture.Game);
+        Assert.True(remove.Success, remove.Message);
+        Assert.Null(WineDllOverrideService.TryReadOverride(UserReg(fixture), "version", "Game.exe"));
+    }
+
     [Fact]
     public async Task InstallFailingAfterTheOverride_UndoesItInProcess()
     {

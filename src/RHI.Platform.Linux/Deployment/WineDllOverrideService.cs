@@ -44,13 +44,18 @@ public sealed class WineDllOverrideService
     /// <summary>
     /// Journals the undo step in <paramref name="operation"/> (when there is one), then sets the override: a crash
     /// between this write and the caller's record leaves a journal entry that start-up recovery rolls back (#23).
+    /// Refused before the step is journaled while Wine runs in the prefix (the editor would refuse the write), so a
+    /// game started during a download never leaves an undo step for an override RHI did not write.
     /// </summary>
     public async Task<WineOverrideRecord> EnsureNativeBuiltinAsync(
         DeploymentOperation? operation, string prefixPath, string dllName, string? applicationName = null, CancellationToken cancellationToken = default)
     {
+        if (EditRefusal(prefixPath) is { } refusal)
+            throw new WineRegistryEditRefusedException(refusal, inUse: true);
         if (operation is not null)
             await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
-                WineOverrideCompensator.Describe(prefixPath, PlanNativeBuiltin(prefixPath, dllName, applicationName)),
+                WineOverrideCompensator.Describe(prefixPath, PlanNativeBuiltin(prefixPath, dllName, applicationName),
+                    LinuxDeploymentRecovery.GameKeyOfCommitProbe(operation.CommitProbe), DateTime.UtcNow),
                 cancellationToken).ConfigureAwait(false);
         return EnsureNativeBuiltin(prefixPath, dllName, applicationName);
     }
@@ -180,9 +185,18 @@ public sealed class WineDllOverrideService
         => string.Concat(results.Where(result => result?.Outcome == WineOverrideRestoreOutcome.KeptLaterValue)
             .Select(result => $"{KeptUserValueNotePrefix}{result!.DllName} = '{result.CurrentValue ?? "-"}'."));
 
-    private static string WrittenBy(WineOverrideRecord record) => record.WrittenValue ?? RhiValue;
+    /// <summary>The override's current value in the prefix's hive (read only, no lock).</summary>
+    internal static string? CurrentValue(string prefixPath, WineOverrideRecord record)
+        => TryReadOverride(WineRegistryEditor.ReadUserHive(prefixPath), record.DllName, record.ApplicationName);
 
-    private static bool SameValue(string? a, string? b)
+    internal static string WrittenBy(WineOverrideRecord record) => record.WrittenValue ?? RhiValue;
+
+    /// <summary>Whether two records name the same override (DLL and AppDefaults application, as Wine compares keys).</summary>
+    internal static bool SameOverride(WineOverrideRecord a, WineOverrideRecord b)
+        => string.Equals(NormalizeDllName(a.DllName), NormalizeDllName(b.DllName), StringComparison.OrdinalIgnoreCase)
+           && string.Equals(NormalizeApplicationName(a.ApplicationName), NormalizeApplicationName(b.ApplicationName), StringComparison.OrdinalIgnoreCase);
+
+    internal static bool SameValue(string? a, string? b)
         => a is null || b is null ? a is null && b is null : string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
     public static string? TryReadOverride(string text, string dllName, string? applicationName = null)
