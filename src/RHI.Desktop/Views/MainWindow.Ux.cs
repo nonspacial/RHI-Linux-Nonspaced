@@ -10,6 +10,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core;
+using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Paths;
@@ -145,9 +146,9 @@ public sealed partial class MainWindow
 
         var installPath = ManualGamePathInference.InferInstallRoot(executable);
         var inferredName = ManualGamePathInference.InferGameName(executable, installPath);
-        var nameBox = new TextBox { Text = inferredName, PlaceholderText = T("Win.GameName"), MinWidth = 420 };
-        var prefixBox = new TextBox { PlaceholderText = T("Win.OptionalWineProtonPrefixEG"), MinWidth = 420 };
-        var launchBox = new TextBox { PlaceholderText = T("Win.OptionalLaunchCommand"), MinWidth = 420 };
+        var nameBox = new TextBox { Text = inferredName, PlaceholderText = T("Win.GameName") };
+        var prefixBox = new TextBox { PlaceholderText = T("Win.OptionalWineProtonPrefixEG") };
+        var launchBox = new TextBox { PlaceholderText = T("Win.OptionalLaunchCommand") };
         var browsePrefix = new Button { Content = T("Win.BrowsePrefix"), Padding = new Thickness(10, 5) };
         browsePrefix.Click += (_, _) => RunUiSafe(async () =>
         {
@@ -200,10 +201,12 @@ public sealed partial class MainWindow
         var dialog = new Window
         {
             Title = T("Win.AddGameRHILinux"),
+            // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
+            // window floor (as for Edit game); the form scrolls.
             Width = 620,
             Height = 580,
-            MinWidth = 520,
-            MinHeight = 500,
+            MinWidth = 460,
+            MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = form }
         };
@@ -230,7 +233,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotAddGame", ex.Message);
+                status.Text = TF("Win.CouldNotAddGame", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -435,7 +438,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", ex.Message);
+                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -459,7 +462,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.CouldNotSave", ex.Message);
+                status.Text = TF("Win.CouldNotSave", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -715,7 +718,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             if (DataContext is MainWindowViewModel vm)
-                vm.StatusText = TF("Win.MOTDWasShownButSeenState", ex.Message);
+                vm.StatusText = TF("Win.MOTDWasShownButSeenState", UiLocalizationService.Present(ex.Message));
         }
     }
 
@@ -758,7 +761,7 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             RemoveTrayIcon();
-            vm.StatusText = TF("Win.TrayIconUnavailableSession", ex.Message);
+            vm.StatusText = TF("Win.TrayIconUnavailableSession", UiLocalizationService.Present(ex.Message));
         }
     }
 

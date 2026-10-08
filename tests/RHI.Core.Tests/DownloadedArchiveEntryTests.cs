@@ -44,7 +44,7 @@ public sealed class DownloadedArchiveEntryTests : IDisposable
         var refused = await Assert.ThrowsAsync<InvalidDataException>(() => svc.EnsureNightlyStagedAsync(PeArchitecture.X64));
 
         Assert.StartsWith(ReShadeArchiveExtractor.ArchiveRefusedPrefix, refused.Message);
-        Assert.Contains($"over the {ReShadeArchiveExtractor.MaxEntryBytes}-byte limit", refused.Message);
+        Assert.Contains($": declared size over the limit ({ReShadeArchiveExtractor.MaxEntryBytes + 1} > {ReShadeArchiveExtractor.MaxEntryBytes} bytes)", refused.Message);
         Assert.StartsWith("Arquivo baixado recusado: ", RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", refused.Message));
         Assert.Empty(Directory.EnumerateFiles(cache, "*.dll", SearchOption.AllDirectories));
     }
@@ -70,7 +70,7 @@ public sealed class DownloadedArchiveEntryTests : IDisposable
         var result = await manager.ApplySelectionAsync(game, [id]);
 
         Assert.False(result.Success);
-        Assert.Contains($"over the {TrustedDownloadPolicy.AddonMaxBytes}-byte limit", result.Message);
+        Assert.Contains($": declared size over the limit ({TrustedDownloadPolicy.AddonMaxBytes + 1} > {TrustedDownloadPolicy.AddonMaxBytes} bytes)", result.Message);
         Assert.Empty(Directory.EnumerateFiles(cache, "*.addon64"));
         Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon64", SearchOption.AllDirectories));
     }

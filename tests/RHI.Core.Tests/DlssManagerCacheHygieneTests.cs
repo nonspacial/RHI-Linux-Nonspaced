@@ -104,7 +104,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
 
         var refused = await Assert.ThrowsAsync<InvalidDataException>(() => service.EnsureCachedAsync(DlssComponentKind.SuperResolution, "9.1"));
 
-        Assert.StartsWith($"{TrustedDownloadPolicy.TooLargePrefix}{1024L * 1024 * 1024} /", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{TrustedDownload.SizeLimitPrefix}{1024L * 1024 * 1024}{AtomicFile.SizeLimitMiddle}", refused.Message, StringComparison.Ordinal);
         Assert.Empty(CacheFiles(cache));
     }
 

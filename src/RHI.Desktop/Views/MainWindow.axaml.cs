@@ -156,7 +156,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), TF("Win.CouldNotAnalyzeLibrary", ex.Message));
+            await ShowSimpleMessageAsync(T("Win.DLSSBatch"), TF("Win.CouldNotAnalyzeLibrary", UiLocalizationService.Present(ex.Message)));
             return;
         }
 
@@ -283,10 +283,12 @@ public sealed partial class MainWindow : Window
         var dialog = new Window
         {
             Title = T("Win.DLSSStreamlineBatchOperation"),
+            // Preferred size, capped to the main window; the minimum fits the 640x480 window floor (the body stacks
+            // below 700 px and scrolls, the footer stays pinned).
             Width = 820,
             Height = 650,
-            MinWidth = 700,
-            MinHeight = 520,
+            MinWidth = 460,
+            MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = root
         };
@@ -326,7 +328,7 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                status.Text = TF("Win.BatchOperationFailed", ex.Message);
+                status.Text = TF("Win.BatchOperationFailed", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
@@ -691,7 +693,7 @@ public sealed partial class MainWindow : Window
                 SyncTrayIcon();
                 status.Text = vm.ApplyGlobalReShadeSettingsToSelectedGame(current);
             }
-            catch (Exception ex) { status.Text = TF("Win.CouldNotApplyReShadeDefaults", ex.Message); }
+            catch (Exception ex) { status.Text = TF("Win.CouldNotApplyReShadeDefaults", UiLocalizationService.Present(ex.Message)); }
         };
 
         var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"), ColumnSpacing = 8, Margin = new Avalonia.Thickness(12) };
@@ -755,7 +757,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            vm.StatusText = TF("Win.CouldNotLoadShadersAddOns", ex.Message);
+            vm.StatusText = TF("Win.CouldNotLoadShadersAddOns", UiLocalizationService.Present(ex.Message));
             return;
         }
 
@@ -803,7 +805,7 @@ public sealed partial class MainWindow : Window
                 filesButton.Click += (_, _) => RunUiSafe(async () =>
                 {
                     try { await ShowShaderPackFilesDialogAsync(vm, pack); }
-                    catch (Exception ex) { vm.StatusText = TF("Win.CouldNotOpenFiles", pack.DisplayName, ex.Message); }
+                    catch (Exception ex) { vm.StatusText = TF("Win.CouldNotOpenFiles", pack.DisplayName, UiLocalizationService.Present(ex.Message)); }
                 });
                 packRow.Children.Add(filesButton);
                 Grid.SetColumn(filesButton, 1);
@@ -1163,13 +1165,20 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         void SavePreferences()
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var gpu = gpuCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.GpuGenRtx20;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.DefaultProxyName;
             var result = vm.SetDlssg2030Preferences(gpu, proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdowns go back to what is stored.
+            var stored = vm.GetDlssg2030Preferences();
+            reverting = true;
+            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
+            finally { reverting = false; }
         }
         gpuCombo.SelectionChanged += (_, _) => SavePreferences();
         proxyCombo.SelectionChanged += (_, _) => SavePreferences();
@@ -1278,12 +1287,18 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         proxyCombo.SelectionChanged += (_, _) =>
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? StandaloneDlssEnablerDeploymentService.DefaultProxyName;
             var result = vm.SetStandaloneDlssEnablerPreferences(proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdown goes back to what is stored.
+            reverting = true;
+            try { proxyCombo.SelectedItem = vm.GetStandaloneDlssEnablerPreferences().ProxyName; }
+            finally { reverting = false; }
         };
 
         if (installed)
@@ -1422,13 +1437,20 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         void SaveUniversalMfgPreferences()
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var gpu = gpuCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.DefaultProxyName;
             var result = vm.SetRtx40MfgPreferences(gpu, proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdowns go back to what is stored.
+            var stored = vm.GetRtx40MfgPreferences();
+            reverting = true;
+            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
+            finally { reverting = false; }
         }
 
         gpuCombo.SelectionChanged += (_, _) => SaveUniversalMfgPreferences();
@@ -1938,7 +1960,7 @@ public sealed partial class MainWindow : Window
             if (DataContext is MainWindowViewModel vm)
                 vm.StatusText = ex is JsonStoreUnavailableException
                     ? MainWindowViewModel.StoreSaveFailedText(ex)
-                    : TF("Win.CouldNotSaveSectionLayout", ex.Message);
+                    : TF("Win.CouldNotSaveSectionLayout", UiLocalizationService.Present(ex.Message));
         }
     }
 

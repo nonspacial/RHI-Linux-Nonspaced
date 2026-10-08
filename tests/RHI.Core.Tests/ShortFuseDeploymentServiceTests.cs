@@ -665,7 +665,7 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
     private static void AssertPresentedInPortuguese(string message)
     {
         var pt = UiLocalizationService.PresentFor("pt-BR", message);
-        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
         Assert.NotEqual(message, pt);
     }
 

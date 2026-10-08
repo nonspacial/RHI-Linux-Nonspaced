@@ -578,7 +578,7 @@ public sealed partial class ReShadeChannelTests : IDisposable
     private static void AssertPtBr(string english, string expectedFragment)
     {
         var pt = UiLocalizationService.PresentFor("pt-BR", english);
-        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), pt);
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
         Assert.Contains(expectedFragment, pt);
         Assert.Equal(english, UiLocalizationService.PresentFor("en-US", pt));
     }

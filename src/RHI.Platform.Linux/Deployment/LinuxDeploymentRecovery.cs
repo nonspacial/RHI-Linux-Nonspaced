@@ -36,14 +36,14 @@ public sealed class WineOverrideCompensator(WineDllOverrideService overrides, Fu
         if (!File.Exists(registry)) return CompensationResult.Done;
         if (_isPrefixInUse(prefix))
             return new(CompensationStatus.Deferred,
-                $"The {record.DllName} override in {prefix} is undone at the next start: Wine is running in that prefix and would overwrite the change when it exits.");
+                $"Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is undone at the next start: {record.DllName} ({prefix})");
 
         var current = WineDllOverrideService.TryReadOverride(File.ReadAllText(registry), record.DllName, record.ApplicationName);
         if (string.Equals(current, record.PreviousValue, StringComparison.OrdinalIgnoreCase))
             return CompensationResult.Done; // never written, or already undone
         if (!string.Equals(current, RhiValue, StringComparison.OrdinalIgnoreCase))
             return new(CompensationStatus.KeptLaterChange,
-                $"The {record.DllName} override in {prefix} was changed to '{current ?? "(removed)"}' after the interruption; it was left as it is.");
+                $"This Wine override was changed after the interruption and was left as it is: {record.DllName} ({prefix}) = '{current ?? "-"}'");
         overrides.Restore(prefix, record);
         return CompensationResult.Done;
     }

@@ -1,0 +1,141 @@
+using RHI.Core.Deployment;
+using RHI.Desktop.Diagnostics;
+using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Core.Tests;
+
+/// <summary>
+/// Integration w1 review (ui-build finding 1): every message the wave-1 lanes added in core/platform code that can reach
+/// the status line has a PT-BR presentation. Each sample is the message as the producer builds it (constants where the
+/// producer has them), with neutral values (paths, ids, Portuguese exception text), so any English left in the PT-BR
+/// output comes from the message itself. Finding 2: the generic fallback names the app log and claims nothing about the
+/// operation's state.
+/// </summary>
+public sealed class WaveOneMessageLocalizationTests
+{
+    private const string P = "/jogos/Exemplo/addon.dll";
+    private const string E = "E/S negada";
+
+    public static TheoryData<string> Messages()
+    {
+        var data = new TheoryData<string>();
+        foreach (var message in All()) data.Add(message);
+        return data;
+    }
+
+    private static IEnumerable<string> All()
+    {
+        // AtomicFile / TrustedDownload (core).
+        yield return AtomicFile.NoFolderPrefix + P;
+        yield return $"{AtomicFile.SizeLimitPrefix}1024{AtomicFile.SizeLimitMiddle}addon.dll";
+        yield return AtomicFile.CopyVerifyFailurePrefix + P;
+        yield return $"{AtomicFile.ShaMismatchPrefix}aa11{AtomicFile.ShaMismatchMiddle}bb22): addon.dll";
+        yield return AtomicFile.SameFilePrefix + P;
+        yield return $"{AtomicFile.MoveTargetExistsPrefix}{P} -> {P}.2";
+        yield return $"{AtomicFile.MoveFailedPrefix}18): {P} -> {P}.2";
+        yield return $"{TrustedDownload.SizeLimitPrefix}100{AtomicFile.SizeLimitMiddle}500 bytes";
+        yield return "Could not register this RHI instance in /estado/instancias.";
+        // Deployment journal and owned-file rollback notes (core).
+        yield return $"Journal entry recovery failed: 0a1b: {E}";
+        yield return $"Unreadable journal entry kept at {P}: {E}";
+        yield return "No handler is registered for this step; it was left for the next start: wine-override";
+        yield return "Changed after the interruption and left as it is: wine-override";
+        yield return "Undo deferred to the next start: wine-override";
+        yield return $"Could not undo this step: wine-override ({E})";
+        yield return $"The journal entry could not be narrowed to the deferred steps ({E}).";
+        yield return $"Could not remove {P}";
+        yield return $"The journal entry could not be finalised; it is cleaned on the next start: 0a1b ({E})";
+        yield return $"Rolled back, but the journal entry could not be removed: 0a1b ({E})";
+        yield return $"{P}.bak: not put back; its content was last placed in {P}, which was changed after the interruption.";
+        yield return $"{P}: no surviving copy with the pre-operation content (aa11) was found; every copy was kept.";
+        yield return $"{P}.bak: the backup disappeared although this operation never changed it; every copy was kept.";
+        yield return $"{P}.bak: removed by something else after the interruption (this operation never changed it); nothing to put back.";
+        yield return $"{P}: changed after the interruption (neither its earlier content nor what RHI wrote); left as it is. It did not exist before the operation.";
+        yield return $"{P}: changed after the interruption (neither its earlier content nor what RHI wrote); left as it is. RHI's copy of its earlier content was moved to {P}.pre-rhi";
+        yield return $"{P}.bak: changed after the interruption; left as it is.";
+        yield return $"{P}: rollback failed ({E}); every copy was kept.";
+        yield return "Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is undone at the next start: d3dcompiler_47 (/prefixo)";
+        yield return "This Wine override was changed after the interruption and was left as it is: dxgi (/prefixo) = 'native'";
+        // TransactionalFileDeploymentService (DLSS swaps) and ReShade.
+        yield return $"Source file does not exist: {P}";
+        yield return $"Target directory does not exist: {P}";
+        yield return $"No .original backup exists for {P}.";
+        yield return $"The deployment journal could not be written ({E}); nothing was changed.";
+        yield return $"{E} Rollback was incomplete (Could not remove {P}); the pre-change copies (*{OwnedFileSet.SnapshotMarker}0a1b) were kept next to the affected files.";
+        yield return $"ReShade install/update failed: the deployment journal could not be written ({E}). Nothing was changed.";
+        // DlssManagerService.
+        yield return "DLSS manifest did not answer and no cached copy exists (timeout 30 s).";
+        yield return "Downloaded archive does not contain nvngx_dlss.dll.";
+        yield return $"The cached DLL is not readable after extraction: {P}";
+        yield return "Extracted file is unreadable or unexpectedly small: nvngx_dlss.dll";
+        yield return "Manifest entry has a malformed sha256: 310.1.0";
+        // RenoDX, RenoDX Upgrade, DOF Fix.
+        yield return $"RenoDX install failed: {E} Rollback incomplete: Could not restore {P} ({E}); its previous contents were kept at {P}.rhi-snapshot-1";
+        yield return $"RenoDX removal failed: {E} Restore incomplete: Could not restore {P} ({E}) nor keep a copy of its previous contents ({E})";
+        yield return $"RenoDX install failed: {E} Control UE changes could not be undone: {E}";
+        yield return $"RenoDX removal failed: Could not remove {P}: {E}";
+        yield return "RenoDX install failed: Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).";
+        yield return "RenoDX Upgrade install failed: Downloaded RenoDX Upgrade add-on is not a valid PE payload or is unexpectedly small.";
+        yield return "RenoDX Upgrade install failed: Downloaded RenoDX Upgrade payload has the wrong architecture (expected 64-bit): 32-bit";
+        yield return "Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small.";
+        yield return "Downloaded Universal UE DOF Fix failed the SHA-256 digest published by GitHub.";
+        yield return $"DOF Fix update check failed: {E}";
+        // Policy, Winetricks route, Repair after move.
+        yield return $"Upstream RHI manifest unavailable: {E}";
+        yield return "No safe Winetricks route is available for this prefix.";
+        yield return DeploymentRelocation.RepairDonePrefix + "3";
+        // ReShade setup extractor reasons (after its own prefix).
+        foreach (var reason in new[]
+                 {
+                     "no ZIP archive found in the setup",
+                     "the archive holds no ReShade64.dll or ReShade32.dll",
+                     "ReShade64.dll: declared size over the limit (5 > 4 bytes)",
+                     "the ReShade DLLs together declare more than the limit (9 > 8 bytes)",
+                     "ReShade64.dll: holds more bytes than it declares (4)",
+                     "ReShade64.dll: holds a different size than it declares (3 != 4)",
+                     "ReShade64.dll: CRC-32 does not match the archive (corrupt download)"
+                 })
+            yield return ReShadeArchiveExtractor.SetupUnreadablePrefix + reason;
+        // Downloaded-archive entry refusals (ReShadeArchiveExtractor.ExtractEntryAsync: nightly + Addon Manager zips).
+        foreach (var reason in new[]
+                 {
+                     "ReShade64.dll: declared size over the limit (5 > 4 bytes)",
+                     "Exemplo.addon64: holds more bytes than it declares (4)",
+                     "Exemplo.addon64: holds a different size than it declares (3 != 4)",
+                     "Exemplo.addon64: CRC-32 does not match the archive (corrupt download)",
+                     $"{AtomicFile.SizeLimitPrefix}4{AtomicFile.SizeLimitMiddle}Exemplo.addon64"
+                 })
+            yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + reason;
+    }
+
+    [Theory]
+    [MemberData(nameof(Messages))]
+    public void WaveOneMessage_HasAPortuguesePresentation_AndStaysAsIsInEnglish(string message)
+    {
+        var pt = UiLocalizationService.PresentFor("pt-BR", message);
+
+        Assert.NotEqual(UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
+        // "no" is also Portuguese ("no instalador"); every other marker is English only.
+        var english = UiLocalizationService.EnglishMarkersIn(pt).Where(w => !w.Equals("no", StringComparison.OrdinalIgnoreCase)).ToArray();
+        Assert.True(english.Length == 0, $"English left ({string.Join(", ", english)}): {pt}");
+        Assert.Equal(message, UiLocalizationService.PresentFor("en-US", message));
+    }
+
+    [Theory]
+    [InlineData("pt-BR")]
+    [InlineData("en-US")]
+    public void UnlocalizedFallback_NamesTheAppLog_AndClaimsNothingAboutTheOperation(string language)
+    {
+        var unmapped = language == "pt-BR"
+            ? "The component failed because the remote server is not available right now"
+            : "O componente falhou porque o servidor remoto não está disponível agora para o jogo";
+
+        var shown = UiLocalizationService.PresentFor(language, unmapped);
+
+        Assert.Equal(UiLocalizationService.UnlocalizedFallbackFor(language), shown);
+        Assert.Contains(UiExceptionGuard.Log.FilePath, shown, StringComparison.Ordinal);
+        Assert.EndsWith("rhi.log.", shown, StringComparison.Ordinal);
+        Assert.DoesNotContain("preserv", shown, StringComparison.OrdinalIgnoreCase);
+    }
+}

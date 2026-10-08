@@ -25,7 +25,8 @@ internal sealed class ViewModelFixture : IDisposable
     public MainWindowViewModel Vm { get; }
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
-    private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed)
+    private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
+        Func<HttpRequestMessage, Exception>? httpFailure)
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -34,14 +35,15 @@ internal sealed class ViewModelFixture : IDisposable
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed);
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure);
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
+    /// <param name="httpFailure">What every request throws (default: an "offline test" <see cref="HttpRequestException"/>).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
-        Action<LinuxGameLibraryStore>? seed = null)
+        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null)
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure);
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }
@@ -58,15 +60,18 @@ internal sealed class ViewModelFixture : IDisposable
 
     public void Dispose()
     {
+        // Detaches the view model from process-wide hooks (store quarantine notices) before its files go.
+        Vm.Dispose();
         foreach (var dir in Directory.EnumerateDirectories(Root, "*", SearchOption.AllDirectories).Prepend(Root))
             try { if (OperatingSystem.IsLinux()) File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); } catch { /* best effort before delete */ }
         try { Directory.Delete(Root, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
-        LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built)
+        LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
+        Func<HttpRequestMessage, Exception>? httpFailure)
     {
-        var http = new HttpClient(new OfflineHandler());
+        var http = new HttpClient(new OfflineHandler(httpFailure));
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) });
         var deployment = new TransactionalFileDeploymentService();
@@ -129,9 +134,9 @@ internal sealed class ViewModelFixture : IDisposable
         public Task ProbeAsync(DetectedGame game, IReadOnlyList<string> files, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class OfflineHandler : HttpMessageHandler
+    private sealed class OfflineHandler(Func<HttpRequestMessage, Exception>? failure) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => throw new HttpRequestException("offline test");
+            => throw (failure?.Invoke(request) ?? new HttpRequestException("offline test"));
     }
 }

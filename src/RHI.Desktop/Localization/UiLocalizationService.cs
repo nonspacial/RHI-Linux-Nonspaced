@@ -100,7 +100,6 @@ public static class UiLocalizationService
         ["Ui.Maintenance"] = "Manutenção / caminhos XDG",
         ["Ui.DesktopExperience"] = "Experiência de desktop Linux",
         ["Ui.ViewMode"] = "Modo de visualização",
-        ["Ui.SettingsSaved"] = "Configurações salvas.",
         ["Ui.QuickStartTip"] = "Guia inicial do Linux e regras de responsabilidade dos componentes",
         ["Ui.AvailableHdrModsTip"] = "Todos os jogos com mod RenoDX ou Luma nos catálogos, com link de download",
         ["Ui.AddGameTip"] = "Adiciona manualmente um executável de jogo do Windows à biblioteca persistente",
@@ -125,7 +124,6 @@ public static class UiLocalizationService
         ["Ui.CustomDllPlaceholder"] = "Selecione uma DLL do ReShade ou digite o caminho",
         ["Ui.D3DCompilerPlaceholder"] = "Detectar no prefixo ou selecionar Microsoft D3DCompiler_47.dll",
         ["Ui.D3DCompilerNote"] = "Os dois auxiliares instalam o d3dcompiler_47 nativo da Microsoft e o RHI aplica d3dcompiler_47=native,builtin apenas ao jogo selecionado. O Feeder Full aceita o compilador do prefixo sem diferenciar maiúsculas/minúsculas e pode usar diretamente a DLL da Microsoft selecionada; Aplicar continua salvando-a no perfil do ReShade. O RHI nunca redistribui essa DLL da Microsoft.",
-        ["Ui.FeederConsumerPackage"] = "Pacote consumidor do Feeder",
         ["Ui.FeederConsumer"] = "Consumidor do Feeder",
         ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 é o consumidor neural padrão do Feeder. O RHI baixa a versão compatível automaticamente; não instala Deep Fried Chicken nem adiciona LoadFromDllMain do Chicken.",
         ["Ui.FeederPackagePlaceholder"] = "Selecione o pacote oficial Deep Fried Chicken (.zip ou .7z) antes de instalar o Feeder Full",
@@ -219,7 +217,7 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Combinação atual: {0}",
         ["Ui.UnknownExistingKey"] = "Tecla existente (não reconhecida)",
         ["Ui.ReShadeInternalFormat"] = "Formato interno do ReShade: {0}\nOrdem interna: tecla, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não localizada para PT-BR. A operação foi preservada; consulte os detalhes técnicos/logs se necessário.",
+        ["Ui.UnlocalizedPlatformMessage"] = "O componente retornou uma mensagem técnica ainda não traduzida para PT-BR; confira o texto original em {0}.",
         ["Ui.UnexpectedError"] = "Algo deu errado: {0} O RHI continua em execução; os detalhes estão em {1}.",
         ["Ui.UnexpectedErrorNoLog"] = "Algo deu errado: {0} O RHI continua em execução, mas os detalhes não puderam ser gravados no log.",
         ["Ui.RepeatedErrorsRestart"] = "O RHI encontrou erros repetidos e parou de exibi-los; os detalhes estão em {0}. Reinicie o RHI.",
@@ -328,7 +326,6 @@ public static class UiLocalizationService
         ["Ui.Maintenance"] = "Maintenance / XDG paths",
         ["Ui.DesktopExperience"] = "Linux desktop experience",
         ["Ui.ViewMode"] = "View mode",
-        ["Ui.SettingsSaved"] = "Settings saved.",
         ["Ui.QuickStartTip"] = "Linux quick-start guide and component responsibility rules",
         ["Ui.AvailableHdrModsTip"] = "Every game with a RenoDX or Luma mod in the catalogues, with a download link",
         ["Ui.AddGameTip"] = "Manually adds a Windows game executable to the persistent library",
@@ -353,7 +350,6 @@ public static class UiLocalizationService
         ["Ui.CustomDllPlaceholder"] = "Select a ReShade DLL or enter its path",
         ["Ui.D3DCompilerPlaceholder"] = "Detect in prefix or select Microsoft D3DCompiler_47.dll",
         ["Ui.D3DCompilerNote"] = "Both helpers install Microsoft's native d3dcompiler_47 and RHI applies d3dcompiler_47=native,builtin only to the selected game. Feeder Full accepts the compiler from the prefix case-insensitively and can use the selected Microsoft DLL directly; Apply still saves it to the ReShade profile. RHI never redistributes this Microsoft DLL.",
-        ["Ui.FeederConsumerPackage"] = "Feeder consumer package",
         ["Ui.FeederConsumer"] = "Feeder consumer",
         ["Ui.FeederRenoDxNote"] = "RenoDX DLSS5 is the default neural consumer for Feeder. RHI downloads the compatible version automatically; it does not install Deep Fried Chicken or add the Chicken LoadFromDllMain token.",
         ["Ui.FeederPackagePlaceholder"] = "Select the official Deep Fried Chicken package (.zip or .7z) before installing Feeder Full",
@@ -447,7 +443,7 @@ public static class UiLocalizationService
         ["Ui.CurrentHotkey"] = "Current binding: {0}",
         ["Ui.UnknownExistingKey"] = "Existing key (unrecognized)",
         ["Ui.ReShadeInternalFormat"] = "Internal ReShade format: {0}\nInternal order: key, Ctrl, Shift, Alt.",
-        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet localized for EN-US. The operation state was preserved; consult technical details/logs if needed.",
+        ["Ui.UnlocalizedPlatformMessage"] = "The component returned a technical message that is not yet translated into English; check the original text in {0}.",
         ["Ui.UnexpectedError"] = "Something went wrong: {0} RHI is still running; the details are in {1}.",
         ["Ui.UnexpectedErrorNoLog"] = "Something went wrong: {0} RHI is still running, but the details could not be written to the log.",
         ["Ui.RepeatedErrorsRestart"] = "RHI hit repeated errors and stopped showing them; the details are in {0}. Please restart RHI.",
@@ -612,11 +608,6 @@ public static class UiLocalizationService
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Core.Deployment.TrustedDownloadPolicy.GitHubReleases.RefusalPrefix,
             "Download recusado: links de release do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
-        // Size caps (TrustedDownload announced size, AtomicFile streamed content). The numbers/file follow the fragments.
-        (RHI.Core.Deployment.TrustedDownloadPolicy.TooLargePrefix,
-            "Download recusado: maior que o limite de tamanho deste download. Limite / tamanho anunciado em bytes: "),
-        (RHI.Core.Deployment.AtomicFile.OverLimitPrefix,
-            "Conteúdo recusado: maior que o seu limite de tamanho. Limite em bytes e arquivo: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
         // wikiUnlinks title kept installable by a manifest snapshot override (#141). The URL follows the fragment.
         ("Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: ",
@@ -820,6 +811,85 @@ public static class UiLocalizationService
         ("ShortFuse-owned file was modified outside RHI: ", "Arquivo pertencente ao ShortFuse foi modificado fora do RHI: "),
         ("Could not save the repaired ShortFuse ownership record (", "Não foi possível salvar o registro de propriedade corrigido do ShortFuse ("),
         ("); Remove is blocked before anything was changed.", "); a remoção foi bloqueada antes de qualquer alteração."),
+        // Wave-1 core/platform messages (integration w1 review, ui-build finding 1). Interpolated values sit after the
+        // fixed fragments; the fragments are matched on the producers' own constants where they exist.
+        (RHI.Core.Deployment.AtomicFile.NoFolderPrefix, "Não foi possível determinar a pasta deste caminho: "),
+        (RHI.Core.Deployment.AtomicFile.SizeLimitPrefix, "O conteúdo excede o limite de tamanho ("),
+        (RHI.Core.Deployment.AtomicFile.CopyVerifyFailurePrefix, "A verificação da cópia falhou (o arquivo gravado não corresponde ao que foi lido): "),
+        (RHI.Core.Deployment.AtomicFile.ShaMismatchPrefix, "SHA-256 divergente (esperado "),
+        (RHI.Core.Deployment.AtomicFile.ShaMismatchMiddle, ", real "),
+        (RHI.Core.Deployment.AtomicFile.SameFilePrefix, "Origem e destino são o mesmo arquivo: "),
+        (RHI.Core.Deployment.AtomicFile.MoveTargetExistsPrefix, "Movimentação recusada, o destino já existe: "),
+        (RHI.Core.Deployment.AtomicFile.MoveFailedPrefix, "Não foi possível mover o arquivo (errno "),
+        (RHI.Core.Deployment.TrustedDownload.SizeLimitPrefix, "O download é maior que o limite de tamanho ("),
+        ("Could not register this RHI instance in ", "Não foi possível registrar esta instância do RHI em "),
+        ("Journal entry recovery failed: ", "A recuperação da entrada do diário falhou: "),
+        ("Unreadable journal entry kept at ", "Entrada ilegível do diário mantida em "),
+        ("No handler is registered for this step; it was left for the next start: ", "Nenhum tratador está registrado para esta etapa; ela ficou para a próxima inicialização: "),
+        ("Changed after the interruption and left as it is: ", "Alterado depois da interrupção e mantido como está: "),
+        ("Undo deferred to the next start: ", "Desfazer adiado para a próxima inicialização: "),
+        ("Could not undo this step: ", "Não foi possível desfazer esta etapa: "),
+        ("The journal entry could not be narrowed to the deferred steps (", "A entrada do diário não pôde ser reduzida às etapas adiadas ("),
+        ("The journal entry could not be finalised; it is cleaned on the next start: ", "A entrada do diário não pôde ser finalizada; ela será limpa na próxima inicialização: "),
+        ("Rolled back, but the journal entry could not be removed: ", "Desfeito, mas a entrada do diário não pôde ser removida: "),
+        ("Could not remove ", "Não foi possível remover "),
+        (": not put back; its content was last placed in ", ": não foi devolvido; o conteúdo dele foi colocado por último em "),
+        (", which was changed after the interruption.", ", que foi alterado depois da interrupção."),
+        (": no surviving copy with the pre-operation content (", ": nenhuma cópia restante com o conteúdo anterior à operação ("),
+        (") was found; every copy was kept.", ") foi encontrada; todas as cópias foram mantidas."),
+        (": the backup disappeared although this operation never changed it; every copy was kept.", ": a cópia de segurança sumiu, embora esta operação nunca a tenha alterado; todas as cópias foram mantidas."),
+        (": removed by something else after the interruption (this operation never changed it); nothing to put back.", ": removido por outro processo depois da interrupção (esta operação nunca o alterou); nada a devolver."),
+        (": changed after the interruption (neither its earlier content nor what RHI wrote); left as it is.", ": alterado depois da interrupção (nem o conteúdo anterior nem o que o RHI gravou); mantido como está."),
+        (" It did not exist before the operation.", " Ele não existia antes da operação."),
+        (": changed after the interruption; left as it is.", ": alterado depois da interrupção; mantido como está."),
+        (": rollback failed (", ": a reversão falhou ("),
+        ("); every copy was kept.", "); todas as cópias foram mantidas."),
+        ("RHI's copy of its earlier content was moved to ", "A cópia do RHI com o conteúdo anterior foi movida para "),
+        ("Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is undone at the next start: ",
+            "O Wine está em execução neste prefixo e sobrescreveria a alteração ao sair; por isso este override do Wine será desfeito na próxima inicialização: "),
+        ("This Wine override was changed after the interruption and was left as it is: ", "Este override do Wine foi alterado depois da interrupção e foi mantido como está: "),
+        ("Source file does not exist: ", "O arquivo de origem não existe: "),
+        ("Target directory does not exist: ", "O diretório de destino não existe: "),
+        ("No .original backup exists for ", "Não existe cópia .original para "),
+        ("The deployment journal could not be written (", "O diário de implantação não pôde ser gravado ("),
+        ("the deployment journal could not be written (", "o diário de implantação não pôde ser gravado ("),
+        ("); nothing was changed.", "); nada foi alterado."),
+        ("). Nothing was changed.", "). Nada foi alterado."),
+        (" Rollback was incomplete (", " A reversão ficou incompleta ("),
+        ("); the pre-change copies (*", "); as cópias anteriores à alteração (*"),
+        (") were kept next to the affected files.", ") foram mantidas ao lado dos arquivos afetados."),
+        ("ReShade install/update failed: ", "Falha na instalação/atualização do ReShade: "),
+        ("DLSS manifest did not answer and no cached copy exists (timeout ", "O manifesto de DLSS não respondeu e não há cópia em cache (tempo limite "),
+        ("Downloaded archive does not contain ", "O arquivo baixado não contém "),
+        ("The cached DLL is not readable after extraction: ", "A DLL em cache não pode ser lida após a extração: "),
+        ("Extracted file is unreadable or unexpectedly small: ", "O arquivo extraído está ilegível ou é pequeno demais: "),
+        ("Manifest entry has a malformed sha256: ", "Entrada do manifesto com sha256 malformado: "),
+        ("DLSS manifest has no entries.", "O manifesto de DLSS não tem entradas."),
+        ("Manifest entry has no version.", "Entrada do manifesto sem versão."),
+        (" Rollback incomplete: ", " Reversão incompleta: "),
+        (" Restore incomplete: ", " Restauração incompleta: "),
+        (" Control UE changes could not be undone: ", " As alterações do Control UE não puderam ser desfeitas: "),
+        ("Could not restore ", "Não foi possível restaurar "),
+        ("; its previous contents were kept at ", "; o conteúdo anterior foi mantido em "),
+        (" nor keep a copy of its previous contents (", " nem guardar uma cópia do conteúdo anterior ("),
+        ("Downloaded RenoDX file is not a valid PE add-on (possible HTML/error response).", "O arquivo RenoDX baixado não é um add-on PE válido (possível resposta HTML/de erro)."),
+        ("RenoDX removal failed: ", "Falha na remoção do RenoDX: "),
+        ("Downloaded RenoDX Upgrade add-on is not a valid PE payload or is unexpectedly small.", "O add-on RenoDX Upgrade baixado não é um arquivo PE válido ou é pequeno demais."),
+        ("Downloaded RenoDX Upgrade payload has the wrong architecture (expected ", "O arquivo RenoDX Upgrade baixado tem a arquitetura errada (esperado "),
+        ("RenoDX Upgrade install failed: ", "Falha na instalação do RenoDX Upgrade: "),
+        ("Downloaded Universal UE DOF Fix is not a valid PE payload or is unexpectedly small.", "O Universal UE DOF Fix baixado não é um arquivo PE válido ou é pequeno demais."),
+        ("Downloaded Universal UE DOF Fix failed the SHA-256 digest published by GitHub.", "O Universal UE DOF Fix baixado não confere com o SHA-256 publicado pelo GitHub."),
+        ("DOF Fix update check failed: ", "Falha ao verificar atualização do DOF Fix: "),
+        ("Upstream RHI manifest unavailable: ", "Manifesto do RHI upstream indisponível: "),
+        ("No safe Winetricks route is available for this prefix.", "Nenhuma rota segura do Winetricks está disponível para este prefixo."),
+        (RHI.Platform.Linux.Deployment.DeploymentRelocation.RepairDonePrefix, "Registros atualizados para a nova pasta do jogo: "),
+        ("no ZIP archive found in the setup", "nenhum arquivo ZIP encontrado no instalador"),
+        ("the archive holds no ReShade64.dll or ReShade32.dll", "o arquivo não contém ReShade64.dll nem ReShade32.dll"),
+        (": declared size over the limit (", ": tamanho declarado acima do limite ("),
+        ("the ReShade DLLs together declare more than the limit (", "as DLLs do ReShade juntas declaram mais que o limite ("),
+        ("holds more bytes than it declares (", "contém mais bytes do que declara ("),
+        ("holds a different size than it declares (", "tem tamanho diferente do que declara ("),
+        ("CRC-32 does not match the archive (corrupt download)", "o CRC-32 não confere com o arquivo (download corrompido)"),
         ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.")
     ];
 
@@ -929,11 +999,22 @@ public static class UiLocalizationService
         {
             // The real text is not lost: it goes to the error log once, so "see the logs" is true.
             LogUntranslatedOnce(normalized, value);
-            return TextFor(normalized, "Ui.UnlocalizedPlatformMessage");
+            return UnlocalizedFallbackFor(normalized);
         }
 
         return result;
     }
+
+    /// <summary>
+    /// What <see cref="PresentFor"/> shows for a platform message with no presentation in <paramref name="language"/>:
+    /// a generic line naming the app log, where <see cref="LogUntranslatedOnce"/> wrote the original text.
+    /// </summary>
+    public static string UnlocalizedFallbackFor(string? language)
+        => FormatFor(language, "Ui.UnlocalizedPlatformMessage", RHI.Desktop.Diagnostics.UiExceptionGuard.Log.FilePath);
+
+    /// <summary>English marker words left in <paramref name="value"/> (tests: a PT-BR presentation must have none).</summary>
+    internal static IReadOnlyList<string> EnglishMarkersIn(string value)
+        => Tokens(value.Replace('\'', ' ')).Where(EnglishMarkers.Contains).ToArray();
 
     private sealed record PortugueseOnlyTemplate(string Anchor, Regex Pattern, string Replacement, int LiteralLength);
 
@@ -1008,8 +1089,7 @@ public static class UiLocalizationService
     private static bool LooksLikeOppositeLanguage(string language, string value)
     {
         if (value.Length < 24) return false;
-        var tokens = value
-            .Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '/', '\\', '-', '—', '_' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var tokens = Tokens(value);
         if (tokens.Length < 4) return false;
 
         var english = CountMarkers(tokens, EnglishMarkers);
@@ -1018,6 +1098,10 @@ public static class UiLocalizationService
             ? english >= 3 && english > portuguese + 1
             : portuguese >= 3 && portuguese > english + 1;
     }
+
+    private static string[] Tokens(string value)
+        => value.Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '/', '\\', '-', '—', '_' },
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static int CountMarkers(IEnumerable<string> tokens, HashSet<string> markers)
         => tokens.Count(token => markers.Contains(token));

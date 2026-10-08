@@ -304,7 +304,7 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
         var result = await manager.ApplySelectionAsync(game, [id]);
 
         Assert.False(result.Success);
-        Assert.Contains(TrustedDownloadPolicy.TooLargePrefix + $"{AddonCap} / {AddonCap + 1}", result.Message, StringComparison.Ordinal);
+        Assert.Contains($"{TrustedDownload.SizeLimitPrefix}{AddonCap}{AtomicFile.SizeLimitMiddle}{AddonCap + 1} bytes", result.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon*", SearchOption.AllDirectories));
     }
 
@@ -325,7 +325,7 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
         var result = await service.InstallAsync(game, files);
 
         Assert.False(result.Success);
-        Assert.Contains(TrustedDownloadPolicy.TooLargePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Contains($"{TrustedDownload.SizeLimitPrefix}{AddonCap}{AtomicFile.SizeLimitMiddle}", result.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFiles(game.BinaryDirectory!, "*.addon*"));
     }
 
@@ -347,7 +347,7 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
 
         var refused = await Assert.ThrowsAsync<InvalidDataException>(() => service.InstallAsync(game));
 
-        Assert.StartsWith(TrustedDownloadPolicy.TooLargePrefix + $"{AddonCap} /", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{TrustedDownload.SizeLimitPrefix}{AddonCap}{AtomicFile.SizeLimitMiddle}", refused.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -361,7 +361,7 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
         var refused = await Assert.ThrowsAsync<InvalidDataException>(() => TrustedDownload.DownloadToTempAsync(
             http, "https://github.com/o/r/releases/download/v1/x.addon64", Path.Combine(dir, "x.addon64"), TrustedDownloadPolicy.GitHub with { MaxBytes = 4096 }));
 
-        Assert.StartsWith(AtomicFile.OverLimitPrefix + "4096 ", refused.Message, StringComparison.Ordinal);
+        Assert.StartsWith($"{AtomicFile.SizeLimitPrefix}4096{AtomicFile.SizeLimitMiddle}", refused.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFileSystemEntries(dir));
     }
 
@@ -396,10 +396,12 @@ public sealed class TrustedDownloadPolicyTests : IDisposable
     [Fact]
     public void SizeRefusals_ArePresentedInPortuguese()
     {
-        var announced = $"{TrustedDownloadPolicy.TooLargePrefix}268435456 / 268435457";
-        Assert.Equal("Download recusado: maior que o limite de tamanho deste download. Limite / tamanho anunciado em bytes: 268435456 / 268435457",
+        // One message per cap, built from the producers' own constants (TrustedDownload announced size, AtomicFile streamed).
+        var announced = $"{TrustedDownload.SizeLimitPrefix}268435456{AtomicFile.SizeLimitMiddle}268435457 bytes";
+        Assert.Equal("O download é maior que o limite de tamanho (268435456 bytes): 268435457 bytes",
             UiLocalizationService.PresentFor("pt-BR", announced));
-        Assert.StartsWith("Conteúdo recusado:", UiLocalizationService.PresentFor("pt-BR", AtomicFile.OverLimitPrefix + "4096 x.addon64"), StringComparison.Ordinal);
+        Assert.Equal("O conteúdo excede o limite de tamanho (4096 bytes): x.addon64",
+            UiLocalizationService.PresentFor("pt-BR", $"{AtomicFile.SizeLimitPrefix}4096{AtomicFile.SizeLimitMiddle}x.addon64"));
     }
 
     [Fact]

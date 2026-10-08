@@ -232,7 +232,7 @@ public sealed class RenoDxUpgradeDeploymentService
 
         var payloadArchitecture = PeArchitectureDetector.Detect(download.Path);
         if (payloadArchitecture != architecture)
-            throw new InvalidDataException($"Downloaded RenoDX Upgrade payload is {ArchitectureLabel(payloadArchitecture)}, expected {ArchitectureLabel(architecture)}.");
+            throw new InvalidDataException($"Downloaded RenoDX Upgrade payload has the wrong architecture (expected {ArchitectureLabel(architecture)}): {ArchitectureLabel(payloadArchitecture)}");
 
         download.MoveTo(cache);
         return cache;

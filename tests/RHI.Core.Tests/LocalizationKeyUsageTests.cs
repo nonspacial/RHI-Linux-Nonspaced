@@ -13,8 +13,20 @@ namespace RHI.Core.Tests;
 public sealed class LocalizationKeyUsageTests
 {
     // Key literals as the code writes them: T("Vm.X"), TF(...), Text/Format(...), and keys handed on as arguments
-    // (TryPersist(..., "Ui.WhatGameLibrary")).
-    private static readonly Regex KeyLiteral = new("\"((?:Vm|Win|Ui|Hist|Key)\\.[A-Za-z0-9_]+)\"");
+    // (TryPersist(..., "Ui.WhatGameLibrary")). The prefixes come from the tables themselves, so a new key family
+    // (Scan.*) is checked as soon as it exists.
+    private static readonly Regex KeyLiteral = new("\"((?:" + string.Join("|", KeyPrefixes()) + ")\\.[A-Za-z0-9_]+)\"");
+
+    private static IEnumerable<string> KeyPrefixes()
+        => UiLocalizationService.Keys.Where(k => k.Contains('.')).Select(k => k[..k.IndexOf('.')]).Distinct(StringComparer.Ordinal)
+            .Select(Regex.Escape);
+
+    [Fact]
+    public void KeyPattern_CoversEveryKeyFamily()
+    {
+        foreach (var family in new[] { "Vm", "Win", "Ui", "Hist", "Key", "Scan" })
+            Assert.Matches(KeyLiteral, $"T(\"{family}.Anything\")");
+    }
     private static readonly Regex XamlResource = new(@"DynamicResource\s+([A-Za-z0-9_.]+)");
     private static readonly Regex XamlDefinedKey = new("x:Key=\"([^\"]+)\"");
 
@@ -40,6 +52,25 @@ public sealed class LocalizationKeyUsageTests
         Assert.True(code.Count > 10 && xaml.Count > 0, "desktop sources not found");
         Assert.Empty(missing);
     }
+
+    [Fact]
+    public void EveryKeyInTheTables_IsUsedByCodeOrXaml()
+    {
+        // The reverse check: a row nothing asks for is dead text that still has to be translated and reviewed.
+        var desktop = Path.Combine(RepoRoot(), "src", "RHI.Desktop");
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in SourceFiles(desktop, "*.cs").Concat(SourceFiles(desktop, "*.axaml")))
+        {
+            if (file.EndsWith("UiStrings.cs", StringComparison.Ordinal)) continue;
+            var text = TableDefinition.Replace(File.ReadAllText(file), "");
+            foreach (Match m in KeyToken.Matches(text)) used.Add(m.Value);
+        }
+
+        Assert.Empty(UiLocalizationService.Keys.Where(k => k.Contains('.') && !used.Contains(k)).Order(StringComparer.Ordinal));
+    }
+
+    private static readonly Regex TableDefinition = new("\\[\"[A-Za-z]+\\.[A-Za-z0-9_]+\"\\]\\s*=");
+    private static readonly Regex KeyToken = new("(?<![A-Za-z0-9_.])[A-Za-z]+\\.[A-Za-z0-9_]+(?![A-Za-z0-9_])");
 
     [Fact]
     public void MigrateScript_RoundTripsTheTable_ByteForByte()

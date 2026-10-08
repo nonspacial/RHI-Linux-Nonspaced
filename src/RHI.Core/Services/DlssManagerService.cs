@@ -103,7 +103,7 @@ public sealed class DlssManagerService
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException($"DLSS manifest did not answer within {ManifestFetchTimeout.TotalSeconds:0} s and no cached copy exists.");
+            throw new TimeoutException($"DLSS manifest did not answer and no cached copy exists (timeout {ManifestFetchTimeout.TotalSeconds:0} s).");
         }
     }
 
@@ -464,7 +464,7 @@ public sealed class DlssManagerService
             await ExtractVerifiedAsync(match, cachedDll, cancellationToken).ConfigureAwait(false);
         }
         if (!IsReadableCachedDll(cachedDll))
-            throw new IOException($"Cached {expectedDll} is not readable after extraction: {cachedDll}");
+            throw new IOException($"The cached DLL is not readable after extraction: {cachedDll}");
         CacheStamp.Write(cachedDll, entry.Url, entry.Version, entry.Sha256);
         return cachedDll;
     }
@@ -492,7 +492,7 @@ public sealed class DlssManagerService
         {
             NormalizeCacheDllPermissions(staged.Path);
             if (!IsReadableCachedDll(staged.Path))
-                throw new InvalidDataException($"Extracted {member.Name} is unreadable or unexpectedly small.");
+                throw new InvalidDataException($"Extracted file is unreadable or unexpectedly small: {member.Name}");
             AtomicFile.MoveIntoPlace(staged.Path, destination);
         }
         finally
@@ -655,7 +655,7 @@ public sealed class DlssManagerService
             if (string.IsNullOrWhiteSpace(entry.Version)) throw new InvalidDataException("Manifest entry has no version.");
             ValidateDownloadUrl(entry.Url);
             if (entry.Sha256 is { } sha && (sha.Length != 64 || !sha.All(Uri.IsHexDigit)))
-                throw new InvalidDataException($"Manifest entry {entry.Version} has a malformed sha256.");
+                throw new InvalidDataException($"Manifest entry has a malformed sha256: {entry.Version}");
         }
     }
 

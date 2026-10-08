@@ -60,79 +60,104 @@ public sealed class JsonStoreUnavailableException : IOException
 /// </summary>
 public static class JsonStoreQuarantine
 {
-    private const int MaxPending = 32;
-    private static readonly object Gate = new();
-    private static readonly Dictionary<string, (DateTime Mtime, long Length, string? Copy)> Known = new(StringComparer.Ordinal);
-    private static readonly List<JsonStoreQuarantineNotice> Pending = [];
-    private static readonly List<Action<JsonStoreQuarantineNotice>> Listeners = [];
+    /// <summary>The process-wide registry every store reports to.</summary>
+    internal static readonly Registry Shared = new();
 
     /// <summary>
     /// Attaches a listener (any thread may call it back) and hands it the notices nobody has
     /// received yet. Dispose the result to detach it.
     /// </summary>
-    public static IDisposable Listen(Action<JsonStoreQuarantineNotice> listener)
-    {
-        ArgumentNullException.ThrowIfNull(listener);
-        JsonStoreQuarantineNotice[] replay;
-        lock (Gate)
-        {
-            Listeners.Add(listener);
-            replay = Pending.ToArray();
-            Pending.Clear();
-        }
-        foreach (var notice in replay) listener(notice);
-        return new Subscription(listener);
-    }
+    public static IDisposable Listen(Action<JsonStoreQuarantineNotice> listener) => Shared.Listen(listener);
 
     /// <summary>
     /// Copies an unreadable file aside (once per file version) and returns the copy, or null when
     /// the file could not even be read. <paramref name="bytes"/> are the bytes that failed to parse.
     /// </summary>
-    internal static string? Quarantine(string path, byte[]? bytes, bool writesRefused)
-    {
-        var fullPath = Path.GetFullPath(path);
-        (DateTime Mtime, long Length) stamp;
-        try
-        {
-            var info = new FileInfo(fullPath);
-            stamp = (info.LastWriteTimeUtc, info.Exists ? info.Length : -1);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            stamp = (DateTime.MinValue, -1);
-        }
-
-        JsonStoreQuarantineNotice notice;
-        Action<JsonStoreQuarantineNotice>[] listeners;
-        lock (Gate)
-        {
-            if (Known.TryGetValue(fullPath, out var known) && known.Mtime == stamp.Mtime && known.Length == stamp.Length)
-                return known.Copy;
-
-            var copy = bytes is null ? null : CopyAside(fullPath, bytes);
-            Known[fullPath] = (stamp.Mtime, stamp.Length, copy);
-            notice = new JsonStoreQuarantineNotice(fullPath, copy, writesRefused);
-            listeners = Listeners.ToArray();
-            if (listeners.Length == 0)
-            {
-                // Kept for the first listener to attach (e.g. settings read before the UI exists).
-                Pending.Add(notice);
-                if (Pending.Count > MaxPending) Pending.RemoveAt(0);
-            }
-        }
-
-        AppLog.Warn("store", notice.QuarantinePath is null
-            ? $"{fullPath} could not be read or copied aside" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt")
-            : $"{fullPath} could not be read; copy kept at {notice.QuarantinePath}" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt"));
-        foreach (var listener in listeners) listener(notice);
-        return notice.QuarantinePath;
-    }
+    internal static string? Quarantine(string path, byte[]? bytes, bool writesRefused) => Shared.Quarantine(path, bytes, writesRefused);
 
     /// <summary>The file reads again (fixed, replaced or deleted): a later corruption is a new event.</summary>
-    internal static void Forget(string path)
+    internal static void Forget(string path) => Shared.Forget(path);
+
+    /// <summary>
+    /// The bookkeeping behind the facade. An instance of its own lets tests check the
+    /// "pending notices go to the first listener only" rule without the listeners every live view
+    /// model in the test process attaches to <see cref="Shared"/>.
+    /// </summary>
+    internal sealed class Registry
     {
-        var fullPath = Path.GetFullPath(path);
-        lock (Gate) Known.Remove(fullPath);
+        private const int MaxPending = 32;
+        private readonly object _gate = new();
+        private readonly Dictionary<string, (DateTime Mtime, long Length, string? Copy)> _known = new(StringComparer.Ordinal);
+        private readonly List<JsonStoreQuarantineNotice> _pending = [];
+        private readonly List<Action<JsonStoreQuarantineNotice>> _listeners = [];
+
+        public IDisposable Listen(Action<JsonStoreQuarantineNotice> listener)
+        {
+            ArgumentNullException.ThrowIfNull(listener);
+            JsonStoreQuarantineNotice[] replay;
+            lock (_gate)
+            {
+                _listeners.Add(listener);
+                replay = _pending.ToArray();
+                _pending.Clear();
+            }
+            foreach (var notice in replay) listener(notice);
+            return new Subscription(this, listener);
+        }
+
+        public string? Quarantine(string path, byte[]? bytes, bool writesRefused)
+        {
+            var fullPath = Path.GetFullPath(path);
+            (DateTime Mtime, long Length) stamp;
+            try
+            {
+                var info = new FileInfo(fullPath);
+                stamp = (info.LastWriteTimeUtc, info.Exists ? info.Length : -1);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                stamp = (DateTime.MinValue, -1);
+            }
+
+            JsonStoreQuarantineNotice notice;
+            Action<JsonStoreQuarantineNotice>[] listeners;
+            lock (_gate)
+            {
+                if (_known.TryGetValue(fullPath, out var known) && known.Mtime == stamp.Mtime && known.Length == stamp.Length)
+                    return known.Copy;
+
+                var copy = bytes is null ? null : CopyAside(fullPath, bytes);
+                _known[fullPath] = (stamp.Mtime, stamp.Length, copy);
+                notice = new JsonStoreQuarantineNotice(fullPath, copy, writesRefused);
+                listeners = _listeners.ToArray();
+                if (listeners.Length == 0)
+                {
+                    // Kept for the first listener to attach (e.g. settings read before the UI exists).
+                    _pending.Add(notice);
+                    if (_pending.Count > MaxPending) _pending.RemoveAt(0);
+                }
+            }
+
+            AppLog.Warn("store", notice.QuarantinePath is null
+                ? $"{fullPath} could not be read or copied aside" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt")
+                : $"{fullPath} could not be read; copy kept at {notice.QuarantinePath}" + (writesRefused ? "; saves to it are refused" : "; it will be rebuilt"));
+            foreach (var listener in listeners) listener(notice);
+            return notice.QuarantinePath;
+        }
+
+        public void Forget(string path)
+        {
+            var fullPath = Path.GetFullPath(path);
+            lock (_gate) _known.Remove(fullPath);
+        }
+
+        private sealed class Subscription(Registry registry, Action<JsonStoreQuarantineNotice> listener) : IDisposable
+        {
+            public void Dispose()
+            {
+                lock (registry._gate) registry._listeners.Remove(listener);
+            }
+        }
     }
 
     /// <summary>
@@ -206,14 +231,6 @@ public static class JsonStoreQuarantine
         {
             // Reported to the caller as "no copy" (null): writes stay refused for user data.
             return null;
-        }
-    }
-
-    private sealed class Subscription(Action<JsonStoreQuarantineNotice> listener) : IDisposable
-    {
-        public void Dispose()
-        {
-            lock (Gate) Listeners.Remove(listener);
         }
     }
 }

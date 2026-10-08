@@ -183,7 +183,7 @@ public sealed class ControlUePostInstallTests : IDisposable
     }
 
     private static void AssertNotGenericInPortuguese(string message)
-        => Assert.True(UiLocalizationService.PresentFor("pt-BR", message) != UiLocalizationService.TextFor("pt-BR", "Ui.UnlocalizedPlatformMessage"), message);
+        => Assert.True(UiLocalizationService.PresentFor("pt-BR", message) != UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), message);
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 

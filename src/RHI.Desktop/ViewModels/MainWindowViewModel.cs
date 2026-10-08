@@ -715,7 +715,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // aside before a listener existed (e.g. settings read at startup).
         _quarantineSubscription = JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
         _settings = _settingsStore.Load();
-        _libraryState = _libraryStore.Load();
+        _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
         LibraryFilterMode = _libraryState.FilterMode;
         ViewMode = _settings.ViewMode;
         SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
@@ -948,12 +948,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>
     /// A merged card took over a duplicate's favourite/hidden/edit state; persist the move through the one
-    /// store-write helper. Automatic, so a refusal is only reported (returned for the scan's status line):
-    /// the card already shows the adopted state and the next library save retries it. The move is one-way:
-    /// if the duplicates later stop merging, the adopted keys stay on the card's key.
+    /// store-write helper. Automatic, so the status line is left alone (<c>reportStatus: false</c>) and a refusal is
+    /// returned for the scan's own status line instead: the card already shows the adopted state, and the next
+    /// library-state save persists it (it is part of <c>_libraryState</c>, which add/edit/reset/remove copy). The
+    /// move is one-way: if the duplicates later stop merging, the adopted keys stay on the card's key.
     /// </summary>
     private string? SaveAdoptedLibraryState()
-        => TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary");
+        => TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatGameLibrary", reportStatus: false);
 
     private async Task LoadDlssManifestAsync()
     {
@@ -985,7 +986,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             // Appended as a notice: this can land after the scan, whose problems notice or the selected
             // game's Ready line must stay on screen (Refs #43).
-            StatusText = _statusNotice.Raise(TF("Vm.DLSSManifestUnavailable", ex.Message), StatusText);
+            StatusText = _statusNotice.Raise(TF("Vm.DLSSManifestUnavailable", UiLocalizationService.Present(ex.Message)), StatusText);
         }
     }
 
@@ -1068,7 +1069,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         JsonStoreUnavailableException refused when refused.QuarantinePath is not null => TF("Vm.NotSavedCouldNotReadCopy",
             Path.GetFileName(refused.FilePath), refused.QuarantinePath),
         JsonStoreUnavailableException refused => TF("Vm.NotSavedCouldNotReadFix", refused.FilePath),
-        _ => TF("Win.CouldNotSave", error.Message)
+        _ => TF("Win.CouldNotSave", UiLocalizationService.Present(error.Message))
     };
 
     /// <summary>
@@ -1113,6 +1114,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnLibraryFilterModeChanged(string value)
     {
         if (_libraryState is null) return;
+        if (LibraryRepairRunning)
+        {
+            // Shown now, saved with the next library change (the repair reloads the library when it finishes).
+            ApplyFilter();
+            return;
+        }
         _libraryState.FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(value);
         if (!string.Equals(value, _libraryState.FilterMode, StringComparison.Ordinal))
             LibraryFilterMode = _libraryState.FilterMode;
@@ -1334,7 +1341,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             if (generation == _selectionGeneration && ReferenceEquals(SelectedGame, game))
-                StatusText = TF("Vm.FailedAnalyze", game.Name, ex.Message);
+                StatusText = TF("Vm.FailedAnalyze", game.Name, UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -1421,7 +1428,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // Re-key records older builds stored under a Heroic game's folder while the game is still
             // there, so they keep matching after it moves (Refs #38).
             TryPersist(() => _deploymentRecords.MigrateGameKeys(found), "Ui.WhatDeploymentRecords", sessionOnly: false);
-            _libraryState = _libraryStore.Load();
+            _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             LibraryFilterMode = _libraryState.FilterMode;
 
             // Partial refresh: the scanner hands back fresh detector-level instances, but the
@@ -1471,7 +1478,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.ScanFailed", ex.Message);
+            StatusText = TF("Vm.ScanFailed", UiLocalizationService.Present(ex.Message));
             return false;
         }
         finally
@@ -1503,7 +1510,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UpdateAllFailed", ex.Message);
+            StatusText = TF("Vm.UpdateAllFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -1563,7 +1570,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", ex.Message);
+            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", UiLocalizationService.Present(ex.Message));
         }
     }
 
@@ -1648,7 +1655,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
-            StatusText = TF("Vm.CouldNotLaunch", game.Name, ex.Message);
+            StatusText = TF("Vm.CouldNotLaunch", game.Name, UiLocalizationService.Present(ex.Message));
         }
         return false;
     }
@@ -1673,7 +1680,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(TF("Vm.RenoDXSettings", ex.Message)));
+            return new(null, false, Array.Empty<RenoDxCompatibilitySetting>(), ShowStatus(TF("Vm.RenoDXSettings", UiLocalizationService.Present(ex.Message))));
         }
     }
 
@@ -1701,7 +1708,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(TF("Vm.OptiScalerSettings", ex.Message)));
+            return new(null, false, Array.Empty<OptiScalerAdvancedSetting>(), ShowStatus(TF("Vm.OptiScalerSettings", UiLocalizationService.Present(ex.Message))));
         }
     }
 
@@ -1741,8 +1748,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetDlssg2030Preferences(SelectedGame, gpuGeneration, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetDlssg2030Preferences(game, gpuGeneration, proxyName));
+    }
+
+    /// <summary>
+    /// A dialog preference save (DLSS Enabler, RTX 20 FG, Universal MFG) through <see cref="TryPersist"/>: any
+    /// store failure, not only a refused unreadable file, comes back as a failed result saying nothing changed, and
+    /// the dialog puts its dropdowns back to the stored preferences.
+    /// </summary>
+    private ComponentOperationResult PersistPreference(Func<ComponentOperationResult> save)
+    {
+        ComponentOperationResult? result = null;
+        if (TryPersist(() => result = save(), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
+            return ComponentOperationResult.Fail(failure);
+        StatusText = UiLocalizationService.Present(result!.Message);
         return result;
     }
 
@@ -1776,9 +1796,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetStandaloneDlssEnablerPreferences(SelectedGame, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetStandaloneDlssEnablerPreferences(game, proxyName));
     }
 
     public async Task<DlssEnablerUpdateStatus> CheckStandaloneDlssEnablerUpdateAsync(CancellationToken cancellationToken = default)
@@ -1811,18 +1830,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, proxyName));
     }
 
     public ComponentOperationResult SetRtx40MfgPreferences(string gpuGeneration, string proxyName)
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, gpuGeneration, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, gpuGeneration, proxyName));
     }
 
     public async Task<Rtx40MfgUpdateStatus> CheckRtx40MfgUpdateAsync(CancellationToken cancellationToken = default)
@@ -1950,7 +1967,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.Symbol", component.DisplayName, ex.Message);
+            StatusText = TF("Vm.Symbol", component.DisplayName, UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -1994,7 +2011,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            UalLatestVersionText = TF("Vm.UpdateCheckFailed", ex.Message);
+            UalLatestVersionText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
             StatusText = UalLatestVersionText;
         }
         finally
@@ -2044,7 +2061,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UltimateASILoader", ex.Message);
+            StatusText = TF("Vm.UltimateASILoader", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2073,7 +2090,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.UltimateASILoaderRemovalFailed", ex.Message);
+            StatusText = TF("Vm.UltimateASILoaderRemovalFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2103,7 +2120,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
             StatusText = UiLocalizationService.Present(status.Message);
         }
-        catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", ex.Message); StatusText = ShortFuseLatestVersionText; }
+        catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", UiLocalizationService.Present(ex.Message)); StatusText = ShortFuseLatestVersionText; }
         finally { IsBusy = false; NotifyShortFuse(); }
     }
 
@@ -2131,7 +2148,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 RefreshShortFuseState(game);
             }
         }
-        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
         finally { IsBusy = false; NotifyShortFuse(); NotifyUal(); NotifyDlss(); }
     }
 
@@ -2208,7 +2225,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2228,7 +2245,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2248,7 +2265,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", ex.Message));
+            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", UiLocalizationService.Present(ex.Message)));
         }
         finally { IsBusy = false; }
     }
@@ -2272,7 +2289,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", ex.Message);
+            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
             StatusText = ReShadeUpdateText;
         }
         finally { IsBusy = false; }
@@ -2297,7 +2314,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.QuickApplyFailed", ex.Message);
+            StatusText = TF("Vm.QuickApplyFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2325,7 +2342,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.RestoreAllFailed", ex.Message);
+            StatusText = TF("Vm.RestoreAllFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
@@ -2481,12 +2498,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwap", displayName, result.Error);
+                StatusText = TF("Vm.FailedSwap", displayName, UiLocalizationService.Present(result.Error));
             }
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2520,12 +2537,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var result = await _dlss.RestoreAsync(kind, paths);
             StatusText = result.Success
                 ? TF("Vm.OriginalDLLRestored", displayName)
-                : TF("Vm.RestoreUnavailable", displayName, result.Error);
+                : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), ex.Message);
+            StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2568,12 +2585,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwapStreamline", result.Error);
+                StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(result.Error));
             }
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwapStreamline", ex.Message);
+            StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2602,12 +2619,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var result = await _dlss.RestoreStreamlineAsync(streamlineFolders);
             StatusText = result.Success
                 ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
-                : TF("Vm.StreamlineRestoreUnavailable", result.Error);
+                : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.StreamlineRestoreFailed", ex.Message);
+            StatusText = TF("Vm.StreamlineRestoreFailed", UiLocalizationService.Present(ex.Message));
         }
         finally { IsBusy = false; }
     }
@@ -2744,7 +2761,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", ex.Message)));
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", UiLocalizationService.Present(ex.Message))));
         }
         finally
         {
@@ -2866,7 +2883,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ToggleFavourite()
     {
-        if (SelectedGame is null) return;
+        if (SelectedGame is null || LibraryWritesPaused()) return;
         var game = SelectedGame;
         var key = LinuxGameLibraryStore.GameKey(game);
         if (_libraryState.FavouriteGames.Contains(key))
@@ -2888,7 +2905,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ToggleHidden()
     {
-        if (SelectedGame is null) return;
+        if (SelectedGame is null || LibraryWritesPaused()) return;
         var game = SelectedGame;
         var key = LinuxGameLibraryStore.GameKey(game);
         if (_libraryState.HiddenGames.Contains(key))
@@ -2908,16 +2925,45 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// The library state add/edit/reset/remove mutate: a copy of the in-memory state, so changes kept only for this
+    /// session (a favourite, hidden flag or HDR profile whose save was refused, a merged-duplicate adoption) are kept
+    /// and written with it. When that state is only the empty stand-in for an unreadable library file, the file is read
+    /// again instead: the user may have fixed it, and saving the stand-in would overwrite what they restored.
+    /// </summary>
+    private LinuxGameLibraryState WorkingLibraryCopy()
+        => _libraryStateUnreadable
+            ? _libraryStore.Load(out _libraryStateUnreadable)
+            : LinuxGameLibraryStore.Copy(_libraryState);
+
+    private bool _libraryStateUnreadable;
+
+    /// <summary>
+    /// True while Repair after move rewrites the library file in the background: a favourite, hidden, HDR or filter
+    /// save then would write the pre-repair state over the repaired file, so those changes wait (review nit 9).
+    /// </summary>
+    internal bool LibraryRepairRunning { get; set; }
+
+    /// <summary>Says so and returns true while <see cref="LibraryRepairRunning"/>.</summary>
+    private bool LibraryWritesPaused()
+    {
+        if (!LibraryRepairRunning) return false;
+        StatusText = T("Vm.WaitForRepairAfterMove");
+        return true;
+    }
+
+    /// <summary>
     /// The UI's one store-write helper: runs <paramref name="save"/>; on failure writes the exception (with its stack)
     /// to the app log, shows the localised reason on the status line and returns it. Null means saved.
     /// A store refusing to overwrite an unreadable file (<see cref="JsonStoreUnavailableException"/>) is reported with
     /// the file and its set-aside copy. <paramref name="sessionOnly"/> says the in-memory change stays for this session;
     /// pass false where the store is the authority and the caller reverts (preference dropdowns go back to the saved
     /// value) or aborts (add/edit/remove/reset of library entries, which mutate a copy and adopt it only once saved).
+    /// <paramref name="reportStatus"/> false is for background saves the user did not ask for (merged-duplicate
+    /// adoption): the failure is logged and returned, the status line is left alone.
     /// Every exception is caught on purpose: this is the UI boundary, so even a programming error in a store reads as
     /// "Could not save …" rather than ending the session — the full stack is in the log.
     /// </summary>
-    private string? TryPersist(Action save, string whatKey, bool sessionOnly = true)
+    private string? TryPersist(Action save, string whatKey, bool sessionOnly = true, bool reportStatus = true)
     {
         try
         {
@@ -2932,7 +2978,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : sessionOnly
                     ? UiLocalizationService.Format("Ui.SaveFailedSessionOnly", UiLocalizationService.Text(whatKey), ex.Message)
                     : UiLocalizationService.Format("Ui.SaveFailedNothingChanged", UiLocalizationService.Text(whatKey), ex.Message);
-            StatusText = message;
+            if (reportStatus) StatusText = message;
             return message;
         }
     }
@@ -2981,9 +3027,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
         }
 
-        // Mutate a fresh copy and adopt it only once it is on disk: a refused save must not stay in
+        // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
         // _libraryState, or the next unrelated library save would persist it.
-        var state = _libraryStore.Load();
+        var state = WorkingLibraryCopy();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         state.GameEdits[key] = new LinuxGameEditOverride
         {
@@ -3012,7 +3058,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
         if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
             return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
-        var state = _libraryStore.Load();
+        var state = WorkingLibraryCopy();
         var key = LinuxGameLibraryStore.GameKey(SelectedGame);
         var removed = state.GameEdits.Remove(key);
         if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
@@ -3080,7 +3126,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return (false, T("Vm.GameDirectoryAlreadyLibrary"));
 
         // Mutate a copy; the live state changes only once the save succeeded.
-        var state = _libraryStore.Load();
+        var state = WorkingLibraryCopy();
         if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
             return (false, T("Vm.ManualGameAlreadySaved"));
 
@@ -3111,6 +3157,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// found by name and folder (a game without a store id) are adopted only after the user
     /// confirms the old and new folders.
     /// </summary>
+    /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+
     [RelayCommand(CanExecute = nameof(CanRepairAfterMove))]
     private async Task RepairAfterMoveAsync()
     {
@@ -3132,8 +3181,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             StatusText = TF("Vm.CheckingRHISFilesNewFolder", game.Name);
-            IGameStateStore[] uiStores = [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
-            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, uiStores));
+            LibraryRepairRunning = true;
+            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, RepairUiStores));
             if (!result.Success)
             {
                 StatusText = UiLocalizationService.Present(result.Message);
@@ -3143,7 +3192,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             repaired = true;
             StatusText = TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
-            _libraryState = _libraryStore.Load();
+            _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);
             game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
             game.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
@@ -3156,6 +3205,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
+            LibraryRepairRunning = false;
             IsBusy = false;
             NotifySelected();
         }
@@ -3175,7 +3225,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is not { IsManuallyAdded: true } selected) return;
         // Mutate a copy; the live state changes only once the save succeeded. Matched by every folder the
         // entry may have been saved with (an edit or the manifest may have moved InstallPath).
-        var state = _libraryStore.Load();
+        var state = WorkingLibraryCopy();
         if (state.RemoveManualEntriesFor(selected) == 0)
         {
             StatusText = TF("Vm.SavedManualEntryWasNotFound", selected.Name);
@@ -3214,7 +3264,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", ex.Message));
+            var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", UiLocalizationService.Present(ex.Message)));
             StatusText = UiLocalizationService.Present(result.Message);
             return result;
         }
@@ -3342,7 +3392,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwapNRVersion", ex.Message);
+            StatusText = TF("Vm.FailedSwapNRVersion", UiLocalizationService.Present(ex.Message));
             try { RevertPin(); } catch { /* the status line already reports the failure */ }
         }
         finally
@@ -3397,9 +3447,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             if (reportStatus)
-                StatusText = TF("Vm.FailedRefreshNRVersions", ex.Message);
+                StatusText = TF("Vm.FailedRefreshNRVersions", UiLocalizationService.Present(ex.Message));
             else
-                Debug.WriteLine($"[RHI] Automatic NR version catalog refresh failed: {ex.Message}");
+                AppLog.Warn("nr-versions", "Automatic NR version catalog refresh failed", ex);
         }
         finally
         {
@@ -3557,7 +3607,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[RHI] Automatic latest-version refresh failed: {ex.Message}");
+            AppLog.Warn("latest-version", "Automatic latest-version refresh failed", ex);
         }
     }
 
@@ -3623,7 +3673,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     ? T("Vm.ShortFuseWillLoadLastZzzRenodx")
                     : T("Vm.ShortFuseUsesDefaultNameRenodxDlss");
         }
-        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", ex.Message); }
+        catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
         finally
         {
             IsBusy = false;
@@ -3823,6 +3873,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void SaveHdrProfile(DetectedGame game)
     {
+        if (LibraryWritesPaused())
+        {
+            LoadHdrProfile(game);
+            return;
+        }
         var key = LinuxGameLibraryStore.GameKey(game);
         var profile = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
         if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);

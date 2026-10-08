@@ -32,7 +32,7 @@ public sealed class StartupScanTests : IDisposable
             ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
 
         var timer = Stopwatch.StartNew();
-        _ = new MainWindowViewModel(
+        using var vm = new MainWindowViewModel(
             new GameLibraryScanner([new SignallingDetector(scanStarted)]),
             new LinuxGameLauncher(),
             new NoProbe(),
@@ -59,7 +59,7 @@ public sealed class StartupScanTests : IDisposable
         {
             ManifestFetchTimeout = TimeSpan.FromMilliseconds(1500)
         };
-        var vm = CreateViewModel(dlss, new FailingDetector());
+        using var vm = CreateViewModel(dlss, new FailingDetector());
 
         var timer = Stopwatch.StartNew();
         while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.Contains("DLSS", StringComparison.Ordinal))
@@ -92,7 +92,7 @@ public sealed class StartupScanTests : IDisposable
             ManifestFetchTimeout = TimeSpan.FromMilliseconds(100)
         };
 
-        var vm = CreateViewModel(dlss, new FixedDetector("Heroic", new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real }),
+        using var vm = CreateViewModel(dlss, new FixedDetector("Heroic", new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real }),
             new FixedDetector("Manual", manual));
         var timer = Stopwatch.StartNew();
         while (timer.Elapsed < TimeSpan.FromSeconds(15) && !vm.StatusText.StartsWith(LibraryScanStatusText.Done(1), StringComparison.Ordinal))

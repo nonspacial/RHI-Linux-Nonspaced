@@ -127,11 +127,11 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
             foreach (var (name, entry) in payload)
             {
                 if (entry.Length > MaxEntryBytes)
-                    return $"{name} declares {entry.Length} bytes, over the {MaxEntryBytes}-byte limit";
+                    return $"{name}: declared size over the limit ({entry.Length} > {MaxEntryBytes} bytes)";
                 total += entry.Length;
             }
             if (total > MaxTotalBytes)
-                return $"the ReShade DLLs together declare {total} bytes, over the {MaxTotalBytes}-byte limit";
+                return $"the ReShade DLLs together declare more than the limit ({total} > {MaxTotalBytes} bytes)";
 
             foreach (var (name, entry) in payload)
                 if (await ExtractVerifiedAsync(entry, Path.Combine(outputDirectory, name), cancellationToken).ConfigureAwait(false) is { } failure)
@@ -153,7 +153,8 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     /// </summary>
     internal static async Task<string?> ExtractEntryAsync(ZipArchiveEntry entry, string destination, long maxBytes, CancellationToken cancellationToken)
     {
-        if (entry.Length > maxBytes) return $"{entry.Name} declares {entry.Length} bytes, over the {maxBytes}-byte limit";
+        // Same wording as the setup extractor's cap refusal, so one PT-BR pair presents both.
+        if (entry.Length > maxBytes) return $"{entry.Name}: declared size over the limit ({entry.Length} > {maxBytes} bytes)";
         return await ExtractVerifiedAsync(entry, destination, cancellationToken).ConfigureAwait(false) is { } failure
             ? $"{entry.Name}: {failure}"
             : null;
@@ -183,12 +184,12 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
             }
             catch (InvalidDataException) when (reader.BytesRead > entry.Length)
             {
-                return $"holds more than the {entry.Length} bytes it declares";
+                return $"holds more bytes than it declares ({entry.Length})";
             }
         }
 
         string? refusal = null;
-        if (staged.Length != entry.Length) refusal = $"holds {staged.Length} bytes but declares {entry.Length}";
+        if (staged.Length != entry.Length) refusal = $"holds a different size than it declares ({staged.Length} != {entry.Length})";
         else if (reader.Crc32 != entry.Crc32) refusal = "CRC-32 does not match the archive (corrupt download)";
         if (refusal is not null)
         {

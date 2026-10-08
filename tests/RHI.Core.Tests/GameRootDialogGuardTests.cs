@@ -89,11 +89,15 @@ public sealed class GameRootDialogGuardTests
     [Fact]
     public async Task AddManualGame_ASymlinkSpellingOfASavedEntry_IsRefusedAsAlreadySaved()
     {
-        using var fixture = await ViewModelFixture.StartAsync([]);
+        // Add checks the working library copy, which is the in-memory state except when that only stands in for an
+        // unreadable file: then the file is read again. A saved entry the scan has not listed yet is reached that way
+        // (the user restored the file while RHI ran), and its symlink spelling must still read as "already saved".
+        using var fixture = await ViewModelFixture.StartAsync([], seed: store => File.WriteAllText(store.LibraryPath, "{ not json"));
         var hades = fixture.Game("Hades");
-        var state = fixture.Library.Load();
-        state.ManualGames.Add(new LinuxManualGameEntry { Name = "Hades", InstallPath = hades.InstallPath });
-        fixture.Library.Save(state); // saved by another window; not listed until the next scan
+        File.WriteAllText(fixture.Library.LibraryPath, System.Text.Json.JsonSerializer.Serialize(new LinuxGameLibraryState
+        {
+            ManualGames = [new LinuxManualGameEntry { Name = "Hades", InstallPath = hades.InstallPath }]
+        }));
         var link = Path.Combine(fixture.Root, "games-link");
         Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
 

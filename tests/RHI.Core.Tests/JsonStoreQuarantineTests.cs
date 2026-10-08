@@ -400,6 +400,45 @@ public sealed class JsonStoreQuarantineTests : IDisposable
     }
 
     [Fact]
+    public void PendingNotice_RaisedWithNoListener_GoesToTheFirstLaterListenerOnly()
+    {
+        // Integration w1 review (stores minor 4): a registry of its own, so no live view model's listener is attached.
+        var registry = new JsonStoreQuarantine.Registry();
+        var path = Path.Combine(_root, "no-listener.json");
+        File.WriteAllBytes(path, Garbage("no-listener"));
+        registry.Quarantine(path, File.ReadAllBytes(path), writesRefused: true);
+
+        var first = new List<JsonStoreQuarantineNotice>();
+        var second = new List<JsonStoreQuarantineNotice>();
+        using (registry.Listen(first.Add)) { }
+        using (registry.Listen(second.Add)) { }
+
+        Assert.Equal(Path.GetFullPath(path), Assert.Single(first).FilePath);
+        Assert.Empty(second);
+    }
+
+    [Fact]
+    public void StagedCommit_OneFileStagedTwice_IsRefusedBeforeAnythingIsWritten()
+    {
+        // Integration w1 review (stores nit 8): two stores on one path must not both write it.
+        var path = Path.Combine(_root, "shared.json");
+        File.WriteAllText(path, "{\"a\":1}");
+        var before = File.ReadAllBytes(path);
+        var stamp = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(path, stamp);
+
+        var ex = Assert.Throws<StagedFileCommitException>(() => StagedFileCommit.Commit(
+        [
+            new StagedFileWrite(path, before, "{\"a\":2}"u8.ToArray()),
+            new StagedFileWrite(path, before, "{\"a\":3}"u8.ToArray()),
+        ]));
+
+        Assert.Equal("Nothing was changed: one file was staged twice by two stores.", ex.Message);
+        Assert.Equal(before, File.ReadAllBytes(path));
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(path)); // never rewritten, not even by a rollback
+    }
+
+    [Fact]
     [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
     public void StoreFileWrite_SymlinkedStoreFile_StaysALinkAndTheTargetKeepsItsMode()
     {

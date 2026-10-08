@@ -2,6 +2,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
@@ -243,6 +244,71 @@ public sealed class UiExceptionHandlingTests : IDisposable
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
         Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
         Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
+    }
+
+    /// <summary>
+    /// Integration w1 review (stores minor 3): a store that refuses to overwrite its unreadable file
+    /// (<see cref="RHI.Platform.Linux.Persistence.JsonStoreUnavailableException"/>) is reported through TryPersist's own
+    /// branch: the line names the file and the copy set aside, and the dropdown reverts.
+    /// </summary>
+    [Fact]
+    public async Task GameOverride_WithUnreadablePreferencesFile_RevertsTheDropdown_AndNamesTheCopy()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        var before = fx.Vm.SelectedGraphicsApiOverride;
+        var prefs = Path.Combine(fx.ConfigDir, "prefs");
+        Directory.CreateDirectory(prefs);
+        var file = Path.Combine(prefs, "api.json");
+        File.WriteAllText(file, "{ not json");
+        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
+
+        fx.Vm.SelectedGraphicsApiOverride = other;
+
+        var copy = Assert.Single(Directory.GetFiles(prefs, "api.json.corrupt-*"));
+        Assert.StartsWith($"Not saved: api.json could not be read (a copy is at {copy}).", fx.Vm.StatusText);
+        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
+        Assert.Equal("{ not json", File.ReadAllText(file));
+    }
+
+    /// <summary>
+    /// Integration w1 review (stores minor 6): the DLSS Enabler, RTX 20 FG and Universal MFG dialog saves go through
+    /// TryPersist. A store failure other than a refused unreadable file (here a read-only folder) used to escape the
+    /// dropdown handler to the global guard; now it is a failed result saying nothing changed, and the stored
+    /// preferences (what the dialog reverts its dropdowns to) are untouched.
+    /// </summary>
+    [Theory]
+    [InlineData("dlssg2030")]
+    [InlineData("enabler")]
+    [InlineData("mfg")]
+    public async Task DialogPreferenceSave_WithReadOnlyPreferences_FailsSayingNothingChanged(string dialog)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAndSelectAsync(fx, fx.Game("Tunic"));
+        string Stored() => dialog switch
+        {
+            "dlssg2030" => fx.Vm.GetDlssg2030Preferences().ProxyName,
+            "enabler" => fx.Vm.GetStandaloneDlssEnablerPreferences().ProxyName,
+            _ => $"{fx.Vm.GetRtx40MfgPreferences().GpuGeneration}|{fx.Vm.GetRtx40MfgPreferences().ProxyName}"
+        };
+        var before = Stored();
+        LockPreferences(fx);
+
+        var result = dialog switch
+        {
+            "dlssg2030" => fx.Vm.SetDlssg2030Preferences(Dlssg2030UnlockDeploymentService.GpuGenRtx20,
+                Dlssg2030UnlockDeploymentService.ProxyNames.First(p => p != before)),
+            "enabler" => fx.Vm.SetStandaloneDlssEnablerPreferences(StandaloneDlssEnablerDeploymentService.ProxyNames.First(p => p != before)),
+            _ => fx.Vm.SetRtx40MfgPreferences(Rtx40MfgStandaloneDeploymentService.GpuGenRtx30,
+                Rtx40MfgStandaloneDeploymentService.SelectableProxyNames.First(p => !before.EndsWith("|" + p, StringComparison.Ordinal)))
+        };
+
+        Assert.False(result.Success);
+        Assert.StartsWith("Could not save this game's preferences:", result.Message);
+        Assert.Contains("Nothing was changed.", result.Message);
+        Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
+        Assert.Equal(before, Stored());
     }
 
     [Fact]

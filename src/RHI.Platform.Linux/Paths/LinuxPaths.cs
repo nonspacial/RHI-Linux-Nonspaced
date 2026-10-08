@@ -3,16 +3,21 @@ namespace RHI.Platform.Linux.Paths;
 public static class LinuxPaths
 {
     public static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    public static string ConfigHome => Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
-        ?? Path.Combine(Home, ".config");
-    public static string DataHome => Environment.GetEnvironmentVariable("XDG_DATA_HOME")
-        ?? Path.Combine(Home, ".local", "share");
-    public static string CacheHome => Environment.GetEnvironmentVariable("XDG_CACHE_HOME")
-        ?? Path.Combine(Home, ".cache");
+    public static string ConfigHome => ConfigHomeFrom(Environment.GetEnvironmentVariable);
+    public static string DataHome => DataHomeFrom(Environment.GetEnvironmentVariable);
+    public static string CacheHome => CacheHomeFrom(Environment.GetEnvironmentVariable);
     /// <summary>XDG state dir (logs and other state that is not user data); defaults to ~/.local/state.</summary>
-    public static string StateHome => Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } state
-        ? state
-        : Path.Combine(Home, ".local", "state");
+    public static string StateHome => StateHomeFrom(Environment.GetEnvironmentVariable);
+
+    // The XDG base-directory spec: an empty or relative value is invalid and is ignored (the default is used), so
+    // XDG_CONFIG_HOME="" never turns into a folder relative to whatever directory RHI was started from.
+    internal static string ConfigHomeFrom(Func<string, string?> env) => XdgHome(env("XDG_CONFIG_HOME"), ".config");
+    internal static string DataHomeFrom(Func<string, string?> env) => XdgHome(env("XDG_DATA_HOME"), ".local", "share");
+    internal static string CacheHomeFrom(Func<string, string?> env) => XdgHome(env("XDG_CACHE_HOME"), ".cache");
+    internal static string StateHomeFrom(Func<string, string?> env) => XdgHome(env("XDG_STATE_HOME"), ".local", "state");
+
+    private static string XdgHome(string? value, params string[] defaultUnderHome)
+        => value is { Length: > 0 } && Path.IsPathRooted(value) ? value : Path.Combine([Home, .. defaultUnderHome]);
 
     /// <summary>The one app log (<see cref="RHI.Core.Services.AppLog"/>): <c>$XDG_STATE_HOME/rhi-linux/logs/rhi.log</c>.</summary>
     public static string AppLogPath => Path.Combine(LogDirectory, "rhi.log");
