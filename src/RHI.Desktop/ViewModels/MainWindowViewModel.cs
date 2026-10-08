@@ -45,11 +45,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         return string.IsNullOrWhiteSpace(presented) ? fallback : presented;
     }
 
-    private sealed record ProbeCacheEntry(
-        IReadOnlyList<string> Files,
-        IReadOnlyList<ManagedComponent> Components,
-        DlssDetectionResult Dlss);
-
     private readonly GameLibraryScanner _scanner;
     private readonly IGameLauncher _launcher;
     private readonly IGameRuntimeProbe _runtimeProbe;
@@ -77,10 +72,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _loadingLumaModePreference;
     private bool _loadingHdrProfile;
     private readonly List<DetectedGame> _allGames = [];
-    private readonly Dictionary<string, ProbeCacheEntry> _probeCache = new(StringComparer.Ordinal);
-    private CancellationTokenSource? _selectionProbeCts;
-    private int _selectionGeneration;
+    private readonly SelectedGameSession _session;
     private DlssDetectionResult _dlssDetection = new();
+    // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
+    private bool _libraryHasManagedTargets;
+    private bool _libraryHasDlssBatchCandidates;
+    private LinuxHdrHostSnapshot? _lastHdrHost;
     private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<PeArchitecture, string> _ualLatestVersionCache = new();
     private readonly Dictionary<PeArchitecture, Task<string?>> _ualLatestVersionLoads = new();
@@ -133,6 +130,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>True while an operation holds <see cref="Operations"/>; drives the busy overlay.</summary>
     public bool IsBusy => _operations.IsBusy;
+
+    /// <summary>The selected game's analysis (unit 1 of the split; Refs #71, #72, #74, #82, #83).</summary>
+    public SelectedGameSession Session => _session;
+
+    /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
+    private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
+
+    /// <summary>The selected game's disk facts, or null while the analysis runs; getters read only these.</summary>
+    private SelectionFacts? Facts => CurrentAnalysis?.Facts;
     [ObservableProperty] private string? selectedDlssSrVersion;
     [ObservableProperty] private string? selectedDlssRrVersion;
     [ObservableProperty] private string? selectedDlssFgVersion;
@@ -234,7 +240,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
-    public bool CanUpdateAll => !IsBusy && _updateAll.HasManagedTargets(_allGames);
+    public bool CanUpdateAll => !IsBusy && _libraryHasManagedTargets;
     public string SelectedTitle => SelectedGame?.Name ?? UiLocalizationService.Text("Ui.SelectGame");
     public string SelectedSource => SelectedGame is null ? "" : $"{SelectedGame.Source}  •  {SelectedGame.Runner ?? UiLocalizationService.Text("Ui.UnknownRunner")}";
 
@@ -259,9 +265,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         null => T("Vm.NoGameSelected"),
         { GameRootNotAllowed: true } game => GameRootNotAllowedText(game),
         { FolderMissing: true } game => FolderMissingText(game),
-        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: { } manualExe } when !File.Exists(manualExe)
+        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual", ExecutablePath: not null } when Facts is { ExecutableExists: false }
             => T("Vm.ModificationTargetManualExecutableMissing"),
-        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: { } manifestExe } when !File.Exists(manifestExe)
+        { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest", ExecutablePath: not null } when Facts is { ExecutableExists: false }
             => T("Vm.ModificationTargetManifestExecutableMissing"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manual" } => T("Vm.ModificationTargetManual"),
         { HasConfirmedPatchTarget: true, PatchTargetAuthority: "Manifest" } => T("Vm.ModificationTargetManifest"),
@@ -384,17 +390,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         get
         {
             if (SelectedGame is null) return T("Vm.SelectWindowsGame");
-            var policy = _managedComponents.GetLumaPolicy(SelectedGame);
-            return UiLocalizationService.Present(policy.Summary);
+            return Facts is { } facts ? UiLocalizationService.Present(facts.LumaPolicy.Summary) : "";
         }
     }
     public string LumaCoexistenceText
     {
         get
         {
-            if (SelectedGame is null) return "";
-            var policy = _managedComponents.GetLumaPolicy(SelectedGame);
-            return policy.RenoDxCompatible
+            if (SelectedGame is null || Facts is not { } facts) return "";
+            return facts.LumaPolicy.RenoDxCompatible
                 ? T("Vm.UpstreamRHICompatibilityDataAllowsRenoDX")
                 : T("Vm.RenoDXLumaRemainMutuallyExclusiveUnless");
         }
@@ -403,7 +407,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
         ? new LinuxHdrLaunchPlan(false, false, new Dictionary<string, string>(), null, "%command%", T("Vm.SelectGameConfigureHDRLaunchOrchestration"))
-        : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi });
+        : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }, HdrHost);
+
+    /// <summary>
+    /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
+    /// analysis has finished, the start-up probe (<see cref="_lastHdrHost"/>) or, in the moment before that lands, one
+    /// direct probe.
+    /// </summary>
+    private LinuxHdrHostSnapshot HdrHost => Facts?.HdrHost ?? (_lastHdrHost ??= _hdrProfiles.ProbeHost());
     public string HdrProfileHint
     {
         get
@@ -441,7 +452,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string? LaunchToolTip => SelectedGame switch
     {
         { ParentLauncherName: { Length: > 0 } parent } => TF("Vm.OpensStartGameFromLauncher", parent),
-        { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game)
+        { LaunchCommand: null or "" } game when Facts is { OrphanedProtonPrefix: true }
             => TF("Vm.UnavailablePrefixWasBuiltByProton",
                   game.CompatibilityTool ?? "?"),
         _ => null
@@ -453,8 +464,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
     public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
     public bool CanInstallD3DCompilerWithWinetricks
-        => HasConfirmedPatchTarget && SelectedGame is { } game
-           && D3DCompilerToolInstaller.CanInstallWithWinetricks(game);
+        => HasConfirmedPatchTarget && SelectedGame is not null && Facts is { CanInstallWithWinetricks: true };
     public string D3DCompilerWinetricksButtonText
         => SelectedGame is { } game && D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
             ? TF("Vm.InstallViaWinetricks", game.CompatibilityTool ?? game.Runner ?? game.Source)
@@ -464,7 +474,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             null => T("Vm.SelectGameDetermineCorrectD3DCompilerHelper"),
             { UsesProton: true } => T("Vm.SteamProtonTargetProtontricksUsedSteam"),
-            { } game when D3DCompilerToolInstaller.IsOrphanedProtonPrefix(game) => OrphanedProtonText(game),
+            { } game when Facts is { OrphanedProtonPrefix: true } => OrphanedProtonText(game),
             { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
                 => TF("Vm.TargetWinetricksUsesActiveMatchingPrefix", game.Source, game.CompatibilityTool ?? game.Runner ?? T("Vm.LauncherRunner")),
             { SteamAppId: null, PrefixPath: not null } => T("Vm.StandaloneSystemWineTargetWinetricksRuns"),
@@ -496,13 +506,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool IsReShadeLegacy => ReShadeChannelValue(SelectedReShadeChannel).Equals("Legacy", StringComparison.OrdinalIgnoreCase);
     public bool IsReShadeCustom => ReShadeChannelValue(SelectedReShadeChannel).Equals("Custom", StringComparison.OrdinalIgnoreCase);
 
-    public bool UalInstalled => SelectedGame is not null && _managedComponents.GetUltimateAsiLoaderRecord(SelectedGame) is not null;
+    public bool UalInstalled => SelectedGame is not null && Facts?.UalRecord is not null;
     public string UalInstalledProxy => SelectedGame is null
         ? ""
-        : _managedComponents.GetUltimateAsiLoaderRecord(SelectedGame)?.Metadata.GetValueOrDefault("UAL.ProxyName") ?? "";
+        : Facts?.UalRecord?.Metadata.GetValueOrDefault("UAL.ProxyName") ?? "";
     public string UalInstalledVersion => SelectedGame is null
         ? ""
-        : _managedComponents.GetUltimateAsiLoaderRecord(SelectedGame)?.Version ?? "";
+        : Facts?.UalRecord?.Version ?? "";
     public string UalStatusText => SelectedGame switch
     {
         null => T("Vm.NoGameSelected"),
@@ -530,25 +540,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 notes.Add(T("Vm.RecommendedByRHI"));
             if (UltimateAsiLoaderDeploymentService.RhiConflictNames.Contains(SelectedUalProxyName, StringComparer.OrdinalIgnoreCase))
                 notes.Add(T("Vm.MayConflictReShadeOptiScaler"));
-            var dir = SelectedGame.BinaryDirectory ?? Path.GetDirectoryName(SelectedGame.ExecutablePath ?? "");
-            if (!string.IsNullOrWhiteSpace(dir))
-            {
-                var target = Path.Combine(dir, SelectedUalProxyName);
-                if (File.Exists(target))
-                    notes.Add(TF("Vm.ExistingWillPreservedAsUnlessManaged", SelectedUalProxyName, UltimateAsiLoaderDeploymentService.HookedName(SelectedUalProxyName)));
-            }
+            if (Facts?.UalProxyFilesPresent.Contains(SelectedUalProxyName) == true)
+                notes.Add(TF("Vm.ExistingWillPreservedAsUnlessManaged", SelectedUalProxyName, UltimateAsiLoaderDeploymentService.HookedName(SelectedUalProxyName)));
             return notes.Count == 0
                 ? T("Vm.WineOverrideScopedSelectedGameNative")
                 : string.Join(" · ", notes) + ".";
         }
     }
 
-    public bool ShortFuseInstalled => SelectedGame is not null && _managedComponents.IsShortFuseManaged(SelectedGame);
-    public string ShortFuseInstalledVersion => SelectedGame is null ? "" : _managedComponents.GetShortFuseRecord(SelectedGame)?.Version ?? "";
+    public bool ShortFuseInstalled => SelectedGame is not null && Facts?.ShortFuseManaged == true;
+    public string ShortFuseInstalledVersion => SelectedGame is null ? "" : Facts?.ShortFuseRecord?.Version ?? "";
     private ManagedComponent? CurrentShortFuseComponent
-        => SelectedGame is not null && _probeCache.TryGetValue(Key(SelectedGame), out var probe)
-            ? probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ShortFuse)
-            : null;
+        => CurrentAnalysis?.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ShortFuse);
 
     public string ShortFuseStatusText => SelectedGame switch
     {
@@ -578,7 +581,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanLoadNeuralVersionHistory => !IsBusy;
     public bool OrchestratedDlssStackManaged => Dlss5FeederFullManaged || ShortFuseInstalled;
 
-    public bool Dlss5FeederFullManaged => SelectedGame is not null && _managedComponents.IsDlss5FeederFullManaged(SelectedGame);
+    public bool Dlss5FeederFullManaged => SelectedGame is not null && Facts?.Dlss5FeederFullManaged == true;
     public bool CanSwapDlssSr => HasConfirmedPatchTarget && DlssSrDetected && !OrchestratedDlssStackManaged;
     public bool CanSwapDlssRr => HasConfirmedPatchTarget && DlssRrDetected && !OrchestratedDlssStackManaged;
     public bool CanSwapDlssFg => HasConfirmedPatchTarget && DlssFgDetected && !OrchestratedDlssStackManaged;
@@ -594,11 +597,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
                 return T("Vm.WindowsNeuralRenderingMethodsNotAvailable");
 
-            var hasNativeDlss = _managedComponents.HasNativeDlssForNeuralRendering(
-                SelectedGame, _dlssDetection.DlssPaths.Count > 0);
-            var recommended = LinuxManagedComponentService.RecommendedNeuralRenderingMethod(SelectedGame, hasNativeDlss);
-            var architecture = SelectedGame.ForcedArchitecture ?? PeArchitectureDetector.Detect(SelectedGame.ExecutablePath);
-            if (architecture == PeArchitecture.X86 && recommended == ManagedComponentKind.Dlss5Feeder)
+            if (Facts is not { } facts) return T("Vm.AnalyzingGameFilesBackground");
+            var recommended = LinuxManagedComponentService.RecommendedNeuralRenderingMethod(SelectedGame, facts.HasNativeDlssForNeuralRendering);
+            if (facts.Architecture == PeArchitecture.X86 && recommended == ManagedComponentKind.Dlss5Feeder)
                 return T("Vm.DLSS5Feeder32BitSupportedVia");
 
             return recommended switch
@@ -619,27 +620,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     // A restore button is meaningful only after RHI actually created an .original backup.
     // This also doubles as a persistent visual signal that survives switching games/restarting RHI.
-    public bool DlssSrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && HasRhiBackup(_dlssDetection.DlssPaths);
-    public bool DlssRrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && HasRhiBackup(_dlssDetection.DlssdPaths);
-    public bool DlssFgRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && HasRhiBackup(_dlssDetection.DlssgPaths);
-    public bool DlssNrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && HasRhiBackup(_dlssDetection.DlssnrPaths);
-    public bool StreamlineRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && CountStreamlineBackups() > 0;
+    public bool DlssSrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && Facts?.DlssSrBackups > 0;
+    public bool DlssRrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && Facts?.DlssRrBackups > 0;
+    public bool DlssFgRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && Facts?.DlssFgBackups > 0;
+    public bool DlssNrRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && Facts?.DlssNrBackups > 0;
+    public bool StreamlineRestoreAvailable => HasConfirmedPatchTarget && !OrchestratedDlssStackManaged && Facts?.StreamlineBackups > 0;
 
     public string DlssSrDeploymentState => ShortFuseInstalled && DlssSrDetected
         ? T("Vm.ShortFuseManaged")
-        : Dlss5FeederFullManaged && DlssSrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssPaths);
-    public string DlssRrDeploymentState => ShortFuseInstalled && DlssRrDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssdPaths);
-    public string DlssFgDeploymentState => ShortFuseInstalled && DlssFgDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssgPaths);
+        : Dlss5FeederFullManaged && DlssSrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssPaths, Facts?.DlssSrBackups ?? 0);
+    public string DlssRrDeploymentState => ShortFuseInstalled && DlssRrDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssdPaths, Facts?.DlssRrBackups ?? 0);
+    public string DlssFgDeploymentState => ShortFuseInstalled && DlssFgDetected ? T("Vm.ShortFuseManaged") : DlssDeploymentState(_dlssDetection.DlssgPaths, Facts?.DlssFgBackups ?? 0);
     public string DlssNrDeploymentState => ShortFuseInstalled && DlssNrDetected
         ? T("Vm.ShortFuseManaged")
-        : Dlss5FeederFullManaged && DlssNrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssnrPaths);
+        : Dlss5FeederFullManaged && DlssNrDetected ? T("Vm.FeederFullPrivate") : DlssDeploymentState(_dlssDetection.DlssnrPaths, Facts?.DlssNrBackups ?? 0);
     public string StreamlineDeploymentState
     {
         get
         {
             if (_dlssDetection.StreamlineFolders.Count == 0) return T("Vm.Missing");
             if (ShortFuseInstalled) return T("Vm.ShortFuseManaged");
-            var backups = CountStreamlineBackups();
+            var backups = Facts?.StreamlineBackups ?? 0;
             return backups > 0 ? TF("Vm.RHIAppliedDLLS", backups) : T("Vm.GameDLLs");
         }
     }
@@ -687,10 +688,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy && !OrchestratedDlssStackManaged &&
         (DlssSrRestoreAvailable || DlssRrRestoreAvailable || DlssFgRestoreAvailable || DlssNrRestoreAvailable || StreamlineRestoreAvailable);
 
-    public bool CanOpenDlssBatch => !IsBusy && _allGames.Any(game =>
-        game.HasConfirmedPatchTarget &&
-        !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
-        !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath));
+    public bool CanOpenDlssBatch => !IsBusy && _libraryHasDlssBatchCandidates;
 
     public MainWindowViewModel(
         GameLibraryScanner scanner,
@@ -706,7 +704,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         LinuxGameLibraryStore? libraryStore = null,
         LinuxDeploymentRecordStore? deploymentRecords = null,
         LinuxHdrLaunchProfileService? hdrProfiles = null,
-        OperationCoordinator? operations = null)
+        OperationCoordinator? operations = null,
+        SelectedGameSession? session = null)
     {
         _operations = operations ?? new OperationCoordinator();
         _operations.PropertyChanged += OnOperationsChanged;
@@ -724,6 +723,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _libraryStore = libraryStore ?? new LinuxGameLibraryStore();
         _deploymentRecords = deploymentRecords ?? new LinuxDeploymentRecordStore();
         _hdrProfiles = hdrProfiles ?? new LinuxHdrLaunchProfileService();
+        _session = session ?? new SelectedGameSession(runtimeProbe, managedComponents, _dlssDefaults, _hdrProfiles);
+        _session.Changed += OnSessionChanged;
+        _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
         // aside before a listener existed (e.g. settings read at startup).
         _quarantineSubscription = JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
@@ -748,6 +750,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _disposed = true;
         _quarantineSubscription.Dispose();
         _operations.PropertyChanged -= OnOperationsChanged;
+        _session.Changed -= OnSessionChanged;
+        _session.Completed -= OnAnalysisCompleted;
+        _runtimeProbe.LateMetadataAvailable -= OnLateProbeMetadata;
+        _session.Cancel();
         try { _backgroundUpdateCts?.Cancel(); }
         catch (ObjectDisposedException) { /* already stopped */ }
         _backgroundUpdateCts?.Dispose();
@@ -907,7 +913,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             RefreshUalState(game);
             RefreshShortFuseState(game);
-            if (_probeCache.TryGetValue(Key(game), out var cached))
+            if (CurrentAnalysis is { } cached)
             {
                 Components.Clear();
                 foreach (var item in cached.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
@@ -946,7 +952,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return T("Vm.WindowsReShadeSettingsNotAppliedNative");
         if (!SelectedGame.HasConfirmedPatchTarget)
             return T("Vm.SetTargetGameExecutableEditGame");
-        if (!_probeCache.TryGetValue(Key(SelectedGame), out var probe) ||
+        if (CurrentAnalysis is not { } probe ||
             !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
                 component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))
             return T("Vm.InstallDetectReShadeSelectedGameBefore");
@@ -956,9 +962,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task InitializeAsync()
     {
+        // The HDR host (NVIDIA driver, gamescope on PATH) is read once off the UI thread; each analysis refreshes it.
+        var hdrHost = Task.Run(_hdrProfiles.ProbeHost);
         var neuralVersionCatalogTask = EnsureNeuralVersionCatalogAsync();
         // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
         var dlssManifestTask = LoadDlssManifestAsync();
+        _lastHdrHost ??= await hdrHost;
         await RefreshAsync();
         await dlssManifestTask;
         await neuralVersionCatalogTask;
@@ -1022,6 +1031,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void OnBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(IsBusy));
+        // An operation may have installed or removed managed components: re-work Update All / DLSS batch off the UI thread.
+        if (!value) UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
         _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
@@ -1233,13 +1244,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
         var preference = ParseLumaModePreference(value);
         var game = SelectedGame;
-        if (TryPersist(() => _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
+        LumaPolicySnapshot? policy = null;
+        if (TryPersist(() => policy = _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
         {
             LoadLumaModePreference(game);
             StatusText = failure;
             return;
         }
-        ReevaluateCurrentGameForLumaPolicy(game);
+        ReevaluateCurrentGameForLumaPolicy(game, policy!);
     }
 
     partial void OnSelectedHdrModeChanged(string value)
@@ -1264,7 +1276,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedGameChanged(DetectedGame? value)
     {
-        CancelSelectionProbe();
+        _session.Cancel();
         Components.Clear();
         _dlssDetection = new();
         IsSelectionProbeBusy = false;
@@ -1272,6 +1284,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         if (value is null)
         {
+            _session.Select(null);
             ResetGraphicsApiOverride();
             ResetOptiScalerVariant();
             ResetHdrProfile();
@@ -1293,121 +1306,64 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         LoadNeuralVersionPins(value);
         UiExceptionGuard.Forget(RefreshSelectedLatestVersionsAsync(value), "RefreshSelectedLatestVersionsAsync");
 
-        if (_probeCache.TryGetValue(Key(value), out var cached))
-        {
-            ApplyProbeResult(cached);
-            StatusText = TF("Vm.ReadyCached", value.Name);
-            NotifySelected();
-            return;
-        }
-
-        IsSelectionProbeBusy = true;
-        NotifySelected();
-        var generation = ++_selectionGeneration;
-        _selectionProbeCts = new CancellationTokenSource();
-        UiExceptionGuard.Forget(AnalyzeSelectedGameAsync(value, generation, _selectionProbeCts.Token), "AnalyzeSelectedGameAsync");
+        // A cached analysis is published at once (and reported through OnAnalysisCompleted); otherwise the session
+        // starts one in the background and reports progress through OnSessionChanged.
+        _session.Select(value);
+        if (_session.IsProbeBusy) StatusText = TF("Vm.AnalyzingBackground", value.Name);
     }
 
-    private async Task AnalyzeSelectedGameAsync(DetectedGame game, int generation, CancellationToken cancellationToken)
+    /// <summary>The session published an analysis or started/ended one: the panels follow it.</summary>
+    private void OnSessionChanged()
     {
-        var timer = Stopwatch.StartNew();
-        try
+        var game = SelectedGame;
+        var analysis = CurrentAnalysis;
+        Components.Clear();
+        if (analysis is not null)
+            foreach (var item in analysis.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
+        _dlssDetection = analysis?.Dlss ?? new();
+        if (analysis is not null)
         {
-            StatusText = TF("Vm.AnalyzingBackground", game.Name);
-
-            if (!game.HasConfirmedPatchTarget)
+            _lastHdrHost = analysis.Facts.HdrHost;
+            if (game is not null)
             {
-                // No patch target: nothing is indexed (a refused manual folder may be $HOME or /).
-                var emptyFiles = Array.Empty<string>();
-                var components = ComponentProbe.Probe(game, emptyFiles, cancellationToken);
-                _managedComponents.Decorate(game, components);
-                var pending = new ProbeCacheEntry(emptyFiles, components, new DlssDetectionResult());
-
-                cancellationToken.ThrowIfCancellationRequested();
-                if (generation != _selectionGeneration || !ReferenceEquals(SelectedGame, game)) return;
-
-                _probeCache[Key(game)] = pending;
-                ApplyProbeResult(pending);
-                StatusText = game.GameRootNotAllowed
-                    ? GameRootNotAllowedText(game)
-                    : game.FolderMissing
-                        ? FolderMissingText(game)
-                        : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name);
-                return;
-            }
-
-            var files = await Task.Run(
-                () => GameFileIndexer.Build(game.InstallPath, 8, cancellationToken),
-                cancellationToken);
-
-            await _runtimeProbe.ProbeAsync(game, files, cancellationToken);
-            await _managedComponents.PrepareGameAsync(game, files, cancellationToken);
-
-            var derived = await Task.Run(() =>
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var components = ComponentProbe.Probe(game, files, cancellationToken);
-                _managedComponents.Decorate(game, components);
-                var dlss = game.DlssScanSkippedByManifest
-                    ? new DlssDetectionResult()
-                    : _dlssDefaults.DetectTargets(game, files, cancellationToken);
-                return new ProbeCacheEntry(files, components, dlss);
-            }, cancellationToken);
-
-            cancellationToken.ThrowIfCancellationRequested();
-            if (generation != _selectionGeneration || !ReferenceEquals(SelectedGame, game)) return;
-
-            _probeCache[Key(game)] = derived;
-            ApplyProbeResult(derived);
-            timer.Stop();
-            StatusText = GameFileIndexer.IsTruncated(files)
-                ? TF("Vm.IndexingStoppedAtFilesSoSome",
-                     game.Name, files.Count)
-                : TF("Vm.ReadyFilesIndexedMs", game.Name, files.Count, timer.ElapsedMilliseconds);
-        }
-        catch (OperationCanceledException)
-        {
-            // Switching games is expected to cancel the previous probe. Do not surface it as an error.
-        }
-        catch (Exception ex)
-        {
-            if (generation == _selectionGeneration && ReferenceEquals(SelectedGame, game))
-                StatusText = TF("Vm.FailedAnalyze", game.Name, UiLocalizationService.Present(ex.Message));
-        }
-        finally
-        {
-            if (generation == _selectionGeneration && ReferenceEquals(SelectedGame, game))
-            {
-                IsSelectionProbeBusy = false;
-                NotifySelected();
+                RefreshUalState(game);
+                RefreshShortFuseState(game);
             }
         }
+        IsSelectionProbeBusy = game is not null && ReferenceEquals(_session.Game, game) && _session.IsProbeBusy;
+        NotifySelected();
+    }
+
+    /// <summary>An analysis of the selected game ended: say so in the status line.</summary>
+    private void OnAnalysisCompleted(AnalysisOutcome outcome)
+    {
+        var game = outcome.Game;
+        StatusText = outcome.Kind switch
+        {
+            AnalysisOutcomeKind.Cached => TF("Vm.ReadyCached", game.Name),
+            AnalysisOutcomeKind.NoPatchTarget => game.GameRootNotAllowed
+                ? GameRootNotAllowedText(game)
+                : game.FolderMissing
+                    ? FolderMissingText(game)
+                    : TF("Vm.LaunchConfigurationWasPreservedButModification", game.Name),
+            AnalysisOutcomeKind.Failed => TF("Vm.FailedAnalyze", game.Name, UiLocalizationService.Present(outcome.Error?.Message)),
+            _ => outcome.Truncated
+                ? TF("Vm.IndexingStoppedAtFilesSoSome", game.Name, outcome.FileCount)
+                : TF("Vm.ReadyFilesIndexedMs", game.Name, outcome.FileCount, outcome.ElapsedMilliseconds)
+        };
     }
 
     /// <summary>
     /// A slow PCGamingWiki answer arrived after the selection finished without it (Refs #54): drop the
     /// stale probe result and, when that game is still selected and idle, analyse it again (the answer
-    /// is cached by then, so this is quick).
+    /// is cached by then, so this is quick). The probe ran on a working copy, so the game is matched by its key.
     /// </summary>
     private void OnLateProbeMetadata(DetectedGame game) => Dispatcher.UIThread.Post(() =>
     {
-        _probeCache.Remove(Key(game));
-        if (ReferenceEquals(SelectedGame, game) && !IsBusy && !IsSelectionProbeBusy)
-            OnSelectedGameChanged(game);
+        _session.Invalidate(game);
+        if (SelectedGame is { } selected && Key(selected) == Key(game) && !IsBusy && !IsSelectionProbeBusy)
+            OnSelectedGameChanged(selected);
     });
-
-    private void ApplyProbeResult(ProbeCacheEntry result)
-    {
-        Components.Clear();
-        foreach (var item in result.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
-        _dlssDetection = result.Dlss;
-        if (SelectedGame is { } game)
-        {
-            RefreshUalState(game);
-            RefreshShortFuseState(game);
-        }
-        NotifySelected();
-    }
 
     /// <summary>
     /// Claims the busy gate for an operation the user started; null, with the status line saying another operation
@@ -1466,8 +1422,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var currentKey = SelectedGame is null ? null : Key(SelectedGame);
         try
         {
-            CancelSelectionProbe();
-            if (onlyDetectors is null) _probeCache.Clear();
+            _session.Cancel();
+            if (onlyDetectors is null) _session.InvalidateAll();
             // Full Refresh bypasses the session NR version caches (upstream 2.7.9).
             Task? neuralCatalogRefresh = null;
             if (onlyDetectors is null)
@@ -1491,7 +1447,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             // hit is never applied to an un-probed game. Everything else takes the normal path.
             var previous = onlyDetectors is null
                 ? null
-                : _allGames.Where(g => _probeCache.ContainsKey(Key(g))).ToDictionary(Key, StringComparer.Ordinal);
+                : _allGames.Where(g => _session.TryGetCached(g, out _)).ToDictionary(Key, StringComparer.Ordinal);
             var merged = new List<DetectedGame>(found.Count);
             var adoptedMergedKeys = false;
             foreach (var game in found)
@@ -1506,7 +1462,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     merged.Add(kept);
                     continue;
                 }
-                _probeCache.Remove(libraryKey);
+                _session.Invalidate(game);
                 _libraryState.GameEdits.TryGetValue(libraryKey, out var edit);
                 LinuxGameIdentityService.ApplyDetectedIdentity(game, edit);
                 game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
@@ -1521,6 +1477,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? Games.FirstOrDefault()
                 : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
+            await RefreshLibraryFactsAsync();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
             var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
@@ -1565,17 +1522,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
                 LinuxUpdateRunMode.Manual,
                 op.Token);
-            _probeCache.Clear();
-            if (SelectedGame is { } selected && result.ChangedCount > 0)
-                await ReprobeGameAsync(selected);
+            // Always re-analyse the selected game: dropping its cached analysis without one wedged every component
+            // action on "wait for analysis" (Refs #72).
+            await InvalidateAllAndReprobeSelectedAsync();
             StatusText = UiLocalizationService.UpdateAllSummary(result);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
+            await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were updated
             StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
+            await InvalidateAllAndReprobeSelectedAsync();
             StatusText = TF("Vm.UpdateAllFailed", UiLocalizationService.Present(ex.Message));
         }
         finally
@@ -1595,9 +1554,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (!game.HasConfirmedPatchTarget || !_updateAll.HasManagedTargets([game])) continue;
             var key = Key(game);
-            if (_probeCache.TryGetValue(key, out var cached))
+            if (_session.CachedFiles(game) is { } cached)
             {
-                indexes[key] = cached.Files;
+                indexes[key] = cached;
                 continue;
             }
             if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
@@ -1643,7 +1602,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (!_settings.AutoUpdateComponents || IsBusy) return;
         var games = _allGames.ToArray();
-        if (!_updateAll.HasManagedTargets(games)) return;
+        if (!await Task.Run(() => _updateAll.HasManagedTargets(games), cancellationToken)) return;
         using var op = _operations.TryBegin("background-update", linkedToken: cancellationToken);
         if (op is null) return;
         try
@@ -1656,13 +1615,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 op.Token);
             if (result.ChangedCount > 0)
             {
-                _probeCache.Clear();
+                await InvalidateAllAndReprobeSelectedAsync();
                 StatusText = UiLocalizationService.UpdateAllSummary(result) + T("Vm.Background");
             }
         }
         catch (OperationCanceledException) when (op.CancelRequested)
         {
             // The user cancelled this pass; the loop runs the next one on schedule.
+            await InvalidateAllAndReprobeSelectedAsync();
             StatusText = OperationCancelledText() + T("Vm.Background");
         }
     }
@@ -1985,15 +1945,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         return false;
     }
 
-    private IReadOnlyList<string>? ProbedFiles(DetectedGame game)
-        => _probeCache.TryGetValue(Key(game), out var probe) ? probe.Files : null;
+    private IReadOnlyList<string>? ProbedFiles(DetectedGame game) => _session.CachedFiles(game);
 
     [RelayCommand]
     private async Task ManageComponentAsync(ManagedComponentKind kind)
     {
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         var game = SelectedGame;
-        if (!_probeCache.TryGetValue(Key(game), out var probe))
+        if (CurrentAnalysis is not { } probe)
         {
             StatusText = T("Vm.WaitGameAnalysisFinishBeforeChanging");
             return;
@@ -2058,18 +2017,52 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>Drops <paramref name="game"/>'s analysis and works it out again (its files changed).</summary>
     private async Task ReprobeGameAsync(DetectedGame game)
     {
-        _probeCache.Remove(Key(game));
-        CancelSelectionProbe();
-        Components.Clear();
-        _dlssDetection = new();
-        IsSelectionProbeBusy = true;
-        NotifySelected();
-        var generation = ++_selectionGeneration;
-        _selectionProbeCts = new CancellationTokenSource();
-        await AnalyzeSelectedGameAsync(game, generation, _selectionProbeCts.Token);
+        await _session.ReprobeAsync(game);
         LoadReShadeProfile(game);
+    }
+
+    /// <summary>
+    /// After an operation that changed files in the selected game but reports its own result line (UAL, DLSS swap or
+    /// restore, ShortFuse load order): the cached file index is dropped and rebuilt so the next install sees the new
+    /// files and backups (Refs #83), and the operation's line stays on screen.
+    /// </summary>
+    private async Task ReprobeKeepingStatusAsync(DetectedGame game)
+    {
+        var line = StatusText;
+        await ReprobeGameAsync(game);
+        StatusText = line;
+    }
+
+    /// <summary>
+    /// The one path for operations that may have changed files in any game (Update All, the background pass, the DLSS
+    /// batch): every cached analysis is dropped and the selected game is always analysed again (Refs #72).
+    /// </summary>
+    private async Task InvalidateAllAndReprobeSelectedAsync()
+    {
+        _session.InvalidateAll();
+        if (SelectedGame is { } selected) await ReprobeGameAsync(selected);
+    }
+
+    /// <summary>
+    /// Re-works the library-wide facts behind Update All and DLSS batch (deployment records, game folders) off the UI
+    /// thread; run after scans and after every operation (Refs #71).
+    /// </summary>
+    private async Task RefreshLibraryFactsAsync()
+    {
+        var games = _allGames.ToArray();
+        var (managed, batch) = await Task.Run(() => (
+            _updateAll.HasManagedTargets(games),
+            games.Any(game => game.HasConfirmedPatchTarget &&
+                              !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) &&
+                              !game.DlssScanSkippedByManifest && Directory.Exists(game.InstallPath))));
+        _libraryHasManagedTargets = managed;
+        _libraryHasDlssBatchCandidates = batch;
+        OnPropertyChanged(nameof(CanUpdateAll));
+        UpdateAllCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanOpenDlssBatch));
     }
 
     [RelayCommand]
@@ -2143,7 +2136,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
-                RefreshUalState(game);
+                await ReprobeKeepingStatusAsync(game); // the new proxy DLL is in the file index (Refs #83)
                 var update = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game, op.Token);
                 if (update.Success && !string.IsNullOrWhiteSpace(update.LatestVersion) && GetUalArchitecture(game) is { } architecture)
                     _ualLatestVersionCache[architecture] = update.LatestVersion;
@@ -2181,7 +2174,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
-                RefreshUalState(game);
+                await ReprobeKeepingStatusAsync(game); // Refs #83
                 UalLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
             }
         }
@@ -2269,7 +2262,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         var game = SelectedGame;
-        if (!_probeCache.TryGetValue(Key(game), out var probe))
+        if (CurrentAnalysis is not { } probe)
         {
             StatusText = T("Vm.WaitGameAnalysisFinishBeforeChanging2");
             return;
@@ -2433,9 +2426,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             StatusText = TF("Vm.QuickApplyApplyingDLSSStreamlineDefaults", game.Name);
-            IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
-                ? cached.Files
-                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+            IReadOnlyList<string>? files = _session.CachedFiles(game)
+                ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
             var result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
             StatusText = UiLocalizationService.Present(result.Summary);
             if (result.ChangedCount > 0)
@@ -2465,9 +2457,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             StatusText = TF("Vm.RestoringAllRHIDLSSStreamlineOriginals", game.Name);
-            IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
-                ? cached.Files
-                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+            IReadOnlyList<string>? files = _session.CachedFiles(game)
+                ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
             var result = await _dlssDefaults.RestoreAllAsync(game, files, op.Token);
             StatusText = UiLocalizationService.Present(result.Summary);
             if (result.ChangedCount > 0)
@@ -2505,8 +2496,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     game.DlssScanSkippedByManifest || string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
                     continue;
                 var key = Key(game);
-                if (_probeCache.TryGetValue(key, out var cached))
-                    indexes[key] = cached.Files;
+                if (_session.CachedFiles(game) is { } cached)
+                    indexes[key] = cached;
                 else
                     indexes[key] = await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
             }
@@ -2540,14 +2531,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 games, defaults,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : null,
                 op.Token);
-            _probeCache.Clear();
-            if (SelectedGame is { } selected && result.ChangedCount > 0)
-                await ReprobeGameAsync(selected);
+            await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
             StatusText = UiLocalizationService.Present(result.Summary);
             return result;
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
+            await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were changed
             StatusText = OperationCancelledText();
             throw;
         }
@@ -2572,14 +2562,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 games,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : null,
                 op.Token);
-            _probeCache.Clear();
-            if (SelectedGame is { } selected && result.ChangedCount > 0)
-                await ReprobeGameAsync(selected);
+            await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
             StatusText = UiLocalizationService.Present(result.Summary);
             return result;
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
+            await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were changed
             StatusText = OperationCancelledText();
             throw;
         }
@@ -2599,9 +2588,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (!game.HasConfirmedPatchTarget) continue;
             var key = Key(game);
-            if (_probeCache.TryGetValue(key, out var cached))
+            if (_session.CachedFiles(game) is { } cached)
             {
-                indexes[key] = cached.Files;
+                indexes[key] = cached;
                 continue;
             }
             if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
@@ -2617,7 +2606,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SwapDlssComponentAsync(string? component)
     {
-        if (SelectedGame is null || !TryResolveComponent(component, out var kind, out var version, out var paths)) return;
+        if (SelectedGame is not { } game || !TryResolveComponent(component, out var kind, out var version, out var paths)) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
             StatusText = T("Vm.SetTargetExecutableEditGameBefore4");
@@ -2654,7 +2643,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 StatusText = changed == 0
                     ? TF("Vm.AlreadyMatchesGameFileNothingChanged", displayName, version)
                     : TF("Vm.AppliedFileSOriginalPreservedAs", displayName, version, changed);
-                NotifyDlss();
+                await ReprobeKeepingStatusAsync(game); // the .original backups are in the file index (Refs #83)
             }
             else
             {
@@ -2674,7 +2663,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task RestoreDlssComponentAsync(string? component)
     {
-        if (SelectedGame is null || !TryResolveComponent(component, out var kind, out _, out var paths)) return;
+        if (SelectedGame is not { } game || !TryResolveComponent(component, out var kind, out _, out var paths)) return;
         if (!SelectedGame.HasConfirmedPatchTarget)
         {
             StatusText = T("Vm.SetTargetExecutableEditGameBefore5");
@@ -2702,7 +2691,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = result.Success
                 ? TF("Vm.OriginalDLLRestored", displayName)
                 : op.CancelRequested ? OperationCancelledText() : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
-            if (result.Success) NotifyDlss();
+            if (result.Success) await ReprobeKeepingStatusAsync(game); // Refs #83
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -2717,7 +2706,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SwapStreamlineAsync()
     {
-        if (SelectedGame is null || IsBusy) return;
+        if (SelectedGame is not { } game || IsBusy) return;
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
@@ -2749,7 +2738,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 StatusText = changed == 0
                     ? TF("Vm.StreamlineAlreadyMatchesAllDetectedDLLs", SelectedStreamlineVersion)
                     : TF("Vm.StreamlineAppliedExistingDLLSOriginals", SelectedStreamlineVersion, changed);
-                NotifyDlss();
+                await ReprobeKeepingStatusAsync(game); // Refs #83
             }
             else
             {
@@ -2769,7 +2758,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task RestoreStreamlineAsync()
     {
-        if (SelectedGame is null || IsBusy) return;
+        if (SelectedGame is not { } game || IsBusy) return;
         if (OrchestratedDlssStackManaged)
         {
             StatusText = ShortFuseInstalled
@@ -2792,7 +2781,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = result.Success
                 ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
                 : op.CancelRequested ? OperationCancelledText() : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
-            if (result.Success) NotifyDlss();
+            if (result.Success) await ReprobeKeepingStatusAsync(game); // Refs #83
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -2897,7 +2886,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             // Apply installs ReShade when RHI does not manage it yet (plus RE Framework on RE Engine): warn first.
             var installsReShade = !_managedComponents.IsReShadeManaged(game) &&
-                (_probeCache.TryGetValue(Key(game), out var probe)
+                (_session.TryGetCached(game, out var probe)
                     ? probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade) is not { } row || ManifestInstallWarning.IsFirstInstall(row.Availability)
                     : true);
             if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, "ReShade", installsReShade, ProbedFiles(game)))
@@ -3280,7 +3269,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         saved?.Invoke();
 
         var name = SelectedGame.Name;
-        _probeCache.Remove(Key(SelectedGame));
+        _session.Invalidate(SelectedGame);
         var message = await RefreshWhenIdleAsync(NoDetectors)
             ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
             : TF("Vm.ModificationTargetSavedButLibraryWas", name);
@@ -3302,7 +3291,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _libraryState = state;
         saved?.Invoke();
         var name = SelectedGame.Name;
-        _probeCache.Remove(Key(SelectedGame));
+        _session.Invalidate(SelectedGame);
         var message = !await RefreshWhenIdleAsync(NoDetectors)
             ? TF("Vm.ChangesSavedButLibraryWasNot", name)
             : removed
@@ -3453,7 +3442,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (repaired && ReferenceEquals(SelectedGame, game))
         {
             // Reload every per-game preference from the stores and probe the new folder.
-            _probeCache.Remove(Key(game));
+            _session.Invalidate(game);
             OnSelectedGameChanged(game);
         }
         CheckRepairAfterMove(force: true);
@@ -3533,14 +3522,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AddonWatcherEnabled));
         OnPropertyChanged(nameof(AddonWatchFolder));
         OnPropertyChanged(nameof(ShowMotdOnStartup));
-    }
-
-    private void CancelSelectionProbe()
-    {
-        _selectionProbeCts?.Cancel();
-        _selectionProbeCts?.Dispose();
-        _selectionProbeCts = null;
-        _selectionGeneration++;
     }
 
     private void ResetNeuralVersionPins()
@@ -3747,11 +3728,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             target.Add(value);
     }
 
-    private PeArchitecture? GetUalArchitecture(DetectedGame game)
-    {
-        var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
-        return architecture is PeArchitecture.X86 or PeArchitecture.X64 ? architecture : null;
-    }
+    /// <summary>The executable's architecture for UAL's per-architecture release (off the UI thread when it is read).</summary>
+    private static PeArchitecture? GetUalArchitecture(DetectedGame game)
+        => UalArchitecture(game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath));
+
+    private static PeArchitecture? UalArchitecture(PeArchitecture architecture)
+        => architecture is PeArchitecture.X86 or PeArchitecture.X64 ? architecture : null;
 
     private string FormatLatestVersionSummary(string? installedVersion, string? latestVersion)
     {
@@ -3768,13 +3750,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         return T("Vm.LoadingLatestVersion");
     }
 
-    private string? CachedUalLatestVersion(DetectedGame game)
-    {
-        var architecture = GetUalArchitecture(game);
-        return architecture is not null && _ualLatestVersionCache.TryGetValue(architecture.Value, out var version)
+    private string? CachedUalLatestVersion(PeArchitecture architecture)
+        => UalArchitecture(architecture) is { } ual && _ualLatestVersionCache.TryGetValue(ual, out var version)
             ? version
             : null;
-    }
 
     private async Task<string?> GetUalLatestVersionAsync(DetectedGame game, bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
@@ -3871,10 +3850,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void RefreshShortFuseState(DetectedGame game)
     {
-        ShortFuseAutoConfigEnabled = _managedComponents.GetShortFuseAutoConfigEnabled(game);
-        SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
-        var record = _managedComponents.GetShortFuseRecord(game);
-        ShortFuseLatestVersionText = FormatLatestVersionSummary(record?.Version, _shortFuseLatestVersionCache);
+        // Read from the selected game's analysis (no disk access on the UI thread); defaults until it is published.
+        var facts = ReferenceEquals(game, SelectedGame) ? Facts : null;
+        ShortFuseAutoConfigEnabled = facts?.ShortFuseAutoConfigEnabled ?? false;
+        SetShortFuseZzzLoadOrderSilently(facts?.ShortFuseZzzLoadOrderInEffect ?? false);
+        ShortFuseLatestVersionText = FormatLatestVersionSummary(facts?.ShortFuseRecord?.Version, _shortFuseLatestVersionCache);
         NotifyShortFuse();
     }
 
@@ -3928,6 +3908,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : enabled
                     ? T("Vm.ShortFuseWillLoadLastZzzRenodx")
                     : T("Vm.ShortFuseUsesDefaultNameRenodxDlss");
+            if (result.Success && ReferenceEquals(SelectedGame, game)) await ReprobeKeepingStatusAsync(game); // the add-on was renamed (Refs #83)
         }
         catch (Exception ex) when (op.WasCancelled(ex)) { StatusText = OperationCancelledText(); }
         catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
@@ -3948,12 +3929,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void RefreshUalState(DetectedGame game)
     {
+        // Read from the selected game's analysis (no disk access on the UI thread); empty until it is published.
+        var facts = ReferenceEquals(game, SelectedGame) ? Facts : null;
         var previous = SelectedUalProxyName;
         UalProxyNames.Clear();
-        foreach (var name in _managedComponents.GetUltimateAsiLoaderProxyNames(game))
+        foreach (var name in facts?.UalProxyNames ?? [])
             UalProxyNames.Add(name);
 
-        var record = _managedComponents.GetUltimateAsiLoaderRecord(game);
+        var record = facts?.UalRecord;
         var installed = record?.Metadata.GetValueOrDefault("UAL.ProxyName");
         if (!string.IsNullOrWhiteSpace(installed))
             SelectedUalProxyName = installed;
@@ -3961,9 +3944,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                  UalProxyNames.Contains(previous, StringComparer.OrdinalIgnoreCase))
             SelectedUalProxyName = UalProxyNames.First(x => x.Equals(previous, StringComparison.OrdinalIgnoreCase));
         else
-            SelectedUalProxyName = _managedComponents.GetUltimateAsiLoaderRecommendedProxy(game);
+            SelectedUalProxyName = facts?.UalRecommendedProxy ?? "";
 
-        UalLatestVersionText = FormatLatestVersionSummary(record?.Version, CachedUalLatestVersion(game));
+        UalLatestVersionText = FormatLatestVersionSummary(record?.Version, facts is null ? null : CachedUalLatestVersion(facts.Architecture));
         NotifyUal();
     }
 
@@ -4050,34 +4033,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void ReevaluateCurrentGameComponents(DetectedGame game)
     {
-        if (_probeCache.TryGetValue(Key(game), out var cached))
-        {
-            var components = ComponentProbe.Probe(game, cached.Files);
-            _managedComponents.Decorate(game, components);
-            var refreshed = cached with { Components = components };
-            _probeCache[Key(game)] = refreshed;
-            ApplyProbeResult(refreshed);
-        }
-        else
-        {
-            NotifySelected();
-        }
+        if (!_session.Recompose(game)) NotifySelected();
     }
 
-    private void ReevaluateCurrentGameForLumaPolicy(DetectedGame game)
+    private void ReevaluateCurrentGameForLumaPolicy(DetectedGame game, LumaPolicySnapshot policy)
     {
-        if (_probeCache.TryGetValue(Key(game), out var cached))
-        {
-            var components = ComponentProbe.Probe(game, cached.Files);
-            _managedComponents.Decorate(game, components);
-            var refreshed = cached with { Components = components };
-            _probeCache[Key(game)] = refreshed;
-            ApplyProbeResult(refreshed);
-        }
-        else NotifySelected();
+        if (!_session.Recompose(game, facts => facts with { LumaPolicy = policy })) NotifySelected();
         OnPropertyChanged(nameof(LumaPolicyText));
         OnPropertyChanged(nameof(LumaCoexistenceText));
-        StatusText = $"{game.Name}: {UiLocalizationService.Present(_managedComponents.GetLumaPolicy(game).Summary)}.";
+        StatusText = $"{game.Name}: {UiLocalizationService.Present(policy.Summary)}.";
     }
 
     private static string ParseHdrMode(string? value)
@@ -4177,18 +4141,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void ReevaluateCurrentGameForApiOverride(DetectedGame game)
     {
-        if (_probeCache.TryGetValue(Key(game), out var cached))
-        {
-            var components = ComponentProbe.Probe(game, cached.Files);
-            _managedComponents.Decorate(game, components);
-            var refreshed = cached with { Components = components };
-            _probeCache[Key(game)] = refreshed;
-            ApplyProbeResult(refreshed);
-        }
-        else
-        {
-            NotifySelected();
-        }
+        if (!_session.Recompose(game)) NotifySelected();
         StatusText = game.UserGraphicsApiOverride is null
             ? game.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown
                 ? TF("Vm.ExplicitGraphicsAPIOverrideRemovedUpstream", game.Name, FormatApi(manifestApi))
@@ -4355,25 +4308,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         RestoreAllDlssCommand.NotifyCanExecuteChanged();
     }
 
-    private static bool HasRhiBackup(IEnumerable<string> targets)
-        => targets.Any(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension));
-
-    private static string DlssDeploymentState(IReadOnlyList<string> targets)
+    private static string DlssDeploymentState(IReadOnlyList<string> targets, int backups)
     {
         if (targets.Count == 0) return T("Vm.Missing");
-        var backups = targets.Count(target => File.Exists(target + TransactionalFileDeploymentService.BackupExtension));
         return backups > 0
             ? TF("Vm.RHIApplied", backups, targets.Count)
             : targets.Count == 1 ? T("Vm.GameDLL") : TF("Vm.GameDLLs2", targets.Count);
-    }
-
-    private int CountStreamlineBackups()
-    {
-        var ext = TransactionalFileDeploymentService.BackupExtension;
-        return _dlssDetection.StreamlineFolders
-            .SelectMany(folder => DlssManagerService.KnownStreamlineDlls.Select(name => Path.Combine(folder, name)))
-            .Distinct(StringComparer.Ordinal)
-            .Count(target => File.Exists(target + ext));
     }
 
     private static void FillVersions(ObservableCollection<string> target, IEnumerable<string> versions)

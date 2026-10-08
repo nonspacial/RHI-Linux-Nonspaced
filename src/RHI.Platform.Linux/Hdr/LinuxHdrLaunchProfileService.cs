@@ -94,10 +94,17 @@ public sealed partial class LinuxHdrLaunchProfileService
     }
 
     public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile)
+        => BuildPlan(game, profile, ProbeHost());
+
+    /// <summary>
+    /// The plan for a host probed earlier (<see cref="ProbeHost"/> reads /proc and searches PATH, so the UI probes it
+    /// off its thread and builds plans from the snapshot).
+    /// </summary>
+    public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host)
     {
         ArgumentNullException.ThrowIfNull(game);
+        ArgumentNullException.ThrowIfNull(host);
         profile = (profile ?? new LinuxHdrGameProfile()).Normalize();
-        var host = ProbeHost();
         if (profile.Mode == LinuxHdrModes.Off)
             return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%",
                 $"HDR launch profile is Off. Runner graphics stack remains untouched. Host: {host.Summary}.");

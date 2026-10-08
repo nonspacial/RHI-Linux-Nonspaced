@@ -31,7 +31,7 @@ internal sealed class ViewModelFixture : IDisposable
     private readonly HttpHang _hang = new();
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, IGameRuntimeProbe? probe)
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -40,15 +40,17 @@ internal sealed class ViewModelFixture : IDisposable
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, _hang);
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, _hang, probe);
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
     /// <param name="httpFailure">What every request throws (default: an "offline test" <see cref="HttpRequestException"/>).</param>
+    /// <param name="probe">The runtime probe (default: one that changes nothing).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
-        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null)
+        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
+        IGameRuntimeProbe? probe = null)
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, probe);
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }
@@ -74,7 +76,7 @@ internal sealed class ViewModelFixture : IDisposable
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
-        Func<HttpRequestMessage, Exception>? httpFailure, HttpHang hang)
+        Func<HttpRequestMessage, Exception>? httpFailure, HttpHang hang, IGameRuntimeProbe? probe)
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, hang));
         var upstreamManifest = new UpstreamRhiManifestService(http);
@@ -122,7 +124,7 @@ internal sealed class ViewModelFixture : IDisposable
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,
             new NeuralAddonVersionPreferenceStore(Path.Combine(prefs, "neural.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")));
         built(managed);
-        return new MainWindowViewModel(scanner, new LinuxGameLauncher(), new NoProbe(), dlss, managed,
+        return new MainWindowViewModel(scanner, new LinuxGameLauncher(), probe ?? new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),
             settingsStore, new LinuxUpdateAllService(records, managed), new LinuxDlssDefaultsService(dlss, records), libraryStore, records);
     }
