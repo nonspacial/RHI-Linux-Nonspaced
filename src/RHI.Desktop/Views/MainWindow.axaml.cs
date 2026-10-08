@@ -283,10 +283,12 @@ public sealed partial class MainWindow : Window
         var dialog = new Window
         {
             Title = T("Win.DLSSStreamlineBatchOperation"),
+            // Preferred size, capped to the main window; the minimum fits the 640x480 window floor (the body stacks
+            // below 700 px and scrolls, the footer stays pinned).
             Width = 820,
             Height = 650,
-            MinWidth = 700,
-            MinHeight = 520,
+            MinWidth = 460,
+            MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = root
         };
