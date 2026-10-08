@@ -93,6 +93,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **Why it matters:** For a Heroic game, the gamescope/HDR environment wraps `xdg-open heroic://…`, which exits at once. HDR never reaches the game, yet the status says "Launching … with HDR profile".
 - **Fix seam:** Use `StartsWith("Heroic", OrdinalIgnoreCase)`, and also treat `xdg-open` with a `heroic://`, `steam://` or `lutris:` URI as launcher-mediated.
 - **Verify:** Extend `HdrLinuxIntegrationTests` with `Source="Heroic/Epic"`; assert `IsLauncherMediated` is true.
+- **Status:** fixed on `w2/launch` in `d7cf282` (#106: one `LaunchHandoffClassifier` for the launcher's working directory and the HDR profile; the command decides) and `c5353f4` (#46/#146: a hand-off is never wrapped — Launch starts it through its launcher and the status line gives that launcher's steps; `LinuxGameLauncher` refuses launch options on a hand-off; HDR wording via UiStrings).
 
 ## Medium
 

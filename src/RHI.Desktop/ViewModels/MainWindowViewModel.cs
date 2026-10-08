@@ -378,18 +378,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
-        ? new LinuxHdrLaunchPlan(false, false, new Dictionary<string, string>(), null, "%command%", T("Vm.SelectGameConfigureHDRLaunchOrchestration"))
+        ? LinuxHdrLaunchPlan.NoGame
         : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi });
-    public string HdrProfileHint
-    {
-        get
-        {
-            var plan = SelectedHdrPlan;
-            if (SelectedGame is not null && plan.Enabled && LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
-                return UiLocalizationService.Present(plan.Summary) + T("Vm.StoreMediatedLaunchDetectedConfigureProfile");
-            return UiLocalizationService.Present(plan.Summary);
-        }
-    }
+    public string HdrProfileHint => HdrLaunchText.Hint(SelectedHdrPlan, SelectedGame);
     public string HdrLaunchOptions => SelectedHdrPlan.LaunchOptions;
     public bool CanCopyHdrLaunchOptions => SelectedGame is not null && SelectedHdrPlan.Enabled && SelectedHdrPlan.CanApply;
 
@@ -1520,24 +1511,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
     }
 
-    private async Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
-    {
-        try
-        {
-            if (runImmediate)
-                await RunBackgroundUpdatePassAsync(cancellationToken);
-            using var timer = new PeriodicTimer(TimeSpan.FromHours(_settings.UpdateCheckIntervalHours));
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-                await RunBackgroundUpdatePassAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", UiLocalizationService.Present(ex.Message));
-        }
-    }
+    // A failed pass is logged, reported and retried with back-off; the loop ends only when cancelled (#81).
+    private Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
+        => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, TimeSpan.FromHours(_settings.UpdateCheckIntervalHours), runImmediate,
+            (ex, retry) => StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry), cancellationToken);
 
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
     {
@@ -1570,24 +1547,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null) return;
         var plan = SelectedHdrPlan;
-        if (plan.Enabled && !plan.CanApply)
+        if (HdrLaunchText.LaunchRefusal(plan, _launcher is IGameLaunchOptionsLauncher) is { } refusal)
         {
-            StatusText = TF("Vm.HDRLaunchBlocked", UiLocalizationService.Present(plan.Summary));
+            StatusText = refusal;
             return;
         }
 
-        if (plan.Enabled)
+        if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
-            if (LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
-            {
-                StatusText = T("Vm.HDRProfileReadyButGameLaunched");
-                return;
-            }
-            if (_launcher is not IGameLaunchOptionsLauncher profiledLauncher)
-            {
-                StatusText = T("Vm.HDRLaunchProfileEnabledButLauncher");
-                return;
-            }
             var hdrGame = SelectedGame;
             StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
@@ -1599,6 +1566,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var started = game.ParentLauncherName is { Length: > 0 } parent
             ? TF("Vm.OpeningStartFromLauncher", parent, game.Name)
             : TF("Vm.Launching", game.Name);
+        // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
+        if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
         StatusText = started;
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;
@@ -3365,8 +3334,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             LoadNeuralVersionPins(game); // the dropdown goes back to what is saved
             return;
         }
-        if (_managedComponents.IsManaged(game, kind))
+        // A legacy add-on-only DLSS5 Feeder keeps the pin for its reinstall instead of a swap that must fail (#115).
+        var change = _managedComponents.PlanNeuralPinChange(game, kind);
+        if (change == NeuralPinChange.SwapInPlace)
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind, previous), "SwapNeuralVersionInPlaceAsync");
+        else if (change == NeuralPinChange.ReinstallNeeded)
+            StatusText = T("Vm.Dlss5FeederLegacyPinSaved");
     }
 
     private void SaveNeuralRenderingDllPin(string value)

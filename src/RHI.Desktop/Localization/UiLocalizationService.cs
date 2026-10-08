@@ -462,6 +462,9 @@ public static class UiLocalizationService
 
     private static readonly (string En, string Pt)[] ExactPresentationPairs =
     [
+        // LinuxGameLauncher.HandoffProfileRefused (#46).
+        ("Launch profile not applied: a store launcher starts this game, so the profile has to be entered in that launcher.",
+         "Perfil de inicialização não aplicado: um launcher de loja inicia este jogo, então o perfil precisa ser definido nesse launcher."),
         // RenoDX compatibility settings are emitted by the platform layer with stable internal keys.
         ("Game binary directory is not known yet.", "O diretório de binários do jogo ainda não é conhecido."),
         ("No ReShade.ini was found in the game binary directory.", "Nenhum ReShade.ini foi encontrado no diretório de binários do jogo."),
@@ -825,10 +828,6 @@ public static class UiLocalizationService
         ("Automatic OptiScaler deployment is currently limited to detected 64-bit Windows executables.", "A instalação automática do OptiScaler está limitada a executáveis Windows de 64 bits detectados."),
         ("Start the game once so its Wine/Proton prefix exists before installing OptiScaler.", "Execute o jogo uma vez para criar o prefixo Wine/Proton antes de instalar o OptiScaler."),
         ("Managed by RHI Linux", "Gerenciado pelo RHI Linux"),
-        ("HDR launch profile is Off. Runner graphics stack remains untouched. Host:", "Perfil de inicialização HDR desativado. A pilha gráfica do runner permanece intacta. Host:"),
-        ("Desktop HDR must already be enabled. Host:", "O HDR do desktop já deve estar ativado. Host:"),
-        ("Gamescope HDR wrapper enabled.", "Wrapper HDR do Gamescope ativado."),
-        ("Desktop/output HDR support is still required. Host:", "O suporte HDR do desktop/saída continua obrigatório. Host:"),
         ("RE Engine games require RE Framework. When installing ReShade, RHI will automatically install RE Framework first and continue only if the dependency becomes valid.", "Jogos RE Engine exigem RE Framework. Ao instalar ReShade, o RHI instalará automaticamente o RE Framework primeiro e só continuará se a dependência ficar válida."),
         ("Luma Framework requires RHI-managed ReShade. An external ReShade was detected and will be preserved; RHI will not automatically adopt or overwrite it.", "Luma Framework exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; o RHI não o adotará nem sobrescreverá automaticamente."),
         ("Luma Framework requires RHI-managed ReShade; installing Luma will automatically install ReShade before the Luma package. On DX9, dgVoodoo2 is still prepared automatically when required by the catalog.", "Luma Framework exige ReShade gerenciado pelo RHI; a instalação do Luma instalará ReShade automaticamente antes do pacote Luma. Em DX9, dgVoodoo2 continua sendo preparado automaticamente quando exigido pelo catálogo."),

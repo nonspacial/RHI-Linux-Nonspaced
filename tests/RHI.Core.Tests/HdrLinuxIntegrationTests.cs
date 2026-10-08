@@ -57,7 +57,7 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
         Assert.DoesNotContain("PROTON_ENABLE_HDR", plan.Environment.Keys);
         Assert.DoesNotContain("PROTON_ENABLE_WAYLAND", plan.Environment.Keys);
         Assert.Equal("%command%", plan.LaunchOptions);
-        Assert.Contains("proton script", plan.Summary);
+        Assert.Equal(LinuxHdrPlanReason.DirectWineLaunch, plan.Reason);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
 
         Assert.True(plan.Enabled);
         Assert.False(plan.CanApply);
-        Assert.Contains("requires a Wayland", plan.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LinuxHdrPlanReason.WaylandSessionRequired, plan.Reason);
     }
 
     [Fact]
@@ -94,12 +94,12 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
 
         Assert.False(plan.CanApply);
         Assert.Empty(plan.Environment);
-        Assert.Contains("application/toolkit-specific", plan.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LinuxHdrPlanReason.NativeLinuxToolkitSpecific, plan.Reason);
 
         var generic = Game("Proton 11.0");
         var genericPlan = service.BuildPlan(generic, Profile(LinuxHdrModes.NativeWayland));
         Assert.False(genericPlan.CanApply);
-        Assert.Contains("will not guess", genericPlan.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LinuxHdrPlanReason.NoRunnerContract, genericPlan.Reason);
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
         var plan = service.BuildPlan(Game("GE-Proton11-3"), Profile(LinuxHdrModes.Gamescope));
 
         Assert.False(plan.CanApply);
-        Assert.Contains("not found", plan.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LinuxHdrPlanReason.GamescopeMissing, plan.Reason);
         Assert.Null(plan.CommandPrefix);
     }
 
@@ -148,7 +148,8 @@ public sealed class HdrLinuxIntegrationTests : IDisposable
 
         Assert.DoesNotContain("ENABLE_HDR_WSI", normal.Environment.Keys);
         Assert.Equal("1", legacy.Environment["ENABLE_HDR_WSI"]);
-        Assert.Contains("older than 595", normal.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LinuxHdrLegacyWsiNote.OlderNvidiaDriver, normal.LegacyWsi);
+        Assert.Equal(LinuxHdrLegacyWsiNote.Enabled, legacy.LegacyWsi);
     }
 
     [Fact]

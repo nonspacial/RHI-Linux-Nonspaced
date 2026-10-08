@@ -44,6 +44,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"DLSS Enabler Standalone update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
         yield return $"RTX 20 FG Unlock legado update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-2";
         yield return $"RE Framework update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.anterior-1";
+        // Launch options refused on a store hand-off (wave 2, #46).
+        yield return RHI.Platform.Linux.Launch.LinuxGameLauncher.HandoffProfileRefused;
         // AtomicFile / TrustedDownload (core).
         yield return AtomicFile.NoFolderPrefix + P;
         yield return $"{AtomicFile.SizeLimitPrefix}1024{AtomicFile.SizeLimitMiddle}addon.dll";

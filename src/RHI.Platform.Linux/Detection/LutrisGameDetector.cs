@@ -140,6 +140,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 var launcher = PickParentLauncher(sharing, libraryGames.Select(x => x.Folder).ToArray());
                 // Only games share the prefix (no launcher config): nothing to launch the others through.
                 if (launcher is null) continue;
+                // The parent launcher is not a game: no patch target or graphics API of its own until the user
+                // picks one in Edit game (Refs #148; a Battle.net/Ubisoft client exe is already caught by name).
+                launcher.RequiresExplicitPatchTarget = true;
                 foreach (var (entry, folder) in libraryGames)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -179,16 +182,25 @@ public sealed partial class LutrisGameDetector : IGameDetector
     /// <summary>
     /// The launcher among the configs sharing one prefix, chosen by role: a config whose game folder is a
     /// store-library game folder of that prefix (or inside one) is a game with its own Lutris entry, never
-    /// the parent. Of the rest, one whose configured exe resolves wins; ties keep ordinal config file-name
-    /// order (slug, then timestamp, so the oldest of one slug's duplicate configs). Null when only games
-    /// share the prefix.
+    /// the parent. Of the rest, a store client RHI knows by its executable (GOG Galaxy, Ubisoft Connect,
+    /// Battle.net, the EA app…) comes first, so a game installed outside the store libraries in the same
+    /// prefix (a GOG offline install beside Galaxy) is not taken for the launcher; then one whose configured
+    /// exe resolves; ties keep ordinal config file-name order (slug, then timestamp, so the oldest of one
+    /// slug's duplicate configs). Null when only games share the prefix. Known limitation: with no known
+    /// client among them, a game outside the libraries can still be picked over an unknown launcher.
     /// </summary>
     private static DetectedGame? PickParentLauncher(IEnumerable<(DetectedGame Game, bool ExeResolves)> sharing, IReadOnlyList<string> libraryGameFolders)
         => sharing
             .Where(c => !libraryGameFolders.Any(folder => IsSameOrUnder(PathIdentity.Canonicalize(c.Game.InstallPath), folder)))
-            .OrderBy(c => c.ExeResolves ? 0 : 1) // stable: keeps file-name order within each group
+            // Stable sorts: file-name order is kept within each group.
+            .OrderBy(c => IsKnownStoreClient(c.Game) ? 0 : 1)
+            .ThenBy(c => c.ExeResolves ? 0 : 1)
             .Select(c => c.Game)
             .FirstOrDefault();
+
+    private static bool IsKnownStoreClient(DetectedGame config)
+        => Settings.LinuxGameIdentityService.IsSharedLauncherExecutable(config.LaunchExecutablePath) ||
+           Settings.LinuxGameIdentityService.IsSharedLauncherExecutable(config.ExecutablePath);
 
     private static bool IsSameOrUnder(string path, string folder)
         => path == folder || path.StartsWith(folder + "/", StringComparison.Ordinal);

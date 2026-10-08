@@ -8,8 +8,9 @@ namespace RHI.Platform.Linux.Launch;
 
 public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
 {
-    // Programs that hand the launch to a store client instead of running a local executable.
-    private static readonly string[] StoreHandoffPrograms = ["steam", "lutris", "heroic", "xdg-open", "gio", "flatpak"];
+    /// <summary>Refusal when launch options are asked for on a store hand-off (fixed text; PT-BR presentation pair).</summary>
+    public const string HandoffProfileRefused =
+        "Launch profile not applied: a store launcher starts this game, so the profile has to be entered in that launcher.";
 
     /// <summary>How long a launch is watched for an immediate failure before it is left to run.</summary>
     public static readonly TimeSpan DefaultEarlyExitWindow = TimeSpan.FromSeconds(3);
@@ -56,6 +57,11 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
+        // Wrapping a store client (xdg-open heroic://…, steam -applaunch) never reaches the game it starts later,
+        // so a launch profile on a hand-off would be reported as applied without effect (#46).
+        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix)) &&
+            LaunchHandoffClassifier.IsHandoff(game))
+            throw new InvalidOperationException(HandoffProfileRefused);
 
         var stderrLog = CreateLaunchLog(game);
         var process = new Process { StartInfo = BuildStartInfo(game, options, stderrLog) };
@@ -203,7 +209,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// </summary>
     internal static string? ResolveWorkingDirectory(DetectedGame game)
     {
-        if (IsStoreHandoff(game)) return null;
+        if (LaunchHandoffClassifier.IsHandoff(game)) return null;
 
         var exeDirectory = string.IsNullOrWhiteSpace(game.LaunchExecutablePath)
             ? null
@@ -212,23 +218,6 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         return !string.IsNullOrWhiteSpace(game.InstallPath) && Directory.Exists(game.InstallPath)
             ? game.InstallPath
             : null;
-    }
-
-    private static bool IsStoreHandoff(DetectedGame game)
-    {
-        var source = game.Source ?? string.Empty;
-        if (source.Equals("Steam", StringComparison.OrdinalIgnoreCase) ||
-            source.Equals("Lutris", StringComparison.OrdinalIgnoreCase) ||
-            source.StartsWith("Heroic", StringComparison.OrdinalIgnoreCase)) return true;
-
-        var command = game.LaunchCommand ?? string.Empty;
-        if (command.Contains("://", StringComparison.Ordinal)) return true;
-        // First word that is not a leading NAME=value assignment. Quoting is ignored: this only has to
-        // recognise a bare store client name.
-        var program = command.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault(word => word.IndexOf('=') <= 0 || word.StartsWith('/') || word.StartsWith('\''));
-        return program is not null &&
-               StoreHandoffPrograms.Contains(Path.GetFileName(program), StringComparer.OrdinalIgnoreCase);
     }
 
     internal static string BuildShellCommand(string launchCommand, string? commandPrefix)

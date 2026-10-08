@@ -110,6 +110,35 @@ public sealed class LutrisLauncherPrefixGamesTests : IDisposable
     }
 
     [Fact]
+    public void ParentLauncherCard_ShowsNoGraphicsApi_ItsGamesKeepTheirs()
+    {
+        // #148: a launcher RHI does not know by exe name, bundling a CEF Vulkan loader. As the parent of library
+        // games it is no patch target, so its card shows Unknown instead of Vulkan High; its game is unaffected.
+        var prefix = Prefix("acme");
+        var launcherDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Acme", "Acme Launcher");
+        Pe(launcherDir, "AcmeLauncher.exe", 4096);
+        File.WriteAllText(Path.Combine(launcherDir, "vulkan-1.dll"), "MZ vkCreateInstance");
+        var gameExe = Pe(Path.Combine(prefix, "drive_c", "Games", "Acme Quest"), "AcmeQuest.exe", 4096);
+        Config("acme-launcher-1763437958", $"game:\n  exe: drive_c/Program Files (x86)/Acme/Acme Launcher/AcmeLauncher.exe\n  prefix: {prefix}\nname: Acme Launcher\n");
+
+        var games = Detect().ToDictionary(g => g.Name);
+        foreach (var card in games.Values)
+        {
+            LinuxGameIdentityService.ApplyDetectedIdentity(card);
+            DetectionHelpers.ApplyRuntimeMetadata(card, GameFileIndexer.Build(card.InstallPath, 8));
+        }
+
+        var launcher = games["Acme Launcher"];
+        Assert.True(launcher.RequiresExplicitPatchTarget);
+        Assert.False(launcher.HasConfirmedPatchTarget);
+        Assert.Equal((GraphicsApi.Unknown, GraphicsApiConfidence.Unknown), (launcher.GraphicsApi, launcher.GraphicsApiConfidence));
+        var game = games["Acme Quest"];
+        Assert.Equal("Acme Launcher", game.ParentLauncherName);
+        Assert.True(game.HasConfirmedPatchTarget);
+        Assert.Equal(gameExe, game.ExecutablePath);
+    }
+
+    [Fact]
     public void SeveralLauncherConfigs_TheOneWhoseExeResolvesIsTheParent()
     {
         var prefix = Prefix("battlenet");
@@ -126,6 +155,31 @@ public sealed class LutrisLauncherPrefixGamesTests : IDisposable
         var game = Assert.Single(games, g => g.ParentLauncherName is not null);
         Assert.Equal("Battle.net", game.ParentLauncherName);
         Assert.Equal("lutris 'lutris:rungame/battlenet'", game.LaunchCommand);
+    }
+
+    [Fact]
+    public void GameOutsideTheLibraries_SortingFirst_IsNotTheParent_WhenAKnownClientSharesThePrefix()
+    {
+        // w2-launch review, minor 7: a GOG offline install in drive_c/GOG Games sharing Galaxy's prefix sorted first,
+        // so it became the launcher every library game is started through, and lost its own patch target and API.
+        var prefix = Prefix("gog");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files (x86)", "GOG Galaxy"), "GalaxyClient.exe");
+        var witcherExe = Pe(Path.Combine(prefix, "drive_c", "GOG Games", "The Witcher 3"), "witcher3.exe", 4096);
+        Pe(Path.Combine(prefix, "drive_c", "Games", "Cyberpunk 2077"), "Cyberpunk2077.exe", 4096);
+        Config("aaa-the-witcher-3-1700000000", $"game:\n  exe: {witcherExe}\n  prefix: {prefix}\nname: The Witcher 3\n");
+        Config("gog-galaxy-1763437958", $"game:\n  exe: drive_c/Program Files (x86)/GOG Galaxy/GalaxyClient.exe\n  prefix: {prefix}\nname: GOG Galaxy\n");
+
+        var games = Detect().ToDictionary(g => g.Name);
+
+        Assert.Equal(["Cyberpunk 2077", "GOG Galaxy", "The Witcher 3"], games.Keys.Order());
+        var libraryGame = games["Cyberpunk 2077"];
+        Assert.Equal("GOG Galaxy", libraryGame.ParentLauncherName);
+        Assert.Equal("lutris 'lutris:rungame/gog-galaxy'", libraryGame.LaunchCommand);
+        Assert.True(games["GOG Galaxy"].RequiresExplicitPatchTarget);
+        var witcher = games["The Witcher 3"];
+        Assert.Null(witcher.ParentLauncherName);
+        Assert.False(witcher.RequiresExplicitPatchTarget);
+        Assert.Equal(witcherExe, witcher.ExecutablePath);
     }
 
     [Fact]

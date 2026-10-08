@@ -109,6 +109,46 @@ public sealed class MultiApiDetectionTests : IDisposable
     }
 
     [Fact]
+    public void VulkanLoaderBesideAnExe_ThatImportsDx11_DoesNotMakeItVulkan()
+    {
+        // #148: launchers/CEF ship vulkan-1.dll; it used to decide Vulkan High before the import table was read.
+        Directory.CreateDirectory(Path.Combine(_root, "Game"));
+        var exe = WritePe(Path.Combine("Game", "Game.exe"), ["dxgi.dll", "d3d11.dll"], []);
+        File.WriteAllText(Path.Combine(_root, "Game", "vulkan-1.dll"), "MZ vkCreateInstance vkCreateDevice");
+
+        var found = GraphicsApiDetector.Detect(_root, exe);
+
+        Assert.Equal((GraphicsApi.DirectX11, GraphicsApiConfidence.High), (found.Primary, found.Confidence));
+        Assert.Equal([GraphicsApi.DirectX11], found.Candidates);
+    }
+
+    [Fact]
+    public void VulkanLoaderBesideAnExe_WithNoOtherEvidence_IsLowNotHigh()
+    {
+        // Nothing names a renderer; the loader itself (full of vk* names) must not be read as a nearby engine binary.
+        Directory.CreateDirectory(Path.Combine(_root, "Launcher"));
+        var exe = WritePe(Path.Combine("Launcher", "Launcher.exe"), ["kernel32.dll", "user32.dll"], []);
+        File.WriteAllText(Path.Combine(_root, "Launcher", "vulkan-1.dll"), "MZ vkCreateInstance vkCreateDevice");
+
+        var found = GraphicsApiDetector.Detect(_root, exe, GameFileIndexer.Build(_root, 8));
+
+        Assert.Equal((GraphicsApi.Vulkan, GraphicsApiConfidence.Low), (found.Primary, found.Confidence));
+        Assert.Contains("not imported", found.Evidence, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VulkanLoaderBesideAnExe_ThatImportsIt_IsVulkanHigh()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "VkGame"));
+        var exe = WritePe(Path.Combine("VkGame", "VkGame.exe"), ["kernel32.dll", "vulkan-1.dll"], []);
+        File.WriteAllText(Path.Combine(_root, "VkGame", "vulkan-1.dll"), "MZ vkCreateInstance");
+
+        var found = GraphicsApiDetector.Detect(_root, exe);
+
+        Assert.Equal((GraphicsApi.Vulkan, GraphicsApiConfidence.High), (found.Primary, found.Confidence));
+    }
+
+    [Fact]
     public void ImportTable_DelayLoadCountsWhenNoDx11PlusImport()
     {
         var found = GraphicsApiDetector.Detect(_root, WritePe("DelayGame.exe", ["d3d9.dll"], ["d3d12.dll"]));
