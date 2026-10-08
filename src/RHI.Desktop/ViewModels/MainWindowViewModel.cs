@@ -3388,9 +3388,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             if (reportStatus)
-                StatusText = TF("Vm.FailedRefreshNRVersions", ex.Message);
+                StatusText = TF("Vm.FailedRefreshNRVersions", UiLocalizationService.Present(ex.Message));
             else
-                Debug.WriteLine($"[RHI] Automatic NR version catalog refresh failed: {ex.Message}");
+                AppLog.Warn("nr-versions", "Automatic NR version catalog refresh failed", ex);
         }
         finally
         {
@@ -3548,7 +3548,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[RHI] Automatic latest-version refresh failed: {ex.Message}");
+            AppLog.Warn("latest-version", "Automatic latest-version refresh failed", ex);
         }
     }
 
