@@ -105,6 +105,7 @@
   - Getters then read only that snapshot.
   - Separately, add an in-memory cache with file-mtime invalidation to `LinuxDeploymentRecordStore`, and cache `ProbeHost()` for the process lifetime.
 - **Verification:** assert that the `/proc/self/io` `rchar` delta for `vm.SelectedGame = g` stays below 2 × `deployments.json` size, or count `Find` calls through a decorator store.
+- **Status:** fixed in `a9bf929`, `0ba966e` and `fc6c40d` (#71, epic #89 unit 1). The selected game's analysis (`SelectedGameSession`) carries a `SelectionFacts` snapshot worked out off the UI thread: UAL/ShortFuse/Feeder records, files beside the executable, architecture, `.original` backup counts, the Luma policy, the HDR host (`LinuxHdrLaunchProfileService.BuildPlan(game, profile, host)`) and the Wine prefix state; getters read only it. `CanUpdateAll`/`CanOpenDlssBatch` read library facts worked out off the UI thread after scans and operations, and the Installed/RenoDX/Luma filter facts are kept per game until the next scan or operation. Tests: `SelectedGameSessionTests.Getters_ReadTheAnalysisSnapshot_NotTheDisk`.
 
 ### UI-04 — Several bulk operations clear the cache without re-probing, which wedges component actions ("wait for analysis")
 
@@ -124,6 +125,7 @@
 - **Why it matters:** the UI claims analysis is pending when none is running. The only recovery is selecting another game and coming back.
 - **Minimal seam:** use one `InvalidateAndReprobeSelected()` helper for every cache-invalidating path. The cache is cleared inside it, and it always calls `ReprobeGameAsync(selected)` when a game is selected.
 - **Verification:** unit test that calls `UpdateAllCommand` with no managed changes and then `ManageComponentCommand`; assert that no "wait for analysis" status appears.
+- **Status:** fixed in `a9bf929` (#72). Update All, the background pass and DLSS batch apply/restore go through `InvalidateAllAndReprobeSelectedAsync` (also after a cancel or failure); component actions read the published analysis, which an invalidation no longer removes. Tests: `SelectedGameSessionTests.DlssBatch_WithNothingChanged_LeavesTheSelectedGameAnalysed`.
 
 ### UI-05 — Unhandled exceptions from UI handlers and persistence writes can terminate the process
 
@@ -165,6 +167,7 @@
 - **Why it matters:** unbounded growth in a tray-resident app (close-to-tray keeps the process alive), for data that consumers only need for the selected game.
 - **Minimal seam:** keep only derived results (`Components`, `Dlss`, facts) for non-selected games, and keep `Files` for the selected game plus a small LRU (e.g. 3). Re-index on demand; the harness's status line showed 3,001 files indexed in 402 ms.
 - **Verification:** the same `vm-probe` loop, asserting retained bytes stay under a fixed bound (e.g. under 10 MB for 60 games).
+- **Status:** fixed in `a9bf929` (#74, #60). The cache is an LRU of 8 analyses (`SelectedGameSession.DefaultCapacity`); measured 6.2 MiB retained after 60 games of 3,000 paths (only the 8 kept stay reachable). Bulk-operation indexes stay transient. Tests: `SelectedGameSessionTests.Cache_RetainsOnlyItsCapacityOfFileIndexes`, `BrowsingManyGames_KeepsAtMostTheCacheCapacity`.
 
 ### UI-07 — Each search keystroke and filter change resets the selection, cancelling and restarting analysis
 
@@ -180,6 +183,7 @@
   - The null window briefly exposes `Reset*` side effects.
 - **Minimal seam:** diff `Games` in place (remove non-matching, insert matching) instead of `Clear()`. Alternatively, suppress selection write-back during `ApplyFilter` with a guard, or keep a filtered view (`DataGridCollectionView`-style) over `_allGames`.
 - **Verification:** a test that records `SelectedGame` transitions while setting `SearchText` to a value that still matches; assert zero transitions.
+- **Status:** fixed in `cd51fac` (#75, epic #89 unit 3). `LibraryViewModel` filters the list in place (removes and inserts cards, never clears), the search applies 200 ms after the last keystroke, and a selection that still matches is kept without passing through null. Tests: `LibraryListTests`.
 
 ### UI-08 — `IsBusy` has no owner, so concurrent operations clear each other's gate
 
@@ -200,6 +204,7 @@
   - Give background passes a non-blocking indicator.
   - Make `RefreshAsync` return a result so callers can report "deferred".
 - **Verification:** a test that holds a fake long-running background pass and calls `ApplyDlssBatchAsync`. Assert it is refused, or that `IsBusy` stays true until both finish.
+- **Status:** fixed in `34b0f67` (#76, epic #89 unit 2). `OperationCoordinator` owns the gate: `TryBegin(kind)` returns a scope or null, a stale scope never clears another's gate, and every mutating entry point (dialog writers, DLSS batch, background pass, refresh) claims it or is refused with "Another RHI operation is already running.". The background pass keeps the overlay (deviation: a non-blocking indicator would let the user start a conflicting write mid-pass) but it can now be cancelled. Tests: `OperationCoordinatorTests`.
 
 ### UI-09 — Long operations cannot be cancelled while the busy overlay blocks the whole window
 
@@ -213,6 +218,7 @@
 - **Why it matters:** the app looks hung, and users will kill it mid-transaction.
 - **Minimal seam:** have the coordinator from UI-08 own a `CancellationTokenSource` per operation, expose a Cancel command on the overlay, and pass the token through `LinuxManagedComponentService` (most service methods already accept one).
 - **Verification:** a fake `HttpMessageHandler` that never completes. Invoke `ManageComponentCommand`, cancel, and assert that `IsBusy` returns to false within one second.
+- **Status:** fixed in `34b0f67` (#77). Each operation has its own token, passed to the services; the busy overlay has a Cancel button (hidden for Repair after move, which must not stop part-way), the DLSS batch dialog's Close becomes Cancel while it runs, and a cancelled result reads "Operation cancelled.". Tests: `OperationCoordinatorTests.StalledDownload_Cancel_ReleasesTheOverlayWithinASecond`, `StalledComponentCheck_Cancel_SaysCancelled_NotFailed`.
 
 ### UI-10 — In Portuguese, the Add-game dialog never closes after a successful add
 
@@ -296,12 +302,14 @@
 - **Why it matters:** the UI can observe inconsistent field combinations. There is no crash risk.
 - **Seam:** the probe returns an immutable result that the VM applies on the UI thread; this is the same seam as UI-03's snapshot.
 - **Verification:** the probe interface returns a record; the model has no setters written from a background thread.
+- **Status:** fixed in `a9bf929` (#82). The probe runs on `DetectedGame.ShallowClone()`; the fields it writes are captured as an immutable `GameRuntimeFacts` and applied on the UI thread with the analysis. A contract test classifies every writable `DetectedGame` property. Tests: `SelectedGameSessionTests.Probe_WritesAWorkingCopy_…`, `RuntimeFacts_CoverEveryProbeWrittenField_AndRoundTrip`.
 
 ### UI-16 — Some mutations leave the cached file index stale
 
 - **Where:** `InstallOrUpdateUalAsync`/`RemoveUalAsync` `:1592-1667`, `SwapDlssComponentAsync`/`RestoreDlssComponentAsync`/`SwapStreamlineAsync`/`RestoreStreamlineAsync` `:2022-2192`.
 - **What happens:** they call only `RefreshUalState`/`NotifyDlss`. `ProbeCacheEntry.Files` and `Components` are not recomputed, so a later `InstallAsync(game, kind, probe.Files)` (`:1530`) receives an index without the new proxy DLL or `.original` backups.
 - **Seam:** reuse UI-04's `InvalidateAndReprobeSelected()`.
+- **Status:** fixed in `a9bf929` (#83). UAL install/update/remove, DLSS and Streamline swap/restore and the ShortFuse load-order toggle re-analyse the selected game (`ReprobeKeepingStatusAsync`, the operation's own line stays). Tests: `SelectedGameSessionTests.DlssRestore_RebuildsTheFileIndex_AndKeepsItsResultLine`.
 
 ### UI-17 — "Clear cache" runs synchronously on the UI thread
 
@@ -314,6 +322,7 @@
 - **Where:** `DetectedGame.cs:7`, `LibraryBadge` `:24`.
 - **What happens:** the library list's badge reflects favourite/hidden only because `ToggleFavourite`/`ToggleHidden` call `ApplyFilter`, which re-creates the rows (and triggers UI-07). Any future in-place update will not refresh the list.
 - **Seam:** a thin `GameRowViewModel` wrapper implementing INPC.
+- **Status:** fixed in `cd51fac` (#85). The list shows `GameRowViewModel` cards (INPC); favourite/hidden changes go through the card on the UI thread and update the badge in place. Tests: `LibraryListTests.ToggleFavourite_UpdatesTheSameCardInPlace`.
 
 ### UI-19 — "Latest version" caches never expire
 
@@ -399,6 +408,8 @@
    - Concerns 12 and 16 move into `ReShadeProfileViewModel` and one small VM per component dialog, bound from AXAML `DataTemplate`s instead of 1,450 lines of code-behind.
 
 Suggested order: enable compiled bindings (UI-14) first as the safety net, then 1, then 2, then 3, then 4 and 5 (mechanical moves), then 6, then 7. Units 1 and 2 remove most of the Critical and High findings on their own.
+
+**Status (lane w2-vmsplit, #89):** units 1 (`SelectedGameSession`, `a9bf929`), 2 (`OperationCoordinator`, `34b0f67`) and 3 (`LibraryViewModel` list with `GameRowViewModel` cards, `cd51fac`) are extracted, with VM tests for each. Units 4–7 (DLSS panel, Extras, runtime panel, shell and per-dialog VMs) are not started; manual add/edit/remove (UI-10 result records) still live in the shell view model.
 
 ---
 
