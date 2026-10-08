@@ -181,6 +181,7 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.LibraryIdentityPath), nameof(DetectedGame.MergedAliases), nameof(DetectedGame.LibraryProvider),
             nameof(DetectedGame.LaunchExecutablePath), nameof(DetectedGame.LaunchProvider), nameof(DetectedGame.RequiresExplicitPatchTarget),
             nameof(DetectedGame.PatchTargetAuthority), nameof(DetectedGame.Runner), nameof(DetectedGame.LaunchCommand),
+            nameof(DetectedGame.UserLaunchCommand), nameof(DetectedGame.DetectedLaunch), // identity resolution from the saved edit (Edit game command)
             nameof(DetectedGame.ParentLauncherName), nameof(DetectedGame.CompatibilityTool), nameof(DetectedGame.CompatibilityLayerType),
             nameof(DetectedGame.WineBinaryPath), nameof(DetectedGame.WineServerPath), nameof(DetectedGame.UserGraphicsApiOverride),
             nameof(DetectedGame.WikiNameOverride), nameof(DetectedGame.ManifestInstallRoot), nameof(DetectedGame.IsManifestSplitChild),

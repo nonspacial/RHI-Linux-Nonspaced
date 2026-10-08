@@ -352,7 +352,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         await AddAndSelectAsync(fx, game);
         LockLibrary(fx);
 
-        var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+        var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
         Assert.False(saved);
         Assert.StartsWith("Could not save the game library:", message);
@@ -369,7 +369,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([]);
         var game = fx.Game("Tunic");
         await AddAndSelectAsync(fx, game);
-        var (saved, saveMessage) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+        var (saved, saveMessage) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
         Assert.True(saved, saveMessage);
         LockLibrary(fx);
 

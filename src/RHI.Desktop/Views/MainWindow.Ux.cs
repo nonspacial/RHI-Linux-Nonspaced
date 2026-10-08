@@ -148,7 +148,7 @@ public sealed partial class MainWindow
         var inferredName = ManualGamePathInference.InferGameName(executable, installPath);
         var nameBox = new TextBox { Text = inferredName, PlaceholderText = T("Win.GameName") };
         var prefixBox = new TextBox { PlaceholderText = T("Win.OptionalWineProtonPrefixEG") };
-        var launchBox = new TextBox { PlaceholderText = T("Win.OptionalLaunchCommand") };
+        var launch = LaunchCommandField(null, "Win.LeaveCommandEmptyIfRHIShould");
         var browsePrefix = new Button { Content = T("Win.BrowsePrefix"), Padding = new Thickness(10, 5) };
         browsePrefix.Click += (_, _) => RunUiSafe(async () =>
         {
@@ -183,15 +183,7 @@ public sealed partial class MainWindow
         prefixRow.Children.Add(prefixBox); Grid.SetColumn(prefixBox, 0);
         prefixRow.Children.Add(browsePrefix); Grid.SetColumn(browsePrefix, 1);
         form.Children.Add(prefixRow);
-        form.Children.Add(new TextBlock { Text = T("Win.LaunchCommandOptional"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        form.Children.Add(launchBox);
-        form.Children.Add(new TextBlock
-        {
-            Text = T("Win.LeaveCommandEmptyIfRHIShould"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 10,
-            Opacity = 0.6
-        });
+        launch.AddTo(form);
         form.Children.Add(status);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         buttons.Children.Add(cancel);
@@ -223,7 +215,7 @@ public sealed partial class MainWindow
                     InstallPath = installPath,
                     ExecutablePath = executable,
                     PrefixPath = prefix,
-                    LaunchCommand = string.IsNullOrWhiteSpace(launchBox.Text) ? null : launchBox.Text.Trim(),
+                    LaunchCommand = LinuxGameEditOverride.NormalizeLaunchCommand(launch.Box.Text),
                     Runner = prefix is null ? "Manual Windows" : "Manual Wine"
                 };
                 // Closes as soon as the entry is saved: a refresh that waits for a running operation
@@ -242,6 +234,25 @@ public sealed partial class MainWindow
         });
         await ShowFittedDialogAsync(dialog);
     }
+
+    /// <summary>
+    /// Add game's launch command field (label, text box, hint below), also used by Edit game so the two read, look and
+    /// validate the same (<see cref="LinuxGameEditOverride.NormalizeLaunchCommand"/>).
+    /// </summary>
+    private sealed record LaunchCommandFieldControls(TextBlock Label, TextBox Box, TextBlock Hint)
+    {
+        public void AddTo(StackPanel form)
+        {
+            form.Children.Add(Label);
+            form.Children.Add(Box);
+            form.Children.Add(Hint);
+        }
+    }
+
+    private static LaunchCommandFieldControls LaunchCommandField(string? command, string hintKey) => new(
+        new TextBlock { Text = T("Win.LaunchCommandOptional"), FontWeight = FontWeight.SemiBold },
+        new TextBox { Text = command, PlaceholderText = T("Win.OptionalLaunchCommand") },
+        new TextBlock { Text = T(hintKey), TextWrapping = TextWrapping.Wrap, FontSize = 10, Opacity = 0.6 });
 
     private void EditGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
@@ -379,11 +390,10 @@ public sealed partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.76
         });
-        if (!string.IsNullOrWhiteSpace(game.LaunchCommand))
-        {
-            form.Children.Add(new TextBlock { Text = T("Win.InheritedLaunchCommand"), FontWeight = FontWeight.SemiBold });
-            form.Children.Add(new TextBlock { Text = game.LaunchCommand, TextWrapping = TextWrapping.Wrap, FontSize = 10, Opacity = 0.62 });
-        }
+        // The command that runs on Play (the user's, else the detected one), editable as in Add game; clearing it goes
+        // back to the detected command.
+        var launchCommand = LaunchCommandField(game.LaunchCommand, "Win.EditLaunchCommandHint");
+        launchCommand.AddTo(form);
 
         form.Children.Add(new TextBlock { Text = T("Win.GameModificationTargetHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 10, 0, 0) });
         form.Children.Add(new TextBlock
@@ -457,6 +467,7 @@ public sealed partial class MainWindow
                     gameRoot.Text?.Trim() ?? "",
                     binaryDirectory.Text?.Trim() ?? "",
                     chosenProvider,
+                    launchCommand.Box.Text,
                     saved: dialog.Close);
                 if (!saved) status.Text = message;
             }

@@ -140,7 +140,7 @@ public sealed class GameRootDialogGuardTests
         // The exe and binaries folder sit inside the refused root, so only the root guard can refuse.
         var (root, exe) = Refused(kind, fixture);
 
-        var (savedEdit, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null);
+        var (savedEdit, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.False(savedEdit);
         Assert.False(string.IsNullOrWhiteSpace(message));
@@ -234,7 +234,7 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
         var exe = Exe(Path.Combine(fixture.Root, "New Drive", "Gone Game"), "Gone.exe");
 
-        var (saved, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
+        var (saved, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.True(saved, message);
         var repointed = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
@@ -255,7 +255,7 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
         var exe = HomeGameExe();
 
-        var (saved, _) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
+        var (saved, _) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.True(saved);
         var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
@@ -287,7 +287,7 @@ public sealed class GameRootDialogGuardTests
         vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add").Game;
         running = vm.Operations.TryBegin("test")!;
         var editSaved = false;
-        var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
+        var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null, () => editSaved = true);
 
         Assert.True(editSaved);
         Assert.False(edit.IsCompleted);

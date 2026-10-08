@@ -33,6 +33,18 @@ public sealed class LinuxGameEditOverride
     /// <summary>Confirmed binary directory used for proxy/add-on deployment.</summary>
     public string? BinaryDirectory { get; set; }
 
+    /// <summary>
+    /// The launch command the user typed in Edit game; it replaces the detected/launcher command on the card. Null = the
+    /// detected command (or the Add game entry's) is used again.
+    /// </summary>
+    public string? LaunchCommand { get; set; }
+
+    /// <summary>
+    /// The rule Add game and Edit game apply to a typed launch command: trimmed; empty or whitespace-only = none.
+    /// </summary>
+    public static string? NormalizeLaunchCommand(string? command)
+        => string.IsNullOrWhiteSpace(command) ? null : command.Trim();
+
     public LinuxGameEditOverride Normalize()
     {
         LaunchProvider = string.IsNullOrWhiteSpace(LaunchProvider) ||
@@ -43,8 +55,12 @@ public sealed class LinuxGameEditOverride
         PatchExecutablePath = NormalizeOptionalPath(PatchExecutablePath);
         GameRootPath = NormalizeOptionalPath(GameRootPath);
         BinaryDirectory = NormalizeOptionalPath(BinaryDirectory);
+        LaunchCommand = NormalizeLaunchCommand(LaunchCommand);
         return this;
     }
+
+    /// <summary>True when the edit still holds anything (a patch target, a launcher badge or a launch command).</summary>
+    public bool IsEmpty() => !HasPatchTarget && LaunchProvider is null && LaunchCommand is null;
 
     public bool HasPatchTarget =>
         !string.IsNullOrWhiteSpace(PatchExecutablePath) &&
@@ -84,7 +100,7 @@ public sealed class LinuxGameLibraryState
         foreach (var key in GameEdits.Keys.ToArray())
         {
             var normalized = (GameEdits[key] ?? new LinuxGameEditOverride()).Normalize();
-            if (!normalized.HasPatchTarget && string.IsNullOrWhiteSpace(normalized.LaunchProvider))
+            if (normalized.IsEmpty())
                 GameEdits.Remove(key);
             else
                 GameEdits[key] = normalized;
@@ -99,7 +115,7 @@ public sealed class LinuxGameLibraryState
                 entry.InstallPath = NormalizePath(entry.InstallPath);
                 entry.ExecutablePath = NormalizeOptionalPath(entry.ExecutablePath);
                 entry.PrefixPath = NormalizeOptionalPath(entry.PrefixPath);
-                entry.LaunchCommand = string.IsNullOrWhiteSpace(entry.LaunchCommand) ? null : entry.LaunchCommand.Trim();
+                entry.LaunchCommand = LinuxGameEditOverride.NormalizeLaunchCommand(entry.LaunchCommand);
                 entry.Runner = string.IsNullOrWhiteSpace(entry.Runner) ? "Manual Windows" : entry.Runner.Trim();
                 return entry;
             })
@@ -300,9 +316,12 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
         return [edit.GameRootPath!, edit.BinaryDirectory!, edit.PatchExecutablePath!];
     }
 
+    // The launch command goes with the edit as typed: it is the user's shell text, so RHI never rewrites paths in it
+    // (a new folder can need other quoting).
     private static LinuxGameEditOverride Rebase(GameStateMove move, LinuxGameEditOverride edit) => new()
     {
         LaunchProvider = edit.LaunchProvider,
+        LaunchCommand = edit.LaunchCommand,
         PatchExecutablePath = MapOptional(move, edit.PatchExecutablePath),
         GameRootPath = MapOptional(move, edit.GameRootPath),
         BinaryDirectory = MapOptional(move, edit.BinaryDirectory)

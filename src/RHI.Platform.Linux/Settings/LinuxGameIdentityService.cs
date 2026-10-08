@@ -34,6 +34,7 @@ public static class LinuxGameIdentityService
     {
         ArgumentNullException.ThrowIfNull(game);
 
+        ApplyLaunchCommand(game, edit);
         game.LibraryIdentityPath ??= game.InstallPath;
         game.LibraryProvider = InferLibraryProvider(game);
         game.LaunchExecutablePath ??= game.ExecutablePath;
@@ -101,6 +102,21 @@ public static class LinuxGameIdentityService
             game.ExecutablePath = null;
             game.BinaryDirectory = null;
         }
+    }
+
+    /// <summary>
+    /// The Edit game launch command replaces the detected one (and the parent launcher it named, which no longer
+    /// starts the game); without one the detected command and launcher are back. Done first, so the launch provider
+    /// badge, the hand-off classification (HDR, working directory) and Play all read the command that will run. The
+    /// detected pair is captured once per card instance, so resolving the same card again (Repair after move) never
+    /// takes the user's command for the detected one.
+    /// </summary>
+    private static void ApplyLaunchCommand(DetectedGame game, LinuxGameEditOverride? edit)
+    {
+        game.DetectedLaunch ??= new DetectedLaunch(game.LaunchCommand, game.ParentLauncherName);
+        game.UserLaunchCommand = LinuxGameEditOverride.NormalizeLaunchCommand(edit?.LaunchCommand);
+        game.LaunchCommand = game.UserLaunchCommand ?? game.DetectedLaunch.Command;
+        game.ParentLauncherName = game.UserLaunchCommand is null ? game.DetectedLaunch.ParentLauncherName : null;
     }
 
     public static string InferLibraryProvider(DetectedGame game)

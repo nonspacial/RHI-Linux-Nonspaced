@@ -178,9 +178,10 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// </summary>
     internal const int ReaderWaitTenths = 10;
 
-    /// <summary>A launch command the user typed (Add game dialog), as opposed to one a detector built.</summary>
+    /// <summary>A launch command the user typed (Add game or Edit game), as opposed to one a detector built.</summary>
     internal static bool IsUserCommand(DetectedGame game)
-        => game.IsManuallyAdded || string.Equals(game.Source, "Manual", StringComparison.OrdinalIgnoreCase);
+        => game.IsManuallyAdded || string.Equals(game.Source, "Manual", StringComparison.OrdinalIgnoreCase)
+           || game.UserLaunchCommand is not null;
 
     /// <summary>
     /// Puts <c>~/.local/bin</c> and <c>~/bin</c> (when they exist) in front of PATH unless PATH already

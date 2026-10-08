@@ -437,14 +437,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string? LaunchToolTip => SelectedGame switch
     {
         { ParentLauncherName: { Length: > 0 } parent } => TF("Vm.OpensStartGameFromLauncher", parent),
-        { LaunchCommand: null or "" } game when Facts is { OrphanedProtonPrefix: true }
+        // The reason arms use CanLaunch's own test, so a disabled Play always says why (a blank command included).
+        { } game when !_launcher.CanLaunch(game) && Facts is { OrphanedProtonPrefix: true }
             => TF("Vm.UnavailablePrefixWasBuiltByProton",
                   game.CompatibilityTool ?? "?"),
         // Play stays visible but disabled on a card without a launch command (the reason shows after ~2 s, like the
         // orphaned-Proton case): it becomes applicable once Edit game gives the card a command (w2-launch re-review 2).
-        { LaunchCommand: null or "" } game when D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game)
+        { } game when !_launcher.CanLaunch(game) && D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game)
             => T("Vm.LaunchRuntimeUnknownSetCommandInEdit"),
-        { LaunchCommand: null or "" } => T("Vm.NoLaunchCommandSetOneInEdit"),
+        { } game when !_launcher.CanLaunch(game) => T("Vm.NoLaunchCommandSetOneInEdit"),
         _ => null
     };
 
@@ -3225,18 +3226,36 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 UiLocalizationService.Text(whatKey), UiLocalizationService.Present(ex.Message));
 
     /// <summary>
-    /// Saves the Edit game target; <c>Saved</c> is the structural success flag (the message is localised).
-    /// <paramref name="saved"/> runs as soon as the edit is on disk, before the library refresh waits for a
+    /// Saves the Edit game target and launch command; <c>Saved</c> is the structural success flag (the message is
+    /// localised). <paramref name="saved"/> runs as soon as the edit is on disk, before the library refresh waits for a
     /// running operation, so the dialog can close instead of sitting disabled with no message.
     /// </summary>
+    /// <param name="launchCommand">
+    /// The Edit game launch command box (Add game's rule: trimmed, blank = none). None, or the detected command itself,
+    /// saves no command: the card uses the detected (launcher or Add game) command again.
+    /// </param>
     public async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
         string patchExecutablePath,
         string gameRootPath,
         string binaryDirectory,
         string? launchProvider,
+        string? launchCommand,
         Action? saved = null)
     {
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
+
+        var detectedCommand = SelectedGame.DetectedLaunch is { } detected ? detected.Command
+            : SelectedGame.UserLaunchCommand is null ? SelectedGame.LaunchCommand : null;
+        var userCommand = LinuxGameEditOverride.NormalizeLaunchCommand(launchCommand);
+        if (userCommand is not null && string.Equals(userCommand, LinuxGameEditOverride.NormalizeLaunchCommand(detectedCommand), StringComparison.Ordinal))
+            userCommand = null;
+        var commandChanged = !string.Equals(userCommand, SelectedGame.UserLaunchCommand, StringComparison.Ordinal);
+
+        // All three target fields left blank with a new launch command: only the launch fields are saved, and a saved
+        // patch target stays as it is (a launcher card has none to show; a stale one waits for Repair after move).
+        if (commandChanged && string.IsNullOrWhiteSpace(patchExecutablePath) && string.IsNullOrWhiteSpace(gameRootPath)
+            && string.IsNullOrWhiteSpace(binaryDirectory))
+            return await SaveSelectedGameEditAsync(null, launchProvider, userCommand, saved);
 
         if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
             return (false, T("Vm.SelectRealGameExecutableShouldReceive"));
@@ -3268,26 +3287,46 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
         }
 
-        // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
-        // _libraryState, or the next unrelated library save would persist it.
-        var state = WorkingLibraryCopy();
-        var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        state.GameEdits[key] = new LinuxGameEditOverride
+        return await SaveSelectedGameEditAsync(new LinuxGameEditOverride
         {
-            LaunchProvider = launchProvider,
             PatchExecutablePath = executable,
             GameRootPath = root,
             BinaryDirectory = binaries
+        }, launchProvider, userCommand, saved);
+    }
+
+    /// <param name="target">The patch target to save; null keeps the one already saved for the game (if any).</param>
+    private async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
+        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, Action? saved)
+    {
+        var game = SelectedGame!;
+        var commandChanged = !string.Equals(userCommand, game.UserLaunchCommand, StringComparison.Ordinal);
+        // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
+        // _libraryState, or the next unrelated library save would persist it.
+        var state = WorkingLibraryCopy();
+        var key = LinuxGameLibraryStore.GameKey(game);
+        if (target is null) state.GameEdits.TryGetValue(key, out target);
+        var edit = new LinuxGameEditOverride
+        {
+            LaunchProvider = launchProvider,
+            PatchExecutablePath = target?.PatchExecutablePath,
+            GameRootPath = target?.GameRootPath,
+            BinaryDirectory = target?.BinaryDirectory,
+            LaunchCommand = userCommand
         }.Normalize();
+        if (edit.IsEmpty()) state.GameEdits.Remove(key);
+        else state.GameEdits[key] = edit;
         if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
         _libraryState = state;
         saved?.Invoke();
 
-        var name = SelectedGame.Name;
-        _session.Invalidate(SelectedGame);
-        var message = await RefreshWhenIdleAsync(NoDetectors)
-            ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
-            : TF("Vm.ModificationTargetSavedButLibraryWas", name);
+        var name = game.Name;
+        _session.Invalidate(game);
+        var refreshed = await RefreshWhenIdleAsync(NoDetectors);
+        var message = !refreshed ? TF("Vm.ModificationTargetSavedButLibraryWas", name)
+            : !commandChanged ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
+            : userCommand is null ? TF("Vm.EditSavedPlayUsesDetectedCommand", name)
+            : TF("Vm.EditSavedPlayUsesYourCommand", name);
         StatusText = message;
         return (true, message);
     }

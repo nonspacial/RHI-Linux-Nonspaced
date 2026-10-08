@@ -91,6 +91,16 @@ public sealed class DetectedGame
     public string? Runner { get; set; }
     public string? LaunchCommand { get; set; }
     /// <summary>
+    /// The launch command the user typed in Edit game, applied by identity resolution as <see cref="LaunchCommand"/>;
+    /// null when the detected command is used. Runs as a user-typed command (login shell), like an Add game command.
+    /// </summary>
+    public string? UserLaunchCommand { get; set; }
+    /// <summary>
+    /// What the detector (or the Add game entry) supplied for starting the card, captured by the first identity
+    /// resolution so that an Edit game command can replace it and clearing that command brings it back.
+    /// </summary>
+    public DetectedLaunch? DetectedLaunch { get; set; }
+    /// <summary>
     /// Set when Launch starts this launcher rather than the game (a game installed inside a launcher's
     /// prefix, e.g. Ubisoft Connect or Battle.net); the user starts the game from the launcher.
     /// </summary>
@@ -185,6 +195,9 @@ public sealed class DetectedGame
 
     public override string ToString() => $"{Name} ({Source})";
 }
+
+/// <summary>The launch command and parent launcher a detector (or the Add game entry) supplied for a card.</summary>
+public sealed record DetectedLaunch(string? Command, string? ParentLauncherName);
 
 /// <summary>A library identity (source, identity folder, Steam AppID, Heroic app) absorbed by a merged card.</summary>
 public sealed record LibraryEntryAlias(string Source, string IdentityPath, int? SteamAppId, string? HeroicAppName = null);

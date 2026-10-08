@@ -30,7 +30,7 @@ public sealed class GameEditDialogResultTests
             var game = fx.Game("Tunic");
             await AddAndSelectAsync(fx, game);
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
             Assert.True(saved, message);
             Assert.Contains(language == "pt-BR" ? "alvo de modificações salvo" : "modification target saved", message);
@@ -49,7 +49,7 @@ public sealed class GameEditDialogResultTests
             var outside = fx.Game("Elsewhere");
             await AddAndSelectAsync(fx, game);
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(outside.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null);
+            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(outside.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
             Assert.False(saved);
             Assert.Contains("dentro da raiz do jogo", message);
