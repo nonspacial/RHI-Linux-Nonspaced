@@ -152,6 +152,46 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
     }
 
     [Fact]
+    public void MigrateGameKeys_ThatFailsToSave_LeavesCacheAndLedgerUnchanged()
+    {
+        // Integration w1 review (stores minor 2): the re-key works on a copy, so a failed save leaves the cached
+        // record under its old key (an in-place re-key would make the next unrelated save persist it).
+        var path = Path.Combine(_root, "records.json");
+        var store = new LinuxDeploymentRecordStore(path);
+        var install = Path.Combine(_root, "Heroic", "Game");
+        var game = new DetectedGame { Name = "Game", HeroicAppName = "abc123", InstallPath = install, BinaryDirectory = install };
+        var legacyKey = Path.GetFullPath(install);
+        store.Upsert(new LinuxDeploymentRecord { GameKey = legacyKey, Component = ManagedComponentKind.ReShade, BinaryDirectory = install });
+        var ledger = File.ReadAllText(path);
+
+        using (LedgerWriteBlocker.Block(store, path))
+            Assert.ThrowsAny<IOException>(() => store.MigrateGameKeys([game]));
+
+        Assert.Equal(legacyKey, Assert.Single(store.FindAll(game)).GameKey);
+        Assert.Equal(ledger, File.ReadAllText(path));
+        // The next successful save still migrates (nothing was half-applied).
+        Assert.Equal(1, store.MigrateGameKeys([game]));
+        Assert.Equal("heroic:abc123", Assert.Single(new LinuxDeploymentRecordStore(path).FindAll(game)).GameKey);
+    }
+
+    [Fact]
+    public void Remove_ThatFailsToSave_LeavesCacheAndLedgerUnchanged()
+    {
+        // Integration w1 review (stores minor 2): Remove filters a copy of the cached list.
+        var path = Path.Combine(_root, "records.json");
+        var store = new LinuxDeploymentRecordStore(path);
+        var game = new DetectedGame { Name = "Game", InstallPath = "/tmp/game", SteamAppId = 42 };
+        store.Upsert(Seed());
+        var ledger = File.ReadAllText(path);
+
+        using (LedgerWriteBlocker.Block(store, path))
+            Assert.ThrowsAny<IOException>(() => store.Remove(game, ManagedComponentKind.ShortFuse));
+
+        AssertUnchanged(store.Find(game, ManagedComponentKind.ShortFuse)!);
+        Assert.Equal(ledger, File.ReadAllText(path));
+    }
+
+    [Fact]
     public void Upsert_RefusedOnCorruptLedger_LeavesRecordUnchanged()
     {
         var path = Path.Combine(_root, "records.json");
