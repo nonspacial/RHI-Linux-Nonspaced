@@ -1294,6 +1294,18 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public bool IsManaged(DetectedGame game, ManagedComponentKind kind)
         => _records.Find(game, kind) is not null;
 
+    /// <summary>
+    /// What a changed Neural Rendering add-on pin does to the installed add-on: nothing yet (not installed: the pin
+    /// applies at install), an in-place swap, or nothing until a reinstall — a legacy add-on-only DLSS5 Feeder cannot
+    /// be swapped in place, so its pin is kept for the next install instead of failing and reverting (#115).
+    /// </summary>
+    public NeuralPinChange PlanNeuralPinChange(DetectedGame game, ManagedComponentKind kind)
+    {
+        if (!IsManaged(game, kind)) return NeuralPinChange.SaveOnly;
+        if (kind == ManagedComponentKind.Dlss5Feeder && !IsDlss5FeederFullManaged(game)) return NeuralPinChange.ReinstallNeeded;
+        return NeuralPinChange.SwapInPlace;
+    }
+
     public bool IsDlss5FeederFullManaged(DetectedGame game)
     {
         var record = _records.Find(game, ManagedComponentKind.Dlss5Feeder);
@@ -2089,4 +2101,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     }
 
 
+}
+
+/// <summary>Outcome of changing a Neural Rendering add-on pin (see <see cref="LinuxManagedComponentService.PlanNeuralPinChange"/>).</summary>
+public enum NeuralPinChange
+{
+    /// <summary>Not installed: the pin is used by the next install.</summary>
+    SaveOnly,
+    /// <summary>Installed: the add-on is swapped to the pinned version now.</summary>
+    SwapInPlace,
+    /// <summary>Installed as a legacy add-on-only DLSS5 Feeder: the pin applies once it is removed and installed again.</summary>
+    ReinstallNeeded
 }

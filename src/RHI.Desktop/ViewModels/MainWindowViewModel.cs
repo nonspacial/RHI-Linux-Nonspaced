@@ -3371,8 +3371,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             LoadNeuralVersionPins(game); // the dropdown goes back to what is saved
             return;
         }
-        if (_managedComponents.IsManaged(game, kind))
+        // A legacy add-on-only DLSS5 Feeder keeps the pin for its reinstall instead of a swap that must fail (#115).
+        var change = _managedComponents.PlanNeuralPinChange(game, kind);
+        if (change == NeuralPinChange.SwapInPlace)
             UiExceptionGuard.Forget(SwapNeuralVersionInPlaceAsync(game, kind, previous), "SwapNeuralVersionInPlaceAsync");
+        else if (change == NeuralPinChange.ReinstallNeeded)
+            StatusText = T("Vm.Dlss5FeederLegacyPinSaved");
     }
 
     private void SaveNeuralRenderingDllPin(string value)

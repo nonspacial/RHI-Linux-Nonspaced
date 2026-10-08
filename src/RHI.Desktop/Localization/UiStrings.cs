@@ -132,6 +132,7 @@ internal static class UiStrings
         ("Vm.ScanFailed", "Falha na verificação: {0}", "Scan failed: {0}"),
         ("Vm.UpdateAllPreparingRHIManagedGames", "Atualizar tudo: preparando jogos gerenciados pelo RHI…", "Update all: preparing RHI-managed games…"),
         ("Vm.UpdateAllFailed", "Falha em Atualizar tudo: {0}", "Update all failed: {0}"),
+        ("Vm.Dlss5FeederLegacyPinSaved", "Versão salva. Este DLSS5 Feeder é uma instalação antiga, só com o add-on: remova-o e instale de novo para usar a versão escolhida.", "Version saved. This DLSS5 Feeder is an older add-on-only install: remove it and install it again to use the chosen version."),
         ("Vm.BackgroundUpdateFailedRetrying", "A atualização automática falhou: {0}. Nova tentativa em {1} min.", "Automatic update failed: {0}. Trying again in {1} min."),
         ("Vm.Background", " (segundo plano)", " (background)"),
         ("Hdr.Off", "Perfil de inicialização HDR desativado. A pilha gráfica do runner permanece intacta.", "HDR launch profile is Off. The runner's graphics stack stays untouched."),

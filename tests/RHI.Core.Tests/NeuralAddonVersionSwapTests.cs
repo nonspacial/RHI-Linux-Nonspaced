@@ -342,6 +342,62 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, "dlss5-feed.addon64")!.Sha256);
     }
 
+    [Fact]
+    public async Task LegacyAddonOnlyFeeder_PinKeptForReinstall_AndUpdateAllDoesNotFailIt()
+    {
+        // #115: an add-on-only Feeder from before the full stack cannot be swapped in place. A pin change used to start
+        // a swap that always failed (and reverted the pin); manual Update All reported it failed on every run.
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "legacy", "game")).FullName;
+        var game = Game(bin);
+        var addon = Write(Path.Combine(bin, "dlss5-feed.addon64"), Pe(0x50));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "legacy-deployments.json"));
+        records.Upsert(Record(game, ManagedComponentKind.Dlss5Feeder, "0.9", addon)); // no Feeder.FullStack metadata
+        using var http = new HttpClient(new MapHandler(new()));
+        var service = new LinuxManagedComponentService(
+            records: records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!,
+            relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!,
+            rtx40Mfg: null!, dlss5Feeder: Feeder(http, records), dlss5Bridge: null!, d3dCompilerTools: null!, ultimateAsiLoader: null!,
+            shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!,
+            lumaPolicy: null!, neuralVersionPins: new NeuralAddonVersionPreferenceStore(Path.Combine(_root, "legacy-pins.json")));
+
+        Assert.Equal(NeuralPinChange.ReinstallNeeded, service.PlanNeuralPinChange(game, ManagedComponentKind.Dlss5Feeder));
+        Assert.Equal(NeuralPinChange.SaveOnly, service.PlanNeuralPinChange(game, ManagedComponentKind.ShortFuse));
+
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(records, service, new NeverRunning()).RunAsync([game], _ => [], mode);
+            var item = Assert.Single(result.Items);
+            Assert.True(item.Success, item.Message);
+            Assert.Equal((0, 0), (result.FailedCount, result.ChangedCount));
+        }
+        Assert.Equal(Pe(0x50), File.ReadAllBytes(addon));
+        Assert.Equal("0.9", records.Find(game, ManagedComponentKind.Dlss5Feeder)!.Version);
+    }
+
+    [Fact]
+    public void FullStackFeeder_PinChangeSwapsInPlace()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "full", "game")).FullName;
+        var game = Game(bin);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "full-deployments.json"));
+        var record = Record(game, ManagedComponentKind.Dlss5Feeder, "1.0", Write(Path.Combine(bin, "dlss5-feed.addon64"), Pe(0x51)));
+        record.Metadata["Feeder.FullStack"] = "1";
+        records.Upsert(record);
+        var service = new LinuxManagedComponentService(
+            records: records, reshade: null!, addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!,
+            relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!,
+            rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!, ultimateAsiLoader: null!,
+            shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!,
+            lumaPolicy: null!, neuralVersionPins: new NeuralAddonVersionPreferenceStore(Path.Combine(_root, "full-pins.json")));
+
+        Assert.Equal(NeuralPinChange.SwapInPlace, service.PlanNeuralPinChange(game, ManagedComponentKind.Dlss5Feeder));
+    }
+
+    private sealed class NeverRunning : IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game) => false;
+    }
+
     private Dlss5FeederFullDeploymentService Feeder(HttpClient http, LinuxDeploymentRecordStore records)
     {
         var files = new TransactionalFileDeploymentService();
