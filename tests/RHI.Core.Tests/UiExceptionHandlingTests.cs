@@ -388,6 +388,10 @@ public sealed class UiExceptionHandlingTests : IDisposable
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
         Assert.True(added, message);
+        // Selecting the new card starts its background analysis, which ends with its own "Ready — …" status line.
+        // Wait for it, so a test's next status assertion is not raced by that line (the race failed ~1 in 10 runs).
+        for (var i = 0; i < 200 && (fx.Vm.IsSelectionProbeBusy || !fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal)); i++)
+            await Task.Delay(25);
     }
 
     private static void UnlockAll(string root)
