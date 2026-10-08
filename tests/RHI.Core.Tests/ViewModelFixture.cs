@@ -26,7 +26,7 @@ internal sealed class ViewModelFixture : IDisposable
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse)
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -35,15 +35,17 @@ internal sealed class ViewModelFixture : IDisposable
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure);
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, httpResponse);
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
     /// <param name="httpFailure">What every request throws (default: an "offline test" <see cref="HttpRequestException"/>).</param>
+    /// <param name="httpResponse">A response for chosen requests (null: the request fails as <paramref name="httpFailure"/> says).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
-        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null)
+        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
+        Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse = null)
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse);
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }
@@ -69,9 +71,9 @@ internal sealed class ViewModelFixture : IDisposable
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse)
     {
-        var http = new HttpClient(new OfflineHandler(httpFailure));
+        var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse));
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) });
         var deployment = new TransactionalFileDeploymentService();
@@ -134,9 +136,12 @@ internal sealed class ViewModelFixture : IDisposable
         public Task ProbeAsync(DetectedGame game, IReadOnlyList<string> files, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class OfflineHandler(Func<HttpRequestMessage, Exception>? failure) : HttpMessageHandler
+    private sealed class OfflineHandler(Func<HttpRequestMessage, Exception>? failure, Func<HttpRequestMessage, HttpResponseMessage?>? response)
+        : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => throw (failure?.Invoke(request) ?? new HttpRequestException("offline test"));
+            => response?.Invoke(request) is { } answer
+                ? Task.FromResult(answer)
+                : throw (failure?.Invoke(request) ?? new HttpRequestException("offline test"));
     }
 }

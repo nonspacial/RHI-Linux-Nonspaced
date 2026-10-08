@@ -28,6 +28,9 @@ public sealed record RelocationRepairResult(bool Success, int Repaired, string M
 /// preferences, library entries (favourite, hidden, edits, HDR) and update history, all in one
 /// staged commit. When the old folder still exists it must no longer hold RHI's files with their
 /// recorded hashes (a leftover); otherwise it is a live copy and RHI says how to proceed.</item>
+/// <item>A moved game with no records whose per-game entries still name its old folder (an Edit game patch
+/// target, <see cref="IGameStateStore.MovedPaths"/>) is repaired the same way without records: every named path must
+/// be found under the game's current folder (Refs #147).</item>
 /// <item>Games without a store id are keyed by folder, so a moved one has no record under its key;
 /// the same repair adopts a folder-keyed record only on strong evidence: the same game name, the old
 /// install folder mapping exactly onto the current one (same folder name and layout down to the
@@ -55,8 +58,18 @@ public sealed class DeploymentRelocation
             ? ComponentOperationResult.Fail(GuardPrefix + moved.Record.BinaryDirectory + GuardSuffix)
             : null;
 
-    /// <summary>True when "Repair after move" has something to do for this game (cheap: no hashing).</summary>
-    public bool NeedsRepair(DetectedGame game) => FindMoved(game).Count > 0 || FindAdoptable(game).Count > 0;
+    /// <summary>
+    /// True when "Repair after move" has something to do for this game (cheap: no hashing): records left at its old
+    /// folder, or entries in <paramref name="stores"/> that still name it (<see cref="IGameStateStore.MovedPaths"/>).
+    /// </summary>
+    public bool NeedsRepair(DetectedGame game, IReadOnlyList<IGameStateStore>? stores = null)
+        => FindMoved(game).Count > 0 || FindAdoptable(game).Count > 0 || MovedPaths(game, stores ?? []).Count > 0;
+
+    private static IReadOnlyList<string> MovedPaths(DetectedGame game, IReadOnlyList<IGameStateStore> stores)
+        => stores.Distinct().SelectMany(store => store.MovedPaths(game))
+            .Where(path => !string.IsNullOrWhiteSpace(path) && Path.IsPathRooted(path))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 
     /// <summary>What a repair would touch (moved and adoptable records), for the confirmation the UI shows.</summary>
     public IReadOnlyList<RelocatedRecord> Preview(DetectedGame game) => [.. FindMoved(game), .. FindAdoptable(game)];
@@ -124,7 +137,7 @@ public sealed class DeploymentRelocation
         repaired = [];
         var candidates = Preview(game).ToList();
         if (candidates.Count == 0)
-            return new(false, 0, "Nothing to repair: RHI's records for this game already match its folder.");
+            return RepairStoresOnly(game, stores);
 
         var oldFolders = candidates.Where(c => c.Adopted).Select(c => c.Record.GameKey).Distinct(StringComparer.Ordinal).ToArray();
         if (oldFolders.Length > 1)
@@ -170,10 +183,59 @@ public sealed class DeploymentRelocation
 
         // Stage the ledger and every per-game store first: nothing is written unless all can be.
         var move = new GameStateMove(game, candidates.Select(c => (c.OldRoot, c.NewRoot)), oldFolders);
+        if (Commit(move, stores, _records.StageReplace(candidates.Select(c => c.Record).ToArray(), rebased)) is { } failed)
+            return failed;
+
+        repaired = candidates;
+        return new(true, rebased.Count, $"{RepairDonePrefix}{rebased.Count}");
+    }
+
+    /// <summary>
+    /// A moved game without RHI records whose per-game entries still name its old folder (an Edit game patch target):
+    /// re-points them once every named path is found under the game's current folder (Refs #147). Only the stores
+    /// holding those entries take part: no record key changes here, so the others have nothing of this game to move
+    /// (and one of them being unreadable must not block it).
+    /// </summary>
+    private RelocationRepairResult RepairStoresOnly(DetectedGame game, IReadOnlyList<IGameStateStore> stores)
+    {
+        IReadOnlyList<IGameStateStore> involved;
+        IReadOnlyList<string> paths;
+        try
+        {
+            involved = stores.Distinct().Where(store => MovedPaths(game, [store]).Count > 0).ToArray();
+            paths = MovedPaths(game, involved);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new(false, 0, RepairNotSavedPrefix + ex.Message);
+        }
+        if (paths.Count == 0)
+            return new(false, 0, "Nothing to repair: RHI's records for this game already match its folder.");
+
+        var roots = new List<(string OldRoot, string NewRoot)>();
+        foreach (var path in paths)
+        {
+            if (!TryMapPath(path, game, out var oldRoot, out var newRoot))
+                return new(false, 0, $"{RepairNoMatchPrefix}{path}");
+            roots.Add((oldRoot, newRoot));
+        }
+        var move = new GameStateMove(game, roots, []);
+        foreach (var path in paths)
+        {
+            var mapped = move.MapPath(path);
+            if (!Path.Exists(mapped))
+                return new(false, 0, $"{RepairMissingAfterMovePrefix}{mapped}");
+        }
+        return Commit(move, involved) ?? new(true, 0, RepairSettingsDone);
+    }
+
+    /// <summary>Stages <paramref name="records"/> (if any) and every store's part of <paramref name="move"/>, then writes them all or none; null when written.</summary>
+    private RelocationRepairResult? Commit(GameStateMove move, IReadOnlyList<IGameStateStore> stores, StagedFileWrite? records = null)
+    {
         var writes = new List<StagedFileWrite>();
         try
         {
-            writes.Add(_records.StageReplace(candidates.Select(c => c.Record).ToArray(), rebased));
+            if (records is not null) writes.Add(records);
             foreach (var store in stores.Distinct())
                 if (store.StageMove(move) is { } write)
                     writes.Add(write);
@@ -196,9 +258,7 @@ public sealed class DeploymentRelocation
         {
             _records.InvalidateCache();
         }
-
-        repaired = candidates;
-        return new(true, rebased.Count, $"{RepairDonePrefix}{rebased.Count}");
+        return null;
     }
 
     // Messages are split before the variable part so the UI can translate the fixed text.
@@ -212,6 +272,8 @@ public sealed class DeploymentRelocation
     public const string RepairNotSavedPrefix = "Nothing was changed: the game's records and settings could not all be updated. ";
     public const string RepairPartlyWrittenPrefix = "Repair after move failed part-way: ";
     public const string RepairDonePrefix = "Records updated to the game's new folder: ";
+    public const string RepairMissingAfterMovePrefix = "Nothing was changed: the folder or file the game's settings name is not at the new location: ";
+    public const string RepairSettingsDone = "The game's settings now point to its new folder.";
 
     private static bool IsOwnedHashedFile(LinuxDeployedFile file)
         => !file.AllowUserChanges && !string.IsNullOrWhiteSpace(file.Sha256) && !string.IsNullOrWhiteSpace(file.Path);
@@ -277,6 +339,35 @@ public sealed class DeploymentRelocation
             best = common;
             oldRoot = Join(old[..(old.Length - common + 1)]);
             newRoot = Join(current[..(current.Length - common + 1)]);
+        }
+        return best > 0;
+    }
+
+    /// <summary>
+    /// Maps <paramref name="path"/>, a path under the game's old folder (deeper or not), onto the game's current folder
+    /// by the longest run of trailing folder names they share (e.g. /a/steamapps/common/G/Game → /b/steamapps/common/G/Game
+    /// for a game now at /b/steamapps/common/G). Roots follow <see cref="TryMap"/>'s convention.
+    /// </summary>
+    internal static bool TryMapPath(string path, DetectedGame game, out string oldRoot, out string newRoot)
+    {
+        oldRoot = newRoot = "";
+        var old = Segments(path);
+        var best = 0;
+        foreach (var anchor in new[] { game.LibraryIdentityPath, game.InstallPath, game.BinaryDirectory })
+        {
+            if (string.IsNullOrWhiteSpace(anchor) || !Path.IsPathRooted(anchor)) continue;
+            var current = Segments(anchor);
+            for (var length = old.Length; length > 0; length--)
+            {
+                var common = 0;
+                while (common < length && common < current.Length
+                       && string.Equals(old[length - 1 - common], current[^(common + 1)], StringComparison.Ordinal))
+                    common++;
+                if (common <= best || common >= length || common >= current.Length) continue;
+                best = common;
+                oldRoot = Join(old[..(length - common + 1)]);
+                newRoot = Join(current[..(current.Length - common + 1)]);
+            }
         }
         return best > 0;
     }

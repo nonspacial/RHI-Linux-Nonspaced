@@ -163,6 +163,7 @@ public sealed class GameLibraryTests : IDisposable
         Directory.CreateDirectory(a.InstallPath);
         Directory.CreateDirectory(b.InstallPath);
         a.SteamAppId = b.SteamAppId = 123;
+        a.IsManifestSplitChild = b.IsManifestSplitChild = true; // children of one manifest splitGames entry
         Assert.NotEqual(LinuxGameLibraryStore.GameKey(a), LinuxGameLibraryStore.GameKey(b));
     }
 

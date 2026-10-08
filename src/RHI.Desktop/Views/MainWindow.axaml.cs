@@ -62,9 +62,7 @@ public sealed partial class MainWindow : Window
     };
 
     /// <summary>The "Do not change" version option, in either language (a dialog can outlive a language switch).</summary>
-    private static bool IsDoNotChange(string value)
-        => string.Equals(value, UiLocalizationService.TextFor("pt-BR", "Win.DoNotChange"), StringComparison.OrdinalIgnoreCase)
-           || string.Equals(value, UiLocalizationService.TextFor("en-US", "Win.DoNotChange"), StringComparison.OrdinalIgnoreCase);
+    private static bool IsDoNotChange(string value) => OptionLists.IsDoNotChange(value);
 
     /// <summary>Event-handler body runner: nothing a handler throws reaches the dispatcher unreported (UI-05).</summary>
     private static async void RunUiSafe(Func<Task> work, [CallerMemberName] string context = "")
@@ -171,7 +169,7 @@ public sealed partial class MainWindow : Window
 
         static ComboBox VersionCombo(IEnumerable<string> versions, string current)
         {
-            var items = new List<string> { T("Win.DoNotChange") };
+            var items = new List<string> { OptionLists.DoNotChangeDisplay() };
             items.AddRange(versions.Where(version => !string.IsNullOrWhiteSpace(version)).Distinct(StringComparer.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current, StringComparer.OrdinalIgnoreCase))
                 items.Add(current); // preserve an offline/persisted default even when the manifest is temporarily unavailable
@@ -368,33 +366,17 @@ public sealed partial class MainWindow : Window
         var settings = snapshot.Settings;
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
 
-        static string UiLanguageDisplay(string value) => value == "en-US" ? "English (United States)" : "Português (Brasil)";
-        static string UiLanguageValue(string? display) => string.Equals(display, "English (United States)", StringComparison.Ordinal) ? "en-US" : "pt-BR";
+        // Labels and values come from the one mapping the view model uses (OptionLists, Refs #87).
         var uiLanguage = new ComboBox
         {
-            ItemsSource = new[] { "Português (Brasil)", "English (United States)" },
-            SelectedItem = UiLanguageDisplay(settings.UiLanguage),
+            ItemsSource = OptionLists.UiLanguage.Items,
+            SelectedItem = OptionLists.UiLanguage.Display(settings.UiLanguage),
             Width = 240
         };
-
-        static string ReShadeChannelDisplay(string value) => value switch
-        {
-            "Nightly" => UiLocalizationService.Text("Ui.OptionNightly"),
-            "Legacy" => UiLocalizationService.Text("Ui.OptionLegacy"),
-            "Custom" => UiLocalizationService.Text("Ui.OptionCustom"),
-            _ => UiLocalizationService.Text("Ui.OptionStable")
-        };
-        static string ReShadeChannelValue(string? display)
-        {
-            if (string.Equals(display, UiLocalizationService.Text("Ui.OptionNightly"), StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Desenvolvimento (Nightly)", StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Nightly", StringComparison.OrdinalIgnoreCase)) return "Nightly";
-            if (string.Equals(display, UiLocalizationService.Text("Ui.OptionLegacy"), StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Legado", StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Legacy", StringComparison.OrdinalIgnoreCase)) return "Legacy";
-            if (string.Equals(display, UiLocalizationService.Text("Ui.OptionCustom"), StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Personalizado", StringComparison.OrdinalIgnoreCase) || string.Equals(display, "Custom", StringComparison.OrdinalIgnoreCase)) return "Custom";
-            return "Stable";
-        }
         var channel = new ComboBox
         {
-            ItemsSource = new[] { UiLocalizationService.Text("Ui.OptionStable"), UiLocalizationService.Text("Ui.OptionNightly"), UiLocalizationService.Text("Ui.OptionLegacy"), UiLocalizationService.Text("Ui.OptionCustom") },
-            SelectedItem = ReShadeChannelDisplay(settings.ReShadeChannel),
+            ItemsSource = OptionLists.ReShadeChannel.Items,
+            SelectedItem = OptionLists.ReShadeChannel.Display(settings.ReShadeChannel),
             Width = 230
         };
         var manageIni = new CheckBox { Content = T("Win.ManageReShadeIniSearchPaths"), IsChecked = settings.ReShadeManageIni };
@@ -415,14 +397,10 @@ public sealed partial class MainWindow : Window
             Content = T("Win.WatchSelectedFolderDownloadedAddOns"),
             IsChecked = settings.AddonWatcherEnabled
         };
-        static string ViewModeDisplay(string value) =>
-            value.Equals("Compact", StringComparison.OrdinalIgnoreCase) ? T("Win.Compact") : T("Win.Detailed");
-        static string ViewModeValue(string? display) =>
-            string.Equals(display, T("Win.Compact"), StringComparison.OrdinalIgnoreCase) ? "Compact" : "Detail";
         var viewMode = new ComboBox
         {
-            ItemsSource = new[] { T("Win.Detailed"), T("Win.Compact") },
-            SelectedItem = ViewModeDisplay(settings.ViewMode),
+            ItemsSource = OptionLists.ViewMode.Items,
+            SelectedItem = OptionLists.ViewMode.Display(settings.ViewMode),
             Width = 190
         };
         var trayIconEnabled = new CheckBox
@@ -449,7 +427,7 @@ public sealed partial class MainWindow : Window
 
         static ComboBox BuildDlssDefaultCombo(IEnumerable<string> versions, string current)
         {
-            var items = new List<string> { T("Win.DoNotChange") };
+            var items = new List<string> { OptionLists.DoNotChangeDisplay() };
             foreach (var version in versions.Where(version => !string.IsNullOrWhiteSpace(version)).Distinct(StringComparer.OrdinalIgnoreCase))
                 items.Add(version);
             if (!string.IsNullOrWhiteSpace(current) && !items.Contains(current, StringComparer.OrdinalIgnoreCase))
@@ -566,8 +544,8 @@ public sealed partial class MainWindow : Window
         reset.Click += (_, _) =>
         {
             var defaults = new LinuxAppSettings();
-            uiLanguage.SelectedItem = UiLanguageDisplay(defaults.UiLanguage);
-            channel.SelectedItem = ReShadeChannelDisplay(defaults.ReShadeChannel);
+            uiLanguage.SelectedItem = OptionLists.UiLanguage.Display(defaults.UiLanguage);
+            channel.SelectedItem = OptionLists.ReShadeChannel.Display(defaults.ReShadeChannel);
             manageIni.IsChecked = defaults.ReShadeManageIni;
             screenshotPath.Text = defaults.ScreenshotPath;
             perGameScreenshots.IsChecked = defaults.PerGameScreenshotFolders;
@@ -575,7 +553,7 @@ public sealed partial class MainWindow : Window
             screenshotHotkey.SetValue(defaults.ScreenshotHotkey);
             addonWatchFolder.Text = defaults.AddonWatchFolder;
             addonWatcherEnabled.IsChecked = defaults.AddonWatcherEnabled;
-            viewMode.SelectedItem = ViewModeDisplay(defaults.ViewMode);
+            viewMode.SelectedItem = OptionLists.ViewMode.Display(defaults.ViewMode);
             trayIconEnabled.IsChecked = defaults.TrayIconEnabled;
             closeToTray.IsChecked = defaults.CloseToTray;
             closeToTray.IsEnabled = defaults.TrayIconEnabled;
@@ -583,11 +561,11 @@ public sealed partial class MainWindow : Window
             cacheAllShaders.IsChecked = defaults.CacheAllShaders;
             verboseLogging.IsChecked = defaults.VerboseLogging;
             autoUpdateComponents.IsChecked = defaults.AutoUpdateComponents;
-            defaultDlss.SelectedItem = T("Win.DoNotChange");
-            defaultDlssd.SelectedItem = T("Win.DoNotChange");
-            defaultDlssg.SelectedItem = T("Win.DoNotChange");
-            defaultDlssnr.SelectedItem = T("Win.DoNotChange");
-            defaultStreamline.SelectedItem = T("Win.DoNotChange");
+            defaultDlss.SelectedItem = OptionLists.DoNotChangeDisplay();
+            defaultDlssd.SelectedItem = OptionLists.DoNotChangeDisplay();
+            defaultDlssg.SelectedItem = OptionLists.DoNotChangeDisplay();
+            defaultDlssnr.SelectedItem = OptionLists.DoNotChangeDisplay();
+            defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
             status.Text = vm.ResetLinuxSettings();
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -636,8 +614,8 @@ public sealed partial class MainWindow : Window
 
         LinuxAppSettings ReadControls() => new()
         {
-            UiLanguage = UiLanguageValue(uiLanguage.SelectedItem?.ToString()),
-            ReShadeChannel = ReShadeChannelValue(channel.SelectedItem?.ToString()),
+            UiLanguage = OptionLists.UiLanguage.Value(uiLanguage.SelectedItem?.ToString()),
+            ReShadeChannel = OptionLists.ReShadeChannel.Value(channel.SelectedItem?.ToString()),
             ReShadeManageIni = manageIni.IsChecked == true,
             ScreenshotPath = screenshotPath.Text ?? "",
             OverlayHotkey = overlayHotkey.Value,
@@ -645,7 +623,7 @@ public sealed partial class MainWindow : Window
             PerGameScreenshotFolders = perGameScreenshots.IsChecked == true,
             AddonWatchFolder = addonWatchFolder.Text ?? "",
             AddonWatcherEnabled = addonWatcherEnabled.IsChecked == true,
-            ViewMode = ViewModeValue(viewMode.SelectedItem?.ToString()),
+            ViewMode = OptionLists.ViewMode.Value(viewMode.SelectedItem?.ToString()),
             TrayIconEnabled = trayIconEnabled.IsChecked == true,
             CloseToTray = trayIconEnabled.IsChecked == true && closeToTray.IsChecked == true,
             ShowMotdOnStartup = showMotdOnStartup.IsChecked == true,

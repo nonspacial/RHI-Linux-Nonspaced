@@ -16,6 +16,14 @@ public interface IGameStateStore
     /// when its file cannot be read, which cancels the whole repair.
     /// </summary>
     StagedFileWrite? StageMove(GameStateMove move);
+
+    /// <summary>
+    /// Paths (folders or files) this store's entries for <paramref name="game"/> still name although they no longer
+    /// exist — the game moved, with no RHI records to show it (e.g. an Edit game patch target). "Repair after move"
+    /// maps them onto the game's current folder and re-points them only when every mapped path exists (Refs #147).
+    /// Reads only; none by default.
+    /// </summary>
+    IReadOnlyList<string> MovedPaths(DetectedGame game) => [];
 }
 
 /// <summary>
@@ -25,8 +33,9 @@ public interface IGameStateStore
 /// <item>Record keys (<see cref="GameRecordIdentity"/>): only folder-keyed games change key
 /// (store-keyed <c>steam:</c>/<c>heroic:</c> keys survive a move); entries may carry a
 /// <c>|suffix</c>.</item>
-/// <item>Library keys (<see cref="LinuxGameLibraryStore.GameKey(DetectedGame)"/>): every game's
-/// changes, since it includes the library folder.</item>
+/// <item>Library keys (<see cref="LinuxGameLibraryStore.GameKey(DetectedGame)"/>): only folder-keyed games
+/// change key (Steam/Heroic keys survive a move, Refs #147); the keys builds before #147 wrote (folder
+/// included) are old keys of every game.</item>
 /// </list>
 /// An entry already stored under the new key is the user's newer choice and wins over the old one.
 /// </summary>
@@ -55,7 +64,13 @@ public sealed class GameStateMove
         OldLibraryKeys = string.IsNullOrWhiteSpace(identity) ? [] : _roots
             .Select(r => Rebase(identity, r.NewRoot, r.OldRoot))
             .OfType<string>()
-            .Select(old => LinuxGameLibraryStore.GameKey(game, old))
+            .SelectMany(old => new[]
+            {
+                LinuxGameLibraryStore.GameKey(game, old), LinuxGameLibraryStore.LegacyGameKey(game.Source, old, game.SteamAppId),
+                LinuxGameLibraryStore.ResolvedFolderKey(game, old) // this branch's earlier symlink-resolved folder key
+            })
+            .OfType<string>()
+            .Append(LinuxGameLibraryStore.LegacyGameKey(game)) // the current folder's pre-#147 key, if not yet adopted
             .Where(k => !string.Equals(k, NewLibraryKey, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

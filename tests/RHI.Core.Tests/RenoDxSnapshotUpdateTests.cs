@@ -266,6 +266,33 @@ public sealed class RenoDxSnapshotUpdateTests : IDisposable
         Assert.Equal((ComponentUpdateAction.Update, SnapshotHandler.VersionOf(0)), (entry.Action, entry.FromVersion));
     }
 
+    // #110: the real service's operations go through the update recorder (Track). Replacing Track with a plain call of
+    // the operation leaves the history empty and fails this test.
+    [Fact]
+    public async Task ManagedService_UpdateAndRemove_AreRecordedInTheHistory()
+    {
+        Assert.True((await _service.InstallAsync(_game, _files)).Success);
+        var managed = new LinuxManagedComponentService(_store, reshade: null!, addonManager: null!, renodx: _service, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!,
+            updateLog: _log);
+        _handler.Rebuild();
+
+        var update = await managed.UpdateManagedAsync(_game, ManagedComponentKind.RenoDX, _files);
+        var remove = await managed.RemoveAsync(_game, ManagedComponentKind.RenoDX);
+
+        Assert.True(update.Success, update.Message);
+        Assert.True(remove.Success, remove.Message);
+        var entries = _log.GetAll().Reverse().ToArray(); // stored newest first
+        Assert.Equal(2, entries.Length);
+        Assert.All(entries, e => Assert.Equal((ManagedComponentKind.RenoDX, true, "Outer Wilds"), (e.Component, e.Success, e.GameName)));
+        Assert.Equal((ComponentUpdateAction.Update, SnapshotHandler.VersionOf(0), SnapshotHandler.VersionOf(1)),
+            (entries[0].Action, entries[0].FromVersion, entries[0].ToVersion));
+        Assert.Equal((ComponentUpdateAction.Remove, SnapshotHandler.VersionOf(1), (string?)null),
+            (entries[1].Action, entries[1].FromVersion, entries[1].ToVersion));
+    }
+
     public void Dispose()
     {
         _http.Dispose();

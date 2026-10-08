@@ -199,7 +199,7 @@ public sealed class GameLibraryScanner
             first.MergedAliases = first.MergedAliases.Concat(candidate.MergedAliases)
                 .Append(new LibraryEntryAlias(candidate.Source ?? "",
                     string.IsNullOrWhiteSpace(candidate.LibraryIdentityPath) ? candidate.InstallPath : candidate.LibraryIdentityPath,
-                    candidate.SteamAppId))
+                    candidate.SteamAppId, candidate.HeroicAppName))
                 .Distinct().ToArray();
             first.LibraryIdentityPath ??= candidate.LibraryIdentityPath;
             first.LibraryProvider ??= candidate.LibraryProvider;
@@ -226,6 +226,7 @@ public sealed class GameLibraryScanner
             first.RequiresExplicitPatchTarget |= candidate.RequiresExplicitPatchTarget;
             first.GameRootNotAllowed |= candidate.GameRootNotAllowed;
             first.FolderMissing |= candidate.FolderMissing;
+            first.PatchTargetFolderMissing |= candidate.PatchTargetFolderMissing;
             first.ManifestSteamAppIdOverride ??= candidate.ManifestSteamAppIdOverride;
             first.ManifestGraphicsApiOverride ??= candidate.ManifestGraphicsApiOverride;
             first.ManifestGraphicsApis = Union(first.ManifestGraphicsApis, candidate.ManifestGraphicsApis);

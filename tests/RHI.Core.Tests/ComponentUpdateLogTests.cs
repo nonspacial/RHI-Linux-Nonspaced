@@ -155,6 +155,137 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Equal((false, ManagedComponentKind.OptiScaler, "disk full"), (failed.Success, failed.Component, failed.Message));
     }
 
+    // #109: an operation that changed the requested component's ledger entry and then failed (its files were rolled
+    // back, or Upsert threw) is a failed update in the history, never a successful one.
+    [Fact]
+    public async Task Recorder_FailedOperationThatChangedTheLedger_IsLoggedAsFailed()
+    {
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        Upsert(records, ManagedComponentKind.ReShade, "6.3.0");
+        Upsert(records, ManagedComponentKind.UltimateAsiLoader, "1.0");
+        var log = new ComponentUpdateLogStore(LogPath);
+        var recorder = new ComponentUpdateRecorder(records, log);
+
+        var result = await recorder.TrackAsync(_game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Update, () =>
+        {
+            Upsert(records, ManagedComponentKind.UltimateAsiLoader, "2.0");
+            return Task.FromResult(ComponentOperationResult.Fail("rolled back"));
+        });
+
+        Assert.False(result.Success);
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal((ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Update, false, "rolled back", "1.0"),
+            (entry.Component, entry.Action, entry.Success, entry.Message, entry.FromVersion));
+
+        // Same through an exception, and a dependency the failed operation really installed stays a success.
+        await Assert.ThrowsAsync<IOException>(() => recorder.TrackAsync(_game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Install, () =>
+        {
+            Upsert(records, ManagedComponentKind.ReShade, "6.4.0");
+            Upsert(records, ManagedComponentKind.RenoDX, "0.40");
+            throw new IOException("disk full");
+        }));
+        var entries = log.GetAll();
+        var renodx = Assert.Single(entries, e => e.Component == ManagedComponentKind.RenoDX);
+        Assert.Equal((ComponentUpdateAction.Install, false, "disk full"), (renodx.Action, renodx.Success, renodx.Message));
+        var reshade = Assert.Single(entries, e => e.Component == ManagedComponentKind.ReShade);
+        Assert.Equal((ComponentUpdateAction.Update, true), (reshade.Action, reshade.Success));
+        Assert.Same(renodx, entries[0]);
+    }
+
+    // #111: a write error (here: the folder became read-only) never stops recording silently. The events wait in memory
+    // and are listed, the failure is logged once and shown by the history dialog, and the next write that succeeds saves
+    // them with it.
+    [Fact]
+    public async Task WriteError_IsReportedOnce_AndRecordingResumesWhenWritable()
+    {
+        var dir = Path.Combine(_root, "history");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "update-log.json");
+        var store = new ComponentUpdateLogStore(path);
+        Assert.True(store.Record(Entry(1)));
+        var appLog = new RHI.Core.Services.AppLog(Path.Combine(_root, "rhi.log"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var recorder = new ComponentUpdateRecorder(records, store);
+        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(appLog))
+            {
+                Assert.False(store.Record(Entry(2)));
+                var install = await recorder.TrackAsync(_game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () =>
+                {
+                    Upsert(records, ManagedComponentKind.ReShade, "6.4.0");
+                    return Task.FromResult(ComponentOperationResult.Ok("installed"));
+                });
+                Assert.True(install.Success); // history never fails the install
+
+                Assert.NotNull(store.WriteError);
+                Assert.Equal(2, store.UnsavedCount);
+                Assert.Equal([ManagedComponentKind.ReShade, ManagedComponentKind.RenoDX, ManagedComponentKind.RenoDX],
+                    store.GetAll().Select(e => e.Component));
+                Assert.Single(new ComponentUpdateLogStore(path).GetAll()); // only the first event is on disk
+                Assert.NotNull(ComponentUpdateHistoryPresenter.WriteErrorText(store));
+                Assert.Single(File.ReadAllLines(appLog.FilePath), line => line.Contains("could not be written", StringComparison.Ordinal));
+            }
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.True(store.Record(Entry(3)));
+
+        Assert.Null(store.WriteError);
+        Assert.Equal(0, store.UnsavedCount);
+        Assert.Null(ComponentUpdateHistoryPresenter.WriteErrorText(store));
+        Assert.Equal(4, new ComponentUpdateLogStore(path).GetAll().Count);
+    }
+
+    // Review w2-stores #4 (#111): while the file cannot be written, the events kept in memory are bounded like the file
+    // (200, newest kept), so a long outage never grows memory without limit.
+    [Fact]
+    public void WriteError_EventsKeptInMemory_AreBoundedNewestFirst()
+    {
+        var dir = Path.Combine(_root, "bounded");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "update-log.json");
+        var store = new ComponentUpdateLogStore(path);
+        Assert.True(store.Record(Entry(0)));
+        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(Path.Combine(_root, "rhi.log"))))
+                for (var minute = 1; minute <= 250; minute++)
+                    Assert.False(store.Record(Entry(minute)));
+
+            Assert.Equal(200, store.UnsavedCount);
+            var all = store.GetAll();
+            Assert.Equal(200, all.Count);
+            Assert.Equal("v250", all[0].FromVersion);
+            Assert.Equal("v51", all[^1].FromVersion);
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.True(store.Record(Entry(251)));
+        var saved = new ComponentUpdateLogStore(path).GetAll();
+        Assert.Equal(200, saved.Count);
+        Assert.Equal("v251", saved[0].FromVersion);
+    }
+
+    // Review w2-stores #4 nit: the dialog line must not promise more than the store does — kept events are lost if RHI
+    // closes before the file can be written.
+    [Fact]
+    public void WriteErrorLine_SaysTheEventsAreKeptOnlyWhileRhiStaysOpen()
+    {
+        Assert.Contains("are kept while RHI stays open",
+            RHI.Desktop.Localization.UiLocalizationService.FormatFor("en-US", "Win.UpdateHistoryNotSaved", "disk full", 3), StringComparison.Ordinal);
+        Assert.Contains("ficam guardados enquanto o RHI estiver aberto",
+            RHI.Desktop.Localization.UiLocalizationService.FormatFor("pt-BR", "Win.UpdateHistoryNotSaved", "disco cheio", 3), StringComparison.Ordinal);
+    }
+
     // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
     // drop the real change and log every other component as installed or removed.
     [Fact]

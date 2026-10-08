@@ -260,6 +260,7 @@
 - **Why it matters:** the user cannot see their pin and will likely "re-pin" or assume Latest.
 - **Minimal seam:** call `EnsureOption` before assigning the selection. This becomes moot with the value/display records from UI-01.
 - **Verification:** a headless combo bound to `Dlss5FeederVersionOptions`; select a game with a stored pin and assert that `combo.SelectedItem == pin`.
+- **Status:** fixed in `fc33b5d` (#80). `LoadNeuralVersionPins`, `RefreshLocalizedPresentationCore` and `ResetNeuralVersionPins` add (or relabel) the option before selecting it. Tests: `NeuralVersionPinSelectionTests` (every version selection the VM makes is already an option, on game selection and on a language switch); harness CHECKs bind a real headless `ComboBox` to the lists and read `SelectedItem` back.
 
 ### UI-13 — The background update loop dies permanently on its first exception
 
@@ -320,11 +321,13 @@
 - **Where:** `_ualLatestVersionCache`/`_shortFuseLatestVersionCache` `:75-78, 2799-2864`.
 - **What happens:** they are filled once per session. A long-running tray process shows a stale "latest" until the user presses Check.
 - **Seam:** add a TTL.
+- **Status:** fixed in `600618a` (#86, with #117). `LatestVersionCache` (1 h TTL, shared in-flight request, a load started before `Clear` is not stored) behind `UpstreamVersionCatalog`; an explicit full Refresh clears the UAL and ShortFuse latest versions and reloads the NR version lists. Tests: `UpstreamVersionCatalogTests` (fake clock), `NeuralVersionRefreshViewModelTests`.
 
 ### UI-20 — Duplicated display↔value mapping between the VM and the Settings dialog
 
 - **Where:** `MainWindow.axaml.cs:326-339` reimplements `ReShadeChannelDisplay/Value` from `MainWindowViewModel.cs:388-409`. `:317-318` maps language display names by exact English/Portuguese literals.
 - **Why it matters:** divergence is only a matter of time; the root cause is the same display-string-as-value pattern as UI-01.
+- **Status:** fixed in `a6f9982` (#87). `ViewModels/OptionLists` holds one display↔value mapping per option list (ReShade channel, UI language, view mode, OptiScaler variant, Luma mode, HDR mode, graphics API override, library filter, launch provider, "Latest", "Do not change"); the VM, the Settings dialog and Edit game read labels and values only through it, and a label reads back in either language. Tests: `OptionListsTests` (round trip and collisions in both languages).
 
 ### Checked and not found (negative results)
 

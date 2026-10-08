@@ -1,4 +1,5 @@
 using RHI.Core.Models;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -97,9 +98,10 @@ public sealed class ComponentUpdateRecorder
                     entry = OwnedEntry(game, owner, fileLabel, before, after);
                 if (entry is not null) _log.Record(entry);
             }
-            catch
+            catch (Exception ex)
             {
-                // History is informational; it must never fail or alter the swap.
+                // History is informational; it must never fail or alter the swap (write errors are kept by the store).
+                AppLog.Warn("update-history", $"The {fileLabel} swap for {game.Name} was not recorded in the update history.", ex);
             }
         }
     }
@@ -111,8 +113,9 @@ public sealed class ComponentUpdateRecorder
             var record = _records.Find(game, owner);
             return (true, record is null ? null : versionOf(record));
         }
-        catch
+        catch (Exception ex) // recording never fails the wrapped operation
         {
+            AppLog.Warn("update-history", $"The {owner} record of {game.Name} could not be read for the update history.", ex);
             return (false, null);
         }
     }
@@ -138,8 +141,9 @@ public sealed class ComponentUpdateRecorder
                 .GroupBy(r => r.Component)
                 .ToDictionary(g => g.Key, g => (HistoryVersion(g.First()), g.First().InstalledAtUtc));
         }
-        catch
+        catch (Exception ex) // recording never fails the wrapped operation
         {
+            AppLog.Warn("update-history", $"The records of {game.Name} could not be read for the update history.", ex);
             return [];
         }
     }
@@ -204,22 +208,36 @@ public sealed class ComponentUpdateRecorder
             }
 
             var failed = result is { Success: false } || (error is not null && error is not OperationCanceledException);
-            if (failed && entries.All(e => e.Component != requested))
+            if (failed)
             {
-                entries.Add(Entry(requested, intent, before.TryGetValue(requested, out var prior) ? prior.Version : null, null) with
+                // A failed operation may still have changed the requested component's ledger entry (a service
+                // upserts, then a later step fails and its files are rolled back): that change is the failure,
+                // never a success. Dependencies it really installed or removed on the way stay as they are.
+                var message = result?.Message ?? error?.Message;
+                var marked = false;
+                for (var i = 0; i < entries.Count; i++)
                 {
-                    Success = false,
-                    Message = result?.Message ?? error?.Message
-                });
+                    if (entries[i].Component != requested) continue;
+                    entries[i] = entries[i] with { Success = false, Message = message };
+                    marked = true;
+                }
+                if (!marked)
+                    entries.Add(Entry(requested, intent, before.TryGetValue(requested, out var prior) ? prior.Version : null, null) with
+                    {
+                        Success = false,
+                        Message = message
+                    });
             }
 
             // The requested component is recorded last so it heads the newest-first list.
             foreach (var entry in entries.OrderBy(e => e.Component == requested))
                 _log.Record(entry);
         }
-        catch
+        catch (Exception ex)
         {
-            // History is informational; a full disk or corrupt log must not fail an install.
+            // History is informational and must not fail an install; a write error is kept and shown by the store
+            // (ComponentUpdateLogStore.WriteError), anything else is logged here.
+            AppLog.Warn("update-history", $"The {requested} operation for {game.Name} was not recorded in the update history.", ex);
         }
     }
 }

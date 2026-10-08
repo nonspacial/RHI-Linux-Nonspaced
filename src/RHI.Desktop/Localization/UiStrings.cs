@@ -304,6 +304,7 @@ internal static class UiStrings
         ("Win.NotAvailable", "Não disponível", "Not available"),
         ("Win.ClearHistory", "Limpar histórico", "Clear history"),
         ("Win.UpdateHistoryCouldNotReadWas", "O histórico de atualizações não pôde ser lido e foi copiado para {0}. Nada novo será registrado até que você limpe o histórico.", "The update history could not be read and was copied to {0}. Nothing new is recorded until you clear the history."),
+        ("Win.UpdateHistoryNotSaved", "O histórico de atualizações não pôde ser salvo; {1} evento(s) recente(s) ficam guardados enquanto o RHI estiver aberto e serão salvos quando o arquivo puder ser gravado de novo. Motivo: {0}", "The update history could not be saved; {1} recent event(s) are kept while RHI stays open and will be saved once the file can be written again. Reason: {0}"),
         ("Win.NoUpdatesRecordedYet", "Nenhuma atualização registrada.", "No updates recorded yet."),
         ("Win.EventSRecorded", "{0} registro(s)", "{0} event(s) recorded"),
         ("Win.NoComponentUpdatesHaveBeenRecorded", "Nenhuma atualização de componente foi registrada ainda.\n\nO RHI registra cada instalação, atualização e remoção de componentes gerenciados (ReShade, RenoDX, OptiScaler, ReLimiter, Display Commander, Luma e outros) — por ação manual, Atualizar tudo ou a verificação em segundo plano.", "No component updates have been recorded yet.\n\nRHI records every install, update and removal of managed components (ReShade, RenoDX, OptiScaler, ReLimiter, Display Commander, Luma and others) — from manual actions, Update all or the background check."),
@@ -586,6 +587,8 @@ internal static class UiStrings
         ("Vm.UseTheseRecords", "Usar estes registros", "Use these records"),
         ("Vm.RepairAfterMoveCancelledNothingWas", "Reparar após mover cancelado; nada foi alterado.", "Repair after move cancelled; nothing was changed."),
         ("Vm.CheckingRHISFilesNewFolder", "{0}: verificando os arquivos do RHI na nova pasta…", "{0}: checking RHI's files in the new folder…"),
+        ("Vm.ModificationTargetFolderGoneUseRepair", "O alvo de modificações escolhido em Editar jogo está numa pasta que não existe mais — use Reparar após mover (ou escolha outro em Editar jogo)", "The modification target chosen in Edit game is in a folder that no longer exists — use Repair after move (or choose another in Edit game)"),
+        ("Vm.GameSettingsNowPointNewFolder", "{0}: as configurações do RHI agora apontam para a nova pasta.", "{0}: RHI's settings now point to the new folder."),
         ("Vm.RHISRecordsSettingsNowPoint", "{0}: registros e configurações do RHI atualizados para a nova pasta ({1}).", "{0}: RHI's records and settings now point to the new folder ({1})."),
         ("Vm.SavedManualEntryWasNotFound", "{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed."),
         ("Vm.RemovedFromManualLibraryButList", "{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh.")

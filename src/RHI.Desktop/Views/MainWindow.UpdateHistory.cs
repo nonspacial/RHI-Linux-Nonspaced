@@ -27,16 +27,30 @@ public sealed partial class MainWindow
             list.Children.Clear();
             IReadOnlyList<ComponentUpdateLogEntry> entries;
             string? corrupt;
+            string? notSaved;
             try
             {
                 entries = store.GetAll();
                 corrupt = store.CorruptLogPath;
+                notSaved = ComponentUpdateHistoryPresenter.WriteErrorText(store);
             }
             catch (Exception ex)
             {
                 entries = [];
                 corrupt = null;
+                notSaved = null;
                 list.Children.Add(new TextBlock { Text = ErrorLineText.Of(ex), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.OrangeRed });
+            }
+
+            if (notSaved is not null)
+            {
+                list.Children.Add(new TextBlock
+                {
+                    Text = notSaved,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = Brushes.OrangeRed,
+                    Margin = new Thickness(0, 8, 0, 0)
+                });
             }
 
             if (corrupt is not null)
