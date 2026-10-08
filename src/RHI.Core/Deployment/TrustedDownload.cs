@@ -251,6 +251,23 @@ public static class TrustedDownload
         string? accept = null,
         CancellationToken cancellationToken = default)
     {
+        var bytes = await GetBytesAsync(http, url, policy, accept, cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream(bytes, writable: false);
+        using var reader = new StreamReader(buffer, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <see cref="GetStringAsync"/> for a caller that validates and decodes the bytes itself (a small text file it
+    /// caches and hashes as served): same policy checks and cap.
+    /// </summary>
+    public static async Task<byte[]> GetBytesAsync(
+        HttpClient http,
+        string url,
+        TrustedDownloadPolicy policy,
+        string? accept = null,
+        CancellationToken cancellationToken = default)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Get, policy.Validate(url));
         request.Headers.UserAgent.Add(DefaultUserAgent);
         if (!string.IsNullOrWhiteSpace(accept)) request.Headers.Accept.ParseAdd(accept);
@@ -271,9 +288,7 @@ public static class TrustedDownload
                 throw new InvalidDataException($"{SizeLimitPrefix}{cap}{AtomicFile.SizeLimitMiddle}{url}");
             buffer.Write(chunk, 0, read);
         }
-        buffer.Position = 0;
-        using var reader = new StreamReader(buffer, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        return buffer.ToArray();
     }
 
     /// <summary>

@@ -331,6 +331,12 @@ public sealed class RenoDxDeploymentService
                 ? await File.ReadAllBytesAsync(engineIniSnapshotPath!, cancellationToken).ConfigureAwait(false)
                 : null;
 
+            // The upstream Engine.ini template is fetched here, with the other downloads, and applied after the gate
+            // (w2 merge review, minor 1: it used to be fetched after the add-on was copied).
+            var engineIniTemplate = string.IsNullOrWhiteSpace(game.EngineIniFileOverride)
+                ? null
+                : await _engineIniFiles.FetchAsync(game.EngineIniFileOverride!, cancellationToken).ConfigureAwait(false);
+
             RenoDxIniOverrideApplyResult iniApply;
             UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
             // Downloads and snapshots are done: from the copy on, Cancel is refused (a late cancel used to leave the
@@ -346,10 +352,9 @@ public sealed class RenoDxDeploymentService
                     : null;
                 iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
 
-                if (!string.IsNullOrWhiteSpace(game.EngineIniFileOverride))
+                if (engineIniTemplate is not null)
                 {
-                    engineIniApply = await _engineIniFiles.ApplyAsync(
-                        game, game.EngineIniFileOverride!, previousEngineIniState, cancellationToken).ConfigureAwait(false);
+                    engineIniApply = UpstreamEngineIniFileManager.Apply(game, engineIniTemplate, previousEngineIniState);
                 }
                 else if (previousEngineIniState is not null)
                 {

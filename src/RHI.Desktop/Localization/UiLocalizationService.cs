@@ -650,6 +650,8 @@ public static class UiLocalizationService
             "Download recusado: links do DLSS5 Feeder devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.ShaderPacks.RefusalPrefix,
             "Download recusado: links de pacote de shaders do ReShade devem ser HTTPS em um host confiável (GitHub ou GitLab). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.EngineIniTemplates.RefusalPrefix,
+            "Download recusado: links de modelo de Engine.ini devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // Wave 2 trust lane (#26, #27, #37, #41): shared host-tool runner, nightly lookup, rollback that kept a copy.
         (RHI.Platform.Linux.Deployment.ExternalProcess.TimeoutPrefix, "Uma ferramenta externa demorou demais e foi interrompida: "),
         (RHI.Platform.Linux.Deployment.ExternalArchiveRunner.NoToolPrefix, "Este arquivo precisa do 7-Zip (7zz/7z/7za) ou do bsdtar, e nenhum deles está instalado. Arquivo: "),

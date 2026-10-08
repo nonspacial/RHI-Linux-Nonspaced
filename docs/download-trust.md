@@ -39,6 +39,7 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | dgVoodoo2 | `DgVoodoo` | GitHub release hosts | GitHub asset `digest`; manifest links carry none | fail-open |
 | DLSS5 Feeder (release zip, tagged shader, branch archives) | `Dlss5Feeder` | GitHub release hosts, raw.githubusercontent.com, codeload.github.com | GitHub asset `digest` for the release zip; branch archives have none | fail-open; branch archives are fetched per install |
 | ReShade shader packs | `ShaderPacks` | GitHub release hosts, codeload.github.com, gitlab.com (upstream manifest's UltraShade) | none for branch archives | fail-open |
+| Upstream Engine.ini templates (`engineIniFiles`, RenoDX installs) | `EngineIniTemplates` | raw.githubusercontent.com, 256 KiB | none (text template, parsed before use; last-known-good cache when unreachable) | fail-open |
 | Universal UE DOF Fix | core `GitHub` | GitHub release hosts, raw.githubusercontent.com | GitHub asset `digest`; a manifest `ueDofFix` override names another file, so the digest does not apply | fail-open |
 | RenoDX add-ons | core `RenoDxAddons` | GitHub, `<author>.github.io`, renodx.com | none (snapshots are rebuilt in place) | fail-open; ETag/Last-Modified/size stamp for update checks |
 | ReShade Addon Manager | core `ReShadeAddons` | GitHub, `<author>.github.io`, raw.githubusercontent.com (Addons.ini) | none checked | fail-open |

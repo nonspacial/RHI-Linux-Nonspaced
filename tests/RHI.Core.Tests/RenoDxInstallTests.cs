@@ -190,6 +190,63 @@ public sealed class RenoDxInstallTests : IDisposable
         Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
     }
 
+    // w2 merge review, minor 1 and nit 5: the upstream Engine.ini template is fetched before the write gate, under its
+    // own host policy, and applied after it; nothing is downloaded once the add-on is being copied.
+    [Fact]
+    public async Task Install_EngineIniTemplate_IsFetchedBeforeTheWriteGate()
+    {
+        var root = Path.Combine(_root, "engine-template-gate");
+        var bin = Path.Combine(root, "Game", "Binaries", "Win64");
+        var prefix = Path.Combine(root, "pfx");
+        Directory.CreateDirectory(bin);
+        Directory.CreateDirectory(Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Local"));
+        var exe = Path.Combine(bin, "Game-Win64-Shipping.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        File.WriteAllText(Path.Combine(bin, "ReShade64.dll"), "MZ ReShade crosire");
+        var game = new DetectedGame
+        {
+            Name = "Engine Template Game", InstallPath = root, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix,
+            Runner = "Proton", Source = "Steam", EngineIniProjectOverride = "EngineTemplateProject", EngineIniFileOverride = "engine-template.ini"
+        };
+        var watch = new GateWatchingHandler(new EngineTemplateHandler());
+        using var http = new HttpClient(watch);
+        var store = new LinuxDeploymentRecordStore(Path.Combine(root, "records.json"));
+        var manifest = new UpstreamRhiManifestService(http, "https://example.test/engine-manifest.json");
+        var service = new RenoDxDeploymentService(http, store, new RenoDxCatalogService(http, manifest), Path.Combine(root, "cache"), manifest);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, [exe, Path.Combine(bin, "ReShade64.dll")], ct),
+            [Path.Combine(root, "Game"), prefix], atWritePhase: watch.CloseGate);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Empty(watch.LateRequests);
+        Assert.Contains("r.HDR.EnableHDROutput=1", File.ReadAllText(UpstreamEngineIniFileManager.ResolveTargetPath(game)!));
+    }
+
+    [Fact]
+    public async Task EngineIniTemplate_IsFetchedUnderItsHostPolicy()
+    {
+        Assert.Equal(["raw.githubusercontent.com"], DownloadSources.EngineIniTemplates.AllowedHosts);
+        Assert.Equal(256L * 1024, DownloadSources.EngineIniTemplates.MaxBytes);
+        // A redirect off raw.githubusercontent.com is refused (no cache to fall back to): the policy's own refusal.
+        using var http = new HttpClient(new RedirectingHandler("https://example.test/engine-files/x.ini"));
+        var manager = new UpstreamEngineIniFileManager(http, Path.Combine(_root, "engine-policy-cache"));
+
+        var refused = await Assert.ThrowsAsync<RHI.Core.Deployment.UntrustedDownloadException>(() => manager.FetchAsync("x.ini"));
+
+        Assert.StartsWith(DownloadSources.EngineIniTemplates.RefusalPrefix, refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Answers every request as if it had been redirected to <paramref name="finalUrl"/>.</summary>
+    private sealed class RedirectingHandler(string finalUrl) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                RequestMessage = new HttpRequestMessage(HttpMethod.Get, finalUrl),
+                Content = new StringContent("[SystemSettings]\nr.Probe=1\n")
+            });
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
     // w2/vmsplit review finding 1: Cancel is honoured only before the first write; a late cancel used to throw after

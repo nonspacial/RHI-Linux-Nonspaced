@@ -83,11 +83,18 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy ShaderPacks = new(
         "ReShade shader pack", "GitHub or GitLab", [.. GitHubReleaseHosts, "codeload.github.com", "gitlab.com"], maxBytes: PayloadArchiveMaxBytes);
 
+    /// <summary>
+    /// Upstream RHI's Engine.ini templates (<c>engineIniFiles</c>): text files in RankFTW/rhi-repo served by
+    /// raw.githubusercontent.com, capped like the template parser (256 KiB).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy EngineIniTemplates = new(
+        "Engine.ini template", "GitHub", ["raw.githubusercontent.com"], maxBytes: 256L * 1024);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
         GitHubApi, ReShadeSetup, ReShadeNightly, GitHubAddonRelease, OptiScaler, Luma, REFramework, UltimateAsiLoader,
-        RhiRepository, UniversalMfg, Dlssg2030, DgVoodoo, Dlss5Feeder, ShaderPacks,
+        RhiRepository, UniversalMfg, Dlssg2030, DgVoodoo, Dlss5Feeder, ShaderPacks, EngineIniTemplates,
         TrustedDownloadPolicy.GitHubReleases, TrustedDownloadPolicy.GitHub, TrustedDownloadPolicy.RenoDxAddons, TrustedDownloadPolicy.ReShadeAddons
     ];
 }

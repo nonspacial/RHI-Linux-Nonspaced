@@ -20,6 +20,9 @@ internal sealed record UpstreamEngineIniFileState(
     string TemplateSha256,
     IReadOnlyList<UpstreamEngineIniOwnedEntry> Entries);
 
+/// <summary>A fetched (or last-known-good cached) Engine.ini template, validated and decoded, ready to apply.</summary>
+internal sealed record UpstreamEngineIniTemplate(string Name, string Text, string Sha256, string SourceUrl);
+
 internal sealed record UpstreamEngineIniApplyResult(
     UpstreamEngineIniFileState? State,
     int AppliedCount,
@@ -55,10 +58,24 @@ internal sealed class UpstreamEngineIniFileManager
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(game);
-        var safeName = ValidateTemplateName(templateName);
-        var template = await FetchTemplateAsync(safeName, cancellationToken).ConfigureAwait(false);
-        return ApplyTemplate(game, safeName, template.Text, template.Sha256, template.SourceUrl, previousState);
+        var template = await FetchAsync(templateName, cancellationToken).ConfigureAwait(false);
+        return Apply(game, template, previousState);
     }
+
+    /// <summary>
+    /// The network half of <see cref="ApplyAsync"/>: a deployment fetches the template before its write gate (Cancel
+    /// still honoured, no download once game files change) and applies it with <see cref="Apply"/> afterwards.
+    /// </summary>
+    public async Task<UpstreamEngineIniTemplate> FetchAsync(string templateName, CancellationToken cancellationToken = default)
+    {
+        var safeName = ValidateTemplateName(templateName);
+        var (text, sha256, sourceUrl) = await FetchTemplateAsync(safeName, cancellationToken).ConfigureAwait(false);
+        return new UpstreamEngineIniTemplate(safeName, text, sha256, sourceUrl);
+    }
+
+    /// <summary>The file half of <see cref="ApplyAsync"/>: no network.</summary>
+    public static UpstreamEngineIniApplyResult Apply(DetectedGame game, UpstreamEngineIniTemplate template, UpstreamEngineIniFileState? previousState)
+        => ApplyTemplate(game, template.Name, template.Text, template.Sha256, template.SourceUrl, previousState);
 
     internal static UpstreamEngineIniApplyResult ApplyTemplate(
         DetectedGame game,
@@ -254,14 +271,12 @@ internal sealed class UpstreamEngineIniFileManager
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, sourceUrl);
-            request.Headers.UserAgent.ParseAdd(RHI.Core.RhiProductInfo.UserAgent);
+            // Under its own host policy (HTTPS, raw.githubusercontent.com before and after redirects, 256 KiB cap;
+            // w2 merge review, nit 5), with a 15 s limit of its own.
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
-            using var response = await _http.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
+            var bytes = await TrustedDownload.GetBytesAsync(
+                _http, sourceUrl, DownloadSources.EngineIniTemplates, cancellationToken: timeout.Token).ConfigureAwait(false);
             ValidateTemplateBytes(bytes, safeName);
             var text = DecodeTemplate(bytes);
             _ = ParseTemplate(text); // Structural validation before cache persistence.

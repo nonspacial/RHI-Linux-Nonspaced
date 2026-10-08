@@ -157,7 +157,7 @@ public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
         };
 
         await Assert.ThrowsAnyAsync<IOException>(() => coordinator.MigrateAsync(game));
-        Assert.Single(Directory.GetFiles(journalDir, "*.json", SearchOption.AllDirectories).Where(f => !f.EndsWith(".lock", StringComparison.Ordinal)));
+        Assert.Single(Directory.GetFiles(journalDir, "*.json", SearchOption.AllDirectories), f => !f.EndsWith(".lock", StringComparison.Ordinal));
         running = false;
         await coordinator.MigrateAsync(game);
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
