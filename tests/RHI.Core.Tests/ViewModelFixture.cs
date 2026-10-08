@@ -25,6 +25,11 @@ internal sealed class ViewModelFixture : IDisposable
     public MainWindowViewModel Vm { get; }
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
+    /// <summary>Requests this matches never answer until cancelled (a stalled download; Refs #77).</summary>
+    public Func<HttpRequestMessage, bool>? HangWhen { get => _hang.When; set => _hang.When = value; }
+
+    private readonly HttpHang _hang = new();
+
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
         Func<HttpRequestMessage, Exception>? httpFailure)
     {
@@ -35,7 +40,7 @@ internal sealed class ViewModelFixture : IDisposable
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure);
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, _hang);
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -69,9 +74,9 @@ internal sealed class ViewModelFixture : IDisposable
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, HttpHang hang)
     {
-        var http = new HttpClient(new OfflineHandler(httpFailure));
+        var http = new HttpClient(new OfflineHandler(httpFailure, hang));
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) });
         var deployment = new TransactionalFileDeploymentService();
@@ -134,9 +139,17 @@ internal sealed class ViewModelFixture : IDisposable
         public Task ProbeAsync(DetectedGame game, IReadOnlyList<string> files, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
-    private sealed class OfflineHandler(Func<HttpRequestMessage, Exception>? failure) : HttpMessageHandler
+    private sealed class HttpHang
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => throw (failure?.Invoke(request) ?? new HttpRequestException("offline test"));
+        public Func<HttpRequestMessage, bool>? When;
+    }
+
+    private sealed class OfflineHandler(Func<HttpRequestMessage, Exception>? failure, HttpHang hang) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (hang.When?.Invoke(request) == true) await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw failure?.Invoke(request) ?? new HttpRequestException("offline test");
+        }
     }
 }

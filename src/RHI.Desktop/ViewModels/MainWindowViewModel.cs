@@ -121,8 +121,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string libraryFilterMode = "All Games";
     [ObservableProperty] private string viewMode = "Detail";
     [ObservableProperty] private string statusText = UiLocalizationService.Text("Ui.Starting");
-    [ObservableProperty] private bool isBusy;
     [ObservableProperty] private bool isSelectionProbeBusy;
+
+    private readonly OperationCoordinator _operations;
+
+    /// <summary>
+    /// The busy gate and its Cancel command (Refs #76, #77): every operation that changes game files or the library
+    /// holds it, so <see cref="IsBusy"/> stays true until the last owner lets go.
+    /// </summary>
+    public OperationCoordinator Operations => _operations;
+
+    /// <summary>True while an operation holds <see cref="Operations"/>; drives the busy overlay.</summary>
+    public bool IsBusy => _operations.IsBusy;
     [ObservableProperty] private string? selectedDlssSrVersion;
     [ObservableProperty] private string? selectedDlssRrVersion;
     [ObservableProperty] private string? selectedDlssFgVersion;
@@ -695,8 +705,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         LinuxDlssDefaultsService? dlssDefaultsService = null,
         LinuxGameLibraryStore? libraryStore = null,
         LinuxDeploymentRecordStore? deploymentRecords = null,
-        LinuxHdrLaunchProfileService? hdrProfiles = null)
+        LinuxHdrLaunchProfileService? hdrProfiles = null,
+        OperationCoordinator? operations = null)
     {
+        _operations = operations ?? new OperationCoordinator();
+        _operations.PropertyChanged += OnOperationsChanged;
         _scanner = scanner;
         _launcher = launcher;
         _runtimeProbe = runtimeProbe;
@@ -734,6 +747,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
         _quarantineSubscription.Dispose();
+        _operations.PropertyChanged -= OnOperationsChanged;
         try { _backgroundUpdateCts?.Cancel(); }
         catch (ObjectDisposedException) { /* already stopped */ }
         _backgroundUpdateCts?.Dispose();
@@ -927,6 +941,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string ApplyGlobalReShadeSettingsToSelectedGame(LinuxAppSettings settings)
     {
         if (SelectedGame is null) return T("Vm.SelectGameFirst");
+        if (IsBusy) return T("Vm.AnotherRHIOperationAlreadyRunning");
         if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return T("Vm.WindowsReShadeSettingsNotAppliedNative");
         if (!SelectedGame.HasConfirmedPatchTarget)
@@ -999,9 +1014,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     // picker rows already have their decorated ActionAllowed state at that point, while UAL /
     // ShortFuse can otherwise remain visually disabled until another manual Refresh. Re-notify
     // those computed states on every busy transition so both surfaces converge automatically.
-    partial void OnIsBusyChanged(bool value)
+    private void OnOperationsChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        _busyGate.SetBusy(value);
+        if (e.PropertyName == nameof(OperationCoordinator.IsBusy)) OnBusyChanged(_operations.IsBusy);
+    }
+
+    private void OnBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsBusy));
         _statusNotice.SetBusy(value);
         OnPropertyChanged(nameof(CanUpdateAll));
         UpdateAllCommand.NotifyCanExecuteChanged();
@@ -1389,7 +1409,30 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifySelected();
     }
 
-    private readonly BusyGate _busyGate = new();
+    /// <summary>
+    /// Claims the busy gate for an operation the user started; null, with the status line saying another operation
+    /// is running, when the gate is held. Dispose the scope (a <c>using</c>) to release it.
+    /// </summary>
+    private OperationScope? BeginOperation(string kind, bool cancellable = true, CancellationToken linkedToken = default)
+    {
+        var op = _operations.TryBegin(kind, cancellable, linkedToken);
+        if (op is null) StatusText = T("Vm.AnotherRHIOperationAlreadyRunning");
+        return op;
+    }
+
+    /// <summary>A gated dialog write refused while another operation runs: the status line and the result say so.</summary>
+    private ComponentOperationResult? RefuseWhileBusy()
+        => IsBusy ? ComponentOperationResult.Fail(ShowStatus(T("Vm.AnotherRHIOperationAlreadyRunning"))) : null;
+
+    internal static string OperationCancelledText() => T("Vm.OperationCancelled");
+
+    /// <summary>
+    /// An operation's result line: services turn a cancelled download into a failed result, which reads as
+    /// "Operation cancelled." when the user pressed Cancel; any other result is shown as it is.
+    /// </summary>
+    private static string OutcomeText(OperationScope op, bool success, string? message)
+        => !success && op.CancelRequested ? OperationCancelledText() : UiLocalizationService.Present(message);
+
     private static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
     private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
 
@@ -1404,7 +1447,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (IsBusy)
             StatusText = T("Vm.WaitingCurrentOperationFinishBeforeUpdating");
-        await _busyGate.WhenIdleAsync();
+        await _operations.WhenIdleAsync();
         return await RefreshAsync(onlyDetectors);
     }
 
@@ -1415,14 +1458,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// </summary>
     private async Task<bool> RefreshAsync(IReadOnlySet<string>? onlyDetectors)
     {
-        if (IsBusy) return false;
-        IsBusy = true;
+        using var op = _operations.TryBegin("refresh");
+        if (op is null) return false;
         StatusText = onlyDetectors is null
             ? T("Vm.ScanningSteamHeroicLutrisWinePrefixes")
             : T("Vm.UpdatingLibrary");
+        var currentKey = SelectedGame is null ? null : Key(SelectedGame);
         try
         {
-            var currentKey = SelectedGame is null ? null : Key(SelectedGame);
             CancelSelectionProbe();
             if (onlyDetectors is null) _probeCache.Clear();
             // Full Refresh bypasses the session NR version caches (upstream 2.7.9).
@@ -1434,7 +1477,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             SelectedGame = null;
 
-            var scan = await _scanner.ScanWithReportAsync(onlyDetectors);
+            var scan = await _scanner.ScanWithReportAsync(onlyDetectors, op.Token);
             var found = scan.Games;
             // Re-key records older builds stored under a Heroic game's folder while the game is still
             // there, so they keep matching after it moves (Refs #38).
@@ -1487,6 +1530,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             return true;
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            // The library list is unchanged; put the selection back.
+            StatusText = OperationCancelledText();
+            SelectedGame = currentKey is null ? Games.FirstOrDefault() : Games.FirstOrDefault(g => Key(g) == currentKey) ?? Games.FirstOrDefault();
+            return false;
+        }
         catch (Exception ex)
         {
             StatusText = TF("Vm.ScanFailed", UiLocalizationService.Present(ex.Message));
@@ -1494,7 +1544,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             OnPropertyChanged(nameof(CanUpdateAll));
             UpdateAllCommand.NotifyCanExecuteChanged();
         }
@@ -1505,19 +1554,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (!CanUpdateAll) return;
         var games = _allGames.ToArray();
-        IsBusy = true;
+        using var op = BeginOperation("update-all");
+        if (op is null) return;
         try
         {
             StatusText = T("Vm.UpdateAllPreparingRHIManagedGames");
-            var indexes = await PrepareUpdateIndexesAsync(games, CancellationToken.None);
+            var indexes = await PrepareUpdateIndexesAsync(games, op.Token);
             var result = await _updateAll.RunAsync(
                 games,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
-                LinuxUpdateRunMode.Manual);
+                LinuxUpdateRunMode.Manual,
+                op.Token);
             _probeCache.Clear();
             if (SelectedGame is { } selected && result.ChangedCount > 0)
                 await ReprobeGameAsync(selected);
             StatusText = UiLocalizationService.UpdateAllSummary(result);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
@@ -1525,7 +1580,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             OnPropertyChanged(nameof(CanUpdateAll));
             UpdateAllCommand.NotifyCanExecuteChanged();
         }
@@ -1590,24 +1644,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (!_settings.AutoUpdateComponents || IsBusy) return;
         var games = _allGames.ToArray();
         if (!_updateAll.HasManagedTargets(games)) return;
-        IsBusy = true;
+        using var op = _operations.TryBegin("background-update", linkedToken: cancellationToken);
+        if (op is null) return;
         try
         {
-            var indexes = await PrepareUpdateIndexesAsync(games, cancellationToken);
+            var indexes = await PrepareUpdateIndexesAsync(games, op.Token);
             var result = await _updateAll.RunAsync(
                 games,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
                 LinuxUpdateRunMode.Background,
-                cancellationToken);
+                op.Token);
             if (result.ChangedCount > 0)
             {
                 _probeCache.Clear();
                 StatusText = UiLocalizationService.UpdateAllSummary(result) + T("Vm.Background");
             }
         }
-        finally
+        catch (OperationCanceledException) when (op.CancelRequested)
         {
-            IsBusy = false;
+            // The user cancelled this pass; the loop runs the next one on schedule.
+            StatusText = OperationCancelledText() + T("Vm.Background");
         }
     }
 
@@ -1699,6 +1755,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var result = _managedComponents.SetRenoDxCompatibilitySetting(SelectedGame, key, value);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1727,6 +1784,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var result = _managedComponents.SetOptiScalerAdvancedSetting(SelectedGame, id, value);
         StatusText = UiLocalizationService.Present(result.Message);
         return result;
@@ -1740,12 +1798,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
+        using var op = BeginOperation("optiscaler-settings", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         var result = await _managedComponents
-            .SetOptiScalerAdvancedSettingAsync(game, id, value, cancellationToken)
+            .SetOptiScalerAdvancedSettingAsync(game, id, value, op.Token)
             .ConfigureAwait(true);
         if (result.Success)
             ReevaluateCurrentGameComponents(game);
-        StatusText = UiLocalizationService.Present(result.Message);
+        StatusText = OutcomeText(op, result.Success, result.Message);
         return result;
     }
 
@@ -1759,6 +1819,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var game = SelectedGame;
         return PersistPreference(() => _managedComponents.SetDlssg2030Preferences(game, gpuGeneration, proxyName));
     }
@@ -1791,8 +1852,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
-        var result = await _managedComponents.UpdateDlssg2030Async(game, cancellationToken).ConfigureAwait(true);
-        StatusText = UiLocalizationService.Present(result.Message);
+        using var op = BeginOperation("component-update", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await _managedComponents.UpdateDlssg2030Async(game, op.Token).ConfigureAwait(true);
+        StatusText = OutcomeText(op, result.Success, result.Message);
         if (result.Success) await ReprobeGameAsync(game);
         return result;
     }
@@ -1807,6 +1870,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var game = SelectedGame;
         return PersistPreference(() => _managedComponents.SetStandaloneDlssEnablerPreferences(game, proxyName));
     }
@@ -1825,8 +1889,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
-        var result = await _managedComponents.UpdateStandaloneDlssEnablerAsync(game, cancellationToken).ConfigureAwait(true);
-        StatusText = UiLocalizationService.Present(result.Message);
+        using var op = BeginOperation("component-update", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await _managedComponents.UpdateStandaloneDlssEnablerAsync(game, op.Token).ConfigureAwait(true);
+        StatusText = OutcomeText(op, result.Success, result.Message);
         if (result.Success) await ReprobeGameAsync(game);
         return result;
     }
@@ -1841,6 +1907,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var game = SelectedGame;
         return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, proxyName));
     }
@@ -1849,6 +1916,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
         var game = SelectedGame;
         return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, gpuGeneration, proxyName));
     }
@@ -1867,8 +1935,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
-        var result = await _managedComponents.UpdateRtx40MfgAsync(game, cancellationToken).ConfigureAwait(true);
-        StatusText = UiLocalizationService.Present(result.Message);
+        using var op = BeginOperation("component-update", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await _managedComponents.UpdateRtx40MfgAsync(game, op.Token).ConfigureAwait(true);
+        StatusText = OutcomeText(op, result.Success, result.Message);
         if (result.Success) await ReprobeGameAsync(game);
         return result;
     }
@@ -1936,7 +2006,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("component");
+        if (op is null) return;
         try
         {
             var removing = component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
@@ -1962,25 +2033,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? TF("Vm.RemovingRHIManaged", component.DisplayName)
                 : TF("Vm.Installing", component.DisplayName);
             var result = removing
-                ? await _managedComponents.RemoveAsync(game, kind)
+                ? await _managedComponents.RemoveAsync(game, kind, op.Token)
                 : kind == ManagedComponentKind.Dlss5Feeder
                     ? await _managedComponents.InstallDlss5FeederAsync(
                         game,
                         IsDeepFriedChickenFeederConsumer ? Dlss5FeederConsumer.DeepFriedChicken : Dlss5FeederConsumer.RenoDxDlss5,
                         IsDeepFriedChickenFeederConsumer ? Dlss5FeederConsumerPackagePath : null,
-                        ReShadeD3DCompiler47Path)
+                        ReShadeD3DCompiler47Path,
+                        op.Token)
                     : kind == ManagedComponentKind.OptiScaler
-                        ? await _managedComponents.InstallOptiScalerAsync(game, ParseOptiScalerVariant(SelectedOptiScalerVariant))
-                        : await _managedComponents.InstallAsync(game, kind, probe.Files);
-            StatusText = UiLocalizationService.Present(result.Message);
+                        ? await _managedComponents.InstallOptiScalerAsync(game, ParseOptiScalerVariant(SelectedOptiScalerVariant), op.Token)
+                        : await _managedComponents.InstallAsync(game, kind, probe.Files, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
                 await ReprobeGameAsync(game);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             StatusText = TF("Vm.Symbol", component.DisplayName, UiLocalizationService.Present(ex.Message));
         }
-        finally { IsBusy = false; }
     }
 
     private async Task ReprobeGameAsync(DetectedGame game)
@@ -2006,19 +2081,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = T("Vm.SetTargetExecutableEditGameBefore");
             return;
         }
-        IsBusy = true;
+        using var op = BeginOperation("ual-check");
+        if (op is null) return;
         NotifyUalCommands();
         try
         {
             StatusText = T("Vm.RefreshingLatestUltimateASILoaderVersion");
             var game = SelectedGame;
-            var status = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game);
+            var status = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game, op.Token);
             if (status.Success && !string.IsNullOrWhiteSpace(status.LatestVersion) && GetUalArchitecture(game) is { } architecture)
                 _ualLatestVersionCache[architecture] = status.LatestVersion;
             UalLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetUltimateAsiLoaderRecord(game)?.Version, status.LatestVersion)
-                : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
-            StatusText = UiLocalizationService.Present(status.Message);
+                : op.CancelRequested
+                    ? UiLocalizationService.Text("Ui.NotCheckedYet")
+                    : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
+            StatusText = OutcomeText(op, status.Success, status.Message);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
@@ -2027,7 +2109,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             NotifyUal();
         }
     }
@@ -2037,7 +2118,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("ual");
+        if (op is null) return;
         NotifyUalCommands();
         try
         {
@@ -2045,7 +2127,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (_managedComponents.GetUltimateAsiLoaderRecord(game) is not null)
             {
                 StatusText = T("Vm.UpdatingUltimateASILoader");
-                result = await _managedComponents.UpdateUltimateAsiLoaderAsync(game);
+                result = await _managedComponents.UpdateUltimateAsiLoaderAsync(game, op.Token);
             }
             else
             {
@@ -2055,14 +2137,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     return;
                 }
                 StatusText = TF("Vm.InstallingUltimateASILoaderAs", SelectedUalProxyName);
-                result = await _managedComponents.InstallUltimateAsiLoaderAsync(game, SelectedUalProxyName);
+                result = await _managedComponents.InstallUltimateAsiLoaderAsync(game, SelectedUalProxyName, op.Token);
             }
 
-            StatusText = UiLocalizationService.Present(result.Message);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
                 RefreshUalState(game);
-                var update = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game);
+                var update = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game, op.Token);
                 if (update.Success && !string.IsNullOrWhiteSpace(update.LatestVersion) && GetUalArchitecture(game) is { } architecture)
                     _ualLatestVersionCache[architecture] = update.LatestVersion;
                 UalLatestVersionText = update.Success
@@ -2070,13 +2152,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     : UalLatestVersionText;
             }
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+        }
         catch (Exception ex)
         {
             StatusText = TF("Vm.UltimateASILoader", UiLocalizationService.Present(ex.Message));
         }
         finally
         {
-            IsBusy = false;
             NotifyUal();
         }
     }
@@ -2086,18 +2171,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("ual-remove");
+        if (op is null) return;
         NotifyUalCommands();
         try
         {
             StatusText = T("Vm.RemovingUltimateASILoaderRestoringChained");
-            var result = await _managedComponents.RemoveUltimateAsiLoaderAsync(game);
-            StatusText = UiLocalizationService.Present(result.Message);
+            var result = await _managedComponents.RemoveUltimateAsiLoaderAsync(game, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
                 RefreshUalState(game);
                 UalLatestVersionText = UiLocalizationService.Text("Ui.NotCheckedYet");
             }
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
@@ -2105,7 +2195,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             NotifyUal();
         }
     }
@@ -2119,20 +2208,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = T("Vm.SetTargetExecutableEditGameBefore2");
             return;
         }
-        IsBusy = true;
+        using var op = BeginOperation("shortfuse-check");
+        if (op is null) return;
         try
         {
             var game = SelectedGame;
-            var status = await _managedComponents.CheckShortFuseLatestReleaseAsync(game);
+            var status = await _managedComponents.CheckShortFuseLatestReleaseAsync(game, op.Token);
             if (status.Success && !string.IsNullOrWhiteSpace(status.LatestVersion))
                 _shortFuseLatestVersionCache = status.LatestVersion;
             ShortFuseLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetShortFuseRecord(game)?.Version, status.LatestVersion)
-                : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
-            StatusText = UiLocalizationService.Present(status.Message);
+                : op.CancelRequested
+                    ? UiLocalizationService.Text("Ui.NotCheckedYet")
+                    : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
+            StatusText = OutcomeText(op, status.Success, status.Message);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex) { ShortFuseLatestVersionText = TF("Vm.ShortFuseUpdateCheckFailed", UiLocalizationService.Present(ex.Message)); StatusText = ShortFuseLatestVersionText; }
-        finally { IsBusy = false; NotifyShortFuse(); }
+        finally { NotifyShortFuse(); }
     }
 
     [RelayCommand]
@@ -2140,7 +2236,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("shortfuse");
+        if (op is null) return;
         try
         {
             var removing = _managedComponents.IsShortFuseManaged(game);
@@ -2150,17 +2247,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? T("Vm.RemovingShortFuseRestoringPreviousStack")
                 : T("Vm.InstallingShortFuseDLSSFrameGenerationOrchestrat");
             var result = removing
-                ? await _managedComponents.RemoveShortFuseAsync(game)
-                : await _managedComponents.InstallShortFuseAsync(game, ShortFuseAutoConfigEnabled);
-            StatusText = UiLocalizationService.Present(result.Message);
+                ? await _managedComponents.RemoveShortFuseAsync(game, op.Token)
+                : await _managedComponents.InstallShortFuseAsync(game, ShortFuseAutoConfigEnabled, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
                 await ReprobeGameAsync(game);
                 RefreshShortFuseState(game);
             }
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+        }
         catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
-        finally { IsBusy = false; NotifyShortFuse(); NotifyUal(); NotifyDlss(); }
+        finally { NotifyShortFuse(); NotifyUal(); NotifyDlss(); }
     }
 
     [RelayCommand]
@@ -2216,7 +2317,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             ShaderPackIds = packs
         };
 
-        IsBusy = true;
+        using var op = BeginOperation("reshade");
+        if (op is null) return;
         try
         {
             // Applying a profile installs ReShade when it is not there yet (Available or Unknown), and RE Framework on an
@@ -2224,8 +2326,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, component.DisplayName,
                     installsTarget: ManifestInstallWarning.IsFirstInstall(component.Availability), probe.Files)) return;
             StatusText = TF("Vm.ApplyingReShadeProfile", channel);
-            var result = await _managedComponents.ApplyReShadeAsync(game, options);
-            StatusText = UiLocalizationService.Present(result.Message);
+            var result = await _managedComponents.ApplyReShadeAsync(game, options, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
             if (result.Success)
             {
@@ -2234,11 +2336,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 await ReprobeGameAsync(game);
             }
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+        }
         catch (Exception ex)
         {
             ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", UiLocalizationService.Present(ex.Message)));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2246,19 +2351,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || !CanInstallD3DCompilerWithProtontricks) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("d3dcompiler");
+        if (op is null) return;
         try
         {
             StatusText = TF("Vm.InstallingNativeD3DCompiler47Protontricks", game.Name);
-            var result = await _managedComponents.InstallD3DCompilerWithProtontricksAsync(game);
-            StatusText = UiLocalizationService.Present(result.Message);
+            var result = await _managedComponents.InstallD3DCompilerWithProtontricksAsync(game, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", UiLocalizationService.Present(ex.Message)));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2266,19 +2375,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || IsBusy || !CanInstallD3DCompilerWithWinetricks) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("d3dcompiler");
+        if (op is null) return;
         try
         {
             StatusText = TF("Vm.InstallingNativeD3DCompiler47", game.Name, game.CompatibilityTool ?? game.Runner ?? "Winetricks");
-            var result = await _managedComponents.InstallD3DCompilerWithWinetricksAsync(game);
-            StatusText = UiLocalizationService.Present(result.Message);
+            var result = await _managedComponents.InstallD3DCompilerWithWinetricksAsync(game, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             ReShadeUpdateText = UiLocalizationService.Present(result.Message);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", UiLocalizationService.Present(ex.Message)));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2291,19 +2404,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = ReShadeUpdateText;
             return;
         }
-        IsBusy = true;
+        using var op = BeginOperation("reshade-check");
+        if (op is null) return;
         try
         {
-            var result = await _managedComponents.CheckReShadeUpdateAsync(SelectedGame);
-            ReShadeUpdateText = UiLocalizationService.Present(result.Message);
-            StatusText = UiLocalizationService.Present(result.Message);
+            var result = await _managedComponents.CheckReShadeUpdateAsync(SelectedGame!, op.Token);
+            ReShadeUpdateText = op.CancelRequested ? OperationCancelledText() : UiLocalizationService.Present(result.Message);
+            StatusText = ReShadeUpdateText;
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             ReShadeUpdateText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
             StatusText = ReShadeUpdateText;
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand(CanExecute = nameof(CanQuickApplyDlssDefaults))]
@@ -2311,17 +2428,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || !CanQuickApplyDlssDefaults) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("dlss-defaults");
+        if (op is null) return;
         try
         {
             StatusText = TF("Vm.QuickApplyApplyingDLSSStreamlineDefaults", game.Name);
             IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
                 ? cached.Files
-                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8));
-            var result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files);
+                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+            var result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
             StatusText = UiLocalizationService.Present(result.Summary);
             if (result.ChangedCount > 0)
                 await ReprobeGameAsync(game);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
@@ -2329,7 +2451,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             NotifyDlssDefaults();
         }
     }
@@ -2339,17 +2460,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null || !CanRestoreAllDlss) return;
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("dlss-restore");
+        if (op is null) return;
         try
         {
             StatusText = TF("Vm.RestoringAllRHIDLSSStreamlineOriginals", game.Name);
             IReadOnlyList<string>? files = _probeCache.TryGetValue(Key(game), out var cached)
                 ? cached.Files
-                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8));
-            var result = await _dlssDefaults.RestoreAllAsync(game, files);
+                : await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+            var result = await _dlssDefaults.RestoreAllAsync(game, files, op.Token);
             StatusText = UiLocalizationService.Present(result.Summary);
             if (result.ChangedCount > 0)
                 await ReprobeGameAsync(game);
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
@@ -2357,33 +2483,45 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            IsBusy = false;
             NotifyDlssDefaults();
         }
     }
 
-    public async Task<IReadOnlyList<LinuxDlssBatchCandidate>> GetDlssBatchCandidatesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<LinuxDlssBatchCandidate>?> GetDlssBatchCandidatesAsync(CancellationToken cancellationToken = default)
     {
-        var games = _allGames.ToArray();
-        var indexes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-        foreach (var game in games)
+        // Indexing every eligible game can take a while: it holds the gate (the button cannot start it twice) and the
+        // busy overlay's Cancel stops it (Refs #77). Null when refused or cancelled; the status line says which.
+        using var op = BeginOperation("dlss-batch-scan", linkedToken: cancellationToken);
+        if (op is null) return null;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!game.HasConfirmedPatchTarget ||
-                string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) ||
-                game.DlssScanSkippedByManifest || string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
-                continue;
-            var key = Key(game);
-            if (_probeCache.TryGetValue(key, out var cached))
-                indexes[key] = cached.Files;
-            else
-                indexes[key] = await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, cancellationToken), cancellationToken);
-        }
+            var games = _allGames.ToArray();
+            var indexes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+            foreach (var game in games)
+            {
+                op.Token.ThrowIfCancellationRequested();
+                if (!game.HasConfirmedPatchTarget ||
+                    string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) ||
+                    game.DlssScanSkippedByManifest || string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
+                    continue;
+                var key = Key(game);
+                if (_probeCache.TryGetValue(key, out var cached))
+                    indexes[key] = cached.Files;
+                else
+                    indexes[key] = await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+            }
 
-        return _dlssDefaults.InspectBatch(
-            games,
-            game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-            cancellationToken);
+            var candidates = await Task.Run(() => _dlssDefaults.InspectBatch(
+                games,
+                game => indexes.TryGetValue(Key(game), out var files) ? files : null,
+                op.Token), op.Token);
+            return candidates;
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+            return null;
+        }
     }
 
     public async Task<LinuxDlssBatchResult> ApplyDlssBatchAsync(
@@ -2392,24 +2530,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (games.Count == 0) return new LinuxDlssBatchResult([]);
-        IsBusy = true;
+        using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
+        if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchPreparingGameS", games.Count);
-            var indexes = await PrepareDlssBatchIndexesAsync(games, cancellationToken);
+            var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
             var result = await _dlssDefaults.ApplyBatchAsync(
                 games, defaults,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-                cancellationToken);
+                op.Token);
             _probeCache.Clear();
             if (SelectedGame is { } selected && result.ChangedCount > 0)
                 await ReprobeGameAsync(selected);
             StatusText = UiLocalizationService.Present(result.Summary);
             return result;
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+            throw;
+        }
         finally
         {
-            IsBusy = false;
             NotifyDlssDefaults();
         }
     }
@@ -2419,24 +2562,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (games.Count == 0) return new LinuxDlssBatchResult([]);
-        IsBusy = true;
+        using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
+        if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchRestorePreparingGame", games.Count);
-            var indexes = await PrepareDlssBatchIndexesAsync(games, cancellationToken);
+            var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
             var result = await _dlssDefaults.RestoreBatchAsync(
                 games,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-                cancellationToken);
+                op.Token);
             _probeCache.Clear();
             if (SelectedGame is { } selected && result.ChangedCount > 0)
                 await ReprobeGameAsync(selected);
             StatusText = UiLocalizationService.Present(result.Summary);
             return result;
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
+            throw;
+        }
         finally
         {
-            IsBusy = false;
             NotifyDlssDefaults();
         }
     }
@@ -2493,12 +2641,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("dlss-swap");
+        if (op is null) return;
         try
         {
             var displayName = DlssComponentDisplayName(kind);
             StatusText = TF("Vm.DownloadingApplying", displayName, version);
-            var result = await _dlss.SwapAsync(kind, paths, version);
+            var result = await _dlss.SwapAsync(kind, paths, version, op.Token);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
@@ -2509,14 +2658,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwap", displayName, UiLocalizationService.Present(result.Error));
+                StatusText = op.CancelRequested ? OperationCancelledText() : TF("Vm.FailedSwap", displayName, UiLocalizationService.Present(result.Error));
             }
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             StatusText = TF("Vm.FailedSwap", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2541,21 +2693,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("dlss-swap");
+        if (op is null) return;
         try
         {
             var displayName = DlssComponentDisplayName(kind);
-            var result = await _dlss.RestoreAsync(kind, paths);
+            var result = await _dlss.RestoreAsync(kind, paths, op.Token);
             StatusText = result.Success
                 ? TF("Vm.OriginalDLLRestored", displayName)
-                : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
+                : op.CancelRequested ? OperationCancelledText() : TF("Vm.RestoreUnavailable", displayName, UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             StatusText = TF("Vm.RestoreFailed", DlssComponentDisplayName(kind), UiLocalizationService.Present(ex.Message));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2581,11 +2737,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("streamline");
+        if (op is null) return;
         try
         {
             StatusText = TF("Vm.DownloadingApplyingStreamline", SelectedStreamlineVersion);
-            var result = await _dlss.SwapStreamlineAsync(streamlineFolders, SelectedStreamlineVersion);
+            var result = await _dlss.SwapStreamlineAsync(streamlineFolders, SelectedStreamlineVersion, op.Token);
             if (result.Success)
             {
                 var changed = result.Results.Count(x => x.Changed);
@@ -2596,14 +2753,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
             else
             {
-                StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(result.Error));
+                StatusText = op.CancelRequested ? OperationCancelledText() : TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(result.Error));
             }
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             StatusText = TF("Vm.FailedSwapStreamline", UiLocalizationService.Present(ex.Message));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2624,20 +2784,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("streamline");
+        if (op is null) return;
         try
         {
-            var result = await _dlss.RestoreStreamlineAsync(streamlineFolders);
+            var result = await _dlss.RestoreStreamlineAsync(streamlineFolders, op.Token);
             StatusText = result.Success
                 ? TF("Vm.StreamlineOriginalDLLSRestored", result.Results.Count)
-                : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
+                : op.CancelRequested ? OperationCancelledText() : TF("Vm.StreamlineRestoreUnavailable", UiLocalizationService.Present(result.Error));
             if (result.Success) NotifyDlss();
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            StatusText = OperationCancelledText();
         }
         catch (Exception ex)
         {
             StatusText = TF("Vm.StreamlineRestoreFailed", UiLocalizationService.Present(ex.Message));
         }
-        finally { IsBusy = false; }
     }
 
     [RelayCommand]
@@ -2726,9 +2890,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        if (IsBusy) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("shaders-addons", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             // Apply installs ReShade when RHI does not manage it yet (plus RE Framework on RE Engine): warn first.
@@ -2746,15 +2910,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 .ToArray();
 
             StatusText = T("Vm.ApplyingShaderPackSelection");
-            var shaderResult = await _managedComponents.ApplyReShadeAsync(game, options, cancellationToken);
+            var shaderResult = await _managedComponents.ApplyReShadeAsync(game, options, op.Token);
             if (!shaderResult.Success)
             {
-                StatusText = UiLocalizationService.Present(shaderResult.Message);
+                StatusText = OutcomeText(op, shaderResult.Success, shaderResult.Message);
                 return shaderResult;
             }
 
             StatusText = T("Vm.ApplyingReShadeAddSelection");
-            var addonResult = await _managedComponents.ApplyReShadeAddonSelectionAsync(game, addonIds, cancellationToken);
+            var addonResult = await _managedComponents.ApplyReShadeAddonSelectionAsync(game, addonIds, op.Token);
             if (!addonResult.Success)
             {
                 return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message))));
@@ -2770,13 +2934,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return ComponentOperationResult.Ok(ShowStatus(UiLocalizationService.ShaderAddonAppliedFor(
                 UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource)));
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (op.WasCancelled(ex) && op.CancelRequested)
+        {
+            return ComponentOperationResult.Fail(ShowStatus(OperationCancelledText()));
+        }
+        catch (Exception ex) when (!op.Token.IsCancellationRequested)
         {
             return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", UiLocalizationService.Present(ex.Message))));
-        }
-        finally
-        {
-            IsBusy = false;
         }
     }
 
@@ -3240,7 +3404,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task RepairAfterMoveAsync()
     {
         if (SelectedGame is not { } game) return;
-        IsBusy = true;
+        using var op = BeginOperation("repair-after-move", cancellable: false);
+        if (op is null) return;
         var repaired = false;
         try
         {
@@ -3261,7 +3426,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, RepairUiStores));
             if (!result.Success)
             {
-                StatusText = UiLocalizationService.Present(result.Message);
+                StatusText = OutcomeText(op, result.Success, result.Message);
                 return;
             }
 
@@ -3282,7 +3447,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         finally
         {
             EndLibraryRepair(repaired);
-            IsBusy = false;
             NotifySelected();
         }
 
@@ -3324,29 +3488,30 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return ComponentOperationResult.Fail(T("Vm.WaitCurrentOperationAnalysisFinishBefore"));
 
         var game = SelectedGame;
-        IsBusy = true;
+        using var op = BeginOperation("luma-local", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.LumaFramework, "Luma", installsTarget: true, ProbedFiles(game)))
                 return ComponentOperationResult.Fail(StatusText);
             StatusText = TF("Vm.InstallingLocalLumaPackage", game.Name);
             var result = await _managedComponents
-                .InstallLocalLumaPackageAsync(game, sourcePath, cancellationToken)
+                .InstallLocalLumaPackageAsync(game, sourcePath, op.Token)
                 .ConfigureAwait(true);
-            StatusText = UiLocalizationService.Present(result.Message);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
                 await ReprobeGameAsync(game);
             return result;
         }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            return ComponentOperationResult.Fail(ShowStatus(OperationCancelledText()));
+        }
         catch (Exception ex)
         {
             var result = ComponentOperationResult.Fail(TF("Vm.LocalLuma", UiLocalizationService.Present(ex.Message)));
-            StatusText = UiLocalizationService.Present(result.Message);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             return result;
-        }
-        finally
-        {
-            IsBusy = false;
         }
     }
 
@@ -3450,14 +3615,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (ReferenceEquals(SelectedGame, game)) LoadNeuralVersionPins(game);
         }
 
-        IsBusy = true;
+        using var op = BeginOperation("nr-swap");
+        if (op is null)
+        {
+            RevertPin();
+            return;
+        }
         try
         {
             StatusText = T("Vm.SwappingNRVersionPlace");
             var result = kind is { } addon
-                ? await _managedComponents.SwapNeuralAddonVersionAsync(game, addon)
-                : await _managedComponents.SwapNeuralRenderingDllAsync(game);
-            StatusText = UiLocalizationService.Present(result.Message);
+                ? await _managedComponents.SwapNeuralAddonVersionAsync(game, addon, op.Token)
+                : await _managedComponents.SwapNeuralRenderingDllAsync(game, op.Token);
+            StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
             {
                 await ReprobeGameAsync(game);
@@ -3468,12 +3638,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = TF("Vm.FailedSwapNRVersion", UiLocalizationService.Present(ex.Message));
-            try { RevertPin(); } catch { /* the status line already reports the failure */ }
+            StatusText = op.WasCancelled(ex) ? OperationCancelledText() : TF("Vm.FailedSwapNRVersion", UiLocalizationService.Present(ex.Message));
+            try { RevertPin(); }
+            catch (Exception revertError) when (revertError is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                AppLog.Warn("nr-swap", "Could not put the previous NR version pin back", revertError); // the status line already reports the failure
+            }
         }
         finally
         {
-            IsBusy = false;
             NotifyDlss();
         }
     }
@@ -3481,21 +3654,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task LoadNeuralVersionHistoryAsync()
     {
-        if (IsBusy) return;
-        IsBusy = true;
+        using var op = BeginOperation("nr-versions");
+        if (op is null) return;
         try
         {
             StatusText = T("Vm.RefreshingNeuralRenderingAddVersions");
-            await EnsureNeuralVersionCatalogAsync(forceRefresh: true, reportStatus: true);
+            await EnsureNeuralVersionCatalogAsync(forceRefresh: true, reportStatus: true, op.Token);
         }
         finally
         {
-            IsBusy = false;
             NotifyDlss();
         }
     }
 
-    private async Task EnsureNeuralVersionCatalogAsync(bool forceRefresh = false, bool reportStatus = false)
+    private async Task EnsureNeuralVersionCatalogAsync(bool forceRefresh = false, bool reportStatus = false, CancellationToken cancellationToken = default)
     {
         if (!forceRefresh && _neuralVersionCatalogLoaded) return;
 
@@ -3511,7 +3683,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
         }
 
-        var loadTask = LoadNeuralVersionCatalogCoreAsync();
+        var loadTask = LoadNeuralVersionCatalogCoreAsync(cancellationToken);
         _neuralVersionCatalogLoadTask = loadTask;
         try
         {
@@ -3522,7 +3694,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            if (reportStatus)
+            if (reportStatus && ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                StatusText = OperationCancelledText();
+            else if (reportStatus)
                 StatusText = TF("Vm.FailedRefreshNRVersions", UiLocalizationService.Present(ex.Message));
             else
                 AppLog.Warn("nr-versions", "Automatic NR version catalog refresh failed", ex);
@@ -3534,11 +3708,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task LoadNeuralVersionCatalogCoreAsync()
+    private async Task LoadNeuralVersionCatalogCoreAsync(CancellationToken cancellationToken = default)
     {
-        var feederTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Feeder);
-        var bridgeTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Dx11Bridge);
-        var shortFuseTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.ShortFuse);
+        var feederTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Feeder, cancellationToken);
+        var bridgeTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Dx11Bridge, cancellationToken);
+        var shortFuseTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.ShortFuse, cancellationToken);
         await Task.WhenAll(feederTask, bridgeTask, shortFuseTask);
         var feederSelected = SelectedDlss5FeederVersion;
         var bridgeSelected = SelectedDlss5BridgeVersion;
@@ -3739,20 +3913,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task ApplyShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled)
     {
-        IsBusy = true;
+        using var op = BeginOperation("shortfuse-load-order");
+        if (op is null)
+        {
+            if (ReferenceEquals(SelectedGame, game))
+                SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
+            return;
+        }
         try
         {
-            var result = await _managedComponents.SetShortFuseZzzLoadOrderAsync(game, enabled);
+            var result = await _managedComponents.SetShortFuseZzzLoadOrderAsync(game, enabled, op.Token);
             StatusText = !result.Success
                 ? UiLocalizationService.Present(result.Message)
                 : enabled
                     ? T("Vm.ShortFuseWillLoadLastZzzRenodx")
                     : T("Vm.ShortFuseUsesDefaultNameRenodxDlss");
         }
+        catch (Exception ex) when (op.WasCancelled(ex)) { StatusText = OperationCancelledText(); }
         catch (Exception ex) { StatusText = TF("Vm.ShortFuse", UiLocalizationService.Present(ex.Message)); }
         finally
         {
-            IsBusy = false;
             if (ReferenceEquals(SelectedGame, game))
                 SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
         }

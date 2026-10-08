@@ -271,7 +271,7 @@ public sealed class GameRootDialogGuardTests
         var exe = Exe(Path.Combine(fixture.Root, "games", "Busy Add"));
         var vm = fixture.Vm;
 
-        vm.IsBusy = true; // e.g. Update All running
+        var running = vm.Operations.TryBegin("test")!; // e.g. Update All running
         var addSaved = false;
         var add = vm.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Busy Add", InstallPath = Path.GetDirectoryName(exe)!, ExecutablePath = exe }, () => addSaved = true);
@@ -280,18 +280,18 @@ public sealed class GameRootDialogGuardTests
         Assert.False(add.IsCompleted);
         Assert.Single(fixture.Library.Load().ManualGames);
 
-        vm.IsBusy = false;
+        running.Dispose();
         var (added, _) = await add.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.True(added);
 
         vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add");
-        vm.IsBusy = true;
+        running = vm.Operations.TryBegin("test")!;
         var editSaved = false;
         var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
 
         Assert.True(editSaved);
         Assert.False(edit.IsCompleted);
-        vm.IsBusy = false;
+        running.Dispose();
         Assert.True((await edit.WaitAsync(TimeSpan.FromSeconds(30))).Saved);
     }
 }

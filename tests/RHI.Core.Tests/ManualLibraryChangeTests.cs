@@ -57,15 +57,15 @@ public sealed class ManualLibraryChangeTests
     [Fact]
     public async Task BusyGate_HoldsWorkUntilTheBusyOperationEnds()
     {
-        var gate = new BusyGate();
+        var gate = new OperationCoordinator();
         await gate.WhenIdleAsync(); // idle: immediate
 
-        gate.SetBusy(true);
+        var op = gate.TryBegin("test")!;
         var waiting = gate.WhenIdleAsync();
         await Task.Delay(50);
         Assert.False(waiting.IsCompleted);
 
-        gate.SetBusy(false);
+        op.Dispose();
         await waiting.WaitAsync(TimeSpan.FromSeconds(5));
     }
 }

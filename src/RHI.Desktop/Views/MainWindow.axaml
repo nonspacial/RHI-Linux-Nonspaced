@@ -626,6 +626,9 @@
         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
           <ProgressBar IsIndeterminate="True" Width="280" Height="4"/>
           <TextBlock Text="{DynamicResource Ui.Processing}" Foreground="#A0AABB"/>
+          <!-- Stops the running operation (Refs #77); hidden for operations that cannot stop part-way. -->
+          <Button Classes="rhi" Content="{DynamicResource Ui.CancelOperation}" HorizontalAlignment="Center"
+                  Command="{Binding Operations.CancelCommand}" IsVisible="{Binding Operations.CanCancel}"/>
         </StackPanel>
       </Border>
     </Grid>
