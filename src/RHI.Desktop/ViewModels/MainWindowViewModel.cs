@@ -1532,7 +1532,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 ? Games.FirstOrDefault()?.Game
                 : (Games.FirstOrDefault(row => Key(row.Game) == currentKey) ?? Games.FirstOrDefault())?.Game;
             CheckRepairAfterMove(force: true); // the scan may have found the game in a new folder
-            await RefreshLibraryFactsAsync();
             if (neuralCatalogRefresh is not null) await neuralCatalogRefresh;
             // Scan problems ride on the following lines (the selected game's "Ready — …") as a notice.
             var problems = string.Join(" ", new[] { LibraryScanStatusText.Problems(scan, AppLog.Current?.FilePath), adoptRefused }
@@ -1540,6 +1539,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             string? scanProblems = problems.Length == 0 ? null : problems;
             var scanDone = LibraryScanStatusText.Done(_library.AllGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
+            await RefreshLibraryFactsAsync(); // Update All / DLSS batch availability for the new library, off the UI thread
             return true;
         }
         catch (Exception ex) when (op.WasCancelled(ex))
