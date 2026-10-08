@@ -29,6 +29,38 @@ public sealed class AtomicFileUserFileTests : IDisposable
     }
 
     [Fact]
+    public void Write_ReadOnlyTargetKeepingTheLock_IsWrittenAndStaysReadOnly()
+    {
+        // Review w2-trust major 2 (upstream 2.8.5 Engine.ini: clear read-only, write, lock again).
+        var file = Path.Combine(_root, "Engine.ini");
+        File.WriteAllText(file, "locked by the user");
+        const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        File.SetUnixFileMode(file, locked);
+
+        var result = AtomicFile.ReplaceUserFile(file, "new"u8.ToArray(), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+
+        Assert.Equal(file, result.WrittenPath);
+        Assert.Equal("new", File.ReadAllText(file));
+        Assert.Equal(locked, File.GetUnixFileMode(file));
+        Assert.Single(Directory.EnumerateFileSystemEntries(_root));
+    }
+
+    [Fact]
+    public void Write_WritableTargetKeepingTheLock_StaysWritable()
+    {
+        // Keeping the lock never adds one: a writable file stays writable.
+        var file = Path.Combine(_root, "Engine.ini");
+        File.WriteAllText(file, "old");
+        const UnixFileMode open = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
+        File.SetUnixFileMode(file, open);
+
+        AtomicFile.ReplaceUserFileLines(file, ["[SystemSettings]", "r.Key=1"], readOnly: ReadOnlyUserFile.WriteKeepingLock);
+
+        Assert.Equal($"[SystemSettings]{Environment.NewLine}r.Key=1{Environment.NewLine}", File.ReadAllText(file));
+        Assert.Equal(open, File.GetUnixFileMode(file));
+    }
+
+    [Fact]
     public void Write_ReadOnlyTarget_IsRefusedAndLeftAlone()
     {
         var file = Path.Combine(_root, "ReShade.ini");

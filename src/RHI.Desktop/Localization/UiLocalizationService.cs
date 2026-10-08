@@ -666,6 +666,8 @@ public static class UiLocalizationService
             "Link simbólico não seguido (o RHI não grava através deste link): "),
         ("ReShade.ini link not followed: its target must be a file named reshade.ini inside the game folder or the ReShade folder in your config directory. Link: ",
             "Link do ReShade.ini não seguido: o destino deve ser um arquivo chamado reshade.ini dentro da pasta do jogo ou da pasta ReShade no seu diretório de configuração. Link: "),
+        ("Engine.ini link not followed: its target must be a file named Engine.ini inside the same Wine prefix or game project folder. Link: ",
+            "Link do Engine.ini não seguido: o destino deve ser um arquivo chamado Engine.ini dentro do mesmo prefixo Wine ou da pasta do projeto do jogo. Link: "),
         ("Written content did not verify; the original file was kept: ", "O conteúdo gravado não pôde ser verificado; o arquivo original foi mantido: "),
         (" A temporary file could not be removed: ", " Um arquivo temporário não pôde ser removido: "),
         // Foreign same-name add-on (DEP-10, #29). The path follows the fragment.

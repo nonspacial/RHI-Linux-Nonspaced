@@ -179,7 +179,7 @@ internal sealed class UpstreamEngineIniFileManager
         {
             Directory.CreateDirectory(Path.GetDirectoryName(iniPath)
                                       ?? throw new InvalidOperationException("Resolved Engine.ini parent directory is invalid."));
-            AtomicFile.ReplaceUserFileLines(iniPath, lines);
+            LumaEngineIniOverrideManager.WriteUserEngineIni(iniPath, lines);
         }
 
         if (owned.Count == 0)
@@ -230,7 +230,7 @@ internal sealed class UpstreamEngineIniFileManager
             File.Delete(state.IniPath);
             return;
         }
-        AtomicFile.ReplaceUserFileLines(state.IniPath, lines);
+        LumaEngineIniOverrideManager.WriteUserEngineIni(state.IniPath, lines);
     }
 
     public static string Serialize(UpstreamEngineIniFileState state)

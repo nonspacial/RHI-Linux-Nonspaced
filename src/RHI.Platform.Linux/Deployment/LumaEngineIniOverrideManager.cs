@@ -402,10 +402,42 @@ internal static class LumaEngineIniOverrideManager
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1])) lines.RemoveAt(lines.Count - 1);
     }
 
-    /// <summary>Engine.ini is the user's file: the one user-file write path (mode kept, read-only and links refused, verified).</summary>
+    /// <summary>Engine.ini is the user's file: the one user-file write path (mode kept, verified).</summary>
     private static void WriteIni(string path, IReadOnlyList<string> lines)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? throw new InvalidOperationException("Engine.ini parent is invalid."));
-        AtomicFile.ReplaceUserFileLines(path, lines);
+        WriteUserEngineIni(path, lines);
+    }
+
+    /// <summary>Fixed text before "link -> target" when a symlinked Engine.ini is refused (localisation key).</summary>
+    internal const string LinkRefusalPrefix =
+        "Engine.ini link not followed: its target must be a file named Engine.ini inside the same Wine prefix or game project folder. Link: ";
+
+    /// <summary>
+    /// Every Engine.ini write (Luma tweaks, upstream templates, their removal and rollback) goes through here, as
+    /// upstream 2.8.5 does it: a read-only Engine.ini is written and stays read-only (users lock it so the game cannot
+    /// rewrite it on launch; upstream clears read-only, writes, locks again), so the lock never blocks install or
+    /// removal. A symlinked Engine.ini is written through when <see cref="LinkPolicy"/> allows its target.
+    /// </summary>
+    internal static UserFileWriteResult WriteUserEngineIni(string path, IEnumerable<string> lines)
+        => AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: LinkPolicy(path), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+
+    /// <summary>
+    /// The only Engine.ini symlinks RHI writes through: final target named Engine.ini (any case) inside the Wine prefix
+    /// the path is in (the folder holding <c>drive_c</c>) or the UE project folder (the folder holding <c>Saved</c>).
+    /// </summary>
+    internal static UserFileLinkPolicy LinkPolicy(string iniPath)
+    {
+        var roots = new List<string>();
+        for (var dir = Path.GetDirectoryName(Path.GetFullPath(iniPath)); !string.IsNullOrEmpty(dir); dir = Path.GetDirectoryName(dir))
+        {
+            var name = Path.GetFileName(dir);
+            var parent = Path.GetDirectoryName(dir);
+            if (string.IsNullOrEmpty(parent)) break;
+            if (name.Equals("drive_c", StringComparison.Ordinal) || name.Equals("Saved", StringComparison.OrdinalIgnoreCase))
+                roots.Add(parent);
+        }
+        if (roots.Count == 0) roots.Add(Path.GetDirectoryName(Path.GetFullPath(iniPath))!);
+        return new UserFileLinkPolicy("Engine.ini", roots, LinkRefusalPrefix);
     }
 }

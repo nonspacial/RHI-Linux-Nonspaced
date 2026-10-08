@@ -506,8 +506,10 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.DoesNotContain("DisplayMode=1", after);
     }
 
-    [Fact]
-    public async Task Install_GenericWikiMetadataRecordsFieldsAppliesOwnedEngineIniAndRollsBackOnRemove()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)] // review w2-trust major 2: a locked Engine.ini (upstream locks it) blocks neither install nor removal
+    public async Task Install_GenericWikiMetadataRecordsFieldsAppliesOwnedEngineIniAndRollsBackOnRemove(bool lockedEngineIni)
     {
         const string wikiUrl = "https://github.com/rhi-tests/luma-generic-wiki";
         var root = Path.Combine(_root, "metadata-lifecycle");
@@ -536,6 +538,10 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         File.WriteAllText(Path.Combine(binary, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
         var engineIni = Path.Combine(engineConfig, "Engine.ini");
         File.WriteAllText(engineIni, "[SystemSettings]\nUserKeep=42\n");
+        var engineIniMode = lockedEngineIni
+            ? UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead
+            : File.GetUnixFileMode(engineIni);
+        File.SetUnixFileMode(engineIni, engineIniMode);
 
         var records = NewRecords("metadata-records.json");
         SeedManagedReShade(records, game);
@@ -583,6 +589,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Contains("UserKeep=42", afterRemove);
         Assert.DoesNotContain("r.Luma.Metadata=", afterRemove);
         Assert.Null(records.Find(game, ManagedComponentKind.LumaFramework));
+        Assert.Equal(engineIniMode, File.GetUnixFileMode(engineIni));
     }
 
     [Fact]

@@ -38,6 +38,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return Dlssg2030UnlockDeploymentService.BlobMismatchPrefix + "version.dll";
         yield return Dlssg2030UnlockDeploymentService.BlobMissingPrefix + "version.dll@0123abc";
         yield return ReShadeDeploymentService.NightlyLookupFailedMessage;
+        yield return $"{LumaEngineIniOverrideManager.LinkRefusalPrefix}/prefixo/drive_c/Engine.ini -> /outro/Engine.ini";
         yield return LumaFrameworkDeploymentService.RollbackIncompletePrefix + E;
         yield return $"Universal MFG update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";
         yield return $"DLSS Enabler Standalone update failed: {E}{DeploymentMessages.PreviousFileKeptFragment}{P}.rhi-previous-1";

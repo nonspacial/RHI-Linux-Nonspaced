@@ -127,6 +127,67 @@ public sealed class LumaEngineIniOverrideManagerTests : IDisposable
         Assert.Equal(ini, resolved);
     }
 
+    private const UnixFileMode Locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
+    [Fact]
+    public void ApplyAndCleanup_ReadOnlyEngineIni_AreWrittenAndTheFileStaysLocked()
+    {
+        // Review w2-trust major 2: upstream 2.8.5 clears read-only, writes, locks again; a lock never blocks
+        // install or removal.
+        var game = CreateGameWithPrefixOverride("LockedProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        File.WriteAllText(ini, "[SystemSettings]\nUserKeep=42\n");
+        File.SetUnixFileMode(ini, Locked);
+
+        var state = LumaEngineIniOverrideManager.Apply(game, [new LumaEngineIniEntry("SystemSettings", "r.Luma.Locked", "1")]);
+
+        Assert.NotNull(state);
+        Assert.Contains("r.Luma.Locked=1", File.ReadAllText(ini));
+        Assert.Equal(Locked, File.GetUnixFileMode(ini));
+
+        LumaEngineIniOverrideManager.Cleanup(state);
+
+        Assert.DoesNotContain("r.Luma.Locked=", File.ReadAllText(ini));
+        Assert.Contains("UserKeep=42", File.ReadAllText(ini));
+        Assert.Equal(Locked, File.GetUnixFileMode(ini));
+    }
+
+    [Fact]
+    public void Apply_SymlinkedEngineIniInsideThePrefix_IsWrittenThroughAndTheLinkKept()
+    {
+        var game = CreateGameWithPrefixOverride("LinkedProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        var shared = Path.Combine(game.PrefixPath!, "drive_c", "tweaks", "Engine.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
+        File.WriteAllText(shared, "[SystemSettings]\nUserKeep=42\n");
+        File.CreateSymbolicLink(ini, shared);
+
+        LumaEngineIniOverrideManager.Apply(game, [new LumaEngineIniEntry("SystemSettings", "r.Luma.Linked", "1")]);
+
+        Assert.NotNull(new FileInfo(ini).LinkTarget);
+        Assert.Contains("r.Luma.Linked=1", File.ReadAllText(shared));
+    }
+
+    [Fact]
+    public void Apply_SymlinkedEngineIniLeavingThePrefix_IsRefusedAndTheTargetLeftAlone()
+    {
+        var game = CreateGameWithPrefixOverride("EscapeProject");
+        var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
+        Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
+        var outside = Path.Combine(_root, "elsewhere", "Engine.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+        File.WriteAllText(outside, "victim");
+        File.CreateSymbolicLink(ini, outside);
+
+        var refused = Assert.Throws<IOException>(() =>
+            LumaEngineIniOverrideManager.Apply(game, [new LumaEngineIniEntry("SystemSettings", "r.Luma.Escape", "1")]));
+
+        Assert.Equal($"{LumaEngineIniOverrideManager.LinkRefusalPrefix}{ini} -> {outside}", refused.Message);
+        Assert.Equal("victim", File.ReadAllText(outside));
+    }
+
     private DetectedGame CreateGameWithPrefixOverride(string projectOverride)
     {
         var gameRoot = Path.Combine(_root, Guid.NewGuid().ToString("N"));

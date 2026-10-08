@@ -607,7 +607,8 @@ public sealed partial class ReShadeDeploymentService
 
             if (coexist)
             {
-                OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false);
+                // A removal is never blocked by the user's lock on OptiScaler.ini: written, kept read-only.
+                OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false, ReadOnlyUserFile.WriteKeepingLock);
                 await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
                 disabledOptiLoader = true;
             }
@@ -646,7 +647,7 @@ public sealed partial class ReShadeDeploymentService
             {
                 try
                 {
-                    OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
+                    OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true, ReadOnlyUserFile.WriteKeepingLock);
                     await RefreshManagedOptiScalerIniHashAsync(game, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch { }

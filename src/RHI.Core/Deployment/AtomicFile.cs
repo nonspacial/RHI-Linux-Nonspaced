@@ -202,33 +202,52 @@ public static class AtomicFile
     /// <summary>
     /// Replaces a file the user owns (a game's ReShade.ini edited by RenoDX, a rollback restore of it) through the
     /// one write path (unique temp, fsync, full read-back verify, rename, directory fsync). The file keeps its Unix
-    /// mode. A read-only target is refused, never replaced. A symlinked path is written through only when
+    /// mode. A read-only target is refused and left alone, unless <paramref name="readOnly"/> is
+    /// <see cref="ReadOnlyUserFile.WriteKeepingLock"/>: then it is written and stays read-only (upstream RHI's
+    /// Engine.ini handling: clear read-only, write, lock again). A symlinked path is written through only when
     /// <paramref name="linkPolicy"/> allows its final target (name and containment); any other link is refused.
     /// </summary>
     /// <param name="wrapOutput">Test seam: wraps the temp-file stream (e.g. to fail mid-write like a full disk).</param>
     public static UserFileWriteResult ReplaceUserFile(
-        string path, byte[] bytes, UserFileLinkPolicy? linkPolicy = null, Func<Stream, Stream>? wrapOutput = null)
+        string path, byte[] bytes, UserFileLinkPolicy? linkPolicy = null, Func<Stream, Stream>? wrapOutput = null,
+        ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
     {
         var target = ResolveUserFileTarget(path, linkPolicy);
         if (string.IsNullOrEmpty(Path.GetDirectoryName(target))) throw new IOException(NoFolderPrefix + path);
         UnixFileMode? mode = null;
+        var relockWindowsFile = false;
         if (File.Exists(target))
         {
             if (OperatingSystem.IsWindows())
             {
-                if (File.GetAttributes(target).HasFlag(FileAttributes.ReadOnly))
-                    throw new IOException(ReadOnlyRefusalPrefix + target);
+                var attributes = File.GetAttributes(target);
+                if (attributes.HasFlag(FileAttributes.ReadOnly))
+                {
+                    if (readOnly != ReadOnlyUserFile.WriteKeepingLock) throw new IOException(ReadOnlyRefusalPrefix + target);
+                    File.SetAttributes(target, attributes & ~FileAttributes.ReadOnly);
+                    relockWindowsFile = true;
+                }
             }
             else
             {
                 var current = File.GetUnixFileMode(target);
-                if (!current.HasFlag(UnixFileMode.UserWrite))
+                // A locked file kept locked: the replacement gets the same mode, write bit still off (rename needs
+                // only the folder to be writable, so the lock is never lifted on disk).
+                if (!current.HasFlag(UnixFileMode.UserWrite) && readOnly != ReadOnlyUserFile.WriteKeepingLock)
                     throw new IOException(ReadOnlyRefusalPrefix + target);
                 mode = current;
             }
         }
-        var synced = WriteVerified(target, bytes, mode, wrapOutput);
-        return new UserFileWriteResult(target, synced);
+        try
+        {
+            var synced = WriteVerified(target, bytes, mode, wrapOutput);
+            return new UserFileWriteResult(target, synced);
+        }
+        finally
+        {
+            if (relockWindowsFile && File.Exists(target))
+                File.SetAttributes(target, File.GetAttributes(target) | FileAttributes.ReadOnly);
+        }
     }
 
     /// <summary>
@@ -237,11 +256,12 @@ public static class AtomicFile
     /// in <paramref name="encoding"/> (default UTF-8 without BOM).
     /// </summary>
     public static UserFileWriteResult ReplaceUserFileLines(
-        string path, IEnumerable<string> lines, Encoding? encoding = null, UserFileLinkPolicy? linkPolicy = null)
+        string path, IEnumerable<string> lines, Encoding? encoding = null, UserFileLinkPolicy? linkPolicy = null,
+        ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
     {
         var text = new StringBuilder();
         foreach (var line in lines) text.Append(line).Append(Environment.NewLine);
-        return ReplaceUserFile(path, Encode(text.ToString(), encoding ?? new UTF8Encoding(false)), linkPolicy);
+        return ReplaceUserFile(path, Encode(text.ToString(), encoding ?? new UTF8Encoding(false)), linkPolicy, readOnly: readOnly);
     }
 
     /// <summary>
@@ -639,6 +659,20 @@ public sealed record StagedFile(string Path, string Sha256, long Length);
 /// link and its target follow it.
 /// </summary>
 public sealed record UserFileLinkPolicy(string RequiredFileName, IReadOnlyList<string> AllowedRoots, string RefusalPrefix);
+
+/// <summary>What <see cref="AtomicFile.ReplaceUserFile"/> does with a target the user made read-only.</summary>
+public enum ReadOnlyUserFile
+{
+    /// <summary>Refuse with <see cref="AtomicFile.ReadOnlyRefusalPrefix"/>; the file is left as it is.</summary>
+    Refuse,
+
+    /// <summary>
+    /// Write it and keep it read-only (the user's lock stays). For files whose lock means "the game must not
+    /// rewrite this" rather than "RHI must not": Engine.ini (upstream 2.8.5 clears, writes, locks again), and a
+    /// removal that must never be blocked.
+    /// </summary>
+    WriteKeepingLock
+}
 
 /// <summary>What <see cref="AtomicFile.ReplaceUserFile"/> did: the file actually replaced and whether its folder was fsynced.</summary>
 public sealed record UserFileWriteResult(string WrittenPath, bool DirectorySynced);

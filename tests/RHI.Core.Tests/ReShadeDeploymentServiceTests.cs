@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Net;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
@@ -160,6 +161,66 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(bin, "ReShade64.dll")));
         Assert.Equal("MZ OptiScaler proxy", File.ReadAllText(dxgi));
         Assert.Contains("LoadReshade=true", File.ReadAllText(ini), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Remove_LockedOptiScalerIni_NeverBlocksRemoval_AndStaysLocked()
+    {
+        // Review w2-trust major 2: OptiScaler.ini read-only may refuse an install, never a removal.
+        var (game, store, ini) = CoexistingOptiScaler("optiscaler-locked-remove");
+        var service = NewService(store, Path.Combine(_root, "os-locked-cache"));
+        var install = await service.InstallAsync(game);
+        Assert.True(install.Success, install.Message);
+        const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        File.SetUnixFileMode(ini, locked);
+
+        var remove = await service.RemoveAsync(game);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.Contains("LoadReshade=false", File.ReadAllText(ini), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(locked, File.GetUnixFileMode(ini));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "ReShade64.dll")));
+    }
+
+    [Fact]
+    public async Task Install_LockedOptiScalerIni_IsRefused_AndTheFileLeftAlone()
+    {
+        var (game, store, ini) = CoexistingOptiScaler("optiscaler-locked-install");
+        const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        File.SetUnixFileMode(ini, locked);
+        var service = NewService(store, Path.Combine(_root, "os-locked-install-cache"));
+
+        var install = await service.InstallAsync(game);
+
+        Assert.False(install.Success);
+        Assert.Contains(AtomicFile.ReadOnlyRefusalPrefix + ini, install.Message, StringComparison.Ordinal);
+        Assert.Equal("[Plugins]\nLoadReshade=auto\n", File.ReadAllText(ini));
+        Assert.Equal(locked, File.GetUnixFileMode(ini));
+    }
+
+    /// <summary>An RHI-managed OptiScaler owning dxgi.dll (ReShade then installs as ReShade64.dll beside it).</summary>
+    private (DetectedGame Game, LinuxDeploymentRecordStore Store, string Ini) CoexistingOptiScaler(string folder)
+    {
+        var bin = Path.Combine(_root, folder);
+        Directory.CreateDirectory(bin);
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var dxgi = Path.Combine(bin, "dxgi.dll");
+        File.WriteAllText(dxgi, "MZ OptiScaler proxy");
+        var ini = Path.Combine(bin, "OptiScaler.ini");
+        File.WriteAllText(ini, "[Plugins]\nLoadReshade=auto\n");
+        var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
+        var store = new LinuxDeploymentRecordStore(Path.Combine(_root, folder + "-records.json"));
+        store.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.OptiScaler, BinaryDirectory = bin,
+            Files =
+            [
+                new LinuxDeployedFile { Path = dxgi, ExistedBeforeInstall = false, Sha256 = Sha256(dxgi) },
+                new LinuxDeployedFile { Path = ini, ExistedBeforeInstall = false, AllowUserChanges = true, Sha256 = Sha256(ini) }
+            ]
+        });
+        return (game, store, ini);
     }
 
     [Fact]

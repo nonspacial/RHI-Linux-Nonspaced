@@ -361,7 +361,7 @@ public sealed class RenoDxDeploymentService
                 if (iniPathBeforeApply is not null && iniBeforeApply is not null)
                     snapshots.Add(new(iniPathBeforeApply, iniBeforeApply, RenoDxIniOverrideManager.LinkPolicy(game.BinaryDirectory, game.InstallPath)));
                 if (engineIniSnapshotPath is not null)
-                    snapshots.Add(new(engineIniSnapshotPath, engineIniBeforeApply));
+                    snapshots.Add(FileSnapshot.EngineIni(engineIniSnapshotPath, engineIniBeforeApply));
                 var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
                 if (notes.Count > 0)
                     throw new IOException($"{failure.Message} Rollback incomplete: {string.Join(" ", notes)}", failure);
@@ -721,7 +721,7 @@ public sealed class RenoDxDeploymentService
                 if (iniSnapshotPath is not null && iniSnapshot is not null)
                     snapshots.Add(new(iniSnapshotPath, iniSnapshot,
                         RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(iniSnapshotPath) ?? iniSnapshotPath, game.InstallPath)));
-                if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(new(engineIniSnapshotPath, engineIniSnapshot));
+                if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(FileSnapshot.EngineIni(engineIniSnapshotPath, engineIniSnapshot));
                 var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
                 if (notes.Count > 0)
                     throw new IOException($"{failure.Message} Restore incomplete: {string.Join(" ", notes)}", failure);
@@ -739,9 +739,16 @@ public sealed class RenoDxDeploymentService
 
     /// <summary>
     /// A file's bytes before an operation; null bytes = the file did not exist. <paramref name="LinkPolicy"/> says which
-    /// symlink the restore may write through (null: none).
+    /// symlink the restore may write through (null: none); <paramref name="ReadOnly"/> whether a read-only file is
+    /// refused or written and kept read-only.
     /// </summary>
-    internal sealed record FileSnapshot(string Path, byte[]? Bytes, UserFileLinkPolicy? LinkPolicy = null);
+    internal sealed record FileSnapshot(string Path, byte[]? Bytes, UserFileLinkPolicy? LinkPolicy = null,
+        ReadOnlyUserFile ReadOnly = ReadOnlyUserFile.Refuse)
+    {
+        /// <summary>An Engine.ini snapshot: restored like every Engine.ini write (a read-only file is written and stays locked).</summary>
+        internal static FileSnapshot EngineIni(string path, byte[]? bytes)
+            => new(path, bytes, LumaEngineIniOverrideManager.LinkPolicy(path), ReadOnlyUserFile.WriteKeepingLock);
+    }
 
     private string SnapshotFallbackDirectory => System.IO.Path.Combine(_cacheDir, "restore-snapshots");
 
@@ -766,7 +773,7 @@ public sealed class RenoDxDeploymentService
                     if (string.IsNullOrEmpty(directory))
                         throw new IOException(AtomicFile.NoFolderPrefix + snapshot.Path);
                     Directory.CreateDirectory(directory);
-                    AtomicFile.ReplaceUserFile(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy);
+                    AtomicFile.ReplaceUserFile(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy, readOnly: snapshot.ReadOnly);
                 }
                 else if (File.Exists(snapshot.Path))
                 {
