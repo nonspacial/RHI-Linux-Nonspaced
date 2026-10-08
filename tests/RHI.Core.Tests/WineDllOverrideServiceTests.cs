@@ -191,5 +191,54 @@ public sealed class WineDllOverrideServiceTests : IDisposable
         Assert.Equal("disabled", WineDllOverrideService.TryReadOverride(File.ReadAllText(reg), "winmm", "Game.exe"));
     }
 
+    // w2 wine review, nit 8: a value Wine wrapped over several lines (trailing backslash) is replaced or removed whole.
+    [Fact]
+    public void SetAndRemove_AMultiLineValue_LeaveNoOrphanedContinuationLines()
+    {
+        const string section = "[Software\\\\Wine\\\\AppDefaults\\\\Game.exe\\\\DllOverrides] 1\n";
+        var hive = "WINE REGISTRY Version 2\n\n" + section + "\"dxgi\"=hex(2):6e,00,61,00,\\\n  74,00,69,00,00,00\n\"x\"=\"y\"\n";
+
+        var set = WineDllOverrideService.SetOverride(hive, "dxgi", "native,builtin", "Game.exe");
+        var removed = WineDllOverrideService.RemoveOverride(hive, "dxgi", "Game.exe");
+
+        Assert.Equal("WINE REGISTRY Version 2\n\n" + section + "\"dxgi\"=\"native,builtin\"\n\"x\"=\"y\"\n", set);
+        Assert.Equal("WINE REGISTRY Version 2\n\n" + section + "\"x\"=\"y\"\n", removed);
+    }
+
+    // w2 wine review, nit 8: create + remove of a section gives back the exact bytes, final newline or not, and a value
+    // added to the hive's last section goes after its last value (no blank line, final newline kept).
+    [Theory]
+    [InlineData("WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Other] 1\n\"x\"=\"y\"")]
+    [InlineData("WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Other] 1\n\"x\"=\"y\"\n")]
+    [InlineData("WINE REGISTRY Version 2\r\n\r\n[Software\\\\Wine\\\\Other] 1\r\n\"x\"=\"y\"")]
+    public void EnsureThenRestore_GivesBackTheExactHive_WithOrWithoutAFinalNewline(string original)
+    {
+        var prefix = Path.Combine(_root, "pfx-final-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(prefix);
+        var reg = Path.Combine(prefix, "user.reg");
+        File.WriteAllText(reg, original);
+        var service = new WineDllOverrideService();
+
+        var created = service.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+        service.Restore(prefix, created);
+        Assert.Equal(original, File.ReadAllText(reg));
+
+        var global = service.EnsureNativeBuiltin(prefix, "d3d9.dll");
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(reg), "d3d9"));
+        service.Restore(prefix, global);
+        Assert.Equal(original, File.ReadAllText(reg));
+    }
+
+    [Fact]
+    public void NewValueInTheHivesLastSection_GoesAfterItsLastValue_KeepingTheFinalNewline()
+    {
+        const string hive = "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\DllOverrides] 1\n\"x\"=\"builtin\"\n";
+
+        var set = WineDllOverrideService.SetOverride(hive, "dxgi", "native,builtin");
+
+        Assert.Equal("WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\DllOverrides] 1\n\"x\"=\"builtin\"\n\"dxgi\"=\"native,builtin\"\n", set);
+        Assert.Equal(hive, WineDllOverrideService.RemoveOverride(set, "dxgi"));
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 }

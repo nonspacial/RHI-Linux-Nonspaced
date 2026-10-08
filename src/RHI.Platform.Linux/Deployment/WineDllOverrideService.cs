@@ -229,23 +229,31 @@ public sealed class WineDllOverrideService
         var entry = $"\"{dllName}\"=\"{value}\"";
         if (start < 0)
         {
+            // A hive without a final newline (Wine always writes one) gets none after the new section either, so
+            // RemoveSectionIfEmpty can give back exactly the bytes it had.
+            var finalNewline = text.Length == 0 || text.EndsWith('\n') || text.EndsWith('\r');
             if (lines.Count > 0 && lines[^1].Length != 0) lines.Add("");
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var fileTime = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 11644473600L) * 10_000_000L;
             lines.Add($"{sectionName} {now}");
             lines.Add($"#time={fileTime.ToString("x", CultureInfo.InvariantCulture)}");
             lines.Add(entry);
-            return string.Join(newline, lines) + newline;
+            return string.Join(newline, lines) + (finalNewline ? newline : "");
         }
 
         var prefix = $"\"{dllName}\"=";
         for (var i = start + 1; i < end; i++)
         {
             if (!lines[i].TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+            lines.RemoveRange(i + 1, ContinuationLines(lines, i, end));
             lines[i] = entry;
             return string.Join(newline, lines);
         }
-        lines.Insert(end, entry);
+        // After the section's last value, not after the blank separator line (or the empty string that follows a
+        // final newline), so the hive keeps its layout and its final newline.
+        var at = end;
+        while (at > start + 1 && lines[at - 1].Length == 0) at--;
+        lines.Insert(at, entry);
         return string.Join(newline, lines);
     }
 
@@ -261,7 +269,7 @@ public sealed class WineDllOverrideService
         for (var i = start + 1; i < end; i++)
         {
             if (!lines[i].TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-            lines.RemoveAt(i);
+            lines.RemoveRange(i, 1 + ContinuationLines(lines, i, end));
             break;
         }
         return string.Join(newline, lines);
@@ -291,6 +299,10 @@ public sealed class WineDllOverrideService
         // Consume the separator blank line after the section when present, but never
         // touch the next registry section. This avoids leaving extra blank blocks.
         while (removeEnd < lines.Count && lines[removeEnd].Length == 0) removeEnd++;
+        // The last section of a hive without a final newline (as SetOverride leaves one it created there): its
+        // separator blank line goes too, so the hive ends where it ended before the section was added.
+        var lastWithoutFinalNewline = removeEnd == lines.Count && lines[^1].Length != 0;
+        if (lastWithoutFinalNewline && start > 0 && lines[start - 1].Length == 0) start--;
         lines.RemoveRange(start, removeEnd - start);
 
         // Avoid creating a trailing stack of empty lines after section removal.
@@ -298,6 +310,17 @@ public sealed class WineDllOverrideService
             lines.RemoveAt(lines.Count - 1);
 
         return string.Join(newline, lines);
+    }
+
+    /// <summary>
+    /// How many lines after <paramref name="valueLine"/> continue its value: Wine wraps long hex values with a trailing
+    /// backslash (a quoted string value always ends with its closing quote).
+    /// </summary>
+    private static int ContinuationLines(IReadOnlyList<string> lines, int valueLine, int sectionEnd)
+    {
+        var count = 0;
+        for (var i = valueLine; i + 1 < sectionEnd && lines[i].TrimEnd().EndsWith('\\'); i++) count++;
+        return count;
     }
 
     private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string sectionName)
