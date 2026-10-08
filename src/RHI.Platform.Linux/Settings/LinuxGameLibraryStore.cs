@@ -325,7 +325,11 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     /// sub-folder). The same split child in two Steam libraries gives two cards with one key, so they share favourite,
     /// hidden, edit and HDR profile (rare: Steam installs an app in one library). The same AppID in two libraries is one
     /// card: favourite and hidden of both are united, an edit or HDR profile comes from the card's own older key first
-    /// and the other stays under its own key (kept, detached).</para>
+    /// and the other stays under its own key (kept, detached). A stored key in another spelling of the game's folder is
+    /// adopted by where that spelling points today (<c>SameFolderKeys</c>): if a symlink in an old spelling is re-pointed
+    /// at another disk holding a different game in a same-named folder of the same source, and the first game's launcher
+    /// spelling changed to the direct path before RHI saw it, the second game inherits the first game's state (three
+    /// coincidences; a key written as-is through that link has the same exposure).</para>
     /// </summary>
     public static string GameKey(DetectedGame game) => GameKey(game, IdentityPath(game));
 
@@ -341,8 +345,21 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     /// <summary>
     /// A key unique to one card at one folder (source, AppID, folder) for in-session caches (the runtime probe, the
     /// selection kept across a refresh), which must not survive a move. Never for saved state: use <see cref="GameKey(DetectedGame)"/>.
+    /// The folder is compared as Linux does, case-sensitively: <c>Game</c> and <c>game</c> are two folders, so two cards
+    /// never share one cached analysis (the pre-#147 key lower-cased it; w2 merge review, nit 4).
     /// </summary>
-    public static string SessionKey(DetectedGame game) => LegacyGameKey(game);
+    public static string SessionKey(DetectedGame game)
+    {
+        var identityPath = IdentityPath(game);
+        string path;
+        try { path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(identityPath)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            path = (identityPath ?? "").Trim();
+        }
+        var app = game.SteamAppId is int id ? $"steam:{id}" : "nosteam";
+        return $"{Source(game.Source)}|{app}|{path}";
+    }
 
     /// <summary>The key builds before #147 saved library state under: source, Steam AppID and lower-cased folder.</summary>
     public static string LegacyGameKey(DetectedGame game) => LegacyGameKey(game.Source, IdentityPath(game), game.SteamAppId);

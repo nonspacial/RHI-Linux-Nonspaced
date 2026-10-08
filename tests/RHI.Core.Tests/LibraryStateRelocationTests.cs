@@ -9,14 +9,28 @@ namespace RHI.Core.Tests;
 /// <summary>
 /// #147: favourite, hidden, game edits and HDR settings follow a game whose Steam library (or Heroic folder) moved,
 /// RHI components or not. Library state is keyed by the store's id (Steam AppID plus a split child's name, Heroic app
-/// id), other games by their folder's identity; keys older builds wrote are adopted when the game is found, never
-/// dropped; a patch target (Edit game) left naming the old folder is re-pointed by "Repair after move".
+/// id), other games by their folder as the launcher spells it (no symlink resolution, so re-pointing a symlinked
+/// games folder keeps the key); keys older builds wrote are adopted when the game is found, never dropped; a patch
+/// target (Edit game) left naming the old folder is re-pointed by "Repair after move".
 /// </summary>
 public sealed class LibraryStateRelocationTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-library-relocation-" + Guid.NewGuid().ToString("N"));
 
     public LibraryStateRelocationTests() => Directory.CreateDirectory(_root);
+
+    // w2 merge review, nit 4: the in-session key compares folders as Linux does, so two folders that differ only in
+    // case are two cards with their own cached analysis; the same folder spelled with a trailing slash is one.
+    [Fact]
+    public void SessionKey_TellsFoldersDifferingOnlyInCaseApart()
+    {
+        var upper = new DetectedGame { Name = "Game", Source = "Wine", InstallPath = Path.Combine(_root, "Games", "Game") };
+        var lower = new DetectedGame { Name = "game", Source = "Wine", InstallPath = Path.Combine(_root, "Games", "game") };
+        var slash = new DetectedGame { Name = "Game", Source = "Wine", InstallPath = Path.Combine(_root, "Games", "Game") + "/" };
+
+        Assert.NotEqual(LinuxGameLibraryStore.SessionKey(upper), LinuxGameLibraryStore.SessionKey(lower));
+        Assert.Equal(LinuxGameLibraryStore.SessionKey(upper), LinuxGameLibraryStore.SessionKey(slash));
+    }
 
     public void Dispose()
     {
