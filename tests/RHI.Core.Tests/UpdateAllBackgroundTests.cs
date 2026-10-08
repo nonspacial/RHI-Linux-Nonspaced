@@ -34,21 +34,60 @@ public sealed class UpdateAllBackgroundTests
     }
 
     [Fact]
-    public async Task ManualRun_UpdatesEverySupportedManagedRecordWithoutPrecheck()
+    public async Task ManualRun_RefreshesReShade_AndChecksEveryOtherFamilyFirst()
     {
+        // #113: manual Update All used to reinstall every family but RenoDX and call each one "updated". Upstream
+        // re-deploys only ReShade unconditionally; every other family updates only when its check finds one.
         using var fixture = new Fixture();
         var game = fixture.Game("manual");
-        fixture.Record(game, ManagedComponentKind.ReShade);
-        fixture.Record(game, ManagedComponentKind.DofFix);
+        foreach (var component in LinuxUpdateAllService.SupportedComponents) fixture.Record(game, component);
         var backend = new FakeBackend();
         var service = fixture.Service(backend);
 
         var result = await service.RunAsync([game], _ => ["file"], LinuxUpdateRunMode.Manual);
 
-        Assert.Equal(2, backend.UpdateCalls.Count);
-        Assert.Empty(backend.CheckCalls);
-        Assert.Equal(2, result.ChangedCount);
-        Assert.Equal(0, result.FailedCount);
+        Assert.Equal([ManagedComponentKind.ReShade], backend.UpdateCalls);
+        Assert.Equal(LinuxUpdateAllService.SupportedComponents.Where(c => c != ManagedComponentKind.ReShade).Order(), backend.CheckCalls.Order());
+        Assert.Equal((1, 12, 0), (result.ChangedCount, result.CurrentCount, result.FailedCount));
+    }
+
+    [Theory]
+    [InlineData(LinuxUpdateRunMode.Manual, ManagedComponentKind.ReShade)]
+    [InlineData(LinuxUpdateRunMode.Manual, ManagedComponentKind.DofFix)]
+    [InlineData(LinuxUpdateRunMode.Background, ManagedComponentKind.OptiScaler)]
+    public async Task UpdateThatLeavesThePayloadAsItWas_IsCurrent_NotUpdated(LinuxUpdateRunMode mode, ManagedComponentKind component)
+    {
+        // A refresh (or an update a check asked for) that re-deploys the same files changes nothing for the user.
+        using var fixture = new Fixture();
+        var game = fixture.Game("same-payload");
+        fixture.Record(game, component);
+        var backend = new FakeBackend();
+        backend.Checks[component] = new(true, true, "update");
+        backend.Unchanged.Add(component);
+        var service = fixture.Service(backend);
+
+        var result = await service.RunAsync([game], _ => [], mode);
+
+        Assert.Equal([component], backend.UpdateCalls);
+        Assert.Equal((0, 1, 0), (result.ChangedCount, result.CurrentCount, result.FailedCount));
+    }
+
+    [Fact]
+    public void PayloadFingerprint_IgnoresInstallTimeMetadataAndUserEditableFiles_ButNotPayloadHashes()
+    {
+        LinuxDeploymentRecord Record(string sha, string ini, DateTime at, string op) => new()
+        {
+            Version = "6.4.0", InstalledAtUtc = at, Metadata = { ["Deployment.OperationId"] = op },
+            Files =
+            [
+                new LinuxDeployedFile { Path = "/g/dxgi.dll", Sha256 = sha },
+                new LinuxDeployedFile { Path = "/g/ReShade.ini", Sha256 = ini, AllowUserChanges = true }
+            ]
+        };
+        var first = LinuxDeploymentRecord.PayloadFingerprint(Record("aa", "i1", DateTime.UnixEpoch, "op1"));
+
+        Assert.Equal(first, LinuxDeploymentRecord.PayloadFingerprint(Record("aa", "i2", DateTime.UtcNow, "op2")));
+        Assert.NotEqual(first, LinuxDeploymentRecord.PayloadFingerprint(Record("bb", "i1", DateTime.UnixEpoch, "op1")));
     }
 
     [Fact]
@@ -200,6 +239,7 @@ public sealed class UpdateAllBackgroundTests
         fixture.Record(game, ManagedComponentKind.ReShade);
         fixture.Record(game, ManagedComponentKind.DofFix);
         var backend = new FakeBackend();
+        backend.Checks[ManagedComponentKind.DofFix] = new(true, true, "update");
         backend.UpdateResults[ManagedComponentKind.ReShade] = ComponentOperationResult.Fail("boom");
         backend.UpdateResults[ManagedComponentKind.DofFix] = ComponentOperationResult.Ok("ok");
         var service = fixture.Service(backend);
@@ -300,6 +340,10 @@ public sealed class UpdateAllBackgroundTests
         public List<ManagedComponentKind> UpdateCalls { get; } = [];
         public Dictionary<ManagedComponentKind, IReadOnlyList<string>> LastIndexedFiles { get; } = new();
         public bool BlockUpdates { get; set; }
+        /// <summary>Set by the fixture: a successful update bumps the record's version, as a real payload change does.</summary>
+        public LinuxDeploymentRecordStore? Records { get; set; }
+        /// <summary>Families whose successful update re-deploys the same payload.</summary>
+        public HashSet<ManagedComponentKind> Unchanged { get; } = [];
         public TaskCompletionSource<bool> UpdateEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<bool> ReleaseUpdates { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -320,7 +364,13 @@ public sealed class UpdateAllBackgroundTests
                 UpdateEntered.TrySetResult(true);
                 await ReleaseUpdates.Task.WaitAsync(cancellationToken);
             }
-            return UpdateResults.TryGetValue(component, out var value) ? value : ComponentOperationResult.Ok("updated");
+            var result = UpdateResults.TryGetValue(component, out var value) ? value : ComponentOperationResult.Ok("updated");
+            if (result.Success && Records?.Find(game, component) is { } record && !Unchanged.Contains(component))
+            {
+                record.Version += "-new";
+                Records.Upsert(record);
+            }
+            return result;
         }
     }
 
@@ -358,7 +408,10 @@ public sealed class UpdateAllBackgroundTests
             });
 
         public LinuxUpdateAllService Service(ILinuxManagedUpdateBackend backend, IGameRunningProbe? running = null)
-            => new(Records, backend, running ?? new FixedRunningProbe(false));
+        {
+            if (backend is FakeBackend fake) fake.Records = Records;
+            return new(Records, backend, running ?? new FixedRunningProbe(false));
+        }
 
         public void Dispose() { try { Directory.Delete(Root, true); } catch { } }
     }

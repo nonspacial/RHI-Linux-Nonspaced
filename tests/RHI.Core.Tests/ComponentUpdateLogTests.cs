@@ -155,6 +155,36 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Equal((false, ManagedComponentKind.OptiScaler, "disk full"), (failed.Success, failed.Component, failed.Message));
     }
 
+    [Fact]
+    public async Task Recorder_UnversionedRefresh_LogsAnUpdateOnlyWhenThePayloadChanged()
+    {
+        // #113: re-deploying the same unversioned payload (new install time, same files) is not an update.
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        var log = new ComponentUpdateLogStore(LogPath);
+        var recorder = new ComponentUpdateRecorder(records, log);
+        void Deploy(string sha) => records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(_game), GameName = _game.Name, Component = ManagedComponentKind.DofFix,
+            BinaryDirectory = _root, Version = null, InstalledAtUtc = DateTime.UtcNow,
+            Files = [new LinuxDeployedFile { Path = Path.Combine(_root, "dof.addon64"), Sha256 = sha }]
+        });
+        Deploy("aa");
+
+        await recorder.TrackAsync(_game, ManagedComponentKind.DofFix, ComponentUpdateAction.Update, () =>
+        {
+            Deploy("aa");
+            return Task.FromResult(ComponentOperationResult.Ok("refreshed"));
+        });
+        Assert.Empty(log.GetAll());
+
+        await recorder.TrackAsync(_game, ManagedComponentKind.DofFix, ComponentUpdateAction.Update, () =>
+        {
+            Deploy("bb");
+            return Task.FromResult(ComponentOperationResult.Ok("updated"));
+        });
+        Assert.Equal(ComponentUpdateAction.Update, Assert.Single(log.GetAll()).Action);
+    }
+
     // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
     // drop the real change and log every other component as installed or removed.
     [Fact]

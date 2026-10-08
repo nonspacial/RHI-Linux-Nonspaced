@@ -111,10 +111,11 @@ public sealed class LinuxGameRunningProbe : IGameRunningProbe
 
 /// <summary>
 /// Linux-native Update All coordinator. Only the component families explicitly accepted for
-/// the supported managed-component set participate. Background mode first performs a version/identity
-/// check and mutates only components with an actual pending update. Manual mode does the same for
-/// the families in <see cref="CheckedInManualMode"/> (upstream 2.8.0: RenoDX only when flagged) and
-/// refreshes the rest to the latest compatible payload (#113). A failure is isolated to one game/component.
+/// the supported managed-component set participate. Both modes first perform a version/identity
+/// check and mutate only components with an actual pending update; manual mode refreshes the families in
+/// <see cref="RefreshedInManualMode"/> regardless, as upstream's Update All does for ReShade. An update is
+/// reported as "updated" only when the component's installed payload changed (#113). A failure is isolated
+/// to one game/component.
 /// </summary>
 public sealed class LinuxUpdateAllService
 {
@@ -139,8 +140,9 @@ public sealed class LinuxUpdateAllService
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
 
-    // Families whose check is reliable enough to skip a manual reinstall when nothing changed.
-    private static readonly ManagedComponentKind[] CheckedInManualMode = [ManagedComponentKind.RenoDX];
+    // Manual mode checks first like background mode, except ReShade, which upstream's Update All re-deploys
+    // whenever it is installed (#113). A refresh that leaves the payload as it was counts as current, not updated.
+    private static readonly ManagedComponentKind[] RefreshedInManualMode = [ManagedComponentKind.ReShade];
 
     private readonly LinuxDeploymentRecordStore _records;
     private readonly ILinuxManagedUpdateBackend _backend;
@@ -202,7 +204,7 @@ public sealed class LinuxUpdateAllService
                     cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
-                        if (mode == LinuxUpdateRunMode.Background || CheckedInManualMode.Contains(component))
+                        if (mode == LinuxUpdateRunMode.Background || !RefreshedInManualMode.Contains(component))
                         {
                             var check = await _backend.CheckManagedUpdateAsync(game, component, files, cancellationToken).ConfigureAwait(false);
                             if (check.Blocked)
@@ -218,12 +220,15 @@ public sealed class LinuxUpdateAllService
                             }
                         }
 
+                        var before = PayloadOf(game, component);
                         var update = await _backend.UpdateManagedAsync(game, component, files, cancellationToken).ConfigureAwait(false);
                         // The component's source was unreachable (e.g. a reshade.me outage) and nothing was changed:
                         // "could not be checked", not a failure and never an update (#132).
+                        // A successful update counts as "updated" only when the installed payload changed (#113).
                         results.Add(update.SourceUnavailable
                             ? new LinuxUpdateItemResult(game.Name, component, true, false, false, update.Message, Unchecked: true)
-                            : new LinuxUpdateItemResult(game.Name, component, update.Success, update.Success, false, update.Message));
+                            : new LinuxUpdateItemResult(game.Name, component, update.Success,
+                                update.Success && !string.Equals(before, PayloadOf(game, component), StringComparison.Ordinal), false, update.Message));
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -245,6 +250,9 @@ public sealed class LinuxUpdateAllService
     }
 
     public static bool IsSupported(ManagedComponentKind component) => Supported.Contains(component);
+
+    private string? PayloadOf(DetectedGame game, ManagedComponentKind component)
+        => _records.Find(game, component) is { } record ? LinuxDeploymentRecord.PayloadFingerprint(record) : null;
 
     private static int UpdateOrder(ManagedComponentKind component) => component switch
     {

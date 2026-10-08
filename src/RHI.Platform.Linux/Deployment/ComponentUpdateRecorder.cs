@@ -129,14 +129,14 @@ public sealed class ComponentUpdateRecorder
         ToVersion = to
     };
 
-    private Dictionary<ManagedComponentKind, (string? Version, DateTime InstalledAtUtc)> Snapshot(DetectedGame game)
+    private Dictionary<ManagedComponentKind, (string? Version, string Payload)> Snapshot(DetectedGame game)
     {
         try
         {
             // Copy values: some services mutate the cached record in place before upserting.
             return _records.FindAll(game)
                 .GroupBy(r => r.Component)
-                .ToDictionary(g => g.Key, g => (HistoryVersion(g.First()), g.First().InstalledAtUtc));
+                .ToDictionary(g => g.Key, g => (HistoryVersion(g.First()), LinuxDeploymentRecord.PayloadFingerprint(g.First())));
         }
         catch
         {
@@ -165,7 +165,7 @@ public sealed class ComponentUpdateRecorder
         DetectedGame game,
         ManagedComponentKind requested,
         ComponentUpdateAction intent,
-        Dictionary<ManagedComponentKind, (string? Version, DateTime InstalledAtUtc)> before,
+        Dictionary<ManagedComponentKind, (string? Version, string Payload)> before,
         ComponentOperationResult? result,
         Exception? error)
     {
@@ -194,8 +194,9 @@ public sealed class ComponentUpdateRecorder
                 else if (!string.Equals(was.Version, current.Version, StringComparison.Ordinal))
                     entries.Add(Entry(kind, ComponentUpdateAction.Update, was.Version, current.Version));
                 else if (kind == requested && intent == ComponentUpdateAction.Update && current.Version is null &&
-                         was.InstalledAtUtc != current.InstalledAtUtc)
-                    entries.Add(Entry(kind, ComponentUpdateAction.Update, null, null)); // unversioned payload refreshed
+                         !string.Equals(was.Payload, current.Payload, StringComparison.Ordinal))
+                    // Unversioned payload replaced; re-deploying the same files is no update (#113).
+                    entries.Add(Entry(kind, ComponentUpdateAction.Update, null, null));
             }
             foreach (var (kind, was) in before)
             {
