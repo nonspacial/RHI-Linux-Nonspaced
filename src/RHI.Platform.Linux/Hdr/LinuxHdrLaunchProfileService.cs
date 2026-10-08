@@ -37,7 +37,17 @@ public sealed record LinuxHdrHostSnapshot(
     string? Desktop,
     bool GamescopeAvailable,
     string? NvidiaDriverVersion,
-    bool LegacyWsiLikelyRequired);
+    bool LegacyWsiLikelyRequired)
+{
+    /// <summary>
+    /// Stand-in used before the host has been probed (a getter never probes it on the UI thread); the plan is rebuilt
+    /// once the real probe lands. No desktop name: the UI words an unknown desktop in its own language.
+    /// </summary>
+    public static LinuxHdrHostSnapshot NotProbed { get; } = new(false, null, false, null, false) { Probed = false };
+
+    /// <summary>False only for <see cref="NotProbed"/>.</summary>
+    public bool Probed { get; init; } = true;
+}
 
 /// <summary>
 /// Why a plan looks the way it does. The service returns codes, never prose: the desktop words them in the
@@ -128,10 +138,17 @@ public sealed partial class LinuxHdrLaunchProfileService
     }
 
     public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile)
+        => BuildPlan(game, profile, ProbeHost());
+
+    /// <summary>
+    /// The plan for a host probed earlier (<see cref="ProbeHost"/> reads /proc and searches PATH, so the UI probes it
+    /// off its thread and builds plans from the snapshot).
+    /// </summary>
+    public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host)
     {
         ArgumentNullException.ThrowIfNull(game);
+        ArgumentNullException.ThrowIfNull(host);
         profile = (profile ?? new LinuxHdrGameProfile()).Normalize();
-        var host = ProbeHost();
         var handoff = LaunchHandoffClassifier.Classify(game);
         if (profile.Mode == LinuxHdrModes.Off)
             return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%", LinuxHdrPlanReason.Off, host, Handoff: handoff);

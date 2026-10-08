@@ -571,7 +571,7 @@ public sealed class LibraryStateRelocationViewModelTests
                 };
                 library.Save(state);
             });
-            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
             Assert.False(fx.Vm.SelectedGame!.HasConfirmedPatchTarget); // the old target is not replaced by a guess
             Assert.Contains("Repair after move", fx.Vm.PatchTargetStatusText, StringComparison.Ordinal);
             await WaitAsync(() => fx.Vm.ShowRepairAfterMove);

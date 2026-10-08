@@ -38,7 +38,7 @@ internal sealed class AppComposition
 
     public MainWindowViewModel CreateViewModel()
         => new(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
-            UpdateAll, DlssDefaults, LibraryStore, Records);
+            UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
 
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal)
     {

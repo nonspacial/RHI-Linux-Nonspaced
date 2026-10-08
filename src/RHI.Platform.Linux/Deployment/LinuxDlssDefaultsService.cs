@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -257,9 +258,12 @@ public sealed class LinuxDlssDefaultsService
         foreach (var game in games)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // One game is one unit: Cancel stops the batch between games, and once a game's first DLL is being
+            // swapped that game runs to the end.
+            using var unit = new OperationCancellation(cancellationToken);
             try
             {
-                var result = await ApplyDefaultsAsync(game, defaults, indexedFiles?.Invoke(game), cancellationToken).ConfigureAwait(false);
+                var result = await ApplyDefaultsAsync(game, defaults, indexedFiles?.Invoke(game), unit.Token).ConfigureAwait(false);
                 all.AddRange(result.Items);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -284,9 +288,10 @@ public sealed class LinuxDlssDefaultsService
         foreach (var game in games)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            using var unit = new OperationCancellation(cancellationToken);
             try
             {
-                var result = await RestoreAllAsync(game, indexedFiles?.Invoke(game), cancellationToken).ConfigureAwait(false);
+                var result = await RestoreAllAsync(game, indexedFiles?.Invoke(game), unit.Token).ConfigureAwait(false);
                 all.AddRange(result.Items);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

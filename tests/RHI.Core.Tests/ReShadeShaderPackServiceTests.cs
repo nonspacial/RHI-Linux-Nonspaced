@@ -219,6 +219,22 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_root, "evil.fx")));
     }
 
+    // w2/vmsplit review finding 1: once the old packs start coming out of the game folder the sync runs to the end (a
+    // cancel half-way used to leave copied packs that no manifest owned).
+    [Fact]
+    public async Task Sync_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var http = new HttpClient(new ZipHandler(CreateShaderZip()));
+        var service = new ReShadeShaderPackService(http, Path.Combine(_root, "cancel-cache"), customRoot: Path.Combine(_root, "cancel-custom"));
+        var game = Directory.CreateDirectory(Path.Combine(_root, "cancel-game")).FullName;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.SyncAsync(game, ["CrosireMaster"], ct), [game]);
+
+        Assert.Contains(@".\reshade-shaders\RHI\CrosireMaster\Shaders\**", run.Result.EffectSearchPaths);
+        Assert.True(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
+        Assert.True(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", ".rhi-manifest.json")));
+    }
+
     private static byte[] CreateShaderZip()
     {
         using var memory = new MemoryStream();

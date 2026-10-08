@@ -467,11 +467,6 @@ public sealed class Dlss5FeederFullDeploymentService
                     : ValidateDownloadedPayload(consumerAsset, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
             }
 
-            if (compilerPlan.DeploySourcePath is not null)
-                await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
-
-            if (_overrides is not null)
-                compilerOverride = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
             // Current upstream publishes a single DLSS5-Feeder-*.zip release asset.
             // The archive is produced by Windows tooling, so entries may carry either '/' or '\\'
             // separators. Linux must normalize both before matching leaf names. The tagged raw
@@ -561,9 +556,22 @@ public sealed class Dlss5FeederFullDeploymentService
                     var dgConfigTarget = Path.Combine(binaryDir, "dgVoodoo.conf");
                     if (File.Exists(dgConfigTarget))
                         throw new IOException($"External dgVoodoo.conf already exists: {dgConfigTarget}. RHI Linux will not overwrite it automatically.");
-                    dx9Migration = await _dx9ReShade.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
-                    dx9TranslationCreatedThisAttempt = true;
                 }
+            }
+
+            // Every download and extraction above is done: from the first game file on, the install runs to completion
+            // or full rollback (Cancel is refused). The compiler copy and its override used to run before the downloads.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            if (compilerPlan.DeploySourcePath is not null)
+                await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
+
+            if (_overrides is not null)
+                compilerOverride = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+
+            if (dgVoodooPayload is not null)
+            {
+                dx9Migration = await _dx9ReShade!.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
+                dx9TranslationCreatedThisAttempt = true;
             }
 
             Directory.CreateDirectory(addonDir);
@@ -825,6 +833,8 @@ public sealed class Dlss5FeederFullDeploymentService
                 dx9RestoreCoordinator = dx9ReShade;
             }
 
+            // Cancel is honoured only up to here: the teardown never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             if (record.Metadata.TryGetValue(MetaIniPath, out var iniPath) && !string.IsNullOrWhiteSpace(iniPath))
             {
                 var mutation = new PresetPathMutation(

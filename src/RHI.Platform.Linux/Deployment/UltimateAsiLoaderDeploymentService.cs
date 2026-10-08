@@ -188,6 +188,8 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var journaled = operation;
 
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
@@ -307,6 +309,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (string.Equals(record.Version, release.Version, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Ok($"Ultimate ASI Loader {record.Version} is already current.");
 
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             // Verified durable replace (temp + fsync + full re-read hash + rename).

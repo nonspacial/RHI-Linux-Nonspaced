@@ -242,9 +242,10 @@ public sealed class Dlssg2030UnlockDeploymentService
             _journal, "RTX 20 FG Unlock install: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var journaled = operation;
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
             wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
             // Verified, fsynced copies beside the targets (full re-read hash), placed without replacing anything.
@@ -466,6 +467,7 @@ public sealed class Dlssg2030UnlockDeploymentService
 
         string? staged = null;
         var previous = proxyPath + $".rhi-update-old-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             var stagedCopy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);

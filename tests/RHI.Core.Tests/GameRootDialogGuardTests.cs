@@ -136,7 +136,7 @@ public sealed class GameRootDialogGuardTests
         state.ManualGames.Add(new LinuxManualGameEntry { Name = "Listed", InstallPath = Path.GetDirectoryName(listed)!, ExecutablePath = listed });
         fixture.Library.Save(state);
         await fixture.Vm.RefreshCommand.ExecuteAsync(null);
-        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Listed");
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Listed").Game;
         // The exe and binaries folder sit inside the refused root, so only the root guard can refuse.
         var (root, exe) = Refused(kind, fixture);
 
@@ -159,8 +159,8 @@ public sealed class GameRootDialogGuardTests
             store.Save(state);
         });
 
-        var home = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
-        var whole = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Prefix");
+        var home = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
+        var whole = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Prefix").Game;
         foreach (var game in new[] { home, whole })
         {
             Assert.True(game.GameRootNotAllowed);
@@ -203,7 +203,7 @@ public sealed class GameRootDialogGuardTests
     {
         using var fixture = await WithMissingFolderEntry(out var missing);
 
-        var game = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        var game = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
         Assert.True(game.FolderMissing);
         Assert.False(game.GameRootNotAllowed);
         Assert.False(game.HasConfirmedPatchTarget);
@@ -231,13 +231,13 @@ public sealed class GameRootDialogGuardTests
     public async Task MissingFolderEntry_EditedOntoTheNewFolder_IsUsableAgain()
     {
         using var fixture = await WithMissingFolderEntry(out _);
-        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
         var exe = Exe(Path.Combine(fixture.Root, "New Drive", "Gone Game"), "Gone.exe");
 
         var (saved, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
 
         Assert.True(saved, message);
-        var repointed = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game");
+        var repointed = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
         Assert.False(repointed.FolderMissing);
         Assert.True(repointed.HasConfirmedPatchTarget);
         Assert.Equal(Path.GetDirectoryName(exe), repointed.InstallPath);
@@ -252,13 +252,13 @@ public sealed class GameRootDialogGuardTests
             state.ManualGames.Add(new LinuxManualGameEntry { Name = "Whole Home", InstallPath = LinuxPaths.Home });
             store.Save(state);
         });
-        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
+        fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
         var exe = HomeGameExe();
 
         var (saved, _) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null);
 
         Assert.True(saved);
-        var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home");
+        var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
         Assert.False(fixedGame.GameRootNotAllowed);
         Assert.True(fixedGame.HasConfirmedPatchTarget);
         Assert.Equal(Path.GetDirectoryName(exe), fixedGame.InstallPath);
@@ -271,7 +271,7 @@ public sealed class GameRootDialogGuardTests
         var exe = Exe(Path.Combine(fixture.Root, "games", "Busy Add"));
         var vm = fixture.Vm;
 
-        vm.IsBusy = true; // e.g. Update All running
+        var running = vm.Operations.TryBegin("test")!; // e.g. Update All running
         var addSaved = false;
         var add = vm.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Busy Add", InstallPath = Path.GetDirectoryName(exe)!, ExecutablePath = exe }, () => addSaved = true);
@@ -280,18 +280,18 @@ public sealed class GameRootDialogGuardTests
         Assert.False(add.IsCompleted);
         Assert.Single(fixture.Library.Load().ManualGames);
 
-        vm.IsBusy = false;
+        running.Dispose();
         var (added, _) = await add.WaitAsync(TimeSpan.FromSeconds(30));
         Assert.True(added);
 
-        vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add");
-        vm.IsBusy = true;
+        vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add").Game;
+        running = vm.Operations.TryBegin("test")!;
         var editSaved = false;
         var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, () => editSaved = true);
 
         Assert.True(editSaved);
         Assert.False(edit.IsCompleted);
-        vm.IsBusy = false;
+        running.Dispose();
         Assert.True((await edit.WaitAsync(TimeSpan.FromSeconds(30))).Saved);
     }
 }

@@ -217,6 +217,54 @@ public sealed class DofFixDeploymentServiceTests : IDisposable
         Assert.NotNull(records.Find(game, ManagedComponentKind.DofFix));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    private (DofFixDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, HttpClient Http) CancelFixture(string name)
+    {
+        var game = CreateGame();
+        game.DofFixForcedByManifest = true;
+        var payload = MakePePayload(256 * 1024);
+        var digest = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
+        var releases = ReleaseListJson("1.0.2", "https://github.com/test/fix", digest);
+        var http = new HttpClient(new FakeHandler(req =>
+        {
+            var url = req.RequestUri!.AbsoluteUri;
+            if (url.Contains("rhi-repo/releases", StringComparison.OrdinalIgnoreCase)) return JsonResponse(releases);
+            if (url == "https://manifest.test/manifest.json") return JsonResponse("{\"version\":2}");
+            if (url == "https://github.com/test/fix") return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+            throw new InvalidOperationException("Unexpected URL: " + url);
+        }));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, name + "-records.json"));
+        var manifest = new UpstreamRhiManifestService(http, "https://manifest.test/manifest.json");
+        return (new DofFixDeploymentService(http, records, manifest, Path.Combine(_root, "cache-" + name)), records, game, http);
+    }
+
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (service, records, game, http) = CancelFixture("cancel-install");
+        using var _ = http;
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [game.InstallPath]);
+
+        // A late cancel used to throw after the copy and leave the add-on in the game folder with no record.
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(game, ManagedComponentKind.DofFix));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var (service, records, game, http) = CancelFixture("cancel-remove");
+        using var _ = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [game.InstallPath]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(game, ManagedComponentKind.DofFix));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, DofFixDeploymentService.AddonFileName)));
+    }
+
     private DofFixDeploymentService NewService(HttpClient http, string recordsName, string manifestUrl = "https://manifest.test/manifest.json")
     {
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, recordsName));

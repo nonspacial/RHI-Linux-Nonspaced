@@ -258,6 +258,7 @@ All paths are relative to `/mnt/vdo_storage/worktrees/rhi-audit/`.
 - **What happens:** Each entry keeps up to 200k absolute-path strings (tens of MB per large game) for the life of the process. Only a full refresh clears the cache.
 - **Fix seam:** LRU of 3–5 entries, or keep only the derived results and re-index on demand for Update All.
 - **Verify:** Browse 20 large games and watch RSS in the test harness.
+- **Status:** fixed in `a9bf929` (#60) with UI-06: the probe cache is an LRU of 8 analyses (`SelectedGameSession`); 6.2 MiB measured for 3,000-path games.
 
 ### DET-22 — Every refresh, including the "6 ms" partial one, invalidates and re-downloads the upstream manifest
 - **Where:** `UpstreamGameLibraryPolicyService.cs:21-22`; `GameLibraryScanner.cs:74-86` (policies run on partial scans too); `UpstreamRhiManifestService.cs:585, 640`.

@@ -115,6 +115,46 @@ public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe"));
     }
 
+    // w2/vmsplit review finding 1: once the migration (or its undo) starts changing overrides and files it runs to the
+    // end; a late cancel used to throw between the move and the record update.
+    [Fact]
+    public async Task MigrateAndRestore_CancelAfterTheFirstWrite_RunToCompletion()
+    {
+        var bin = Path.Combine(_root, "cancel-game");
+        var prefix = Path.Combine(_root, "cancel-prefix");
+        Directory.CreateDirectory(bin);
+        Directory.CreateDirectory(prefix);
+        File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x14c, 128 * 1024);
+        var d3d9 = Path.Combine(bin, "d3d9.dll");
+        PeArchitectureDetectorTests.WritePe(d3d9, 0x14c, 2 * 1024 * 1024);
+        var game = new DetectedGame
+        {
+            Name = "DX9 Cancel Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe,
+            PrefixPath = prefix, GraphicsApi = GraphicsApi.DirectX9, Source = "Test", Runner = "Wine"
+        };
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "cancel-records.json"));
+        var overrides = new WineDllOverrideService();
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = bin, WineOverride = overrides.EnsureNativeBuiltin(prefix, "d3d9", Path.GetFileName(exe)),
+            Files = [new LinuxDeployedFile { Path = d3d9, ExistedBeforeInstall = false, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(d3d9) }]
+        });
+        var coordinator = new Dx9TranslationReShadeCoordinator(records, overrides);
+
+        var migrated = await CancelAtWritePhase.RunAsync(async ct => await coordinator.MigrateAsync(game, ct), [bin, prefix]);
+        var dxgi = Path.Combine(bin, "dxgi.dll");
+        Assert.Equal(dxgi, records.Find(game, ManagedComponentKind.ReShade)!.Files.Single().Path);
+        Assert.True(File.Exists(dxgi));
+
+        await CancelAtWritePhase.RunAsync(async ct => { await coordinator.RestoreAsync(game, migrated.Result, ct); return true; }, [bin, prefix]);
+        Assert.Equal(d3d9, records.Find(game, ManagedComponentKind.ReShade)!.Files.Single().Path);
+        Assert.True(File.Exists(d3d9));
+        Assert.False(File.Exists(dxgi));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }

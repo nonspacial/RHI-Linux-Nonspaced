@@ -155,6 +155,8 @@ public sealed class GitHubReShadeAddonDeploymentService
         try
         {
             var (cached, download) = await DownloadAsync(release, architecture, deployFileName, cancellationToken).ConfigureAwait(false);
+            // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the copied add-on with no record).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             var targetHash = await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
             var auxiliaryConfig = TryEnsureAuxiliaryConfigIfAbsent(deployDir);
@@ -215,6 +217,8 @@ public sealed class GitHubReShadeAddonDeploymentService
 
         try
         {
+            // The removal never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var file in record.Files)
             {
                 if (!File.Exists(file.Path)) continue;

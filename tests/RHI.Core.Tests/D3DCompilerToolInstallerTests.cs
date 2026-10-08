@@ -88,4 +88,33 @@ public sealed class D3DCompilerToolInstallerTests
         }
     }
 
+    // w2/vmsplit review finding 1: the helper tool writes into the prefix as soon as it starts, so a Cancel after that
+    // point is refused and RHI waits for it; it used to report "cancelled" and leave the tool running behind an idle UI.
+    [Fact]
+    public async Task ToolRun_CancelAfterItStarted_WaitsForTheToolToFinish()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-d3dcompiler-cancel-" + Guid.NewGuid().ToString("N"));
+        var bin = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
+        var prefix = Directory.CreateDirectory(Path.Combine(root, "pfx")).FullName;
+        var marker = Path.Combine(root, "tool-finished");
+        try
+        {
+            var exe = Path.Combine(bin, "Game.exe");
+            PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+            var game = new RHI.Core.Models.DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix };
+            var tool = new System.Diagnostics.ProcessStartInfo("/bin/sh") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            tool.ArgumentList.Add("-c");
+            tool.ArgumentList.Add($"sleep 0.5; : > '{marker}'");
+            var installer = new D3DCompilerToolInstaller(new RHI.Platform.Linux.Deployment.WineDllOverrideService());
+
+            var run = await CancelAtWritePhase.RunAsync(ct => installer.RunAndVerifyAsync(game, tool, "fake-tool", applyOverride: false, ct), [bin]);
+
+            Assert.True(File.Exists(marker), "RHI returned before the tool it started had finished.");
+            Assert.DoesNotContain("cancelled", run.Result.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
 }

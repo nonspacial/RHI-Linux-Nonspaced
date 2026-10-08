@@ -253,6 +253,7 @@ internal static class UiStrings
         ("Vm.CouldNotOpenWineProtonPrefix", "Não foi possível abrir o prefixo Wine/Proton: {0}", "Could not open the Wine/Proton prefix: {0}"),
         ("Vm.Profile", "Perfil: {0}{1}.", "Profile: {0}{1}."),
         ("Vm.AnotherRHIOperationAlreadyRunning", "Outra operação do RHI já está em andamento.", "Another RHI operation is already running."),
+        ("Vm.OperationCancelled", "Operação cancelada.", "Operation cancelled."),
         ("Vm.ApplyingShaderPackSelection", "Aplicando seleção de pacotes de shaders…", "Applying shader pack selection…"),
         ("Vm.ApplyingReShadeAddSelection", "Aplicando seleção de add-ons do ReShade…", "Applying ReShade add-on selection…"),
         ("Vm.ShadersAppliedButAddOnsFailed", "Shaders aplicados, mas os add-ons falharam: {0}", "Shaders applied, but add-ons failed: {0}"),

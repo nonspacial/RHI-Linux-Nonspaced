@@ -150,7 +150,9 @@ public sealed partial class MainWindow : Window
         IReadOnlyList<LinuxDlssBatchCandidate> candidates;
         try
         {
-            candidates = await vm.GetDlssBatchCandidatesAsync();
+            // Null: another operation is running or the user cancelled the analysis; the status line says which.
+            if (await vm.GetDlssBatchCandidatesAsync() is not { } found) return;
+            candidates = found;
         }
         catch (Exception ex)
         {
@@ -298,6 +300,7 @@ public sealed partial class MainWindow : Window
             .Select(row => row.Candidate.Game)
             .ToArray();
 
+        var running = false;
         async Task RunAsync(bool restoreMode)
         {
             var selected = SelectedGames();
@@ -315,7 +318,10 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            deploy.IsEnabled = restore.IsEnabled = close.IsEnabled = false;
+            // While the batch runs, Close becomes Cancel: the main window's overlay is behind this dialog (Refs #77).
+            deploy.IsEnabled = restore.IsEnabled = false;
+            running = true;
+            close.Content = T("Win.Cancel");
             try
             {
                 status.Text = restoreMode ? T("Win.RestoringSelectedGames") : T("Win.ApplyingSelectedGames");
@@ -324,19 +330,35 @@ public sealed partial class MainWindow : Window
                     : await vm.ApplyDlssBatchAsync(selected, chosen);
                 status.Text = UiLocalizationService.Present(result.Summary);
             }
+            catch (OperationRefusedException refused)
+            {
+                status.Text = refused.Message;
+            }
+            catch (OperationCanceledException)
+            {
+                status.Text = T("Vm.OperationCancelled");
+            }
             catch (Exception ex)
             {
                 status.Text = TF("Win.BatchOperationFailed", UiLocalizationService.Present(ex.Message));
             }
             finally
             {
+                running = false;
+                close.Content = T("Win.Close");
                 deploy.IsEnabled = restore.IsEnabled = close.IsEnabled = true;
             }
         }
 
         deploy.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: false));
         restore.Click += (_, _) => RunUiSafe(() => RunAsync(restoreMode: true));
-        close.Click += (_, _) => dialog.Close();
+        close.Click += (_, _) =>
+        {
+            if (!running) { dialog.Close(); return; }
+            close.IsEnabled = false;
+            vm.Operations.Cancel();
+        };
+        dialog.Closing += (_, args) => args.Cancel |= running; // the window's own close button waits for the batch too
         await ShowFittedDialogAsync(dialog);
     });
 

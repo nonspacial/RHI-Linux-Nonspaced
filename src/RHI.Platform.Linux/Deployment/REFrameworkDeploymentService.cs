@@ -106,6 +106,8 @@ public sealed class REFrameworkDeploymentService
             _journal, "RE Framework install: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var journaled = operation;
+        // Downloaded and validated: from the override on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
@@ -202,6 +204,7 @@ public sealed class REFrameworkDeploymentService
         }
 
         var backup = owned.Path + $".rhi-update-backup-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             AtomicFile.Copy(owned.Path, backup, currentHash);

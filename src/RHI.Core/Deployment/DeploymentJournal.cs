@@ -291,13 +291,17 @@ public sealed class DeploymentOperation : IAsyncDisposable
     public string? CommitProbe { get; }
     public OwnedFileSet Files { get; }
 
-    /// <summary>Tracks <paramref name="path"/> with a verified snapshot, journaled before returning.</summary>
+    /// <summary>
+    /// Tracks <paramref name="path"/> with a verified snapshot, journaled before returning. Tracking means the file is
+    /// about to change, so it ends the operation's cancellable phase (<see cref="OperationCancellation.BeginWrites"/>).
+    /// </summary>
     public Task TrackFileAsync(string path, CancellationToken cancellationToken = default, bool includeBackup = true)
-        => Files.TrackWithSnapshotAsync(path, cancellationToken, includeBackup);
+        => Files.TrackWithSnapshotAsync(path, OperationCancellation.BeginWrites(cancellationToken), includeBackup);
 
-    /// <summary>Journals how to undo a side effect; call before making it.</summary>
+    /// <summary>Journals how to undo a side effect; call before making it. Ends the cancellable phase.</summary>
     public async Task AddCompensationAsync(string kind, string data, CancellationToken cancellationToken = default)
     {
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         _compensations.Add(new JournalCompensation { Kind = kind, Data = data });
         await PersistAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -372,11 +376,11 @@ public sealed class DeploymentOperation : IAsyncDisposable
 
     /// <summary>Declares the content now at a tracked <paramref name="path"/> as written by this operation (call right after an in-place edit).</summary>
     public Task RecordWrittenContentAsync(string path, CancellationToken cancellationToken = default)
-        => Files.RecordWrittenContentAsync(path, cancellationToken);
+        => Files.RecordWrittenContentAsync(path, OperationCancellation.BeginWrites(cancellationToken));
 
-    /// <summary>Declares (and journals) content about to be placed at a tracked path, before placing it.</summary>
+    /// <summary>Declares (and journals) content about to be placed at a tracked path, before placing it. Ends the cancellable phase.</summary>
     public Task RecordWriteAsync(string path, string sha256, CancellationToken cancellationToken = default)
-        => Files.RecordWriteAsync(path, sha256, cancellationToken);
+        => Files.RecordWriteAsync(path, sha256, OperationCancellation.BeginWrites(cancellationToken));
 
     internal Task PersistAsync(CancellationToken cancellationToken)
         => _journal.WriteAsync(Document(), cancellationToken);

@@ -1,5 +1,4 @@
 using System.Reflection;
-using RHI.Core.Models;
 using RHI.Desktop.ViewModels;
 
 namespace RHI.Core.Tests;
@@ -19,11 +18,11 @@ public sealed class CompiledBindingsTests
 
     [Theory]
     [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.GameCountText))]
-    [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.SelectedGame))]
+    [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.SelectedGameRow))]
     [InlineData(typeof(MainWindowViewModel), nameof(MainWindowViewModel.Components))]
     [InlineData(typeof(ComponentRowViewModel), nameof(ComponentRowViewModel.Status))]
     [InlineData(typeof(ComponentRowViewModel), nameof(ComponentRowViewModel.Command))]
-    [InlineData(typeof(DetectedGame), nameof(DetectedGame.Name))]
+    [InlineData(typeof(GameRowViewModel), nameof(GameRowViewModel.Name))]
     public void MainWindow_BindingPaths_AreCompiledAgainstTheirDataType(Type dataType, string property)
         => Assert.Contains($"{dataType.FullName},{dataType.Assembly.GetName().Name}.{property}!Getter", CompiledAccessors);
 }

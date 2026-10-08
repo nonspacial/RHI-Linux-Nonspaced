@@ -127,8 +127,9 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <see cref="MaxLaunchLogBytes"/>, appends a note when there is more, then drains the rest to
     /// /dev/null for as long as anything writes. The command runs in a subshell so an <c>exit</c> or
     /// <c>exec</c> in it still lets the shell close its own stderr and wait for the reader before exiting
-    /// with the command's status: an early failure's last line is in the file before RHI reads it (the copy is
-    /// unbuffered, so a line is there as soon as the reader has it). That wait is bounded (<see cref="ReaderWaitTenths"/>): a background child the command started (a wrapper's
+    /// with the command's status: an early failure's last line is in the file before RHI reads it (when stdbuf is
+    /// available the copy is unbuffered, so a line is there as soon as the reader has it; without stdbuf GNU head may
+    /// hold the last line in its buffer while a background child keeps the FIFO open). That wait is bounded (<see cref="ReaderWaitTenths"/>): a background child the command started (a wrapper's
     /// daemon, the Steam client after <c>steam -applaunch</c>) keeps the FIFO open, so the reader only ends when
     /// that child does. The shell then exits with the command's status anyway, inside RHI's early-exit window and
     /// without lingering for the whole session; the reader stays behind, still draining the child's stderr.
@@ -140,8 +141,8 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         var fifo = ShellQuote(stderrLog + ".fifo");
         return
             $"if mkfifo -m 600 {fifo} 2>/dev/null; then\n" +
-            // GNU head writes through stdio: unbuffered, each line is in the file as soon as it is read, even while
-            // a background child keeps the FIFO open (busybox head has no stdio buffer and no stdbuf).
+            // GNU head writes through stdio: run under stdbuf when it is available, each line is in the file as soon as it
+            // is read, even while a background child keeps the FIFO open (busybox head has no stdio buffer and no stdbuf).
             "  rhi_unbuffered=\n" +
             "  command -v stdbuf >/dev/null 2>&1 && rhi_unbuffered='stdbuf -o0'\n" +
             $"  {{ $rhi_unbuffered head -c {MaxLaunchLogBytes}; if [ \"$(head -c 1 | wc -c)\" -gt 0 ]; then " +

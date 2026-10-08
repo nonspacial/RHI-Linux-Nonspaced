@@ -306,6 +306,42 @@ public sealed partial class StandaloneDlssEnablerDeploymentServiceTests : IDispo
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-install", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(("4.10.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x5B)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(fixture.Game, "winmm.dll", ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
+    }
+
+    [Fact]
+    public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-update", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(
+            ("4.9.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x5C)))),
+            ("4.10.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x5D)))));
+        handler.ActiveVersion = "4.9.0";
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "psapi.dll")).Success);
+        handler.ActiveVersion = "4.10.0";
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.UpdateAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Equal("4.10.0", records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone)!.Version);
+    }
+
     private StandaloneDlssEnablerDeploymentService CreateService(
         GameFixture fixture,
         HttpClient http,

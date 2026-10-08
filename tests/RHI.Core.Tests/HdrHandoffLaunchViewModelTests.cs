@@ -77,7 +77,7 @@ public sealed class HdrHandoffLaunchViewModelTests : IDisposable
     private static async Task<ViewModelFixture> StartAsync(DetectedGame game, RecordingLauncher launcher, bool gamescope)
     {
         var fx = await ViewModelFixture.StartAsync([game], launcher: launcher, hdrProfiles: Service(gamescope));
-        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == game.Name);
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == game.Name).Game;
         for (var i = 0; i < 200 && (fx.Vm.IsSelectionProbeBusy || !fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal)); i++)
             await Task.Delay(25);
         fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrGamescope");

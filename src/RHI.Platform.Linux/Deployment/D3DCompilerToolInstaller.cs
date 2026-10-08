@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -128,7 +129,10 @@ public sealed class D3DCompilerToolInstaller
 
         try
         {
-            // The shared runner (#37): time limit, process-tree kill on timeout or cancel, closed stdin.
+            // The tool writes into the prefix as soon as it starts, and a cancelled wait would leave it running behind an
+            // idle RHI: from here on the install runs to the end (Cancel is refused). The shared runner (#37) still
+            // applies its time limit, process-tree kill on timeout and closed stdin.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var run = await ExternalProcess.RunAsync(startInfo, ToolTimeout, cancellationToken).ConfigureAwait(false);
             if (run.ExitCode != 0)
                 return ComponentOperationResult.Fail($"{toolName} could not install {Verb}: {run.LastMeaningfulLine()}");

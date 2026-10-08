@@ -333,6 +333,9 @@ public sealed class RenoDxDeploymentService
 
             RenoDxIniOverrideApplyResult iniApply;
             UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
+            // Downloads and snapshots are done: from the copy on, Cancel is refused (a late cancel used to leave the
+            // add-on and its INI keys in place with no record).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
@@ -674,6 +677,9 @@ public sealed class RenoDxDeploymentService
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
+
+            // Cancel is honoured only up to here: the removal never stops half-way.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
             // Control UE DLLs and renderer.ini go back first. If any of them cannot, RenoDX stays
             // installed and the record keeps owning what is left, so a retry can finish the job.

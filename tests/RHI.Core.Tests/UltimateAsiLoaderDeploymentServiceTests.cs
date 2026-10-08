@@ -256,6 +256,44 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests : IDisposabl
         Assert.Null(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-install", 0x8664);
+        using var http = new HttpClient(CreateReleaseHandler(CreateUalZip(0x8664, marker: 0x33), "9.7.4"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = new UltimateAsiLoaderDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(fixture.Root, "cache"));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(fixture.Game, "version.dll", ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(
+            File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
+    }
+
+    [Fact]
+    public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        using var fixture = CreateGame("cancel-update", 0x8664);
+        var zip1 = CreateUalZip(0x8664, 0x74);
+        var zip2 = CreateUalZip(0x8664, 0x75);
+        var handler = new SequenceReleaseHandler(
+            CreateReleaseJson(zip1, "9.7.4", "https://github.com/rhi-tests/ual-1.zip"), zip1,
+            CreateReleaseJson(zip2, "9.7.5", "https://github.com/rhi-tests/ual-2.zip"), zip2);
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = new UltimateAsiLoaderDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(fixture.Root, "cache"));
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+        handler.AdvanceRelease();
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.UpdateAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Equal("9.7.5", records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.Version);
+    }
+
     private GameFixture CreateGame(string name, ushort machine)
     {
         var dir = Path.Combine(_root, name + "-" + Guid.NewGuid().ToString("N"));

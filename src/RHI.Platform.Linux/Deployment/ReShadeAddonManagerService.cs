@@ -256,6 +256,9 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                 prepared.Add((definition, payload.Path, payload.DeployName));
             }
 
+            // Every payload is prepared: from the first change in the game folder on, Cancel is refused and the
+            // selection change runs to completion or full rollback.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
             Directory.CreateDirectory(deployDir);
             var oldByPath = old.Files.ToDictionary(x => Path.GetFullPath(x.Path), StringComparer.OrdinalIgnoreCase);
@@ -298,7 +301,6 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                 {
                     foreach (var item in prepared)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
                         var target = Path.Combine(deployDir, item.DeployName);
                         var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
                         try

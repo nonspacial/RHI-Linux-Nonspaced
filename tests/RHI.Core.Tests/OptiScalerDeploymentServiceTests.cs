@@ -357,6 +357,50 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
         Assert.DoesNotContain(targets, path => path.Split(Path.DirectorySeparatorChar).Any(segment => segment.Equals("Licenses", StringComparison.OrdinalIgnoreCase)));
     }
 
+    // w2/vmsplit review finding 1: Cancel is honoured only before the first write; afterwards the operation runs to the end.
+    [Fact]
+    public async Task Install_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (game, store) = CreateGame("cancel-install", GraphicsApi.DirectX12);
+        SeedManagedReShade(game, store);
+        var service = NewService(store, CreatePackage("cancel-install-package"));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, ct), [game.InstallPath, game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.OptiScaler));
+        Assert.True(BinarySignatureInspector.LooksLikeReShade(Path.Combine(game.BinaryDirectory!, "ReShade64.dll")));
+    }
+
+    [Fact]
+    public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
+    {
+        var (game, store) = CreateGame("cancel-update", GraphicsApi.DirectX12);
+        var service = NewService(store, CreatePackage("cancel-update-package"));
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.UpdateAsync(game, ct), [game.InstallPath, game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.NotNull(store.Find(game, ManagedComponentKind.OptiScaler));
+    }
+
+    [Fact]
+    public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
+    {
+        var (game, store) = CreateGame("cancel-remove", GraphicsApi.DirectX12);
+        SeedManagedReShade(game, store);
+        var service = NewService(store, CreatePackage("cancel-remove-package"));
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [game.InstallPath, game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+        Assert.True(BinarySignatureInspector.LooksLikeReShade(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
+    }
+
     private (DetectedGame Game, LinuxDeploymentRecordStore Store) CreateGame(string name, GraphicsApi api, ushort machine = 0x8664)
     {
         var gameRoot = Path.Combine(_root, name, "game");

@@ -25,7 +25,7 @@ public sealed class NeuralVersionPinSelectionTests
         fx.Managed.SetNeuralRenderingDllVersionPin(pinned, "310.9.9");
         var violations = Watch(fx.Vm);
 
-        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
 
         Assert.Empty(violations);
         Assert.Equal(("v9.9-feeder", "v9.9-bridge", "renodx-dlss-SF-9.9", "310.9.9"),
@@ -40,7 +40,7 @@ public sealed class NeuralVersionPinSelectionTests
         await AddAsync(fx, "Celeste"); // selected after adding
         fx.Managed.SetNeuralAddonVersionPin(pinned, ManagedComponentKind.Dlss5Feeder, "v9.9-feeder");
         fx.Managed.SetNeuralRenderingDllVersionPin(pinned, "310.9.9");
-        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
         Assert.Equal("v9.9-feeder", fx.Vm.SelectedDlss5FeederVersion);
         var violations = Watch(fx.Vm);
         var settings = fx.Vm.GetLinuxSettingsSnapshot().Settings;
@@ -88,6 +88,6 @@ public sealed class NeuralVersionPinSelectionTests
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
         Assert.True(added, message);
-        return fx.Vm.Games.Single(g => g.Name == name);
+        return fx.Vm.Games.Single(g => g.Name == name).Game;
     }
 }

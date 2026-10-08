@@ -125,11 +125,12 @@ public sealed partial class OptiScalerDeploymentService
         var backups = new Dictionary<string, string>(StringComparer.Ordinal);
         var newlyCreated = new List<string>();
         var createdDirs = new List<string>();
+        // Downloaded and checked: from the first replaced file on, the update runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             foreach (var (source, targetRaw) in requested)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 var target = Path.GetFullPath(targetRaw);
                 if (byPath.TryGetValue(target, out var owned))
                 {
@@ -251,6 +252,8 @@ public sealed partial class OptiScalerDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var journaled = operation;
 
+        // Downloaded: from the first change on, the install runs to completion or full rollback (Cancel is refused).
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             migration = await MigrateManagedReShadeIfNeededAsync(game, proxyTarget, cancellationToken).ConfigureAwait(false);
@@ -275,7 +278,6 @@ public sealed partial class OptiScalerDeploymentService
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
             foreach (var (_, target) in requested)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 existedBefore[target] = File.Exists(target);
                 if (File.Exists(target) && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
                     throw new InvalidOperationException($"Backup collision protection: {target}.original already exists. RHI will not guess which previous tool owns that backup.");
@@ -430,9 +432,11 @@ public sealed partial class OptiScalerDeploymentService
                     return ComponentOperationResult.Fail("Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing dxgi.dll, so ReShade64.dll cannot be moved back to dxgi.dll without overwriting that original.");
             }
 
+            // Cancel is honoured only up to here: the teardown never stops half-way (a restored original no longer
+            // matches RHI's hash, so a retry would be refused).
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var file in record.Files.OrderByDescending(file => file.Path.Length).ToArray())
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall)
                 {
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -499,9 +503,13 @@ public sealed partial class OptiScalerDeploymentService
             if (!File.Exists(file.Path) || !File.Exists(backup)) continue;
             if (string.Equals(await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
             if (!string.Equals(await FileHash.Sha256HexAsync(backup, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
-            File.Move(backup, file.Path, overwrite: true);
             restored.Add(file.Path);
         }
+        if (restored.Count == 0) return restored;
+        // Checked: the give-back runs for every file found, whatever Cancel says.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
+        foreach (var path in restored)
+            File.Move(path + TransactionalFileDeploymentService.BackupExtension, path, overwrite: true);
         return restored;
     }
 

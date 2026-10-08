@@ -30,7 +30,7 @@ public sealed class LibraryStateSessionTests
         await AddAndSelectAsync(fx, fx.Game("Celeste"));
 
         Assert.Contains(key, fx.Library.Load().FavouriteGames);
-        Assert.True(fx.Vm.Games.Single(g => g.Name == "Tunic").IsFavourite);
+        Assert.True(fx.Vm.Games.Single(g => g.Name == "Tunic").Game.IsFavourite);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public sealed class LibraryStateSessionTests
                 ManualGames = [new LinuxManualGameEntry { Name = "Hades", InstallPath = hades.InstallPath, Runner = "Manual Windows" }],
                 FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { "restored-key" }
             });
-            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic");
+            fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
             var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame);
 
             switch (change)
@@ -232,11 +232,12 @@ public sealed class LibraryStateSessionTests
     [Fact]
     public void EveryViewModelStoreSave_GoesThroughTryPersist()
     {
-        var vm = Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "ViewModels", "MainWindowViewModel.cs");
-        var direct = File.ReadAllLines(vm)
-            .Select((line, i) => (line, i))
+        // Every view-model file: the split (epic #89) moves code out of MainWindowViewModel.cs.
+        var viewModels = Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Desktop", "ViewModels");
+        var direct = Directory.EnumerateFiles(viewModels, "*.cs")
+            .SelectMany(file => File.ReadAllLines(file).Select((line, i) => (file, line, i)))
             .Where(x => StoreWrite.IsMatch(x.line) && !x.line.Contains("TryPersist(", StringComparison.Ordinal))
-            .Select(x => $"{x.i + 1}: {x.line.Trim()}")
+            .Select(x => $"{Path.GetFileName(x.file)}:{x.i + 1}: {x.line.Trim()}")
             .ToList();
 
         Assert.Empty(direct);

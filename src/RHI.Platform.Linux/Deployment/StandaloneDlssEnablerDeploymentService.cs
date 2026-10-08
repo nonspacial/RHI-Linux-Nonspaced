@@ -174,6 +174,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
             _journal, "DLSS Enabler Standalone install: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var journaled = operation;
+        // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
@@ -359,6 +361,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
 
         string? staged = null;
         var previous = targetPath + $".rhi-previous-{Guid.NewGuid():N}";
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             var stagedCopy = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);

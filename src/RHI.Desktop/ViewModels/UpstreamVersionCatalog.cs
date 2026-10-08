@@ -19,6 +19,17 @@ public sealed class UpstreamVersionCatalog
         Action<NeuralVersionLists> applyNeuralVersions,
         Func<DateTime>? utcNow = null,
         TimeSpan? latestTimeToLive = null)
+        : this((kind, _) => listNeuralVersions(kind), applyNeuralVersions, utcNow, latestTimeToLive)
+    {
+    }
+
+    /// <param name="listNeuralVersions">Lists one add-on's versions; the token is the one the load's starter passed to
+    /// <see cref="NeuralVersionCatalog.EnsureAsync"/> (its operation's Cancel, w2/vmsplit).</param>
+    public UpstreamVersionCatalog(
+        Func<ManagedComponentKind, CancellationToken, Task<IReadOnlyList<GitHubReleaseVersion>>> listNeuralVersions,
+        Action<NeuralVersionLists> applyNeuralVersions,
+        Func<DateTime>? utcNow = null,
+        TimeSpan? latestTimeToLive = null)
     {
         NeuralVersions = new NeuralVersionCatalog(listNeuralVersions, applyNeuralVersions);
         UalLatest = new LatestVersionCache<PeArchitecture>(latestTimeToLive, utcNow);
@@ -157,26 +168,33 @@ public enum NeuralCatalogOutcome
 
 /// <summary>
 /// Loads the neural-rendering add-on version lists once per session; a forced load (full Refresh, "Load versions")
-/// fetches them again. Concurrent callers share one load. <paramref name="apply"/> runs on the caller's context
-/// (the UI thread in the app), so it may update bound collections.
+/// fetches them again. Concurrent callers share one load. <paramref name="list"/> gets the token of the caller that
+/// started the load (cancelling it fails that load for every caller, as before the catalogue existed); a joining caller
+/// stops waiting when its own token is cancelled. <paramref name="apply"/> runs on the caller's context (the UI thread
+/// in the app), so it may update bound collections.
 /// </summary>
 public sealed class NeuralVersionCatalog(
-    Func<ManagedComponentKind, Task<IReadOnlyList<GitHubReleaseVersion>>> list,
+    Func<ManagedComponentKind, CancellationToken, Task<IReadOnlyList<GitHubReleaseVersion>>> list,
     Action<NeuralVersionLists> apply)
 {
     private Task? _load;
 
+    public NeuralVersionCatalog(Func<ManagedComponentKind, Task<IReadOnlyList<GitHubReleaseVersion>>> list, Action<NeuralVersionLists> apply)
+        : this((kind, _) => list(kind), apply)
+    {
+    }
+
     public bool IsLoaded { get; private set; }
 
     /// <summary>Throws what the load threw when this call started it (a joined load's failure is its starter's to report).</summary>
-    public async Task<NeuralCatalogOutcome> EnsureAsync(bool forceRefresh = false)
+    public async Task<NeuralCatalogOutcome> EnsureAsync(bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
         if (!forceRefresh && IsLoaded) return NeuralCatalogOutcome.NotNeeded;
 
         if (_load is { } running)
         {
-            try { await running; }
-            catch (Exception)
+            try { await running.WaitAsync(cancellationToken); }
+            catch (Exception) when (!cancellationToken.IsCancellationRequested)
             {
                 // Reported by the caller that started this load; a forced refresh below starts its own.
             }
@@ -184,7 +202,7 @@ public sealed class NeuralVersionCatalog(
                 return IsLoaded ? NeuralCatalogOutcome.AlreadyLoaded : NeuralCatalogOutcome.NotNeeded;
         }
 
-        var load = LoadAsync();
+        var load = LoadAsync(cancellationToken);
         _load = load;
         try
         {
@@ -199,11 +217,11 @@ public sealed class NeuralVersionCatalog(
     }
 
     // No ConfigureAwait(false): apply updates bound collections on the caller's (UI) context.
-    private async Task LoadAsync()
+    private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        var feeder = list(ManagedComponentKind.Dlss5Feeder);
-        var bridge = list(ManagedComponentKind.Dlss5Dx11Bridge);
-        var shortFuse = list(ManagedComponentKind.ShortFuse);
+        var feeder = list(ManagedComponentKind.Dlss5Feeder, cancellationToken);
+        var bridge = list(ManagedComponentKind.Dlss5Dx11Bridge, cancellationToken);
+        var shortFuse = list(ManagedComponentKind.ShortFuse, cancellationToken);
         await Task.WhenAll(feeder, bridge, shortFuse);
         apply(new NeuralVersionLists(feeder.Result, bridge.Result, shortFuse.Result));
     }

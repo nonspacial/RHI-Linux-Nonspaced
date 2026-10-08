@@ -307,6 +307,9 @@ public sealed class ReShadeShaderPackService
                     previousByPath);
         }
 
+        // Everything is staged and validated: from the first change in the game folder on, the sync runs to the end
+        // (a cancel half-way used to leave copied packs that no manifest owns).
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         RemoveManifestFiles(root, previous);
         if (normalized.Length == 0)
         {
@@ -323,7 +326,6 @@ public sealed class ReShadeShaderPackService
 
         foreach (var id in normalized)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var staged = stagedById[id];
             var safeId = SafePackDirectoryName(id);
             var targetPackRoot = Path.Combine(root, safeId);

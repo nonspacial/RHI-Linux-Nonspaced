@@ -458,6 +458,8 @@ public sealed class ShortFuseDeploymentService
         var deployed = new List<LinuxDeployedFile>();
         var changedFiles = new List<string>();
 
+        // Downloads and staging are done: from the first game file on, the install runs to completion or full rollback.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             if (!ualWasPresent && autoConfigEnabled)
@@ -550,7 +552,7 @@ public sealed class ShortFuseDeploymentService
         }
         catch (Exception ex)
         {
-            await RollbackDeployedFilesAsync(deployed, cancellationToken).ConfigureAwait(false);
+            await RollbackDeployedFilesAsync(deployed).ConfigureAwait(false);
             if (!FileCleanup.TryDelete(addonTarget, out var addonError))
                 AppLog.Warn("shortfuse", $"Install rollback could not remove {addonTarget}", addonError);
             if (iniSnapshot is not null)
@@ -698,6 +700,10 @@ public sealed class ShortFuseDeploymentService
         var ualRemoved = false;
         WineOverrideRestoreResult? reshadeOverrideBack = null;
 
+        // Cancel is honoured only up to here: a teardown that stopped half-way would be refused on retry by the hash
+        // guard (restored originals no longer match RHI's hash), and its failure path rewrites the snapshots, so from
+        // here on it always runs to the end.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             // Snapshot every owned target and backup so a late teardown failure can reconstruct state.
@@ -712,7 +718,6 @@ public sealed class ShortFuseDeploymentService
 
             foreach (var file in record.Files.AsEnumerable().Reverse())
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
                 {
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
@@ -881,17 +886,26 @@ public sealed class ShortFuseDeploymentService
         changedFiles.Add(target);
     }
 
-    private async Task RollbackDeployedFilesAsync(IEnumerable<LinuxDeployedFile> files, CancellationToken ct)
+    // Compensation: never cancellable (a cancelled restore puts nothing back and leaves RHI's DLLs with their
+    // .original beside them and no record). A file that could not be put back keeps its .original and is logged.
+    private async Task RollbackDeployedFilesAsync(IEnumerable<LinuxDeployedFile> files)
     {
         foreach (var file in files.Reverse())
         {
             try
             {
                 if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
-                    _ = await _files.RestoreAsync(file.Path, ct).ConfigureAwait(false);
+                {
+                    var restored = await _files.RestoreAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
+                    if (!restored.Success)
+                        AppLog.Warn("shortfuse-rollback", $"Could not restore {file.Path}; its .original is kept: {restored.Error}");
+                }
                 else if (File.Exists(file.Path)) File.Delete(file.Path);
             }
-            catch { }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("shortfuse-rollback", $"Could not roll back {file.Path}", ex);
+            }
         }
     }
 

@@ -60,7 +60,8 @@ public sealed class Dx9TranslationReShadeCoordinator
             _journal, "ReShade DX9 translation: " + game.Name, game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) throw new IOException(journalRefusal);
         await using var journaled = operation;
-
+        // From the first override on, the migration (or its undo) runs to the end whatever Cancel says.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var exeName = Path.GetFileName(game.ExecutablePath);
         var originalRecordOverride = record.WineOverride;
         var previousOperationId = record.Metadata.GetValueOrDefault(LinuxDeploymentRecovery.OperationIdMetadataKey);
@@ -117,6 +118,7 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             throw new WineRegistryEditRefusedException(wineRunning, inUse: true);
 
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var translatedOverride = record.WineOverride;
         WineOverrideRestoreResult? overrideRestore = null;
         File.Move(state.TranslatedPath, state.OriginalPath);
