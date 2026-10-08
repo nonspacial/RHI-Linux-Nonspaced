@@ -28,6 +28,9 @@ public sealed record LumaPackageSelection(
 /// </summary>
 public sealed class LumaFrameworkDeploymentService
 {
+    /// <summary>Test seam: runs at the start of each install rollback step with its description (may throw).</summary>
+    internal Action<string>? RollbackStepFaultForTesting { get; set; }
+
     public const string LatestReleaseApiUrl = "https://api.github.com/repos/Filoppi/Luma-Framework/releases/latest";
     public const string GenericUnrealAssetName = "Luma-Unreal_Engine.zip";
     internal const string MetaDx9Migration = "LumaFramework.Dx9ReShadeMigration";
@@ -682,12 +685,19 @@ public sealed class LumaFrameworkDeploymentService
             {
                 // Compensation never honours cancellation, and each step runs even when an earlier one failed: a
                 // swallowed INI write used to skip the Engine.ini, DX9 and directory restores and leave Luma's keys in
-                // the user's ReShade.ini and the game's Engine.ini with no record to remove them.
+                // the user's ReShade.ini and the game's Engine.ini with no record to remove them. Every failure a step
+                // meets is caught and logged (never only I/O ones), and the staging folder holding RHI's rollback copies
+                // is kept from here until every step has succeeded (w2 merge review, nit 3).
+                keepStaging = true;
                 var rollbackFailed = false;
                 void Step(string what, Action action)
                 {
-                    try { action(); }
-                    catch (Exception stepError) when (stepError is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    try
+                    {
+                        RollbackStepFaultForTesting?.Invoke(what);
+                        action();
+                    }
+                    catch (Exception stepError)
                     {
                         rollbackFailed = true;
                         AppLog.Warn("luma-rollback", $"Could not {what} for {game.Name}", stepError);
@@ -733,7 +743,7 @@ public sealed class LumaFrameworkDeploymentService
                 if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
                 {
                     try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
-                    catch (Exception dx9Error) when (dx9Error is IOException or UnauthorizedAccessException or InvalidOperationException)
+                    catch (Exception dx9Error)
                     {
                         rollbackFailed = true;
                         AppLog.Warn("luma-rollback", $"Could not restore the DX9 ReShade migration for {game.Name}", dx9Error);
@@ -743,10 +753,10 @@ public sealed class LumaFrameworkDeploymentService
                 // The rollback copies live in the staging folder: keep it when anything could not be put back.
                 if (rollbackFailed)
                 {
-                    keepStaging = true;
                     AppLog.Warn("luma-rollback", $"Rollback incomplete for {game.Name}; RHI's copies are kept at {stagingRoot}");
                     return ComponentOperationResult.Fail($"{RollbackIncompletePrefix}{ex.Message}");
                 }
+                keepStaging = false;
                 return ComponentOperationResult.Fail($"Luma Framework installation rolled back: {ex.Message}");
             }
         }

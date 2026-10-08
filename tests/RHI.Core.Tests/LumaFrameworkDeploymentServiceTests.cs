@@ -708,6 +708,37 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.LumaFramework));
     }
 
+    // w2 merge review, nit 3: a rollback step that fails with something other than an I/O error is logged like any
+    // other, the remaining steps still run, and the staging folder with RHI's rollback copies is kept.
+    [Fact]
+    public async Task Install_RollbackStepFailingUnexpectedly_StillRunsTheOtherSteps_AndKeepsTheRollbackCopies()
+    {
+        var fx = CreateLumaCancelFixture("rollback-unexpected");
+        using var http = fx.Http;
+        var engineBefore = File.ReadAllText(fx.EngineIni);
+        var logPath = Path.Combine(_root, "rollback-unexpected.log");
+        fx.Records.SaveFaultForTesting = () => new IOException("Simulated ledger failure");
+        fx.Service.RollbackStepFaultForTesting = what =>
+        {
+            if (what == "restore ReShade.ini") throw new NullReferenceException("simulated defect");
+        };
+
+        ComponentOperationResult result;
+        using (AppLog.UseInThisFlow(new AppLog(logPath)))
+            result = await fx.Service.InstallAsync(fx.Game);
+        fx.Records.SaveFaultForTesting = null;
+
+        Assert.False(result.Success);
+        Assert.StartsWith(LumaFrameworkDeploymentService.RollbackIncompletePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Equal(engineBefore, File.ReadAllText(fx.EngineIni)); // a later step still ran
+        var log = File.ReadAllText(logPath);
+        Assert.Contains("Could not restore ReShade.ini", log, StringComparison.Ordinal);
+        Assert.Contains("NullReferenceException", log, StringComparison.Ordinal);
+        var kept = System.Text.RegularExpressions.Regex.Match(log, "RHI's copies are kept at (\\S+)").Groups[1].Value;
+        Assert.True(Directory.Exists(kept), $"the rollback copies at '{kept}' were deleted");
+        Directory.Delete(kept, recursive: true);
+    }
+
     [Fact]
     public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
     {
