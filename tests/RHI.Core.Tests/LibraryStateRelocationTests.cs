@@ -1,4 +1,5 @@
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Settings;
@@ -53,8 +54,10 @@ public sealed class LibraryStateRelocationTests : IDisposable
         Assert.NotEqual(LinuxGameLibraryStore.SessionKey(Steam(oldLib)), LinuxGameLibraryStore.SessionKey(Steam(newLib)));
     }
 
+    // Review w2-stores #1: a folder key keeps the folder as the launcher spells it (no symlink resolution); a symlink
+    // spelling of the same folder is one card in the scanner, and the duplicate's state follows through MergedAliases.
     [Fact]
-    public void FolderKey_IsTheFoldersIdentity_SoASymlinkSpellingIsTheSameGame()
+    public async Task FolderKey_IsTheFolderAsWritten_AndASymlinkSpellingIsAdoptedThroughTheMergedCard()
     {
         var real = Directory.CreateDirectory(Path.Combine(_root, "media", "Indie")).FullName;
         var link = Path.Combine(_root, "Games");
@@ -62,8 +65,152 @@ public sealed class LibraryStateRelocationTests : IDisposable
         var viaLink = new DetectedGame { Name = "Indie", Source = "Manual", InstallPath = Path.Combine(link, "Indie") + "/" };
         var direct = new DetectedGame { Name = "Indie", Source = "Manual", InstallPath = real };
 
-        Assert.Equal(LinuxGameLibraryStore.GameKey(direct), LinuxGameLibraryStore.GameKey(viaLink));
-        Assert.Contains(real, LinuxGameLibraryStore.GameKey(direct), StringComparison.Ordinal); // case kept: Linux paths are case-sensitive
+        Assert.Equal("folder:manual|" + Path.Combine(link, "Indie"), LinuxGameLibraryStore.GameKey(viaLink)); // no trailing separator, link kept
+        Assert.Equal("folder:manual|" + real, LinuxGameLibraryStore.GameKey(direct)); // case kept: Linux paths are case-sensitive
+
+        var card = Assert.Single(await new GameLibraryScanner([new FixedDetector("Manual", viaLink, direct)]).ScanAsync());
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add(LinuxGameLibraryStore.GameKey(direct));
+        state.HdrProfiles[LinuxGameLibraryStore.GameKey(direct)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+
+        Assert.True(state.AdoptOlderKeys(card));
+        Assert.Equal([LinuxGameLibraryStore.GameKey(card)], state.FavouriteGames);
+        Assert.Equal(LinuxHdrModes.Gamescope, state.HdrProfiles[LinuxGameLibraryStore.GameKey(card)].Mode);
+    }
+
+    /// <summary>The owner's layout: <c>Games -&gt; diskA/Games</c>, a Lutris game at <c>Games/battlenet</c> with an edit.</summary>
+    private (DetectedGame Game, string Link) LutrisBehindSymlink()
+    {
+        var install = Directory.CreateDirectory(Path.Combine(_root, "diskA", "Games", "battlenet")).FullName;
+        File.WriteAllText(Path.Combine(install, "Battle.net.exe"), "MZ");
+        var link = Path.Combine(_root, "Games");
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "diskA", "Games"));
+        var path = Path.Combine(link, "battlenet");
+        return (new DetectedGame { Name = "Battle.net", Source = "Lutris", InstallPath = path, LibraryIdentityPath = path }, link);
+    }
+
+    private static DetectedGame Redetected(DetectedGame game)
+        => new() { Name = game.Name, Source = game.Source, InstallPath = game.InstallPath, LibraryIdentityPath = game.LibraryIdentityPath };
+
+    // Review w2-stores #1: moving the games to another disk and re-pointing the symlink (mv + ln -sfn) keeps every
+    // favourite, hidden flag, edit and HDR profile on the game, with nothing to repair.
+    [Fact]
+    public void RePointedGamesSymlink_KeepsTheKeyAndAllState()
+    {
+        var (game, link) = LutrisBehindSymlink();
+        var store = new LinuxGameLibraryStore(Path.Combine(_root, "game-library.json"));
+        var key = LinuxGameLibraryStore.GameKey(game);
+        var state = store.Load();
+        state.FavouriteGames.Add(key);
+        state.HiddenGames.Add(key);
+        state.GameEdits[key] = new LinuxGameEditOverride
+        {
+            LaunchProvider = "Lutris", GameRootPath = game.InstallPath, BinaryDirectory = game.InstallPath,
+            PatchExecutablePath = Path.Combine(game.InstallPath, "Battle.net.exe")
+        }.Normalize();
+        state.HdrProfiles[key] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+        store.Save(state);
+
+        // mv diskA/Games diskB/Games; ln -sfn diskB/Games Games
+        Directory.CreateDirectory(Path.Combine(_root, "diskB"));
+        Directory.Move(Path.Combine(_root, "diskA", "Games"), Path.Combine(_root, "diskB", "Games"));
+        File.Delete(link);
+        Directory.CreateSymbolicLink(link, Path.Combine(_root, "diskB", "Games"));
+        var found = Redetected(game);
+
+        Assert.Equal(key, LinuxGameLibraryStore.GameKey(found));
+        var after = store.Load();
+        Assert.False(after.AdoptOlderKeys(found));
+        Assert.Equal([key], after.FavouriteGames);
+        Assert.Equal([key], after.HiddenGames);
+        Assert.Equal(LinuxHdrModes.Gamescope, after.HdrProfiles[key].Mode);
+        Assert.Empty(store.MovedPaths(found)); // the edit's folder still exists through the link: nothing to repair
+        LinuxGameIdentityService.ApplyDetectedIdentity(found, after.GameEdits[key]);
+        Assert.True(found.HasConfirmedPatchTarget);
+        Assert.False(found.PatchTargetFolderMissing);
+    }
+
+    // Review w2-stores #1: keys an earlier build of this branch wrote with the symlink resolved are adopted onto the
+    // as-written key, without overwriting an entry already there (that one wins, the older one is kept).
+    [Fact]
+    public void ResolvedFolderKeysThisBranchWrote_AreAdoptedOntoTheAsWrittenKey()
+    {
+        var (game, _) = LutrisBehindSymlink();
+        var resolved = "folder:lutris|" + Path.Combine(_root, "diskA", "Games", "battlenet"); // what 6225e85 wrote
+        var key = LinuxGameLibraryStore.GameKey(game);
+        Assert.NotEqual(resolved, key);
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add(resolved);
+        state.HiddenGames.Add(resolved);
+        state.GameEdits[resolved] = new LinuxGameEditOverride { LaunchProvider = "Steam" };
+        state.GameEdits[key] = new LinuxGameEditOverride { LaunchProvider = "Lutris" }; // newer choice
+        state.HdrProfiles[resolved] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+
+        Assert.True(state.AdoptOlderKeys(game));
+
+        Assert.Equal([key], state.FavouriteGames);
+        Assert.Equal([key], state.HiddenGames);
+        Assert.Equal(LinuxHdrModes.Gamescope, state.HdrProfiles[key].Mode);
+        Assert.Equal("Lutris", state.GameEdits[key].LaunchProvider);
+        Assert.Equal("Steam", state.GameEdits[resolved].LaunchProvider); // kept, not dropped
+        Assert.DoesNotContain(resolved, state.HdrProfiles.Keys);
+    }
+
+    // The same for a merged duplicate's resolved key, and the edit lookup Repair after move reads before adoption.
+    [Fact]
+    public void ResolvedFolderKeys_OfAMergedDuplicate_AreAdopted_AndAnEditUnderOneIsSeenByRepair()
+    {
+        var (game, _) = LutrisBehindSymlink();
+        var realFolder = Path.Combine(_root, "diskA", "Games", "battlenet");
+        var aliasViaLink = Path.Combine(_root, "Games", "battlenet");
+        game.MergedAliases = [new LibraryEntryAlias("Wine", aliasViaLink, null)];
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add("folder:wine|" + realFolder);
+
+        Assert.True(state.AdoptOlderKeys(game));
+        Assert.Equal([LinuxGameLibraryStore.GameKey(game)], state.FavouriteGames);
+
+        var store = new LinuxGameLibraryStore(Path.Combine(_root, "game-library.json"));
+        var saved = store.Load();
+        var gone = Path.Combine(_root, "gone");
+        saved.GameEdits["folder:lutris|" + realFolder] = new LinuxGameEditOverride
+        {
+            GameRootPath = gone, BinaryDirectory = gone, PatchExecutablePath = Path.Combine(gone, "Battle.net.exe")
+        };
+        store.Save(saved);
+        Assert.Equal([gone, gone, Path.Combine(gone, "Battle.net.exe")], store.MovedPaths(Redetected(game)));
+    }
+
+    // Review w2-stores #1: a folder-keyed game whose resolved-form key this branch wrote moves (not a re-pointed link):
+    // Repair after move carries that key too.
+    [Fact]
+    public void ResolvedFolderKeyOfTheOldFolder_FollowsTheGameOnRepair()
+    {
+        var (game, link) = LutrisBehindSymlink();
+        var store = new LinuxGameLibraryStore(Path.Combine(_root, "game-library.json"));
+        var state = store.Load();
+        var resolved = "folder:lutris|" + Path.Combine(_root, "diskA", "Games", "battlenet");
+        state.FavouriteGames.Add(resolved);
+        state.HdrProfiles[resolved] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+        store.Save(state);
+        Directory.Move(Path.Combine(_root, "diskA", "Games", "battlenet"), Path.Combine(_root, "diskA", "Games", "battle.net"));
+        var moved = Redetected(game);
+        moved.InstallPath = moved.LibraryIdentityPath = Path.Combine(link, "battle.net");
+
+        var write = store.StageMove(new GameStateMove(moved, [(game.InstallPath, moved.InstallPath)], []));
+        Assert.NotNull(write);
+        RHI.Platform.Linux.Persistence.StagedFileCommit.Commit([write!]);
+
+        var after = store.Load();
+        Assert.Equal([LinuxGameLibraryStore.GameKey(moved)], after.FavouriteGames);
+        Assert.Equal(LinuxHdrModes.Gamescope, after.HdrProfiles[LinuxGameLibraryStore.GameKey(moved)].Mode);
+    }
+
+    private sealed class FixedDetector(string name, params DetectedGame[] games) : RHI.Core.Services.IGameDetector
+    {
+        public string Name => name;
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<DetectedGame>>(games);
     }
 
     // ---- Migration of keys older builds wrote ----------------------------------------------------

@@ -156,20 +156,23 @@ public sealed class LinuxGameLibraryState
         return changed;
     }
 
-    /// <summary>The game's edit under its current key, else under the key an older build wrote.</summary>
+    /// <summary>The game's edit under its current key, else under a key an older build wrote for this folder.</summary>
     public bool TryGetEdit(RHI.Core.Models.DetectedGame game, out LinuxGameEditOverride edit)
     {
         if (GameEdits.TryGetValue(LinuxGameLibraryStore.GameKey(game), out edit!)) return true;
-        return GameEdits.TryGetValue(LinuxGameLibraryStore.LegacyGameKey(game), out edit!);
+        if (GameEdits.TryGetValue(LinuxGameLibraryStore.LegacyGameKey(game), out edit!)) return true;
+        return LinuxGameLibraryStore.ResolvedFolderKey(game) is { } resolved && GameEdits.TryGetValue(resolved, out edit!);
     }
 
     private string[] OlderKeys(RHI.Core.Models.DetectedGame game)
     {
         var keys = new List<string> { LinuxGameLibraryStore.LegacyGameKey(game) };
+        if (LinuxGameLibraryStore.ResolvedFolderKey(game) is { } resolved) keys.Add(resolved);
         foreach (var alias in game.MergedAliases)
         {
             keys.Add(LinuxGameLibraryStore.GameKey(alias));
             keys.Add(LinuxGameLibraryStore.LegacyGameKey(alias));
+            if (LinuxGameLibraryStore.ResolvedFolderKey(alias) is { } aliasResolved) keys.Add(aliasResolved);
         }
         if (game.SteamAppId is int appId && LinuxGameLibraryStore.SteamLibraryTail(LinuxGameLibraryStore.IdentityPath(game)) is { } tail)
         {
@@ -310,8 +313,9 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     /// The key a game's library state (favourite, hidden, edit, HDR profile) is saved under. It survives moving the game
     /// to another library or drive (Refs #147): a Steam game is keyed by its AppID and a Heroic game by its app id —
     /// plus the child's name for a manifest split game, whose children share one AppID — and any other game by its
-    /// source and the filesystem identity of its library folder (<see cref="PathIdentity"/>). Keys older builds wrote
-    /// (<see cref="LegacyGameKey(DetectedGame)"/>) are adopted by <see cref="LinuxGameLibraryState.AdoptOlderKeys"/>.
+    /// source and its library folder as the launcher spells it (symlinks not resolved, so re-pointing a symlinked games
+    /// folder keeps the key). Keys older builds wrote (<see cref="LegacyGameKey(DetectedGame)"/>) are adopted by
+    /// <see cref="LinuxGameLibraryState.AdoptOlderKeys"/>.
     /// </summary>
     public static string GameKey(DetectedGame game) => GameKey(game, IdentityPath(game));
 
@@ -377,8 +381,47 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
         return string.IsNullOrWhiteSpace(heroicAppName) ? null : $"heroic:{heroicAppName.Trim()}{split}";
     }
 
-    private static string FolderKey(string? sourceName, string identityPath)
-        => $"folder:{Source(sourceName)}|{PathIdentity.Canonicalize(identityPath ?? "")}";
+    /// <summary>
+    /// A folder-keyed game's key uses the folder as the launcher spells it (absolute, no trailing separator), never with
+    /// symlinks resolved: re-pointing a symlinked games folder (<c>~/Games -&gt; /media/disk/Games</c>, moved with
+    /// <c>mv</c> + <c>ln -sfn</c>) must not change the key. Two spellings of one folder are one card in the scanner, and the
+    /// duplicate's key is adopted through <see cref="DetectedGame.MergedAliases"/>.
+    /// </summary>
+    private static string FolderKey(string? sourceName, string? identityPath)
+        => $"folder:{Source(sourceName)}|{AsWritten(identityPath)}";
+
+    /// <summary>
+    /// The key builds of this branch wrote for a folder-keyed game before keys kept the folder as written: the folder's
+    /// <see cref="PathIdentity"/> (symlinks resolved). Null for a store-keyed game (Steam, Heroic) or when it equals the
+    /// current key. Adopted by <see cref="LinuxGameLibraryState.AdoptOlderKeys"/> while the symlink still points where it did.
+    /// </summary>
+    internal static string? ResolvedFolderKey(DetectedGame game) => ResolvedFolderKey(game, IdentityPath(game));
+
+    /// <summary>As <see cref="ResolvedFolderKey(DetectedGame)"/> with <paramref name="identityPath"/> as the game's library folder.</summary>
+    internal static string? ResolvedFolderKey(DetectedGame game, string identityPath)
+        => StoreKey(game.SteamAppId, game.HeroicAppName, game.IsManifestSplitChild ? game.Name : null) is null
+            ? ResolvedFolderKey(game.Source, identityPath)
+            : null;
+
+    /// <summary>The resolved-form key of a merged duplicate (see <see cref="ResolvedFolderKey(DetectedGame)"/>).</summary>
+    internal static string? ResolvedFolderKey(LibraryEntryAlias alias)
+        => StoreKey(alias.SteamAppId, alias.HeroicAppName, null) is null ? ResolvedFolderKey(alias.Source, alias.IdentityPath) : null;
+
+    private static string? ResolvedFolderKey(string? sourceName, string? identityPath)
+    {
+        var resolved = $"folder:{Source(sourceName)}|{PathIdentity.Canonicalize(identityPath ?? "")}";
+        return string.Equals(resolved, FolderKey(sourceName, identityPath), StringComparison.Ordinal) ? null : resolved;
+    }
+
+    private static string AsWritten(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        string full;
+        try { full = Path.GetFullPath(path); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { full = path.Trim(); }
+        var trimmed = full.TrimEnd(Path.DirectorySeparatorChar);
+        return trimmed.Length == 0 && full.Length > 0 ? Path.DirectorySeparatorChar.ToString() : trimmed;
+    }
 
     private static string Source(string? sourceName) => (sourceName ?? "").Trim().ToLowerInvariant();
 

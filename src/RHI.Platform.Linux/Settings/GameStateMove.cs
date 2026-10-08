@@ -64,7 +64,12 @@ public sealed class GameStateMove
         OldLibraryKeys = string.IsNullOrWhiteSpace(identity) ? [] : _roots
             .Select(r => Rebase(identity, r.NewRoot, r.OldRoot))
             .OfType<string>()
-            .SelectMany(old => new[] { LinuxGameLibraryStore.GameKey(game, old), LinuxGameLibraryStore.LegacyGameKey(game.Source, old, game.SteamAppId) })
+            .SelectMany(old => new[]
+            {
+                LinuxGameLibraryStore.GameKey(game, old), LinuxGameLibraryStore.LegacyGameKey(game.Source, old, game.SteamAppId),
+                LinuxGameLibraryStore.ResolvedFolderKey(game, old) // this branch's earlier symlink-resolved folder key
+            })
+            .OfType<string>()
             .Append(LinuxGameLibraryStore.LegacyGameKey(game)) // the current folder's pre-#147 key, if not yet adopted
             .Where(k => !string.Equals(k, NewLibraryKey, StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
