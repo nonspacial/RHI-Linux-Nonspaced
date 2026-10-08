@@ -883,6 +883,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// favourites/hidden/edits/HDR and the preference stores it owns). All or nothing.
     /// </summary>
     public RelocationRepairResult RepairAfterMove(DetectedGame game, IReadOnlyList<IGameStateStore>? libraryStores = null)
+        => _relocation.Repair(game, RepairStores(libraryStores), out _);
+
+    /// <summary>
+    /// Every per-game store "Repair after move" rewrites: the ones this service owns plus <paramref name="libraryStores"/>.
+    /// A per-game store missing here loses its entries when the game moves (a contract test walks the app's object graph).
+    /// </summary>
+    internal IReadOnlyList<IGameStateStore> RepairStores(IReadOnlyList<IGameStateStore>? libraryStores = null)
     {
         IGameStateStore?[] owned =
         [
@@ -890,8 +897,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
             _shortFuse?.GameState, _lumaPolicy?.GameState
         ];
-        var stores = owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
-        return _relocation.Repair(game, stores, out _);
+        return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
 
     private IReadOnlyList<string> BuildDependencyIndex(DetectedGame game, IReadOnlyList<string>? indexedFiles = null)

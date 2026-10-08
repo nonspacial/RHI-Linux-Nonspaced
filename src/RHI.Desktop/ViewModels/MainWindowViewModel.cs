@@ -3112,6 +3112,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// found by name and folder (a game without a store id) are adopted only after the user
     /// confirms the old and new folders.
     /// </summary>
+    /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
+    internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+
     [RelayCommand(CanExecute = nameof(CanRepairAfterMove))]
     private async Task RepairAfterMoveAsync()
     {
@@ -3133,8 +3136,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             StatusText = TF("Vm.CheckingRHISFilesNewFolder", game.Name);
-            IGameStateStore[] uiStores = [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
-            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, uiStores));
+            var result = await Task.Run(() => _managedComponents.RepairAfterMove(game, RepairUiStores));
             if (!result.Success)
             {
                 StatusText = UiLocalizationService.Present(result.Message);
