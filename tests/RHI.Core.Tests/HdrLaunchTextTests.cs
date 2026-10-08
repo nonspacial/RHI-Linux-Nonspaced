@@ -99,7 +99,7 @@ public sealed class HdrLaunchTextTests : IDisposable
     [Theory]
     [InlineData("Steam", "steam -applaunch 1234", "Launch Options", "gamescope --hdr-enabled -- %command%")]
     [InlineData("Lutris", "lutris 'lutris:rungame/game'", "System options", "command prefix gamescope --hdr-enabled --")]
-    [InlineData("Manual", "flatpak run org.example.Game", "that launcher", "wrapper command gamescope --hdr-enabled --")]
+    [InlineData("Manual", "xdg-open 'itch://caves/abc/launch'", "that launcher", "wrapper command gamescope --hdr-enabled --")]
     public void EachLauncher_GetsItsOwnSteps(string source, string command, string where, string what)
     {
         var game = Game(source, command);
@@ -111,6 +111,19 @@ public sealed class HdrLaunchTextTests : IDisposable
         Assert.Contains(where, en, StringComparison.Ordinal);
         Assert.Contains(what, en, StringComparison.Ordinal);
         Assert.DoesNotContain(UiLocalizationService.EnglishMarkersIn(pt), w => !w.Equals("no", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void SteamCardWithAWrappedClientCommand_IsAHandoff_AndTheProfileIsNotWrappedAroundSteam()
+    {
+        // w2-launch review, major 1 repro: Edit game → `gamemoderun steam -applaunch <id>`, HDR = Gamescope. RHI ran
+        // `gamescope --hdr-enabled -- gamemoderun steam …`, said HDR was applied, and the game Steam started got none.
+        var game = Game("Steam", "gamemoderun steam -applaunch 1234");
+        var plan = Service(gamescope: true).BuildPlan(game, Profile(LinuxHdrModes.Gamescope));
+
+        Assert.Equal(LaunchHandoff.Steam, plan.Handoff);
+        Assert.False(plan.AppliesAtLaunch);
+        Assert.Contains("Launch Options", InLanguage("en-US", () => HdrLaunchText.HandoffNotice(plan, game)), StringComparison.Ordinal);
     }
 
     [Fact]
