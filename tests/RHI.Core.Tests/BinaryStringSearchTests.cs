@@ -82,6 +82,66 @@ public sealed class BinaryStringSearchTests : IDisposable
     }
 
     [Fact]
+    public void SameSizeRewriteWithTheOldModificationTime_IsReadAgain()
+    {
+        // Review w2-trust minor 3: an in-place rewrite of equal length whose mtime is set back (touch -d) kept
+        // (path, length, mtime) and returned the stale answer; the ctime cannot be set back.
+        var path = Path.Combine(_root, "same-size.dll");
+        var stamp = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("xx-nothing-of-note-here-xx"));
+        File.SetLastWriteTimeUtc(path, stamp);
+        Assert.False(BinaryStringSearch.ContainsAny(path, "SameSizeNeedle"));
+
+        Thread.Sleep(50); // past the file system's timestamp granularity
+        using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write))
+            stream.Write(Encoding.ASCII.GetBytes("xx-SameSizeNeedle-there-xx"));
+        File.SetLastWriteTimeUtc(path, stamp);
+
+        Assert.Equal(26, new FileInfo(path).Length);
+        Assert.True(BinaryStringSearch.ContainsAny(path, "SameSizeNeedle"));
+    }
+
+    [Fact]
+    public void SameSizeReplacementKeepingTheModificationTime_IsReadAgain()
+    {
+        // cp -p / .NET File.Copy + rename: another file of the same length and mtime takes the path.
+        var path = Path.Combine(_root, "replaced.dll");
+        var stamp = new DateTime(2026, 2, 2, 0, 0, 0, DateTimeKind.Utc);
+        File.WriteAllBytes(path, Encoding.ASCII.GetBytes("yy-nothing-of-note-here-yy"));
+        File.SetLastWriteTimeUtc(path, stamp);
+        Assert.False(BinaryStringSearch.ContainsAny(path, "ReplacementNeedle"));
+
+        Thread.Sleep(50);
+        var staged = Path.Combine(_root, "staged.dll");
+        File.WriteAllBytes(staged, Encoding.ASCII.GetBytes("yy-ReplacementNeedle-yy-yy"));
+        File.SetLastWriteTimeUtc(staged, stamp);
+        File.Move(staged, path, overwrite: true);
+
+        Assert.Equal(stamp, File.GetLastWriteTimeUtc(path));
+        Assert.True(BinaryStringSearch.ContainsAny(path, "ReplacementNeedle"));
+    }
+
+    [Fact]
+    public void SameSizeRewriteBehindASymlink_IsReadAgain()
+    {
+        // The ctime is the linked file's (what the scan reads), not the link's own, which a rewrite never moves.
+        var target = Path.Combine(_root, "real-compiler.dll");
+        var link = Path.Combine(_root, "linked-compiler.dll");
+        var stamp = new DateTime(2026, 3, 3, 0, 0, 0, DateTimeKind.Utc);
+        File.WriteAllBytes(target, Encoding.ASCII.GetBytes("zz-nothing-of-note-here-zz"));
+        File.SetLastWriteTimeUtc(target, stamp);
+        File.CreateSymbolicLink(link, target);
+        Assert.False(BinaryStringSearch.ContainsAny(link, "LinkedNeedle"));
+
+        Thread.Sleep(50);
+        using (var stream = new FileStream(target, FileMode.Open, FileAccess.Write))
+            stream.Write(Encoding.ASCII.GetBytes("zz-LinkedNeedle-there-zzzz"));
+        File.SetLastWriteTimeUtc(target, stamp);
+
+        Assert.True(BinaryStringSearch.ContainsAny(link, "LinkedNeedle"));
+    }
+
+    [Fact]
     public void Find_ReportsWhichNeedlesArePresent_AndStopsWhenTheRuleIsMet()
     {
         var path = Path.Combine(_root, "compiler.dll");

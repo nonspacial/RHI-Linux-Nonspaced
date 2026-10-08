@@ -10,7 +10,7 @@ namespace RHI.Core.Services;
 /// is still found), every needle is matched as ASCII and as UTF-16LE text ignoring ASCII case, and the
 /// scan stops as soon as the caller has what it needs. Nothing proportional to the file size is allocated
 /// (the old reader built a 32 MiB byte array plus a Latin-1 and a UTF-16 copy of it on every call), and a
-/// string past the first 32 MiB is no longer missed. Results are cached per (path, length, last write time)
+/// string past the first 32 MiB is no longer missed. Results are cached per (path, length, ctime)
 /// so the same DLL probed again (every library refresh, every dependency check) is not read again.
 /// </summary>
 public static class BinaryStringSearch
@@ -31,7 +31,7 @@ public static class BinaryStringSearch
     /// <summary>
     /// The indexes of the <paramref name="needles"/> present in <paramref name="path"/>. The scan stops early once
     /// <paramref name="enough"/> returns true for the set found so far (null: scan the whole file). An unreadable or
-    /// missing file yields an empty set. Cached by path, length, last write time, needle list and stop rule.
+    /// missing file yields an empty set. Cached by path, length, ctime (mtime where ctime cannot be read), needle list and stop rule.
     /// </summary>
     public static IReadOnlySet<int> Find(string path, IReadOnlyList<string> needles, Func<IReadOnlySet<int>, bool>? enough = null)
     {
@@ -48,7 +48,11 @@ public static class BinaryStringSearch
 
         // An early-stopped scan knows only what its own stop rule needed, so the rule is part of the key.
         var rule = enough is null ? "" : $"{enough.Method.DeclaringType?.FullName}.{enough.Method.Name}";
-        var key = new CacheKey(info.FullName, info.Length, info.LastWriteTimeUtc, string.Join('\u0001', needles), rule);
+        // Freshness is the ctime, not the mtime: a same-size rewrite that keeps or restores the mtime (cp -p, .NET
+        // File.Copy, touch -d) still moves the ctime, which no program can set back, and a replacement by rename gets
+        // a new one too. The mtime stands in only where ctime cannot be read (not Linux).
+        var changed = RHI.Core.Deployment.FileChangeTime.TryGetUtc(info.FullName, followLinks: true) ?? info.LastWriteTimeUtc;
+        var key = new CacheKey(info.FullName, info.Length, changed, string.Join('\u0001', needles), rule);
         if (Cache.TryGetValue(key, out var cached)) return cached.ToHashSet();
 
         HashSet<int> found;
@@ -125,5 +129,5 @@ public static class BinaryStringSearch
         }
     }
 
-    private readonly record struct CacheKey(string Path, long Length, DateTime LastWriteUtc, string Needles, string StopRule);
+    private readonly record struct CacheKey(string Path, long Length, DateTime ChangeUtc, string Needles, string StopRule);
 }
