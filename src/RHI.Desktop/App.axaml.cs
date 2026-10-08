@@ -33,7 +33,8 @@ public sealed class App : Application
             MainWindowViewModel? tokenNoticeTarget = null;
             githubToken.TokenRejected += (_, _) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenRejected());
             githubToken.TokenFileExposed += (_, e) => Dispatcher.UIThread.Post(() => tokenNoticeTarget?.ReportGitHubTokenFileExposed(e.Restricted));
-            var http = new HttpClient(githubToken) { Timeout = TimeSpan.FromMinutes(5) };
+            // GitHub API answers are revalidated with ETags for the session (#35): a 304 costs no rate limit.
+            var http = new HttpClient(new GitHubConditionalCacheHandler(githubToken)) { Timeout = TimeSpan.FromMinutes(5) };
             var records = new LinuxDeploymentRecordStore();
             var wineOverrides = new WineDllOverrideService();
             // Roll back deployments a crash interrupted and sweep their leftovers (#23) before any
