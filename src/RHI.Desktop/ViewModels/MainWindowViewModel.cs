@@ -196,7 +196,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         async Task CheckAsync()
         {
             bool needed;
-            try { needed = await Task.Run(() => _managedComponents.NeedsRelocationRepair(game)); }
+            try { needed = await Task.Run(() => _managedComponents.NeedsRelocationRepair(game, RepairUiStores)); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
             {
                 needed = false; // an unreadable ledger is reported by every operation that needs it
@@ -1407,16 +1407,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             foreach (var game in found)
             {
                 game.LibraryIdentityPath ??= game.InstallPath;
-                adoptedMergedKeys |= _libraryState.AdoptMergedKeys(game);
+                adoptedMergedKeys |= _libraryState.AdoptOlderKeys(game); // older-build and merged-duplicate keys (Refs #55, #147)
                 var libraryKey = LinuxGameLibraryStore.GameKey(game);
-                if (previous is not null && previous.TryGetValue(libraryKey, out var kept))
+                if (previous is not null && previous.TryGetValue(Key(game), out var kept))
                 {
                     kept.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
                     kept.IsHidden = _libraryState.HiddenGames.Contains(libraryKey);
                     merged.Add(kept);
                     continue;
                 }
-                _probeCache.Remove(libraryKey);
+                _probeCache.Remove(Key(game));
                 _libraryState.GameEdits.TryGetValue(libraryKey, out var edit);
                 LinuxGameIdentityService.ApplyDetectedIdentity(game, edit);
                 game.IsFavourite = _libraryState.FavouriteGames.Contains(libraryKey);
@@ -3205,7 +3205,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             repaired = true;
-            StatusText = TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
+            StatusText = result.Repaired == 0 ? TF("Vm.GameSettingsNowPointNewFolder", game.Name) : TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);
@@ -4044,7 +4044,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch { return false; }
     }
 
-    private static string Key(DetectedGame g) => LinuxGameLibraryStore.GameKey(g);
+    // In-session caches (probe, selection) are per card and folder; saved library state uses GameKey (Refs #147).
+    private static string Key(DetectedGame g) => LinuxGameLibraryStore.SessionKey(g);
 }
 
 /// <summary>One component's manifest warning in the install-warning dialog; <see cref="Heading"/> names the component when several are shown.</summary>

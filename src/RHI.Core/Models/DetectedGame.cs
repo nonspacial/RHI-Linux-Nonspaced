@@ -180,5 +180,5 @@ public sealed class DetectedGame
     public override string ToString() => $"{Name} ({Source})";
 }
 
-/// <summary>A library identity (source, identity folder, Steam AppID) absorbed by a merged card.</summary>
-public sealed record LibraryEntryAlias(string Source, string IdentityPath, int? SteamAppId);
+/// <summary>A library identity (source, identity folder, Steam AppID, Heroic app) absorbed by a merged card.</summary>
+public sealed record LibraryEntryAlias(string Source, string IdentityPath, int? SteamAppId, string? HeroicAppName = null);

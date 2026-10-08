@@ -51,6 +51,18 @@ public static class LinuxGameIdentityService
         game.RequiresExplicitPatchTarget = discoveredSharedLauncher || detectorRequiresTarget;
         game.PatchTargetAuthority = "Automatic";
 
+        if (edit?.HasPatchTarget == true && !Directory.Exists(edit.GameRootPath))
+        {
+            // The confirmed patch target's folder is gone (the game moved, or its drive is not mounted). Never fall back
+            // to an automatic guess in place of the user's choice: no patch target until "Repair after move" re-points
+            // the edit or Edit game sets a new one (Refs #147). The detected folder stays the install path.
+            game.ExecutablePath = null;
+            game.BinaryDirectory = null;
+            game.RequiresExplicitPatchTarget = true;
+            game.PatchTargetAuthority = "Manual";
+            return;
+        }
+
         if (edit?.HasPatchTarget == true)
         {
             game.InstallPath = edit.GameRootPath!;

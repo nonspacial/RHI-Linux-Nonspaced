@@ -85,6 +85,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"Upstream RHI manifest unavailable: {E}";
         yield return "No safe Winetricks route is available for this prefix.";
         yield return DeploymentRelocation.RepairDonePrefix + "3";
+        yield return DeploymentRelocation.RepairMissingAfterMovePrefix + P; // #147, Repair after move without records
+        yield return DeploymentRelocation.RepairSettingsDone;
         // Final ui-stores review, findings 2-4: Repair after move's rolled-back commit, the staged-commit lead-in, the
         // desktop opener, the update history and .NET's own file-system errors behind refused saves.
         yield return DeploymentRelocation.RepairNotSavedPrefix + $"Access to the path '{P}.rhi-tmp-0a1b' is denied.";

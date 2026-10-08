@@ -164,12 +164,12 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         var cardKey = RHI.Platform.Linux.Settings.LinuxGameLibraryStore.GameKey(card);
 
         Assert.NotEqual(manualKey, cardKey);
-        Assert.True(state.AdoptMergedKeys(card));
+        Assert.True(state.AdoptOlderKeys(card));
         Assert.Contains(cardKey, state.FavouriteGames);
         Assert.Contains(cardKey, state.HiddenGames);
         Assert.Equal("Manual", state.GameEdits[cardKey].LaunchProvider);
         Assert.DoesNotContain(manualKey, state.FavouriteGames);
-        Assert.False(state.AdoptMergedKeys(card)); // nothing left to move
+        Assert.False(state.AdoptOlderKeys(card)); // nothing left to move
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
             }
         };
 
-        Assert.False(state.AdoptMergedKeys(card));
+        Assert.False(state.AdoptOlderKeys(card));
         Assert.Equal("Heroic", state.GameEdits[cardKey].LaunchProvider);
         Assert.Equal("Manual", state.GameEdits[aliasKey].LaunchProvider); // the duplicate's edit is kept, not deleted
     }

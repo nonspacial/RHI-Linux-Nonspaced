@@ -100,8 +100,9 @@ public sealed class StartupScanTests : IDisposable
 
         // The merged card is Heroic's (detector order); a hidden card is filtered out of Games, so read the store.
         var saved = library.Load();
-        Assert.StartsWith("heroic|", Assert.Single(saved.FavouriteGames));
-        Assert.StartsWith("heroic|", Assert.Single(saved.HiddenGames));
+        var cardKey = LinuxGameLibraryStore.GameKey(new DetectedGame { Name = "X", Source = "Heroic", InstallPath = real });
+        Assert.Equal(cardKey, Assert.Single(saved.FavouriteGames));
+        Assert.Equal(cardKey, Assert.Single(saved.HiddenGames));
     }
 
     private MainWindowViewModel CreateViewModel(DlssManagerService dlss, params IGameDetector[] detectors)

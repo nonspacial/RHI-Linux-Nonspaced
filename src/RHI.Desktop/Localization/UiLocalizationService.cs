@@ -112,7 +112,7 @@ public static class UiLocalizationService
         ["Ui.EditTip"] = "Separar o launcher usado para iniciar do executável real que recebe detecção, mods e patches",
         ["Ui.RemoveManualTip"] = "Remove somente a entrada manual salva; os arquivos do jogo não são alterados",
         ["Ui.RepairMove"] = "Reparar após mover",
-        ["Ui.RepairMoveTip"] = "O jogo mudou de pasta e os registros do RHI ainda apontam para a antiga. Confere os arquivos do RHI na nova pasta e atualiza os registros; nada muda se algo não bater.",
+        ["Ui.RepairMoveTip"] = "O jogo mudou de pasta e os registros ou configurações do RHI ainda apontam para a antiga. Confere a nova pasta e atualiza registros e configurações; nada muda se algo não bater.",
 
         ["Ui.DlssNote"] = "O gerenciador local substitui apenas DLLs de DLSS/Streamline que o próprio jogo já fornece. Jogos sem DLSS usam o DLSS5 Feeder Full; trocas diretas ficam bloqueadas enquanto o Feeder Full controla sua pilha privada de SR/NR. Aplicar padrões usa as versões salvas; um padrão vazio significa não alterar o componente. O selo ✓ RHI aplicado indica que existe backup .original do RHI e a restauração está disponível.",
         ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
@@ -338,7 +338,7 @@ public static class UiLocalizationService
         ["Ui.EditTip"] = "Separate the launcher used to start the game from the real executable that receives detection, mods and patches",
         ["Ui.RemoveManualTip"] = "Removes only the saved manual entry; game files are not changed",
         ["Ui.RepairMove"] = "Repair after move",
-        ["Ui.RepairMoveTip"] = "The game moved and RHI's records still point to its old folder. Checks RHI's files in the new folder and updates the records; nothing changes if anything does not match.",
+        ["Ui.RepairMoveTip"] = "The game moved and RHI's records or settings still point to its old folder. Checks the new folder and updates the records and settings; nothing changes if anything does not match.",
 
         ["Ui.DlssNote"] = "The local manager only replaces DLSS/Streamline DLLs that the game already ships. Games without DLSS use DLSS5 Feeder Full; direct swaps stay blocked while Feeder Full controls its private SR/NR stack. Apply defaults uses the saved versions; an empty default means do not change that component. The ✓ RHI applied badge means an RHI .original backup exists and restore is available.",
         ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
@@ -739,6 +739,8 @@ public static class UiLocalizationService
         ("More than one record for the same component; remove and reinstall it instead: ", "Há mais de um registro para o mesmo componente; remova e reinstale-o: "),
         ("Nothing was changed: a file RHI installed is not at the new location: ", "Nada foi alterado: um arquivo instalado pelo RHI não está no novo local: "),
         ("Nothing was changed: a file RHI installed differs at the new location: ", "Nada foi alterado: um arquivo instalado pelo RHI está diferente no novo local: "),
+        (RHI.Platform.Linux.Deployment.DeploymentRelocation.RepairMissingAfterMovePrefix, "Nada foi alterado: a pasta ou o arquivo indicado nas configurações do jogo não está no novo local: "),
+        (RHI.Platform.Linux.Deployment.DeploymentRelocation.RepairSettingsDone, "As configurações do jogo agora apontam para a nova pasta."),
         (" cannot be read and could not be copied aside. RHI will not overwrite it; fix or delete the file.", " não pode ser lido e não pôde ser copiado. O RHI não vai sobrescrevê-lo; corrija ou apague o arquivo."),
         (" cannot be read; a copy was kept at ", " não pode ser lido; uma cópia foi guardada em "),
         (". RHI will not overwrite it; fix or delete the file.", ". O RHI não vai sobrescrevê-lo; corrija ou apague o arquivo."),

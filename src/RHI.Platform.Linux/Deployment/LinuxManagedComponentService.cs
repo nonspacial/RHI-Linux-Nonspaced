@@ -870,8 +870,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             : null;
     }
 
-    /// <summary>True when the game was moved and "Repair after move" has records to update.</summary>
-    public bool NeedsRelocationRepair(DetectedGame game) => _relocation.NeedsRepair(game);
+    /// <summary>
+    /// True when the game was moved and "Repair after move" has something to update: records, or entries in the
+    /// per-game stores (this service's and <paramref name="libraryStores"/>) that still name the old folder (Refs #147).
+    /// </summary>
+    public bool NeedsRelocationRepair(DetectedGame game, IReadOnlyList<IGameStateStore>? libraryStores = null)
+        => _relocation.NeedsRepair(game, RepairStores(libraryStores));
 
     /// <summary>The records "Repair after move" would update, for the confirmation shown before adopting.</summary>
     public IReadOnlyList<RelocatedRecord> RelocationPreview(DetectedGame game) => _relocation.Preview(game);
