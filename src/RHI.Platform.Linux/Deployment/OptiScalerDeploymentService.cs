@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -20,6 +21,7 @@ public sealed partial class OptiScalerDeploymentService
     private readonly IOptiScalerPackageProvider _packages;
     private readonly DlssManagerService? _dlss;
     private readonly StandaloneDlssEnablerDeploymentService? _dlssEnabler;
+    private readonly DeploymentJournal? _journal;
 
     public OptiScalerDeploymentService(
         IFileDeploymentService files,
@@ -27,8 +29,10 @@ public sealed partial class OptiScalerDeploymentService
         WineDllOverrideService overrides,
         IOptiScalerPackageProvider packages,
         DlssManagerService? dlss = null,
-        StandaloneDlssEnablerDeploymentService? dlssEnabler = null)
+        StandaloneDlssEnablerDeploymentService? dlssEnabler = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _files = files;
         _records = records;
         _overrides = overrides;
@@ -215,6 +219,8 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail("Remove DLSS5 Feeder before installing the OptiScaler DLSS NR variant. Both components would own nvngx_dlssnr.dll and RHI Linux does not yet have a shared-file ownership ledger for that runtime.");
         if (_records.Find(game, ManagedComponentKind.OptiScaler) is not null)
             return ComponentOperationResult.Fail("OptiScaler is already managed by RHI Linux for this game. Remove it before reinstalling/updating.");
+        if (_overrides.EditRefusal(prefix) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         OptiScalerPackage package;
         string? nrRuntime = null;
@@ -236,6 +242,13 @@ public sealed partial class OptiScalerDeploymentService
         var requested = new List<(string Source, string Target)>();
         var existedBefore = new Dictionary<string, bool>(StringComparer.Ordinal);
 
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, $"OptiScaler install: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
+
         try
         {
             migration = await MigrateManagedReShadeIfNeededAsync(game, proxyTarget, cancellationToken).ConfigureAwait(false);
@@ -252,7 +265,7 @@ public sealed partial class OptiScalerDeploymentService
             overrideRecord = migration?.TransferredOverride;
             if (overrideRecord is null)
             {
-                overrideRecord = _overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", Path.GetFileName(game.ExecutablePath));
+                overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "dxgi.dll", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
                 overrideCreatedHere = true;
             }
 
@@ -291,6 +304,7 @@ public sealed partial class OptiScalerDeploymentService
                     [DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion ?? ""
                 }
             };
+            if (operation is not null) record.Metadata[LinuxDeploymentRecovery.OperationIdMetadataKey] = operation.Id;
 
             foreach (var (_, target) in requested)
             {
@@ -304,6 +318,8 @@ public sealed partial class OptiScalerDeploymentService
             }
 
             _records.Upsert(record);
+            // The record carries the operation id: it is the commit point even if this cleanup fails.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok(
                 $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as dxgi.dll" +
                 (migration is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled."),
@@ -315,9 +331,7 @@ public sealed partial class OptiScalerDeploymentService
             if (deployed)
                 await RollbackDeploymentAsync(requested, existedBefore, createdDirectories, CancellationToken.None).ConfigureAwait(false);
             if (overrideCreatedHere && overrideRecord is not null)
-            {
-                try { _overrides.Restore(prefix, overrideRecord); } catch { }
-            }
+                _overrides.TryRestore(prefix, overrideRecord);
             if (migration is not null)
                 await RollbackReShadeMigrationAsync(migration, CancellationToken.None).ConfigureAwait(false);
             return ComponentOperationResult.Fail($"OptiScaler install failed: {ex.Message}");
@@ -360,6 +374,9 @@ public sealed partial class OptiScalerDeploymentService
         var reShadeRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var reShade64 = reShadeRecord?.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
         var dxgi = Path.Combine(record.BinaryDirectory, "dxgi.dll");
+
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var changed = false;
         ComponentOperationResult FailKeepingProgress(string message)
@@ -428,6 +445,7 @@ public sealed partial class OptiScalerDeploymentService
             }
 
             var keptReShade = false;
+            WineOverrideRestoreResult? overrideRestore = null;
             if (reShadeRecord is not null && reShade64 is not null && File.Exists(reShade64.Path))
             {
                 if (File.Exists(dxgi))
@@ -442,14 +460,15 @@ public sealed partial class OptiScalerDeploymentService
             }
             else if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
             {
-                _overrides.Restore(prefix, record.WineOverride);
+                overrideRestore = _overrides.Restore(prefix, record.WineOverride);
             }
 
             CleanupDirectories(record.DirectoriesCreatedByRhi);
             _records.Remove(game, ManagedComponentKind.OptiScaler);
-            return ComponentOperationResult.Ok(keptReShade
+            return ComponentOperationResult.Ok((keptReShade
                 ? "RHI-managed OptiScaler removed; ReShade64.dll was moved back to dxgi.dll and retained its Wine override."
-                : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.");
+                : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.")
+                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {

@@ -16,9 +16,7 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed class WineOverrideCompensator(WineDllOverrideService overrides, Func<string, bool>? isPrefixInUse = null) : IDeploymentCompensator
 {
     public const string KindName = "wine-dll-override";
-    private const string RhiValue = "native,builtin";
-
-    private readonly Func<string, bool> _isPrefixInUse = isPrefixInUse ?? (prefix => WineServerProbe.IsRunningFor(prefix));
+    private readonly Func<string, bool> _isPrefixInUse = isPrefixInUse ?? overrides.Registry.IsPrefixInUse;
 
     public string Kind => KindName;
 
@@ -32,21 +30,28 @@ public sealed class WineOverrideCompensator(WineDllOverrideService overrides, Fu
             throw new InvalidDataException("Incomplete Wine override journal step.");
         var prefix = payload.PrefixPath;
         if (!record.ChangedByRhi || !Directory.Exists(prefix)) return CompensationResult.Done; // nothing RHI set, or prefix deleted since
-        var registry = Path.Combine(prefix, "user.reg");
-        if (!File.Exists(registry)) return CompensationResult.Done;
-        if (_isPrefixInUse(prefix))
-            return new(CompensationStatus.Deferred,
-                $"Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is undone at the next start: {record.DllName} ({prefix})");
+        if (!WineRegistryEditor.HasUserHive(prefix)) return CompensationResult.Done;
+        if (_isPrefixInUse(prefix)) return DeferredWhileWineRuns(record, prefix);
 
-        var current = WineDllOverrideService.TryReadOverride(File.ReadAllText(registry), record.DllName, record.ApplicationName);
-        if (string.Equals(current, record.PreviousValue, StringComparison.OrdinalIgnoreCase))
-            return CompensationResult.Done; // never written, or already undone
-        if (!string.Equals(current, RhiValue, StringComparison.OrdinalIgnoreCase))
-            return new(CompensationStatus.KeptLaterChange,
-                $"This Wine override was changed after the interruption and was left as it is: {record.DllName} ({prefix}) = '{current ?? "-"}'");
-        overrides.Restore(prefix, record);
-        return CompensationResult.Done;
+        WineOverrideRestoreResult result;
+        try
+        {
+            // Restore acts only while the override holds RHI's value; a later value is kept (#30).
+            result = overrides.Restore(prefix, record);
+        }
+        catch (WineRegistryEditRefusedException ex) when (ex.PrefixInUse)
+        {
+            return DeferredWhileWineRuns(record, prefix);
+        }
+        return result.Outcome == WineOverrideRestoreOutcome.KeptLaterValue
+            ? new(CompensationStatus.KeptLaterChange,
+                $"This Wine override was changed after the interruption and was left as it is: {record.DllName} ({prefix}) = '{result.CurrentValue ?? "-"}'")
+            : CompensationResult.Done;
     }
+
+    private static CompensationResult DeferredWhileWineRuns(WineOverrideRecord record, string prefix)
+        => new(CompensationStatus.Deferred,
+            $"Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is undone at the next start: {record.DllName} ({prefix})");
 
     private sealed class Payload
     {
@@ -92,20 +97,8 @@ public static class WineServerProbe
         return false;
     }
 
-    private static string Normalise(string path)
-    {
-        var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-        try
-        {
-            // compatdata folders are often reached through a symlinked library path
-            if (new DirectoryInfo(full).ResolveLinkTarget(returnFinalTarget: true) is { } target)
-                full = Path.TrimEndingDirectorySeparator(target.FullName);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-        }
-        return full;
-    }
+    // compatdata folders are often reached through a symlinked library path: resolve every component.
+    private static string Normalise(string path) => PathIdentity.Canonicalize(path);
 }
 
 /// <summary>
@@ -147,6 +140,36 @@ public static class LinuxDeploymentRecovery
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)
         => $"record|{component}|{LinuxDeploymentRecordStore.GameKey(game)}";
+
+    /// <summary>Fixed text of the refusal when an operation cannot be journaled; the reason follows.</summary>
+    public const string JournalUnavailablePrefix = "The deployment journal could not be written (";
+
+    /// <summary>
+    /// Opens the journaled operation of an install whose commit point is <paramref name="component"/>'s record (put
+    /// <see cref="DeploymentOperation.Id"/> under <see cref="OperationIdMetadataKey"/> and commit right after the
+    /// save). No journal (tests, tools): no operation and no refusal. A journal that cannot be written refuses before
+    /// anything changes.
+    /// </summary>
+    public static async Task<(DeploymentOperation? Operation, string? Refusal)> BeginRecordOperationAsync(
+        DeploymentJournal? journal, string description, DetectedGame game, ManagedComponentKind component, CancellationToken cancellationToken)
+    {
+        if (journal is null) return (null, null);
+        try
+        {
+            return (await journal.BeginAsync(description, RecordCommitProbe(game, component), cancellationToken).ConfigureAwait(false), null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
+        }
+    }
+
+    /// <summary>Puts <paramref name="operation"/>'s id into <paramref name="record"/>'s metadata (its commit point); returns the record.</summary>
+    public static LinuxDeploymentRecord StampOperation(DeploymentOperation? operation, LinuxDeploymentRecord record)
+    {
+        if (operation is not null) record.Metadata[OperationIdMetadataKey] = operation.Id;
+        return record;
+    }
 
     /// <summary>
     /// Everything start-up does for deployments, in order, under the instance gate's start-up lock:

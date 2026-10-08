@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
+public sealed partial class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dlss-enabler-standalone-tests-" + Guid.NewGuid().ToString("N"));
 

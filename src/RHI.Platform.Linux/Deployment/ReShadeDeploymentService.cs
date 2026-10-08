@@ -131,6 +131,8 @@ public sealed partial class ReShadeDeploymentService
         var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var directProxy = SelectProxyName(game.EffectiveGraphicsApi);
         if (directProxy is null)
@@ -357,11 +359,8 @@ public sealed partial class ReShadeDeploymentService
                     throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
                 if (overrideRecord is null)
                 {
-                    if (operation is not null)
-                        await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
-                            WineOverrideCompensator.Describe(prefix, _overrides.PlanNativeBuiltin(prefix, directProxy, Path.GetFileName(game.ExecutablePath))),
-                            cancellationToken).ConfigureAwait(false);
-                    overrideRecord = _overrides.EnsureNativeBuiltin(prefix, directProxy, Path.GetFileName(game.ExecutablePath));
+                    overrideRecord = await _overrides.EnsureNativeBuiltinAsync(
+                        operation, prefix, directProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
                     appliedOverride = overrideRecord;
                     overrideCreatedThisAttempt = true;
                 }
@@ -407,14 +406,8 @@ public sealed partial class ReShadeDeploymentService
 
                 if (appliedCompilerOverride is null)
                 {
-                    if (operation is not null)
-                        await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
-                            WineOverrideCompensator.Describe(compilerPrefix, _overrides.PlanNativeBuiltin(compilerPrefix, D3DCompilerOverrideName, Path.GetFileName(game.ExecutablePath))),
-                            cancellationToken).ConfigureAwait(false);
-                    appliedCompilerOverride = _overrides.EnsureNativeBuiltin(
-                        compilerPrefix,
-                        D3DCompilerOverrideName,
-                        Path.GetFileName(game.ExecutablePath));
+                    appliedCompilerOverride = await _overrides.EnsureNativeBuiltinAsync(
+                        operation, compilerPrefix, D3DCompilerOverrideName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
                     compilerOverrideCreatedThisAttempt = true;
                 }
                 additionalOverrides.Add(appliedCompilerOverride);
@@ -506,9 +499,9 @@ public sealed partial class ReShadeDeploymentService
             if (existingRecord is null && fileReplaced)
                 await RollbackFreshFileAsync(target, existedBefore, cancellationToken).ConfigureAwait(false);
             if (existingRecord is null && overrideCreatedThisAttempt && game.PrefixPath is { } prefix && Directory.Exists(prefix))
-                _overrides.Restore(prefix, appliedOverride);
+                _overrides.TryRestore(prefix, appliedOverride);
             if (compilerOverrideCreatedThisAttempt && game.PrefixPath is { } compilerPrefix && Directory.Exists(compilerPrefix))
-                _overrides.Restore(compilerPrefix, appliedCompilerOverride);
+                _overrides.TryRestore(compilerPrefix, appliedCompilerOverride);
             if (compilerFileCreatedThisAttempt && d3dCompilerPlan is not null)
             {
                 try
@@ -558,6 +551,9 @@ public sealed partial class ReShadeDeploymentService
         if (string.IsNullOrWhiteSpace(binaryDirectory))
             return ComponentOperationResult.Fail("The managed ReShade installation has no recorded game directory, so removal was stopped safely.");
 
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
+
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
         var coexist = managedOptiScaler is not null &&
             record.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
@@ -598,16 +594,18 @@ public sealed partial class ReShadeDeploymentService
                 }
             }
 
+            var overrideRestores = new List<WineOverrideRestoreResult>();
             if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
             {
                 foreach (var additionalOverride in record.AdditionalWineOverrides.AsEnumerable().Reverse())
-                    _overrides.Restore(prefix, additionalOverride);
-                _overrides.Restore(prefix, record.WineOverride);
+                    overrideRestores.Add(_overrides.Restore(prefix, additionalOverride));
+                overrideRestores.Add(_overrides.Restore(prefix, record.WineOverride));
             }
             _records.Remove(game, ManagedComponentKind.ReShade);
-            return ComponentOperationResult.Ok(coexist
+            return ComponentOperationResult.Ok((coexist
                 ? "RHI-managed ReShade removed; OptiScaler LoadReshade was disabled. RHI shader files were cleaned and user-edited ReShade.ini content was preserved."
-                : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.");
+                : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.")
+                + WineDllOverrideService.KeptValueNotes([.. overrideRestores]));
         }
         catch (Exception ex)
         {

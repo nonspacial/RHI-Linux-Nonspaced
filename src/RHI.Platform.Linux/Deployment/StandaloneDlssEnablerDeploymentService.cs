@@ -40,6 +40,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
+    private readonly DeploymentJournal? _journal;
     private readonly StandaloneDlssEnablerPreferenceStore _preferences;
 
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
@@ -51,8 +52,10 @@ public sealed class StandaloneDlssEnablerDeploymentService
         LinuxDeploymentRecordStore records,
         WineDllOverrideService overrides,
         StandaloneDlssEnablerPreferenceStore? preferences = null,
-        string? cacheRoot = null)
+        string? cacheRoot = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _overrides = overrides;
@@ -103,7 +106,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
            && ResolveArchitecture(game) == PeArchitecture.X64
            && !string.IsNullOrWhiteSpace(game.PrefixPath)
            && Directory.Exists(game.PrefixPath)
-           && File.Exists(Path.Combine(game.PrefixPath, "user.reg"))
+           && WineRegistryEditor.HasUserHive(game.PrefixPath)
            && ResolveBinaryDirectory(game) is not null;
 
     public static string EligibilityReason(DetectedGame game)
@@ -114,7 +117,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return "Selecione primeiro o executável real do jogo em Editar jogo.";
         if (ResolveArchitecture(game) != PeArchitecture.X64)
             return "O pacote standalone atual do DLSS Enabler é tratado como Windows x64 no caminho Linux.";
-        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !File.Exists(Path.Combine(game.PrefixPath, "user.reg")))
+        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o DLSS Enabler Standalone.";
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
@@ -130,6 +133,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail("DLSS Enabler Standalone já é gerenciado pelo RHI para este jogo.");
         if (!IsGameEligible(game))
             return ComponentOperationResult.Fail(EligibilityReason(game));
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var selectedProxy = NormalizeProxyName(proxyName ?? GetPreferences(game).ProxyName);
         if (!ProxyNames.Contains(selectedProxy, StringComparer.OrdinalIgnoreCase))
@@ -163,16 +168,23 @@ public sealed class StandaloneDlssEnablerDeploymentService
         WineOverrideRecord? wineOverride = null;
         var moved = false;
         var recordWritten = false;
+
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "DLSS Enabler Standalone install: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
         try
         {
             File.Copy(payloadPath, tempPath, overwrite: false);
             ValidatePayload(tempPath);
-            wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
+            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
             File.Move(tempPath, targetPath);
             moved = true;
 
             var payloadHash = await Sha256FileAsync(targetPath, cancellationToken).ConfigureAwait(false);
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -201,7 +213,9 @@ public sealed class StandaloneDlssEnablerDeploymentService
                     [MetaPayloadSha256] = payloadHash,
                     [MetaExperimental] = "1",
                 }
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             recordWritten = true;
             _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = selectedProxy });
 
@@ -213,7 +227,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
         {
             try { if (moved && File.Exists(targetPath)) File.Delete(targetPath); } catch { }
             TryDelete(tempPath);
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); } catch { }
+            _overrides.TryRestore(game.PrefixPath, wineOverride);
             try { if (recordWritten) _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone); } catch { }
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone install rolled back: {ex.Message}");
         }
@@ -226,6 +240,9 @@ public sealed class StandaloneDlssEnablerDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return ComponentOperationResult.Fail("DLSS Enabler Standalone não é gerenciado pelo RHI para este jogo. Instalações externas permanecem protegidas.");
+
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
@@ -244,7 +261,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
 
         var tempPath = targetPath + $".rhi-remove-{Guid.NewGuid():N}";
         var moved = false;
-        var overrideRestored = false;
+        WineOverrideRestoreResult? overrideRestore = null;
         try
         {
             if (File.Exists(targetPath))
@@ -252,22 +269,26 @@ public sealed class StandaloneDlssEnablerDeploymentService
                 File.Move(targetPath, tempPath);
                 moved = true;
             }
-            _overrides.Restore(game.PrefixPath!, record.WineOverride);
-            overrideRestored = true;
+            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
             _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone);
             if (File.Exists(tempPath)) File.Delete(tempPath);
-            return ComponentOperationResult.Ok("DLSS Enabler Standalone removido e o override Wine anterior foi restaurado.");
+            return ComponentOperationResult.Ok("DLSS Enabler Standalone removido e o override Wine anterior foi restaurado."
+                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
             try
             {
                 if (moved && File.Exists(tempPath) && !File.Exists(targetPath)) File.Move(tempPath, targetPath);
-                if (overrideRestored && record.WineOverride is not null)
-                    _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
+                // Put RHI's value back only where this removal restored it; a later value stays (#30).
+                if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                    _overrides.TryReapply(game.PrefixPath, record.WineOverride);
                 _records.Upsert(record);
             }
-            catch { }
+            catch (Exception rollbackError)
+            {
+                AppLog.Warn("deployment", "DLSS Enabler Standalone removal rollback was incomplete", rollbackError);
+            }
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}");
         }
     }

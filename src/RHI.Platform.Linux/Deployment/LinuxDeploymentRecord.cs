@@ -37,4 +37,11 @@ public sealed class WineOverrideRecord
     /// <summary>True only when RHI had to create the target DllOverrides registry section.</summary>
     public bool SectionCreatedByRhi { get; set; }
     public string? ApplicationName { get; set; }
+
+    /// <summary>
+    /// The value RHI wrote (#30). Restore acts only while the override still holds it, so a value the user or
+    /// another tool set later survives uninstall. Records written before this field existed read null, which
+    /// means <see cref="WineDllOverrideService.RhiValue"/>: the only value RHI has ever written.
+    /// </summary>
+    public string? WrittenValue { get; set; }
 }

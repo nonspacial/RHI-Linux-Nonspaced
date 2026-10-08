@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
@@ -87,6 +88,7 @@ public sealed class Dlss5FeederFullDeploymentService
     private readonly ReShadeDeploymentService? _reShade;
     private readonly DgVoodooDeploymentService? _dgVoodoo;
     private readonly Dx9TranslationReShadeCoordinator? _dx9ReShade;
+    private readonly DeploymentJournal? _journal;
     private readonly string _cacheDir;
 
     public Dlss5FeederFullDeploymentService(
@@ -98,8 +100,10 @@ public sealed class Dlss5FeederFullDeploymentService
         WineDllOverrideService? overrides = null,
         ReShadeDeploymentService? reShade = null,
         DgVoodooDeploymentService? dgVoodoo = null,
-        Dx9TranslationReShadeCoordinator? dx9ReShade = null)
+        Dx9TranslationReShadeCoordinator? dx9ReShade = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _dlss = dlss;
@@ -290,6 +294,8 @@ public sealed class Dlss5FeederFullDeploymentService
 
         if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
             return ComponentOperationResult.Fail("DLSS5 Feeder Full needs an initialized Wine/Proton prefix. Start the game once first.");
+        if (_overrides?.EditRefusal(prefix) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
             return ComponentOperationResult.Fail("Remove ShortFuse before installing DLSS5 Feeder Full. Both workflows own the DLSS/Streamline stack and must not be stacked.");
         var gameArchitecture = PeArchitectureDetector.Detect(game.ExecutablePath!);
@@ -397,6 +403,12 @@ public sealed class Dlss5FeederFullDeploymentService
             return ComponentOperationResult.Fail($"External or previous shader tree detected at {integrationRoot}. RHI Linux will not overwrite it automatically.");
 
         Directory.CreateDirectory(_cacheDir);
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "DLSS5 Feeder install: " + game.Name, game, ManagedComponentKind.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
         var stageRoot = Path.Combine(_cacheDir, $"stage-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stageRoot);
 
@@ -447,7 +459,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
 
             if (_overrides is not null)
-                compilerOverride = _overrides.EnsureNativeBuiltin(prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath));
+                compilerOverride = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
             // Current upstream publishes a single DLSS5-Feeder-*.zip release asset.
             // The archive is produced by Windows tooling, so entries may carry either '/' or '\\'
             // separators. Linux must normalize both before matching leaf names. The tagged raw
@@ -666,7 +678,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 [MetaPresetSetValue] = presetMutation.SetValue
             };
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -679,7 +691,9 @@ public sealed class Dlss5FeederFullDeploymentService
                 DirectoriesCreatedByRhi = createdDirs,
                 AdditionalWineOverrides = compilerOverride is null ? [] : [compilerOverride],
                 Metadata = metadata
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
 
             var configNote = deepFriedConfigPreexisting
                 ? $" Existing {DeepFriedConfigName} was preserved as user-owned configuration."
@@ -717,8 +731,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
                 try { await _dx9ReShade.RestoreAsync(game, dx9Migration, cancellationToken).ConfigureAwait(false); } catch { }
             TryDeleteEmptyTree(integrationRoot);
-            if (compilerOverride is not null && _overrides is not null)
-                try { _overrides.Restore(prefix, compilerOverride); } catch { }
+            _overrides?.TryRestore(prefix, compilerOverride);
             return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}");
         }
         finally
@@ -737,6 +750,8 @@ public sealed class Dlss5FeederFullDeploymentService
 
         if (!record.Metadata.TryGetValue(FullStackMetadata, out var full) || full != "1")
             return await _legacyAddonOnly.RemoveAsync(game, cancellationToken).ConfigureAwait(false);
+        if (_overrides?.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var preserved = new List<string>();
         try
@@ -822,15 +837,17 @@ public sealed class Dlss5FeederFullDeploymentService
 
             foreach (var directory in record.DirectoriesCreatedByRhi.OrderByDescending(x => x.Length))
                 TryDeleteEmptyTree(directory);
+            var overrideRestores = new List<WineOverrideRestoreResult>();
             if (_overrides is not null && game.PrefixPath is { } removePrefix && Directory.Exists(removePrefix))
                 foreach (var wineOverride in record.AdditionalWineOverrides)
-                    _overrides.Restore(removePrefix, wineOverride);
+                    overrideRestores.Add(_overrides.Restore(removePrefix, wineOverride));
             _records.Remove(game, ManagedComponentKind.Dlss5Feeder);
 
             var suffix = preserved.Count == 0
                 ? ""
                 : $" Preserved {preserved.Count} user-modified file(s): {string.Join(", ", preserved.Select(Path.GetFileName))}.";
-            return ComponentOperationResult.Ok("RHI-managed DLSS5 Feeder Full removed; ReShade itself was left installed." + suffix);
+            return ComponentOperationResult.Ok("RHI-managed DLSS5 Feeder Full removed; ReShade itself was left installed." + suffix
+                + WineDllOverrideService.KeptValueNotes([.. overrideRestores]));
         }
         catch (Exception ex)
         {

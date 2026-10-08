@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class ShortFuseDeploymentServiceTests : IDisposable
+public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-shortfuse-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -686,11 +686,11 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         return (Path.Combine(dir, ShortFuseDeploymentService.AddonFileName), Path.Combine(dir, ShortFuseDeploymentService.ZzzAddonFileName));
     }
 
-    private Context CreateContext(GameFixture fixture, bool fullNetwork = false)
+    private Context CreateContext(GameFixture fixture, bool fullNetwork = false, WineDllOverrideService? wineOverrides = null)
     {
         var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
         var deployment = new TransactionalFileDeploymentService();
-        var overrides = new WineDllOverrideService();
+        var overrides = wineOverrides ?? new WineDllOverrideService();
         var handler = fullNetwork ? CreateFullHandler() : new MapHandler(new Dictionary<string, ResponseTemplate>());
         var http = new HttpClient(handler);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(fixture.Root, "cache-dlss"));
