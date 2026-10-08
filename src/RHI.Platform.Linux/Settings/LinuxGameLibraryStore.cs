@@ -194,7 +194,24 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     /// Never throws: a missing or unreadable library yields an empty state. An unreadable file is
     /// copied aside and <see cref="Save"/> refuses to replace it until it reads again.
     /// </summary>
-    public LinuxGameLibraryState Load() => _file.Load().Value ?? new LinuxGameLibraryState();
+    public LinuxGameLibraryState Load() => Load(out _);
+
+    /// <summary>As <see cref="Load()"/>; <paramref name="unreadable"/> says the state is an empty stand-in for a file
+    /// that could not be read (saves are refused until it reads again).</summary>
+    public LinuxGameLibraryState Load(out bool unreadable)
+    {
+        var load = _file.Load();
+        unreadable = load.IsUnreadable;
+        return load.Value ?? new LinuxGameLibraryState();
+    }
+
+    /// <summary>A deep copy (JSON round trip): callers mutate it and adopt it only once it is saved.</summary>
+    public static LinuxGameLibraryState Copy(LinuxGameLibraryState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        return (JsonSerializer.Deserialize<LinuxGameLibraryState>(JsonSerializer.SerializeToUtf8Bytes(state, JsonOptions), JsonOptions)
+                ?? new LinuxGameLibraryState()).Normalize();
+    }
 
     /// <summary>Throws <see cref="JsonStoreUnavailableException"/> while an unreadable library file is on disk.</summary>
     public void Save(LinuxGameLibraryState state)
