@@ -155,6 +155,43 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Equal((false, ManagedComponentKind.OptiScaler, "disk full"), (failed.Success, failed.Component, failed.Message));
     }
 
+    // #109: an operation that changed the requested component's ledger entry and then failed (its files were rolled
+    // back, or Upsert threw) is a failed update in the history, never a successful one.
+    [Fact]
+    public async Task Recorder_FailedOperationThatChangedTheLedger_IsLoggedAsFailed()
+    {
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        Upsert(records, ManagedComponentKind.ReShade, "6.3.0");
+        Upsert(records, ManagedComponentKind.UltimateAsiLoader, "1.0");
+        var log = new ComponentUpdateLogStore(LogPath);
+        var recorder = new ComponentUpdateRecorder(records, log);
+
+        var result = await recorder.TrackAsync(_game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Update, () =>
+        {
+            Upsert(records, ManagedComponentKind.UltimateAsiLoader, "2.0");
+            return Task.FromResult(ComponentOperationResult.Fail("rolled back"));
+        });
+
+        Assert.False(result.Success);
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal((ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Update, false, "rolled back", "1.0"),
+            (entry.Component, entry.Action, entry.Success, entry.Message, entry.FromVersion));
+
+        // Same through an exception, and a dependency the failed operation really installed stays a success.
+        await Assert.ThrowsAsync<IOException>(() => recorder.TrackAsync(_game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Install, () =>
+        {
+            Upsert(records, ManagedComponentKind.ReShade, "6.4.0");
+            Upsert(records, ManagedComponentKind.RenoDX, "0.40");
+            throw new IOException("disk full");
+        }));
+        var entries = log.GetAll();
+        var renodx = Assert.Single(entries, e => e.Component == ManagedComponentKind.RenoDX);
+        Assert.Equal((ComponentUpdateAction.Install, false, "disk full"), (renodx.Action, renodx.Success, renodx.Message));
+        var reshade = Assert.Single(entries, e => e.Component == ManagedComponentKind.ReShade);
+        Assert.Equal((ComponentUpdateAction.Update, true), (reshade.Action, reshade.Success));
+        Assert.Same(renodx, entries[0]);
+    }
+
     // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
     // drop the real change and log every other component as installed or removed.
     [Fact]

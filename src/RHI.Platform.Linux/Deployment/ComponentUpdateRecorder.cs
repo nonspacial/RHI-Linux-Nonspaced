@@ -204,13 +204,25 @@ public sealed class ComponentUpdateRecorder
             }
 
             var failed = result is { Success: false } || (error is not null && error is not OperationCanceledException);
-            if (failed && entries.All(e => e.Component != requested))
+            if (failed)
             {
-                entries.Add(Entry(requested, intent, before.TryGetValue(requested, out var prior) ? prior.Version : null, null) with
+                // A failed operation may still have changed the requested component's ledger entry (a service
+                // upserts, then a later step fails and its files are rolled back): that change is the failure,
+                // never a success. Dependencies it really installed or removed on the way stay as they are.
+                var message = result?.Message ?? error?.Message;
+                var marked = false;
+                for (var i = 0; i < entries.Count; i++)
                 {
-                    Success = false,
-                    Message = result?.Message ?? error?.Message
-                });
+                    if (entries[i].Component != requested) continue;
+                    entries[i] = entries[i] with { Success = false, Message = message };
+                    marked = true;
+                }
+                if (!marked)
+                    entries.Add(Entry(requested, intent, before.TryGetValue(requested, out var prior) ? prior.Version : null, null) with
+                    {
+                        Success = false,
+                        Message = message
+                    });
             }
 
             // The requested component is recorded last so it heads the newest-first list.
