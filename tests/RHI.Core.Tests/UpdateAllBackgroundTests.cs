@@ -128,6 +128,8 @@ public sealed class UpdateAllBackgroundTests
 
         Assert.Equal(first, LinuxDeploymentRecord.PayloadFingerprint(Record("aa", "i2", DateTime.UtcNow, "op2")));
         Assert.NotEqual(first, LinuxDeploymentRecord.PayloadFingerprint(Record("bb", "i1", DateTime.UnixEpoch, "op1")));
+        // The w2/trust toolkit stores upper-case hex; a record written before it holds lower case for the same bytes.
+        Assert.Equal(first, LinuxDeploymentRecord.PayloadFingerprint(Record("AA", "i1", DateTime.UnixEpoch, "op1")));
     }
 
     [Fact]

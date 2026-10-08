@@ -22,14 +22,15 @@ public sealed class LinuxDeploymentRecord
     /// <summary>
     /// What is installed, for "did this change?" questions (Update All's updated count, update history): the
     /// version plus each RHI-owned payload file and its hash. Install time, operation ids in metadata and files the
-    /// user may edit (configs) are left out, so re-deploying the same payload compares equal (#113).
+    /// user may edit (configs) are left out, so re-deploying the same payload compares equal (#113). Hashes compare
+    /// case-insensitively: older records hold lower-case hex, the w2/trust toolkit writes upper case.
     /// </summary>
     public static string PayloadFingerprint(LinuxDeploymentRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
         var files = record.Files
             .Where(file => !file.AllowUserChanges)
-            .Select(file => $"{file.Path}\t{file.Sha256}")
+            .Select(file => $"{file.Path}\t{file.Sha256?.Trim().ToUpperInvariant()}")
             .Order(StringComparer.Ordinal);
         return string.Join("\n", files.Prepend(record.Version ?? string.Empty));
     }
