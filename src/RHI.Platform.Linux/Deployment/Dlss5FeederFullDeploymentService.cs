@@ -559,6 +559,16 @@ public sealed class Dlss5FeederFullDeploymentService
                 }
             }
 
+            // A 32-bit game's host64 helper runs a 64-bit ReShade: staged (possibly downloaded from reshade.me) here with
+            // the other downloads, before the gate (w2 merge review, minor 1: it used to download after the first change).
+            ReShadeStagedDll? hostReShade = null;
+            if (layout.RequiresHost64)
+            {
+                if (_reShade is null)
+                    throw new InvalidOperationException("32-bit DLSS5 Feeder needs the ReShade service to stage a 64-bit host64 ReShade runtime.");
+                hostReShade = await _reShade.EnsureLatestStagedAsync(PeArchitecture.X64, cancellationToken).ConfigureAwait(false);
+            }
+
             // Every download and extraction above is done: from the first game file on, the install runs to completion
             // or full rollback (Cancel is refused). The compiler copy and its override used to run before the downloads.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
@@ -579,13 +589,10 @@ public sealed class Dlss5FeederFullDeploymentService
             Directory.CreateDirectory(textureRoot);
             createdDirs.Add(integrationRoot);
             var host64CacheNote = "";
-            if (layout.RequiresHost64)
+            if (hostReShade is not null)
             {
-                if (_reShade is null)
-                    throw new InvalidOperationException("32-bit DLSS5 Feeder needs the ReShade service to stage a 64-bit host64 ReShade runtime.");
                 Directory.CreateDirectory(layout.Host64Directory!);
                 createdDirs.Add(layout.Host64Directory!);
-                var hostReShade = await _reShade.EnsureLatestStagedAsync(PeArchitecture.X64, cancellationToken).ConfigureAwait(false);
                 host64CacheNote = Host64CacheNote(hostReShade.FromCache);
                 await CopyOwnedAsync(host64Executable!, layout.Host64ExecutableTarget!, copied, cancellationToken).ConfigureAwait(false);
                 await CopyOwnedAsync(hostReShade.DllPath, Path.Combine(layout.Host64Directory!, "dxgi.dll"), copied, cancellationToken).ConfigureAwait(false);

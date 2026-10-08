@@ -142,6 +142,22 @@ public sealed class Dlss5FeederLifecycleAuditTests
         f.AssertInstalled(Dlss5FeederConsumer.RenoDxDlss5, expectedEarlyLoad: "0");
     }
 
+    // w2 merge review, minor 1 (vmsplit re-review nit 5): on a 32-bit game the host64 helper's 64-bit ReShade (a
+    // reshade.me download) is staged with the other downloads, before the write gate; nothing is fetched after it.
+    [Fact]
+    public async Task FullStack32Bit_DownloadsTheHost64ReShadeBeforeTheWriteGate()
+    {
+        using var f = new FeederFixture(x86: true);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => f.Install(Dlss5FeederConsumer.RenoDxDlss5, ct), [f.Bin, f.Game.PrefixPath!],
+            atWritePhase: f.Watch.CloseGate);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.True(File.Exists(Path.Combine(f.Bin, "host64", "dxgi.dll")));
+        Assert.Contains(f.Requests, url => url.StartsWith("https://reshade.me", StringComparison.Ordinal));
+        Assert.Empty(f.Watch.LateRequests);
+    }
+
     [Fact]
     public async Task FullStackDx9_CancelAfterTheFirstWrite_ThenAFailure_RestoresTheDx9Migration()
     {
@@ -188,26 +204,29 @@ public sealed class Dlss5FeederLifecycleAuditTests
         public LinuxDeploymentRecordStore Records { get; }
         public Dlss5FeederFullDeploymentService Service { get; }
         public List<string> Requests { get; } = [];
+        /// <summary>Records requests sent after the write gate (close it from CancelAtWritePhase's atWritePhase).</summary>
+        public GateWatchingHandler Watch { get; }
 
-        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false)
+        /// <param name="x86">A 32-bit game: the Feeder deploys its host64 helper with a 64-bit ReShade from reshade.me.</param>
+        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false)
         {
             Bin = Path.Combine(_root, "game");
             var prefix = Path.Combine(_root, "prefix");
             Directory.CreateDirectory(Bin);
             Directory.CreateDirectory(prefix);
             var exe = Path.Combine(Bin, "Game.exe");
-            File.WriteAllBytes(exe, Pe(128 * 1024));
+            File.WriteAllBytes(exe, x86 ? Pe(128 * 1024, 0x14c) : Pe(128 * 1024));
             var reshade = Pe(2 * 1024 * 1024);
             Encoding.ASCII.GetBytes("ReShade reshade.me crosire").CopyTo(reshade, 4096);
             File.WriteAllBytes(Path.Combine(Bin, dx9 ? "d3d9.dll" : "dxgi.dll"), reshade);
-            var compiler = Pe(1_100_000);
+            var compiler = x86 ? Pe(1_100_000, 0x14c) : Pe(1_100_000);
             Encoding.ASCII.GetBytes("Microsoft (R) HLSL Shader Compiler 10.1 D3DCompiler_47.dll").CopyTo(compiler, 4096);
             File.WriteAllBytes(Path.Combine(Bin, "d3dcompiler_47.dll"), compiler);
             File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
             File.WriteAllText(IniPath, "[GENERAL]\nPresetPath=" + UserPreset + "\nEffectSearchPaths=.\\user\\Shaders\\**\nTextureSearchPaths=.\\user\\Textures\\**\n[ADDON]\n" +
                 (preexistingEarlyLoad ? "LoadFromDllMain=deep-fried-chicken.addon64\n" : ""));
             Game = new DetectedGame { Name = "Synthetic Feeder audit", InstallPath = Bin, BinaryDirectory = Bin,
-                ExecutablePath = exe, PrefixPath = prefix, Source = "Audit", Runner = "Wine", GraphicsApi = dx9 ? GraphicsApi.DirectX9 : GraphicsApi.DirectX12 };
+                ExecutablePath = exe, PrefixPath = prefix, Source = "Audit", Runner = "Wine", GraphicsApi = dx9 ? GraphicsApi.DirectX9 : x86 ? GraphicsApi.DirectX11 : GraphicsApi.DirectX12 };
             RecordsPath = Path.Combine(_root, "deployments.json");
             Records = new LinuxDeploymentRecordStore(RecordsPath);
             if (dx9)
@@ -229,7 +248,10 @@ public sealed class Dlss5FeederLifecycleAuditTests
             _dfcHash = Hash(File.ReadAllBytes(_package));
             _renoAddon = Pe(70 * 1024);
             _renoHash = Hash(_renoAddon);
-            var feederArchive = Zip(("addon64/dlss5-feed.addon64", Pe(70 * 1024)), ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))));
+            var feederArchive = x86
+                ? Zip(("addon32/dlss5-feed.addon32", Pe(70 * 1024, 0x14c)), ("host64/dlss5-feed-host64.exe", Pe(70 * 1024)),
+                    ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))))
+                : Zip(("addon64/dlss5-feed.addon64", Pe(70 * 1024)), ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))));
             _feederHash = Hash(feederArchive);
             var lumeniteFiles = new List<(string, byte[])> { ("LumeniteFX/Shaders/lumenite_Kernel.fx", Encoding.UTF8.GetBytes(new string('k', 1024))),
                 ("LumeniteFX/Textures/lumenite_test.png", new byte[2048]) };
@@ -254,14 +276,22 @@ public sealed class Dlss5FeederLifecycleAuditTests
             responses[GitHubReleaseAssetResolver.NormalizeReleaseApiUrl("https://api.github.com/repos/dege-diosg/dgVoodoo2/releases/latest")]
                 = Release("2.86", "dgVoodoo2_86.zip", dgVoodooUrl, dgVoodooZip);
             responses[dgVoodooUrl] = dgVoodooZip;
-            _http = new HttpClient(new FixtureHandler(responses, Requests));
+            // The host64 helper's 64-bit ReShade (32-bit games): reshade.me's page and setup, extracted by a stand-in.
+            responses[ReShadeDeploymentService.HomeUrl + "/"] = Encoding.UTF8.GetBytes("<a href=\"/downloads/ReShade_Setup_9.9.9_Addon.exe\">Download</a>");
+            responses[ReShadeDeploymentService.HomeUrl] = responses[ReShadeDeploymentService.HomeUrl + "/"];
+            responses["https://reshade.me/downloads/ReShade_Setup_9.9.9_Addon.exe"] = Pe(600_000);
+            Watch = new GateWatchingHandler(new FixtureHandler(responses, Requests));
+            _http = new HttpClient(Watch);
             var dlss = new DlssManagerService(_http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
             var manifest = new UpstreamRhiManifestService(_http, "https://github.com/rhi-tests/unused-manifest");
             var legacy = new UpstreamRhiAddonDeploymentService(_http, Records, manifest, new UpstreamRhiAddonDeploymentOptions(
                 ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://github.com/rhi-tests/unused-release", 64 * 1024,
                 DeployFileName64: "dlss5-feed.addon64"), Path.Combine(_root, "cache-legacy"));
             var overrides = new WineDllOverrideService();
+            var reShade = new ReShadeDeploymentService(_http, new TransactionalFileDeploymentService(), Records, overrides, new StandInExtractor(),
+                Path.Combine(_root, "cache-reshade"), new ReShadeShaderPackService(_http, Path.Combine(_root, "cache-packs"), customRoot: Path.Combine(_root, "custom")));
             Service = new Dlss5FeederFullDeploymentService(_http, Records, dlss, legacy, Path.Combine(_root, "cache-feeder"), overrides,
+                reShade: reShade,
                 dgVoodoo: new DgVoodooDeploymentService(_http, Path.Combine(_root, "cache-dgvoodoo")),
                 dx9ReShade: new Dx9TranslationReShadeCoordinator(Records, overrides));
         }
@@ -324,14 +354,30 @@ public sealed class Dlss5FeederLifecycleAuditTests
             Assert.DoesNotContain("d3dcompiler_47", File.ReadAllText(Path.Combine(Game.PrefixPath!, "user.reg")));
         }
 
-        public static byte[] Pe(int length)
+        public static byte[] Pe(int length, ushort machine = 0x8664)
         {
             var bytes = new byte[length];
             bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
             BitConverter.GetBytes(0x80).CopyTo(bytes, 0x3c);
             bytes[0x80] = (byte)'P'; bytes[0x81] = (byte)'E';
-            BitConverter.GetBytes((ushort)0x8664).CopyTo(bytes, 0x84);
+            BitConverter.GetBytes(machine).CopyTo(bytes, 0x84);
             return bytes;
+        }
+
+        /// <summary>Extracts a synthetic ReShade64/ReShade32 pair from any setup.</summary>
+        private sealed class StandInExtractor : IReShadeArchiveExtractor
+        {
+            public Task ExtractDllsAsync(string setupExe, string outputDirectory, CancellationToken cancellationToken = default)
+            {
+                Directory.CreateDirectory(outputDirectory);
+                foreach (var (name, machine) in new[] { ("ReShade64.dll", (ushort)0x8664), ("ReShade32.dll", (ushort)0x14c) })
+                {
+                    var dll = Pe(1_100_000, machine);
+                    Encoding.ASCII.GetBytes("ReShade crosire reshade.me").CopyTo(dll, 512);
+                    File.WriteAllBytes(Path.Combine(outputDirectory, name), dll);
+                }
+                return Task.CompletedTask;
+            }
         }
         private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
         private static byte[] Zip(params (string Name, byte[] Bytes)[] entries)
