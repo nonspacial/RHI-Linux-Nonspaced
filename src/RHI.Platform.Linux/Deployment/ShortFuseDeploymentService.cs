@@ -379,6 +379,8 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail("Game binary directory is not available for ShortFuse.");
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
             return ComponentOperationResult.Fail("Start the game once so its Wine/Proton prefix exists before installing ShortFuse.");
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var reshadeRecord = _records.Find(game, ManagedComponentKind.ReShade);
         if (reshadeRecord is null)
@@ -479,8 +481,10 @@ public sealed class ShortFuseDeploymentService
             {
                 if (reshadeRecord.WineOverride is not null)
                 {
-                    _overrides.Restore(game.PrefixPath, reshadeRecord.WineOverride);
-                    overrideSuspended = reshadeRecord.WineOverride.ChangedByRhi;
+                    // Suspended only when RHI's value was really taken out: a value the user set is theirs (#30),
+                    // and Remove must not put RHI's value back over it.
+                    var suspension = _overrides.Restore(game.PrefixPath, reshadeRecord.WineOverride);
+                    overrideSuspended = suspension.Outcome == WineOverrideRestoreOutcome.Restored;
                 }
 
                 if (!Path.GetFullPath(originalReShadePath).Equals(Path.GetFullPath(asiPath), StringComparison.Ordinal))
@@ -562,12 +566,8 @@ public sealed class ShortFuseDeploymentService
                 _records.Upsert(reshadeRecord);
             }
             catch (Exception reshadeError) { AppLog.Warn("shortfuse", "Install rollback could not put ReShade back as it was", reshadeError); }
-            try
-            {
-                if (overrideSuspended && reshadeRecord.WineOverride is not null)
-                    _ = _overrides.EnsureNativeBuiltin(game.PrefixPath, reshadeRecord.WineOverride.DllName, reshadeRecord.WineOverride.ApplicationName);
-            }
-            catch (Exception overrideError) { AppLog.Warn("shortfuse", "Install rollback could not restore the ReShade Wine override", overrideError); }
+            if (overrideSuspended)
+                _overrides.TryReapply(game.PrefixPath, reshadeRecord.WineOverride);
             if (ualInstalledByUs)
             {
                 try { await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false); }
@@ -584,6 +584,8 @@ public sealed class ShortFuseDeploymentService
             return ComponentOperationResult.Fail("ShortFuse is not managed by RHI Linux. External/stale ShortFuse files are protected from implicit removal.");
         // Copy: the store's cached instance must not change unless a write succeeds.
         var record = LinuxDeploymentRecordStore.Clone(stored);
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         // An interrupted ZZZ load-order rename can leave the record one name behind; follow the
         // owned add-on to its other name so the hash guard and teardown below still apply to it.
@@ -657,16 +659,14 @@ public sealed class ShortFuseDeploymentService
 
         var rollbackSnapshots = new List<(string Path, byte[]? Bytes, byte[]? BackupBytes)>();
 
-        // Snapshot the cross-component state as well as ShortFuse-owned files. Remove may touch
-        // ReShade naming/metadata, reshade.ini, UAL and user.reg after restoring the DLL stack;
-        // keeping byte-exact snapshots lets a late failure return to the installed ShortFuse state.
+        // Snapshot the cross-component file state as well as ShortFuse-owned files. Remove may touch
+        // ReShade naming/metadata, reshade.ini and UAL after restoring the DLL stack; keeping byte-exact
+        // snapshots lets a late failure return to the installed ShortFuse state. The Wine registry is
+        // never snapshotted and written back whole (#24): a failure undoes only the overrides this removal
+        // changed, key by key through the registry editor, so nothing else in user.reg is reverted.
         var iniRollbackPath = record.Metadata.GetValueOrDefault(MetaIniPath);
         var iniRollbackBytes = !string.IsNullOrWhiteSpace(iniRollbackPath) && File.Exists(iniRollbackPath)
             ? await File.ReadAllBytesAsync(iniRollbackPath, cancellationToken).ConfigureAwait(false)
-            : null;
-        var registryPath = !string.IsNullOrWhiteSpace(game.PrefixPath) ? Path.Combine(game.PrefixPath, "user.reg") : null;
-        var registryRollbackBytes = registryPath is not null && File.Exists(registryPath)
-            ? await File.ReadAllBytesAsync(registryPath, cancellationToken).ConfigureAwait(false)
             : null;
         var reshadeRecordJson = reshadeRecord is null ? null : JsonSerializer.Serialize(reshadeRecord);
         var reshadePayloadBefore = reshadeRecord?.Files.FirstOrDefault(f => IsReShadePayload(f.Path));
@@ -690,6 +690,12 @@ public sealed class ShortFuseDeploymentService
         var ualHookedBytes = ualHookedPath is not null && File.Exists(ualHookedPath)
             ? await File.ReadAllBytesAsync(ualHookedPath, cancellationToken).ConfigureAwait(false)
             : null;
+        // UAL's removal restores its override only while it holds RHI's value; remember whether it did,
+        // so a rollback puts RHI's value back exactly there.
+        var ualOverrideHeldRhiValue = ualRecordBefore?.WineOverride is { } ualOverride
+                                      && WineDllOverrideService.HoldsWrittenValue(game.PrefixPath, ualOverride);
+        var ualRemoved = false;
+        WineOverrideRestoreResult? reshadeOverrideBack = null;
 
         try
         {
@@ -737,13 +743,16 @@ public sealed class ShortFuseDeploymentService
             {
                 var ualResult = await _ual.RemoveAsync(game, cancellationToken).ConfigureAwait(false);
                 if (!ualResult.Success) throw new IOException(ualResult.Message);
+                ualRemoved = true;
             }
 
+            // Re-enable ReShade's proxy override only where it is still at the value the install's suspension left.
             if (reshadeRecord?.WineOverride is not null && record.Metadata.GetValueOrDefault(MetaReShadeOverrideSuspended) == "1")
-                _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, reshadeRecord.WineOverride.DllName, reshadeRecord.WineOverride.ApplicationName);
+                reshadeOverrideBack = _overrides.Reapply(game.PrefixPath!, reshadeRecord.WineOverride);
 
             _records.Remove(game, ManagedComponentKind.ShortFuse);
-            return ComponentOperationResult.Ok("ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership.");
+            return ComponentOperationResult.Ok("ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership."
+                + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack));
         }
         catch (Exception ex)
         {
@@ -806,15 +815,11 @@ public sealed class ShortFuseDeploymentService
             }
             catch { }
 
-            try
-            {
-                if (registryPath is not null)
-                {
-                    if (registryRollbackBytes is null) { if (File.Exists(registryPath)) File.Delete(registryPath); }
-                    else File.WriteAllBytes(registryPath, registryRollbackBytes);
-                }
-            }
-            catch { }
+            // Registry: undo exactly what this removal changed, per key (atomic, locked, refused while Wine runs).
+            if (reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryRestore(game.PrefixPath, reshadeRecord!.WineOverride);
+            if (ualRemoved && ualOverrideHeldRhiValue)
+                _overrides.TryReapply(game.PrefixPath, ualRecordBefore!.WineOverride);
 
             try { _records.Upsert(record); } catch { }
             return ComponentOperationResult.Fail($"ShortFuse removal failed; the installed ShortFuse/ReShade/UAL/INI/registry state was restored from transaction snapshots where possible: {ex.Message}");

@@ -24,13 +24,16 @@ public sealed class REFrameworkDeploymentService
     private readonly WineDllOverrideService _overrides;
     private readonly GitHubReleaseAssetResolver _resolver;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
     public REFrameworkDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         WineDllOverrideService overrides,
-        string? cacheDir = null)
+        string? cacheDir = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _overrides = overrides;
@@ -76,8 +79,10 @@ public sealed class REFrameworkDeploymentService
         CancellationToken cancellationToken = default)
     {
         if (!IsGameEligible(game)) return ComponentOperationResult.Fail(EligibilityReason(game));
-        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !File.Exists(Path.Combine(game.PrefixPath, "user.reg")))
+        if (!WineRegistryEditor.HasUserHive(game.PrefixPath))
             return ComponentOperationResult.Fail("Start the RE Engine game once so its Wine/Proton prefix exists before installing RE Framework.");
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var deployDir = ResolveDeployDirectory(game);
         if (string.IsNullOrWhiteSpace(deployDir) || !Directory.Exists(deployDir))
@@ -95,14 +100,20 @@ public sealed class REFrameworkDeploymentService
         var applicationName = Path.GetFileName(game.ExecutablePath ?? "");
         WineOverrideRecord? overrideRecord = null;
         var deployed = false;
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "RE Framework install: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
         try
         {
-            overrideRecord = _overrides.EnsureNativeBuiltin(game.PrefixPath!, DllFileName, applicationName);
+            overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
             // Verified durable copy; never replaces a dinput8.dll that appeared since the check above.
             var deployedHash = await AtomicFile.CopyAsync(cachedDll, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
             deployed = true;
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -130,18 +141,16 @@ public sealed class REFrameworkDeploymentService
                     [VerifiedDownload.MetadataSha256Key] = download.Sha256,
                     [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
         }
         catch
         {
             if (deployed && !FileCleanup.TryDelete(target, out var deleteError))
                 AppLog.Warn("reframework", $"Rollback could not remove {target}", deleteError);
-            if (overrideRecord is not null)
-            {
-                try { _overrides.Restore(game.PrefixPath!, overrideRecord); }
-                catch (Exception restoreError) { AppLog.Warn("reframework", "Rollback could not restore the dinput8 Wine override", restoreError); }
-            }
+            _overrides.TryRestore(game.PrefixPath, overrideRecord);
             throw;
         }
     }
@@ -247,10 +256,13 @@ public sealed class REFrameworkDeploymentService
 
         if (string.IsNullOrWhiteSpace(game.PrefixPath))
             return ComponentOperationResult.Fail("The Wine/Proton prefix is unavailable, so the dinput8 override cannot be restored safely.");
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
+        WineOverrideRestoreResult overrideRestore;
         try
         {
-            _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
         }
         catch (Exception ex)
         {
@@ -263,21 +275,16 @@ public sealed class REFrameworkDeploymentService
         }
         catch (Exception ex)
         {
-            // Keep the game usable if filesystem teardown failed after registry restoration.
-            try
-            {
-                var app = record.WineOverride?.ApplicationName ?? Path.GetFileName(game.ExecutablePath ?? "");
-                _overrides.EnsureNativeBuiltin(game.PrefixPath!, DllFileName, app);
-            }
-            catch (Exception overrideError)
-            {
-                AppLog.Warn("reframework", "Could not put the dinput8 Wine override back after a failed removal", overrideError);
-            }
+            // Keep the game usable if filesystem teardown failed after registry restoration: put RHI's value back
+            // where this removal restored it (a value set since stays, #30).
+            if (overrideRestore.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"RE Framework dinput8.dll could not be removed: {ex.Message}");
         }
 
         _records.Remove(game, ManagedComponentKind.REFramework);
-        return ComponentOperationResult.Ok("RE Framework removed and the previous per-game dinput8 Wine override restored.", owned.Path);
+        return ComponentOperationResult.Ok("RE Framework removed and the previous per-game dinput8 Wine override restored."
+            + WineDllOverrideService.KeptValueNotes(overrideRestore), owned.Path);
     }
 
     internal static string ResolveDeployDirectory(DetectedGame game)

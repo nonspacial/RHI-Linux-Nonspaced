@@ -61,6 +61,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
+    private readonly DeploymentJournal? _journal;
     private readonly Rtx40MfgPreferenceStore _preferences;
 
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
@@ -72,8 +73,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         LinuxDeploymentRecordStore records,
         WineDllOverrideService overrides,
         Rtx40MfgPreferenceStore? preferences = null,
-        string? cacheRoot = null)
+        string? cacheRoot = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _overrides = overrides;
@@ -150,7 +153,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                && apiEligible
                && !string.IsNullOrWhiteSpace(game.PrefixPath)
                && Directory.Exists(game.PrefixPath)
-               && File.Exists(Path.Combine(game.PrefixPath, "user.reg"))
+               && WineRegistryEditor.HasUserHive(game.PrefixPath)
                && ResolveBinaryDirectory(game) is not null
                && HasStreamlineFrameGeneration(game, managedOptiScaler);
     }
@@ -174,7 +177,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             return "Universal MFG em RTX 30 é experimental e exige DirectX 12; Vulkan não é habilitado para RTX 30 neste caminho.";
         if (gpu == GpuGenRtx40 && game.EffectiveGraphicsApi is not (GraphicsApi.DirectX12 or GraphicsApi.Vulkan))
             return "Universal MFG em RTX 40 usa DirectX 12 como caminho principal e Vulkan experimental; DirectX 11 não é elegível.";
-        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !File.Exists(Path.Combine(game.PrefixPath, "user.reg")))
+        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o Universal MFG.";
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
@@ -196,6 +199,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
         if (!IsGameEligible(game, selectedGpu, managedOptiScaler))
             return ComponentOperationResult.Fail(EligibilityReason(game, selectedGpu, managedOptiScaler));
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var conflict = FindFrameGenerationConflict(game);
         if (conflict is not null)
@@ -236,13 +241,20 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         WineOverrideRecord? wineOverride = null;
         var moved = false;
         var recordWritten = false;
+
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "Universal MFG install: " + game.Name, game, ManagedComponentKind.Rtx40MfgStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
         try
         {
             // Verified, fsynced copy beside the target (full re-read hash), placed without replacing anything.
             var staged = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
             tempPath = staged.Path;
             ValidatePayload(tempPath);
-            wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
+            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
             AtomicFile.MoveIntoPlace(tempPath, targetPath, overwrite: false);
             moved = true;
 
@@ -261,7 +273,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             };
             // Fail-closed source: every payload matched GitHub's digest or the publisher's SHA256SUMS.txt (#26).
             VerifiedDownload.Record(metadata, payloadHash, digestVerified: true);
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -282,7 +294,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                     }
                 ],
                 Metadata = metadata
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             recordWritten = true;
             _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
 
@@ -295,8 +309,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             if (moved && !FileCleanup.TryDelete(targetPath, out var deleteError))
                 AppLog.Warn("universal-mfg", $"Install rollback could not remove {targetPath}", deleteError);
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); }
-            catch (Exception restoreError) { AppLog.Warn("universal-mfg", "Install rollback could not restore the Wine override", restoreError); }
+            _overrides.TryRestore(game.PrefixPath, wineOverride);
             try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone); }
             catch (Exception recordError) { AppLog.Warn("universal-mfg", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"Universal MFG install rolled back: {ex.Message}");
@@ -310,6 +323,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return ComponentOperationResult.Fail("Universal MFG não é gerenciado pelo RHI para este jogo. Instalações externas permanecem protegidas.");
+
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName) ?? record.Metadata.GetValueOrDefault(LegacyMetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
@@ -328,7 +344,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
         var tempPath = targetPath + $".rhi-remove-{Guid.NewGuid():N}";
         var moved = false;
-        var overrideRestored = false;
+        WineOverrideRestoreResult? overrideRestore = null;
         try
         {
             if (File.Exists(targetPath))
@@ -336,19 +352,20 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                 File.Move(targetPath, tempPath);
                 moved = true;
             }
-            _overrides.Restore(game.PrefixPath!, record.WineOverride);
-            overrideRestored = true;
+            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
             _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone);
             FileCleanup.TryDelete(tempPath);
-            return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado.");
+            return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
+                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
             try
             {
                 if (moved && File.Exists(tempPath) && !File.Exists(targetPath)) File.Move(tempPath, targetPath);
-                if (overrideRestored && record.WineOverride is not null)
-                    _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
+                // Put RHI's value back only where this removal restored it; a later value stays (#30).
+                if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                    _overrides.TryReapply(game.PrefixPath, record.WineOverride);
                 _records.Upsert(record);
             }
             catch (Exception rollbackError)

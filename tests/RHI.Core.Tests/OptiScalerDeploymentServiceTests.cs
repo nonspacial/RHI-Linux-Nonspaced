@@ -115,6 +115,26 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
     }
 
 
+    // w2 wine review, minor 2 (N7): refused while Wine runs in the prefix, before the package is requested.
+    [Fact]
+    public async Task Install_WhileWineRunsInThePrefix_IsRefusedBeforeRequestingPackage()
+    {
+        var (game, store) = CreateGame("wine-running", GraphicsApi.DirectX12);
+        var provider = new FakePackageProvider(CreatePackage("wine-running-package"));
+        var userReg = File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg"));
+        var service = new OptiScalerDeploymentService(new TransactionalFileDeploymentService(), store,
+            new WineDllOverrideService(new WineRegistryEditor(_ => true)), provider);
+
+        var result = await service.InstallAsync(game);
+
+        Assert.False(result.Success);
+        Assert.Equal(WineRegistryEditor.PrefixInUseRefusalPrefix + game.PrefixPath, result.Message);
+        Assert.Equal(0, provider.CallCount);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.Equal(userReg, File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")));
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+    }
+
     [Fact]
     public async Task Install_DlssNrBlocksWhileFeederOwnsNeuralRuntimeBeforeRequestingPackage()
     {

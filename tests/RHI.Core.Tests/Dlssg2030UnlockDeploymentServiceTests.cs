@@ -326,6 +326,52 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         Assert.DoesNotContain(probe, component => component.Kind == ManagedComponentKind.Dlssg2030Unlock && component.Availability == ComponentAvailability.Installed);
     }
 
+    // w2 wine review, minor 2 (N12): removal refused while Wine runs in the prefix, before any teardown.
+    [Fact]
+    public async Task Remove_WhileWineRunsInThePrefix_IsRefusedBeforeTeardown()
+    {
+        using var fixture = CreateGame("wine-running-remove", 0x8664, GraphicsApi.DirectX12);
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x38), UpstreamIni("SM86")));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        Assert.True((await CreateService(fixture, http, records).InstallAsync(fixture.Game)).Success);
+        var proxy = Path.Combine(fixture.Bin, "version.dll");
+        var proxyBytes = File.ReadAllBytes(proxy);
+        var running = new Dlssg2030UnlockDeploymentService(http, records, new WineDllOverrideService(new WineRegistryEditor(_ => true)),
+            new Dlssg2030PreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"));
+
+        var remove = await running.RemoveAsync(fixture.Game);
+
+        Assert.False(remove.Success);
+        Assert.Equal(WineRegistryEditor.PrefixInUseRefusalPrefix + fixture.Prefix, remove.Message);
+        Assert.Equal(proxyBytes, File.ReadAllBytes(proxy));
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.IniFileName)));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
+    }
+
+    // w2 wine review, minor 2 (N3): a removal failing after it restored the override puts RHI's value back (the record stays).
+    [Fact]
+    public async Task Remove_FailingAfterTheOverrideWasRestored_PutsRhisOverrideBack()
+    {
+        using var fixture = CreateGame("remove-fails", 0x8664, GraphicsApi.DirectX12);
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x39), UpstreamIni("SM86")));
+        var ledger = Path.Combine(fixture.Root, "deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game)).Success);
+        var proxy = Path.Combine(fixture.Bin, "version.dll");
+        var proxyBytes = File.ReadAllBytes(proxy);
+
+        ComponentOperationResult remove;
+        using (LedgerWriteBlocker.Block(records, ledger))
+            remove = await service.RemoveAsync(fixture.Game);
+
+        Assert.False(remove.Success);
+        Assert.Equal(proxyBytes, File.ReadAllBytes(proxy));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
+        Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
+    }
+
     private Dlssg2030UnlockDeploymentService CreateService(GameFixture fixture, HttpClient http, LinuxDeploymentRecordStore records)
         => new(http, records, new WineDllOverrideService(), new Dlssg2030PreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"));
 

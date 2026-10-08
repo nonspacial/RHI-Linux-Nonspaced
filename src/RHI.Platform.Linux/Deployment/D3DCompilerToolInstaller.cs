@@ -13,6 +13,14 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed class D3DCompilerToolInstaller
 {
     private const string Verb = "d3dcompiler_47";
+
+    /// <summary>The tool installed the DLL, but Wine still ran in the prefix afterwards; the prefix path follows.</summary>
+    public const string OverrideNotSetWineRunningPrefix =
+        "Native D3DCompiler_47 was installed, but Wine is still running in this prefix, so RHI did not set the d3dcompiler_47 override. Close everything using this prefix and run the install again. Prefix: ";
+
+    /// <summary>wineserver stays a few seconds after the tool's last Wine process; this is how long RHI waits for it.</summary>
+    internal TimeSpan WineServerExitWait { get; init; } = TimeSpan.FromSeconds(20);
+
     private readonly WineDllOverrideService _overrides;
 
     public D3DCompilerToolInstaller(WineDllOverrideService overrides)
@@ -98,7 +106,8 @@ public sealed class D3DCompilerToolInstaller
         return RunAndVerifyAsync(game, startInfo, toolLabel, applyOverride: false, cancellationToken: cancellationToken);
     }
 
-    private async Task<ComponentOperationResult> RunAndVerifyAsync(
+    /// <remarks>Internal for tests, which run a stand-in tool.</remarks>
+    internal async Task<ComponentOperationResult> RunAndVerifyAsync(
         DetectedGame game,
         ProcessStartInfo startInfo,
         string toolName,
@@ -113,6 +122,9 @@ public sealed class D3DCompilerToolInstaller
         var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
         if (architecture is not (PeArchitecture.X64 or PeArchitecture.X86))
             return ComponentOperationResult.Fail("Game PE architecture is unknown/unsupported, so the D3DCompiler install was not started.");
+        // Running a prefix tool while the game uses the prefix is unsafe as well: refuse before starting it.
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         try
         {
@@ -128,6 +140,9 @@ public sealed class D3DCompilerToolInstaller
             var appName = Path.GetFileName(game.ExecutablePath);
             if (applyOverride)
             {
+                // The tool's own wineserver rewrites user.reg when it exits: wait for it before editing.
+                if (!await _overrides.Registry.WaitUntilIdleAsync(game.PrefixPath, WineServerExitWait, cancellationToken).ConfigureAwait(false))
+                    return ComponentOperationResult.Fail(OverrideNotSetWineRunningPrefix + game.PrefixPath);
                 _overrides.EnsureNativeBuiltin(game.PrefixPath, Verb, appName);
                 return ComponentOperationResult.Ok(
                     $"Native Microsoft D3DCompiler_47 installed/verified with {toolName}; per-game d3dcompiler_47=native,builtin is active for {appName}.",

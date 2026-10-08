@@ -55,6 +55,7 @@ public sealed class Dlssg2030UnlockDeploymentService
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
+    private readonly DeploymentJournal? _journal;
     private readonly Dlssg2030PreferenceStore _preferences;
 
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
@@ -66,8 +67,10 @@ public sealed class Dlssg2030UnlockDeploymentService
         LinuxDeploymentRecordStore records,
         WineDllOverrideService overrides,
         Dlssg2030PreferenceStore? preferences = null,
-        string? cacheRoot = null)
+        string? cacheRoot = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _overrides = overrides;
@@ -143,7 +146,7 @@ public sealed class Dlssg2030UnlockDeploymentService
            && game.EffectiveGraphicsApi == GraphicsApi.DirectX12
            && !string.IsNullOrWhiteSpace(game.PrefixPath)
            && Directory.Exists(game.PrefixPath)
-           && File.Exists(Path.Combine(game.PrefixPath, "user.reg"))
+           && WineRegistryEditor.HasUserHive(game.PrefixPath)
            && ResolveBinaryDirectory(game) is not null;
 
     public static string EligibilityReason(DetectedGame game)
@@ -156,7 +159,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             return "RTX 20 FG Unlock legado exige um executável Windows x64.";
         if (game.EffectiveGraphicsApi != GraphicsApi.DirectX12)
             return "O caminho experimental RTX 20 / SM75 está habilitado somente para jogos DirectX 12.";
-        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !File.Exists(Path.Combine(game.PrefixPath, "user.reg")))
+        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return "Inicie o jogo uma vez para criar/inicializar o prefixo Wine/Proton antes de instalar o RTX 20 FG Unlock legado.";
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
@@ -178,6 +181,8 @@ public sealed class Dlssg2030UnlockDeploymentService
 
         if (!IsGameEligible(game))
             return ComponentOperationResult.Fail(EligibilityReason(game));
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         if (_records.Find(game, ManagedComponentKind.MfgAdaUnlock) is not null)
             return ComponentOperationResult.Fail("MFG Ada Unlock já está ativo. Remova-o antes de instalar o RTX 20 FG Unlock legado; os dois métodos de desbloqueio de Frame Generation não devem compartilhar o mesmo processo.");
@@ -231,10 +236,16 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniMoved = false;
         var recordWritten = false;
 
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "RTX 20 FG Unlock install: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath));
+            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
             // Verified, fsynced copies beside the targets (full re-read hash), placed without replacing anything.
             var stagedProxy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
@@ -267,7 +278,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             };
             RecordDownloads(metadata, payload);
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -283,7 +294,9 @@ public sealed class Dlssg2030UnlockDeploymentService
                     new LinuxDeployedFile { Path = iniPath, ExistedBeforeInstall = false, Sha256 = iniHash, AllowUserChanges = true },
                 ],
                 Metadata = metadata
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             recordWritten = true;
 
             _preferences.Set(game, new Dlssg2030Preferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
@@ -299,8 +312,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             }.OfType<string>());
             foreach (var leftover in leftovers)
                 AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
-            try { if (wineOverride is not null) _overrides.Restore(game.PrefixPath!, wineOverride); }
-            catch (Exception restoreError) { AppLog.Warn("fg2030", "Install rollback could not restore the Wine override", restoreError); }
+            _overrides.TryRestore(game.PrefixPath, wineOverride);
             try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock); }
             catch (Exception recordError) { AppLog.Warn("fg2030", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}");
@@ -314,6 +326,9 @@ public sealed class Dlssg2030UnlockDeploymentService
         var record = GetRecord(game);
         if (record is null)
             return ComponentOperationResult.Fail("RTX 20 FG Unlock legado não é gerenciado pelo RHI para este jogo. A remoção externa permanece protegida.");
+
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var proxyName = record.Metadata.GetValueOrDefault(MetaProxyName);
         if (string.IsNullOrWhiteSpace(proxyName))
@@ -344,7 +359,7 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniTemp = iniPath + $".rhi-remove-{Guid.NewGuid():N}";
         var proxyMoved = false;
         var iniMoved = false;
-        var overrideRestored = false;
+        WineOverrideRestoreResult? overrideRestore = null;
 
         try
         {
@@ -359,16 +374,16 @@ public sealed class Dlssg2030UnlockDeploymentService
                 iniMoved = true;
             }
 
-            _overrides.Restore(game.PrefixPath!, record.WineOverride);
-            overrideRestored = true;
+            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
             _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
 
             if (proxyMoved && File.Exists(proxyTemp)) File.Delete(proxyTemp);
             if (iniMoved && File.Exists(iniTemp)) File.Delete(iniTemp);
 
-            return ComponentOperationResult.Ok(preserveIni
+            return ComponentOperationResult.Ok((preserveIni
                 ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
-                : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.");
+                : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
+                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
@@ -376,8 +391,9 @@ public sealed class Dlssg2030UnlockDeploymentService
             {
                 if (proxyMoved && File.Exists(proxyTemp) && !File.Exists(proxyPath)) File.Move(proxyTemp, proxyPath);
                 if (iniMoved && File.Exists(iniTemp) && !File.Exists(iniPath)) File.Move(iniTemp, iniPath);
-                if (overrideRestored && record.WineOverride is not null)
-                    _ = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, record.WineOverride.ApplicationName ?? Path.GetFileName(game.ExecutablePath));
+                // Put RHI's value back only where this removal restored it; a later value stays (#30).
+                if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                    _overrides.TryReapply(game.PrefixPath, record.WineOverride);
                 _records.Upsert(record);
             }
             catch (Exception rollbackError)

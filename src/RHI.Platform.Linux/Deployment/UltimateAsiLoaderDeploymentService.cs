@@ -61,14 +61,17 @@ public sealed class UltimateAsiLoaderDeploymentService
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
+    private readonly DeploymentJournal? _journal;
     private readonly string _cacheRoot;
 
     public UltimateAsiLoaderDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         WineDllOverrideService overrides,
-        string? cacheRoot = null)
+        string? cacheRoot = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _overrides = overrides;
@@ -144,6 +147,8 @@ public sealed class UltimateAsiLoaderDeploymentService
         var preflight = ValidateTarget(game, dllName);
         if (!preflight.Success)
             return ComponentOperationResult.Fail(preflight.Message);
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var architecture = ResolveArchitecture(game);
         var binaryDir = ResolveBinaryDirectory(game)!;
@@ -176,9 +181,16 @@ public sealed class UltimateAsiLoaderDeploymentService
         var movedOriginal = false;
         var copiedProxy = false;
 
+        // The Wine override is journaled before it is written (#23): a crash before the record is saved
+        // leaves an entry start-up recovery rolls back, never an override nothing owns.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "Ultimate ASI Loader install: " + game.Name, game, ManagedComponentKind.UltimateAsiLoader, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var journaled = operation;
+
         try
         {
-            wineOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath));
+            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
             if (hadOriginal)
             {
@@ -202,7 +214,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             if (hadOriginal)
                 metadata[MetaHookedPath] = hookedPath;
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -223,7 +235,9 @@ public sealed class UltimateAsiLoaderDeploymentService
                     }
                 ],
                 Metadata = metadata
-            });
+            }));
+            // The record carries the operation id: it is the commit point.
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
 
             var chainText = hadOriginal
                 ? $" Existing {proxyName} was preserved as {Path.GetFileName(hookedPath)} and will be restored on Remove."
@@ -245,15 +259,7 @@ public sealed class UltimateAsiLoaderDeploymentService
                 AppLog.Warn("ual", $"Install rollback could not put {proxyName} back (the original stays at {hookedPath})", rollbackError);
             }
 
-            try
-            {
-                if (wineOverride is not null)
-                    _overrides.Restore(game.PrefixPath!, wineOverride);
-            }
-            catch (Exception restoreError)
-            {
-                AppLog.Warn("ual", $"Install rollback could not restore the {proxyName} Wine override", restoreError);
-            }
+            _overrides.TryRestore(game.PrefixPath, wineOverride);
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}");
         }
@@ -329,6 +335,8 @@ public sealed class UltimateAsiLoaderDeploymentService
 
         if (!record.Metadata.TryGetValue(MetaProxyName, out var proxyName) || string.IsNullOrWhiteSpace(proxyName))
             return ComponentOperationResult.Fail("Ultimate ASI Loader deployment record is missing its proxy filename.");
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            return ComponentOperationResult.Fail(wineRunning);
 
         var targetPath = Path.Combine(record.BinaryDirectory, proxyName);
         var fileRecord = record.Files.FirstOrDefault(f => Path.GetFullPath(f.Path).Equals(Path.GetFullPath(targetPath), StringComparison.Ordinal));
@@ -352,6 +360,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         var tempManaged = targetPath + $".rhi-remove-{Guid.NewGuid():N}";
         var movedManagedAside = false;
         var restoredOriginal = false;
+        WineOverrideRestoreResult? overrideRestore = null;
 
         try
         {
@@ -367,16 +376,17 @@ public sealed class UltimateAsiLoaderDeploymentService
                 restoredOriginal = true;
             }
 
-            _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
 
             if (movedManagedAside && File.Exists(tempManaged))
                 File.Delete(tempManaged);
 
             _records.Remove(game, ManagedComponentKind.UltimateAsiLoader);
             return ComponentOperationResult.Ok(
-                hadOriginal
+                (hadOriginal
                     ? $"Ultimate ASI Loader removed; original {proxyName} restored and Wine override rolled back."
-                    : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.");
+                    : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.")
+                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
@@ -392,6 +402,9 @@ public sealed class UltimateAsiLoaderDeploymentService
             {
                 AppLog.Warn("ual", $"Removal rollback did not complete; the managed proxy may be at {tempManaged}", rollbackError);
             }
+            // The record stays, so the override it owns goes back too (only where this removal restored it, #30).
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}");
         }
@@ -420,7 +433,7 @@ public sealed class UltimateAsiLoaderDeploymentService
     {
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
             return new(false, "Start the Windows game once so its Wine/Proton prefix exists before installing Ultimate ASI Loader.");
-        if (!File.Exists(Path.Combine(game.PrefixPath, "user.reg")))
+        if (!WineRegistryEditor.HasUserHive(game.PrefixPath))
             return new(false, "Wine/Proton user.reg is missing. Start the game once so the prefix is initialized.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new(false, "A Windows game executable could not be resolved for Ultimate ASI Loader.");

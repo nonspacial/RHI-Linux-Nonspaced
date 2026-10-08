@@ -1,5 +1,6 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -18,11 +19,13 @@ public sealed class Dx9TranslationReShadeCoordinator
 {
     private readonly LinuxDeploymentRecordStore _records;
     private readonly WineDllOverrideService _overrides;
+    private readonly DeploymentJournal? _journal;
 
-    public Dx9TranslationReShadeCoordinator(LinuxDeploymentRecordStore records, WineDllOverrideService overrides)
+    public Dx9TranslationReShadeCoordinator(LinuxDeploymentRecordStore records, WineDllOverrideService overrides, DeploymentJournal? journal = null)
     {
         _records = records;
         _overrides = overrides;
+        _journal = journal;
     }
 
     public async Task<ReShadeDx9MigrationState> MigrateAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -48,29 +51,45 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !hash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Managed ReShade d3d9.dll was modified outside RHI; DX9 migration is blocked.");
 
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            throw new WineRegistryEditRefusedException(wineRunning, inUse: true);
+
+        // The overrides are journaled before they are written (#23); the ReShade record carrying this
+        // operation's id is the commit point.
+        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+            _journal, "ReShade DX9 translation: " + game.Name, game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) throw new IOException(journalRefusal);
+        await using var journaled = operation;
+
         var exeName = Path.GetFileName(game.ExecutablePath);
         var originalRecordOverride = record.WineOverride;
-        var d3d9Override = originalRecordOverride is not null &&
-                           string.Equals(Path.GetFileNameWithoutExtension(originalRecordOverride.DllName), "d3d9", StringComparison.OrdinalIgnoreCase)
-            ? originalRecordOverride
-            : _overrides.EnsureNativeBuiltin(game.PrefixPath, "d3d9", exeName);
+        var previousOperationId = record.Metadata.GetValueOrDefault(LinuxDeploymentRecovery.OperationIdMetadataKey);
+        WineOverrideRecord? d3d9Override = null;
         WineOverrideRecord? dxgiOverride = null;
         try
         {
-            dxgiOverride = _overrides.EnsureNativeBuiltin(game.PrefixPath, "dxgi", exeName);
+            d3d9Override = originalRecordOverride is not null &&
+                           string.Equals(Path.GetFileNameWithoutExtension(originalRecordOverride.DllName), "d3d9", StringComparison.OrdinalIgnoreCase)
+                ? originalRecordOverride
+                : await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath, "d3d9", exeName, cancellationToken).ConfigureAwait(false);
+            dxgiOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath, "dxgi", exeName, cancellationToken).ConfigureAwait(false);
             File.Move(d3d9, dxgi);
             file.Path = dxgi;
             file.Sha256 = await FileHash.Sha256HexAsync(dxgi, cancellationToken).ConfigureAwait(false);
             record.WineOverride = dxgiOverride;
-            _records.Upsert(record);
+            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, record));
+            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             return new ReShadeDx9MigrationState(d3d9, dxgi, hash, d3d9Override);
         }
         catch
         {
             try { if (File.Exists(dxgi) && !File.Exists(d3d9)) File.Move(dxgi, d3d9); } catch { }
-            if (dxgiOverride is not null) try { _overrides.Restore(game.PrefixPath, dxgiOverride); } catch { }
-            if (originalRecordOverride is null) try { _overrides.Restore(game.PrefixPath, d3d9Override); } catch { }
+            _overrides.TryRestore(game.PrefixPath, dxgiOverride);
+            if (originalRecordOverride is null) _overrides.TryRestore(game.PrefixPath, d3d9Override);
             record.WineOverride = originalRecordOverride;
+            // The rolled-back record must not claim this operation as its commit.
+            if (previousOperationId is null) record.Metadata.Remove(LinuxDeploymentRecovery.OperationIdMetadataKey);
+            else record.Metadata[LinuxDeploymentRecovery.OperationIdMetadataKey] = previousOperationId;
             file.Path = d3d9;
             file.Sha256 = File.Exists(d3d9) ? await FileHash.Sha256HexAsync(d3d9, cancellationToken).ConfigureAwait(false) : hash;
             _records.Upsert(record);
@@ -95,12 +114,16 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (!string.IsNullOrWhiteSpace(file.Sha256) && !currentHash.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Translated ReShade dxgi.dll was modified outside RHI; restoration is blocked.");
 
+        if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
+            throw new WineRegistryEditRefusedException(wineRunning, inUse: true);
+
         var translatedOverride = record.WineOverride;
+        WineOverrideRestoreResult? overrideRestore = null;
         File.Move(state.TranslatedPath, state.OriginalPath);
         try
         {
             if (translatedOverride is not null)
-                _overrides.Restore(game.PrefixPath, translatedOverride);
+                overrideRestore = _overrides.Restore(game.PrefixPath, translatedOverride);
             file.Path = state.OriginalPath;
             file.Sha256 = await FileHash.Sha256HexAsync(state.OriginalPath, cancellationToken).ConfigureAwait(false);
             record.WineOverride = state.D3D9Override;
@@ -109,6 +132,9 @@ public sealed class Dx9TranslationReShadeCoordinator
         catch
         {
             try { if (File.Exists(state.OriginalPath) && !File.Exists(state.TranslatedPath)) File.Move(state.OriginalPath, state.TranslatedPath); } catch { }
+            // The record keeps the translated override, so put RHI's value back where this restore removed it (#30).
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, translatedOverride);
             record.WineOverride = translatedOverride;
             file.Path = state.TranslatedPath;
             if (File.Exists(state.TranslatedPath)) file.Sha256 = await FileHash.Sha256HexAsync(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
