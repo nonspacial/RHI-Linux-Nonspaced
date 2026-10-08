@@ -1737,8 +1737,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetDlssg2030Preferences(SelectedGame, gpuGeneration, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetDlssg2030Preferences(game, gpuGeneration, proxyName));
+    }
+
+    /// <summary>
+    /// A dialog preference save (DLSS Enabler, RTX 20 FG, Universal MFG) through <see cref="TryPersist"/>: any
+    /// store failure, not only a refused unreadable file, comes back as a failed result saying nothing changed, and
+    /// the dialog puts its dropdowns back to the stored preferences.
+    /// </summary>
+    private ComponentOperationResult PersistPreference(Func<ComponentOperationResult> save)
+    {
+        ComponentOperationResult? result = null;
+        if (TryPersist(() => result = save(), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
+            return ComponentOperationResult.Fail(failure);
+        StatusText = UiLocalizationService.Present(result!.Message);
         return result;
     }
 
@@ -1772,9 +1785,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetStandaloneDlssEnablerPreferences(SelectedGame, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetStandaloneDlssEnablerPreferences(game, proxyName));
     }
 
     public async Task<DlssEnablerUpdateStatus> CheckStandaloneDlssEnablerUpdateAsync(CancellationToken cancellationToken = default)
@@ -1807,18 +1819,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, proxyName));
     }
 
     public ComponentOperationResult SetRtx40MfgPreferences(string gpuGeneration, string proxyName)
     {
         if (SelectedGame is null)
             return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var result = _managedComponents.SetRtx40MfgPreferences(SelectedGame, gpuGeneration, proxyName);
-        StatusText = UiLocalizationService.Present(result.Message);
-        return result;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetRtx40MfgPreferences(game, gpuGeneration, proxyName));
     }
 
     public async Task<Rtx40MfgUpdateStatus> CheckRtx40MfgUpdateAsync(CancellationToken cancellationToken = default)

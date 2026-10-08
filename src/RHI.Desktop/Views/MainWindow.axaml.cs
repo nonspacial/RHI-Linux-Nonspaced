@@ -1165,13 +1165,20 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         void SavePreferences()
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var gpu = gpuCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.GpuGenRtx20;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.DefaultProxyName;
             var result = vm.SetDlssg2030Preferences(gpu, proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdowns go back to what is stored.
+            var stored = vm.GetDlssg2030Preferences();
+            reverting = true;
+            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
+            finally { reverting = false; }
         }
         gpuCombo.SelectionChanged += (_, _) => SavePreferences();
         proxyCombo.SelectionChanged += (_, _) => SavePreferences();
@@ -1280,12 +1287,18 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         proxyCombo.SelectionChanged += (_, _) =>
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? StandaloneDlssEnablerDeploymentService.DefaultProxyName;
             var result = vm.SetStandaloneDlssEnablerPreferences(proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdown goes back to what is stored.
+            reverting = true;
+            try { proxyCombo.SelectedItem = vm.GetStandaloneDlssEnablerPreferences().ProxyName; }
+            finally { reverting = false; }
         };
 
         if (installed)
@@ -1424,13 +1437,20 @@ public sealed partial class MainWindow : Window
             });
         }
 
+        var reverting = false;
         void SaveUniversalMfgPreferences()
         {
-            if (installed) return;
+            if (installed || reverting) return;
             var gpu = gpuCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40;
             var proxy = proxyCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.DefaultProxyName;
             var result = vm.SetRtx40MfgPreferences(gpu, proxy);
             message.Text = UiLocalizationService.Present(result.Message);
+            if (result.Success) return;
+            // Not saved: the dropdowns go back to what is stored.
+            var stored = vm.GetRtx40MfgPreferences();
+            reverting = true;
+            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
+            finally { reverting = false; }
         }
 
         gpuCombo.SelectionChanged += (_, _) => SaveUniversalMfgPreferences();
