@@ -717,6 +717,25 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
     }
 
+    // w2/vmsplit re-review, minor 2: the removal closes the Cancel gate before its first change, so a Cancel pressed
+    // while it writes is refused and its real outcome is reported (it used to be accepted and read "Operation cancelled.").
+    [Fact]
+    public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
+    {
+        using var fixture = CreateGame("cancel-remove", 0x8664, GraphicsApi.DirectX12);
+        using var handler = Rtx40Handler.WithVersions(("1.3.2", CreateZip(("RTXMFG.dll", CreatePe(0x8664, 512 * 1024, 0x4D)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+    }
+
     [Fact]
     public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
     {

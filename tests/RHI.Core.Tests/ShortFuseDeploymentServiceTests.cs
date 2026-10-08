@@ -678,6 +678,28 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
     }
 
+    // w2/vmsplit re-review, minor 2: the ZZZ load-order rename closes the Cancel gate before it renames, both with an
+    // installed add-on and when only the preference changes, so a Cancel pressed meanwhile never replaces its outcome.
+    [Fact]
+    public async Task ZzzLoadOrder_EntersItsWritePhaseBeforeTheRename_AndRunsToTheEnd()
+    {
+        using var fixture = CreateGame("cancel-zzz");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        var preference = await CancelAtWritePhase.RunAsync(ct => ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true, ct), [fixture.Bin, fixture.Prefix]);
+        Assert.True(preference.Result.Success, preference.Result.Message);
+        Assert.True((await ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, false)).Success);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game)).Success);
+        var (normal, zzz) = AddonPaths(fixture);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => ctx.ShortFuse.SetZzzLoadOrderAsync(fixture.Game, true, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.False(File.Exists(normal));
+        Assert.True(File.Exists(zzz));
+        Assert.True(ctx.ShortFuse.GetZzzLoadOrderEnabled(fixture.Game));
+    }
+
     [Fact]
     public async Task Install_CancelAfterTheFirstWrite_ThenAFailure_RollsEveryGameFileBack()
     {

@@ -259,6 +259,22 @@ public sealed class REFrameworkDeploymentServiceTests : IDisposable
             File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")), "dinput8", Path.GetFileName(game.ExecutablePath)));
     }
 
+    // w2/vmsplit re-review, minor 2: the removal closes the Cancel gate before its first change, so a Cancel pressed
+    // while it writes is refused and its real outcome is reported (it used to be accepted and read "Operation cancelled.").
+    [Fact]
+    public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
+    {
+        var (service, records, game, http) = CancelFixture("cancel-remove");
+        using var _ = http;
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(game, ct), [game.InstallPath, game.PrefixPath!]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(game, ManagedComponentKind.REFramework));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dinput8.dll")));
+    }
+
     [Fact]
     public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
     {

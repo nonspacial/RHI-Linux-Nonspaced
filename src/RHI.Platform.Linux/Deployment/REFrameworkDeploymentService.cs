@@ -263,6 +263,8 @@ public sealed class REFrameworkDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
 
         WineOverrideRestoreResult overrideRestore;
+        // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);

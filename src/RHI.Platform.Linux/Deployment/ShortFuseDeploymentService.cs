@@ -132,6 +132,8 @@ public sealed class ShortFuseDeploymentService
         var stored = GetRecord(game);
         if (stored is null)
         {
+            // Only the preference changes; still a write, so a Cancel pressed now is refused (its outcome is real).
+            _ = OperationCancellation.BeginWrites(cancellationToken);
             _settings.SetZzzLoadOrderEnabled(game, enabled);
             return ComponentOperationResult.Ok($"ShortFuse will be deployed as {targetName} on the next install.");
         }
@@ -146,6 +148,9 @@ public sealed class ShortFuseDeploymentService
         var resolved = await ResolveOwnedAddonAsync(entry, cancellationToken).ConfigureAwait(false);
         if (!resolved.Success) return resolved;
 
+        // Every check is done: the rename, the ledger write and the rename back on failure run to the end, so Cancel
+        // is refused from here (it used to be accepted and its "Operation cancelled." replaced a split-state report).
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         var current = entry.Path;
         var target = Path.Combine(Path.GetDirectoryName(current)!, targetName);
         if (Path.GetFileName(current).Equals(targetName, StringComparison.Ordinal))

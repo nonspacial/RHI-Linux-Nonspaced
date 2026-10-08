@@ -322,6 +322,25 @@ public sealed partial class StandaloneDlssEnablerDeploymentServiceTests : IDispo
         Assert.NotNull(records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
     }
 
+    // w2/vmsplit re-review, minor 2: the removal closes the Cancel gate before its first change, so a Cancel pressed
+    // while it writes is refused and its real outcome is reported (it used to be accepted and read "Operation cancelled.").
+    [Fact]
+    public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
+    {
+        using var fixture = CreateGame("cancel-remove", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(("4.10.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x5E)))));
+        using var http = new HttpClient(handler);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, "winmm.dll")).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+    }
+
     [Fact]
     public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
     {

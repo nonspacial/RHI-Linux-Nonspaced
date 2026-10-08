@@ -273,6 +273,24 @@ public sealed partial class UltimateAsiLoaderDeploymentServiceTests : IDisposabl
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "version", "Game.exe"));
     }
 
+    // w2/vmsplit re-review, minor 2: the removal closes the Cancel gate before its first change, so a Cancel pressed
+    // while it writes is refused and its real outcome is reported (it used to be accepted and read "Operation cancelled.").
+    [Fact]
+    public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
+    {
+        using var fixture = CreateGame("cancel-remove", 0x8664);
+        using var http = new HttpClient(CreateReleaseHandler(CreateUalZip(0x8664, marker: 0x36), "9.7.4"));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = new UltimateAsiLoaderDeploymentService(http, records, new WineDllOverrideService(), Path.Combine(fixture.Root, "cache"));
+        Assert.True((await service.InstallAsync(fixture.Game, "version.dll")).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "version.dll")));
+    }
+
     [Fact]
     public async Task Update_CancelAfterTheFirstWrite_RunsToCompletion()
     {

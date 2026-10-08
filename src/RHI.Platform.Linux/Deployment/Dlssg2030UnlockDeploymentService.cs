@@ -362,6 +362,8 @@ public sealed class Dlssg2030UnlockDeploymentService
         var iniMoved = false;
         WineOverrideRestoreResult? overrideRestore = null;
 
+        // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             if (File.Exists(proxyPath))

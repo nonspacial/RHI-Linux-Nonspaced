@@ -389,6 +389,24 @@ public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
         Assert.True(File.Exists(Path.Combine(fixture.Bin, Dlssg2030UnlockDeploymentService.IniFileName)));
     }
 
+    // w2/vmsplit re-review, minor 2: the removal closes the Cancel gate before its first change, so a Cancel pressed
+    // while it writes is refused and its real outcome is reported (it used to be accepted and read "Operation cancelled.").
+    [Fact]
+    public async Task Remove_EntersItsWritePhaseBeforeTheFirstChange_AndRunsToTheEnd()
+    {
+        using var fixture = CreateGame("cancel-remove", 0x8664, GraphicsApi.DirectX12);
+        using var http = new HttpClient(new DlssgHandler(CreatePe(0x8664, 320 * 1024, 0x35), UpstreamIni("SM86")));
+        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var service = CreateService(fixture, http, records);
+        Assert.True((await service.InstallAsync(fixture.Game, Dlssg2030UnlockDeploymentService.GpuGenRtx20, "winmm.dll")).Success);
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.RemoveAsync(fixture.Game, ct), [fixture.Bin, fixture.Prefix]);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.Null(records.Find(fixture.Game, ManagedComponentKind.Dlssg2030Unlock));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+    }
+
     private Dlssg2030UnlockDeploymentService CreateService(GameFixture fixture, HttpClient http, LinuxDeploymentRecordStore records)
         => new(http, records, new WineDllOverrideService(), new Dlssg2030PreferenceStore(Path.Combine(fixture.Root, "prefs.json")), Path.Combine(fixture.Root, "cache"));
 
