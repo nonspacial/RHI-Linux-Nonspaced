@@ -26,7 +26,7 @@ internal sealed class ViewModelFixture : IDisposable
     public LinuxManagedComponentService Managed { get; private set; } = null!;
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles)
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -35,15 +35,18 @@ internal sealed class ViewModelFixture : IDisposable
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
-        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure);
+        Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, launcher, hdrProfiles);
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
     /// <param name="httpFailure">What every request throws (default: an "offline test" <see cref="HttpRequestException"/>).</param>
+    /// <param name="launcher">The game launcher (default: the real <see cref="LinuxGameLauncher"/>).</param>
+    /// <param name="hdrProfiles">The HDR profile service (default: one reading this host's session and PATH).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
-        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null)
+        Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
+        IGameLauncher? launcher = null, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles = null)
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, launcher, hdrProfiles);
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }
@@ -69,7 +72,7 @@ internal sealed class ViewModelFixture : IDisposable
 
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
-        Func<HttpRequestMessage, Exception>? httpFailure)
+        Func<HttpRequestMessage, Exception>? httpFailure, IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles)
     {
         var http = new HttpClient(new OfflineHandler(httpFailure));
         var upstreamManifest = new UpstreamRhiManifestService(http);
@@ -117,9 +120,9 @@ internal sealed class ViewModelFixture : IDisposable
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,
             new NeuralAddonVersionPreferenceStore(Path.Combine(prefs, "neural.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")));
         built(managed);
-        return new MainWindowViewModel(scanner, new LinuxGameLauncher(), new NoProbe(), dlss, managed,
+        return new MainWindowViewModel(scanner, launcher ?? new LinuxGameLauncher(), new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),
-            settingsStore, new LinuxUpdateAllService(records, managed), new LinuxDlssDefaultsService(dlss, records), libraryStore, records);
+            settingsStore, new LinuxUpdateAllService(records, managed), new LinuxDlssDefaultsService(dlss, records), libraryStore, records, hdrProfiles);
     }
 
     private sealed class FixedDetector(IReadOnlyList<DetectedGame> games) : IGameDetector

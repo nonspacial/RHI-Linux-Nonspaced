@@ -70,23 +70,26 @@ public static class HdrLaunchText
 
     /// <summary>
     /// Why Launch does not go ahead, or null when it may: a blocked profile, or a launcher that cannot take
-    /// launch options. A store hand-off is not refused: it starts unwrapped (see <see cref="HandoffNotice"/>).
+    /// launch options. A store hand-off is never refused: RHI applies no profile to it either way, so it starts
+    /// unwrapped through its launcher (see <see cref="HandoffNotice"/>), even when the profile is blocked.
     /// </summary>
     public static string? LaunchRefusal(LinuxHdrLaunchPlan plan, bool launcherAcceptsOptions)
     {
-        if (!plan.Enabled) return null;
+        if (!plan.Enabled || plan.Handoff != LaunchHandoff.None) return null;
         if (!plan.CanApply) return TF("Vm.HDRLaunchBlocked", Describe(plan));
-        if (plan.Handoff != LaunchHandoff.None) return null;
         return launcherAcceptsOptions ? null : T("Vm.HDRLaunchProfileEnabledButLauncher");
     }
 
     /// <summary>
     /// For an enabled profile on a store hand-off: RHI starts the game through its launcher without the
-    /// profile (wrapping the store client would not reach the game, Refs #46) and says where to enter it.
-    /// Null otherwise.
+    /// profile (wrapping the store client would not reach the game, Refs #46) and says where to enter it, or,
+    /// when the profile is blocked, why it cannot be used. Null otherwise.
     /// </summary>
     public static string? HandoffNotice(LinuxHdrLaunchPlan plan, DetectedGame game)
-        => plan.Enabled && plan.CanApply && plan.Handoff != LaunchHandoff.None ? ApplyInLauncher(plan, game) : null;
+    {
+        if (!plan.Enabled || plan.Handoff == LaunchHandoff.None) return null;
+        return plan.CanApply ? ApplyInLauncher(plan, game) : TF("Hdr.HandoffProfileBlocked", Describe(plan));
+    }
 
     /// <summary>Status after Copy launch profile: where to paste it.</summary>
     public static string Copied(LinuxHdrLaunchPlan plan, DetectedGame? game)

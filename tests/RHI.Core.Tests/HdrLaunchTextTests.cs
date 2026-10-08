@@ -127,6 +127,34 @@ public sealed class HdrLaunchTextTests : IDisposable
     }
 
     [Fact]
+    public void BlockedProfileOnAHandoff_IsNotARefusal_TheNoticeSaysWhyInTheUiLanguage()
+    {
+        // w2-launch review, minor 3: RHI applies nothing to a hand-off, so a blocked profile must not stop Launch.
+        var game = Game("Steam", "steam -applaunch 1234");
+        var plan = Service(gamescope: false).BuildPlan(game, Profile(LinuxHdrModes.Gamescope));
+
+        Assert.False(plan.CanApply);
+        Assert.Null(HdrLaunchText.LaunchRefusal(plan, launcherAcceptsOptions: true));
+        Assert.Null(HdrLaunchText.LaunchRefusal(plan, launcherAcceptsOptions: false));
+        var en = InLanguage("en-US", () => HdrLaunchText.HandoffNotice(plan, game));
+        var pt = InLanguage("pt-BR", () => HdrLaunchText.HandoffNotice(plan, game));
+        Assert.StartsWith("The launcher starts this game without the HDR profile, which is blocked: Gamescope mode is selected", en, StringComparison.Ordinal);
+        Assert.StartsWith("O launcher inicia este jogo sem o perfil HDR, que está bloqueado: O modo Gamescope", pt, StringComparison.Ordinal);
+        Assert.DoesNotContain(UiLocalizationService.EnglishMarkersIn(pt), w => !w.Equals("no", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void LutrisSteps_SayCommandPrefixNeedsAdvancedOptions()
+    {
+        // w2-launch review, nit 10: Lutris shows "Command prefix" only with "Show advanced options" ticked.
+        var game = Game("Lutris", "lutris 'lutris:rungame/game'");
+        var plan = Service(gamescope: true).BuildPlan(game, Profile(LinuxHdrModes.Gamescope));
+
+        Assert.Contains("tick “Show advanced options”", InLanguage("en-US", () => HdrLaunchText.HandoffNotice(plan, game)), StringComparison.Ordinal);
+        Assert.Contains("marque “Mostrar opções avançadas”", InLanguage("pt-BR", () => HdrLaunchText.HandoffNotice(plan, game)), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LutrisLauncherPrefixGame_NamesTheParentLauncherEntry()
     {
         var game = Game("Lutris", "lutris 'lutris:rungame/ubisoft-connect'");
