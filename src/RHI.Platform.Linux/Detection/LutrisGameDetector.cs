@@ -140,6 +140,9 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 var launcher = PickParentLauncher(sharing, libraryGames.Select(x => x.Folder).ToArray());
                 // Only games share the prefix (no launcher config): nothing to launch the others through.
                 if (launcher is null) continue;
+                // The parent launcher is not a game: no patch target or graphics API of its own until the user
+                // picks one in Edit game (Refs #148; a Battle.net/Ubisoft client exe is already caught by name).
+                launcher.RequiresExplicitPatchTarget = true;
                 foreach (var (entry, folder) in libraryGames)
                 {
                     ct.ThrowIfCancellationRequested();

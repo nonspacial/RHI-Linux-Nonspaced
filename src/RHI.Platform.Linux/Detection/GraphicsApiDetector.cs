@@ -134,8 +134,12 @@ internal static class GraphicsApiDetector
         {
             cancellationToken.ThrowIfCancellationRequested();
             AddMarker(folder, "D3D12Core.dll", GraphicsApi.DirectX12, direct, evidence);
-            AddMarker(folder, "vulkan-1.dll", GraphicsApi.Vulkan, direct, evidence);
         }
+        // A Vulkan loader beside the executable is only weak evidence (Refs #148): launchers and embedded
+        // browsers (CEF) ship vulkan-1.dll for their own UI, and upstream RHI never reads it as a renderer
+        // marker. An exe that really uses it imports it (step 2); otherwise it counts only when nothing else
+        // names a renderer, at Low.
+        var vulkanLoaderBeside = binaryDir is not null && File.Exists(Path.Combine(binaryDir, "vulkan-1.dll"));
 
         // The selected-game file index is already bounded and reused by detection. Consume it
         // before PE scanning so app-local Agility layouts such as Win64/D3D12/D3D12Core.dll
@@ -242,7 +246,13 @@ internal static class GraphicsApiDetector
                 nearby.Add(api);
         }
 
-        if (nearby.Count == 0) return GraphicsApiDetection.Unknown;
+        if (nearby.Count == 0)
+        {
+            return vulkanLoaderBeside
+                ? new GraphicsApiDetection(GraphicsApi.Vulkan, [GraphicsApi.Vulkan], GraphicsApiConfidence.Low,
+                    "vulkan-1.dll beside the executable (not imported; weak evidence)")
+                : GraphicsApiDetection.Unknown;
+        }
         var nearbyOrdered = Order(nearby);
         if (nearbyOrdered.Count >= 3)
         {
@@ -1079,7 +1089,8 @@ internal static class GraphicsApiDetector
         var name = Path.GetFileName(path);
         string[] exact =
         [
-            "dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d9.dll", "dinput8.dll",
+            // vulkan-1.dll: a bundled loader names every Vulkan entry point whether or not anything renders with it.
+            "dxgi.dll", "d3d11.dll", "d3d12.dll", "d3d9.dll", "dinput8.dll", "vulkan-1.dll",
             "winmm.dll", "version.dll", "ReShade64.dll", "OptiScaler.dll"
         ];
         if (exact.Any(x => name.Equals(x, StringComparison.OrdinalIgnoreCase))) return true;
