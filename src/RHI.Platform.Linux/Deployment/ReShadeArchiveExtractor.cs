@@ -172,6 +172,9 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
         {
             try
             {
+                // Bounded at the declared size. On .NET the inflating stream already stops at entry.Length, so this
+                // cap and the length check below are a second line (a mutant dropping the cap is equivalent); they
+                // stay so the guarantee does not depend on that runtime detail.
                 staged = await AtomicFile.StageStreamAsync(reader, destination, null, null, entry.Length, cancellationToken, FixedFileMode).ConfigureAwait(false);
             }
             catch (EntryReadException ex)

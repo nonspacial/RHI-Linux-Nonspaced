@@ -153,6 +153,12 @@ public static class LinuxDeploymentRecovery
     /// journal recovery, then the leftover sweep unless another RHI instance is alive. Must finish
     /// before anything can deploy. Never throws: a failure is reported, and the app still starts.
     /// Without a <paramref name="gate"/> (registration failed) the sweep is skipped.
+    /// <para>Lock wait: a second instance blocks here (no window yet, UI thread waiting) for up to
+    /// <see cref="StartupLockTimeout"/> while the first one recovers and sweeps. If it times out it skips its own
+    /// sweep and starts its services while the first instance's sweep may still be running. That is safe: the
+    /// sweep asks the journal per file (<c>IsReferenced</c>, including the operation lock file), so a journaled
+    /// operation the second instance starts is never swept, and legacy leftovers are only taken when their
+    /// change time is older than the sweep's minimum age (6 h), which no fresh temp file can be.</para>
     /// </summary>
     public static async Task<DeploymentStartupReport> RunAtStartupAsync(
         DeploymentJournal journal,
