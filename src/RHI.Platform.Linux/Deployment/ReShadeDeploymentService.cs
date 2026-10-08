@@ -246,6 +246,18 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Unavailable($"ReShade server unavailable: {staged.FallbackReason} The cached copy ({staged.Version}) is older than the installed version ({existingRecord.Version}); nothing was changed; try again later.");
         }
 
+        // The shader packs (and core headers) are downloaded and staged with the ReShade payload, before the gate, and
+        // copied into the game after it (w2 merge review, minor 1: they used to download after ReShade was copied).
+        ReShadeShaderPackService.PreparedShaderSync preparedShaders;
+        try
+        {
+            preparedShaders = await _shaderPacks.PrepareSyncAsync(game.BinaryDirectory, options.ShaderPackIds, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"ReShade install/update failed: {ex.Message}");
+        }
+
         // Last point Cancel is honoured: from the update snapshot on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
@@ -447,7 +459,7 @@ public sealed partial class ReShadeDeploymentService
                 additionalOverrides.Add(previousCompilerOverride);
             }
 
-            var shaderResult = await _shaderPacks.SyncAsync(game.BinaryDirectory, options.ShaderPackIds, cancellationToken).ConfigureAwait(false);
+            var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
                 iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);

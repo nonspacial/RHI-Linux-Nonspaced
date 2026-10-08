@@ -37,14 +37,25 @@ internal sealed record ReShadeShaderSyncResult(
 /// </summary>
 public sealed class ReShadeShaderPackService
 {
-    private sealed class Manifest
+    /// <summary>A sync staged and validated by <see cref="PrepareSyncAsync"/>, applied by <see cref="ApplySync"/>.</summary>
+    internal sealed record PreparedShaderSync(
+        string Root,
+        string ManifestPath,
+        Manifest Previous,
+        string[] Normalized,
+        Dictionary<string, string> StagedById,
+        Dictionary<string, HashSet<string>> ExclusionsById,
+        bool NeedsCoreHeaders,
+        string? CoreHeadersStaged);
+
+    internal sealed class Manifest
     {
         public int Schema { get; set; } = 2;
         public List<string> PackIds { get; set; } = [];
         public List<ManifestFile> Files { get; set; } = [];
     }
 
-    private sealed class ManifestFile
+    internal sealed class ManifestFile
     {
         public string RelativePath { get; set; } = "";
         public string Sha256 { get; set; } = "";
@@ -225,6 +236,20 @@ public sealed class ReShadeShaderPackService
         IReadOnlyList<string> selectedPackIds,
         CancellationToken cancellationToken = default)
     {
+        var prepared = await PrepareSyncAsync(gameDirectory, selectedPackIds, cancellationToken).ConfigureAwait(false);
+        return ApplySync(prepared, cancellationToken);
+    }
+
+    /// <summary>
+    /// Everything a sync needs from the network (catalogue, packs, core headers), staged and checked against the game
+    /// folder, with nothing in it changed: a deployment prepares the sync before its write gate and applies it with
+    /// <see cref="ApplySync"/> after (w2 merge review, minor 1: the packs used to download after ReShade was copied).
+    /// </summary>
+    internal async Task<PreparedShaderSync> PrepareSyncAsync(
+        string gameDirectory,
+        IReadOnlyList<string> selectedPackIds,
+        CancellationToken cancellationToken = default)
+    {
         await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
 
         var expanded = ExpandDependencies(selectedPackIds, _packs);
@@ -307,6 +332,13 @@ public sealed class ReShadeShaderPackService
                     previousByPath);
         }
 
+        return new PreparedShaderSync(root, manifestPath, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged);
+    }
+
+    /// <summary>The game-folder half of a sync <see cref="PrepareSyncAsync"/> prepared: no network.</summary>
+    internal ReShadeShaderSyncResult ApplySync(PreparedShaderSync prepared, CancellationToken cancellationToken = default)
+    {
+        var (root, manifestPath, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged) = prepared;
         // Everything is staged and validated: from the first change in the game folder on, the sync runs to the end
         // (a cancel half-way used to leave copied packs that no manifest owns).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);

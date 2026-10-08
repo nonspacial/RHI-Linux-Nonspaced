@@ -670,6 +670,47 @@ public sealed partial class ReShadeChannelTests : IDisposable
         Assert.Empty(service.GetInstalledOptions(other).ShaderPackIds);
     }
 
+    // w2 merge review, minor 1: the selected shader packs are downloaded and staged with the ReShade payload, before
+    // the write gate, and copied into the game after it; no request once game files change.
+    [Fact]
+    public async Task Install_WithShaderPacks_DownloadsThemBeforeTheWriteGate()
+    {
+        var (game, store) = CreateGame("gate-shaders");
+        var compiler = Path.Combine(_root, "gate-shaders-native", "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        var handler = new MutableHandler { ShaderZip = ShaderPackZip() };
+        var watch = new GateWatchingHandler(handler);
+        var service = NewService(store, watch, Path.Combine(_root, "gate-shaders-cache"));
+
+        var run = await CancelAtWritePhase.RunAsync(ct => service.InstallAsync(game, new ReShadeInstallOptions
+        {
+            ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = ["CrosireMaster"]
+        }, ct), [game.BinaryDirectory!], atWritePhase: watch.CloseGate);
+
+        Assert.True(run.Result.Success, run.Result.Message);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
+        Assert.Empty(watch.LateRequests);
+    }
+
+    private static byte[] ShaderPackZip()
+    {
+        using var memory = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            foreach (var (name, content) in new[]
+                     {
+                         ("reshade-shaders-master/Shaders/Test.fx", "float4 main() : SV_Target { return 1; }"),
+                         ("reshade-shaders-master/Textures/Test.png", new string('P', 4096))
+                     })
+            {
+                var entry = archive.CreateEntry(name, System.IO.Compression.CompressionLevel.NoCompression);
+                using var writer = new StreamWriter(entry.Open());
+                writer.Write(content);
+            }
+        }
+        return memory.ToArray();
+    }
+
     [Fact]
     public async Task NightlyChannel_StagesArchitectureSpecificArtifact()
     {
@@ -1037,6 +1078,9 @@ public sealed partial class ReShadeChannelTests : IDisposable
     }
 
     private ReShadeDeploymentService NewService(LinuxDeploymentRecordStore store, MutableHandler handler, string cache)
+        => NewService(store, (HttpMessageHandler)handler, cache);
+
+    private ReShadeDeploymentService NewService(LinuxDeploymentRecordStore store, HttpMessageHandler handler, string cache)
     {
         var http = new HttpClient(handler);
         return new ReShadeDeploymentService(
@@ -1127,11 +1171,16 @@ public sealed partial class ReShadeChannelTests : IDisposable
         public bool HomeUnreachable { get; set; }
         public HttpStatusCode SetupStatus { get; set; } = HttpStatusCode.OK;
         public bool SetupUnreachable { get; set; }
+        /// <summary>When set, served for GitHub branch archives (shader packs).</summary>
+        public byte[]? ShaderZip { get; set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             var uri = request.RequestUri!;
+            if (ShaderZip is not null && uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) &&
+                (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) || uri.Host.Equals("codeload.github.com", StringComparison.OrdinalIgnoreCase)))
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(ShaderZip) });
             if (uri.Host.Equals("reshade.me", StringComparison.OrdinalIgnoreCase) && uri.AbsolutePath == "/")
             {
                 if (HomeUnreachable) throw new HttpRequestException("Connection refused");
