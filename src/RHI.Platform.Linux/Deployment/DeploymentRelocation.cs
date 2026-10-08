@@ -183,6 +183,11 @@ public sealed class DeploymentRelocation
         {
             return new(false, 0, RepairPartlyWrittenPrefix + ex.Message);
         }
+        catch (StagedFileCommitException ex)
+        {
+            // Rolled back cleanly: the commit's own "Nothing was changed: " would repeat this message's prefix.
+            return new(false, 0, RepairNotSavedPrefix + ex.Reason);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             return new(false, 0, RepairNotSavedPrefix + ex.Message);

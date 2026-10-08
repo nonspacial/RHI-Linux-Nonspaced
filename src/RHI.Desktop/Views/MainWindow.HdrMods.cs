@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Desktop.Views;
@@ -88,7 +89,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                count.Text = ex.Message;
+                count.Text = ErrorLineText.Of(ex);
                 return;
             }
 

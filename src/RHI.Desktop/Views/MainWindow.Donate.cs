@@ -5,6 +5,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using RHI.Desktop.Localization;
+using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
 
@@ -171,7 +172,7 @@ public sealed partial class MainWindow
         {
             // Same opener as the Links dialog: http(s) only, argument list, no shell.
             if (!LinuxDesktopOpener.TryOpenUri(link, out var error))
-                status.Text = error ?? TF("Win.CouldNotOpen", link);
+                status.Text = ErrorLineText.LinkNotOpened(link, error);
         };
 
         row.Children.Add(name);

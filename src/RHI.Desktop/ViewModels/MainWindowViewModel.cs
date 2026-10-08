@@ -816,10 +816,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             UiExceptionGuard.Log.TryWrite("purge cache", ex);
-            return UiLocalizationService.Format("Ui.CacheNotCleared", ex.Message);
+            return CacheNotClearedText(ex);
         }
         return removed == 0 ? UiLocalizationService.Text("Vm.RHILinuxCacheAlreadyEmpty") : UiLocalizationService.Format("Vm.FileSRemovedFromCache", removed);
     }
+
+    /// <summary>Clear-cache failure line; the exception's text in the UI language's presentation.</summary>
+    internal static string CacheNotClearedText(Exception ex)
+        => UiLocalizationService.Format("Ui.CacheNotCleared", UiLocalizationService.Present(ex.Message));
 
     private void RefreshLocalizedPresentation()
     {
@@ -2646,7 +2650,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
         if (!LinuxDesktopOpener.TryOpenDirectory(SelectedGame.InstallPath, out var error))
-            StatusText = TF("Vm.CouldNotOpenGameFolder", error);
+            StatusText = TF("Vm.CouldNotOpenGameFolder", UiLocalizationService.Present(error));
     }
 
     [RelayCommand]
@@ -2654,7 +2658,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame?.PrefixPath is not { } prefix || !Directory.Exists(prefix)) return;
         if (!LinuxDesktopOpener.TryOpenDirectory(prefix, out var error))
-            StatusText = TF("Vm.CouldNotOpenWineProtonPrefix", error);
+            StatusText = TF("Vm.CouldNotOpenWineProtonPrefix", UiLocalizationService.Present(error));
     }
 
     private void LoadReShadeProfile(DetectedGame game)
@@ -3022,15 +3026,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             UiExceptionGuard.Log.TryWrite("save " + whatKey, ex);
-            var message = ex is JsonStoreUnavailableException
-                ? StoreSaveFailedText(ex)
-                : sessionOnly
-                    ? UiLocalizationService.Format("Ui.SaveFailedSessionOnly", UiLocalizationService.Text(whatKey), ex.Message)
-                    : UiLocalizationService.Format("Ui.SaveFailedNothingChanged", UiLocalizationService.Text(whatKey), ex.Message);
+            var message = SaveFailedText(ex, whatKey, sessionOnly);
             if (reportStatus) StatusText = message;
             return message;
         }
     }
+
+    /// <summary>
+    /// <see cref="TryPersist"/>'s status text. The exception's own text goes through the UI language's presentation:
+    /// store and file-write messages have PT-BR pairs, and unmapped English becomes the localised pointer to the log.
+    /// </summary>
+    internal static string SaveFailedText(Exception ex, string whatKey, bool sessionOnly)
+        => ex is JsonStoreUnavailableException
+            ? StoreSaveFailedText(ex)
+            : UiLocalizationService.Format(sessionOnly ? "Ui.SaveFailedSessionOnly" : "Ui.SaveFailedNothingChanged",
+                UiLocalizationService.Text(whatKey), UiLocalizationService.Present(ex.Message));
 
     /// <summary>
     /// Saves the Edit game target; <c>Saved</c> is the structural success flag (the message is localised).

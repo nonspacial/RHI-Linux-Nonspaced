@@ -36,7 +36,7 @@ public sealed partial class MainWindow
             {
                 entries = [];
                 corrupt = null;
-                list.Children.Add(new TextBlock { Text = ex.Message, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.OrangeRed });
+                list.Children.Add(new TextBlock { Text = ErrorLineText.Of(ex), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.OrangeRed });
             }
 
             if (corrupt is not null)
@@ -120,7 +120,7 @@ public sealed partial class MainWindow
             }
             catch (Exception ex)
             {
-                count.Text = ex.Message;
+                count.Text = ErrorLineText.Of(ex);
                 return;
             }
             Rebuild();

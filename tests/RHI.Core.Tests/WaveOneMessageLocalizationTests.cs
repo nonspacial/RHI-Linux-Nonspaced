@@ -85,6 +85,22 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"Upstream RHI manifest unavailable: {E}";
         yield return "No safe Winetricks route is available for this prefix.";
         yield return DeploymentRelocation.RepairDonePrefix + "3";
+        // Final ui-stores review, findings 2-4: Repair after move's rolled-back commit, the staged-commit lead-in, the
+        // desktop opener, the update history and .NET's own file-system errors behind refused saves.
+        yield return DeploymentRelocation.RepairNotSavedPrefix + $"Access to the path '{P}.rhi-tmp-0a1b' is denied.";
+        yield return DeploymentRelocation.RepairNotSavedPrefix + Platform.Linux.Persistence.StagedFileCommit.StagedTwiceReason;
+        yield return Platform.Linux.Persistence.StagedFileCommit.NothingChangedPrefix + E;
+        yield return RHI.Platform.Linux.Paths.LinuxDesktopOpener.DirectoryMissingPrefix + "/jogos/Exemplo";
+        yield return RHI.Platform.Linux.Paths.LinuxDesktopOpener.UnsupportedLinkPrefix + "ftp://exemplo";
+        yield return RHI.Platform.Linux.Paths.LinuxDesktopOpener.NoOpenerMessage;
+        yield return $"{ComponentUpdateLogStore.UnreadablePrefix}{P}{ComponentUpdateLogStore.UnreadableSuffix}";
+        yield return $"{P} changed while it was being read. Nothing was changed; try again.";
+        yield return AtomicFile.VerifyFailurePrefix + P + AtomicFile.TempLeftoverFragment + P + ".rhi-tmp-0a1b";
+        yield return $"Access to the path '{P}' is denied.";
+        yield return $"Could not find a part of the path '{P}'.";
+        yield return $"Could not find file '{P}'.";
+        yield return $"No space left on device : '{P}'";
+        yield return $"Read-only file system : '{P}'";
         // ReShade setup extractor reasons (after its own prefix).
         foreach (var reason in new[]
                  {

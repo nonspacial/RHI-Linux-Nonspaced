@@ -11,11 +11,18 @@ public sealed record StagedFileWrite(string Path, byte[]? Before, byte[] After);
 /// <summary>A staged multi-file change failed; every file that could be put back was.</summary>
 public sealed class StagedFileCommitException : IOException
 {
-    public StagedFileCommitException(string message, IReadOnlyList<string> notRestored, Exception? inner)
+    public StagedFileCommitException(string message, IReadOnlyList<string> notRestored, Exception? inner, string? reason = null)
         : base(message, inner)
     {
         NotRestored = notRestored;
+        Reason = reason ?? message;
     }
+
+    /// <summary>
+    /// Why the change failed, without the "Nothing was changed: " lead-in, for a caller whose own message already
+    /// says nothing changed (Repair after move).
+    /// </summary>
+    public string Reason { get; }
 
     /// <summary>Files already rewritten that could not be put back (empty when everything was).</summary>
     public IReadOnlyList<string> NotRestored { get; }
@@ -30,11 +37,17 @@ public sealed class StagedFileCommitException : IOException
 /// </summary>
 public static class StagedFileCommit
 {
+    /// <summary>Lead-in of a failure that was rolled back completely (the reason follows).</summary>
+    public const string NothingChangedPrefix = "Nothing was changed: ";
+
+    /// <summary>Two stores staged the same file (a wiring fault); refused before anything is written.</summary>
+    public const string StagedTwiceReason = "one file was staged twice by two stores.";
+
     public static void Commit(IReadOnlyList<StagedFileWrite> writes)
     {
         ArgumentNullException.ThrowIfNull(writes);
         if (writes.Select(w => w.Path).Distinct(StringComparer.Ordinal).Count() != writes.Count)
-            throw new StagedFileCommitException("Nothing was changed: one file was staged twice by two stores.", [], null);
+            throw new StagedFileCommitException(NothingChangedPrefix + StagedTwiceReason, [], null, StagedTwiceReason);
 
         foreach (var write in writes)
         {
@@ -72,9 +85,9 @@ public static class StagedFileCommit
                 }
             }
             var message = notRestored.Count == 0
-                ? $"Nothing was changed: {ex.Message}"
+                ? NothingChangedPrefix + ex.Message
                 : $"{ex.Message} These files were already rewritten and could not be put back: {string.Join(", ", notRestored)}";
-            throw new StagedFileCommitException(message, notRestored, ex);
+            throw new StagedFileCommitException(message, notRestored, ex, notRestored.Count == 0 ? ex.Message : null);
         }
 
         foreach (var write in writes) JsonStoreQuarantine.Forget(write.Path);

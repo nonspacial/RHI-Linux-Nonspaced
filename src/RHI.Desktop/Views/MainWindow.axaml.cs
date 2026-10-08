@@ -554,7 +554,7 @@ public sealed partial class MainWindow : Window
         var openData = new Button { Content = T("Win.OpenData"), Padding = new Avalonia.Thickness(12, 6) };
         void OpenFolder(string path)
         {
-            if (!TryOpenFolder(path, out var error)) status.Text = UiLocalizationService.Format("Ui.FolderNotOpened", error);
+            if (!TryOpenFolder(path, out var error)) status.Text = ErrorLineText.FolderNotOpened(error);
         }
         openConfig.Click += (_, _) => OpenFolder(snapshot.ConfigRoot);
         openCache.Click += (_, _) => OpenFolder(snapshot.CacheRoot);
@@ -855,13 +855,13 @@ public sealed partial class MainWindow : Window
         openCustomShaders.Click += (_, _) =>
         {
             if (!TryOpenFolder(snapshot.CustomShaderRoot, out var error))
-                status.Text = TF("Win.CouldNotOpenCustomShaders", error);
+                status.Text = ErrorLineText.CustomShadersNotOpened(error);
         };
 
         openCustomAddons.Click += (_, _) =>
         {
             if (!TryOpenFolder(snapshot.CustomAddonRoot, out var error))
-                status.Text = TF("Win.CouldNotOpenCustomAddOns", error);
+                status.Text = ErrorLineText.CustomAddonsNotOpened(error);
         };
 
         apply.Click += (_, _) => RunUiSafe(async () =>

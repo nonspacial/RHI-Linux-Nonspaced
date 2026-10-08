@@ -617,6 +617,12 @@ public sealed class GameRecordRelocationTests : IDisposable
 
             Assert.False(result.Success);
             Assert.StartsWith(DeploymentRelocation.RepairNotSavedPrefix, result.Message);
+            // One "Nothing was changed" (the commit's own lead-in is dropped), and a full PT-BR presentation (final
+            // ui-stores review, finding 3).
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(result.Message, "Nothing was changed"));
+            var pt = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", result.Message);
+            Assert.NotEqual(RHI.Desktop.Localization.UiLocalizationService.UnlocalizedFallbackFor("pt-BR"), pt);
+            Assert.DoesNotContain("Nothing was changed", pt);
         }
         finally
         {

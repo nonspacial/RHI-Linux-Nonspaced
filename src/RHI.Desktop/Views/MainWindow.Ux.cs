@@ -672,7 +672,7 @@ public sealed partial class MainWindow
     {
         if (LinuxDesktopOpener.TryOpenUri(url, out var error)) return;
         if (DataContext is MainWindowViewModel vm)
-            vm.StatusText = error ?? TF("Win.CouldNotOpen", url);
+            vm.StatusText = ErrorLineText.LinkNotOpened(url, error);
     }
 
     private void Motd_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>

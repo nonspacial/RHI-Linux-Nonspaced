@@ -883,6 +883,21 @@ public static class UiLocalizationService
         ("Upstream RHI manifest unavailable: ", "Manifesto do RHI upstream indisponível: "),
         ("No safe Winetricks route is available for this prefix.", "Nenhuma rota segura do Winetricks está disponível para este prefixo."),
         (RHI.Platform.Linux.Deployment.DeploymentRelocation.RepairDonePrefix, "Registros atualizados para a nova pasta do jogo: "),
+        // A staged multi-file change rolled back completely (the reason follows), and its staged-twice reason alone
+        // (Repair after move drops the lead-in, its own message already says nothing changed).
+        (RHI.Platform.Linux.Persistence.StagedFileCommit.NothingChangedPrefix, "Nada foi alterado: "),
+        (RHI.Platform.Linux.Persistence.StagedFileCommit.StagedTwiceReason, "o mesmo arquivo foi preparado duas vezes."),
+        // Desktop opener (folders and links); the path or link follows the fragment.
+        (RHI.Platform.Linux.Paths.LinuxDesktopOpener.DirectoryMissingPrefix, "A pasta não existe: "),
+        (RHI.Platform.Linux.Paths.LinuxDesktopOpener.UnsupportedLinkPrefix, "Link não suportado: "),
+        (RHI.Platform.Linux.Paths.LinuxDesktopOpener.NoOpenerMessage, "Nenhum programa para abrir pastas ou links (xdg-open, gio, kde-open) pôde ser iniciado."),
+        // .NET's own file-system errors behind a refused save or folder creation (path between the fragments).
+        ("Access to the path '", "Acesso ao caminho '"),
+        ("' is denied.", "' negado."),
+        ("Could not find a part of the path '", "Parte do caminho não foi encontrada: '"),
+        ("Could not find file '", "Arquivo não encontrado: '"),
+        ("No space left on device : '", "Sem espaço no dispositivo: '"),
+        ("Read-only file system : '", "Sistema de arquivos somente leitura: '"),
         ("no ZIP archive found in the setup", "nenhum arquivo ZIP encontrado no instalador"),
         ("the archive holds no ReShade64.dll or ReShade32.dll", "o arquivo não contém ReShade64.dll nem ReShade32.dll"),
         (": declared size over the limit (", ": tamanho declarado acima do limite ("),

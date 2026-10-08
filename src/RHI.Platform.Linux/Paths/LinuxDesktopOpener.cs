@@ -9,6 +9,11 @@ namespace RHI.Platform.Linux.Paths;
 /// </summary>
 public static class LinuxDesktopOpener
 {
+    // Fixed texts first, values last, so the UI's PT-BR presentation translates them.
+    public const string UnsupportedLinkPrefix = "Unsupported link: ";
+    public const string DirectoryMissingPrefix = "Directory does not exist: ";
+    public const string NoOpenerMessage = "No supported desktop opener could be started.";
+
     internal static IReadOnlyList<ProcessStartInfo> BuildCandidates(string directory)
     {
         var path = Path.GetFullPath(directory);
@@ -43,7 +48,7 @@ public static class LinuxDesktopOpener
         error = null;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
-            error = $"Unsupported link: {url}";
+            error = UnsupportedLinkPrefix + url;
             return false;
         }
 
@@ -64,7 +69,7 @@ public static class LinuxDesktopOpener
                 lastError = ex;
             }
         }
-        error = lastError?.Message ?? "No supported desktop opener could be started.";
+        error = lastError?.Message ?? NoOpenerMessage;
         return false;
     }
 
@@ -73,7 +78,7 @@ public static class LinuxDesktopOpener
         error = null;
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
         {
-            error = $"Directory does not exist: {directory}";
+            error = DirectoryMissingPrefix + directory;
             return false;
         }
 
@@ -95,7 +100,7 @@ public static class LinuxDesktopOpener
             }
         }
 
-        error = lastError?.Message ?? "No supported desktop opener could be started.";
+        error = lastError?.Message ?? NoOpenerMessage;
         return false;
     }
 
