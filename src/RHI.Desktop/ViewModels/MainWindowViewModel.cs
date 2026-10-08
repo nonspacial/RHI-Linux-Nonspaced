@@ -876,14 +876,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _loadingLumaModePreference = false;
             _loadingHdrProfile = false;
         }
+        // Rebuild the lists (new "Latest" label, pin kept as an option) before selecting (UI-12, Refs #80).
+        ReplaceLatestLabel(Dlss5FeederVersionOptions, feederPin ?? LatestDisplay());
+        ReplaceLatestLabel(Dlss5BridgeVersionOptions, bridgePin ?? LatestDisplay());
+        ReplaceLatestLabel(ShortFuseVersionOptions, shortFusePin ?? LatestDisplay());
+        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, nrDllPin ?? LatestDisplay());
         SelectedDlss5FeederVersion = feederPin ?? LatestDisplay();
         SelectedDlss5BridgeVersion = bridgePin ?? LatestDisplay();
         SelectedShortFuseVersion = shortFusePin ?? LatestDisplay();
         SelectedNeuralRenderingDllVersion = nrDllPin ?? LatestDisplay();
-        ReplaceLatestLabel(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
-        ReplaceLatestLabel(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
-        ReplaceLatestLabel(ShortFuseVersionOptions, SelectedShortFuseVersion);
-        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
 
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         if (SelectedGame is { } game)
@@ -3358,26 +3359,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void ResetNeuralVersionPins()
     {
+        ReplaceLatestLabel(Dlss5FeederVersionOptions, LatestDisplay());
+        ReplaceLatestLabel(Dlss5BridgeVersionOptions, LatestDisplay());
+        ReplaceLatestLabel(ShortFuseVersionOptions, LatestDisplay());
+        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, LatestDisplay());
         SelectedDlss5FeederVersion = LatestDisplay();
         SelectedDlss5BridgeVersion = LatestDisplay();
         SelectedShortFuseVersion = LatestDisplay();
         SelectedNeuralRenderingDllVersion = LatestDisplay();
-        ReplaceLatestLabel(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
-        ReplaceLatestLabel(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
-        ReplaceLatestLabel(ShortFuseVersionOptions, SelectedShortFuseVersion);
-        ReplaceLatestLabel(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
     }
 
     private void LoadNeuralVersionPins(DetectedGame game)
     {
-        SelectedDlss5FeederVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Feeder) ?? LatestDisplay();
-        SelectedDlss5BridgeVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Dx11Bridge) ?? LatestDisplay();
-        SelectedShortFuseVersion = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.ShortFuse) ?? LatestDisplay();
-        SelectedNeuralRenderingDllVersion = _managedComponents.GetNeuralRenderingDllVersionPin(game) ?? LatestDisplay();
-        EnsureOption(Dlss5FeederVersionOptions, SelectedDlss5FeederVersion);
-        EnsureOption(Dlss5BridgeVersionOptions, SelectedDlss5BridgeVersion);
-        EnsureOption(ShortFuseVersionOptions, SelectedShortFuseVersion);
-        EnsureOption(NeuralRenderingDllVersionOptions, SelectedNeuralRenderingDllVersion);
+        // Option first, then the selection: a ComboBox drops a SelectedItem missing from its items (UI-12, Refs #80).
+        var feeder = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Feeder) ?? LatestDisplay();
+        var bridge = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.Dlss5Dx11Bridge) ?? LatestDisplay();
+        var shortFuse = _managedComponents.GetNeuralAddonVersionPin(game, ManagedComponentKind.ShortFuse) ?? LatestDisplay();
+        var nrDll = _managedComponents.GetNeuralRenderingDllVersionPin(game) ?? LatestDisplay();
+        EnsureOption(Dlss5FeederVersionOptions, feeder);
+        EnsureOption(Dlss5BridgeVersionOptions, bridge);
+        EnsureOption(ShortFuseVersionOptions, shortFuse);
+        EnsureOption(NeuralRenderingDllVersionOptions, nrDll);
+        SelectedDlss5FeederVersion = feeder;
+        SelectedDlss5BridgeVersion = bridge;
+        SelectedShortFuseVersion = shortFuse;
+        SelectedNeuralRenderingDllVersion = nrDll;
     }
 
     private void SaveNeuralVersionPin(ManagedComponentKind kind, string value)
