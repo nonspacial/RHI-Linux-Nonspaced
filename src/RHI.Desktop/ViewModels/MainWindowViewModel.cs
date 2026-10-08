@@ -1557,24 +1557,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
     }
 
-    private async Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
-    {
-        try
-        {
-            if (runImmediate)
-                await RunBackgroundUpdatePassAsync(cancellationToken);
-            using var timer = new PeriodicTimer(TimeSpan.FromHours(_settings.UpdateCheckIntervalHours));
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-                await RunBackgroundUpdatePassAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception ex)
-        {
-            StatusText = TF("Vm.BackgroundUpdateWasInterrupted", UiLocalizationService.Present(ex.Message));
-        }
-    }
+    // A failed pass is logged, reported and retried with back-off; the loop ends only when cancelled (#81).
+    private Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
+        => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, TimeSpan.FromHours(_settings.UpdateCheckIntervalHours), runImmediate,
+            (ex, retry) => StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry), cancellationToken);
 
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
     {

@@ -132,7 +132,7 @@ internal static class UiStrings
         ("Vm.ScanFailed", "Falha na verificação: {0}", "Scan failed: {0}"),
         ("Vm.UpdateAllPreparingRHIManagedGames", "Atualizar tudo: preparando jogos gerenciados pelo RHI…", "Update all: preparing RHI-managed games…"),
         ("Vm.UpdateAllFailed", "Falha em Atualizar tudo: {0}", "Update all failed: {0}"),
-        ("Vm.BackgroundUpdateWasInterrupted", "A atualização em segundo plano foi interrompida: {0}", "Background update was interrupted: {0}"),
+        ("Vm.BackgroundUpdateFailedRetrying", "A atualização automática falhou: {0}. Nova tentativa em {1} min.", "Automatic update failed: {0}. Trying again in {1} min."),
         ("Vm.Background", " (segundo plano)", " (background)"),
         ("Hdr.Off", "Perfil de inicialização HDR desativado. A pilha gráfica do runner permanece intacta.", "HDR launch profile is Off. The runner's graphics stack stays untouched."),
         ("Hdr.GeProtonNativeWayland", "HDR nativo no Wayland com GE-Proton: PROTON_ENABLE_HDR + PROTON_ENABLE_WAYLAND. O HDR do desktop já deve estar ativado.", "GE-Proton native Wayland HDR: PROTON_ENABLE_HDR + PROTON_ENABLE_WAYLAND. Desktop HDR must already be enabled."),
