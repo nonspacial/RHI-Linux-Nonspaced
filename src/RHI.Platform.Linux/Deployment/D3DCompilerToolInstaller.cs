@@ -116,21 +116,10 @@ public sealed class D3DCompilerToolInstaller
 
         try
         {
-            using var process = Process.Start(startInfo);
-            if (process is null)
-                return ComponentOperationResult.Fail($"Could not start {toolName}.");
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            var stdout = await stdoutTask.ConfigureAwait(false);
-            var stderr = await stderrTask.ConfigureAwait(false);
-
-            if (process.ExitCode != 0)
-            {
-                var detail = LastMeaningfulLine(stderr) ?? LastMeaningfulLine(stdout) ?? $"exit code {process.ExitCode}";
-                return ComponentOperationResult.Fail($"{toolName} could not install {Verb}: {detail}");
-            }
+            // The shared runner (#37): time limit, process-tree kill on timeout or cancel, closed stdin.
+            var run = await ExternalProcess.RunAsync(startInfo, ToolTimeout, cancellationToken).ConfigureAwait(false);
+            if (run.ExitCode != 0)
+                return ComponentOperationResult.Fail($"{toolName} could not install {Verb}: {run.LastMeaningfulLine()}");
 
             var compiler = ReShadeDeploymentService.FindNativeD3DCompilerInPrefix(game.PrefixPath, architecture);
             if (compiler is null)
@@ -152,6 +141,10 @@ public sealed class D3DCompilerToolInstaller
         catch (OperationCanceledException)
         {
             return ComponentOperationResult.Fail($"{toolName} D3DCompiler installation was cancelled.");
+        }
+        catch (TimeoutException ex)
+        {
+            return ComponentOperationResult.Fail($"{toolName} D3DCompiler installation failed: {ex.Message}");
         }
         catch (Win32Exception ex)
         {
@@ -244,8 +237,9 @@ public sealed class D3DCompilerToolInstaller
             CreateNoWindow = true
         };
 
-    private static string? LastMeaningfulLine(string text)
-        => text.Replace("\r", "", StringComparison.Ordinal)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .LastOrDefault();
+    /// <summary>
+    /// winetricks/protontricks download d3dcompiler_47 and run Wine; a stuck run (a dialog nobody sees, a hung
+    /// wineserver) is stopped after this long instead of blocking the install forever.
+    /// </summary>
+    internal static readonly TimeSpan ToolTimeout = TimeSpan.FromMinutes(10);
 }
