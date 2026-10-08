@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Launch;
 
 namespace RHI.Platform.Linux.Hdr;
 
@@ -196,20 +197,10 @@ public sealed partial class LinuxHdrLaunchProfileService
     /// <summary>
     /// Store launchers spawn the actual game later. Wrapping the launcher process itself with
     /// Gamescope or HDR variables is not a reliable per-game application path, so RHI only
-    /// generates a profile for the launcher UI in those cases.
+    /// generates a profile for the launcher UI in those cases. Same classification as the launcher's
+    /// working-directory choice (<see cref="LaunchHandoffClassifier"/>, Refs #106).
     /// </summary>
-    public static bool IsLauncherMediated(DetectedGame game)
-    {
-        var source = game.Source ?? "";
-        if (source.Equals("Steam", StringComparison.OrdinalIgnoreCase) ||
-            source.Equals("Heroic", StringComparison.OrdinalIgnoreCase) ||
-            source.Equals("Lutris", StringComparison.OrdinalIgnoreCase)) return true;
-
-        var command = game.LaunchCommand?.TrimStart() ?? "";
-        return command.StartsWith("steam ", StringComparison.OrdinalIgnoreCase) ||
-               command.StartsWith("heroic ", StringComparison.OrdinalIgnoreCase) ||
-               command.StartsWith("lutris ", StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsLauncherMediated(DetectedGame game) => LaunchHandoffClassifier.IsHandoff(game);
 
     /// <summary>
     /// Standalone Wine-prefix entries (including Proton-built prefixes) are started with the runner's
