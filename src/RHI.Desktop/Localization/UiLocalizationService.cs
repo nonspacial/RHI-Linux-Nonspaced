@@ -612,6 +612,11 @@ public static class UiLocalizationService
             "Download recusado: links do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (RHI.Core.Deployment.TrustedDownloadPolicy.GitHubReleases.RefusalPrefix,
             "Download recusado: links de release do GitHub devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        // Size caps (TrustedDownload announced size, AtomicFile streamed content). The numbers/file follow the fragments.
+        (RHI.Core.Deployment.TrustedDownloadPolicy.TooLargePrefix,
+            "Download recusado: maior que o limite de tamanho deste download. Limite / tamanho anunciado em bytes: "),
+        (RHI.Core.Deployment.AtomicFile.OverLimitPrefix,
+            "Conteúdo recusado: maior que o seu limite de tamanho. Limite em bytes e arquivo: "),
         ("RenoDX install failed: ", "Falha na instalação do RenoDX: "),
         // wikiUnlinks title kept installable by a manifest snapshot override (#141). The URL follows the fragment.
         ("Upstream wikiUnlinks removes this title from RenoDX wiki and generic matching; the upstream manifest's snapshot override is installed instead: ",

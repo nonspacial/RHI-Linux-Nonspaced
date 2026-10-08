@@ -94,6 +94,21 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
     }
 
     [Fact]
+    public async Task AnnouncedSizeOverTheDlssCap_IsRefused()
+    {
+        // The DLSS cap is its own (1 GiB), not the 2 GiB default (integration w1 deploy review 1).
+        var cache = Path.Combine(_root, "cache-size");
+        var handler = new Handler(Manifest(null), Zip(Dll(0x23))) { AnnounceZipLength = DlssManagerService.DownloadPolicy.MaxBytes + 1 };
+        var service = new DlssManagerService(new HttpClient(handler), new TransactionalFileDeploymentService(), cache);
+        await service.FetchManifestAsync();
+
+        var refused = await Assert.ThrowsAsync<InvalidDataException>(() => service.EnsureCachedAsync(DlssComponentKind.SuperResolution, "9.1"));
+
+        Assert.StartsWith($"{TrustedDownloadPolicy.TooLargePrefix}{1024L * 1024 * 1024} /", refused.Message, StringComparison.Ordinal);
+        Assert.Empty(CacheFiles(cache));
+    }
+
+    [Fact]
     public void Constructor_RemovesOldCrashLeftovers_KeepsRecentOnesAndPayloads()
     {
         var cache = Path.Combine(_root, "cache-leftovers");
@@ -194,6 +209,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
         public int ZipRequests { get; private set; }
         public int? FailZipAfterBytes { get; init; }
         public Uri? RedirectZipTo { get; init; }
+        public long? AnnounceZipLength { get; init; }
         public CancellationTokenSource? CancelAfterManifest { get; init; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -210,6 +226,7 @@ public sealed class DlssManagerCacheHygieneTests : IDisposable
                 ? new StreamContent(new FailingStream(zip, limit))
                 : new ByteArrayContent(zip);
             if (RedirectZipTo is not null) request.RequestUri = RedirectZipTo;
+            if (AnnounceZipLength is long announced) content.Headers.ContentLength = announced;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content, RequestMessage = request });
         }
     }

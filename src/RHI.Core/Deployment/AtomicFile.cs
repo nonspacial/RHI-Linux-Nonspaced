@@ -32,6 +32,9 @@ public static class AtomicFile
 
     private const int BufferSize = FileHash.BufferSize;
 
+    /// <summary>Fixed start of the "content over its size cap" refusal (PT-BR presentation pair); limit and file name follow it.</summary>
+    public const string OverLimitPrefix = "Content refused: larger than its size limit. Limit in bytes and file: ";
+
     public static string TempPathFor(string target, string? id = null)
         => target + TempMarker + (string.IsNullOrEmpty(id) ? Guid.NewGuid().ToString("N") : id);
 
@@ -324,7 +327,7 @@ public static class AtomicFile
                     {
                         length += read;
                         if (length > maxBytes)
-                            throw new InvalidDataException($"Content for {Path.GetFileName(target)} exceeds the {maxBytes}-byte limit.");
+                            throw new InvalidDataException($"{OverLimitPrefix}{maxBytes} {Path.GetFileName(target)}");
                         hash.AppendData(buffer, 0, read);
                         await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                     }
@@ -369,7 +372,7 @@ public static class AtomicFile
                 {
                     length += read;
                     if (length > maxBytes)
-                        throw new InvalidDataException($"Content for {Path.GetFileName(target)} exceeds the {maxBytes}-byte limit.");
+                        throw new InvalidDataException($"{OverLimitPrefix}{maxBytes} {Path.GetFileName(target)}");
                     hash.AppendData(buffer, 0, read);
                     output.Write(buffer, 0, read);
                 }

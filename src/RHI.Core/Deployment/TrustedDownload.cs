@@ -12,6 +12,9 @@ namespace RHI.Core.Deployment;
 public sealed record TrustedDownloadPolicy
 {
     public const long DefaultMaxBytes = 2L * 1024 * 1024 * 1024;
+
+    /// <summary>Fixed start of the "announced size over the cap" refusal (PT-BR presentation pair); the numbers follow it.</summary>
+    public const string TooLargePrefix = "Download refused: larger than the size limit for this download. Limit / announced size in bytes: ";
     /// <summary>Cap for a single add-on/DLL download (real ones are a few MB).</summary>
     public const long AddonMaxBytes = 256L * 1024 * 1024;
 
@@ -179,7 +182,7 @@ public static class TrustedDownload
         policy.ValidateFinal(response, url);
         onResponse?.Invoke(response);
         if (response.Content.Headers.ContentLength is long announced && announced > policy.MaxBytes)
-            throw new InvalidDataException($"Download is larger than the {policy.MaxBytes}-byte limit: {announced} bytes.");
+            throw new InvalidDataException($"{TrustedDownloadPolicy.TooLargePrefix}{policy.MaxBytes} / {announced}");
 
         await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var staged = await AtomicFile.StageStreamAsync(body, targetPath, expectedSha256, null, policy.MaxBytes, cancellationToken).ConfigureAwait(false);
