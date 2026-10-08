@@ -115,7 +115,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         await clipboard.SetTextAsync(text);
-        vm.StatusText = T("Win.HDRLaunchProfileCopiedSteamCan");
+        vm.StatusText = HdrLaunchText.Copied(vm.SelectedHdrPlan, vm.SelectedGame);
     });
 
 

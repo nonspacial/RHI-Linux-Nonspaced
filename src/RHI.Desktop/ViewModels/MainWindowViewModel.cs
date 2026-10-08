@@ -392,18 +392,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
-        ? new LinuxHdrLaunchPlan(false, false, new Dictionary<string, string>(), null, "%command%", T("Vm.SelectGameConfigureHDRLaunchOrchestration"))
+        ? LinuxHdrLaunchPlan.NoGame
         : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi });
-    public string HdrProfileHint
-    {
-        get
-        {
-            var plan = SelectedHdrPlan;
-            if (SelectedGame is not null && plan.Enabled && LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
-                return UiLocalizationService.Present(plan.Summary) + T("Vm.StoreMediatedLaunchDetectedConfigureProfile");
-            return UiLocalizationService.Present(plan.Summary);
-        }
-    }
+    public string HdrProfileHint => HdrLaunchText.Hint(SelectedHdrPlan, SelectedGame);
     public string HdrLaunchOptions => SelectedHdrPlan.LaunchOptions;
     public bool CanCopyHdrLaunchOptions => SelectedGame is not null && SelectedHdrPlan.Enabled && SelectedHdrPlan.CanApply;
 
@@ -1616,24 +1607,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (SelectedGame is null) return;
         var plan = SelectedHdrPlan;
-        if (plan.Enabled && !plan.CanApply)
+        if (HdrLaunchText.LaunchRefusal(plan, _launcher is IGameLaunchOptionsLauncher) is { } refusal)
         {
-            StatusText = TF("Vm.HDRLaunchBlocked", UiLocalizationService.Present(plan.Summary));
+            StatusText = refusal;
             return;
         }
 
-        if (plan.Enabled)
+        if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
-            if (LinuxHdrLaunchProfileService.IsLauncherMediated(SelectedGame))
-            {
-                StatusText = T("Vm.HDRProfileReadyButGameLaunched");
-                return;
-            }
-            if (_launcher is not IGameLaunchOptionsLauncher profiledLauncher)
-            {
-                StatusText = T("Vm.HDRLaunchProfileEnabledButLauncher");
-                return;
-            }
             var hdrGame = SelectedGame;
             StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
@@ -1645,6 +1626,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var started = game.ParentLauncherName is { Length: > 0 } parent
             ? TF("Vm.OpeningStartFromLauncher", parent, game.Name)
             : TF("Vm.Launching", game.Name);
+        // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
+        if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
         StatusText = started;
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;

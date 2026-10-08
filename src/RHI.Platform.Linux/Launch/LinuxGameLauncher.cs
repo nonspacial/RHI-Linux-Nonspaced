@@ -8,6 +8,10 @@ namespace RHI.Platform.Linux.Launch;
 
 public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
 {
+    /// <summary>Refusal when launch options are asked for on a store hand-off (fixed text; PT-BR presentation pair).</summary>
+    public const string HandoffProfileRefused =
+        "Launch profile not applied: a store launcher starts this game, so the profile has to be entered in that launcher.";
+
     /// <summary>How long a launch is watched for an immediate failure before it is left to run.</summary>
     public static readonly TimeSpan DefaultEarlyExitWindow = TimeSpan.FromSeconds(3);
 
@@ -53,6 +57,11 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
+        // Wrapping a store client (xdg-open heroic://…, steam -applaunch) never reaches the game it starts later,
+        // so a launch profile on a hand-off would be reported as applied without effect (#46).
+        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix)) &&
+            LaunchHandoffClassifier.IsHandoff(game))
+            throw new InvalidOperationException(HandoffProfileRefused);
 
         var stderrLog = CreateLaunchLog(game);
         var process = new Process { StartInfo = BuildStartInfo(game, options, stderrLog) };

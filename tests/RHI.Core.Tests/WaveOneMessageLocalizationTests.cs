@@ -26,6 +26,8 @@ public sealed class WaveOneMessageLocalizationTests
 
     private static IEnumerable<string> All()
     {
+        // Launch options refused on a store hand-off (wave 2, #46).
+        yield return RHI.Platform.Linux.Launch.LinuxGameLauncher.HandoffProfileRefused;
         // AtomicFile / TrustedDownload (core).
         yield return AtomicFile.NoFolderPrefix + P;
         yield return $"{AtomicFile.SizeLimitPrefix}1024{AtomicFile.SizeLimitMiddle}addon.dll";

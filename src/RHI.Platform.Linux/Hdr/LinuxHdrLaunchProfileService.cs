@@ -31,33 +31,66 @@ public sealed class LinuxHdrGameProfile
     }
 }
 
+/// <param name="Desktop">XDG_CURRENT_DESKTOP (else DESKTOP_SESSION); null when neither is set.</param>
 public sealed record LinuxHdrHostSnapshot(
     bool WaylandSession,
-    string Desktop,
+    string? Desktop,
     bool GamescopeAvailable,
     string? NvidiaDriverVersion,
-    bool LegacyWsiLikelyRequired)
+    bool LegacyWsiLikelyRequired);
+
+/// <summary>
+/// Why a plan looks the way it does. The service returns codes, never prose: the desktop words them in the
+/// UI language (Refs #146; the host line used to read "gamescope available" in English in the PT-BR UI).
+/// </summary>
+public enum LinuxHdrPlanReason
 {
-    public string Summary
-    {
-        get
-        {
-            var session = WaylandSession ? "Wayland" : "non-Wayland";
-            var gamescope = GamescopeAvailable ? "gamescope available" : "gamescope not found";
-            var nvidia = string.IsNullOrWhiteSpace(NvidiaDriverVersion) ? "" : $" · NVIDIA {NvidiaDriverVersion}";
-            var legacy = LegacyWsiLikelyRequired ? " · legacy HDR WSI may be required" : "";
-            return $"{session} · {Desktop} · {gamescope}{nvidia}{legacy}";
-        }
-    }
+    /// <summary>No game selected (the view model's placeholder plan).</summary>
+    NoGame,
+    Off,
+    GeProtonNativeWayland,
+    CachyNativeWayland,
+    GamescopeNativeGame,
+    GamescopeRunnerGame,
+    // Blocked:
+    WaylandSessionRequired,
+    NativeLinuxToolkitSpecific,
+    DirectWineLaunch,
+    NoRunnerContract,
+    GamescopeMissing
 }
 
+/// <summary>What the plan says about the legacy HDR WSI layer (ENABLE_HDR_WSI).</summary>
+public enum LinuxHdrLegacyWsiNote
+{
+    Off,
+    Enabled,
+    /// <summary>Not enabled, but the NVIDIA driver is older than 595 and may need it.</summary>
+    OlderNvidiaDriver
+}
+
+/// <param name="Handoff">
+/// The store client that starts the game (<see cref="LaunchHandoffClassifier"/>). Anything but
+/// <see cref="LaunchHandoff.None"/> means RHI cannot apply the profile when it launches the game: the profile
+/// has to be entered in that launcher (Refs #46).
+/// </param>
 public sealed record LinuxHdrLaunchPlan(
     bool Enabled,
     bool CanApply,
     IReadOnlyDictionary<string, string> Environment,
     string? CommandPrefix,
     string LaunchOptions,
-    string Summary);
+    LinuxHdrPlanReason Reason,
+    LinuxHdrHostSnapshot? Host = null,
+    LinuxHdrLegacyWsiNote LegacyWsi = LinuxHdrLegacyWsiNote.Off,
+    LaunchHandoff Handoff = LaunchHandoff.None)
+{
+    /// <summary>Placeholder while no game is selected.</summary>
+    public static LinuxHdrLaunchPlan NoGame { get; } = new(false, false, new Dictionary<string, string>(StringComparer.Ordinal), null, "%command%", LinuxHdrPlanReason.NoGame);
+
+    /// <summary>RHI applies this profile itself when it launches the game (enabled, valid, not a store hand-off).</summary>
+    public bool AppliesAtLaunch => Enabled && CanApply && Handoff == LaunchHandoff.None;
+}
 
 /// <summary>
 /// Linux HDR launch orchestration only. The translation stack belongs to the selected Wine/Proton runner.
@@ -88,7 +121,7 @@ public sealed partial class LinuxHdrLaunchProfileService
         var wayland = session.Equals("wayland", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(waylandDisplay);
         var desktop = _environment("XDG_CURRENT_DESKTOP");
         if (string.IsNullOrWhiteSpace(desktop)) desktop = _environment("DESKTOP_SESSION");
-        desktop = string.IsNullOrWhiteSpace(desktop) ? "desktop unknown" : desktop.Trim();
+        desktop = string.IsNullOrWhiteSpace(desktop) ? null : desktop.Trim();
         var nvidia = _nvidiaVersion();
         var legacy = TryParseMajor(nvidia, out var major) && major < 595;
         return new LinuxHdrHostSnapshot(wayland, desktop, _commandExists("gamescope"), nvidia, legacy);
@@ -99,62 +132,63 @@ public sealed partial class LinuxHdrLaunchProfileService
         ArgumentNullException.ThrowIfNull(game);
         profile = (profile ?? new LinuxHdrGameProfile()).Normalize();
         var host = ProbeHost();
+        var handoff = LaunchHandoffClassifier.Classify(game);
         if (profile.Mode == LinuxHdrModes.Off)
-            return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%",
-                $"HDR launch profile is Off. Runner graphics stack remains untouched. Host: {host.Summary}.");
+            return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%", LinuxHdrPlanReason.Off, host, Handoff: handoff);
 
-        if (profile.Mode == LinuxHdrModes.NativeWayland)
-            return BuildNativeWayland(game, profile, host);
-
-        return BuildGamescope(game, profile, host);
+        var plan = profile.Mode == LinuxHdrModes.NativeWayland
+            ? BuildNativeWayland(game, profile, host)
+            : BuildGamescope(game, profile, host);
+        return plan with { Handoff = handoff };
     }
 
     private LinuxHdrLaunchPlan BuildNativeWayland(DetectedGame game, LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)
     {
+        // Native Wayland HDR requires a Wayland desktop session; RHI will not change the desktop session for the game.
         if (!host.WaylandSession)
-            return Blocked(profile, host, "Native Wayland HDR requires a Wayland desktop session. RHI will not change the desktop session for the game.");
+            return Blocked(profile, host, LinuxHdrPlanReason.WaylandSessionRequired);
 
+        // Native Linux HDR is application/toolkit-specific: no generic SDL/Vulkan colour-management variables.
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return Blocked(profile, host,
-                "Native Linux HDR is application/toolkit-specific. RHI does not force generic SDL/Vulkan color-management variables onto native games; use Gamescope mode only when that game is known to work through Gamescope.");
+            return Blocked(profile, host, LinuxHdrPlanReason.NativeLinuxToolkitSpecific);
 
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
 
         var family = RunnerFamily(game);
+        // Started with the Proton build's wine, not the proton script: PROTON_* variables would be ignored.
         if (family != "Wine" && IsDirectWineLaunch(game))
-            return Blocked(profile, host,
-                "This game is started directly with its Proton build's wine, not through the proton script, so Proton's HDR/Wayland variables do not apply. Launch it through Steam or a Proton/umu launcher for native Wayland HDR, or use Gamescope mode.");
-        string note;
+            return Blocked(profile, host, LinuxHdrPlanReason.DirectWineLaunch);
+        LinuxHdrPlanReason reason;
         if (family == "GE")
         {
             // GE-Proton exposes its own HDR alias; do not redundantly inject the lower-level runner toggle.
             env["PROTON_ENABLE_HDR"] = "1";
             env["PROTON_ENABLE_WAYLAND"] = "1";
-            note = "GE-Proton native Wayland HDR: PROTON_ENABLE_HDR + PROTON_ENABLE_WAYLAND.";
+            reason = LinuxHdrPlanReason.GeProtonNativeWayland;
         }
         else if (family == "Cachy")
         {
             // Proton-Cachy removed PROTON_ENABLE_HDR; its documented runner toggle is DXVK_HDR.
             env["DXVK_HDR"] = "1";
             env["PROTON_ENABLE_WAYLAND"] = "1";
-            note = "Proton-Cachy native Wayland HDR: runner HDR toggle + PROTON_ENABLE_WAYLAND. RHI does not install or replace translation-layer binaries.";
+            reason = LinuxHdrPlanReason.CachyNativeWayland;
         }
         else
         {
-            return Blocked(profile, host,
-                "Native Wayland HDR automation is enabled only for runner families with an explicit current contract (GE-Proton or Proton-Cachy). Generic Proton/Wine remains runner-configured; RHI will not guess HDR variables.");
+            // Only runner families with an explicit current contract; RHI will not guess HDR variables.
+            return Blocked(profile, host, LinuxHdrPlanReason.NoRunnerContract);
         }
 
         ApplyLegacyWsi(profile, env);
         var options = BuildLaunchOptions(env, null);
-        return new LinuxHdrLaunchPlan(true, true, env, null, options,
-            $"{note} Desktop HDR must already be enabled. Host: {host.Summary}.{LegacyNote(profile, host)}");
+        return new LinuxHdrLaunchPlan(true, true, env, null, options, reason, host, LegacyNote(profile, host));
     }
 
     private LinuxHdrLaunchPlan BuildGamescope(DetectedGame game, LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)
     {
+        // RHI never installs gamescope.
         if (!host.GamescopeAvailable)
-            return Blocked(profile, host, "Gamescope mode was selected, but the gamescope executable was not found in PATH. RHI will not install it automatically.");
+            return Blocked(profile, host, LinuxHdrPlanReason.GamescopeMissing);
 
         // Gamescope is the HDR authority in this mode. Do not layer runner-specific HDR toggles
         // on top of it; that would duplicate policy already owned by the compositor/runner path.
@@ -162,18 +196,17 @@ public sealed partial class LinuxHdrLaunchProfileService
         ApplyLegacyWsi(profile, env);
         const string prefix = "gamescope --hdr-enabled --";
         var options = BuildLaunchOptions(env, prefix);
-        var runnerNote = string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
-            ? "Native game is only wrapped; no Wine/Proton variables are injected."
-            : "The existing Wine/Proton graphics stack remains runner-managed; RHI adds no translation-layer HDR variables in Gamescope mode.";
-        return new LinuxHdrLaunchPlan(true, true, env, prefix, options,
-            $"Gamescope HDR wrapper enabled. {runnerNote} Desktop/output HDR support is still required. Host: {host.Summary}.{LegacyNote(profile, host)}");
+        var reason = string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
+            ? LinuxHdrPlanReason.GamescopeNativeGame
+            : LinuxHdrPlanReason.GamescopeRunnerGame;
+        return new LinuxHdrLaunchPlan(true, true, env, prefix, options, reason, host, LegacyNote(profile, host));
     }
 
-    private static LinuxHdrLaunchPlan Blocked(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host, string reason)
+    private static LinuxHdrLaunchPlan Blocked(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host, LinuxHdrPlanReason reason)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
         ApplyLegacyWsi(profile, env);
-        return new LinuxHdrLaunchPlan(true, false, env, null, "%command%", $"{reason} Host: {host.Summary}.");
+        return new LinuxHdrLaunchPlan(true, false, env, null, "%command%", reason, host, LegacyNote(profile, host));
     }
 
     private static void ApplyLegacyWsi(LinuxHdrGameProfile profile, IDictionary<string, string> environment)
@@ -181,13 +214,10 @@ public sealed partial class LinuxHdrLaunchProfileService
         if (profile.EnableLegacyWsi) environment["ENABLE_HDR_WSI"] = "1";
     }
 
-    private static string LegacyNote(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)
+    private static LinuxHdrLegacyWsiNote LegacyNote(LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)
     {
-        if (profile.EnableLegacyWsi)
-            return " Legacy HDR WSI compatibility is explicitly enabled (ENABLE_HDR_WSI=1).";
-        if (host.LegacyWsiLikelyRequired)
-            return " Detected NVIDIA driver is older than 595; Legacy WSI may be needed if the driver lacks native Vulkan HDR WSI.";
-        return " Legacy WSI is off.";
+        if (profile.EnableLegacyWsi) return LinuxHdrLegacyWsiNote.Enabled;
+        return host.LegacyWsiLikelyRequired ? LinuxHdrLegacyWsiNote.OlderNvidiaDriver : LinuxHdrLegacyWsiNote.Off;
     }
 
     private static IReadOnlyDictionary<string, string> EmptyEnvironment()
@@ -255,7 +285,12 @@ public sealed partial class LinuxHdrLaunchProfileService
             var match = NvidiaVersionRegex().Match(File.ReadAllText(path));
             return match.Success ? match.Groups[1].Value : null;
         }
-        catch { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Unknown driver version: the legacy-WSI hint is simply not offered.
+            AppLog.Warn("hdr", "NVIDIA driver version unreadable", ex);
+            return null;
+        }
     }
 
     private static bool TryParseMajor(string? value, out int major)
