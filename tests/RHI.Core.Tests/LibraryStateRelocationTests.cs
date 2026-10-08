@@ -266,6 +266,70 @@ public sealed class LibraryStateRelocationTests : IDisposable
         Assert.Equal(["heroic:indie"], state.HiddenGames);
     }
 
+    // Review w2-stores #2: the owner's non-Steam entries (Lutris, Wine prefix, manual, Heroic) carry their pre-#147 state
+    // over through the exact-folder older key alone — no merged alias, no steamapps/common tail to fall back on.
+    [Theory]
+    [InlineData("Lutris", null)]
+    [InlineData("Wine", null)]
+    [InlineData("Manual", null)]
+    [InlineData("Heroic/Epic", "Fortnite")]
+    public void NonSteamGame_OlderBuildsExactFolderKey_IsAdopted(string source, string? heroicApp)
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "Games", "Ablechum12")).FullName;
+        var game = new DetectedGame { Name = "Ablechum12", Source = source, HeroicAppName = heroicApp, InstallPath = folder, LibraryIdentityPath = folder };
+        var older = $"{source.ToLowerInvariant()}|nosteam|{folder.ToLowerInvariant()}"; // the key builds before #147 wrote
+        Assert.Equal(older, LinuxGameLibraryStore.LegacyGameKey(game));
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add(older);
+        state.HiddenGames.Add(older);
+        state.GameEdits[older] = new LinuxGameEditOverride { LaunchProvider = "Battle.net" };
+        state.HdrProfiles[older] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+
+        Assert.True(state.AdoptOlderKeys(game));
+
+        var key = LinuxGameLibraryStore.GameKey(game);
+        Assert.Equal(heroicApp is null ? "folder:" + source.ToLowerInvariant() + "|" + folder : "heroic:" + heroicApp, key);
+        Assert.Equal([key], state.FavouriteGames);
+        Assert.Equal([key], state.HiddenGames);
+        Assert.Equal("Battle.net", Assert.Single(state.GameEdits, e => e.Key == key).Value.LaunchProvider);
+        Assert.Equal(LinuxHdrModes.Gamescope, Assert.Single(state.HdrProfiles, e => e.Key == key).Value.Mode);
+    }
+
+    // Review question "same AppID in two libraries": the scanner makes one card; favourite and hidden of both copies are
+    // united, the edit and HDR profile come from the card's own older key and the other copy's stay under their key
+    // (kept, detached — the same rule as a merged duplicate, #55). Nothing is lost.
+    [Fact]
+    public async Task SameAppIdInTwoLibraries_OneCard_FlagsUnited_TheOtherCopysEditAndHdrKept()
+    {
+        var libA = Path.Combine(_root, "libA");
+        var libB = Path.Combine(_root, "libB");
+        var a = Steam(libA, appId: 1174180, name: "Red Dead Redemption 2");
+        var b = Steam(libB, appId: 1174180, name: "Red Dead Redemption 2");
+        Directory.CreateDirectory(a.InstallPath);
+        Directory.CreateDirectory(b.InstallPath);
+        var card = Assert.Single(await new GameLibraryScanner([new FixedDetector("Steam", a, b)]).ScanAsync());
+        Assert.Equal(a.InstallPath, card.InstallPath);
+        string Legacy(DetectedGame g) => LinuxGameLibraryStore.LegacyGameKey(g);
+        var state = new LinuxGameLibraryState();
+        state.FavouriteGames.Add(Legacy(b));
+        state.HiddenGames.Add(Legacy(a));
+        state.GameEdits[Legacy(a)] = new LinuxGameEditOverride { LaunchProvider = "Steam" };
+        state.GameEdits[Legacy(b)] = new LinuxGameEditOverride { LaunchProvider = "Heroic" };
+        state.HdrProfiles[Legacy(a)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope };
+        state.HdrProfiles[Legacy(b)] = new LinuxHdrGameProfile { Mode = LinuxHdrModes.NativeWayland };
+
+        Assert.True(state.AdoptOlderKeys(card));
+
+        Assert.Equal(["steam:1174180"], state.FavouriteGames);
+        Assert.Equal(["steam:1174180"], state.HiddenGames);
+        Assert.Equal("Steam", state.GameEdits["steam:1174180"].LaunchProvider);
+        Assert.Equal(LinuxHdrModes.Gamescope, state.HdrProfiles["steam:1174180"].Mode);
+        Assert.Equal("Heroic", state.GameEdits[Legacy(b)].LaunchProvider);
+        Assert.Equal(LinuxHdrModes.NativeWayland, state.HdrProfiles[Legacy(b)].Mode);
+        Assert.Equal(2, state.GameEdits.Count);
+        Assert.Equal(2, state.HdrProfiles.Count);
+    }
+
     // ---- A patch target left at the old folder ----------------------------------------------------
 
     /// <summary>A Steam game with an Edit game patch target in a sub-folder, at <paramref name="library"/>; files created.</summary>

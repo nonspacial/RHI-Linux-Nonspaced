@@ -316,6 +316,12 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     /// source and its library folder as the launcher spells it (symlinks not resolved, so re-pointing a symlinked games
     /// folder keeps the key). Keys older builds wrote (<see cref="LegacyGameKey(DetectedGame)"/>) are adopted by
     /// <see cref="LinuxGameLibraryState.AdoptOlderKeys"/>.
+    /// <para>Known limits (kept, documented): a split child's key carries the remote manifest's child name, so an upstream
+    /// rename of that child leaves its state under the old name (kept, not adopted: the old key does not record the child's
+    /// sub-folder). The same split child in two Steam libraries gives two cards with one key, so they share favourite,
+    /// hidden, edit and HDR profile (rare: Steam installs an app in one library). The same AppID in two libraries is one
+    /// card: favourite and hidden of both are united, an edit or HDR profile comes from the card's own older key first
+    /// and the other stays under its own key (kept, detached).</para>
     /// </summary>
     public static string GameKey(DetectedGame game) => GameKey(game, IdentityPath(game));
 
