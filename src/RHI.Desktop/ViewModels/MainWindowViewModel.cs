@@ -82,12 +82,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private int _selectionGeneration;
     private DlssDetectionResult _dlssDetection = new();
     private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<PeArchitecture, string> _ualLatestVersionCache = new();
-    private readonly Dictionary<PeArchitecture, Task<string?>> _ualLatestVersionLoads = new();
-    private string? _shortFuseLatestVersionCache;
-    private Task<string?>? _shortFuseLatestVersionLoad;
-    private bool _neuralVersionCatalogLoaded;
-    private Task? _neuralVersionCatalogLoadTask;
+    // NR version lists and UAL/ShortFuse latest versions (TTL; Full Refresh reloads them) (Refs #86, #117).
+    private readonly UpstreamVersionCatalog _versions;
     // GitHub token notice (Refs #133); the settle check runs after queued UI work.
     private readonly OneShotStatusNotice _statusNotice = new(action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
 
@@ -703,6 +699,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _runtimeProbe.LateMetadataAvailable += OnLateProbeMetadata;
         _dlss = dlss;
         _managedComponents = managedComponents;
+        _versions = new UpstreamVersionCatalog(kind => _managedComponents.ListNeuralAddonVersionsAsync(kind), ApplyNeuralVersionLists);
         _apiOverrideStore = apiOverrideStore ?? new GraphicsApiOverrideStore();
         _optiScalerVariantStore = optiScalerVariantStore ?? new OptiScalerVariantPreferenceStore();
         _settingsStore = settingsStore ?? new LinuxSettingsStore();
@@ -1425,13 +1422,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             var currentKey = SelectedGame is null ? null : Key(SelectedGame);
             CancelSelectionProbe();
             if (onlyDetectors is null) _probeCache.Clear();
-            // Full Refresh bypasses the session NR version caches (upstream 2.7.9).
-            Task? neuralCatalogRefresh = null;
-            if (onlyDetectors is null)
-            {
-                _shortFuseLatestVersionCache = null;
-                neuralCatalogRefresh = EnsureNeuralVersionCatalogAsync(forceRefresh: true);
-            }
+            // Full Refresh bypasses the session NR version and latest-version caches (upstream 2.7.9).
+            var neuralCatalogRefresh = onlyDetectors is null ? ReportNeuralCatalogLoadAsync(_versions.FullRefreshAsync()) : null;
             SelectedGame = null;
 
             var scan = await _scanner.ScanWithReportAsync(onlyDetectors);
@@ -2013,8 +2005,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = T("Vm.RefreshingLatestUltimateASILoaderVersion");
             var game = SelectedGame;
             var status = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game);
-            if (status.Success && !string.IsNullOrWhiteSpace(status.LatestVersion) && GetUalArchitecture(game) is { } architecture)
-                _ualLatestVersionCache[architecture] = status.LatestVersion;
+            if (status.Success && GetUalArchitecture(game) is { } architecture)
+                _versions.UalLatest.Set(architecture, status.LatestVersion);
             UalLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetUltimateAsiLoaderRecord(game)?.Version, status.LatestVersion)
                 : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
@@ -2063,8 +2055,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             {
                 RefreshUalState(game);
                 var update = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game);
-                if (update.Success && !string.IsNullOrWhiteSpace(update.LatestVersion) && GetUalArchitecture(game) is { } architecture)
-                    _ualLatestVersionCache[architecture] = update.LatestVersion;
+                if (update.Success && GetUalArchitecture(game) is { } architecture)
+                    _versions.UalLatest.Set(architecture, update.LatestVersion);
                 UalLatestVersionText = update.Success
                     ? FormatLatestVersionSummary(_managedComponents.GetUltimateAsiLoaderRecord(game)?.Version, update.LatestVersion)
                     : UalLatestVersionText;
@@ -2124,8 +2116,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             var game = SelectedGame;
             var status = await _managedComponents.CheckShortFuseLatestReleaseAsync(game);
-            if (status.Success && !string.IsNullOrWhiteSpace(status.LatestVersion))
-                _shortFuseLatestVersionCache = status.LatestVersion;
+            if (status.Success)
+                _versions.ShortFuseLatest.Set(ManagedComponentKind.ShortFuse, status.LatestVersion);
             ShortFuseLatestVersionText = status.Success
                 ? FormatLatestVersionSummary(_managedComponents.GetShortFuseRecord(game)?.Version, status.LatestVersion)
                 : TF("Vm.LatestVersionUnavailable", UiLocalizationService.Present(status.Message));
@@ -3481,30 +3473,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task EnsureNeuralVersionCatalogAsync(bool forceRefresh = false, bool reportStatus = false)
+    private Task EnsureNeuralVersionCatalogAsync(bool forceRefresh = false, bool reportStatus = false)
+        => ReportNeuralCatalogLoadAsync(_versions.NeuralVersions.EnsureAsync(forceRefresh), reportStatus);
+
+    private async Task ReportNeuralCatalogLoadAsync(Task<NeuralCatalogOutcome> load, bool reportStatus = false)
     {
-        if (!forceRefresh && _neuralVersionCatalogLoaded) return;
-
-        if (_neuralVersionCatalogLoadTask is not null)
-        {
-            try { await _neuralVersionCatalogLoadTask; }
-            catch { /* The original load reports/handles its own failure below. */ }
-            if (!forceRefresh || _neuralVersionCatalogLoaded)
-            {
-                if (reportStatus && _neuralVersionCatalogLoaded)
-                    StatusText = T("Vm.NRVersionsUpDate");
-                return;
-            }
-        }
-
-        var loadTask = LoadNeuralVersionCatalogCoreAsync();
-        _neuralVersionCatalogLoadTask = loadTask;
         try
         {
-            await loadTask;
-            _neuralVersionCatalogLoaded = true;
-            if (reportStatus)
-                StatusText = T("Vm.NRVersionsRefreshedLatestRemainsDefault");
+            var outcome = await load;
+            if (!reportStatus) return;
+            if (outcome == NeuralCatalogOutcome.Loaded) StatusText = T("Vm.NRVersionsRefreshedLatestRemainsDefault");
+            else if (outcome == NeuralCatalogOutcome.AlreadyLoaded) StatusText = T("Vm.NRVersionsUpDate");
         }
         catch (Exception ex)
         {
@@ -3513,28 +3492,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             else
                 AppLog.Warn("nr-versions", "Automatic NR version catalog refresh failed", ex);
         }
-        finally
-        {
-            if (ReferenceEquals(_neuralVersionCatalogLoadTask, loadTask))
-                _neuralVersionCatalogLoadTask = null;
-        }
     }
 
-    private async Task LoadNeuralVersionCatalogCoreAsync()
+    private void ApplyNeuralVersionLists(NeuralVersionLists lists)
     {
-        var feederTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Feeder);
-        var bridgeTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.Dlss5Dx11Bridge);
-        var shortFuseTask = _managedComponents.ListNeuralAddonVersionsAsync(ManagedComponentKind.ShortFuse);
-        await Task.WhenAll(feederTask, bridgeTask, shortFuseTask);
         var feederSelected = SelectedDlss5FeederVersion;
         var bridgeSelected = SelectedDlss5BridgeVersion;
         var shortFuseSelected = SelectedShortFuseVersion;
         _rebuildingOptionLists = true;
         try
         {
-            ReplaceVersionOptions(Dlss5FeederVersionOptions, feederTask.Result, feederSelected);
-            ReplaceVersionOptions(Dlss5BridgeVersionOptions, bridgeTask.Result, bridgeSelected);
-            ReplaceVersionOptions(ShortFuseVersionOptions, shortFuseTask.Result, shortFuseSelected);
+            ReplaceVersionOptions(Dlss5FeederVersionOptions, lists.Dlss5Feeder, feederSelected);
+            ReplaceVersionOptions(Dlss5BridgeVersionOptions, lists.Dlss5Bridge, bridgeSelected);
+            ReplaceVersionOptions(ShortFuseVersionOptions, lists.ShortFuse, shortFuseSelected);
             // Clearing the list nulled the bound selection; restore it now that the option exists again.
             SelectedDlss5FeederVersion = feederSelected ?? LatestDisplay();
             SelectedDlss5BridgeVersion = bridgeSelected ?? LatestDisplay();
@@ -3583,68 +3553,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string? CachedUalLatestVersion(DetectedGame game)
     {
         var architecture = GetUalArchitecture(game);
-        return architecture is not null && _ualLatestVersionCache.TryGetValue(architecture.Value, out var version)
-            ? version
-            : null;
+        return architecture is null ? null : _versions.UalLatest.TryGetFresh(architecture.Value);
     }
 
     private async Task<string?> GetUalLatestVersionAsync(DetectedGame game, bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
         var architecture = GetUalArchitecture(game);
         if (architecture is null) return null;
-
-        if (!forceRefresh && _ualLatestVersionCache.TryGetValue(architecture.Value, out var cached))
-            return cached;
-        if (!forceRefresh && _ualLatestVersionLoads.TryGetValue(architecture.Value, out var existingLoad))
-            return await existingLoad;
-
-        async Task<string?> LoadAsync()
+        return await _versions.UalLatest.GetAsync(architecture.Value, async () =>
         {
             var status = await _managedComponents.CheckUltimateAsiLoaderUpdateAsync(game, cancellationToken);
             return status.Success ? status.LatestVersion : null;
-        }
-
-        var load = LoadAsync();
-        if (!forceRefresh) _ualLatestVersionLoads[architecture.Value] = load;
-        try
-        {
-            var version = await load;
-            if (!string.IsNullOrWhiteSpace(version)) _ualLatestVersionCache[architecture.Value] = version;
-            return version;
-        }
-        finally
-        {
-            if (!forceRefresh && _ualLatestVersionLoads.TryGetValue(architecture.Value, out var active) && ReferenceEquals(active, load))
-                _ualLatestVersionLoads.Remove(architecture.Value);
-        }
+        }, forceRefresh);
     }
 
     private async Task<string?> GetShortFuseLatestVersionAsync(DetectedGame game, bool forceRefresh = false, CancellationToken cancellationToken = default)
     {
-        if (!forceRefresh && !string.IsNullOrWhiteSpace(_shortFuseLatestVersionCache))
-            return _shortFuseLatestVersionCache;
-        if (!forceRefresh && _shortFuseLatestVersionLoad is not null)
-            return await _shortFuseLatestVersionLoad;
-
-        async Task<string?> LoadAsync()
+        return await _versions.ShortFuseLatest.GetAsync(ManagedComponentKind.ShortFuse, async () =>
         {
             var status = await _managedComponents.CheckShortFuseLatestReleaseAsync(game, cancellationToken);
             return status.Success ? status.LatestVersion : null;
-        }
-
-        var load = LoadAsync();
-        if (!forceRefresh) _shortFuseLatestVersionLoad = load;
-        try
-        {
-            var version = await load;
-            if (!string.IsNullOrWhiteSpace(version)) _shortFuseLatestVersionCache = version;
-            return version;
-        }
-        finally
-        {
-            if (!forceRefresh && ReferenceEquals(_shortFuseLatestVersionLoad, load))
-                _shortFuseLatestVersionLoad = null;
-        }
+        }, forceRefresh);
     }
 
     private async Task RefreshSelectedLatestVersionsAsync(DetectedGame game)
@@ -3686,7 +3615,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ShortFuseAutoConfigEnabled = _managedComponents.GetShortFuseAutoConfigEnabled(game);
         SetShortFuseZzzLoadOrderSilently(_managedComponents.GetShortFuseZzzLoadOrderInEffect(game));
         var record = _managedComponents.GetShortFuseRecord(game);
-        ShortFuseLatestVersionText = FormatLatestVersionSummary(record?.Version, _shortFuseLatestVersionCache);
+        ShortFuseLatestVersionText = FormatLatestVersionSummary(record?.Version, _versions.ShortFuseLatest.TryGetFresh(ManagedComponentKind.ShortFuse));
         NotifyShortFuse();
     }
 
