@@ -146,6 +146,8 @@ internal static class UiStrings
         ("Hdr.NoRunnerContract", "O HDR nativo no Wayland é automatizado apenas para runners com contrato atual explícito (GE-Proton ou Proton-Cachy). Proton/Wine genérico continua configurado pelo runner; o RHI não adivinha variáveis HDR.", "Native Wayland HDR is automated only for runners with an explicit current contract (GE-Proton or Proton-Cachy). Generic Proton/Wine stays runner-configured; RHI does not guess HDR variables."),
         ("Hdr.GamescopeMissing", "O modo Gamescope foi selecionado, mas o executável gamescope não foi encontrado no PATH. O RHI não o instala automaticamente.", "Gamescope mode is selected, but the gamescope executable was not found in PATH. RHI does not install it automatically."),
         ("Hdr.Host", "Sistema: {0}.", "Host: {0}."),
+        ("Hdr.HostNotChecked", "ainda não verificado", "not checked yet"),
+        ("Hdr.HostNotProbedYet", "O RHI ainda está verificando o sistema (sessão e gamescope); o perfil HDR é avaliado assim que isso terminar.", "RHI is still checking the host (session and gamescope); the HDR profile is assessed as soon as that finishes."),
         ("Hdr.HostWayland", "sessão Wayland", "Wayland session"),
         ("Hdr.HostNotWayland", "sessão sem Wayland", "non-Wayland session"),
         ("Hdr.HostDesktopUnknown", "desktop desconhecido", "desktop unknown"),

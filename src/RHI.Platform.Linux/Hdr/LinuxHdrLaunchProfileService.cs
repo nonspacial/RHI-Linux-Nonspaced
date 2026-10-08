@@ -67,7 +67,12 @@ public enum LinuxHdrPlanReason
     NativeLinuxToolkitSpecific,
     DirectWineLaunch,
     NoRunnerContract,
-    GamescopeMissing
+    GamescopeMissing,
+    /// <summary>
+    /// The host has not been probed yet (<see cref="LinuxHdrHostSnapshot.NotProbed"/>): nothing is known about the
+    /// session or gamescope, so the profile is not judged (never "gamescope not found"); rebuilt when the probe lands.
+    /// </summary>
+    HostNotProbed
 }
 
 /// <summary>What the plan says about the legacy HDR WSI layer (ENABLE_HDR_WSI).</summary>
@@ -152,6 +157,9 @@ public sealed partial class LinuxHdrLaunchProfileService
         var handoff = LaunchHandoffClassifier.Classify(game);
         if (profile.Mode == LinuxHdrModes.Off)
             return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%", LinuxHdrPlanReason.Off, host, Handoff: handoff);
+        // A stand-in host says nothing about the session or gamescope: never word it as a missing tool or a session.
+        if (!host.Probed)
+            return Blocked(profile, host, LinuxHdrPlanReason.HostNotProbed) with { Handoff = handoff };
 
         var plan = profile.Mode == LinuxHdrModes.NativeWayland
             ? BuildNativeWayland(game, profile, host)

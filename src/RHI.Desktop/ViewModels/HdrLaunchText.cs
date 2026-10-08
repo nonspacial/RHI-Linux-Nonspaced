@@ -40,6 +40,7 @@ public static class HdrLaunchText
             LinuxHdrPlanReason.DirectWineLaunch => T("Hdr.DirectWineLaunch"),
             LinuxHdrPlanReason.NoRunnerContract => T("Hdr.NoRunnerContract"),
             LinuxHdrPlanReason.GamescopeMissing => T("Hdr.GamescopeMissing"),
+            LinuxHdrPlanReason.HostNotProbed => T("Hdr.HostNotProbedYet"),
             _ => throw new ArgumentOutOfRangeException(nameof(plan), plan.Reason, null)
         };
         if (plan.Host is { } host) text += " " + TF("Hdr.Host", Host(host));
@@ -57,6 +58,8 @@ public static class HdrLaunchText
 
     public static string Host(LinuxHdrHostSnapshot host)
     {
+        // The stand-in before the start-up probe: no session or gamescope facts to show.
+        if (!host.Probed) return T("Hdr.HostNotChecked");
         var parts = new List<string>
         {
             host.WaylandSession ? T("Hdr.HostWayland") : T("Hdr.HostNotWayland"),

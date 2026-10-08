@@ -68,6 +68,30 @@ public sealed class HdrLaunchTextTests : IDisposable
         Assert.Contains("Host:", en, StringComparison.Ordinal);
     }
 
+    // w2/vmsplit re-review, nit 6: the stand-in host used before the start-up probe lands is never worded as "gamescope
+    // not found" or a non-Wayland session; the profile is not judged until the real host is known.
+    [Theory]
+    [InlineData(LinuxHdrModes.Gamescope)]
+    [InlineData(LinuxHdrModes.NativeWayland)]
+    public void NotProbedHost_IsNeverWordedAsAMissingGamescopeOrSession(string mode)
+    {
+        var game = Game("Wine", "WINEPREFIX=/tmp/pfx wine Game.exe");
+        var plan = Service(gamescope: true).BuildPlan(game, Profile(mode), LinuxHdrHostSnapshot.NotProbed);
+
+        Assert.Equal(LinuxHdrPlanReason.HostNotProbed, plan.Reason);
+        var en = InLanguage("en-US", () => HdrLaunchText.Hint(plan, game));
+        var pt = InLanguage("pt-BR", () => HdrLaunchText.Hint(plan, game));
+        foreach (var wrong in new[] { "Hdr.GamescopeMissing", "Hdr.HostGamescopeNotFound", "Hdr.HostNotWayland", "Hdr.WaylandSessionRequired" })
+        {
+            Assert.DoesNotContain(InLanguage("en-US", () => UiLocalizationService.Text(wrong)), en, StringComparison.Ordinal);
+            Assert.DoesNotContain(InLanguage("pt-BR", () => UiLocalizationService.Text(wrong)), pt, StringComparison.Ordinal);
+        }
+        Assert.Contains(InLanguage("en-US", () => UiLocalizationService.Text("Hdr.HostNotChecked")), en, StringComparison.Ordinal);
+        Assert.Contains(InLanguage("pt-BR", () => UiLocalizationService.Text("Hdr.HostNotProbedYet")), pt, StringComparison.Ordinal);
+        // Off stays Off whatever the host.
+        Assert.Equal(LinuxHdrPlanReason.Off, Service(gamescope: true).BuildPlan(game, Profile(LinuxHdrModes.Off), LinuxHdrHostSnapshot.NotProbed).Reason);
+    }
+
     [Fact]
     public void EveryReasonCode_HasWording()
     {
