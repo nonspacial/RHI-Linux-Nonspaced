@@ -422,9 +422,10 @@ public sealed partial class MainWindow
         {
             Title = TF("Win.EditGame", game.Name),
             // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
-            // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically.
+            // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically. 860 high
+            // so the whole form, footer included, shows at the preferred size with the launch command field (PT-BR wraps more).
             Width = 790,
-            Height = 760,
+            Height = 860,
             MinWidth = 460,
             MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
