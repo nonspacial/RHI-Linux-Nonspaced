@@ -164,11 +164,37 @@ public sealed record VerifiedDownload(string Path, string Sha256, string? Publis
     public const string MetadataIntegrityKey = "Download.Integrity";
 
     /// <summary>Writes <see cref="MetadataSha256Key"/> and <see cref="MetadataIntegrityKey"/> into a deployment record's metadata.</summary>
-    public void RecordIn(IDictionary<string, string> metadata)
+    /// <param name="part">
+    /// Null for the payload the deployment is made from; a name (e.g. <c>dgVoodoo</c>) for each further download the
+    /// same record deploys, written as <c>Download.&lt;part&gt;.Sha256</c> / <c>Download.&lt;part&gt;.Integrity</c>.
+    /// </param>
+    public void RecordIn(IDictionary<string, string> metadata, string? part = null)
+        => Record(metadata, Sha256, DigestVerified, part);
+
+    /// <summary>
+    /// The one way a deployment record names the download it came from (#26): the SHA-256 of the verified cache entry
+    /// (the downloaded file, or the file RHI extracted from it when only that is kept) and whether a digest the
+    /// publisher announced vouched for it (<see cref="PublishedDigest"/>) or HTTPS + host policy only
+    /// (<see cref="RecordedOnly"/>). See <see cref="RecordIn"/> for <paramref name="part"/>.
+    /// </summary>
+    public static void Record(IDictionary<string, string> metadata, string sha256, bool digestVerified, string? part = null)
     {
-        metadata[MetadataSha256Key] = Sha256;
-        metadata[MetadataIntegrityKey] = Integrity;
+        ArgumentNullException.ThrowIfNull(metadata);
+        metadata[Sha256KeyFor(part)] = sha256;
+        metadata[IntegrityKeyFor(part)] = digestVerified ? PublishedDigest : RecordedOnly;
     }
+
+    /// <summary>Removes the keys of <paramref name="part"/> (a deployment that no longer comes from that download).</summary>
+    public static void Forget(IDictionary<string, string> metadata, string? part = null)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        metadata.Remove(Sha256KeyFor(part));
+        metadata.Remove(IntegrityKeyFor(part));
+    }
+
+    public static string Sha256KeyFor(string? part) => part is null ? MetadataSha256Key : $"Download.{part}.Sha256";
+
+    public static string IntegrityKeyFor(string? part) => part is null ? MetadataIntegrityKey : $"Download.{part}.Integrity";
 }
 
 /// <summary>

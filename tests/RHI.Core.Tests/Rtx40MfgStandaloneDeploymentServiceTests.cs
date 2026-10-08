@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -285,6 +286,7 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         Assert.Equal("1.3.2", record!.Version);
         Assert.Equal("winmm.dll", record.Metadata["RTX40MFG.ProxyName"]);
         Assert.Equal(Sha256(target), record.Files.Single().Sha256, ignoreCase: true);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
 
         var remove = await service.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
@@ -508,6 +510,7 @@ public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
         var record = records.Find(fixture.Game, ManagedComponentKind.Rtx40MfgStandalone)!;
         Assert.Equal("1.3.2", record.Version);
         Assert.Equal("wininet.dll", record.Metadata["RTX40MFG.ProxyName"]);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "wininet", "Game.exe"));
     }

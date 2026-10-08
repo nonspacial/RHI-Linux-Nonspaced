@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -254,6 +255,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("1", record!.Metadata[LumaFrameworkDeploymentService.MetaLocalPackage]);
         Assert.Null(record.SourceUrl);
+        DownloadRecordAssert.NotRecorded(record); // a local package is not a download
 
         var update = await service.CheckUpdateAsync(game);
         Assert.True(update.Managed);
@@ -578,6 +580,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Equal("0", record.Metadata["LumaFramework.DlssFsrBlocked"]);
         Assert.Equal("4.27.2", record.Metadata["LumaFramework.UeVersion"]);
         Assert.False(string.IsNullOrWhiteSpace(record.Metadata[LumaEngineIniOverrideManager.MetadataKey]));
+        DownloadRecordAssert.Recorded(record, digest, VerifiedDownload.PublishedDigest); // review w2-trust minor 6
         var afterInstall = File.ReadAllText(engineIni);
         Assert.Contains("UserKeep=42", afterInstall);
         Assert.Contains("r.Luma.Metadata=1", afterInstall);

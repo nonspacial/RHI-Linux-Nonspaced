@@ -196,8 +196,9 @@ public sealed class UltimateAsiLoaderDeploymentService
                 [MetaHadOriginal] = hadOriginal ? "1" : "0",
                 [MetaArchitecture] = architecture.ToString(),
                 [MetaAssetSha256] = release.AssetSha256 ?? "",
-                [VerifiedDownload.MetadataIntegrityKey] = IntegrityOf(release),
             };
+            // The cached DLL (the verified cache entry) is what was copied: its hash is the deployed file's.
+            VerifiedDownload.Record(metadata, targetHash, HasPublishedDigest(release));
             if (hadOriginal)
                 metadata[MetaHookedPath] = hookedPath;
 
@@ -308,7 +309,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             record.SourceUrl = release.AssetUrl;
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata[MetaAssetSha256] = release.AssetSha256 ?? "";
-            record.Metadata[VerifiedDownload.MetadataIntegrityKey] = IntegrityOf(release);
+            VerifiedDownload.Record(record.Metadata, fileRecord.Sha256, HasPublishedDigest(release));
             _records.Upsert(record);
             return ComponentOperationResult.Ok($"Ultimate ASI Loader updated to {release.Version} as {proxyName}.");
         }
@@ -553,8 +554,7 @@ public sealed class UltimateAsiLoaderDeploymentService
     }
 
     /// <summary>What the cached DLL's integrity rests on: GitHub's digest of the zip, or only HTTPS + host policy (#26).</summary>
-    private static string IntegrityOf(UalReleaseInfo release)
-        => string.IsNullOrWhiteSpace(release.AssetSha256) ? VerifiedDownload.RecordedOnly : VerifiedDownload.PublishedDigest;
+    private static bool HasPublishedDigest(UalReleaseInfo release) => !string.IsNullOrWhiteSpace(release.AssetSha256);
 
     private static string SanitizePathPart(string value)
         => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));

@@ -247,6 +247,20 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             moved = true;
 
             var payloadHash = staged.Sha256;
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [MetaGpuGeneration] = selectedGpu,
+                [MetaProxyName] = selectedProxy,
+                [LegacyMetaProxyName] = selectedProxy,
+                [MetaTag] = release.Tag,
+                [MetaAssetName] = release.AssetName,
+                [MetaAssetSha256] = release.AssetSha256 ?? "",
+                [MetaPayloadSha256] = payloadHash,
+                [MetaExperimental] = "1",
+                [MetaUpstream] = RepositoryUrl,
+            };
+            // Fail-closed source: every payload matched GitHub's digest or the publisher's SHA256SUMS.txt (#26).
+            VerifiedDownload.Record(metadata, payloadHash, digestVerified: true);
             _records.Upsert(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -267,18 +281,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                         AllowUserChanges = false
                     }
                 ],
-                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [MetaGpuGeneration] = selectedGpu,
-                    [MetaProxyName] = selectedProxy,
-                    [LegacyMetaProxyName] = selectedProxy,
-                    [MetaTag] = release.Tag,
-                    [MetaAssetName] = release.AssetName,
-                    [MetaAssetSha256] = release.AssetSha256 ?? "",
-                    [MetaPayloadSha256] = payloadHash,
-                    [MetaExperimental] = "1",
-                    [MetaUpstream] = RepositoryUrl,
-                }
+                Metadata = metadata
             });
             recordWritten = true;
             _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
@@ -434,6 +437,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             record.Metadata[MetaAssetName] = latest.AssetName;
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
+            VerifiedDownload.Record(record.Metadata, newHash, digestVerified: true);
             _records.Upsert(record);
             FileCleanup.TryDelete(previous);
             return ComponentOperationResult.Ok($"Universal MFG atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);

@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -90,6 +91,7 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
         Assert.Equal("4.10.0", record!.Version);
         Assert.Equal("winmm.dll", record.Metadata["DLSSEnabler.ProxyName"]);
         Assert.Equal(Sha256(target), record.Files.Single().Sha256, ignoreCase: true);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
 
         var remove = await service.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
@@ -230,6 +232,7 @@ public sealed class StandaloneDlssEnablerDeploymentServiceTests : IDisposable
         var record = records.Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone)!;
         Assert.Equal("4.10.0", record.Version);
         Assert.Equal("psapi.dll", record.Metadata["DLSSEnabler.ProxyName"]);
+        DownloadRecordAssert.Recorded(record, Sha256(target), VerifiedDownload.PublishedDigest);
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(
             File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "psapi", "Game.exe"));
     }

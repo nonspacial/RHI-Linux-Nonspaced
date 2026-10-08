@@ -34,6 +34,10 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
         var packageAgain = await provider.GetLatestAsync();
         Assert.Equal(package.RootDirectory, packageAgain.RootDirectory);
         Assert.Equal(1, extractor.CallCount);
+        // The archive the package came from travels with it into the deployment record (review w2-trust minor 6).
+        Assert.Equal(digest, package.Download!.Sha256, ignoreCase: true);
+        Assert.True(package.Download.DigestVerified);
+        Assert.Equal(digest, packageAgain.Download!.Sha256, ignoreCase: true);
     }
 
     [Theory]

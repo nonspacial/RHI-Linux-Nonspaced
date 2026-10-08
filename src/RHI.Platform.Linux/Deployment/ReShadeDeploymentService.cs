@@ -486,11 +486,7 @@ public sealed partial class ReShadeDeploymentService
             metadata[MetaChannel] = staged.Channel.ToString();
             metadata[MetaSourceIdentity] = staged.SourceIdentity;
             if (staged.Download is { } download) download.RecordIn(metadata);
-            else
-            {
-                metadata.Remove(VerifiedDownload.MetadataSha256Key);
-                metadata.Remove(VerifiedDownload.MetadataIntegrityKey);
-            }
+            else VerifiedDownload.Forget(metadata);
             metadata[MetaShaderPacks] = JsonSerializer.Serialize(shaderResult.PackIds);
             SetOrRemove(metadata, MetaCustomSource, options.Channel == ReShadeChannel.Custom ? staged.SourceUrl : null);
             SetOrRemove(metadata, MetaLegacyVersion, options.Channel == ReShadeChannel.Legacy ? options.LegacyVersion?.Trim() : null);

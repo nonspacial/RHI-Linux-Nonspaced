@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -36,6 +37,10 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         var owned = record.Files.Single(file => file.Path == dlssg);
         Assert.False(owned.ExistedBeforeInstall);
         Assert.Equal(Sha256(Dlssg(0x51)), owned.Sha256);
+        // The DLSS Enabler payload is a download of this record (review w2-trust minor 6); gone with the stack.
+        var enabler = Path.Combine(fx.Bin, "OptiScaler", OptiScalerDeploymentService.DlssEnablerHeadlessFileName);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(enabler), VerifiedDownload.PublishedDigest,
+            OptiScalerDeploymentService.FgStackDlssEnablerDownloadPart);
 
         var disabled = await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false");
 
@@ -45,6 +50,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         record = fx.Store.Find(fx.Game, ManagedComponentKind.OptiScaler)!;
         Assert.DoesNotContain(record.Files, file => file.Path == dlssg);
         Assert.False(record.Metadata.ContainsKey(OptiScalerDeploymentService.FgStackDlssgVersionMetadataKey));
+        DownloadRecordAssert.NotRecorded(record, OptiScalerDeploymentService.FgStackDlssEnablerDownloadPart);
     }
 
     [Fact]

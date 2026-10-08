@@ -255,6 +255,17 @@ public sealed class Dlssg2030UnlockDeploymentService
 
             var proxyHash = stagedProxy.Sha256;
             var iniHash = await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [MetaProxyName] = selectedProxy,
+                [MetaGpuGeneration] = selectedGpu,
+                [MetaRouter] = router,
+                [MetaCommitSha] = snapshot.CommitSha,
+                [MetaSourceDllSha] = payload.SourceDllSha256,
+                [MetaSourceIniSha] = payload.SourceIniSha256,
+                [MetaExperimental] = "1",
+            };
+            RecordDownloads(metadata, payload);
 
             _records.Upsert(new LinuxDeploymentRecord
             {
@@ -271,16 +282,7 @@ public sealed class Dlssg2030UnlockDeploymentService
                     new LinuxDeployedFile { Path = proxyPath, ExistedBeforeInstall = false, Sha256 = proxyHash, AllowUserChanges = false },
                     new LinuxDeployedFile { Path = iniPath, ExistedBeforeInstall = false, Sha256 = iniHash, AllowUserChanges = true },
                 ],
-                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [MetaProxyName] = selectedProxy,
-                    [MetaGpuGeneration] = selectedGpu,
-                    [MetaRouter] = router,
-                    [MetaCommitSha] = snapshot.CommitSha,
-                    [MetaSourceDllSha] = payload.SourceDllSha256,
-                    [MetaSourceIniSha] = payload.SourceIniSha256,
-                    [MetaExperimental] = "1",
-                }
+                Metadata = metadata
             });
             recordWritten = true;
 
@@ -464,6 +466,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             record.Metadata[MetaCommitSha] = snapshot.CommitSha;
             record.Metadata[MetaSourceDllSha] = payload.SourceDllSha256;
             record.Metadata[MetaSourceIniSha] = payload.SourceIniSha256;
+            RecordDownloads(record.Metadata, payload);
             _records.Upsert(record);
 
             FileCleanup.TryDelete(previous);
@@ -541,6 +544,16 @@ public sealed class Dlssg2030UnlockDeploymentService
         ValidateIniText(text);
         var version = ParseVersionFromIni(text) ?? snapshot.Version;
         return new Dlssg2030CachedPayload(dllPath, iniPath, text, sourceDllHash.ToLowerInvariant(), sourceIniHash.ToLowerInvariant(), version);
+    }
+
+    /// <summary>
+    /// The downloads the record comes from (#26): the DLL, and the template INI as part <c>Ini</c>. Both bytes were matched
+    /// against the git blob id GitHub publishes for them at the commit (fail-closed), so both count as published-digest.
+    /// </summary>
+    private static void RecordDownloads(IDictionary<string, string> metadata, Dlssg2030CachedPayload payload)
+    {
+        VerifiedDownload.Record(metadata, payload.SourceDllSha256.ToUpperInvariant(), digestVerified: true);
+        VerifiedDownload.Record(metadata, payload.SourceIniSha256.ToUpperInvariant(), digestVerified: true, part: "Ini");
     }
 
     /// <summary>Fixed start of the refusal of a file whose bytes are not the commit's blob (PT-BR pair); the file name follows.</summary>

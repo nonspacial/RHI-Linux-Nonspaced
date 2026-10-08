@@ -51,6 +51,12 @@ public sealed class Dlss5FeederFullDeploymentService
     private const string IntegrationRootName = "DLSS5FeederFull";
     private const string FullStackMetadata = "Feeder.FullStack";
 
+    // Record metadata parts of the downloads besides the Feeder release (Download.<part>.Sha256/Integrity, #26).
+    internal const string ConsumerDownloadPart = "Consumer";
+    internal const string LumeniteDownloadPart = "Lumenite";
+    internal const string HeadersDownloadPart = "ReShadeHeaders";
+    internal const string FeederShaderDownloadPart = "FeederShader";
+
     // Public upstream archive password used by current encrypted Deep Fried Chicken releases.
     // It is supplied only to the extractor process through redirected stdin and is never persisted
     // in XDG settings, deployment records, command-line arguments or logs.
@@ -216,6 +222,7 @@ public sealed class Dlss5FeederFullDeploymentService
         try
         {
             GitHubResolvedReleaseAsset release;
+            VerifiedDownload download;
             var items = new List<(string RecordedPath, string SourcePath)>();
             try
             {
@@ -223,7 +230,8 @@ public sealed class Dlss5FeederFullDeploymentService
                 release = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
                 // The release zip is cached per version through its stamp (#114): swapping several games, or the
                 // same game again, downloads it once.
-                var zip = (await EnsureCachedReleaseAssetAsync(release, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false)).Path;
+                download = await EnsureCachedReleaseAssetAsync(release, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
+                var zip = download.Path;
                 foreach (var name in payloadNames)
                     items.Add((ManagedFileSwap.FindFile(record, name)!.Path,
                         await ExtractReleasePayloadByNameAsync(zip, name, Path.Combine(stageRoot, name), minimumSize: 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)));
@@ -241,6 +249,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     updated.SourceUrl = release.AssetUrl;
                     updated.Metadata[MetaFeederVersion] = release.Version;
                     updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                    download.RecordIn(updated.Metadata);
                     _records.Upsert(updated);
                 }, cancellationToken).ConfigureAwait(false);
                 return ComponentOperationResult.Ok(changed == 0
@@ -417,6 +426,8 @@ public sealed class Dlss5FeederFullDeploymentService
             GitHubResolvedReleaseAsset? renoDxRelease = null;
             string? renoDxAddon = null;
             string? renoDxPackageSha256 = null;
+            // Every download this record deploys, by record metadata part (#26): null = the Feeder release itself.
+            var downloads = new List<(string? Part, string Sha256, bool DigestVerified)>();
 
             if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
             {
@@ -437,6 +448,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 var consumerDownload = await EnsureCachedReleaseAssetAsync(renoDxRelease, DownloadSources.RhiRepository, cancellationToken).ConfigureAwait(false);
                 var consumerAsset = consumerDownload.Path;
                 renoDxPackageSha256 = consumerDownload.Sha256;
+                downloads.Add((ConsumerDownloadPart, consumerDownload.Sha256, consumerDownload.DigestVerified));
                 renoDxAddon = renoDxRelease.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
                     ? await ExtractReleasePayloadByNameAsync(consumerAsset, RenoDx5AddonName, Path.Combine(stageRoot, RenoDx5AddonName), minimumSize: 32 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)
                     : ValidateDownloadedPayload(consumerAsset, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
@@ -457,6 +469,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 cancellationToken).ConfigureAwait(false);
             var feederDownload = await EnsureCachedReleaseAssetAsync(feederRelease, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
             var feederZip = feederDownload.Path;
+            downloads.Add((null, feederDownload.Sha256, feederDownload.DigestVerified));
             var feederAssetName = gameArchitecture == PeArchitecture.X86 ? FeederAddon32Name : FeederAddonName;
             var feederAddon = await ExtractReleasePayloadByNameAsync(
                 feederZip,
@@ -494,6 +507,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     feederRelease.Version,
                     Path.Combine(stageRoot, FeederFxName),
                     cancellationToken).ConfigureAwait(false);
+                downloads.Add((FeederShaderDownloadPart, FileHash.Sha256Hex(feederFx), false));
             }
 
             var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
@@ -504,11 +518,15 @@ public sealed class Dlss5FeederFullDeploymentService
             ValidateCachedRuntime(cachedNr, NrName);
 
             var lumeniteStage = Path.Combine(stageRoot, "lumenite");
-            await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false);
+            downloads.Add((LumeniteDownloadPart,
+                await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false),
+                false));
             EnsureLumeniteLayout(lumeniteStage);
 
             var headersStage = Path.Combine(stageRoot, "headers");
-            await DownloadAndExtractShaderArchiveAsync(ReShadeHeadersUrl, Path.Combine(stageRoot, "headers.zip"), headersStage, cancellationToken).ConfigureAwait(false);
+            downloads.Add((HeadersDownloadPart,
+                await DownloadAndExtractShaderArchiveAsync(ReShadeHeadersUrl, Path.Combine(stageRoot, "headers.zip"), headersStage, cancellationToken).ConfigureAwait(false),
+                false));
             EnsureHeaderLayout(headersStage);
 
             if (game.EffectiveGraphicsApi == GraphicsApi.DirectX9)
@@ -665,6 +683,10 @@ public sealed class Dlss5FeederFullDeploymentService
                 [MetaPresetPreviousValue] = presetMutation.PreviousValue ?? "",
                 [MetaPresetSetValue] = presetMutation.SetValue
             };
+            foreach (var (part, sha256, verified) in downloads)
+                VerifiedDownload.Record(metadata, sha256, verified, part);
+            if (dgVoodooPayload?.Download is { } dgVoodooDownload)
+                dgVoodooDownload.RecordIn(metadata, DgVoodooPreparedPayload.DownloadPart);
 
             _records.Upsert(new LinuxDeploymentRecord
             {
@@ -1140,17 +1162,20 @@ public sealed class Dlss5FeederFullDeploymentService
         ];
     }
 
-    private async Task DownloadAndExtractShaderArchiveAsync(
+    /// <returns>SHA-256 of the downloaded archive (record metadata, #26).</returns>
+    private async Task<string> DownloadAndExtractShaderArchiveAsync(
         string url,
         string zipPath,
         string destination,
         CancellationToken cancellationToken)
     {
         // Branch archives (codeload.github.com) change under the same link, so they are fetched per install.
+        string sha256;
         using (var download = await TrustedDownload.DownloadToTempAsync(
                    _http, url, zipPath, DownloadSources.Dlss5Feeder, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             if (download.Length < 1024) throw new InvalidDataException("Shader dependency archive is unexpectedly small.");
+            sha256 = download.Sha256;
             download.MoveTo(zipPath);
         }
 
@@ -1175,6 +1200,7 @@ public sealed class Dlss5FeederFullDeploymentService
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, target, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
+        return sha256;
     }
 
     internal static GitHubReleaseAssetQuery CreateFeederAddonReleaseQuery()

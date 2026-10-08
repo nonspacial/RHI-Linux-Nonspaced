@@ -416,6 +416,7 @@ public sealed class LumaFrameworkDeploymentService
         LumaPackageSelection selection;
         LumaFrameworkReleaseInfo release;
         string archivePath;
+        VerifiedDownload? download = null;
         try
         {
             if (localSelection is not null)
@@ -434,7 +435,8 @@ public sealed class LumaFrameworkDeploymentService
                         await ResolveLatestAsync(cancellationToken).ConfigureAwait(false),
                         false, "Generic Unreal Engine", null, null, genericMetadata);
                 release = selection.Release;
-                archivePath = await DownloadAndValidateArchiveAsync(release, cancellationToken).ConfigureAwait(false);
+                download = await DownloadAndValidateArchiveAsync(release, cancellationToken).ConfigureAwait(false);
+                archivePath = download.Path;
             }
         }
         catch (Exception ex)
@@ -657,6 +659,9 @@ public sealed class LumaFrameworkDeploymentService
                         [LumaEngineIniOverrideManager.MetadataKey] = engineIniState is null ? "" : LumaEngineIniOverrideManager.Serialize(engineIniState)
                     }
                 };
+                // The downloads this record deploys (#26): the package (none for a local package) and dgVoodoo2.
+                download?.RecordIn(record.Metadata);
+                preparedDgVoodoo?.Download?.RecordIn(record.Metadata, DgVoodooPreparedPayload.DownloadPart);
                 _records.Upsert(record);
                 var packageKind = localPackage
                     ? $"local package {selection.DisplayName}"
@@ -927,7 +932,7 @@ public sealed class LumaFrameworkDeploymentService
     /// digest when published (#26, #42). A catalogue ("wiki") link has no version identity, so it is fetched again
     /// every time, as before; versioned release assets are reused while their stamp holds.
     /// </summary>
-    private async Task<string> DownloadAndValidateArchiveAsync(LumaFrameworkReleaseInfo release, CancellationToken cancellationToken)
+    private async Task<VerifiedDownload> DownloadAndValidateArchiveAsync(LumaFrameworkReleaseInfo release, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_cacheDir);
         var safeVersion = string.Concat(release.Version.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_'));
@@ -952,7 +957,7 @@ public sealed class LumaFrameworkDeploymentService
                 return Task.CompletedTask;
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        return download.Path;
+        return download;
     }
 
     private static ReShadeDx9MigrationState? ReadDx9Migration(LinuxDeploymentRecord? record, string key)

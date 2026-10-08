@@ -301,6 +301,7 @@ public sealed class ShortFuseDeploymentService
                 updated.SourceUrl = release.AssetUrl;
                 updated.Metadata[MetaAddonSha256] = updated.Files.First(f => f.Path == addon.Path).Sha256 ?? "";
                 updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
+                VerifiedDownload.Record(updated.Metadata, updated.Metadata[MetaAddonSha256], HasPublishedDigest(release));
                 _records.Upsert(updated);
             }, cancellationToken).ConfigureAwait(false);
             return ComponentOperationResult.Ok(changed == 0
@@ -521,6 +522,8 @@ public sealed class ShortFuseDeploymentService
             };
             if (autoConfigEnabled) metadata[MetaReShadeOriginalPath] = originalReShadePath;
             if (iniSnapshot is not null) WriteIniSnapshot(metadata, iniSnapshot);
+            // The cached add-on (verified cache entry) is what was copied: its hash is the deployed file's (#26).
+            VerifiedDownload.Record(metadata, addonHash, HasPublishedDigest(release));
 
             _records.Upsert(new LinuxDeploymentRecord
             {
@@ -970,6 +973,8 @@ public sealed class ShortFuseDeploymentService
     // Direct and archive assets alike are reused only through a CacheStamp written after RHI itself
     // downloaded (and, for archives, extracted) the add-on: a foreign, truncated or older-build file at
     // <cache>/<version>/renodx-dlss.addon64 is deleted and re-downloaded, never deployed (#142).
+    private static bool HasPublishedDigest(ShortFuseReleaseInfo release) => !string.IsNullOrWhiteSpace(release.AssetSha256);
+
     internal async Task<string> EnsureCachedAddonAsync(ShortFuseReleaseInfo release, CancellationToken ct)
     {
         var dir = Path.Combine(_cacheRoot, Sanitize(release.Version));

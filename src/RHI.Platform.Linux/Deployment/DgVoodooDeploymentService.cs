@@ -7,11 +7,17 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Platform.Linux.Deployment;
 
+/// <param name="Download">The verified release archive the D3D9.dll was extracted from (record metadata of the deploying component, #26).</param>
 public sealed record DgVoodooPreparedPayload(
     string Version,
     string SourceUrl,
     string D3D9Path,
-    string ConfigPath);
+    string ConfigPath,
+    VerifiedDownload? Download = null)
+{
+    /// <summary>Record metadata part name of the dgVoodoo2 download (<c>Download.dgVoodoo.Sha256</c>).</summary>
+    public const string DownloadPart = "dgVoodoo";
+}
 
 /// <summary>
 /// Stages the official dgVoodoo2 D3D9 wrapper used by the upstream RHI DX9 paths.
@@ -78,7 +84,7 @@ public sealed class DgVoodooDeploymentService
         var zipPath = Path.Combine(versionDir, assetName);
         // Reuse only an archive this service stamped for this URL, version and published digest (#142);
         // anything else is downloaded again under the dgVoodoo2 host policy and verified (#26, #42).
-        await TrustedDownload.EnsureVerifiedAsync(
+        var download = await TrustedDownload.EnsureVerifiedAsync(
             _http, url, zipPath, DownloadSources.DgVoodoo, version, sha256,
             validate: (temp, ct) =>
             {
@@ -94,7 +100,7 @@ public sealed class DgVoodooDeploymentService
         await ExtractD3D9Async(zipPath, d3d9, architecture, cancellationToken).ConfigureAwait(false);
         var config = Path.Combine(archDir, "dgVoodoo.conf");
         AtomicFile.WriteAllText(config, BuildConfiguration(), new UTF8Encoding(false));
-        return new DgVoodooPreparedPayload(version, url, d3d9, config);
+        return new DgVoodooPreparedPayload(version, url, d3d9, config, download);
     }
 
     internal static bool IsTrustedArchiveUrl(string? value)

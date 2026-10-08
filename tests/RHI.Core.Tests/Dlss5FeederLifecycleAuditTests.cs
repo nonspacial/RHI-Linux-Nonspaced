@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -135,6 +136,7 @@ public sealed class Dlss5FeederLifecycleAuditTests
         private readonly byte[] _renoAddon;
         private readonly string _dfcHash;
         private readonly string _renoHash;
+        private readonly string _feederHash, _lumeniteHash, _headersHash;
         private const string UserPreset = @".\UserPreset.ini";
         public string Bin { get; }
         public string IniPath => Path.Combine(Bin, "ReShade.ini");
@@ -178,11 +180,14 @@ public sealed class Dlss5FeederLifecycleAuditTests
             _renoAddon = Pe(70 * 1024);
             _renoHash = Hash(_renoAddon);
             var feederArchive = Zip(("addon64/dlss5-feed.addon64", Pe(70 * 1024)), ("shaders/DLSS5_Feed.fx", Encoding.UTF8.GetBytes(new string('f', 1024))));
+            _feederHash = Hash(feederArchive);
             var lumeniteFiles = new List<(string, byte[])> { ("LumeniteFX/Shaders/lumenite_Kernel.fx", Encoding.UTF8.GetBytes(new string('k', 1024))),
                 ("LumeniteFX/Textures/lumenite_test.png", new byte[2048]) };
             if (!missingIncludes) lumeniteFiles.Add(("LumeniteFX/Shaders/include/kernel.fxh", Encoding.UTF8.GetBytes("// include\n")));
             var lumenite = Zip(lumeniteFiles.ToArray());
             var headers = Zip(("Shaders/ReShade.fxh", new byte[1024]), ("Shaders/ReShadeUI.fxh", new byte[1024]), ("Shaders/DrawText.fxh", new byte[1024]));
+            _lumeniteHash = Hash(lumenite);
+            _headersHash = Hash(headers);
             var responses = new Dictionary<string, byte[]>(StringComparer.Ordinal) {
                 ["https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1"] = Release("0.13.1-beta.1", "DLSS5-Feeder-0.13.1-beta.1.zip", "https://github.com/rhi-tests/feeder.zip", feederArchive),
                 ["https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100"] = Release("1.2.3", "renodx-dlss5.addon64", "https://github.com/rhi-tests/renodx.addon64", _renoAddon),
@@ -233,6 +238,12 @@ public sealed class Dlss5FeederLifecycleAuditTests
             Assert.Equal(!dfc, File.Exists(Path.Combine(Bin, "renodx-dlss5.addon64")));
             Assert.Equal(dfc, File.ReadAllText(IniPath).Contains("deep-fried-chicken.addon64", StringComparison.Ordinal));
             Assert.DoesNotContain(record.Files, file => file.Path == HdrPath);
+            // Every download the record deploys, named the same way as in every other service (review w2-trust minor 6).
+            DownloadRecordAssert.Recorded(record, _feederHash, VerifiedDownload.PublishedDigest);
+            DownloadRecordAssert.Recorded(record, _lumeniteHash, VerifiedDownload.RecordedOnly, Dlss5FeederFullDeploymentService.LumeniteDownloadPart);
+            DownloadRecordAssert.Recorded(record, _headersHash, VerifiedDownload.RecordedOnly, Dlss5FeederFullDeploymentService.HeadersDownloadPart);
+            if (dfc) DownloadRecordAssert.NotRecorded(record, Dlss5FeederFullDeploymentService.ConsumerDownloadPart); // the user's own package
+            else DownloadRecordAssert.Recorded(record, _renoHash, VerifiedDownload.PublishedDigest, Dlss5FeederFullDeploymentService.ConsumerDownloadPart);
         }
 
         public void AssertClean(bool keepEarlyLoad = false, bool keepConfig = false)

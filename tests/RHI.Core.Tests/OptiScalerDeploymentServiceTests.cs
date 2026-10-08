@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -17,7 +18,7 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
     public async Task InstallAndRemove_Dx12_DeploysRuntimeAllowsIniEditsAndRestoresRegistry()
     {
         var (game, store) = CreateGame("basic", GraphicsApi.DirectX12);
-        var package = CreatePackage("basic-package");
+        var package = CreatePackage("basic-package") with { Download = new VerifiedDownload("/cache/OptiScaler.7z", new string('C', 64), PublishedSha256: null) };
         var service = NewService(store, package);
 
         var installed = await service.InstallAsync(game);
@@ -38,6 +39,7 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("9.9.9", record!.Version);
         Assert.Contains(record.Files, file => Path.GetFileName(file.Path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase) && file.AllowUserChanges);
+        DownloadRecordAssert.Recorded(record, new string('C', 64), VerifiedDownload.RecordedOnly);
 
         // OptiScaler.ini is deliberately user-editable and must not make uninstall unsafe.
         await File.AppendAllTextAsync(ini, "\n[User]\nCustomSetting=true\n");
@@ -53,6 +55,31 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
         var restoredRegistry = File.ReadAllText(registryPath);
         Assert.Null(WineDllOverrideService.TryReadOverride(restoredRegistry, "dxgi", "Game.exe"));
         Assert.DoesNotContain(@"[Software\\Wine\\AppDefaults\\Game.exe\\DllOverrides]", restoredRegistry, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Update_RecordsTheNewPackagesDownload()
+    {
+        // Review w2-trust minor 6: the record names the archive the files now come from, not the first install's.
+        var (game, store) = CreateGame("update-download", GraphicsApi.DirectX12);
+        var first = CreatePackage("update-download-1") with { Download = new VerifiedDownload("/cache/a.7z", new string('A', 64), PublishedSha256: null) };
+        var second = CreatePackage("update-download-2") with
+        {
+            Version = "9.9.10",
+            Download = new VerifiedDownload("/cache/b.7z", new string('B', 64), PublishedSha256: new string('B', 64))
+        };
+        File.AppendAllText(Path.Combine(second.RootDirectory, "OptiScaler", "libxess.dll"), " v2");
+        var provider = new SwitchingPackageProvider(first);
+        var service = NewService(store, provider);
+        Assert.True((await service.InstallAsync(game)).Success);
+
+        provider.Package = second;
+        var updated = await service.UpdateAsync(game);
+
+        Assert.True(updated.Success, updated.Message);
+        var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
+        Assert.Equal("9.9.10", record.Version);
+        DownloadRecordAssert.Recorded(record, new string('B', 64), VerifiedDownload.PublishedDigest);
     }
 
     [Fact]
@@ -409,6 +436,17 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); } catch { }
+    }
+
+    private sealed class SwitchingPackageProvider(OptiScalerPackage package) : IOptiScalerPackageProvider
+    {
+        public OptiScalerPackage Package { get; set; } = package;
+
+        public Task<OptiScalerPackage> GetLatestAsync(CancellationToken cancellationToken = default)
+            => GetLatestAsync(OptiScalerVariant.Stable, cancellationToken);
+
+        public Task<OptiScalerPackage> GetLatestAsync(OptiScalerVariant variant, CancellationToken cancellationToken = default)
+            => Task.FromResult(Package with { Variant = variant });
     }
 
     private sealed class FakePackageProvider(OptiScalerPackage package) : IOptiScalerPackageProvider

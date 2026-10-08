@@ -12,6 +12,7 @@ public sealed partial class OptiScalerDeploymentService
     internal const string FgStackDlssEnablerVersionMetadataKey = "OptiScaler.DlssEnablerVersion";
     internal const string FgStackFilesMetadataKey = "OptiScaler.FgStackFiles";
     internal const string FgStackDlssgVersionMetadataKey = "OptiScaler.DlssgVersion";
+    internal const string FgStackDlssEnablerDownloadPart = "DlssEnabler";
     internal const string DlssEnablerHeadlessFileName = "dlss-enabler-headless.dll";
     internal const string DlssgFileName = "nvngx_dlssg.dll";
 
@@ -299,6 +300,10 @@ public sealed partial class OptiScalerDeploymentService
             record.Metadata[FgStackEnabledMetadataKey] = "1";
             record.Metadata[FgStackStreamlineVersionMetadataKey] = streamlineVersion;
             record.Metadata[FgStackDlssEnablerVersionMetadataKey] = enablerRelease.Version;
+            // The DLSS Enabler payload is a download of this record too (#26); Streamline and nvngx_dlssg come from the
+            // DLSS manager's own cache (its manifest sources, not a deployment download policy).
+            VerifiedDownload.Record(record.Metadata, await FileHash.Sha256HexAsync(enablerPayload, cancellationToken).ConfigureAwait(false),
+                !string.IsNullOrWhiteSpace(enablerRelease.AssetSha256), FgStackDlssEnablerDownloadPart);
             if (dlssg.Version is not null && !leftUnowned.Contains(Path.GetFullPath(Path.Combine(streamlineDirectory, DlssgFileName))))
                 record.Metadata[FgStackDlssgVersionMetadataKey] = dlssg.Version;
             record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(ownedRelative.OrderBy(path => path, StringComparer.Ordinal).ToArray());
@@ -448,6 +453,7 @@ public sealed partial class OptiScalerDeploymentService
 
             record.Metadata[FgStackEnabledMetadataKey] = "0";
             record.Metadata.Remove(FgStackDlssEnablerVersionMetadataKey);
+            VerifiedDownload.Forget(record.Metadata, FgStackDlssEnablerDownloadPart);
             record.Metadata.Remove(FgStackDlssgVersionMetadataKey);
             record.Metadata.Remove(FgStackFilesMetadataKey);
             var streamlineDirectory = Path.Combine(binaryDirectory, "OptiScaler", "Streamline");

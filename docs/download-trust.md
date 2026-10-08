@@ -10,9 +10,16 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 
 - verifies a digest whenever the publisher announces one; a mismatch is refused and nothing is placed or stamped;
 - without one, follows upstream and accepts the payload on HTTPS + host policy (**fail-open**), but records its
-  SHA-256 in the cache stamp, writes one `download-integrity` line to `rhi.log`, and, where the service writes a
-  deployment record from that download, stores `Download.Sha256` and `Download.Integrity`
-  (`published-digest` / `recorded-only`) in the record's metadata;
+  SHA-256 in the cache stamp and writes one `download-integrity` line to `rhi.log`;
+- names every download a deployment record is made from in that record, the same way in every service
+  (`VerifiedDownload.Record`): `Download.Sha256` and `Download.Integrity` (`published-digest` / `recorded-only`) for the
+  main payload, `Download.<part>.Sha256` / `Download.<part>.Integrity` for each further one (Luma and the Feeder:
+  `dgVoodoo`; the Feeder: `Consumer` (RenoDX DLSS5), `Lumenite`, `ReShadeHeaders`, `FeederShader` (raw fallback);
+  RTX 20 FG Unlock: `Ini`; OptiScaler's FG stack: `DlssEnabler`). The SHA-256 is that of the verified cache entry the
+  deployment came from: the downloaded file, or, where RHI keeps only the file it extracted from the download
+  (UAL, ShortFuse, DLSS Enabler, Universal MFG), that file. An update rewrites the keys; a local package (Luma, Deep
+  Fried Chicken) is not a download and has none. Streamline and `nvngx_*` DLLs from the DLSS manifest are outside
+  these policies and are not named;
 - is **fail-closed** only where the fork already was and the publisher always ships an authority: Universal MFG
   refuses a release with neither a GitHub digest nor `SHA256SUMS.txt`, and checks both when present.
 

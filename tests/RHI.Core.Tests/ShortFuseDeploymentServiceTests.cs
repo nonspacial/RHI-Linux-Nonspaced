@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -236,6 +237,9 @@ public sealed class ShortFuseDeploymentServiceTests : IDisposable
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "winmm", "Game.exe"));
         Assert.True(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
         Assert.NotNull(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        var shortFuseRecord = ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse)!;
+        var deployedAddon = shortFuseRecord.Files.Single(file => Path.GetFileName(file.Path) == ShortFuseDeploymentService.AddonFileName).Path;
+        DownloadRecordAssert.Recorded(shortFuseRecord, Sha256(deployedAddon), VerifiedDownload.PublishedDigest);
 
         var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);

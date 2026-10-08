@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -75,6 +76,7 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         Assert.NotNull(record);
         Assert.Equal("9.7.4", record!.Version);
         Assert.Equal("version.dll", record.Metadata["UAL.ProxyName"]);
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(target), VerifiedDownload.PublishedDigest);
 
         var remove = await service.RemoveAsync(fixture.Game);
 
@@ -232,6 +234,8 @@ public sealed class UltimateAsiLoaderDeploymentServiceTests : IDisposable
         Assert.False(firstBytes.SequenceEqual(File.ReadAllBytes(target)));
         Assert.Equal(original, File.ReadAllBytes(Path.Combine(fixture.Bin, "winmmHooked.dll")));
         Assert.Equal("9.7.5", records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!.Version);
+        DownloadRecordAssert.Recorded(records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader)!,
+            DownloadRecordAssert.Sha256Of(target), VerifiedDownload.PublishedDigest);
     }
 
     [Fact]

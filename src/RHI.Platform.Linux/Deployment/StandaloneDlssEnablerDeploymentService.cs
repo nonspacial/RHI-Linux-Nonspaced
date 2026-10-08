@@ -173,6 +173,16 @@ public sealed class StandaloneDlssEnablerDeploymentService
             moved = true;
 
             var payloadHash = staged.Sha256;
+            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [MetaProxyName] = selectedProxy,
+                [MetaTag] = release.Tag,
+                [MetaAssetName] = release.AssetName,
+                [MetaAssetSha256] = release.AssetSha256 ?? "",
+                [MetaPayloadSha256] = payloadHash,
+                [MetaExperimental] = "1",
+            };
+            VerifiedDownload.Record(metadata, payloadHash, !string.IsNullOrWhiteSpace(release.AssetSha256));
             _records.Upsert(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -193,15 +203,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
                         AllowUserChanges = false
                     }
                 ],
-                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [MetaProxyName] = selectedProxy,
-                    [MetaTag] = release.Tag,
-                    [MetaAssetName] = release.AssetName,
-                    [MetaAssetSha256] = release.AssetSha256 ?? "",
-                    [MetaPayloadSha256] = payloadHash,
-                    [MetaExperimental] = "1",
-                }
+                Metadata = metadata
             });
             recordWritten = true;
             _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = selectedProxy });
@@ -357,6 +359,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
             record.Metadata[MetaAssetName] = latest.AssetName;
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
+            VerifiedDownload.Record(record.Metadata, newHash, !string.IsNullOrWhiteSpace(latest.AssetSha256));
             _records.Upsert(record);
             FileCleanup.TryDelete(previous);
             return ComponentOperationResult.Ok($"DLSS Enabler Standalone atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);

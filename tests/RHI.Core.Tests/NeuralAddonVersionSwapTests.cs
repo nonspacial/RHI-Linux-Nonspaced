@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.IO.Compression;
 using System.Net;
 using System.Security.Cryptography;
@@ -200,6 +201,7 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal(addon, Assert.Single(record.Files).Path);
         Assert.Equal(Sha256(addon), record.Files[0].Sha256, ignoreCase: true);
         Assert.Equal(Sha256(addon), record.Metadata["ShortFuse.AddonSha256"], ignoreCase: true);
+        DownloadRecordAssert.Recorded(record, Sha256(addon), VerifiedDownload.RecordedOnly); // review w2-trust minor 6
     }
 
     private static HttpClient ShortFuseHttp(byte[] rc10Addon)
@@ -330,7 +332,8 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal("1.0", records.Find(game, ManagedComponentKind.Dlss5Feeder)!.Version);
         Assert.Equal(Pe(0x40), File.ReadAllBytes(addon));
 
-        responses["https://github.com/rhi-tests/feeder-1.1.zip"] = Zip(("DLSS5-Feeder/dlss5-feed.addon64", newAddon));
+        var feederZip = Zip(("DLSS5-Feeder/dlss5-feed.addon64", newAddon));
+        responses["https://github.com/rhi-tests/feeder-1.1.zip"] = feederZip;
         var result = await feeder.SwapFeederVersionAsync(game, "v1.1");
 
         Assert.True(result.Success, result.Message);
@@ -340,6 +343,8 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
         Assert.Equal("1.1", record.Version);
         Assert.Equal("v1.1", record.Metadata["GitHub.ReleaseTagPin"]);
         Assert.Equal(Sha256(addon), ManagedFileSwap.FindFile(record, "dlss5-feed.addon64")!.Sha256, ignoreCase: true);
+        // The record names the release zip the swapped add-on came from (review w2-trust minor 6); no digest was published.
+        DownloadRecordAssert.Recorded(record, DownloadRecordAssert.Sha256Of(feederZip), VerifiedDownload.RecordedOnly);
     }
 
     [Fact]

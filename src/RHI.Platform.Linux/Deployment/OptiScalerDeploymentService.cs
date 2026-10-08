@@ -165,6 +165,8 @@ public sealed partial class OptiScalerDeploymentService
                 record.Metadata[DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion;
             else
                 record.Metadata.Remove(DlssNrRuntimeVersionMetadataKey);
+            if (package.Download is { } updateDownload) updateDownload.RecordIn(record.Metadata);
+            else VerifiedDownload.Forget(record.Metadata);
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
             _records.Upsert(record);
@@ -292,6 +294,7 @@ public sealed partial class OptiScalerDeploymentService
                     [DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion ?? ""
                 }
             };
+            package.Download?.RecordIn(record.Metadata);
 
             foreach (var (_, target) in requested)
             {

@@ -12,11 +12,13 @@ public enum OptiScalerVariant
     DlssNr
 }
 
+/// <param name="Download">The verified release archive the package was extracted from (record metadata, #26); null when not downloaded through the provider.</param>
 public sealed record OptiScalerPackage(
     string Version,
     string SourceUrl,
     string RootDirectory,
-    OptiScalerVariant Variant = OptiScalerVariant.Stable);
+    OptiScalerVariant Variant = OptiScalerVariant.Stable,
+    VerifiedDownload? Download = null);
 
 public interface IOptiScalerPackageProvider
 {
@@ -118,12 +120,13 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         // not hashed a second time here.
         // A digest GitHub publishes is verified (a mismatch is refused); without one the archive is accepted on
         // HTTPS + the OptiScaler host policy and its SHA-256 is recorded in the stamp (#26, upstream verifies none).
-        var archiveSha256 = (await TrustedDownload.EnsureVerifiedAsync(
+        var download = await TrustedDownload.EnsureVerifiedAsync(
             _http, sourceUrl, archive, DownloadSources.OptiScaler, rawTag, digest,
             validate: (temp, _) => HasPlausibleArchiveSize(temp, expectedSize)
                 ? Task.CompletedTask
                 : throw new InvalidOperationException("Downloaded OptiScaler archive failed size/SHA-256 validation."),
-            cancellationToken: cancellationToken).ConfigureAwait(false)).Sha256;
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var archiveSha256 = download.Sha256;
 
         // The extracted tree's stamp records the SHA-256 of the archive it came from, so a tree
         // extracted from any other archive bytes is never reused, whatever order the calls ran in. The
@@ -150,7 +153,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
             throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
 
         if (freshlyExtracted) CacheStamp.WriteBoundTo(extractDir, sourceUrl, rawTag, archiveSha256);
-        return new OptiScalerPackage(version, sourceUrl, packageRoot, variant);
+        return new OptiScalerPackage(version, sourceUrl, packageRoot, variant, download);
     }
 
     private static JsonElement SelectRelease(JsonElement root, bool responseIsList)
