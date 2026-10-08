@@ -1045,10 +1045,10 @@ public sealed class LumaFrameworkDeploymentService
         }
     }
 
-    /// <summary>Verified durable copy into the game folder (full re-read hash, temp + rename); replaces the target.</summary>
     /// <summary>Fixed start of an install failure whose rollback did not complete (PT-BR pair); the error follows.</summary>
     public const string RollbackIncompletePrefix = "Luma Framework installation failed and its rollback did not complete (details in rhi.log): ";
 
+    /// <summary>Verified durable copy into the game folder (full re-read hash, temp + rename); replaces the target.</summary>
     private static async Task CopyIntoGameAsync(string source, string target, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("Luma target directory is invalid."));
