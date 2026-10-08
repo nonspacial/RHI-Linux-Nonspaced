@@ -642,7 +642,8 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                     ?? entries[0];
 
                 var cachePath = Path.Combine(_cacheDir, $"{safeId}{ext}");
-                entry.ExtractToFile(cachePath, overwrite: true);
+                if (await ReShadeArchiveExtractor.ExtractEntryAsync(entry, cachePath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false) is { } refused)
+                    throw new InvalidDataException($"{ReShadeArchiveExtractor.ArchiveRefusedPrefix}{refused}");
                 ValidateAddonPayload(cachePath, ext, architecture);
                 var deploy = EnsureAddonExtension(
                     definition.DeployFileName ?? Path.GetFileNameWithoutExtension(entry.Name),

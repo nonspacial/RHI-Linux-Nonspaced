@@ -23,6 +23,9 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
     /// <summary>Fixed start of the "no way to read the setup" error (localisation key); the reason follows it.</summary>
     public const string SetupUnreadablePrefix = "The ReShade setup could not be read, and no 7z/7zz/7za or bsdtar is installed to try instead. Reason: ";
 
+    /// <summary>Fixed start of a refused downloaded-archive entry (PT-BR presentation pair); the reason follows it.</summary>
+    public const string ArchiveRefusedPrefix = "Downloaded archive refused: ";
+
     /// <summary>Largest DLL accepted from the setup (real ones are about 5 MB).</summary>
     internal const long MaxEntryBytes = 64L * 1024 * 1024;
     /// <summary>Largest total written from one setup.</summary>
@@ -139,6 +142,21 @@ public sealed class ReShadeArchiveExtractor : IReShadeArchiveExtractor
         {
             archive?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The one way to take a file out of a downloaded ZIP (never <c>ExtractToFile</c>, which applies the
+    /// archive's Unix modes, has no size cap and no CRC check on .NET 8): a declared size over
+    /// <paramref name="maxBytes"/> is refused before anything is written, the bytes are staged bounded by the
+    /// declared size with a fixed mode, length and CRC-32 are compared with the entry, then the file is
+    /// renamed into place. Returns null, or why the entry was refused (nothing is left at the destination).
+    /// </summary>
+    internal static async Task<string?> ExtractEntryAsync(ZipArchiveEntry entry, string destination, long maxBytes, CancellationToken cancellationToken)
+    {
+        if (entry.Length > maxBytes) return $"{entry.Name} declares {entry.Length} bytes, over the {maxBytes}-byte limit";
+        return await ExtractVerifiedAsync(entry, destination, cancellationToken).ConfigureAwait(false) is { } failure
+            ? $"{entry.Name}: {failure}"
+            : null;
     }
 
     /// <summary>Copies one entry to <paramref name="destination"/>; returns null, or why the entry's bytes were refused.</summary>

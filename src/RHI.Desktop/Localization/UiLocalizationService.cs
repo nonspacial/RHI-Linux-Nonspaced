@@ -587,6 +587,8 @@ public static class UiLocalizationService
         // ReShade setup without a host extractor (#3); the reader's reason follows the fragment.
         (RHI.Platform.Linux.Deployment.ReShadeArchiveExtractor.SetupUnreadablePrefix,
          "O instalador do ReShade não pôde ser lido, e nenhum 7z/7zz/7za ou bsdtar está instalado para tentar. Motivo: "),
+        // A downloaded ZIP entry refused (size cap, length or CRC-32); the reason follows the fragment.
+        (RHI.Platform.Linux.Deployment.ReShadeArchiveExtractor.ArchiveRefusedPrefix, "Arquivo baixado recusado: "),
         // RenoDX update check (#129). Mod names, HTTP status and exception text follow the fragments.
         ("RenoDX is not managed by RHI Linux.", "O RenoDX não é gerenciado pelo RHI Linux."),
         ("Game executable is unavailable; RenoDX update check skipped.", "Executável do jogo indisponível; a verificação de atualização do RenoDX foi ignorada."),
