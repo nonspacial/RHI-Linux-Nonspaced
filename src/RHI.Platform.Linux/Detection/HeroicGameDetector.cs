@@ -14,6 +14,23 @@ public sealed class HeroicGameDetector : IGameDetector
 {
     public string Name => "Heroic";
 
+    private readonly Func<IEnumerable<string>> _heroicRoots;
+    private readonly Func<IEnumerable<string>> _legendaryRoots;
+    private readonly Func<IEnumerable<string>> _prefixRoots;
+
+    public HeroicGameDetector() : this(LinuxPaths.HeroicRoots, LinuxPaths.HeroicLegendaryRoots, LinuxPaths.HeroicPrefixRoots) { }
+
+    /// <summary>Test seam: explicit Heroic, Legendary and prefix roots instead of the XDG/home ones.</summary>
+    internal HeroicGameDetector(IEnumerable<string> heroicRoots, IEnumerable<string> legendaryRoots, IEnumerable<string> prefixRoots)
+        : this(() => heroicRoots, () => legendaryRoots, () => prefixRoots) { }
+
+    private HeroicGameDetector(Func<IEnumerable<string>> heroicRoots, Func<IEnumerable<string>> legendaryRoots, Func<IEnumerable<string>> prefixRoots)
+    {
+        _heroicRoots = heroicRoots;
+        _legendaryRoots = legendaryRoots;
+        _prefixRoots = prefixRoots;
+    }
+
     public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
         => Task.Run<IReadOnlyList<DetectedGame>>(() => Detect(cancellationToken), cancellationToken);
 
@@ -21,8 +38,9 @@ public sealed class HeroicGameDetector : IGameDetector
     {
         var result = new Dictionary<string, DetectedGame>(StringComparer.OrdinalIgnoreCase);
         var visitedFiles = new HashSet<string>(StringComparer.Ordinal);
+        var heroicRoots = _heroicRoots().ToArray();
 
-        foreach (var heroicRoot in LinuxPaths.HeroicRoots())
+        foreach (var heroicRoot in heroicRoots)
         {
             foreach (var file in SafeJsonFiles(heroicRoot))
             {
@@ -34,7 +52,7 @@ public sealed class HeroicGameDetector : IGameDetector
         // Epic/Legendary is the important special case: on native Heroic this is commonly
         // ~/.config/legendary/installed.json, i.e. outside HeroicRoots(). Newer Heroic builds
         // can instead use heroic/legendaryConfig/legendary/installed.json. Support both.
-        foreach (var legendaryRoot in LinuxPaths.HeroicLegendaryRoots())
+        foreach (var legendaryRoot in _legendaryRoots())
         {
             ct.ThrowIfCancellationRequested();
             var installed = Path.Combine(legendaryRoot, "installed.json");
@@ -43,8 +61,8 @@ public sealed class HeroicGameDetector : IGameDetector
 
         // Prefer exact prefix data from per-game Heroic settings when available, then fall
         // back to a conservative ~/Games/Heroic/Prefixes name match.
-        AttachConfiguredPrefixes(result.Values);
-        AttachFallbackPrefixes(result.Values.ToList(), LinuxPaths.HeroicPrefixRoots());
+        AttachConfiguredPrefixes(result.Values, heroicRoots);
+        AttachFallbackPrefixes(result.Values.ToList(), _prefixRoots());
 
         return result.Values.ToArray();
     }
@@ -64,10 +82,11 @@ public sealed class HeroicGameDetector : IGameDetector
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
             Visit(doc.RootElement, result, sourceHint);
         }
-        catch
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // Heroic caches are not all game metadata and some can be transient/truncated.
-            // A malformed optional cache should not abort the complete library scan.
+            // Some Heroic caches are transient or truncated: the file is skipped, not the whole Heroic scan,
+            // and the skip is named in the scan's problems notice and rhi.log (Refs #144).
+            DetectorDiagnostics.Warn($"Heroic metadata file {file} skipped", ex);
         }
     }
 
@@ -130,7 +149,7 @@ public sealed class HeroicGameDetector : IGameDetector
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            var props = element.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+            var props = Properties(element);
 
             // Installed records are usually flat (Legendary/GOG installed.json). Some Heroic
             // library caches nest these fields in an "install" object, so merge that object for
@@ -206,6 +225,14 @@ public sealed class HeroicGameDetector : IGameDetector
         return File.Exists(candidate) ? candidate : null;
     }
 
+    /// <summary>An object's properties by case-insensitive name; the first of names differing only in case wins.</summary>
+    private static Dictionary<string, JsonElement> Properties(JsonElement element)
+    {
+        var props = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in element.EnumerateObject()) props.TryAdd(property.Name, property.Value);
+        return props;
+    }
+
     private static string? StringValue(Dictionary<string, JsonElement> props, params string[] keys)
     {
         foreach (var key in keys)
@@ -225,7 +252,7 @@ public sealed class HeroicGameDetector : IGameDetector
         return null;
     }
 
-    private static void AttachConfiguredPrefixes(IEnumerable<DetectedGame> games)
+    private static void AttachConfiguredPrefixes(IEnumerable<DetectedGame> games, IEnumerable<string> heroicRoots)
     {
         var byApp = games
             .Select(g => (game: g, appName: g.HeroicAppName ?? g.EpicAppName))
@@ -234,14 +261,18 @@ public sealed class HeroicGameDetector : IGameDetector
             .ToDictionary(g => g.Key, g => g.First().game, StringComparer.OrdinalIgnoreCase);
         if (byApp.Count == 0) return;
 
-        foreach (var heroicRoot in LinuxPaths.HeroicRoots())
+        foreach (var heroicRoot in heroicRoots)
         {
             var settingsDir = Path.Combine(heroicRoot, "GamesConfig");
             if (!Directory.Exists(settingsDir)) continue;
 
-            IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(settingsDir, "*.json", SearchOption.TopDirectoryOnly); }
-            catch { continue; }
+            string[] files;
+            try { files = Directory.GetFiles(settingsDir, "*.json", SearchOption.TopDirectoryOnly); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"Heroic game settings folder {settingsDir} unreadable; configured prefixes not read", ex);
+                continue;
+            }
 
             foreach (var file in files)
             {
@@ -250,7 +281,11 @@ public sealed class HeroicGameDetector : IGameDetector
                     using var doc = JsonDocument.Parse(File.ReadAllText(file));
                     ExtractConfiguredPrefix(doc.RootElement, byApp);
                 }
-                catch { }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // That game keeps the name-matched fallback prefix (or none).
+                    DetectorDiagnostics.Warn($"Heroic game settings {file} skipped", ex);
+                }
             }
         }
     }
@@ -265,8 +300,7 @@ public sealed class HeroicGameDetector : IGameDetector
                 || IsNative(game)) // a native Linux build never runs in a Wine prefix
                 continue;
 
-            var props = property.Value.EnumerateObject()
-                .ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+            var props = Properties(property.Value);
 
             var prefix = ExpandHome(StringValue(props, "winePrefix", "wine_prefix", "prefix"));
             if (!string.IsNullOrWhiteSpace(prefix) && Directory.Exists(prefix))
@@ -284,8 +318,7 @@ public sealed class HeroicGameDetector : IGameDetector
             if (wineVersion.ValueKind != JsonValueKind.Object)
                 continue;
 
-            var wineProps = wineVersion.EnumerateObject()
-                .ToDictionary(p => p.Name, p => p.Value, StringComparer.OrdinalIgnoreCase);
+            var wineProps = Properties(wineVersion);
             var type = StringValue(wineProps, "type")?.Trim().ToLowerInvariant();
             var name = StringValue(wineProps, "name");
             var configuredBin = ExpandHome(StringValue(wineProps, "bin"));

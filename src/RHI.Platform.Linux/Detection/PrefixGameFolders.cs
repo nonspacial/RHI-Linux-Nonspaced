@@ -34,18 +34,19 @@ internal static class PrefixGameFolders
     /// </summary>
     internal static IEnumerable<Entry> Find(string driveC)
     {
+        var unreadable = new UnreadableFolders();
         foreach (var baseDir in new[] { "Program Files", "Program Files (x86)" })
-            foreach (var top in Children(Path.Combine(driveC, baseDir)))
+            foreach (var top in Children(Path.Combine(driveC, baseDir), unreadable))
             {
                 var library = StoreLibraryFolderNames.Contains(Path.GetFileName(top), StringComparer.OrdinalIgnoreCase);
-                foreach (var dir in library ? Children(top) : new[] { top })
-                    foreach (var entry in Expand(dir, allowVendor: !library, library: library ? top : null))
+                foreach (var dir in library ? Children(top, unreadable) : new[] { top })
+                    foreach (var entry in Expand(dir, allowVendor: !library, library: library ? top : null, unreadable))
                         yield return entry;
             }
 
         var games = Path.Combine(driveC, "Games");
-        foreach (var top in Children(games))
-            foreach (var entry in Expand(top, allowVendor: false, library: games))
+        foreach (var top in Children(games, unreadable))
+            foreach (var entry in Expand(top, allowVendor: false, library: games, unreadable))
                 yield return entry;
     }
 
@@ -61,27 +62,27 @@ internal static class PrefixGameFolders
         return DetectionHelpers.FindLikelyExecutable(entry.Directory, index, ct);
     }
 
-    private static IEnumerable<Entry> Expand(string dir, bool allowVendor, string? library)
+    private static IEnumerable<Entry> Expand(string dir, bool allowVendor, string? library, UnreadableFolders unreadable)
     {
-        var games = LibraryDirectory(dir);
+        var games = LibraryDirectory(dir, unreadable);
         if (games is not null)
         {
             yield return new Entry(dir, games, library);
-            foreach (var game in Children(games))
+            foreach (var game in Children(games, unreadable))
                 yield return new Entry(game, null, games);
             yield break;
         }
 
-        if (allowVendor && !HasOwnExecutable(dir))
+        if (allowVendor && !HasOwnExecutable(dir, unreadable))
         {
-            var products = Children(dir)
-                .Where(child => HasOwnExecutable(child) || LibraryDirectory(child) is not null)
+            var products = Children(dir, unreadable)
+                .Where(child => HasOwnExecutable(child, unreadable) || LibraryDirectory(child, unreadable) is not null)
                 .ToArray();
             // An exe under `bin`/`Binaries` means this is one game whose exe lives deeper, not a vendor.
             if (products.Length > 0 && !products.Any(child => IsGameInternalFolder(Path.GetFileName(child))))
             {
                 foreach (var product in products)
-                    foreach (var entry in Expand(product, allowVendor: false, library))
+                    foreach (var entry in Expand(product, allowVendor: false, library, unreadable))
                         yield return entry;
                 yield break;
             }
@@ -90,34 +91,61 @@ internal static class PrefixGameFolders
         yield return new Entry(dir, null, library);
     }
 
-    private static IEnumerable<string> Children(string dir)
+    private static IEnumerable<string> Children(string dir, UnreadableFolders unreadable)
     {
         string[] children;
         try { children = Directory.Exists(dir) ? Directory.GetDirectories(dir) : []; }
-        catch { yield break; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            unreadable.Report(dir, ex);
+            yield break;
+        }
         foreach (var child in children.Order(StringComparer.Ordinal))
             if (!DetectionHelpers.IsKnownNonGameWineDirectory(Path.GetFileName(child)))
                 yield return child;
     }
 
-    private static string? LibraryDirectory(string dir)
+    private static string? LibraryDirectory(string dir, UnreadableFolders unreadable)
     {
         try
         {
             return Directory.EnumerateDirectories(dir)
                 .FirstOrDefault(child => Path.GetFileName(child).Equals("games", StringComparison.OrdinalIgnoreCase));
         }
-        catch { return null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            unreadable.Report(dir, ex);
+            return null;
+        }
     }
 
-    private static bool HasOwnExecutable(string dir)
+    private static bool HasOwnExecutable(string dir, UnreadableFolders unreadable)
     {
         try
         {
             return Directory.EnumerateFiles(dir, "*.exe", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
                 .Any(file => !Path.GetFileName(file).StartsWith("unins", StringComparison.OrdinalIgnoreCase));
         }
-        catch { return false; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            unreadable.Report(dir, ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Reports each unreadable folder once per prefix scan (it is probed for a library, an executable and its
+    /// children): games in it are missing from the library, so the scan's problems notice names it (Refs #144).
+    /// </summary>
+    private sealed class UnreadableFolders
+    {
+        private readonly HashSet<string> _reported = new(StringComparer.Ordinal);
+
+        public void Report(string dir, Exception error)
+        {
+            if (_reported.Add(dir))
+                DetectorDiagnostics.Warn($"Wine prefix folder {dir} unreadable; games in it are not listed", error);
+        }
     }
 
     private static bool IsGameInternalFolder(string name)

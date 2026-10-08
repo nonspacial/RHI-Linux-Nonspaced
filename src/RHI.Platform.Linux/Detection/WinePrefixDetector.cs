@@ -49,12 +49,26 @@ public sealed class WinePrefixDetector : IGameDetector
                 if (DetectionHelpers.IsLauncherManagedPrefix(prefix) || owned.Owns(prefix))
                     continue;
 
-                var runtime = PrefixRuntime.Read(prefix);
+                PrefixRuntime runtime;
+                try { runtime = PrefixRuntime.Read(prefix); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // Without its runtime markers RHI cannot tell a Proton prefix from a Wine one, and host
+                    // wine would run wineboot over a Proton prefix: skip it rather than guess (Refs #144).
+                    DetectorDiagnostics.Warn($"Wine prefix {prefix} skipped: its runtime markers are unreadable", ex);
+                    continue;
+                }
                 foreach (var entry in PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")))
                 {
                     ct.ThrowIfCancellationRequested();
                     var appDir = entry.Directory;
-                    var exe = PrefixGameFolders.FindExecutable(entry, ct);
+                    string? exe;
+                    try { exe = PrefixGameFolders.FindExecutable(entry, ct); }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        DetectorDiagnostics.Warn($"Wine prefix folder {appDir} skipped", ex);
+                        continue;
+                    }
                     if (exe is null) continue;
                     games.Add(new DetectedGame
                     {
@@ -198,10 +212,8 @@ public sealed class WinePrefixDetector : IGameDetector
                 .Select(dir => Path.Combine(dir, program))
                 .FirstOrDefault(File.Exists);
 
+        /// <summary>Null when the file does not exist; an unreadable one throws (the caller skips the prefix).</summary>
         private static string[]? ReadLines(string path)
-        {
-            try { return File.Exists(path) ? File.ReadAllLines(path) : null; }
-            catch { return null; }
-        }
+            => File.Exists(path) ? File.ReadAllLines(path) : null;
     }
 }
