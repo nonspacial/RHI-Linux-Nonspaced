@@ -107,7 +107,7 @@ public sealed class LumaFrameworkDeploymentService
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ManagedUpdateCheck(true, false, $"Luma update check failed: {ex.Message}", record.Version);
+            return new ManagedUpdateCheck(true, false, $"Luma update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
     }
 

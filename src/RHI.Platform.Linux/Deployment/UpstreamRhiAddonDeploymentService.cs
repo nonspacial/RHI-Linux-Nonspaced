@@ -123,7 +123,7 @@ public sealed class UpstreamRhiAddonDeploymentService
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             var record = _records.Find(game, _options.Kind);
-            return new ManagedUpdateCheck(record is not null, false, $"{_options.DisplayName} update check failed: {ex.Message}", record?.Version);
+            return new ManagedUpdateCheck(record is not null, false, $"{_options.DisplayName} update check failed: {ex.Message}", record?.Version, CouldNotCheck: true);
         }
     }
 

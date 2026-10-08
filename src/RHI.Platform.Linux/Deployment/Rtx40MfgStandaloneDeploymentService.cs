@@ -454,7 +454,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (record is null)
             return new ManagedUpdateCheck(false, false, "Universal MFG is not RHI-managed.");
         var status = await CheckLatestAsync(game, cancellationToken).ConfigureAwait(false);
-        return new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion);
+        return new ManagedUpdateCheck(true, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
+            CouldNotCheck: !status.Success);
     }
 
     internal async Task<Rtx40MfgReleaseInfo> ResolveLatestReleaseAsync(CancellationToken cancellationToken)

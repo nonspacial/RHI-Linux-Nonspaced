@@ -158,7 +158,7 @@ public sealed class REFrameworkDeploymentService
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ManagedUpdateCheck(true, false, $"RE Framework update check failed: {ex.Message}", record.Version);
+            return new ManagedUpdateCheck(true, false, $"RE Framework update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
     }
 

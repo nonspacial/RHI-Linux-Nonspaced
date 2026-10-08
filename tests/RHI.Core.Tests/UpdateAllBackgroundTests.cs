@@ -73,6 +73,46 @@ public sealed class UpdateAllBackgroundTests
     }
 
     [Fact]
+    public async Task ManualRun_CheckThatCouldNotRun_IsCouldNotBeChecked_NotCurrent()
+    {
+        // With every family checked first (#113), a failed check (offline, exe gone) must not read as "current".
+        using var fixture = new Fixture();
+        var game = fixture.Game("offline");
+        fixture.Record(game, ManagedComponentKind.DofFix);
+        fixture.Record(game, ManagedComponentKind.ReLimiter);
+        using var http = new HttpClient(new OfflineHandler());
+        var dofFix = new DofFixDeploymentService(http, fixture.Records, new UpstreamRhiManifestService(http, "https://manifest.invalid/rhi.json"),
+            Path.Combine(fixture.Root, "cache-dof"));
+        var relimiter = new GitHubReShadeAddonDeploymentService(http, fixture.Records, new GitHubReShadeAddonDefinition(
+            ManagedComponentKind.ReLimiter, "ReLimiter", "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
+            "relimiter.addon64", "relimiter.addon32", 100 * 1024, ManagedComponentKind.DisplayCommander), Path.Combine(fixture.Root, "cache-rl"));
+        var backend = new ChecksOnly(new Dictionary<ManagedComponentKind, Func<Task<ManagedUpdateCheck>>>
+        {
+            [ManagedComponentKind.DofFix] = () => dofFix.CheckUpdateAsync(game),
+            [ManagedComponentKind.ReLimiter] = () => relimiter.CheckUpdateAsync(game) // no game executable
+        });
+
+        var result = await fixture.Service(backend).RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+
+        Assert.Equal((0, 0, 2), (result.ChangedCount, result.CurrentCount, result.UncheckedCount));
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new HttpRequestException("offline test");
+    }
+
+    private sealed class ChecksOnly(Dictionary<ManagedComponentKind, Func<Task<ManagedUpdateCheck>>> checks) : ILinuxManagedUpdateBackend
+    {
+        public Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+            => checks[component]();
+
+        public Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("no update without an available update");
+    }
+
+    [Fact]
     public void PayloadFingerprint_IgnoresInstallTimeMetadataAndUserEditableFiles_ButNotPayloadHashes()
     {
         LinuxDeploymentRecord Record(string sha, string ini, DateTime at, string op) => new()

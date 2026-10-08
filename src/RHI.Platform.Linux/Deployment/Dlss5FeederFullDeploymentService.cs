@@ -183,7 +183,7 @@ public sealed class Dlss5FeederFullDeploymentService
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ManagedUpdateCheck(true, false, $"DLSS5 Feeder update check failed: {ex.Message}", record.Version);
+            return new ManagedUpdateCheck(true, false, $"DLSS5 Feeder update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
     }
 

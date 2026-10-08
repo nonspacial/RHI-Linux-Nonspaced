@@ -342,7 +342,8 @@ public sealed class ShortFuseDeploymentService
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
     {
         var status = await CheckLatestAsync(game, releaseTag, cancellationToken).ConfigureAwait(false);
-        return new ManagedUpdateCheck(GetRecord(game) is not null, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion);
+        return new ManagedUpdateCheck(GetRecord(game) is not null, status.Success && status.HasUpdate, status.Message, status.InstalledVersion, status.LatestVersion,
+            CouldNotCheck: !status.Success);
     }
 
     public Task<ComponentOperationResult> InstallAsync(

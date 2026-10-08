@@ -62,10 +62,10 @@ public sealed class GitHubReShadeAddonDeploymentService
         if (record is null)
             return new ManagedUpdateCheck(false, false, $"{_definition.DisplayName} is not managed by RHI Linux.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version);
+            return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true);
         var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
-            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; update check skipped.", record.Version);
+            return new ManagedUpdateCheck(true, false, "Game architecture is unknown; update check skipped.", record.Version, CouldNotCheck: true);
         try
         {
             var latest = await ResolveReleaseAsync(architecture, releaseTag, cancellationToken).ConfigureAwait(false);
@@ -80,7 +80,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return new ManagedUpdateCheck(true, false, $"{_definition.DisplayName} update check failed: {ex.Message}", record.Version);
+            return new ManagedUpdateCheck(true, false, $"{_definition.DisplayName} update check failed: {ex.Message}", record.Version, CouldNotCheck: true);
         }
     }
 
