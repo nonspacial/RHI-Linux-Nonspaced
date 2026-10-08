@@ -241,6 +241,51 @@ public sealed class ComponentUpdateLogTests : IDisposable
         Assert.Equal(4, new ComponentUpdateLogStore(path).GetAll().Count);
     }
 
+    // Review w2-stores #4 (#111): while the file cannot be written, the events kept in memory are bounded like the file
+    // (200, newest kept), so a long outage never grows memory without limit.
+    [Fact]
+    public void WriteError_EventsKeptInMemory_AreBoundedNewestFirst()
+    {
+        var dir = Path.Combine(_root, "bounded");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "update-log.json");
+        var store = new ComponentUpdateLogStore(path);
+        Assert.True(store.Record(Entry(0)));
+        File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            using (RHI.Core.Services.AppLog.UseInThisFlow(new RHI.Core.Services.AppLog(Path.Combine(_root, "rhi.log"))))
+                for (var minute = 1; minute <= 250; minute++)
+                    Assert.False(store.Record(Entry(minute)));
+
+            Assert.Equal(200, store.UnsavedCount);
+            var all = store.GetAll();
+            Assert.Equal(200, all.Count);
+            Assert.Equal("v250", all[0].FromVersion);
+            Assert.Equal("v51", all[^1].FromVersion);
+        }
+        finally
+        {
+            File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.True(store.Record(Entry(251)));
+        var saved = new ComponentUpdateLogStore(path).GetAll();
+        Assert.Equal(200, saved.Count);
+        Assert.Equal("v251", saved[0].FromVersion);
+    }
+
+    // Review w2-stores #4 nit: the dialog line must not promise more than the store does — kept events are lost if RHI
+    // closes before the file can be written.
+    [Fact]
+    public void WriteErrorLine_SaysTheEventsAreKeptOnlyWhileRhiStaysOpen()
+    {
+        Assert.Contains("are kept while RHI stays open",
+            RHI.Desktop.Localization.UiLocalizationService.FormatFor("en-US", "Win.UpdateHistoryNotSaved", "disk full", 3), StringComparison.Ordinal);
+        Assert.Contains("ficam guardados enquanto o RHI estiver aberto",
+            RHI.Desktop.Localization.UiLocalizationService.FormatFor("pt-BR", "Win.UpdateHistoryNotSaved", "disco cheio", 3), StringComparison.Ordinal);
+    }
+
     // Review up-129 #9: a RenoDX version read that throws must not empty the snapshot, which would
     // drop the real change and log every other component as installed or removed.
     [Fact]
