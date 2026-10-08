@@ -268,6 +268,7 @@
 - **Why it matters:** an opt-in feature silently stops for the rest of the session.
 - **Minimal seam:** wrap the pass body in try/catch inside the loop, log it, and continue at the next tick.
 - **Verification:** a fake `ILinuxManagedUpdateBackend` that throws once. Advance the timer through an injected `TimeProvider` or interval and assert that a second pass runs.
+- **Status:** fixed on `w2/launch` in `e7fd7cd` (#81): `BackgroundUpdateLoop` logs a failed pass, reports it with the next try and retries after 15 min, doubling per consecutive failure up to the interval; only cancellation ends it.
 
 ### UI-14 — Compiled bindings are disabled: 212 reflection bindings with no build-time checking
 
