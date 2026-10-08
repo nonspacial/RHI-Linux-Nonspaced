@@ -21,8 +21,8 @@ public sealed class BackgroundUpdateLoopTests
             _ =>
             {
                 passes++;
-                if (passes == 1) throw new HttpRequestException("GitHub unreachable");
-                if (passes == 3) cts.Cancel();
+                if (passes is 1 or 3) throw new HttpRequestException("GitHub unreachable");
+                if (passes == 4) cts.Cancel();
                 return Task.CompletedTask;
             },
             Interval, runImmediate: true,
@@ -30,12 +30,13 @@ public sealed class BackgroundUpdateLoopTests
             cts.Token,
             (wait, token) => { token.ThrowIfCancellationRequested(); waits.Add(wait); return Task.CompletedTask; }).WaitAsync(TimeSpan.FromSeconds(10));
 
-        Assert.Equal(3, passes);
-        var failure = Assert.Single(failures);
-        Assert.Equal("GitHub unreachable", failure.Error.Message);
-        Assert.Equal(TimeSpan.FromMinutes(15), failure.Retry);
-        // Retry soon after the failure, then the normal interval once a pass succeeded.
-        Assert.Equal([TimeSpan.FromMinutes(15), Interval], waits);
+        Assert.Equal(4, passes);
+        Assert.Equal(2, failures.Count);
+        Assert.Equal("GitHub unreachable", failures[0].Error.Message);
+        // Retry soon after the failure, then the normal interval once a pass succeeded. A success resets the back-off:
+        // the next failure (fail → success → fail) retries after 15 min again, not 30 (w2-launch review, minor 6).
+        Assert.Equal([TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15)], failures.Select(f => f.Retry));
+        Assert.Equal([TimeSpan.FromMinutes(15), Interval, TimeSpan.FromMinutes(15)], waits);
     }
 
     [Fact]
