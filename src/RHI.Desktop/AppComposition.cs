@@ -205,7 +205,7 @@ internal sealed class AppComposition
             NexusAccount = nexusAccount,
             ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
             NrCostScaler = new NrCostScalerPresenter(managedComponents),
-            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi)),
+            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(

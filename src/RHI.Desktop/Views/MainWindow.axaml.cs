@@ -1300,29 +1300,55 @@ public sealed partial class MainWindow : Window
         });
 
         var variantRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
+        // #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
+        // the line under the list say in plain words what the channel is (2 s tooltips, the owner's rule).
         var variantLabel = new TextBlock
         {
             Text = T("Win.ChannelVariant"),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
         };
         ToolTip.SetTip(variantLabel, T("Win.StableUsesOfficialStableReleaseNightly"));
+        ToolTip.SetShowDelay(variantLabel, MiddleEllipsisText.TooltipDelay);
         var variantCombo = new ComboBox
         {
             ItemsSource = vm.Runtime.OptiScalerVariantOptions,
             SelectedItem = vm.Runtime.SelectedOptiScalerVariant,
             MinWidth = 260,
-            IsEnabled = !snapshot.ManagedByRhi
+            IsEnabled = !snapshot.ManagedByRhi,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<OptionItem<OptiScalerVariant>>((item, _) =>
+            {
+                var text = new TextBlock { Text = item?.Display };
+                if (item is not null)
+                {
+                    ToolTip.SetTip(text, RuntimePanelViewModel.OptiScalerChannelText(item.Value));
+                    ToolTip.SetShowDelay(text, MiddleEllipsisText.TooltipDelay);
+                }
+                return text;
+            })
         };
+        ToolTip.SetShowOnDisabled(variantCombo, true);
+        ToolTip.SetShowDelay(variantCombo, MiddleEllipsisText.TooltipDelay);
+        var channelText = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        void ShowChannel()
+        {
+            var chosen = (variantCombo.SelectedItem as OptionItem<OptiScalerVariant>)?.Value ?? OptiScalerVariant.Stable;
+            channelText.Text = RuntimePanelViewModel.OptiScalerChannelText(chosen);
+            ToolTip.SetTip(variantCombo, channelText.Text);
+        }
+        ShowChannel();
         variantCombo.SelectionChanged += (_, _) =>
         {
             if (variantCombo.SelectedItem is OptionItem<OptiScalerVariant> value)
                 vm.Runtime.SelectedOptiScalerVariant = value;
+            ShowChannel();
         };
         Grid.SetColumn(variantLabel, 0);
         Grid.SetColumn(variantCombo, 1);
         variantRow.Children.Add(variantLabel);
         variantRow.Children.Add(variantCombo);
         panel.Children.Add(variantRow);
+        panel.Children.Add(channelText);
         panel.Children.Add(new TextBlock
         {
             Text = snapshot.ManagedByRhi

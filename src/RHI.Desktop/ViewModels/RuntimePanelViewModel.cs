@@ -95,6 +95,18 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public OptionItems<OptiScalerVariant> OptiScalerVariantOptions { get; } = OptionLists.OptiScalerVariant.Options();
 
+    /// <summary>
+    /// What an OptiScaler channel is, in plain words (#174): the dropdown's per-channel 2 s tooltip and the line under it
+    /// that names the chosen channel, so F5 DLSSNR (and the others) are visible without opening the list.
+    /// </summary>
+    public static string OptiScalerChannelText(OptiScalerVariant variant) => UiLocalizationService.Text(variant switch
+    {
+        OptiScalerVariant.Nightly => "Win.OptiScalerChannelNightly",
+        OptiScalerVariant.DlssNr => "Win.OptiScalerChannelDlssNr",
+        OptiScalerVariant.F5 => "Win.OptiScalerChannelF5",
+        _ => "Win.OptiScalerChannelStable",
+    });
+
     public OptionItems<LumaModePreference> LumaModeOptions { get; } = OptionLists.LumaMode.Options();
 
     public OptionItems<string> HdrModeOptions { get; } = OptionLists.HdrMode.Options();

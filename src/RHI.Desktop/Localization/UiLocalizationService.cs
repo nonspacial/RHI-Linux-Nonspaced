@@ -1039,6 +1039,8 @@ public static class UiLocalizationService
             "Download recusado: links da API do Nexus Mods devem ser HTTPS em um host confiável (api.nexusmods.com). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.NexusFiles.RefusalPrefix,
             "Download recusado: links de arquivos do Nexus Mods devem ser HTTPS em um host confiável (servidores de arquivos do Nexus Mods, nexus-cdn.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusGameList.RefusalPrefix,
+            "Download recusado: links da lista de jogos do Nexus Mods devem ser HTTPS em um host confiável (data.nexusmods.com). Link recusado: "),
         (RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage, "Não foi possível falar com o Nexus Mods."),
         (RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage, "O Nexus Mods não deu nenhum link de download que o RHI aceite para este arquivo."),
         (RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage, "O Nexus Mods respondeu à verificação da chave sem uma conta."),

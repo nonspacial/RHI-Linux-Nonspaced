@@ -1627,7 +1627,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         items.Add(new("hide", HideActionText, ToggleHiddenCommand));
         if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
         // w3/parity card menu slot: Create shortcut (#162; only from this explicit choice, owner decision) and the game's
-        // Nexus Mods page (#99; only when the manifest names one). Both are left out where they do not apply.
+        // Nexus Mods page (#99, #174; only for a game Nexus has a page for). Both are left out where they do not apply.
         var separated = false;
         if (Parity is { } parity)
         {
@@ -1640,7 +1640,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                 Tip: T("Parity.ShortcutTip")));
             separated = true;
         }
-        if (NexusLinkPresenter.PageFor(game) is { } nexusUrl)
+        // #174: every game Nexus has a page for (no account needed to open it); a list still loading is joined, not awaited.
+        Parity?.NexusLinks.Games?.Prefetch();
+        if (NexusLinkPresenter.PageFor(game, Parity?.NexusLinks.Games) is { } nexusUrl)
             items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
         return items;
     }
