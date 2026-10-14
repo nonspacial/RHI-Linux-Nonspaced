@@ -139,4 +139,9 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #160 — Control UE dialog: full list of required in-game settings (2.8.6)
+
+- Ported (`ae5603c`): the Control Ultimate Edition RenoDX confirmation lists the required in-game settings under its own heading: DLSS on, SSAO on, post-processing High, screen-space reflections High (turn ray tracing off briefly to change it, or pick the High/Ultra render preset), RT reflections on, RT indirect diffuse on, render resolution in even numbers (can be set in `renderer.ini`). Upstream's 2.8.1 DLSS/RT/SSAO line stays. The text comes from `ControlUeInstallDialogModel` (EN + PT-BR), which a dialog template can bind; the shell shows its message in the existing confirmation, which scrolls when the window is small.
+- Linux wording: the closing note says removal restores the previous DLLs and `renderer.ini` except what the user changed after the install (#124); upstream says its extra changes are not reverted. Upstream's OptiScaler FG and "Using HDR?" lines arrive with #136.
+
 ## Parity notes (feature-parity backlog)

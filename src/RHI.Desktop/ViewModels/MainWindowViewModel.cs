@@ -1977,9 +1977,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
             if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
-                ConfirmAsync is { } confirm &&
-                !await confirm(T("Vm.ControlUltimateEditionRenoDXMod"), T("Vm.NOTHDRModFixesRTNoise"),
-                    T("Vm.Install")))
+                ConfirmAsync is { } confirm && new ControlUeInstallDialogModel() is var controlUe &&
+                !await confirm(controlUe.Title, controlUe.Message, controlUe.AcceptText))
             {
                 StatusText = T("Vm.RenoDXInstallationCancelled");
                 return;
