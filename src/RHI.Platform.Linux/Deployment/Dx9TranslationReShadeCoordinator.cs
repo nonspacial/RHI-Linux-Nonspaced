@@ -56,10 +56,11 @@ public sealed class Dx9TranslationReShadeCoordinator
 
         // The overrides are journaled before they are written (#23); the ReShade record carrying this
         // operation's id is the commit point.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "ReShade DX9 translation: " + game.Name, game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) throw new IOException(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
+        var operation = scope.Operation;
         // From the first override on, the migration (or its undo) runs to the end whatever Cancel says.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var exeName = Path.GetFileName(game.ExecutablePath);
@@ -74,17 +75,23 @@ public sealed class Dx9TranslationReShadeCoordinator
                 ? originalRecordOverride
                 : await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath, "d3d9", exeName, cancellationToken).ConfigureAwait(false);
             dxgiOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath, "dxgi", exeName, cancellationToken).ConfigureAwait(false);
-            File.Move(d3d9, dxgi);
+            // Both names tracked and the move declared (#23): a crash before the record is saved puts the proxy back at
+            // d3d9.dll at the next start.
+            await scope.TrackAsync(d3d9, cancellationToken).ConfigureAwait(false);
+            await scope.TrackAsync(dxgi, cancellationToken).ConfigureAwait(false);
+            await scope.DeclareWriteAsync(dxgi, hash, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Rename(d3d9, dxgi);
             file.Path = dxgi;
-            file.Sha256 = await FileHash.Sha256HexAsync(dxgi, cancellationToken).ConfigureAwait(false);
+            file.Sha256 = hash; // a rename cannot change content
             record.WineOverride = dxgiOverride;
-            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, record));
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-            return new ReShadeDx9MigrationState(d3d9, dxgi, hash, d3d9Override);
+            _records.Upsert(scope.Stamp(record));
         }
-        catch
+        catch (Exception ex)
         {
-            try { if (File.Exists(dxgi) && !File.Exists(d3d9)) File.Move(dxgi, d3d9); } catch { }
+            // The proxy goes back to d3d9.dll from the scope's copies; one that cannot be put back is kept and logged.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("dx9-translation", $"Migration rollback could not put d3d9.dll back: {string.Join("; ", rollback.Failures)}", ex);
             _overrides.TryRestore(game.PrefixPath, dxgiOverride);
             if (originalRecordOverride is null) _overrides.TryRestore(game.PrefixPath, d3d9Override);
             record.WineOverride = originalRecordOverride;
@@ -96,6 +103,8 @@ public sealed class Dx9TranslationReShadeCoordinator
             _records.Upsert(record);
             throw;
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return new ReShadeDx9MigrationState(d3d9, dxgi, hash, d3d9Override);
     }
 
     public async Task RestoreAsync(DetectedGame game, ReShadeDx9MigrationState state, CancellationToken cancellationToken = default)
@@ -118,22 +127,33 @@ public sealed class Dx9TranslationReShadeCoordinator
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             throw new WineRegistryEditRefusedException(wineRunning, inUse: true);
 
+        // Journaled like the migration (#23): the ReShade record saved with this operation's id is the commit point.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "ReShade DX9 translation restore: " + game.Name, game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) throw new IOException(journalRefusal);
+        await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var translatedOverride = record.WineOverride;
         WineOverrideRestoreResult? overrideRestore = null;
-        File.Move(state.TranslatedPath, state.OriginalPath);
         try
         {
+            await scope.TrackAsync(state.TranslatedPath, cancellationToken).ConfigureAwait(false);
+            await scope.TrackAsync(state.OriginalPath, cancellationToken).ConfigureAwait(false);
+            await scope.DeclareWriteAsync(state.OriginalPath, currentHash, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Rename(state.TranslatedPath, state.OriginalPath);
             if (translatedOverride is not null)
-                overrideRestore = _overrides.Restore(game.PrefixPath, translatedOverride);
+                overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath, translatedOverride, cancellationToken).ConfigureAwait(false);
             file.Path = state.OriginalPath;
-            file.Sha256 = await FileHash.Sha256HexAsync(state.OriginalPath, cancellationToken).ConfigureAwait(false);
+            file.Sha256 = currentHash; // a rename cannot change content
             record.WineOverride = state.D3D9Override;
-            _records.Upsert(record);
+            _records.Upsert(scope.Stamp(record));
         }
-        catch
+        catch (Exception ex)
         {
-            try { if (File.Exists(state.OriginalPath) && !File.Exists(state.TranslatedPath)) File.Move(state.OriginalPath, state.TranslatedPath); } catch { }
+            // The proxy goes back to dxgi.dll from the scope's copies; one that cannot be put back is kept and logged.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("dx9-translation", $"Restore rollback could not put dxgi.dll back: {string.Join("; ", rollback.Failures)}", ex);
             // The record keeps the translated override, so put RHI's value back where this restore removed it (#30).
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, translatedOverride);
@@ -143,6 +163,7 @@ public sealed class Dx9TranslationReShadeCoordinator
             _records.Upsert(record);
             throw;
         }
+        await scope.CommitAsync().ConfigureAwait(false);
     }
 
 }
