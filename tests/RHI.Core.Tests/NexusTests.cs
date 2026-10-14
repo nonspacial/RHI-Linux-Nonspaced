@@ -549,6 +549,28 @@ public sealed class InstallUserNxmTests : IDisposable
     [Fact]
     public void MenuEntry_DeclaresNxm_AndPassesTheLink()
     {
+        var home = Install(Path.Combine(_root, "home"));
+
+        var lines = File.ReadAllLines(Path.Combine(home, "share", "applications", "rhi-linux.desktop"));
+        Assert.Contains($"Exec=\"{Path.Combine(home, ".local", "opt", "rhi-linux", "RHI")}\" %u", lines);
+        Assert.Contains("MimeType=x-scheme-handler/nxm;", lines);
+    }
+
+    [Fact]
+    public void MenuEntry_ExecPath_WithShellAndDesktopSpecials_ReadsBackExactly_AsTheSpecAndGLibRead()
+    {
+        var home = Install(Path.Combine(_root, "h $x \"q\" `b` \\ 100%"));
+        var file = Path.Combine(home, "share", "applications", "rhi-linux.desktop");
+        var exec = File.ReadAllLines(file).Single(line => line.StartsWith("Exec=", StringComparison.Ordinal))["Exec=".Length..];
+        var rhi = Path.Combine(home, ".local", "opt", "rhi-linux", "RHI");
+
+        Assert.EndsWith(" %u", exec, StringComparison.Ordinal);
+        Assert.Equal([rhi], DesktopEntryReader.ExecArguments(exec[..^" %u".Length]));
+        if (GLibDesktopEntry.ExecArguments(file) is { } glib) Assert.Equal([rhi, "%u"], glib);
+    }
+
+    private string Install(string homePath)
+    {
         var repo = LocalizationKeyUsageTests.RepoRoot();
         var tree = Directory.CreateDirectory(Path.Combine(_root, "tree")).FullName;
         File.Copy(Path.Combine(repo, "install-user.sh"), Path.Combine(tree, "install-user.sh"));
@@ -557,7 +579,7 @@ public sealed class InstallUserNxmTests : IDisposable
         var publish = Directory.CreateDirectory(Path.Combine(tree, "artifacts", "linux-x64")).FullName;
         File.WriteAllText(Path.Combine(publish, "RHI"), "#!/bin/sh\n");
         File.SetUnixFileMode(Path.Combine(publish, "RHI"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        var home = Directory.CreateDirectory(Path.Combine(_root, "home")).FullName;
+        var home = Directory.CreateDirectory(homePath).FullName;
         var start = new System.Diagnostics.ProcessStartInfo("bash", [Path.Combine(tree, "install-user.sh")])
         {
             RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
@@ -568,9 +590,6 @@ public sealed class InstallUserNxmTests : IDisposable
         using var run = System.Diagnostics.Process.Start(start)!;
         run.WaitForExit(30_000);
         Assert.True(run.ExitCode == 0, run.StandardError.ReadToEnd());
-
-        var lines = File.ReadAllLines(Path.Combine(home, "share", "applications", "rhi-linux.desktop"));
-        Assert.Contains($"Exec=\"{Path.Combine(home, ".local", "opt", "rhi-linux", "RHI")}\" %u", lines);
-        Assert.Contains("MimeType=x-scheme-handler/nxm;", lines);
+        return home;
     }
 }

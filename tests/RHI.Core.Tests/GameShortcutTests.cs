@@ -50,6 +50,21 @@ public sealed class DesktopShortcutServiceTests : IDisposable
         Assert.Equal(["/opt/RHI Linux/usr/bin/RHI", "--launch", key], DesktopEntryReader.ExecArguments(exec));
     }
 
+    [Theory]
+    [InlineData("folder:Lutris|/home/u/Games/My \"Quoted\" Game")]
+    [InlineData("folder:Manual|/home/u/$HOME/`whoami`/100% \\ back\\slash")]
+    [InlineData("heroic:Fortnite;rm -rf ~ & echo |x| 'single' #hash")]
+    public void ExecLine_GLibReadsBackTheSameArguments(string key)
+    {
+        var entry = DesktopShortcutService.BuildEntry("Game", ["/opt/RHI $Linux/usr/bin/RHI"], "rhi-linux", key);
+        var file = Path.Combine(_root, "glib.desktop");
+        File.WriteAllText(file, entry);
+
+        if (GLibDesktopEntry.ExecArguments(file) is not { } args) return; // no gcc/GLib here: the strict reader above still holds the rule
+
+        Assert.Equal(["/opt/RHI $Linux/usr/bin/RHI", "--launch", key], args);
+    }
+
     [Fact]
     public void ExecLine_PassesDesktopFileValidate()
     {
@@ -178,21 +193,24 @@ public sealed class DesktopShortcutServiceTests : IDisposable
     private static string? ExternalProcessFind(string tool) => RHI.Platform.Linux.Deployment.ExternalProcess.FindOnPath(tool);
 }
 
-/// <summary>A reader of desktop-entry Exec values exactly as the Desktop Entry Specification 1.5 describes it.</summary>
+/// <summary>
+/// A reader of desktop-entry Exec values exactly as the Desktop Entry Specification 1.5 describes it, as strict as GLib
+/// (<see cref="GLibDesktopEntry"/> runs the host's real GLib where it is installed).
+/// </summary>
 internal static class DesktopEntryReader
 {
     public static IReadOnlyList<string> ExecArguments(string value)
     {
-        // 1. string-type unescape (\s \n \t \r \\); other escapes are kept for the quoting rule.
+        // 1. string-type unescape (\s \n \t \r \\). Any other escape makes the value unreadable, as GLib's key-file
+        //    parser treats it (KDE keeps it, so a reader that kept it modelled KDE only).
         var text = new StringBuilder();
         for (var i = 0; i < value.Length; i++)
         {
-            if (value[i] == '\\' && i + 1 < value.Length && "sntr\\".Contains(value[i + 1]))
-            {
-                text.Append(value[i + 1] switch { 's' => ' ', 'n' => '\n', 't' => '\t', 'r' => '\r', _ => '\\' });
-                i++;
-            }
-            else text.Append(value[i]);
+            if (value[i] != '\\') { text.Append(value[i]); continue; }
+            if (i + 1 >= value.Length || !"sntr\\".Contains(value[i + 1]))
+                throw new FormatException($"Invalid string escape at {i} (GLib refuses the whole value): {value}");
+            text.Append(value[i + 1] switch { 's' => ' ', 'n' => '\n', 't' => '\t', 'r' => '\r', _ => '\\' });
+            i++;
         }
         // 2. Exec quoting: arguments separated by spaces; inside "…", \" \` \$ \\ stand for the character; %% is %.
         var args = new List<string>();
@@ -222,6 +240,75 @@ internal static class DesktopEntryReader
             args.Add(literal.Replace("\0", "%", StringComparison.Ordinal));
         }
         return args;
+    }
+}
+
+/// <summary>
+/// The host's GLib reading a desktop entry's Exec the way GNOME/gio launchers do: <c>g_key_file_get_string</c> (string
+/// unescape, refuses invalid escapes), <c>%%</c> → <c>%</c>, then <c>g_shell_parse_argv</c>. Built once per run with
+/// gcc + pkg-config; null when either is missing.
+/// </summary>
+internal static class GLibDesktopEntry
+{
+    private const string Source = """
+        #include <glib.h>
+        #include <stdio.h>
+        #include <string.h>
+        int main(int argc, char **argv) {
+          GKeyFile *k = g_key_file_new(); GError *e = NULL;
+          if (!g_key_file_load_from_file(k, argv[1], 0, &e)) { fprintf(stderr, "load: %s\n", e->message); return 2; }
+          char *v = g_key_file_get_string(k, "Desktop Entry", "Exec", &e);
+          if (!v) { fprintf(stderr, "get_string: %s\n", e->message); return 3; }
+          GString *x = g_string_new(NULL);
+          for (char *p = v; *p; p++) { if (p[0] == '%' && p[1] == '%') { g_string_append_c(x, '%'); p++; } else g_string_append_c(x, *p); }
+          int n; char **a;
+          if (!g_shell_parse_argv(x->str, &n, &a, &e)) { fprintf(stderr, "parse_argv: %s\n", e->message); return 4; }
+          for (int i = 0; i < n; i++) { fputs(a[i], stdout); fputc(0, stdout); }
+          return 0;
+        }
+        """;
+
+    private static readonly object Gate = new();
+    private static string? _tool;
+    private static bool _tried;
+
+    public static IReadOnlyList<string>? ExecArguments(string desktopFile)
+    {
+        if (Tool() is not { } tool) return null;
+        var start = new ProcessStartInfo(tool, [desktopFile]) { RedirectStandardOutput = true, RedirectStandardError = true };
+        using var run = Process.Start(start)!;
+        var output = run.StandardOutput.ReadToEnd();
+        var error = run.StandardError.ReadToEnd();
+        run.WaitForExit(10_000);
+        Assert.True(run.ExitCode == 0, $"GLib refused the entry: {error}");
+        return output.Split('\0')[..^1];
+    }
+
+    private static string? Tool()
+    {
+        lock (Gate)
+        {
+            if (_tried) return _tool;
+            _tried = true;
+            if (RHI.Platform.Linux.Deployment.ExternalProcess.FindOnPath("gcc") is not { } gcc
+                || RHI.Platform.Linux.Deployment.ExternalProcess.FindOnPath("pkg-config") is not { } pkgConfig) return null;
+            var flags = Run(pkgConfig, ["--cflags", "--libs", "glib-2.0"]);
+            if (flags is null) return null;
+            var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-glib-exec-" + Guid.NewGuid().ToString("N"))).FullName;
+            File.WriteAllText(Path.Combine(dir, "exec.c"), Source);
+            var output = Path.Combine(dir, "exec");
+            if (Run(gcc, [Path.Combine(dir, "exec.c"), "-o", output, .. flags.Split(' ', StringSplitOptions.RemoveEmptyEntries)]) is null) return null;
+            return _tool = output;
+        }
+    }
+
+    private static string? Run(string tool, IEnumerable<string> args)
+    {
+        using var run = Process.Start(new ProcessStartInfo(tool, args) { RedirectStandardOutput = true, RedirectStandardError = true })!;
+        var output = run.StandardOutput.ReadToEnd();
+        run.StandardError.ReadToEnd();
+        run.WaitForExit(60_000);
+        return run.ExitCode == 0 ? output.Trim() : null;
     }
 }
 

@@ -6,9 +6,11 @@ namespace RHI.Platform.Linux.Paths;
 /// <summary>
 /// Writing freedesktop.org desktop entries (Desktop Entry Specification 1.5) for the files RHI creates on an explicit
 /// user choice: game shortcuts (#162) and the nxm:// handler entry (#99). Exec arguments are always quoted; inside the
-/// quotes <c>"</c>, <c>`</c>, <c>$</c> are backslash-escaped and a backslash is written as four (the string unescape runs
-/// before the Exec quoting rule), and <c>%</c> is doubled (field codes) — the rule <c>install-user.sh</c> uses for RHI's
-/// own menu entry. String values (Name, Comment) escape backslash, newline, tab and carriage return.
+/// quotes <c>"</c>, <c>`</c>, <c>$</c> and <c>\</c> take the Exec rule's backslash, and that backslash is itself written
+/// doubled because the string-type unescape runs first (file <c>\\$</c> → Exec <c>\$</c> → <c>$</c>; a backslash is four).
+/// A single backslash before <c>"</c>/<c>`</c>/<c>$</c> is not a valid string escape: GLib refuses the whole value and
+/// only KDE keeps it. <c>%</c> is doubled (field codes) — the rule <c>install-user.sh</c> uses for RHI's own menu entry.
+/// String values (Name, Comment) escape backslash, newline, tab and carriage return.
 /// </summary>
 public static class DesktopEntryFormat
 {
@@ -22,9 +24,9 @@ public static class DesktopEntryFormat
             quoted.Append(c switch
             {
                 '\\' => @"\\\\",
-                '"' => "\\\"",
-                '`' => "\\`",
-                '$' => "\\$",
+                '"' => @"\\""",
+                '`' => @"\\`",
+                '$' => @"\\$",
                 '%' => "%%",
                 _ => c.ToString()
             });
