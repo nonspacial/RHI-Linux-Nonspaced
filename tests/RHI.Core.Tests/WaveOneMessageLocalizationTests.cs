@@ -163,6 +163,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeDeploymentService.NoAddonsLinkMissingMessage;
         yield return ReShadeDeploymentService.NameNotForBitnessPrefix + "ReShade64.dll";
         yield return ReShadeDeploymentService.OtherReShadePresentPrefix + $"{P}/dxgi.dll";
+        yield return Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
+        yield return "Luma Framework installation rolled back: " + Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
     }
 
     [Theory]

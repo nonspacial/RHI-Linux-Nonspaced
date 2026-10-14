@@ -21,6 +21,13 @@ public sealed class Dx9TranslationReShadeCoordinator
     private readonly WineDllOverrideService _overrides;
     private readonly DeploymentJournal? _journal;
 
+    /// <summary>
+    /// Fixed text before the installed name when RHI's ReShade sits under another name than d3d9.dll (a DLL name the user
+    /// chose, e.g. dxgi.dll): what to do, in plain words (PT-BR presentation pair).
+    /// </summary>
+    public const string NeedsReShadeAsD3d9Prefix =
+        "The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ";
+
     public Dx9TranslationReShadeCoordinator(LinuxDeploymentRecordStore records, WineDllOverrideService overrides, DeploymentJournal? journal = null)
     {
         _records = records;
@@ -42,7 +49,7 @@ public sealed class Dx9TranslationReShadeCoordinator
         var dxgi = Path.Combine(game.BinaryDirectory, "dxgi.dll");
         var file = record.Files.FirstOrDefault(item =>
             Path.GetFullPath(item.Path).Equals(Path.GetFullPath(d3d9), StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException("RHI-managed ReShade is not currently deployed as d3d9.dll, so automatic DX9 translation migration is blocked.");
+            ?? throw new InvalidOperationException(NeedsReShadeAsD3d9Prefix + (ProxyPayloadLocator.ReShadePayload(record) is { } payload ? Path.GetFileName(payload.Path) : "?"));
         if (!File.Exists(d3d9))
             throw new FileNotFoundException("Managed ReShade d3d9.dll is missing.", d3d9);
         if (File.Exists(dxgi))

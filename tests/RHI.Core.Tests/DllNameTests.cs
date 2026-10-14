@@ -332,9 +332,34 @@ public sealed class DllNameTests : IDisposable
         var coordinator = new Dx9TranslationReShadeCoordinator(fx.Records, new WineDllOverrideService());
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.MigrateAsync(fx.Game));
 
-        Assert.Contains("not currently deployed as d3d9.dll", error.Message);
+        Assert.Equal(Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dinput8.dll", error.Message);
         Assert.Equal(before, File.ReadAllBytes(Path.Combine(fx.Bin, "dinput8.dll")));
         Assert.False(File.Exists(Path.Combine(fx.Bin, "dxgi.dll")));
+        Assert.Equal(registry, fx.Registry());
+    }
+
+    // w3 review minor 5: a DirectX 9 game where the user chose dxgi.dll (upstream's manifest name for its dgVoodoo2
+    // titles): the refusal says what to do, in plain words, in both languages; nothing changes.
+    [Fact]
+    public async Task Dx9Translation_WithReShadeChosenAsDxgi_SaysPlainlyWhatToDo()
+    {
+        var fx = Fixture("dx9-dxgi", api: GraphicsApi.DirectX9);
+        fx.Names.SetReShade(fx.Game, "dxgi.dll");
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var before = File.ReadAllBytes(Path.Combine(fx.Bin, "dxgi.dll"));
+        var registry = fx.Registry();
+
+        var coordinator = new Dx9TranslationReShadeCoordinator(fx.Records, new WineDllOverrideService());
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.MigrateAsync(fx.Game));
+
+        Assert.Equal(Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll", error.Message);
+        Assert.Contains("set its DLL name to Automatic", error.Message);
+        var luma = "Luma Framework installation rolled back: " + error.Message;
+        var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", luma);
+        Assert.Contains("defina o nome da DLL como Automático", portuguese);
+        Assert.DoesNotContain(RHI.Desktop.Localization.UiLocalizationService.EnglishMarkersIn(portuguese), m => !m.Equals("no", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(before, File.ReadAllBytes(Path.Combine(fx.Bin, "dxgi.dll")));
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "d3d9.dll")));
         Assert.Equal(registry, fx.Registry());
     }
 

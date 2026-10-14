@@ -1000,6 +1000,8 @@ public static class UiLocalizationService
             "O nome de DLL do ReShade escolhido é para a outra arquitetura de jogo Windows; escolha outro nome: "),
         ("ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ",
             "O ReShade já está na pasta deste jogo, mas não foi instalado pelo RHI Linux; um segundo ReShade carregaria duas vezes, então nada foi instalado. Remova esse ReShade antes ou continue usando-o: "),
+        ("The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ",
+            "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como Automático, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";
