@@ -99,6 +99,22 @@ public sealed class DllNamePickerTests
         Assert.Contains(UiLocalizationService.Text("Ui.WhatGamePreferences"), fx.Vm.StatusText);
     }
 
+    // Automatic follows the graphics API: a user API override changes the name it stands for.
+    [Fact]
+    public async Task Picker_Automatic_FollowsTheGraphicsApiOverride()
+    {
+        var (fx, _) = await StartAsync("Api Override Game");
+        using var __ = fx;
+        var picker = fx.Vm.DllNamePicker;
+        await SettledAsync(picker);
+        Assert.Equal("Automatic (dxgi.dll)", picker.Options[0].Display);
+
+        fx.Vm.SelectedGraphicsApiOverride = "DirectX 9";
+        await SettledAsync(picker);
+
+        Assert.Equal("Automatic (d3d9.dll)", picker.Options[0].Display);
+    }
+
     [Fact]
     public async Task Picker_IsHidden_ForANativeLinuxGame()
     {

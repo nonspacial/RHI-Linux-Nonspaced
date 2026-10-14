@@ -70,9 +70,11 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
 
     private void OnShellChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // Selection, analysis (an install/removal re-analyses), busy state, and the UI language (relabels the channel).
+        // Selection, analysis (an install/removal re-analyses), busy state, the graphics API override (changes what
+        // Automatic stands for) and the UI language (relabels the channel).
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedGame) or nameof(MainWindowViewModel.IsSelectionProbeBusy)
-            or nameof(MainWindowViewModel.IsBusy) or nameof(MainWindowViewModel.SelectedReShadeChannel))
+            or nameof(MainWindowViewModel.IsBusy) or nameof(MainWindowViewModel.SelectedReShadeChannel)
+            or nameof(MainWindowViewModel.SelectedGraphicsApiOverride))
             Refresh();
     }
 
