@@ -254,6 +254,44 @@ public sealed class NrCostScalerTests : IDisposable
     }
 
     [Fact]
+    public async Task Remove_LedgerWriteFails_RollsTheFilesBack_WithTheScalersRecordStillInPlace()
+    {
+        InstallOwner();
+        var (service, _) = Build();
+        Assert.True((await service.InstallAsync(_game)).Success);
+        var before = CancelAtWritePhase.Snapshot(Bin);
+        _records.SaveFaultForTesting = () => new IOException("Simulated write failure: deployments.json");
+
+        var result = await service.RemoveAsync(_game);
+        _records.SaveFaultForTesting = null;
+
+        Assert.StartsWith(NrCostScalerService.FailedRolledBackPrefix, result.Message, StringComparison.Ordinal);
+        CancelAtWritePhase.AssertUnchanged(before, Bin);
+        Assert.NotNull(service.GetRecord(_game));
+    }
+
+    [Fact]
+    public async Task Remove_CrashRightAfterTheLedgerWrite_IsAFinishedRemoval_RecoveryRollsNothingBack()
+    {
+        InstallOwner();
+        var (service, _) = Build();
+        Assert.True((await service.InstallAsync(_game)).Success);
+        var crashing = new NrCostScalerService(new HttpClient(new Fake(_ => new HttpResponseMessage(HttpStatusCode.NotFound))), _records,
+            new DeploymentJournal(Path.Combine(_root, "journal")) { CrashAtCommitForTesting = true }, Path.Combine(_root, "cache"));
+
+        await Assert.ThrowsAsync<SimulatedCrashException>(() => crashing.RemoveAsync(_game)); // dies between the ledger write and the journal commit
+        var ledger = new LinuxDeploymentRecordStore(Path.Combine(_root, "data", "deployments.json"));
+        var report = await LinuxDeploymentRecovery.RecoverAsync(new DeploymentJournal(Path.Combine(_root, "journal")), ledger);
+
+        Assert.Equal(0, report!.RolledBack);
+        Assert.Null(ledger.Find(_game, ManagedComponentKind.NrCostScaler));
+        Assert.Equal(OwnerRuntime, File.ReadAllBytes(Runtime));
+        Assert.Equal(["Game.exe", "nvngx_dlssnr.dll"], Directory.EnumerateFiles(Bin).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        var owner = ledger.Find(_game, ManagedComponentKind.ShortFuse)!;
+        Assert.True(FileHash.HexEquals(FileHash.Sha256Hex(Runtime), owner.Files.Single().Sha256!));
+    }
+
+    [Fact]
     public async Task Remove_ProxyChangedSinceInstall_IsRefused_AndLeftAlone()
     {
         InstallOwner();

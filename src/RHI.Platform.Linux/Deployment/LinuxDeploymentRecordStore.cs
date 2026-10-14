@@ -170,6 +170,33 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
+    /// <summary>
+    /// Saves several record changes in one ledger write (all or nothing): each of <paramref name="upserts"/> replaces the
+    /// record with its key and component (stamped like <see cref="Upsert"/>), each of <paramref name="removals"/> goes as
+    /// <see cref="Remove"/> would take it. For operations that change two components' records at their commit point
+    /// (the NR Cost Scaler's removal stamps the owner's record), so a crash can never leave one saved and the other not.
+    /// w3/parity copy of w3/journal's method of the same name and body: keep journal's at integration.
+    /// </summary>
+    public void Commit(IEnumerable<LinuxDeploymentRecord> upserts, IEnumerable<(DetectedGame Game, ManagedComponentKind Component)>? removals = null)
+    {
+        lock (_gate)
+        {
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            foreach (var (game, component) in removals ?? [])
+                records.RemoveAll(r => GameRecordIdentity.Matches(r.GameKey, game) && r.Component == component);
+            var now = DateTime.UtcNow;
+            foreach (var record in upserts)
+            {
+                var copy = Clone(record);
+                copy.SavedAtUtc = now;
+                var index = records.FindIndex(r => r.GameKey == record.GameKey && r.Component == record.Component);
+                if (index >= 0) records[index] = copy; else records.Add(copy);
+            }
+            SaveUnsafe(records);
+        }
+    }
+
     public void Remove(DetectedGame game, ManagedComponentKind component)
     {
         lock (_gate)

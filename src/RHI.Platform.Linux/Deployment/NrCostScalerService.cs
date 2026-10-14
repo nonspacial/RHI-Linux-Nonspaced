@@ -205,7 +205,8 @@ public sealed class NrCostScalerService
     {
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
         var directory = record.BinaryDirectory;
-        var proxyPath = Path.Combine(directory, ProxyDllName);
+        var proxyPath = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals(ProxyDllName, StringComparison.OrdinalIgnoreCase))?.Path
+                        ?? Path.Combine(directory, ProxyDllName);
         var realPath = Path.Combine(directory, RealDllName);
         // Nothing is removed unless every file is still what RHI wrote (the INI may hold the user's own scale).
         var changed = record.Files.Where(f => !f.AllowUserChanges && (!File.Exists(f.Path) || f.Sha256 is null || !FileHash.HexEquals(FileHash.Sha256Hex(f.Path), f.Sha256)))
@@ -224,7 +225,13 @@ public sealed class NrCostScalerService
             var realSha = record.Files.First(f => f.Path == realPath).Sha256!;
             await operation.RecordWriteAsync(proxyPath, realSha, CancellationToken.None).ConfigureAwait(false);
             AtomicFile.Rename(realPath, proxyPath);
-            _records.Remove(game, ManagedComponentKind.NrCostScaler);
+            // Commit point: ONE ledger write takes the scaler's record out and stamps this removal on the record whose
+            // runtime came back (the owner's), so start-up recovery sees a finished removal after it and rolls the files
+            // back with the scaler's record still in place before it (never files without a record).
+            var ownerRecord = _records.FindAll(game).FirstOrDefault(r => r.Component != ManagedComponentKind.NrCostScaler
+                && r.Files.Any(f => string.Equals(f.Path, proxyPath, StringComparison.Ordinal)));
+            _records.Commit(ownerRecord is null ? [] : [LinuxDeploymentRecovery.StampOperation(operation, LinuxDeploymentRecordStore.Clone(ownerRecord))],
+                [(game, ManagedComponentKind.NrCostScaler)]);
             await operation.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok(RemovedMessage, record.Files.Select(f => f.Path).ToArray());
         }
