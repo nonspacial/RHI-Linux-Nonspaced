@@ -9,10 +9,13 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
-/// Settings → Accounts &amp; updates → Nexus Mods (#99; upstream SettingsHandler Nexus section): connect with an API key
-/// pasted from the Nexus account page or through the Nexus login (SSO) window, see who is connected, disconnect, and
-/// make RHI the handler for "Mod Manager Download" links. The key lives in a 0600 file (<see cref="SecretFileStore"/>),
-/// is checked with Nexus before it is saved and is never shown.
+/// Settings → Accounts &amp; updates → Nexus Mods (#99; upstream SettingsHandler Nexus section): one "Connect Nexus
+/// account" button opens the API-key page of the user's Nexus account in the browser and shows the paste box; the pasted
+/// key is checked with Nexus before it is saved. Then: who is connected, disconnect, and RHI as the handler for "Mod
+/// Manager Download" links. The key lives in a 0600 file (<see cref="SecretFileStore"/>) and is never shown.
+/// <para>Owner decision: API key only. The SSO login (<see cref="CreateSso"/>, <see cref="NexusSsoPresenter"/>) stays in the
+/// code, dormant: no control reaches it while <see cref="SsoAvailable"/> is false, i.e. until #171 registers RHI-Linux
+/// with Nexus (<see cref="NexusApplication.RegisteredSsoSlug"/>).</para>
 /// </summary>
 public sealed partial class NexusAccountPresenter : ObservableObject
 {
@@ -57,6 +60,9 @@ public sealed partial class NexusAccountPresenter : ObservableObject
     [ObservableProperty] private string _statusText;
     [ObservableProperty] private string _handlerText;
     [ObservableProperty] private bool _handlerIsRhi;
+
+    /// <summary>The paste box is shown: after "Connect Nexus account", until a key is saved.</summary>
+    [ObservableProperty] private bool _isKeyEntryShown;
 
     /// <summary>The saved key for an API call, or null (status says why) when none is usable.</summary>
     public string? UsableKey()
@@ -121,6 +127,7 @@ public sealed partial class NexusAccountPresenter : ObservableObject
             return false;
         }
         SyncAccount();
+        IsKeyEntryShown = false;
         StatusText = TF("Parity.NexusConnected", user.Name, T(user.IsPremium ? "Parity.NexusPremium" : "Parity.NexusFree"));
         return true;
     }
@@ -145,13 +152,17 @@ public sealed partial class NexusAccountPresenter : ObservableObject
     /// <summary>Nexus's API key page, where a personal key is created (the paste path).</summary>
     public const string KeyPageUrl = "https://www.nexusmods.com/users/myaccount?tab=api";
 
-    public void OpenKeyPage()
+    /// <summary>"Connect Nexus account": opens <see cref="KeyPageUrl"/> in the browser and shows the paste box.</summary>
+    public void Connect()
     {
+        IsKeyEntryShown = true;
         var (opened, error) = _openLink(KeyPageUrl);
-        if (!opened) StatusText = TF("Parity.LinkNotOpened", UiLocalizationService.Present(error));
+        StatusText = opened
+            ? T("Parity.NexusConnectOpened")
+            : TF("Parity.NexusConnectNotOpened", UiLocalizationService.Present(error), KeyPageUrl);
     }
 
-    /// <summary>The login window's model (only when <see cref="SsoAvailable"/>).</summary>
+    /// <summary>The login window's model (only when <see cref="SsoAvailable"/>; dormant until #171, no control calls it).</summary>
     public NexusSsoPresenter CreateSso() => new(this, _sso(), SsoSlug ?? throw new InvalidOperationException("Nexus SSO is not registered."), _openLink);
 
     public async Task RefreshHandlerAsync()

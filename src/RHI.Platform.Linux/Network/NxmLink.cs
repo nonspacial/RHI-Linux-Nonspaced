@@ -60,28 +60,28 @@ public sealed record NxmLink(string GameDomain, int ModId, int FileId, string? K
 
 /// <summary>
 /// How RHI-Linux identifies itself to Nexus Mods. The API wants an application name and version on every request.
-/// SSO (the "log in with Nexus" window) needs an application slug that Nexus registers for each application; RHI-Linux
-/// has none yet — upstream's slug (<c>rhi</c>) belongs to upstream RHI and is not borrowed. Until one is registered,
-/// <see cref="SsoSlug"/> is null and only the API-key paste is offered. A registered slug goes into
-/// <see cref="RegisteredSsoSlug"/>; for testing a registration before a build, <c>RHI_NEXUS_SSO_SLUG</c> overrides it.
+/// Owner decision (#99): RHI-Linux connects to Nexus by API key only — the "Connect Nexus account" button opens the key
+/// page and shows the paste box. SSO (the "log in with Nexus" window, <c>NexusSsoClient</c> and its dialog) stays in the
+/// code, dormant and unreachable: it needs an application slug Nexus registers for RHI-Linux, and that registration is a
+/// finalisation task (#171, possibly done by the upstream fork). Upstream's slug (<c>rhi</c>) belongs to upstream RHI and
+/// is never borrowed. There is no override: until #171 puts the registered slug into <see cref="RegisteredSsoSlug"/>,
+/// <see cref="SsoSlug"/> is null and nothing in the app can open the SSO window.
 /// </summary>
 public static class NexusApplication
 {
     public const string Name = "RHI-Linux";
 
-    /// <summary>The slug Nexus registered for RHI-Linux (none yet: owner decision pending).</summary>
+    /// <summary>The slug Nexus registered for RHI-Linux: none until #171.</summary>
     public const string? RegisteredSsoSlug = null;
 
     private static readonly Regex Slug = new("^[a-z0-9][a-z0-9_-]{0,63}$", RegexOptions.CultureInvariant);
 
     public static string Version => RHI.Core.RhiProductInfo.Version;
 
-    /// <summary>The SSO slug in use (environment override, else <see cref="RegisteredSsoSlug"/>), or null when SSO is unavailable.</summary>
-    public static string? SsoSlug => SlugFrom(Environment.GetEnvironmentVariable("RHI_NEXUS_SSO_SLUG"));
+    /// <summary>The registered SSO slug (<see cref="RegisteredSsoSlug"/>), or null while SSO is dormant.</summary>
+    public static string? SsoSlug => SlugFrom(RegisteredSsoSlug);
 
-    internal static string? SlugFrom(string? environmentValue)
-    {
-        var value = string.IsNullOrWhiteSpace(environmentValue) ? RegisteredSsoSlug : environmentValue.Trim();
-        return value is not null && Slug.IsMatch(value) ? value : null;
-    }
+    /// <summary>A well-formed slug, or null.</summary>
+    internal static string? SlugFrom(string? value)
+        => !string.IsNullOrWhiteSpace(value) && Slug.IsMatch(value.Trim()) ? value.Trim() : null;
 }

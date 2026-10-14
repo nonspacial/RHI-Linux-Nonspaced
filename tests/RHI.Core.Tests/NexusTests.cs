@@ -49,11 +49,15 @@ public sealed class NxmLinkTests
         => Assert.Null(NxmLink.TryParse("nxm://cyberpunk2077/mods/1/files/2?key=" + new string('a', 2100) + "&expires=1"));
 
     [Fact]
-    public void SsoSlug_IsNotBorrowedFromUpstream_ButCanBeConfigured()
+    public void SsoSlug_IsDormantUntil171_NoOverride_UpstreamsNeverBorrowed()
     {
-        Assert.Null(NexusApplication.SlugFrom(null)); // no registration for RHI-Linux yet: SSO hidden, API key only
-        Assert.Null(NexusApplication.SsoSlug is "rhi" ? "rhi" : null);
-        Assert.Equal("rhi-linux", NexusApplication.SlugFrom("rhi-linux"));
+        // Owner decision (#99): API key only; SSO waits for RHI-Linux's own Nexus registration (#171).
+        Assert.Null(NexusApplication.RegisteredSsoSlug);
+        var before = Environment.GetEnvironmentVariable("RHI_NEXUS_SSO_SLUG");
+        Environment.SetEnvironmentVariable("RHI_NEXUS_SSO_SLUG", "rhi-linux"); // the old test override: gone
+        try { Assert.Null(NexusApplication.SsoSlug); }
+        finally { Environment.SetEnvironmentVariable("RHI_NEXUS_SSO_SLUG", before); }
+        Assert.Equal("rhi-linux", NexusApplication.SlugFrom("rhi-linux")); // what #171 will put in, validated
         Assert.Null(NexusApplication.SlugFrom("bad slug&x=1"));
     }
 }
@@ -484,7 +488,8 @@ public sealed class NexusPresenterTests : IDisposable
     }
 
     private (NexusAccountPresenter Account, NexusLinkPresenter Links, NexusApiClientTests.FakeNexus Http) Build(
-        Func<HttpRequestMessage, HttpResponseMessage>? respond = null, NexusSsoClientTests.FakeSocket? socket = null, string? slug = null)
+        Func<HttpRequestMessage, HttpResponseMessage>? respond = null, NexusSsoClientTests.FakeSocket? socket = null, string? slug = null,
+        Func<string, (bool Opened, string? Error)>? openLink = null)
     {
         var fake = new NexusApiClientTests.FakeNexus(respond ?? (request => request.RequestUri!.AbsolutePath switch
         {
@@ -497,7 +502,7 @@ public sealed class NexusPresenterTests : IDisposable
         var api = new NexusApiClient(http);
         var handler = new NxmHandlerRegistration(Path.Combine(_root, "apps"), () => ["/opt/rhi/RHI"], (_, _) => Task.FromResult<(int, string)?>((0, "")));
         var account = new NexusAccountPresenter(new SecretFileStore(KeyPath), api, new AccountsPreferenceStore(Path.Combine(_root, "accounts.json")), handler,
-            socket is null ? null : () => new NexusSsoClient(() => socket), slug, _ => (true, null));
+            socket is null ? null : () => new NexusSsoClient(() => socket), slug, openLink ?? (_ => (true, null)));
         return (account, new NexusLinkPresenter(account, api, new NexusDownloadService(http, api, Path.Combine(_root, "cache"))), fake);
     }
 
@@ -514,6 +519,37 @@ public sealed class NexusPresenterTests : IDisposable
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(KeyPath));
         Assert.Equal("Account: Robbie (Free account)", account.AccountText);
         Assert.DoesNotContain(Key, account.StatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ConnectNexusAccount_OpensTheKeyPage_ShowsThePasteBox_HiddenOnceTheKeyIsSaved()
+    {
+        var opened = new List<string>();
+        var (account, _, _) = Build(openLink: url => { opened.Add(url); return (true, null); });
+        Assert.False(account.IsKeyEntryShown); // not connected: only the Connect button
+
+        account.Connect();
+
+        Assert.Equal(["https://www.nexusmods.com/users/myaccount?tab=api"], opened);
+        Assert.True(account.IsKeyEntryShown);
+        Assert.Equal("Nexus's API key page is open in your browser. Copy your personal API key there, paste it below and choose Check and save.", account.StatusText);
+        Assert.True(await account.SaveKeyAsync(Key));
+        Assert.False(account.IsKeyEntryShown);
+        Assert.True(account.IsConnected);
+    }
+
+    [Fact]
+    public void ConnectNexusAccount_BrowserDoesNotOpen_StillShowsTheBox_AndNamesThePage_InPortuguese()
+    {
+        UiLocalizationService.Apply("pt-BR");
+        var (account, _, _) = Build(openLink: _ => (false, "xdg-open not found"));
+
+        account.Connect();
+
+        Assert.True(account.IsKeyEntryShown);
+        Assert.StartsWith("O navegador não pôde ser aberto (", account.StatusText, StringComparison.Ordinal);
+        Assert.EndsWith("). Abra https://www.nexusmods.com/users/myaccount?tab=api, copie a sua chave pessoal de API, cole aqui embaixo e escolha Verificar e salvar.",
+            account.StatusText, StringComparison.Ordinal);
     }
 
     [Fact]

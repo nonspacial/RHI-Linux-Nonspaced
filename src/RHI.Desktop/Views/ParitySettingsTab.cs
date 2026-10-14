@@ -125,10 +125,13 @@ internal static class ParitySettingsTab
             Name = "NexusKeyBox"
         };
         var save = Button(T("Parity.NexusKeySave"), T("Parity.NexusKeySaveTip"));
-        var login = Button(T("Parity.NexusLogin"), T("Parity.NexusLoginTip"));
-        login.Name = "NexusLoginButton";
-        var keyPage = Button(T("Parity.NexusKeyPage"), T("Parity.NexusKeyPageTip"));
+        // The one way in (owner decision #99): API-key page in the browser + paste box. The SSO window is not offered.
+        var connect = Button(T("Parity.NexusConnect"), T("Parity.NexusConnectTip"));
+        connect.Name = "NexusConnectButton";
+        connect.FontSize = 14;
+        connect.FontWeight = FontWeight.SemiBold;
         var disconnect = Button(T("Parity.NexusDisconnect"));
+        var entry = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Name = "NexusKeyEntry" };
         var handler = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
         var register = Button(T("Parity.NexusHandlerRegister"), T("Parity.NexusHandlerRegisterTip"));
         var unregister = Button(T("Parity.NexusHandlerUnregister"));
@@ -139,10 +142,11 @@ internal static class ParitySettingsTab
             status.Text = presenter.StatusText;
             handler.Text = presenter.HandlerText;
             disconnect.IsVisible = presenter.IsConnected;
-            login.IsVisible = presenter.SsoAvailable; // no Nexus registration for RHI-Linux yet: API key only
+            connect.IsVisible = !presenter.IsConnected;
+            entry.IsVisible = presenter.IsKeyEntryShown && !presenter.IsConnected;
             register.IsVisible = !presenter.HandlerIsRhi;
             unregister.IsVisible = presenter.HandlerIsRhi;
-            save.IsEnabled = login.IsEnabled = box.IsEnabled = !presenter.IsBusy;
+            save.IsEnabled = connect.IsEnabled = box.IsEnabled = !presenter.IsBusy;
         }
         Bind(section, presenter, Sync);
         section.AttachedToVisualTree += (_, _) => UiExceptionGuard.Forget(presenter.RefreshHandlerAsync(), "NexusHandlerQuery");
@@ -150,11 +154,6 @@ internal static class ParitySettingsTab
         async Task SaveAsync()
         {
             if (await presenter.SaveKeyAsync(box.Text)) box.Text = "";
-        }
-        async Task LoginAsync()
-        {
-            if (TopLevel.GetTopLevel(section) is not Window owner) return;
-            await ParityDialogs.NexusLogin(presenter.CreateSso()).ShowDialog<bool>(owner);
         }
         async Task RegisterAsync()
         {
@@ -164,18 +163,20 @@ internal static class ParitySettingsTab
             await presenter.RegisterHandlerAsync();
         }
         save.Click += (_, _) => UiExceptionGuard.Forget(SaveAsync(), "NexusKeySave");
-        login.Click += (_, _) => UiExceptionGuard.Forget(LoginAsync(), "NexusLogin");
-        keyPage.Click += (_, _) => presenter.OpenKeyPage();
+        connect.Click += (_, _) =>
+        {
+            presenter.Connect();
+            Dispatcher.UIThread.Post(() => box.Focus());
+        };
         disconnect.Click += (_, _) => presenter.Disconnect();
         register.Click += (_, _) => UiExceptionGuard.Forget(RegisterAsync(), "NxmRegister");
         unregister.Click += (_, _) => UiExceptionGuard.Forget(presenter.UnregisterHandlerAsync(), "NxmUnregister");
 
-        var entry = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
         entry.Children.Add(box);
         entry.Children.Add(save);
         Grid.SetColumn(save, 1);
         section.Children.Add(account);
-        section.Children.Add(Buttons(login, keyPage, disconnect));
+        section.Children.Add(Buttons(connect, disconnect));
         section.Children.Add(entry);
         section.Children.Add(status);
         section.Children.Add(new TextBlock { Text = T("Parity.NexusHandlerHeading"), FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
