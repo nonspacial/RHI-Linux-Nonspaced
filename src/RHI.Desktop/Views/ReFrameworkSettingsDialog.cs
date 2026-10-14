@@ -14,7 +14,9 @@ namespace RHI.Desktop.Views;
 /// </summary>
 public static class ReFrameworkSettingsDialog
 {
-    private static TextBlock Label(string key) => new() { Text = UiLocalizationService.Text(key) };
+    // Button content strings treat "_" as an access-key marker: doubled, "_storage_" is drawn with both underscores and
+    // keeps the button's own (remove) text style.
+    private static string Label(string key) => UiLocalizationService.Text(key).Replace("_", "__", StringComparison.Ordinal);
 
     public static Window Create(ReFrameworkStoragePresenter presenter, string gameName)
     {
@@ -39,8 +41,6 @@ public static class ReFrameworkSettingsDialog
         var delete = new Button
         {
             Classes = { "rhi", "remove" },
-            // A TextBlock, not a string: Button content strings treat "_" as an access-key marker and "_storage_" lost
-            // its first underscore.
             Content = Label("Journal.RefStorageDelete"),
             HorizontalAlignment = HorizontalAlignment.Left
         };
