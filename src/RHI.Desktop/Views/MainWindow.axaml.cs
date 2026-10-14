@@ -709,7 +709,8 @@ public sealed partial class MainWindow : Window
                 new TabItem { Header = "Shaders/Add-ons", Content = new ScrollViewer { Content = managerTab } },
                 new TabItem { Header = "DLSS/Streamline", Content = new ScrollViewer { Content = dlssTab } },
                 new TabItem { Header = UiLocalizationService.Text("Ui.UxTab"), Content = new ScrollViewer { Content = uxTab } },
-                new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } }
+                new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } },
+                ParitySettingsTab.Create(vm.Parity) // w3/parity hook
             }
         };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
@@ -812,6 +813,8 @@ public sealed partial class MainWindow : Window
                 shaderRoot.Children.Add(packRow);
             }
         }
+
+        shaderRoot.Children.Insert(0, ShaderProfilePanel.Create(vm.Parity, () => shaderChecks.Where(x => x.Box.IsChecked == true).Select(x => x.Id).ToArray(), ids => { foreach (var (id, box) in shaderChecks) box.IsChecked = ids.Contains(id, StringComparer.OrdinalIgnoreCase); })); // w3/parity hook (#93)
 
         var addonRoot = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(12) };
         foreach (var addon in snapshot.Addons.OrderBy(x => x.ManagedByComponent).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))

@@ -47,18 +47,16 @@ fi
 
 ln -sfn "$DEST/RHI" "$BIN_DIR/rhi-linux"
 
-# Desktop Exec quoting: inside double quotes escape \ " ` $, and double any %. A backslash needs
-# four: the Desktop Entry string unescape turns \\\\ into \\ before the Exec quoting rule reads it.
-exec_path="$DEST/RHI"
-exec_path="${exec_path//\\/\\\\\\\\}"
-exec_path="${exec_path//\"/\\\"}"
-exec_path="${exec_path//\`/\\\`}"
-exec_path="${exec_path//\$/\\\$}"
-exec_path="${exec_path//%/%%}"
+# Desktop Exec quoting: inside double quotes \ " ` $ take a backslash, and that backslash is written doubled because
+# the Desktop Entry string unescape runs first (\\$ in the file -> \$ for the Exec rule -> $; a backslash is four).
+# A single backslash before " ` $ is not a valid string escape: GLib refuses the whole value. Any % is doubled.
+# sed, not ${var//}: bash 5.2 changed how backslashes in a ${var//pattern/replacement} replacement are read.
+exec_path="$(printf '%s' "$DEST/RHI" | sed -e 's/\\/\\\\\\\\/g' -e 's/["`$]/\\\\&/g' -e 's/%/%%/g')"
 desktop_tmp="$(mktemp "$APPS_DIR/.rhi-linux.desktop.XXXXXX")"
 while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" == Exec=* ]]; then
-        printf 'Exec="%s"\n' "$exec_path"
+        # %u: a Nexus Mods "Mod Manager Download" (nxm://) link, when the desktop hands one to RHI (#99).
+        printf 'Exec="%s" %%u\n' "$exec_path"
     else
         printf '%s\n' "$line"
     fi

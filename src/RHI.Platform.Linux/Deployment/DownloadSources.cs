@@ -100,6 +100,22 @@ public static class DownloadSources
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
+    /// <summary>Nexus Mods API (key check, mod file lists, download links; #99): api.nexusmods.com only, metadata cap.</summary>
+    public static readonly TrustedDownloadPolicy NexusApi = new(
+        "Nexus Mods API", "api.nexusmods.com", ["api.nexusmods.com"], maxBytes: TrustedDownload.MetadataMaxBytes);
+
+    /// <summary>
+    /// Files from Nexus Mods download links (#99, a confirmed nxm:// link): Nexus's file CDN, one label under
+    /// nexus-cdn.com (supporter-files, cf-files, premium mirrors). Capped at 1 GiB; RHI only installs add-ons and Luma
+    /// packages from them, through the existing confirmed import/install paths.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy NexusFiles = new(
+        "Nexus Mods file", "Nexus Mods' file servers (nexus-cdn.com)", [], ["nexus-cdn.com"], maxBytes: 1024L * 1024 * 1024);
+
+    /// <summary>NR Cost Scaler (#96): xenmods/DLSSNR-Cost-Scaler GitHub releases (a small zip; its published digest is checked).</summary>
+    public static readonly TrustedDownloadPolicy NrCostScaler = new(
+        "NR Cost Scaler", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
+
     // w3/vmsplit rows
     // w3/dllnames rows
 
@@ -114,6 +130,7 @@ public static class DownloadSources
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        NexusApi, NexusFiles, NrCostScaler,
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

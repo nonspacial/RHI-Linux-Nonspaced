@@ -7,6 +7,7 @@ using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Launch;
 using RHI.Platform.Linux.Network;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop;
@@ -43,6 +44,7 @@ internal sealed class AppComposition
     /// <summary>The "PartingX / Xbox folders" setting the Xbox detector reads (Settings hosts it through <see cref="ViewModels.XboxFoldersPresenter"/>).</summary>
     public RHI.Platform.Linux.Detection.Xbox.XboxFolderStore XboxFolders { get; init; } = new();
     // w3/parity rows
+    public ParityFeatures? Parity { get; init; }
     // w3/vmsplit rows
     // w3/dllnames rows
 
@@ -95,7 +97,9 @@ internal sealed class AppComposition
         var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
         var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
         var reshadeExtractor = new ReShadeArchiveExtractor();
-        var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest, journal: journal);
+        // w3/parity hook (#93): the one shader-pack service, shared with the shader-profile export (same cache dir as before).
+        var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest);
+        var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, shaderPacks: shaderPacks, upstreamManifest: upstreamManifest, journal: journal);
         var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
@@ -174,15 +178,31 @@ internal sealed class AppComposition
         var lumaPolicy = new LumaPolicyService(upstreamManifest, lumaModeStore);
         var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         var updateLog = new ComponentUpdateLogStore();
+        var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
-            updateLog);
+            updateLog, nrCostScaler: nrCostScaler); // w3/parity hook (#96): named argument
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        var accounts = new AccountsPreferenceStore();
+        var nexusApi = NexusApiClient.CreateDefault(); // its own client: never follows a redirect with the key
+        var nexusAccount = new NexusAccountPresenter(new SecretFileStore(NexusAccountPresenter.DefaultKeyPath, "nexus"), nexusApi, accounts,
+            new NxmHandlerRegistration(), ssoSlug: NexusApplication.SsoSlug);
+        var parity = new ParityFeatures
+        {
+            NexusAccount = nexusAccount,
+            ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
+            NrCostScaler = new NrCostScalerPresenter(managedComponents),
+            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi)),
+            AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
+            Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
+            GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
+                new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new SecretFileStore(GitHubTokenSettingsService.DefaultTokenPath, "github-token"))),
+        };
         // w3/vmsplit rows
         // w3/dllnames rows
         return new AppComposition
@@ -209,6 +229,7 @@ internal sealed class AppComposition
             // w3/scan rows
             XboxFolders = xboxFolders,
             // w3/parity rows
+            Parity = parity,
             // w3/vmsplit rows
             // w3/dllnames rows
         };

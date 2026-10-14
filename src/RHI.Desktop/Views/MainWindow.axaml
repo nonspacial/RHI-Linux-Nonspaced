@@ -461,6 +461,7 @@
                                   IsEnabled="{Binding CanConfigureNeuralRenderingDllVersion}"/>
                         <TextBlock Grid.Column="2" Text="{DynamicResource Ui.NrDllVersionNote}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
                       </Grid>
+                      <views:NrCostScalerRow/> <!-- w3/parity hook (#96) -->
                     </StackPanel>
                   </Border>
 

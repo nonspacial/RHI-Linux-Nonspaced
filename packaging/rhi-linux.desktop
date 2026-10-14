@@ -2,8 +2,9 @@
 Type=Application
 Name=RHI Linux
 Comment=Manage RHI components for Wine and Proton games
-Exec=rhi-linux
+Exec=rhi-linux %u
 Icon=rhi-linux
 Terminal=false
 Categories=Game;Utility;
 StartupNotify=true
+MimeType=x-scheme-handler/nxm;

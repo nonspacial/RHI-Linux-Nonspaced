@@ -43,6 +43,7 @@ public sealed class App : Application
             var services = AppComposition.Create(http, records, wineOverrides, journal);
             UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);
             var vm = services.CreateViewModel();
+            vm.Parity = services.Parity; // w3/parity hook
             tokenNoticeTarget = vm;
             UiExceptionGuard.SetReporter(message =>
             {
@@ -52,6 +53,15 @@ public sealed class App : Application
             if (recovery.NeedsNotice)
                 Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
             desktop.Exit += (_, _) => vm.Dispose();
+            if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), single-instance hand-off (#162, #99)
+            {
+                UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
+                var handoff = RHI.Platform.Linux.Ux.InstanceHandoff.Listen(request =>
+                    Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, request), "handoff")));
+                desktop.Exit += (_, _) => handoff?.Dispose();
+                if (Program.PendingHandoff is { } pending)
+                    Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, pending), "handoff"));
+            }
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,
@@ -59,6 +69,7 @@ public sealed class App : Application
                 HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog, services.RenoDxUnityDatabase), // w3/sync #126 hook
                 UpstreamManifest = services.UpstreamManifest
             };
+            if (services.Parity is { } windowParity) ((MainWindow)desktop.MainWindow).AttachParity(windowParity); // w3/parity hook (#99)
         }
         base.OnFrameworkInitializationCompleted();
     }

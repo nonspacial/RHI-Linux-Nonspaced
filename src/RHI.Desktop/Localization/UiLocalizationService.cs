@@ -1035,6 +1035,32 @@ public static class UiLocalizationService
         ("Could not determine whether the game executable is 32-bit or 64-bit: this Xbox / Game Pass package keeps it encrypted on disk, so RHI cannot install mods on it yet.", "Não foi possível determinar se o executável do jogo é de 32 ou 64 bits: este pacote do Xbox o mantém criptografado no disco, então o RHI ainda não pode instalar mods nele."),
         ("RHI never changes this file of an Xbox package: the game would no longer start, or PartingX/Xodus would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o PartingX/Xodus o restauraria. Arquivo: "),
         // w3/parity rows
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusApi.RefusalPrefix,
+            "Download recusado: links da API do Nexus Mods devem ser HTTPS em um host confiável (api.nexusmods.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusFiles.RefusalPrefix,
+            "Download recusado: links de arquivos do Nexus Mods devem ser HTTPS em um host confiável (servidores de arquivos do Nexus Mods, nexus-cdn.com). Link recusado: "),
+        (RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage, "Não foi possível falar com o Nexus Mods."),
+        (RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage, "O Nexus Mods não deu nenhum link de download que o RHI aceite para este arquivo."),
+        (RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage, "O Nexus Mods respondeu à verificação da chave sem uma conta."),
+        (RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage, "O Nexus Mods enviou mais do que uma resposta de dados."),
+        (RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix, "O Nexus Mods respondeu "),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.TooLargeMessage, "A exportação do perfil de shaders passa do limite (512 MiB)."),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.NotAProfileMessage, "Este zip não é um perfil de shaders (não tem shader_import.json)."),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.UnreadableProfileMessage, "O perfil de shaders deste zip não pode ser lido."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.NoOwnerMessage, "O NR Cost Scaler precisa antes de um método de Neural Rendering instalado pelo RHI (ShortFuse, DLSS5 Feeder, OptiScaler DLSS NR ou OptiScaler F5 DLSSNR)."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerModifiedPrefix, "NR Cost Scaler não instalado: o nvngx_dlssnr.dll não confere mais com o que o RHI instalou para "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.AlreadyInstalledMessage, "O NR Cost Scaler já está instalado para este jogo."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.NotInstalledMessage, "O NR Cost Scaler não foi instalado pelo RHI para este jogo."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.ForeignFilePrefix, "NR Cost Scaler não instalado: um arquivo que o RHI não gravou está no caminho: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.ScalerModifiedPrefix, "NR Cost Scaler não removido: seus arquivos mudaram desde a instalação pelo RHI (mantidos como estão): "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.DownloadFailedPrefix, "O download do NR Cost Scaler falhou; nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.PackageIncompleteMessage, "A versão do NR Cost Scaler não contém nvngx_dlssnr.dll e nvngx_dlssnr.ini; nada foi alterado."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.InstalledPrefix, "NR Cost Scaler instalado sobre "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.RemovedMessage, "NR Cost Scaler removido; o runtime de Neural Rendering voltou a ser como era."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.FailedRolledBackPrefix, "O NR Cost Scaler falhou e foi desfeito: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerBlockedPrefix, "Remova o NR Cost Scaler antes: ele envolve o nvngx_dlssnr.dll de "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NrCostScaler.RefusalPrefix,
+            "Download recusado: links do NR Cost Scaler devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];
@@ -1089,6 +1115,8 @@ public static class UiLocalizationService
             result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
         if (result.UncheckedCount > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
+        if (result.HeldCount > 0) // w3/parity (#96)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

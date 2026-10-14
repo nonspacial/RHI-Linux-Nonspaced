@@ -57,8 +57,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         LumaFrameworkDeploymentService lumaFramework,
         LumaPolicyService lumaPolicy,
         NeuralAddonVersionPreferenceStore? neuralVersionPins = null,
-        ComponentUpdateLogStore? updateLog = null)
+        ComponentUpdateLogStore? updateLog = null,
+        NrCostScalerService? nrCostScaler = null) // w3/parity (#96)
     {
+        _nrCostScaler = nrCostScaler;
         _records = records;
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
@@ -851,6 +853,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     // Every mutating entry point goes through this: an unconfirmed patch target, or records left
     // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
+    private readonly NrCostScalerService? _nrCostScaler; // w3/parity (#96)
+
     private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
         => XboxWriteGate.Refusal(game) is { } busy ? ComponentOperationResult.Fail(busy) // w3/scan hook (Refs #90)
             : game.HasConfirmedPatchTarget
@@ -862,6 +866,24 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // until #167, so the card never claims one and says why (Refs #90). Removal and updates of what exists never ask this.
     private ComponentOperationResult? InstallGuard(DetectedGame game) // w3/scan hook
         => PatchTargetGuard(game) ?? (XboxWriteGate.InstallRefusal(game) is { } install ? ComponentOperationResult.Fail(install) : null);
+
+    // w3/parity (#96): an nvngx_dlssnr.dll owner is not reinstalled, updated, swapped or removed under the NR Cost Scaler.
+    private ComponentOperationResult? LayerGuard(DetectedGame game, ManagedComponentKind component)
+        => NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered ? ComponentOperationResult.Fail(layered) : null;
+
+    // w3/parity (#96): the NR Cost Scaler's own install and removal, through the same guard and history as every component.
+    public Task<ComponentOperationResult> InstallNrCostScalerAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => InstallGuard(game) is { } guard ? Task.FromResult(guard)
+            : _nrCostScaler is null ? Task.FromResult(ComponentOperationResult.Fail(NrCostScalerService.NoOwnerMessage))
+            : Track(game, ManagedComponentKind.NrCostScaler, ComponentUpdateAction.Install, () => _nrCostScaler.InstallAsync(game, cancellationToken));
+
+    public Task<ComponentOperationResult> RemoveNrCostScalerAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => PatchTargetGuard(game) is { } guard ? Task.FromResult(guard)
+            : _nrCostScaler is null ? Task.FromResult(ComponentOperationResult.Fail(NrCostScalerService.NotInstalledMessage))
+            : Track(game, ManagedComponentKind.NrCostScaler, ComponentUpdateAction.Remove, () => _nrCostScaler.RemoveAsync(game, cancellationToken));
+
+    /// <summary>The NR Cost Scaler service (null in builds and tests constructed without it).</summary>
+    public NrCostScalerService? NrCostScaler => _nrCostScaler;
 
     private ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
     {
@@ -1295,6 +1317,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
         ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
+        ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         _ => kind.ToString()
     };
 
@@ -1452,6 +1475,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         if (guard is not null) return guard;
+        if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.Dlss5Feeder) is { } layered) return ComponentOperationResult.Fail(layered); // w3/parity (#96)
 
         var preflight = Dlss5FeederFullDeploymentService.ValidateTarget(game, consumer, requireReShade: false);
         if (preflight is not null) return preflight;
@@ -1510,6 +1534,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = PatchTargetGuard(game);
         if (guard is not null) return Task.FromResult(guard);
+        if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.ShortFuse) is { } layered) return Task.FromResult(ComponentOperationResult.Fail(layered)); // w3/parity (#96)
         var version = _neuralVersionPins.GetNeuralRenderingDllVersion(game);
         if (IsShortFuseManaged(game))
             return TrackNeuralRenderingDll(game, ManagedComponentKind.ShortFuse,
@@ -1616,6 +1641,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = InstallGuard(game);
         if (guard is not null) return guard;
+        if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.ShortFuse) is { } layered) return ComponentOperationResult.Fail(layered); // w3/parity (#96)
         return await Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.ShortFuse,
@@ -1632,7 +1658,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public Task<ComponentOperationResult> RemoveShortFuseAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.ShortFuse); // w3/parity (#96)
         return guard is null
             ? Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Remove, () => _shortFuse.RemoveAsync(game, cancellationToken))
             : Task.FromResult(guard);
@@ -1785,7 +1811,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var patchGuard = PatchTargetUpdateGuard(game);
         if (patchGuard is not null) return patchGuard;
 
-        return component switch
+        return HeldByLayer(game, component, component switch // w3/parity (#96)
         {
             ManagedComponentKind.ReShade => await CheckReShadeManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.RenoDX => await _renodx.CheckUpdateAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false),
@@ -1801,8 +1827,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
-        };
+        });
     }
+
+    // w3/parity (#96): an NR method's update found while NR Cost Scaler wraps its runtime is held, not attempted (the
+    // update itself is refused by LayerGuard): Update All reports it as held by the scaler, never as a failure.
+    private ManagedUpdateCheck HeldByLayer(DetectedGame game, ManagedComponentKind component, ManagedUpdateCheck check)
+        => check.UpdateAvailable && NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered
+            ? check with { UpdateAvailable = false, Message = layered, HeldBy = NrCostScalerService.DisplayName }
+            : check;
 
     private async Task<ManagedUpdateCheck> CheckReShadeManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken)
     {
@@ -1817,7 +1850,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
         if (guard is not null) return Task.FromResult(guard);
 
         return Track(game, component, ComponentUpdateAction.Update, () => component switch
@@ -1860,7 +1893,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         string? nightlyBuild,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game);
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler); // w3/parity (#96)
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, nightlyBuild, cancellationToken));
@@ -1896,7 +1929,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game);
+        var guard = InstallGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
         if (guard is not null) return guard;
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2076,7 +2109,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind component,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
         if (guard is not null) return Task.FromResult(guard);
 
         if (component == ManagedComponentKind.REFramework &&

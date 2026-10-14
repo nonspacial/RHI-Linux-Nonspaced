@@ -23,7 +23,9 @@ public enum ManagedComponentKind
     ShortFuse = 16,
     Dlssg2030Unlock = 17,
     DlssEnablerStandalone = 18,
-    Rtx40MfgStandalone = 19
+    Rtx40MfgStandalone = 19,
+    // w3/parity (#96): a layer over the nvngx_dlssnr.dll owner, never an owner itself.
+    NrCostScaler = 20
 }
 
 public enum ComponentAvailability

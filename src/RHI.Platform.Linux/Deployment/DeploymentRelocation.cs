@@ -147,6 +147,9 @@ public sealed class DeploymentRelocation
 
         var key = LinuxDeploymentRecordStore.GameKey(game);
         var current = _records.FindAll(game);
+        // w3/parity (#96): a file another record shares with an NR Cost Scaler record holds the scaler's proxy; the
+        // record's own content is beside it under the scaler's _real name (NrCostScalerService.ContentPath).
+        var gameRecords = candidates.Select(c => c.Record).Concat(current).ToArray();
         var rebased = new List<LinuxDeploymentRecord>();
         foreach (var candidate in candidates)
         {
@@ -161,7 +164,7 @@ public sealed class DeploymentRelocation
             // file would block its own update and removal later.
             foreach (var file in record.Files.Where(IsOwnedHashedFile))
             {
-                var mapped = Map(file.Path, candidate);
+                var mapped = Map(NrCostScalerService.ContentPath(record, file, gameRecords), candidate);
                 if (!File.Exists(mapped))
                     return new(false, 0, $"{RepairMissingPrefix}{mapped}");
                 if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -170,7 +173,7 @@ public sealed class DeploymentRelocation
 
             // The old folder may still exist (an emptied leftover, or a backup copy). Only one
             // that still holds RHI's files unchanged is a live copy RHI cannot choose between.
-            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, candidate))
+            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, candidate, gameRecords))
                 return new(false, 0, $"{RepairOldFolderExistsPrefix}{record.BinaryDirectory}{RepairOldFolderExistsSuffix}");
 
             var copy = LinuxDeploymentRecordStore.Clone(record);
@@ -280,11 +283,15 @@ public sealed class DeploymentRelocation
     private static bool IsOwnedHashedFile(LinuxDeployedFile file)
         => !file.AllowUserChanges && !string.IsNullOrWhiteSpace(file.Sha256) && !string.IsNullOrWhiteSpace(file.Path);
 
-    /// <summary>True when any owned file is still at its old (unmapped) path with its recorded hash.</summary>
-    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, RelocatedRecord candidate)
+    /// <summary>
+    /// True when any owned file is still at its old (unmapped) path with its recorded hash; an NR runtime owner's content
+    /// is read where it really is under an NR Cost Scaler (<see cref="NrCostScalerService.ContentPath"/>).
+    /// </summary>
+    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, RelocatedRecord candidate, IReadOnlyList<LinuxDeploymentRecord> gameRecords)
         => record.Files.Where(IsOwnedHashedFile)
             .Where(f => !string.Equals(Map(f.Path, candidate), f.Path, StringComparison.Ordinal))
-            .Any(f => File.Exists(f.Path) && string.Equals(FileHash.Sha256Hex(f.Path), f.Sha256, StringComparison.OrdinalIgnoreCase));
+            .Select(f => (Content: NrCostScalerService.ContentPath(record, f, gameRecords), f.Sha256))
+            .Any(f => File.Exists(f.Content) && string.Equals(FileHash.Sha256Hex(f.Content), f.Sha256, StringComparison.OrdinalIgnoreCase));
 
     private static IReadOnlyList<string> RecordedExecutables(LinuxDeploymentRecord record)
         => new[] { record.WineOverride }.Concat(record.AdditionalWineOverrides ?? [])

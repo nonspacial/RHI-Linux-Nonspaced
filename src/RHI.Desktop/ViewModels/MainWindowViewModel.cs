@@ -87,6 +87,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
+    /// <summary>w3/parity features (Settings → Accounts &amp; updates, shortcuts, hand-off); set by App. Integrator hook.</summary>
+    public ParityFeatures? Parity { get; set; }
+    internal IReadOnlyList<DetectedGame> AllLibraryGames => _library.AllGames; // w3/parity hook (shortcut launch by key)
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     public ObservableCollection<string> DlssSrVersions { get; } = [];
     public ObservableCollection<string> DlssRrVersions { get; } = [];
@@ -1021,6 +1024,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyDlssDefaults();
         NotifyDlss();
     }
+
+    /// <summary>A w3/parity notice (a newer RHI-Linux release, a hand-off result), appended once like the token notice. Integrator hook.</summary>
+    public void ReportParityNotice(string notice) => StatusText = _statusNotice.Raise(notice, StatusText);
 
     /// <summary>
     /// GitHub answered 401 to the saved API token (Refs #133): say so once, appended to the
@@ -2029,6 +2035,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// restore, ShortFuse load order): the cached file index is dropped and rebuilt so the next install sees the new
     /// files and backups (Refs #83), and the operation's line stays on screen.
     /// </summary>
+    internal Task ReprobeSelectedAsync(DetectedGame game) => ReprobeKeepingStatusAsync(game); // w3/parity hook (#96)
+
     private async Task ReprobeKeepingStatusAsync(DetectedGame game)
     {
         var line = StatusText;

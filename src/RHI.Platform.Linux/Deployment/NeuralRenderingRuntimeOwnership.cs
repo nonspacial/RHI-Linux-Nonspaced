@@ -46,12 +46,32 @@ public static class NeuralRenderingRuntimeOwnership
     /// name, or null when none does. A component that would deploy the runtime calls this before its first download.
     /// </summary>
     public static string? OwnerOtherThan(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind requester)
+        => OwnerRecordOtherThan(records, game, requester)?.Name;
+
+    /// <summary>
+    /// The owner (other than <paramref name="requester"/>) by display name, with its record, or null. Layers (the NR Cost
+    /// Scaler) ask this with their own kind to find the record whose runtime they wrap.
+    /// </summary>
+    public static (string Name, LinuxDeploymentRecord Record)? OwnerRecordOtherThan(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind requester)
     {
-        if (requester != ManagedComponentKind.OptiScaler && OptiScalerOwner(records, game) is { } optiScaler) return optiScaler;
-        if (requester != ManagedComponentKind.Dlss5Feeder && records.Find(game, ManagedComponentKind.Dlss5Feeder) is not null) return "DLSS5 Feeder";
-        if (requester != ManagedComponentKind.ShortFuse && records.Find(game, ManagedComponentKind.ShortFuse) is not null) return "ShortFuse";
+        if (requester != ManagedComponentKind.OptiScaler && records.Find(game, ManagedComponentKind.OptiScaler) is { } optiScalerRecord
+            && OptiScalerOwner(optiScalerRecord) is { } optiScaler) return (optiScaler, optiScalerRecord);
+        if (requester != ManagedComponentKind.Dlss5Feeder && records.Find(game, ManagedComponentKind.Dlss5Feeder) is { } feeder) return ("DLSS5 Feeder", feeder);
+        if (requester != ManagedComponentKind.ShortFuse && records.Find(game, ManagedComponentKind.ShortFuse) is { } shortFuse) return ("ShortFuse", shortFuse);
         return null;
     }
+
+    /// <summary>
+    /// Whether <paramref name="component"/>'s record for the game owns the runtime under rule 1: ShortFuse and DLSS5 Feeder
+    /// records always do, OptiScaler only with a variant that deploys it (DLSS NR, F5 DLSSNR).
+    /// </summary>
+    public static bool ComponentOwnsRuntime(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind component)
+        => component switch
+        {
+            ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder => true,
+            ManagedComponentKind.OptiScaler => OptiScalerOwner(records, game) is not null,
+            _ => false
+        };
 
     public static string RefusalFor(string owner) => OwnedByPrefix + owner;
 }

@@ -195,6 +195,26 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Detection.Xbox.PartingXBreadcrumb.NewerSchemaPrefix + "/home/jogador/.local/share/partingx/instances/a.json";
         yield return RHI.Core.Services.PackageFileProtection.RefusalPrefix + "/jogos/pacotes/9ABC/Jogo.exe";
         // w3/parity rows
+        yield return RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage;
+        yield return RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix + "503.";
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.TooLargeMessage;
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.NotAProfileMessage;
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.UnreadableProfileMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.NoOwnerMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerModifiedPrefix + "ShortFuse";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.AlreadyInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.NotInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.ForeignFilePrefix + "/jogos/Exemplo/nvngx_dlssnr.ini";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.ScalerModifiedPrefix + "/jogos/Exemplo/nvngx_dlssnr.dll";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.DownloadFailedPrefix + RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.PackageIncompleteMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.InstalledPrefix + "ShortFuse (v1.0.6).";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.RemovedMessage;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.FailedRolledBackPrefix + "No space left on device : '/jogos'";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerBlockedPrefix + "DLSS5 Feeder";
         // w3/vmsplit rows
         // w3/dllnames rows
     }
