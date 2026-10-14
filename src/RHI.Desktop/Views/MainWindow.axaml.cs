@@ -894,15 +894,21 @@ public sealed partial class MainWindow : Window
             }
         });
 
-        var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto"), ColumnSpacing = 8 };
-        bottom.Children.Add(openCustomShaders);
-        Grid.SetColumn(openCustomShaders, 0);
-        bottom.Children.Add(openCustomAddons);
-        Grid.SetColumn(openCustomAddons, 1);
-        bottom.Children.Add(status);
-        Grid.SetColumn(status, 2);
+        // #165: the buttons share one line (the two folder buttons wrap below each other when narrow, Apply stays right)
+        // and the status line has a row of its own across the full width; squeezed between the buttons it was 10 px
+        // wide at the 620x480 minimum in PT-BR and grew taller than the dialog.
+        var folderButtons = new WrapPanel { ItemSpacing = 8, LineSpacing = 6 };
+        folderButtons.Children.Add(openCustomShaders);
+        folderButtons.Children.Add(openCustomAddons);
+        var bottom = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), RowDefinitions = new RowDefinitions("Auto,Auto"), ColumnSpacing = 8, RowSpacing = 6 };
+        bottom.Children.Add(folderButtons);
+        Grid.SetColumn(folderButtons, 0);
+        apply.VerticalAlignment = VerticalAlignment.Top;
         bottom.Children.Add(apply);
-        Grid.SetColumn(apply, 3);
+        Grid.SetColumn(apply, 1);
+        bottom.Children.Add(status);
+        Grid.SetRow(status, 1);
+        Grid.SetColumnSpan(status, 2);
 
         var tabs = new TabControl
         {
