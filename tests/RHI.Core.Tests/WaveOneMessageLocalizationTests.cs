@@ -231,6 +231,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "Luma Framework installation rolled back: " + Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
         yield return OptiScalerDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
         yield return ReShadeDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
+        yield return OptiScalerDeploymentService.ProxyNameNotOfferedPrefix + "d3d9.dll";
+        yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
     }
 
     [Theory]

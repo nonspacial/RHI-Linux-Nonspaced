@@ -10,6 +10,22 @@ public sealed partial class OptiScalerDeploymentService
     internal const string DlssNrRuntimeVersionMetadataKey = "OptiScaler.DlssNrRuntimeVersion";
     /// <summary>The nightly build (date) an install is pinned to (#156); absent = Latest, which auto-updates.</summary>
     internal const string NightlyBuildMetadataKey = "OptiScaler.NightlyBuild";
+    /// <summary>The DLL name OptiScaler was installed under (#136); absent in older records = <see cref="DefaultProxyName"/>.</summary>
+    internal const string ProxyNameMetadataKey = "OptiScaler.ProxyName";
+    public const string DefaultProxyName = "dxgi.dll";
+
+    /// <summary>
+    /// Names OptiScaler can be installed under: upstream's (2.8.7 <c>OptiScalerService.SupportedDllNames</c>), each
+    /// loaded by Wine from the game folder with a <c>native,builtin</c> override.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ProxyNames =
+        ["dxgi.dll", "winmm.dll", "d3d11.dll", "d3d12.dll", "dbghelp.dll", "version.dll", "wininet.dll", "winhttp.dll"];
+
+    /// <summary>Another RHI component (ReShade, ASI Loader, …) holds the chosen name; name and component follow.</summary>
+    public const string NameHeldByRhiComponentPrefix =
+        "Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ";
+
+    public const string ProxyNameNotOfferedPrefix = "OptiScaler cannot be installed under this DLL name; choose one of dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll or winhttp.dll: ";
 
     public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
     public const string NightlyPinnedNotUpdatedPrefix = "OptiScaler Nightly is pinned, so it was not updated: ";
@@ -117,7 +133,7 @@ public sealed partial class OptiScalerDeploymentService
         }
 
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
-        var proxyTarget = Path.Combine(binaryDirectory, "dxgi.dll");
+        var proxyTarget = Path.Combine(binaryDirectory, GetProxyName(record));
         var requested = new List<(string Source, string Target)>();
         try
         {
@@ -213,13 +229,26 @@ public sealed partial class OptiScalerDeploymentService
         CancellationToken cancellationToken = default)
         => InstallAsync(game, OptiScalerVariant.Nightly, build, cancellationToken);
 
-    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         string? nightlyBuild,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, variant, nightlyBuild, proxyName: null, cancellationToken);
+
+    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
+    /// <param name="proxyName">The DLL name to install OptiScaler under (<see cref="ProxyNames"/>; Control UE frame
+    /// generation uses <c>winmm.dll</c>, #136); null = <see cref="DefaultProxyName"/>. Recorded: update and removal use it.</param>
+    public async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        string? proxyName,
+        CancellationToken cancellationToken = default)
     {
+        var chosenName = ProxyNames.FirstOrDefault(name => name.Equals(proxyName ?? DefaultProxyName, StringComparison.OrdinalIgnoreCase));
+        if (chosenName is null) return ComponentOperationResult.Fail(ProxyNameNotOfferedPrefix + proxyName);
+        proxyName = chosenName;
         if (nightlyBuild is not null)
         {
             if (variant != OptiScalerVariant.Nightly) return ComponentOperationResult.Fail(NightlyPinWrongChannelMessage);
@@ -261,7 +290,7 @@ public sealed partial class OptiScalerDeploymentService
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
 
         var binaryDirectory = Path.GetFullPath(game.BinaryDirectory);
-        var proxyTarget = Path.Combine(binaryDirectory, "dxgi.dll");
+        var proxyTarget = Path.Combine(binaryDirectory, proxyName);
         LinuxDeploymentRecord? migratedReShade = null;
         WineOverrideRecord? overrideRecord = null;
         var overrideCreatedHere = false;
@@ -288,17 +317,20 @@ public sealed partial class OptiScalerDeploymentService
             if (File.Exists(proxyTarget))
             {
                 if (BinarySignatureInspector.LooksLikeOptiScaler(proxyTarget))
-                    throw new InvalidOperationException("OptiScaler is already present as dxgi.dll but is not recorded as RHI-managed. The external installation is protected.");
+                    throw new InvalidOperationException($"OptiScaler is already present but is not recorded as RHI-managed. The external installation is protected: {proxyName}");
                 if (BinarySignatureInspector.LooksLikeReShade(proxyTarget))
-                    throw new InvalidOperationException("ReShade occupies dxgi.dll but is not a migratable RHI-managed install. External ReShade is protected.");
-                throw new InvalidOperationException("Foreign DLL protection: dxgi.dll is occupied by an unknown DLL. Nothing was overwritten.");
+                    throw new InvalidOperationException($"ReShade occupies this name but is not a migratable RHI-managed install. External ReShade is protected: {proxyName}");
+                if (_records.FindAll(game).FirstOrDefault(other => other.Component != ManagedComponentKind.OptiScaler
+                        && other.Files.Any(file => Path.GetFullPath(file.Path).Equals(proxyTarget, StringComparison.Ordinal))) is { } holder)
+                    throw new InvalidOperationException(NameHeldByRhiComponentPrefix + $"{proxyName} ({LinuxManagedComponentService.DisplayDependencyName(holder.Component)})");
+                throw new InvalidOperationException($"Foreign DLL protection: {proxyName} is occupied by an unknown DLL. Nothing was overwritten.");
             }
 
             // ReShade's override for this name passes to OptiScaler with the file it guarded (no registry change).
             overrideRecord = migratedReShade is not null ? _records.Find(game, ManagedComponentKind.ReShade)?.WineOverride : null;
             if (overrideRecord is null)
             {
-                overrideRecord = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, prefix, "dxgi.dll", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                overrideRecord = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, prefix, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
                 overrideCreatedHere = true;
             }
 
@@ -344,6 +376,7 @@ public sealed partial class OptiScalerDeploymentService
                 }
             };
             if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
+            record.Metadata[ProxyNameMetadataKey] = proxyName;
             package.Download?.RecordIn(record.Metadata);
 
             foreach (var (_, target) in requested)
@@ -375,7 +408,7 @@ public sealed partial class OptiScalerDeploymentService
         // The record carries the operation id: it is the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(
-            $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as dxgi.dll" +
+            $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as {proxyName}" +
             (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled."),
             proxyTarget);
     }
@@ -392,6 +425,13 @@ public sealed partial class OptiScalerDeploymentService
            && OptiScalerPackageProvider.IsNightlyBuild(build)
             ? build
             : null;
+
+    /// <summary>The DLL name an installed OptiScaler sits under (records before #136: <see cref="DefaultProxyName"/>).</summary>
+    public static string GetProxyName(LinuxDeploymentRecord record)
+        => record.Metadata.TryGetValue(ProxyNameMetadataKey, out var name)
+           && ProxyNames.FirstOrDefault(known => known.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } valid
+            ? valid
+            : DefaultProxyName;
 
     /// <summary>The newest nightly builds a game can be pinned to (dates, newest first).</summary>
     public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
@@ -428,7 +468,9 @@ public sealed partial class OptiScalerDeploymentService
 
         var reShadeRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var reShade64 = reShadeRecord?.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
-        var dxgi = Path.Combine(record.BinaryDirectory, "dxgi.dll");
+        // ReShade64.dll goes back to the name OptiScaler took from it (dxgi.dll unless OptiScaler sits elsewhere, #136).
+        var proxyName = GetProxyName(record);
+        var dxgi = Path.Combine(record.BinaryDirectory, proxyName);
 
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
@@ -467,9 +509,9 @@ public sealed partial class OptiScalerDeploymentService
                     Path.GetFullPath(file.Path).Equals(Path.GetFullPath(dxgi), StringComparison.Ordinal));
                 // No proxy record with dxgi.dll gone: an earlier, partly failed removal already deleted it.
                 if (proxyRecord is null && File.Exists(dxgi))
-                    return ComponentOperationResult.Fail("Cannot safely remove OptiScaler while ReShade depends on it: the managed dxgi.dll record is missing.");
+                    return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler while ReShade depends on it: the managed proxy record is missing: {proxyName}");
                 if (proxyRecord is { ExistedBeforeInstall: true })
-                    return ComponentOperationResult.Fail("Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing dxgi.dll, so ReShade64.dll cannot be moved back to dxgi.dll without overwriting that original.");
+                    return ComponentOperationResult.Fail($"Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing DLL under its name, so ReShade64.dll cannot be moved back without overwriting that original: {proxyName}");
                 moveReShadeBack = reShadeRecord is not null;
             }
         }
@@ -514,7 +556,7 @@ public sealed partial class OptiScalerDeploymentService
             if (moveReShadeBack)
             {
                 if (File.Exists(dxgi))
-                    throw new IOException("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
+                    throw new IOException($"OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: {proxyName}");
                 // The content is the ReShade64.dll the preflight just hash-checked, so its recorded hash stays valid.
                 await scope.TrackAsync(reShade64!.Path, cancellationToken).ConfigureAwait(false);
                 await scope.TrackAsync(dxgi, cancellationToken).ConfigureAwait(false);
@@ -547,7 +589,7 @@ public sealed partial class OptiScalerDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         CleanupDirectories(record.DirectoriesCreatedByRhi);
         return ComponentOperationResult.Ok((reShadeAfter is not null
-            ? "RHI-managed OptiScaler removed; ReShade64.dll was moved back to dxgi.dll and retained its Wine override."
+            ? $"RHI-managed OptiScaler removed; ReShade64.dll was moved back and retained its Wine override: {proxyName}"
             : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.")
             + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
@@ -612,16 +654,16 @@ public sealed partial class OptiScalerDeploymentService
         if (!BinarySignatureInspector.LooksLikeReShade(proxyTarget)) return null;
 
         var record = _records.Find(game, ManagedComponentKind.ReShade)
-            ?? throw new InvalidOperationException("External ReShade occupies dxgi.dll. RHI will not rename or take ownership of it automatically.");
+            ?? throw new InvalidOperationException($"External ReShade occupies this name. RHI will not rename or take ownership of it automatically: {Path.GetFileName(proxyTarget)}");
         var file = record.Files.FirstOrDefault(item => Path.GetFullPath(item.Path).Equals(Path.GetFullPath(proxyTarget), StringComparison.Ordinal))
-            ?? throw new InvalidOperationException("ReShade is RHI-managed, but its deployment record does not own the current dxgi.dll.");
+            ?? throw new InvalidOperationException($"ReShade is RHI-managed, but its deployment record does not own the current file: {Path.GetFileName(proxyTarget)}");
         var reShade64 = Path.Combine(Path.GetDirectoryName(proxyTarget)!, "ReShade64.dll");
         if (File.Exists(reShade64))
             throw new InvalidOperationException("ReShade64.dll already exists, so RHI cannot create the OptiScaler/ReShade coexistence chain safely.");
 
         var current = await FileHash.Sha256HexAsync(proxyTarget, cancellationToken).ConfigureAwait(false);
         if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Managed ReShade dxgi.dll was modified outside RHI and will not be migrated automatically.");
+            throw new InvalidOperationException($"Managed ReShade was modified outside RHI and will not be migrated automatically: {Path.GetFileName(proxyTarget)}");
 
         await scope.TrackAsync(proxyTarget, cancellationToken).ConfigureAwait(false);
         await scope.TrackAsync(reShade64, cancellationToken).ConfigureAwait(false);

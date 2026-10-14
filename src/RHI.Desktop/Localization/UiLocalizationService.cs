@@ -1089,6 +1089,11 @@ public static class UiLocalizationService
             "A remoção do OptiScaler falhou e foi desfeita; o OptiScaler continua instalado: "),
         ("ReShade removal failed and was rolled back; ReShade stays installed: ",
             "A remoção do ReShade falhou e foi desfeita; o ReShade continua instalado: "),
+        // Phase B (#136): OptiScaler under another DLL name.
+        ("OptiScaler cannot be installed under this DLL name; choose one of dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll or winhttp.dll: ",
+            "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
+        ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
+            "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";
