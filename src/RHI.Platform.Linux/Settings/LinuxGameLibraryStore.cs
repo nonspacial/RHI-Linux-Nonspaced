@@ -35,8 +35,10 @@ public sealed class LinuxGameEditOverride
 
     /// <summary>
     /// The launch command the user typed in Edit game; it replaces the detected/launcher command on the card. Null = the
-    /// detected command (or the Add game entry's) is used again.
+    /// detected command (or the Add game entry's) is used again. Not written while null (Refs #151), so a library file
+    /// with no Edit game command keeps the shape older builds wrote and saving it unchanged leaves it byte-for-byte as is.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LaunchCommand { get; set; }
 
     /// <summary>

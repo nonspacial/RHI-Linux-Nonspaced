@@ -205,16 +205,13 @@ public sealed class GameLibraryScanner
             first.LibraryProvider ??= candidate.LibraryProvider;
             first.LaunchProvider ??= candidate.LaunchProvider;
             first.Runner ??= candidate.Runner;
-            // The "Launch opens the launcher" hint belongs to the command it describes.
-            if (first.LaunchCommand is null)
-            {
-                first.LaunchCommand = candidate.LaunchCommand;
-                first.ParentLauncherName = candidate.ParentLauncherName;
-            }
-            first.ParentLauncherName ??= candidate.ParentLauncherName;
-            // Identity resolution sets these after the scan (Edit game's command); carried like every other field.
-            first.UserLaunchCommand ??= candidate.UserLaunchCommand;
-            first.DetectedLaunch ??= candidate.DetectedLaunch;
+            // How the card starts is one unit (Refs #151): the command, the "Launch opens the launcher" hint that
+            // describes it, and the Edit game command / detected launch identity resolution builds from them. A
+            // duplicate's hint or detected launch never lands beside another source's command.
+            if (first.LaunchCommand is null && candidate.LaunchCommand is not null)
+                TakeLaunch(first, candidate);
+            else if (first.LaunchCommand is null)
+                first.ParentLauncherName ??= candidate.ParentLauncherName;
             if (first.PatchTargetAuthority == "Automatic") first.PatchTargetAuthority = candidate.PatchTargetAuthority;
             first.CompatibilityTool ??= candidate.CompatibilityTool;
             first.CompatibilityLayerType ??= candidate.CompatibilityLayerType;
@@ -293,10 +290,16 @@ public sealed class GameLibraryScanner
         }
         if (manual.UserGraphicsApiOverride is not null) target.UserGraphicsApiOverride = manual.UserGraphicsApiOverride;
         if (!string.IsNullOrWhiteSpace(manual.LaunchCommand))
-        {
-            target.LaunchCommand = manual.LaunchCommand;
-            target.ParentLauncherName = manual.ParentLauncherName;
-        }
+            TakeLaunch(target, manual);
+    }
+
+    /// <summary>Copies how <paramref name="source"/> starts (command, launcher hint, Edit game command, detected launch) as one unit.</summary>
+    private static void TakeLaunch(DetectedGame target, DetectedGame source)
+    {
+        target.LaunchCommand = source.LaunchCommand;
+        target.ParentLauncherName = source.ParentLauncherName;
+        target.UserLaunchCommand = source.UserLaunchCommand;
+        target.DetectedLaunch = source.DetectedLaunch;
     }
 
     private static IReadOnlyList<GraphicsApi> Union(IReadOnlyList<GraphicsApi> a, IReadOnlyList<GraphicsApi> b)
