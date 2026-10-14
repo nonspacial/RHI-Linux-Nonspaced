@@ -17,7 +17,6 @@ public sealed class DeploymentRawWriteContractTests
     private static readonly HashSet<string> NotYetConverted = new(StringComparer.Ordinal)
     {
         "ComponentUpdateLog.cs",                       // update-history store, DEP-01 handling
-        "ControlUePostInstallService.cs",              // w3/dllnames
         "OptiScalerDeploymentService.cs",              // w3/dllnames phase B
         "OptiScalerDeploymentService.Streamline.cs",   // w3/dllnames phase B
         "RenoDxUnityDatabaseService.cs",               // catalogue cache

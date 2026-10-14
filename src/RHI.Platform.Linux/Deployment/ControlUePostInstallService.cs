@@ -346,7 +346,7 @@ public sealed class ControlUePostInstallService
 
         if (!dll.ExistedBefore)
         {
-            if (present) File.Delete(dll.Path);
+            if (present) AtomicFile.Delete(dll.Path);
             notes.Add($"{name}: removed.");
             return true;
         }
@@ -358,7 +358,7 @@ public sealed class ControlUePostInstallService
                 notes.Add($"{name}: previous copy is missing ({previous}); left as it is.");
                 return true;
             }
-            File.Move(previous, dll.Path, overwrite: true);
+            AtomicFile.Rename(previous, dll.Path, overwrite: true); // toolkit: durable, Xbox write gate (w3 integration, #31 ratchet)
             notes.Add($"{name}: restored.");
             return true;
         }
