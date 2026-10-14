@@ -151,6 +151,65 @@ public sealed class ShaderProfileTests : IDisposable
         Assert.Equal("O perfil não pôde ser importado: Este zip não é um perfil de shaders (não tem shader_import.json).", line);
     }
 
+    /// <summary>
+    /// A profile zip whose shader_import.json holds <paramref name="spacesFirst"/> spaces, the profile, then spaces up to
+    /// <paramref name="inflated"/> bytes; with <paramref name="declare"/> its headers claim that size instead of the real one.
+    /// </summary>
+    private string ProfileOfSize(string name, long inflated, long spacesFirst = 0, uint? declare = null)
+    {
+        var path = Path.Combine(_root, name);
+        var json = "{\"Name\":\"Bomb\",\"SelectedPacks\":[\"SweetFX\"]}"u8.ToArray();
+        using (var zip = ZipFile.Open(path, ZipArchiveMode.Create))
+        {
+            using var output = zip.CreateEntry(ShaderProfileArchive.ProfileEntry, CompressionLevel.Optimal).Open();
+            var spaces = new byte[1024 * 1024];
+            Array.Fill(spaces, (byte)' ');
+            void Spaces(long count) { for (var left = count; left > 0; left -= spaces.Length) output.Write(spaces, 0, (int)Math.Min(spaces.Length, left)); }
+            Spaces(spacesFirst);
+            output.Write(json);
+            Spaces(inflated - spacesFirst - json.Length);
+        }
+        if (declare is { } size)
+        {
+            var bytes = File.ReadAllBytes(path);
+            for (var i = 0; i + 4 <= bytes.Length; i++)
+            {
+                var signature = BitConverter.ToUInt32(bytes, i);
+                if (signature == 0x04034b50) BitConverter.TryWriteBytes(bytes.AsSpan(i + 22, 4), size); // local header: uncompressed size
+                if (signature == 0x02014b50) BitConverter.TryWriteBytes(bytes.AsSpan(i + 24, 4), size); // central directory: uncompressed size
+            }
+            File.WriteAllBytes(path, bytes);
+        }
+        return path;
+    }
+
+    [Fact]
+    public void Import_ProfileThatInflatesPastOneMiB_IsRefused_ExactlyOneMiBReads()
+    {
+        var over = ProfileOfSize("over.zip", 1024L * 1024 + 1);
+
+        var error = Assert.Throws<InvalidDataException>(() => ShaderProfileArchive.ReadProfile(over));
+        var (_, imported) = Presenter().Import(over);
+
+        Assert.Equal(ShaderProfileArchive.UnreadableProfileMessage, error.Message);
+        Assert.Null(imported);
+        Assert.Equal("Bomb", ShaderProfileArchive.ReadProfile(ProfileOfSize("exact.zip", 1024L * 1024)).Name);
+    }
+
+    [Fact]
+    public void Import_ProfileDeclaringLessThanItInflates_NeverReadsPastOneMiB()
+    {
+        // Declares 64 bytes, inflates to 8 MiB with the profile past 2 MiB: only the inflated bytes count, so the profile
+        // is never reached (a runtime that stops at the declared size reads 64 spaces; one that does not stops at 1 MiB).
+        var lying = ProfileOfSize("lying.zip", 8L * 1024 * 1024, spacesFirst: 2L * 1024 * 1024, declare: 64);
+        using (var zip = ZipFile.OpenRead(lying)) Assert.Equal(64, zip.GetEntry(ShaderProfileArchive.ProfileEntry)!.Length);
+
+        var (_, imported) = Presenter().Import(lying);
+
+        Assert.Null(imported);
+        Assert.DoesNotContain(new ShaderSelectionProfileStore(StorePath).Load(), p => p.Name == "Bomb");
+    }
+
     [Fact]
     public void UnreadableProfilesFile_IsNeverOverwritten()
     {

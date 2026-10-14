@@ -118,8 +118,17 @@ public static class ShaderProfileArchive
     {
         using var zip = ZipFile.OpenRead(zipPath);
         var entry = zip.GetEntry(ProfileEntry) ?? throw new InvalidDataException(NotAProfileMessage);
-        if (entry.Length > MaxProfileBytes) throw new InvalidDataException(UnreadableProfileMessage);
-        using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+        // The inflated bytes are counted, not the size the zip declares (a crafted entry can declare 1 KiB and inflate to
+        // gigabytes; .NET 8 does not hold the inflater to the declared size).
+        var bytes = new byte[MaxProfileBytes + 1];
+        var length = 0;
+        using (var stream = entry.Open())
+        {
+            int chunk;
+            while (length < bytes.Length && (chunk = stream.Read(bytes, length, bytes.Length - length)) > 0) length += chunk;
+        }
+        if (length > MaxProfileBytes) throw new InvalidDataException(UnreadableProfileMessage);
+        using var reader = new StreamReader(new MemoryStream(bytes, 0, length, writable: false), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
         ShaderSelectionProfile? read;
         try { read = JsonSerializer.Deserialize<ShaderSelectionProfile>(reader.ReadToEnd(), Options); }
         catch (JsonException ex) { throw new InvalidDataException(UnreadableProfileMessage, ex); }
