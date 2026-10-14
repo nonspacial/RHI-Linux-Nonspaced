@@ -184,7 +184,7 @@ public sealed partial class OptiScalerDeploymentService
         }
 
         return new(iniPath, true, rows,
-            "LoadReshade is intentionally chain-owned by RHI Linux and is not exposed here. OptiScaler Nightly/DLSS NR can deploy the same Streamline + DLSS Enabler stack exposed by upstream Windows RHI.");
+            "LoadReshade is intentionally chain-owned by RHI Linux and is not exposed here. OptiScaler Nightly/DLSS NR/F5 DLSSNR can deploy the same Streamline + DLSS Enabler stack exposed by upstream Windows RHI.");
     }
 
     public ComponentOperationResult SetAdvancedSetting(DetectedGame game, string id, string value)
