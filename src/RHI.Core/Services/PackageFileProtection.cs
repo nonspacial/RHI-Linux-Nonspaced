@@ -3,23 +3,23 @@ namespace RHI.Core.Services;
 /// <summary>
 /// Files of an Xbox / Game Pass package RHI must never write (Refs #90): the encrypted game exes (patched bytes no longer
 /// decrypt, so the game fails to start), the package's <c>.xodus-streaming*.msixvc</c>, <c>MicrosoftGame.config</c>,
-/// <c>appxmanifest.xml</c> and PartingX's markers (they carry the licence and the Xbox identity), and the
-/// DXVK / VKD3D-Proton / DXVK-NVAPI DLLs PartingX places in a title prefix's <c>system32</c>/<c>syswow64</c> (PartingX
+/// <c>appxmanifest.xml</c> and the installer app's markers (they carry the licence and the Xbox identity), and the
+/// DXVK / VKD3D-Proton / DXVK-NVAPI DLLs the installer app places in a title prefix's <c>system32</c>/<c>syswow64</c> (the installer app
 /// marks the prefix stale and puts its own back). Decided from the files on disk, so it needs no library state:
-/// a package folder is one holding <c>.xodus-streaming.msixvc</c>, <c>.partingx-owned</c> or <c>.partingx-appx.json</c>.
+/// a package folder is one holding <c>.xodus-streaming.msixvc</c>, <c>.{app}-owned</c> or <c>.{app}-appx.json</c>.
 /// </summary>
 public static class PackageFileProtection
 {
     /// <summary>Fixed start of the refusal; the file's path follows.</summary>
     public const string RefusalPrefix =
-        "RHI never changes this file of an Xbox package: the game would no longer start, or PartingX/Xodus would put it back. File: ";
+        "RHI never changes this file of an Xbox package: the game would no longer start, or the app that installed it would put it back. File: ";
 
-    private static readonly string[] PackageMarkers = [".xodus-streaming.msixvc", ".partingx-owned", ".partingx-appx.json"];
+    private static readonly string[] PackageMarkers = [".xodus-streaming.msixvc", XboxInstallerApp.OwnedMarker, XboxInstallerApp.AppxRecordFile];
 
     private static readonly string[] PackageRootFiles =
     [
-        ".xodus-streaming.msixvc", ".xodus-streaming-tmp.msixvc", ".partingx-owned", ".partingx-appx.json", ".partingx-partial",
-        ".partingx-run", "MicrosoftGame.config", "appxmanifest.xml"
+        ".xodus-streaming.msixvc", ".xodus-streaming-tmp.msixvc", XboxInstallerApp.OwnedMarker, XboxInstallerApp.AppxRecordFile,
+        XboxInstallerApp.PartialMarker, XboxInstallerApp.RunMarker, "MicrosoftGame.config", "appxmanifest.xml"
     ];
 
     private static readonly string[] PrefixRuntimeDlls =
@@ -71,7 +71,7 @@ public static class PackageFileProtection
         return null;
     }
 
-    // <title env>/prefix/drive_c/windows/system32|syswow64/<dll>, where <title env> holds partingx.json.
+    // <title env>/prefix/drive_c/windows/system32|syswow64/<dll>, where <title env> holds {app}.json.
     private static bool IsPrefixRuntimeDll(string dir, string name)
     {
         if (!PrefixRuntimeDlls.Contains(name, StringComparer.OrdinalIgnoreCase)) return false;
@@ -85,7 +85,7 @@ public static class PackageFileProtection
         return environment is not null &&
                Path.GetFileName(windows!).Equals("windows", StringComparison.OrdinalIgnoreCase) &&
                Path.GetFileName(driveC!).Equals("drive_c", StringComparison.Ordinal) &&
-               File.Exists(Path.Combine(environment, "partingx.json"));
+               File.Exists(Path.Combine(environment, XboxInstallerApp.EnvironmentFile));
     }
 
     // An existing exe without the MZ header: the package keeps it encrypted (an absent file is not protected).

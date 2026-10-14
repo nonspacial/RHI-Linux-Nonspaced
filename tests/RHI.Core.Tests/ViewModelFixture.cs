@@ -58,7 +58,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w3/vmsplit rows
             // w3/dllnames rows
             );
-        // w3/scan Settings row (#90): the fixture's own "PartingX / Xbox folders" list (w3 integration).
+        // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
     }
 

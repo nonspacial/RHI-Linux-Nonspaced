@@ -24,15 +24,15 @@ public sealed class SettingsViewModel : PanelViewModel
     /// <summary>Settings → Accounts &amp; updates (#100 update notice, #163 GitHub token, #99 Connect Nexus account); null without them.</summary>
     public ParityFeatures? Parity => _shell.Parity;
 
-    // w3/scan Settings row (#90): "PartingX / Xbox folders"; null until the app composition hands the store over.
-    /// <summary>The "PartingX / Xbox folders" list; saving one rescans the Xbox and Wine detectors when idle.</summary>
+    // w3/scan Settings row (#90): "Xbox / Game Pass folders"; null until the app composition hands the store over.
+    /// <summary>The "Xbox / Game Pass folders" list; saving one rescans the Xbox and Wine detectors when idle.</summary>
     public XboxFoldersPresenter? XboxFolders { get; private set; }
 
     /// <summary>Hosts the Xbox folder list (one store shared with the Xbox and Wine detectors, scan nit 11).</summary>
     internal void UseXboxFolders(RHI.Platform.Linux.Detection.Xbox.XboxFolderStore store)
     {
         var presenter = new XboxFoldersPresenter(store, save => TryPersist(save, XboxFoldersPresenter.WhatKey, sessionOnly: false));
-        // The Wine detector reads the same list (PartingX title prefixes are PartingX's), so both rescan.
+        // The Wine detector reads the same list (installer-app title prefixes are the installer app's), so both rescan.
         presenter.Changed += () => UiExceptionGuard.Forget(((ILibraryEditHost)_shell).RefreshWhenIdleAsync(XboxFolderDetectors), "xbox-folders-refresh");
         XboxFolders = presenter;
     }

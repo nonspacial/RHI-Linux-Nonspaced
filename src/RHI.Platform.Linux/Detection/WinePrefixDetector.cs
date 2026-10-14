@@ -11,16 +11,16 @@ public sealed class WinePrefixDetector : IGameDetector
     private readonly string _home;
     private readonly string? _dataHome;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
-    private readonly Func<IEnumerable<string>> _partingXStateFolders;
+    private readonly Func<IEnumerable<string>> _installerAppStateFolders;
 
     public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome) { }
 
-    /// <param name="xboxFolders">The "PartingX / Xbox folders" setting (w3/scan): prefixes of those instances are PartingX's.</param>
+    /// <param name="xboxFolders">The "Xbox / Game Pass folders" setting (w3/scan): prefixes of those instances are the installer app's.</param>
     public WinePrefixDetector(Xbox.XboxFolderStore xboxFolders)
         : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome, xboxFolders.Folders)
         => XboxFolderStore = xboxFolders;
 
-    /// <summary>The "PartingX / Xbox folders" setting this detector reads (the app passes its one shared store).</summary>
+    /// <summary>The "Xbox / Game Pass folders" setting this detector reads (the app passes its one shared store).</summary>
     internal Xbox.XboxFolderStore? XboxFolderStore { get; }
 
     internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null, IEnumerable<string>? xboxFolders = null)
@@ -31,7 +31,7 @@ public sealed class WinePrefixDetector : IGameDetector
         _home = home;
         _dataHome = dataHome;
         _lutrisConfigRoots = lutrisConfigRoots;
-        _partingXStateFolders = xboxFolders ?? (() => []);
+        _installerAppStateFolders = xboxFolders ?? (() => []);
     }
 
     public string Name => "Wine";
@@ -47,12 +47,12 @@ public sealed class WinePrefixDetector : IGameDetector
             Path.Combine(_home, "Games"),
             Path.Combine(_home, ".local", "share", "bottles", "bottles")
         };
-        // PartingX's title prefixes (Refs #90): every environment root its breadcrumbs, default state folders and the
-        // user's PartingX folders name.
-        var partingX = Xbox.PartingXInstance.KnownEnvironmentRoots(
-            Path.Combine(_dataHome ?? Path.Combine(_home, ".local", "share"), "partingx", "instances"),
-            _partingXStateFolders().Append(Path.Combine(_home, ".local", "state", "partingx")));
-        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome, partingX);
+        // The installer app's title prefixes (Refs #90): every environment root its breadcrumbs, default state folders and the
+        // user's installer-app folders name.
+        var installerApp = Xbox.XboxInstallerInstance.KnownEnvironmentRoots(
+            Path.Combine(_dataHome ?? Path.Combine(_home, ".local", "share"), XboxInstallerApp.FolderName, "instances"),
+            _installerAppStateFolders().Append(Path.Combine(_home, ".local", "state", XboxInstallerApp.FolderName)));
+        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome, installerApp);
         var games = new List<DetectedGame>();
         foreach (var root in roots.Where(Directory.Exists))
         {

@@ -41,7 +41,7 @@ internal sealed class AppComposition
     public RenoDxUnityDatabaseService? RenoDxUnityDatabase { get; init; }
     // w3/journal rows
     // w3/scan rows
-    /// <summary>The "PartingX / Xbox folders" setting the Xbox detector reads (Settings hosts it through <see cref="ViewModels.XboxFoldersPresenter"/>).</summary>
+    /// <summary>The "Xbox / Game Pass folders" setting the Xbox detector reads (Settings hosts it through <see cref="ViewModels.XboxFoldersPresenter"/>).</summary>
     public RHI.Platform.Linux.Detection.Xbox.XboxFolderStore XboxFolders { get; init; } = new();
     // w3/parity rows
     public ParityFeatures? Parity { get; init; }
@@ -81,14 +81,14 @@ internal sealed class AppComposition
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal)
     {
         var libraryStore = new LinuxGameLibraryStore();
-        // w3/scan hook: one "PartingX / Xbox folders" store for Settings, the Xbox detector and the Wine detector (Refs #90).
+        // w3/scan hook: one "Xbox / Game Pass folders" store for Settings, the Xbox detector and the Wine detector (Refs #90).
         var xboxFolders = new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore();
         var detectors = new IGameDetector[]
         {
             new SteamGameDetector(),
             new HeroicGameDetector(),
             new LutrisGameDetector(),
-            new WinePrefixDetector(xboxFolders), // w3/scan hook: PartingX instances' prefixes are PartingX's
+            new WinePrefixDetector(xboxFolders), // w3/scan hook: installer-app instances' prefixes are the installer app's
             new ItchGameDetector(), // the native itch app's games (Refs #90)
             new ManualGameDetector(libraryStore),
             // w3/scan rows (new store detectors)

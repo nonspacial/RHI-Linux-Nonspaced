@@ -10,7 +10,7 @@ namespace RHI.Core.Tests;
 
 /// <summary>
 /// Refs #90, w3-scan review findings 1–2: the one Xbox write gate covers every path that changes an Xbox title. Job
-/// rule (PartingX has a job queued for the title, its job list cannot be read, or its instance is unknown) on every
+/// rule (the installer app has a job queued for the title, its job list cannot be read, or its instance is unknown) on every
 /// entry point; protected-file rule in the shared write primitives, so a writer other than ReShade is refused too.
 /// </summary>
 public sealed class XboxWriteGateTests : IDisposable
@@ -27,11 +27,11 @@ public sealed class XboxWriteGateTests : IDisposable
 
     private sealed record Fixture(DetectedGame Game, string Dir, string Jobs, string Expected);
 
-    /// <summary>A PartingX title with DLSS, Streamline and ReShade files, registered as a scan would, its job list in <paramref name="mode"/>.</summary>
+    /// <summary>An installer-app title with DLSS, Streamline and ReShade files, registered as a scan would, its job list in <paramref name="mode"/>.</summary>
     private Fixture Title(Mode mode)
     {
         var dir = _tree.Dir("payloads", StoreId);
-        _tree.File(JsonSerializer.Serialize(new { storeId = StoreId }), "payloads", StoreId, ".partingx-owned");
+        _tree.File(JsonSerializer.Serialize(new { storeId = StoreId }), "payloads", StoreId, XboxInstallerApp.OwnedMarker);
         _tree.File("msixvc", "payloads", StoreId, ".xodus-streaming.msixvc");
         _tree.Bytes(Encrypted, "payloads", StoreId, "Game.exe");
         _tree.Bytes(Dll, "payloads", StoreId, "nvngx_dlss.dll");
@@ -41,12 +41,12 @@ public sealed class XboxWriteGateTests : IDisposable
         _tree.File("[INPUT]\nKeyOverlay=1,0,0,0\n", "payloads", StoreId, "ReShade.ini");
         var env = _tree.Dir("envs", "default", StoreId);
         _tree.Dir("envs", "default", StoreId, "prefix", "drive_c");
-        _tree.File("{}", "envs", "default", StoreId, "partingx.json");
+        _tree.File("{}", "envs", "default", StoreId, XboxInstallerApp.EnvironmentFile);
         var jobs = _tree.Path_("state", "jobs.json");
         _tree.File(mode == Mode.Garbled
             ? "{ \"queue\": [ trunc"
             : JsonSerializer.Serialize(new { queue = new[] { new { kind = "Update", titleId = StoreId, state = "Running" } } }), "state", "jobs.json");
-        var package = new XboxPackageInfo(StoreId, XboxWriteGate.PartingXApp, null, mode == Mode.UnknownInstance ? null : jobs);
+        var package = new XboxPackageInfo(StoreId, XboxWriteGate.InstallerApp, null, mode == Mode.UnknownInstance ? null : jobs);
         XboxWriteGate.Register(package, dir, env);
         var game = new DetectedGame
         {
@@ -271,7 +271,7 @@ public sealed class XboxWriteGateTests : IDisposable
         await set.TrackAsync(first, CancellationToken.None);
         AtomicFile.WriteAllBytes(first, [(byte)'M', (byte)'Z', 1, 2, 3]);
 
-        // PartingX queues an update now: the next file is refused, and putting the first one back still works.
+        // Installer-app queues an update now: the next file is refused, and putting the first one back still works.
         File.WriteAllText(fx.Jobs, JsonSerializer.Serialize(new { queue = new[] { new { kind = "Update", titleId = StoreId } } }));
         await Assert.ThrowsAsync<XboxTitleBusyException>(() => set.TrackAsync(Path.Combine(fx.Dir, "dxgi.dll"), CancellationToken.None));
         var rollback = await set.RollbackAsync();
@@ -300,10 +300,10 @@ public sealed class XboxWriteGateTests : IDisposable
     }
 
     [Fact]
-    public void AManualCardInsideAnUnregisteredPartingXFolder_IsRefusedAsUnknown()
+    public void AManualCardInsideAnUnregisteredInstallerAppFolder_IsRefusedAsUnknown()
     {
         var dir = _tree.Dir("elsewhere", "9LOOSE");
-        _tree.File(JsonSerializer.Serialize(new { storeId = "9LOOSE" }), "elsewhere", "9LOOSE", ".partingx-owned");
+        _tree.File(JsonSerializer.Serialize(new { storeId = "9LOOSE" }), "elsewhere", "9LOOSE", XboxInstallerApp.OwnedMarker);
         var bin = _tree.Dir("elsewhere", "9LOOSE", "Binaries", "Win64");
 
         var refusal = XboxWriteGate.Refusal(new DetectedGame { Name = "Manual", Source = "Manual", InstallPath = bin, BinaryDirectory = bin });

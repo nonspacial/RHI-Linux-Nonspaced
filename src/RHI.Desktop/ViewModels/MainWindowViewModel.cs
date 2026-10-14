@@ -279,7 +279,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
     public string? LaunchToolTip => SelectedGame switch
     {
-        { ParentLauncherName: { Length: > 0 } parent } => TF("Vm.OpensStartGameFromLauncher", parent),
+        { ParentLauncherName: { Length: > 0 } parent } => TF("Vm.OpensStartGameFromLauncher", XboxCardText.AppName(parent)!),
         // The reason arms use CanLaunch's own test, so a disabled Play always says why (a blank command included).
         { } game when !_launcher.CanLaunch(game) && Facts is { OrphanedProtonPrefix: true }
             => TF("Vm.UnavailablePrefixWasBuiltByProton",
@@ -988,7 +988,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
         var game = SelectedGame;
         var started = game.ParentLauncherName is { Length: > 0 } parent
-            ? TF("Vm.OpeningStartFromLauncher", parent, game.Name)
+            ? TF("Vm.OpeningStartFromLauncher", XboxCardText.AppName(parent)!, game.Name)
             : TF("Vm.Launching", game.Name);
         // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
         if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
@@ -1620,7 +1620,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var game = row.Game;
         var items = new List<CardMenuItem>();
         if (game.HasConfirmedPatchTarget) items.Add(new("open-folder", T("Ui.OpenFolder"), OpenGameFolderCommand));
-        // w3/scan (#90): a PartingX title with a breadcrumb "show" entry point opens its page in PartingX.
+        // w3/scan (#90): an installer-app title with a breadcrumb "show" entry point opens its page in the installer app.
         if (XboxCardActions.ShowInOwningAppLabel(game) is { } showLabel)
             items.Add(new("show-in-owning-app", showLabel, new AsyncRelayCommand(() => ShowInOwningAppAsync(game))));
         items.Add(new("favourite", FavouriteActionText, ToggleFavouriteCommand));

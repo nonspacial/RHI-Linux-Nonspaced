@@ -1,3 +1,4 @@
+using RHI.Core.Services;
 using RHI.Core.Deployment;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
@@ -189,10 +190,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"RE Framework update rolled back: {E}{DeploymentScope.RollbackIncompletePrefix}{P}: rollback failed ({E}); every copy was kept.); every copy was kept.";
         // w3/scan rows
         yield return RHI.Core.Services.XboxWriteGate.BusyMessage;
-        yield return RHI.Core.Services.XboxWriteGate.UnreadablePrefix + "/jogos/partingx/state/partingx/jobs.json";
-        yield return RHI.Core.Services.XboxWriteGate.UnknownInstancePrefix + "/jogos/partingx/payloads/9ABC";
+        yield return RHI.Core.Services.XboxWriteGate.UnreadablePrefix + "/jogos/xbox/state/app/jobs.json";
+        yield return RHI.Core.Services.XboxWriteGate.UnknownInstancePrefix + "/jogos/xbox/payloads/9ABC";
         yield return RHI.Core.Services.XboxWriteGate.EncryptedExecutableMessage;
-        yield return RHI.Platform.Linux.Detection.Xbox.PartingXBreadcrumb.NewerSchemaPrefix + "/home/jogador/.local/share/partingx/instances/a.json";
+        yield return RHI.Platform.Linux.Detection.Xbox.InstallerBreadcrumb.NewerSchemaPrefix + "/home/jogador/.local/share/app/instances/a.json";
         yield return RHI.Core.Services.PackageFileProtection.RefusalPrefix + "/jogos/pacotes/9ABC/Jogo.exe";
         // w3/parity rows
         yield return RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage;

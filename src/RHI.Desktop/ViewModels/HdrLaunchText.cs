@@ -103,13 +103,13 @@ public static class HdrLaunchText
     /// <summary>The launcher that starts the game, and where in it the profile goes.</summary>
     public static string ApplyInLauncher(LinuxHdrLaunchPlan plan, DetectedGame game)
     {
-        var entry = string.IsNullOrWhiteSpace(game.ParentLauncherName) ? game.Name : game.ParentLauncherName;
+        var entry = string.IsNullOrWhiteSpace(game.ParentLauncherName) ? game.Name : XboxCardText.AppName(game.ParentLauncherName)!;
         return plan.Handoff switch
         {
             LaunchHandoff.Steam => TF("Hdr.ApplyInSteam", plan.LaunchOptions),
             LaunchHandoff.Heroic => TF("Hdr.ApplyInHeroic", entry, Settings(plan, "Hdr.WrapperCommand")),
             LaunchHandoff.Lutris => TF("Hdr.ApplyInLutris", entry, Settings(plan, "Hdr.CommandPrefix")),
-            LaunchHandoff.Xbox => TF("Scan.HdrApplyInOwningApp", game.XboxPackage?.OwningApp ?? entry), // w3/scan hook (Refs #90)
+            LaunchHandoff.Xbox => TF("Scan.HdrApplyInOwningApp", XboxCardText.AppName(game.XboxPackage?.OwningApp) ?? entry), // w3/scan hook (Refs #90)
             _ => TF("Hdr.ApplyInOtherLauncher", Settings(plan, "Hdr.WrapperCommand"))
         };
     }

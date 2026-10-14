@@ -10,8 +10,8 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// Settings → "PartingX / Xbox folders" (w3/scan #90, owner decision C; hosted at integration): the folders the Xbox
-/// detector searches besides PartingX's default state folder and <c>~/Games</c>. Built in code like the other Settings
+/// Settings → "Xbox / Game Pass folders" (w3/scan #90, owner decision C; hosted at integration): the folders the Xbox
+/// detector searches besides the installer app's default state folder and <c>~/Games</c>. Built in code like the other Settings
 /// tabs from <see cref="XboxFoldersPresenter"/> only (list, Add folder…, Remove); a refused save shows on the dialog's
 /// status line. Each path is one line with a middle ellipsis and the full path in a 2 s tooltip. Hidden when the view
 /// model has no folder list (a window built over a bare view model).

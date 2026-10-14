@@ -67,7 +67,7 @@ public sealed class OwnedFileSet
     {
         var full = System.IO.Path.GetFullPath(path);
         if (_files.TryGetValue(full, out var existing)) return existing;
-        // A path enters a deployment only through here: an Xbox package file, or a title PartingX is working on, is
+        // A path enters a deployment only through here: an Xbox package file, or a title the installer app is working on, is
         // refused before the operation owns (and so before it changes) anything of it (Refs #90).
         RHI.Core.Services.XboxWriteGate.ThrowIfRefused(full); // w3/scan hook
         var exists = File.Exists(full);

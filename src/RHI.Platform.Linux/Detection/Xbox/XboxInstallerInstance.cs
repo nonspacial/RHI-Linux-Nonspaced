@@ -4,25 +4,25 @@ using RHI.Core.Services;
 namespace RHI.Platform.Linux.Detection.Xbox;
 
 /// <summary>
-/// One PartingX instance (Refs #90): from its breadcrumb (<see cref="PartingXBreadcrumb"/>: payload roots, environment
+/// One installer-app instance (Refs #90): from its breadcrumb (<see cref="InstallerBreadcrumb"/>: payload roots, environment
 /// and runtime roots, job list, how to start it) when it left one, else from its state folder's <c>settings.json</c>.
-/// Besides those, only the files PartingX's spec fixes are read: the payload layout and <c>.partingx-owned</c> marker,
-/// the per-title <c>partingx.json</c> environment file, runtime bundles, user recipes and (for names only) the catalogue
-/// index. Nothing is written and PartingX is never run.
+/// Besides those, only the files the installer app's spec fixes are read: the payload layout and <c>.{app}-owned</c> marker,
+/// the per-title <c>{app}.json</c> environment file, runtime bundles, user recipes and (for names only) the catalogue
+/// index. Nothing is written and the installer app is never run.
 /// </summary>
-internal sealed class PartingXInstance
+internal sealed class XboxInstallerInstance
 {
-    public const string OwnedMarker = ".partingx-owned";
-    /// <summary>PartingX's per-title environment file, beside the title's <c>prefix/</c>.</summary>
-    public const string EnvironmentFile = "partingx.json";
-    public const string PartialMarker = ".partingx-partial";
-    // PartingX's spec: the environment of the (only) local account.
+    public static readonly string OwnedMarker = XboxInstallerApp.OwnedMarker;
+    /// <summary>The installer app's per-title environment file, beside the title's <c>prefix/</c>.</summary>
+    public static readonly string EnvironmentFile = XboxInstallerApp.EnvironmentFile;
+    public static readonly string PartialMarker = XboxInstallerApp.PartialMarker;
+    // The installer app's spec: the environment of the (only) local account.
     private const string AccountId = "default";
 
     private Dictionary<string, string>? _catalogue;
 
-    private PartingXInstance(string stateDir, IReadOnlyList<string> payloadRoots, string? environmentRoot, string? runtimeRoot,
-        string? jobsFile, PartingXBreadcrumb? breadcrumb)
+    private XboxInstallerInstance(string stateDir, IReadOnlyList<string> payloadRoots, string? environmentRoot, string? runtimeRoot,
+        string? jobsFile, InstallerBreadcrumb? breadcrumb)
     {
         StateDir = stateDir;
         PayloadRoots = payloadRoots;
@@ -39,7 +39,7 @@ internal sealed class PartingXInstance
     public string JobsFile { get; }
 
     /// <summary>The breadcrumb this instance was read from; null for an instance read from <c>settings.json</c>.</summary>
-    public PartingXBreadcrumb? Breadcrumb { get; }
+    public InstallerBreadcrumb? Breadcrumb { get; }
 
     /// <summary>
     /// How to open this instance when its breadcrumb gives no entry point (no breadcrumb, or one without a launch):
@@ -47,21 +47,21 @@ internal sealed class PartingXInstance
     /// </summary>
     public string? FallbackOpenCommand { get; set; }
 
-    /// <summary>The instance a breadcrumb describes (the breadcrumb is PartingX's own account of its folders).</summary>
-    public static PartingXInstance FromBreadcrumb(PartingXBreadcrumb crumb)
+    /// <summary>The instance a breadcrumb describes (the breadcrumb is the installer app's own account of its folders).</summary>
+    public static XboxInstallerInstance FromBreadcrumb(InstallerBreadcrumb crumb)
         => new(crumb.StateDir, crumb.PayloadRoots, crumb.EnvironmentRoot, crumb.RuntimeRoot, crumb.JobsFile, crumb);
 
     /// <summary>
     /// The instance whose state folder is <paramref name="stateDir"/>; null when it has no readable <c>settings.json</c>
     /// with a payload root. <paramref name="reportProblems"/>: the folder was named by the user or a breadcrumb, so a
-    /// missing or unreadable file is a scan warning (the default state folder without settings is just PartingX never set up).
+    /// missing or unreadable file is a scan warning (the default state folder without settings is just the installer app never set up).
     /// </summary>
-    public static PartingXInstance? Load(string stateDir, bool reportProblems)
+    public static XboxInstallerInstance? Load(string stateDir, bool reportProblems)
     {
         var settings = Path.Combine(stateDir, "settings.json");
         if (!File.Exists(settings))
         {
-            if (reportProblems) DetectorDiagnostics.Warn($"PartingX folder {stateDir} has no settings.json; its games are not listed");
+            if (reportProblems) DetectorDiagnostics.Warn($"Xbox app folder {stateDir} has no settings.json; its games are not listed");
             return null;
         }
         try
@@ -71,19 +71,19 @@ internal sealed class PartingXInstance
             var payload = String(root, "payloadRoot");
             if (payload is null || !Path.IsPathRooted(payload))
             {
-                DetectorDiagnostics.Warn($"PartingX settings {settings} name no payload folder; its games are not listed");
+                DetectorDiagnostics.Warn($"Xbox app settings {settings} name no payload folder; its games are not listed");
                 return null;
             }
-            return new PartingXInstance(stateDir, [payload], Rooted(String(root, "environmentRoot")), Rooted(String(root, "runtimeRoot")), null, null);
+            return new XboxInstallerInstance(stateDir, [payload], Rooted(String(root, "environmentRoot")), Rooted(String(root, "runtimeRoot")), null, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            DetectorDiagnostics.Warn($"PartingX settings {settings} unreadable; its games are not listed", ex);
+            DetectorDiagnostics.Warn($"Xbox app settings {settings} unreadable; its games are not listed", ex);
             return null;
         }
     }
 
-    /// <summary>One installed title: PartingX's own rule (a real folder whose marker parses and names the folder's store id).</summary>
+    /// <summary>One installed title: the installer app's own rule (a real folder whose marker parses and names the folder's store id).</summary>
     public sealed record Install(string Directory, string StoreId, string? Title);
 
     /// <summary>Installed titles; unfinished downloads (no marker, or a partial marker) are counted, not returned.</summary>
@@ -97,7 +97,7 @@ internal sealed class PartingXInstance
             try { dirs.AddRange(Directory.Exists(payloadRoot) ? Directory.GetDirectories(payloadRoot).Order(StringComparer.Ordinal) : []); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                DetectorDiagnostics.Warn($"PartingX payload folder {payloadRoot} unreadable; its games are not listed", ex);
+                DetectorDiagnostics.Warn($"Xbox app payload folder {payloadRoot} unreadable; its games are not listed", ex);
             }
         }
         foreach (var dir in dirs)
@@ -117,20 +117,20 @@ internal sealed class PartingXInstance
                 using var doc = JsonDocument.Parse(ReadSmall(marker));
                 if (!string.Equals(String(doc.RootElement, "storeId"), id, StringComparison.Ordinal))
                 {
-                    DetectorDiagnostics.Warn($"PartingX folder {dir}: its marker names another title; not listed");
+                    DetectorDiagnostics.Warn($"Xbox app folder {dir}: its marker names another title; not listed");
                     continue;
                 }
                 installs.Add(new Install(dir, id, String(doc.RootElement, "packageTitle")));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
-                DetectorDiagnostics.Warn($"PartingX folder {dir}: marker unreadable; not listed", ex);
+                DetectorDiagnostics.Warn($"Xbox app folder {dir}: marker unreadable; not listed", ex);
             }
         }
         return installs;
     }
 
-    /// <summary>The catalogue title (names only; the catalogue is a cache PartingX refreshes, so it is never relied on for anything else).</summary>
+    /// <summary>The catalogue title (names only; the catalogue is a cache the installer app refreshes, so it is never relied on for anything else).</summary>
     public string? CatalogueTitle(string storeId)
     {
         if (_catalogue is null)
@@ -151,7 +151,7 @@ internal sealed class PartingXInstance
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
-                AppLog.Warn("scan", $"PartingX catalogue {index} unreadable; names come from the packages", ex);
+                AppLog.Warn("scan", $"Xbox app catalogue {index} unreadable; names come from the packages", ex);
             }
         }
         return _catalogue.GetValueOrDefault(storeId);
@@ -161,7 +161,7 @@ internal sealed class PartingXInstance
     /// The name of the product the user installed, which the payload folder is named after (#175): an edition such as
     /// Control Ultimate Edition installs the shared base package, whose marker and package config name the base game
     /// (Control Standard Edition). The catalogue's product record (<c>catalogue/products/&lt;id&gt;.json</c>) first, then the
-    /// catalogue index, then the newest job PartingX ran for that product (<c>jobs.json</c>, which names it the same way).
+    /// catalogue index, then the newest job the installer app ran for that product (<c>jobs.json</c>, which names it the same way).
     /// Names only; null when none of them knows the product.
     /// </summary>
     public string? InstalledProductTitle(string storeId)
@@ -188,7 +188,7 @@ internal sealed class PartingXInstance
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            AppLog.Warn("scan", $"PartingX catalogue product {file} unreadable; the name comes from elsewhere", ex);
+            AppLog.Warn("scan", $"Xbox app catalogue product {file} unreadable; the name comes from elsewhere", ex);
             return null;
         }
     }
@@ -214,12 +214,12 @@ internal sealed class PartingXInstance
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            AppLog.Warn("scan", $"PartingX jobs {JobsFile} unreadable for the title's name", ex);
+            AppLog.Warn("scan", $"Xbox app jobs {JobsFile} unreadable for the title's name", ex);
             return null;
         }
     }
 
-    /// <summary>The executable a user recipe tells PartingX to run instead of the package's own.</summary>
+    /// <summary>The executable a user recipe tells the installer app to run instead of the package's own.</summary>
     public string? RecipeExecutable(string storeId)
     {
         var recipe = Path.Combine(StateDir, "recipes", storeId + ".json");
@@ -231,12 +231,12 @@ internal sealed class PartingXInstance
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            DetectorDiagnostics.Warn($"PartingX recipe {recipe} unreadable; the package's own executable is used", ex);
+            DetectorDiagnostics.Warn($"Xbox app recipe {recipe} unreadable; the package's own executable is used", ex);
             return null;
         }
     }
 
-    /// <summary>The title's Wine environment: its prefix, and the Wine build PartingX selected for it.</summary>
+    /// <summary>The title's Wine environment: its prefix, and the Wine build the installer app selected for it.</summary>
     public sealed record TitleEnvironment(string? Prefix, string? RuntimeName, string? Wine, string? WineServer);
 
     public TitleEnvironment Environment(string storeId)
@@ -269,23 +269,23 @@ internal sealed class PartingXInstance
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
-                DetectorDiagnostics.Warn($"PartingX environment {file} unreadable; the game is listed without its Wine build", ex);
+                DetectorDiagnostics.Warn($"Xbox app environment {file} unreadable; the game is listed without its Wine build", ex);
             }
         }
         return new(hasPrefix ? prefix : null, runtime, wine, wineServer);
     }
 
     /// <summary>
-    /// The environment roots of every PartingX instance RHI can see without scanning payloads (Refs #90, w3-scan review
-    /// minor 6): breadcrumbs, the default state folders' <c>settings.json</c> and the user's PartingX folders. Every Wine
-    /// prefix under one belongs to PartingX, whatever that folder holds yet (no <c>.templates</c> needed).
+    /// The environment roots of every installer-app instance RHI can see without scanning payloads (Refs #90, w3-scan review
+    /// minor 6): breadcrumbs, the default state folders' <c>settings.json</c> and the user's installer-app folders. Every Wine
+    /// prefix under one belongs to the installer app, whatever that folder holds yet (no <c>.templates</c> needed).
     /// </summary>
     internal static IReadOnlyList<string> KnownEnvironmentRoots(string? breadcrumbDir, IEnumerable<string> stateDirs)
     {
-        var roots = PartingXBreadcrumb.ReadAll(breadcrumbDir, reportNewerSchema: false).Select(crumb => crumb.EnvironmentRoot).ToList();
+        var roots = InstallerBreadcrumb.ReadAll(breadcrumbDir, reportNewerSchema: false).Select(crumb => crumb.EnvironmentRoot).ToList();
         foreach (var folder in stateDirs)
         {
-            var settings = new[] { folder, Path.Combine(folder, "partingx"), Path.Combine(folder, "state", "partingx") }
+            var settings = new[] { folder, Path.Combine(folder, XboxInstallerApp.FolderName), Path.Combine(folder, "state", XboxInstallerApp.FolderName) }
                 .Select(dir => Path.Combine(dir, "settings.json"))
                 .FirstOrDefault(File.Exists);
             if (settings is null) continue;
@@ -296,20 +296,20 @@ internal sealed class PartingXInstance
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
             {
-                AppLog.Warn("scan", $"PartingX settings {settings} unreadable; its prefixes are recognised by their layout only", ex);
+                AppLog.Warn("scan", $"Xbox app settings {settings} unreadable; its prefixes are recognised by their layout only", ex);
             }
         }
         return roots.OfType<string>().Select(PathIdentity.Canonicalize).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>
-    /// True for PartingX's environment root layout (<c>default/</c> plus <c>.templates/</c>): every Wine prefix under it
-    /// belongs to PartingX, so the Wine-prefix detector never lists one (Refs #90).
+    /// True for the installer app's environment root layout (<c>default/</c> plus <c>.templates/</c>): every Wine prefix under it
+    /// belongs to the installer app, so the Wine-prefix detector never lists one (Refs #90).
     /// </summary>
     internal static bool IsEnvironmentRoot(string dir)
         => Directory.Exists(Path.Combine(dir, AccountId)) && Directory.Exists(Path.Combine(dir, ".templates"));
 
-    // 1–32 ASCII letters and digits (PartingX's store id rule).
+    // 1–32 ASCII letters and digits (the installer app's store id rule).
     internal static bool IsStoreId(string value) => value.Length is > 0 and <= 32 && value.All(char.IsAsciiLetterOrDigit);
 
     private static bool IsSafeName(string value)

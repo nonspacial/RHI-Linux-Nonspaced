@@ -16,16 +16,16 @@ public sealed class XboxViewModelGateTests
     {
         using var tree = new DetectionTestTree();
         var dir = tree.Dir("payloads", "9VM");
-        tree.File(JsonSerializer.Serialize(new { storeId = "9VM" }), "payloads", "9VM", ".partingx-owned");
+        tree.File(JsonSerializer.Serialize(new { storeId = "9VM" }), "payloads", "9VM", XboxInstallerApp.OwnedMarker);
         tree.Exe("payloads", "9VM", "Game.exe");
         var ini = tree.File("[INPUT]\n", "payloads", "9VM", "ReShade.ini");
         var jobs = tree.File(JsonSerializer.Serialize(new { queue = new[] { new { kind = "Launch", titleId = "9VM" } } }), "state", "jobs.json");
-        var package = new XboxPackageInfo("9VM", XboxWriteGate.PartingXApp, null, jobs);
+        var package = new XboxPackageInfo("9VM", XboxWriteGate.InstallerApp, null, jobs);
         XboxWriteGate.Register(package, dir);
         var game = new DetectedGame
         {
             Name = "Xbox VM", Source = "Xbox", InstallPath = dir, BinaryDirectory = dir, ExecutablePath = Path.Combine(dir, "Game.exe"),
-            Runner = "PartingX", XboxPackage = package
+            Runner = XboxInstallerApp.DisplayName, XboxPackage = package
         };
         UiLocalizationService.Apply(language);
         try
@@ -36,7 +36,7 @@ public sealed class XboxViewModelGateTests
             var status = fx.Vm.ApplyGlobalReShadeSettingsToSelectedGame(new());
 
             Assert.Equal(UiLocalizationService.Present(XboxWriteGate.BusyMessage), status);
-            if (language == "pt-BR") Assert.StartsWith("O PartingX está trabalhando neste jogo", status);
+            if (language == "pt-BR") Assert.StartsWith("O app que instalou este jogo está trabalhando nele", status);
             Assert.Equal("[INPUT]\n", File.ReadAllText(ini));
         }
         finally

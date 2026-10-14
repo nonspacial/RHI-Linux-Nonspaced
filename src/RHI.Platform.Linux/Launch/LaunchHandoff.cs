@@ -13,7 +13,7 @@ public enum LaunchHandoff
     Heroic,
     Lutris,
     /// <summary>
-    /// The app that owns an Xbox / Game Pass install (PartingX, the Xodus GUI) is opened; the user starts the game there
+    /// The app that owns an Xbox / Game Pass install (the installer app, the Xodus GUI) is opened; the user starts the game there
     /// (Refs #90). A direct <c>xodus-cli run</c> is not a hand-off: it runs the game.
     /// </summary>
     Xbox,
@@ -38,7 +38,7 @@ public static class LaunchHandoffClassifier
     private static readonly string[] SteamPrograms = ["steam", "steam.sh", "steam-runtime", "steam-native"];
     private static readonly string[] HeroicPrograms = ["heroic", "heroic-games-launcher"];
     // The apps that own Xbox installs on Linux (Refs #90); xodus-cli is not one (`xodus-cli run` runs the game).
-    private static readonly string[] XboxPrograms = ["partingx", "xodus-gui"];
+    private static readonly string[] XboxPrograms = [RHI.Core.Services.XboxInstallerApp.FileTag, "xodus-gui"];
     private static readonly string[] Shells = ["sh", "bash", "dash", "zsh", "ksh", "mksh", "busybox-sh"];
     // Shell set-up that runs before the program (`cd /game && steam …`, `export X=1; steam …`).
     private static readonly string[] SetupCommands = ["cd", "pushd", "popd", "export", "unset", "set", "umask", "ulimit", "source", ".", ":", "true", "trap", "shopt", "alias"];
@@ -108,7 +108,7 @@ public static class LaunchHandoffClassifier
     public static LaunchHandoff Classify(DetectedGame game)
     {
         ArgumentNullException.ThrowIfNull(game);
-        // An Xbox card's own command (PartingX's Play entry point, or the owning app's opener, which may be that app's
+        // An Xbox card's own command (the installer app's Play entry point, or the owning app's opener, which may be that app's
         // start script naming no store) is the owning app's hand-off; a command the user typed instead is read by its words.
         if (game.UserLaunchCommand is null && game.XboxPackage?.OpenCommand is { } open &&
             string.Equals(open, game.LaunchCommand, StringComparison.Ordinal))
@@ -136,7 +136,7 @@ public static class LaunchHandoffClassifier
 
     /// <summary>
     /// The programs that start an Xbox card's owning app (scan re-review minor 1): its Play/Show entry point's launcher
-    /// (the breadcrumb's <c>argv[0]</c>, e.g. a PartingX instance's <c>run.sh</c>) and the opener's program. A command
+    /// (the breadcrumb's <c>argv[0]</c>, e.g. an installer-app instance's <c>run.sh</c>) and the opener's program. A command
     /// the user typed that runs one of them is still the owning app's hand-off, whatever the file is called.
     /// </summary>
     private static IReadOnlyCollection<string> OwningAppPrograms(XboxPackageInfo? package)
@@ -190,7 +190,7 @@ public static class LaunchHandoffClassifier
             (program.StartsWith("heroic", StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
             return LaunchHandoff.Heroic;
         if (XboxPrograms.Contains(program, StringComparer.OrdinalIgnoreCase) ||
-            (program.StartsWith("partingx", StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
+            (program.StartsWith(RHI.Core.Services.XboxInstallerApp.FileTag, StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
             return LaunchHandoff.Xbox;
         if (UriOpeners.Contains(program, StringComparer.OrdinalIgnoreCase))
         {
@@ -338,7 +338,7 @@ public static class LaunchHandoffClassifier
         if (value.StartsWith("steam:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
         if (value.StartsWith("heroic:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Heroic;
         if (value.StartsWith("lutris:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
-        if (value.StartsWith("partingx:", StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
+        if (value.StartsWith(RHI.Core.Services.XboxInstallerApp.UriScheme, StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
             return LaunchHandoff.Xbox;
         if (StoreClientUriSchemes.Any(scheme => value.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)))
             return LaunchHandoff.Other;
