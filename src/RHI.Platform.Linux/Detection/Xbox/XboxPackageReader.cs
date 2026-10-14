@@ -9,6 +9,8 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 /// spelling, configVersion 0 or 1) and <c>appxmanifest.xml</c>. Read-only; names are matched case-insensitively and
 /// the executable is returned in its on-disk spelling (a manifest may write <c>blooddungeon.exe</c> for
 /// <c>BloodDungeon.exe</c>).
+/// <c>Architecture</c> (the package's <c>ProcessorArchitecture</c>) and <c>ExecutableEncrypted</c> are read
+/// but not applied to the card yet: taking the bitness of an encrypted exe from the package is #167.
 /// </summary>
 internal sealed record XboxPackage(
     string Root,
