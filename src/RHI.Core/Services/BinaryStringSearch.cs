@@ -20,9 +20,12 @@ public static class BinaryStringSearch
 
     private static readonly ConcurrentDictionary<CacheKey, int[]> Cache = new();
 
-    /// <summary>Test seam: number of files actually read (cache misses).</summary>
-    internal static int ScansForTesting => Volatile.Read(ref _scans);
-    private static int _scans;
+    /// <summary>
+    /// Test seam: number of files actually read (cache misses) on the calling thread. Per thread, so test classes that
+    /// scan in parallel never move another test's count (it was process-wide and flaked under the full suite).
+    /// </summary>
+    internal static int ScansForTesting => _scans;
+    [ThreadStatic] private static int _scans;
 
     /// <summary>True when the file contains any of <paramref name="needles"/> (ASCII or UTF-16LE, ASCII case ignored).</summary>
     public static bool ContainsAny(string path, params string[] needles)
@@ -71,7 +74,7 @@ public static class BinaryStringSearch
 
     private static HashSet<int> Scan(string path, IReadOnlyList<string> needles, Func<IReadOnlySet<int>, bool>? enough)
     {
-        Interlocked.Increment(ref _scans);
+        _scans++;
         var patterns = new List<(int Index, byte[] Bytes)>();
         for (var i = 0; i < needles.Count; i++)
         {
