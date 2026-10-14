@@ -34,6 +34,48 @@ public sealed class ProxyComponentDialogTests
         Assert.Equal(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"), dialog.Message);
     }
 
+    /// <summary>
+    /// Review w3 minor 4: the TwoWay ComboBox writes null back when the stored value is not among its options (a Bink
+    /// proxy Universal MFG no longer offers) or its items reset. An empty dropdown is not a choice: it must never save the
+    /// component's default over the user's saved preference, and a later choice in the other dropdown keeps the stored value.
+    /// </summary>
+    [Theory]
+    [InlineData(ProxyComponentDialogKind.Dlssg2030)]
+    [InlineData(ProxyComponentDialogKind.DlssEnabler)]
+    [InlineData(ProxyComponentDialogKind.UniversalMfg)]
+    public async Task AnEmptySelection_NeverSavesTheDefault(ProxyComponentDialogKind kind)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        await AddAsync(fx, "Alpha Quest");
+        (string? Gpu, string Proxy) Stored() => kind switch
+        {
+            ProxyComponentDialogKind.Dlssg2030 => (fx.Vm.GetDlssg2030Preferences().GpuGeneration, fx.Vm.GetDlssg2030Preferences().ProxyName),
+            ProxyComponentDialogKind.DlssEnabler => (null, fx.Vm.GetStandaloneDlssEnablerPreferences().ProxyName),
+            _ => (fx.Vm.GetRtx40MfgPreferences().GpuGeneration, fx.Vm.GetRtx40MfgPreferences().ProxyName)
+        };
+        string chosenProxy, chosenGpu = "";
+        using (var first = new ProxyComponentDialogViewModel(fx.Vm, kind))
+        {
+            chosenProxy = first.ProxyOptions.First(name => name != first.SelectedProxy);
+            first.SelectedProxy = chosenProxy;
+            if (first.HasGpu)
+                first.SelectedGpu = chosenGpu = first.GpuOptions.FirstOrDefault(gpu => gpu != first.SelectedGpu) ?? first.SelectedGpu!;
+        }
+        var saved = Stored();
+        Assert.Equal(chosenProxy, saved.Proxy);
+
+        using var dialog = new ProxyComponentDialogViewModel(fx.Vm, kind);
+        dialog.SelectedProxy = null;
+        if (dialog.HasGpu) dialog.SelectedGpu = null;
+        Assert.Equal(saved, Stored());
+        Assert.Equal("", dialog.Message); // nothing was saved, so nothing to report
+
+        if (!dialog.HasGpu) return;
+        var otherGpu = dialog.GpuOptions.FirstOrDefault(gpu => gpu != chosenGpu) ?? chosenGpu; // FG 20/30 offers one generation
+        dialog.SelectedGpu = otherGpu; // the proxy dropdown is still empty: its stored value stays
+        Assert.Equal((otherGpu, chosenProxy), Stored());
+    }
+
     [Theory]
     [InlineData(ProxyComponentDialogKind.Dlssg2030, ManagedComponentKind.Dlssg2030Unlock, "Ui.Dlssg2030Title", true)]
     [InlineData(ProxyComponentDialogKind.DlssEnabler, ManagedComponentKind.DlssEnablerStandalone, "Ui.DlssEnablerStandaloneTitle", false)]

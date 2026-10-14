@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
@@ -161,22 +162,26 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         if (e.PropertyName == nameof(OperationCoordinator.CanCancel)) OnPropertyChanged(nameof(ShowCancel));
     }
 
-    partial void OnSelectedGpuChanged(string? value) => SavePreferences();
+    // An empty selection is never a choice: the ComboBox writes null back through the TwoWay binding when the stored
+    // value is not among its options (e.g. a Bink proxy name Universal MFG no longer offers) or its items are reset.
+    partial void OnSelectedGpuChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value)) SavePreferences();
+    }
 
-    partial void OnSelectedProxyChanged(string? value) => SavePreferences();
+    partial void OnSelectedProxyChanged(string? value)
+    {
+        if (!string.IsNullOrEmpty(value)) SavePreferences();
+    }
 
+    /// <summary>
+    /// Saves the dropdowns' choice. A dropdown left empty keeps the stored value — never the component's default, which
+    /// would overwrite the user's saved preference just by opening the dialog.
+    /// </summary>
     private void SavePreferences()
     {
         if (_loading || IsInstalled || _reverting) return;
-        var result = _kind switch
-        {
-            ProxyComponentDialogKind.Dlssg2030 => _shell.SetDlssg2030Preferences(
-                SelectedGpu ?? Dlssg2030UnlockDeploymentService.GpuGenRtx20, SelectedProxy ?? Dlssg2030UnlockDeploymentService.DefaultProxyName),
-            ProxyComponentDialogKind.DlssEnabler => _shell.SetStandaloneDlssEnablerPreferences(
-                SelectedProxy ?? StandaloneDlssEnablerDeploymentService.DefaultProxyName),
-            _ => _shell.SetRtx40MfgPreferences(
-                SelectedGpu ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40, SelectedProxy ?? Rtx40MfgStandaloneDeploymentService.DefaultProxyName)
-        };
+        var result = Save();
         Message = UiLocalizationService.Present(result.Message);
         if (result.Success) return;
         // Not saved: the dropdowns go back to what is stored.
@@ -201,7 +206,24 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
             }
         }
         finally { _reverting = false; }
+
+        ComponentOperationResult Save()
+        {
+            switch (_kind)
+            {
+                case ProxyComponentDialogKind.Dlssg2030:
+                    var storedFg = _shell.GetDlssg2030Preferences();
+                    return _shell.SetDlssg2030Preferences(Chosen(SelectedGpu, storedFg.GpuGeneration), Chosen(SelectedProxy, storedFg.ProxyName));
+                case ProxyComponentDialogKind.DlssEnabler:
+                    return _shell.SetStandaloneDlssEnablerPreferences(Chosen(SelectedProxy, _shell.GetStandaloneDlssEnablerPreferences().ProxyName));
+                default:
+                    var storedMfg = _shell.GetRtx40MfgPreferences();
+                    return _shell.SetRtx40MfgPreferences(Chosen(SelectedGpu, storedMfg.GpuGeneration), Chosen(SelectedProxy, storedMfg.ProxyName));
+            }
+        }
     }
+
+    private static string Chosen(string? selected, string stored) => string.IsNullOrEmpty(selected) ? stored : selected;
 
     [RelayCommand]
     private async Task CheckAsync()
