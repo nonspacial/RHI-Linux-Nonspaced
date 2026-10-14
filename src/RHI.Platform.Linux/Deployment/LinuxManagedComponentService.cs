@@ -860,6 +860,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             : ComponentOperationResult.Fail(
                 "Alvo de modificações não definido. Use Editar jogo para selecionar o executável real do jogo; o executável do launcher nunca é usado como destino de patches.");
 
+    // Installs also refuse an Xbox card whose exe cannot be read (encrypted on disk): no installer can tell its bitness
+    // until #167, so the card never claims one and says why (Refs #90). Removal and updates of what exists never ask this.
+    private ComponentOperationResult? InstallGuard(DetectedGame game) // w3/scan hook
+        => PatchTargetGuard(game) ?? (XboxWriteGate.InstallRefusal(game) is { } install ? ComponentOperationResult.Fail(install) : null);
+
     private ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
     {
         if (!game.HasConfirmedPatchTarget)
@@ -1361,7 +1366,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ReShadeInstallOptions options,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         if (guard is not null) return guard;
         return await Track(game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
@@ -1392,7 +1397,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         DetectedGame game,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         return guard is null
             ? _d3dCompilerTools.InstallWithProtontricksAsync(game, cancellationToken)
             : Task.FromResult(guard);
@@ -1402,7 +1407,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         DetectedGame game,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         return guard is null
             ? _d3dCompilerTools.InstallWithWinetricksAsync(game, cancellationToken)
             : Task.FromResult(guard);
@@ -1575,7 +1580,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         string packagePath,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         if (guard is not null) return guard;
         return await Track(game, ManagedComponentKind.LumaFramework, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
@@ -1612,7 +1617,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public async Task<ComponentOperationResult> InstallShortFuseAsync(DetectedGame game, bool autoConfigEnabled = false, CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         if (guard is not null) return guard;
         return await Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
@@ -1742,7 +1747,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         string dllName,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         return guard is null
             ? Track(game, ManagedComponentKind.UltimateAsiLoader, ComponentUpdateAction.Install, () => _ultimateAsiLoader.InstallAsync(game, dllName, cancellationToken))
             : Task.FromResult(guard);
@@ -1847,7 +1852,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         OptiScalerVariant variant,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, cancellationToken));
@@ -1859,7 +1864,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game);
         if (guard is not null) return guard;
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(

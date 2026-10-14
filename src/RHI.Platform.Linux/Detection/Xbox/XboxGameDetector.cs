@@ -175,8 +175,8 @@ public sealed class XboxGameDetector : IGameDetector
             LaunchExecutablePath = executable,
             // A launcher (Fallout 4's, a menu shim) is no patch target until the user picks the game's exe in Edit game.
             RequiresExplicitPatchTarget = package is null || package.ExecutableIsLauncher,
-            // The exe is encrypted on disk, so its PE header cannot give the bitness: the package states it.
-            ForcedArchitecture = package is { ExecutableEncrypted: true, Architecture: PeArchitecture.X86 or PeArchitecture.X64 } ? package.Architecture : null,
+            // The exe is encrypted on disk, so its bitness is unknown: the card never claims one, and installs refuse with
+            // the plain reason (XboxWriteGate.InstallRefusal) until #167 reads it from the package.
             LaunchCommand = openCommand,
             ParentLauncherName = openCommand is null ? null : owningApp,
             XboxPackage = new XboxPackageInfo(storeId, owningApp, openCommand, jobsFile)

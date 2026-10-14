@@ -111,8 +111,8 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Equal("Xbox", game.Source);
         Assert.Equal(Path.Combine(dir, "Game.exe"), game.ExecutablePath);
         Assert.False(game.RequiresExplicitPatchTarget);
-        // Encrypted exe: the package states the bitness.
-        Assert.Equal(PeArchitecture.X64, game.ForcedArchitecture);
+        // Encrypted exe: the card claims no bitness until #167 reads it from the package.
+        Assert.Null(game.ForcedArchitecture);
         Assert.Equal(Path.Combine(_envs, "default", "9ABC", "prefix"), game.PrefixPath);
         Assert.Equal(Path.Combine(_runtimes, "rt1", "bin", "wine"), game.WineBinaryPath);
         Assert.Equal(Path.Combine(_runtimes, "rt1", "bin", "wineserver"), game.WineServerPath);
@@ -184,7 +184,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public void LegacyLauncherPackage_NeedsAnExplicitTarget_AndKeepsItsX86Bitness()
+    public void LegacyLauncherPackage_NeedsAnExplicitTarget_AndClaimsNoBitness()
     {
         Title("9F3", "Launcher.exe", configFile: "MicrosoftGame.config", config: "<Game configVersion=\"0\"><Identity Name=\"Beth.F3\" /></Game>");
         File.WriteAllText(Path.Combine(_payloads, "9F3", "appxmanifest.xml"), Manifest("Launcher.exe", "x86"));
@@ -194,7 +194,7 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Equal(Path.Combine(_payloads, "9F3", "Launcher.exe"), game.ExecutablePath);
         Assert.True(game.RequiresExplicitPatchTarget);
         Assert.False(game.HasConfirmedPatchTarget);
-        Assert.Equal(PeArchitecture.X86, game.ForcedArchitecture);
+        Assert.Null(game.ForcedArchitecture);
     }
 
     [Fact]
@@ -414,7 +414,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public void EncryptedExe_StaysThePatchTarget_UnderThePackagesBitness()
+    public void EncryptedExe_StaysThePatchTarget()
     {
         var dir = Title("9KEEP", "Game.exe");
         // A readable x64 PE elsewhere in the package: re-picking "an exe of the stated bitness" would choose it.
@@ -540,6 +540,53 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
+    public async Task InstallOnAnEncryptedXboxExe_RefusesWithThePlainReason_UntilBitnessComesFromThePackage()
+    {
+        Title("9ENC");
+        var game = Assert.Single(Detect(Inputs()).Games);
+        Assert.True(game.HasConfirmedPatchTarget);
+        var service = new LinuxManagedComponentService(new LinuxDeploymentRecordStore(_tree.Path_("deployments.json")), reshade: null!,
+            addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!, relimiter: null!, displayCommander: null!,
+            mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!,
+            d3dCompilerTools: null!, ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!,
+            lumaPolicy: null!);
+
+        var results = new[]
+        {
+            await service.InstallAsync(game, ManagedComponentKind.ReShade, []),
+            await service.ApplyReShadeAsync(game, new ReShadeInstallOptions()),
+            await service.InstallOptiScalerAsync(game, default),
+            await service.InstallUltimateAsiLoaderAsync(game, "dinput8.dll"),
+            await service.InstallShortFuseAsync(game),
+            await service.InstallD3DCompilerWithWinetricksAsync(game),
+            await service.InstallD3DCompilerWithProtontricksAsync(game),
+            await service.InstallLocalLumaPackageAsync(game, _tree.Path_("luma.zip"))
+        };
+
+        Assert.All(results, result => Assert.Equal((false, XboxWriteGate.EncryptedExecutableMessage), (result.Success, result.Message)));
+        // Only installs ask: a change to what is already there is not refused for the bitness.
+        Assert.Null(XboxWriteGate.Refusal(game));
+    }
+
+    [Fact]
+    public void AReadableXboxExe_IsNotRefusedForItsBitness()
+    {
+        var dir = _tree.Dir("px", "payloads", "9PE");
+        _tree.File(JsonSerializer.Serialize(new { storeId = "9PE" }), "px", "payloads", "9PE", ".partingx-owned");
+        _tree.File("{}", "px", "payloads", "9PE", XboxPackageReader.AppxRecordFileName);
+        _tree.File(Manifest("Game.exe"), "px", "payloads", "9PE", "AppxManifest.xml");
+        var pe = new byte[8192];
+        pe[0] = (byte)'M'; pe[1] = (byte)'Z'; pe[0x3C] = 0x40;
+        pe[0x40] = (byte)'P'; pe[0x41] = (byte)'E'; pe[0x44] = 0x64; pe[0x45] = 0x86;
+        _tree.Bytes(pe, "px", "payloads", "9PE", "Game.exe");
+
+        var game = Assert.Single(Detect(Inputs()).Games);
+
+        Assert.Equal(Path.Combine(dir, "Game.exe"), game.ExecutablePath);
+        Assert.Null(XboxWriteGate.InstallRefusal(game));
+    }
+
+    [Fact]
     public void ManualAdd_RecognisesAGdkFolder_WhateverTheConfigsCase()
     {
         var dir = _tree.Dir("manual", "Game");
@@ -592,7 +639,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public async Task ManifestEntryWithoutBitness_KeepsThePackagesBitness()
+    public async Task ManifestEntry_KeepsTheEncryptedExeTheTarget_AndClaimsNoBitness()
     {
         Title("9MAN", "Game.exe", title: "Hollow Knight");
         var game = Assert.Single(Detect(Inputs()).Games);
@@ -603,7 +650,7 @@ public sealed class XboxGameDetectorTests : IDisposable
         await probe.ProbeAsync(game, GameFileIndexer.Build(game.InstallPath));
 
         Assert.Equal("Unity", game.EngineHint); // the manifest entry applied
-        Assert.Equal(PeArchitecture.X64, game.ForcedArchitecture);
+        Assert.Null(game.ForcedArchitecture);
         Assert.Equal(Path.Combine(game.InstallPath, "Game.exe"), game.ExecutablePath);
     }
 

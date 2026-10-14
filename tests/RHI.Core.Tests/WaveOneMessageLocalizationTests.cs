@@ -154,6 +154,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Core.Services.XboxWriteGate.BusyMessage;
         yield return RHI.Core.Services.XboxWriteGate.UnreadablePrefix + "/jogos/partingx/state/partingx/jobs.json";
         yield return RHI.Core.Services.XboxWriteGate.UnknownInstancePrefix + "/jogos/partingx/payloads/9ABC";
+        yield return RHI.Core.Services.XboxWriteGate.EncryptedExecutableMessage;
         yield return RHI.Core.Services.PackageFileProtection.RefusalPrefix + "/jogos/pacotes/9ABC/Jogo.exe";
         // w3/parity rows
         // w3/vmsplit rows
