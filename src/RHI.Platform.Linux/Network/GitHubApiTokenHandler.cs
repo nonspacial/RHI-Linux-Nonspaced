@@ -167,9 +167,8 @@ public sealed class GitHubApiTokenHandler : DelegatingHandler
                     return _rejected ? null : _cachedToken;
 
                 var token = File.ReadAllText(_tokenPath).Trim();
-                if (string.IsNullOrWhiteSpace(token)
-                    || token.Length > 512
-                    || token.Any(char.IsWhiteSpace))
+                // The rule Settings → GitHub token saves by (#163): one rule for what counts as a token.
+                if (!Persistence.SecretFileStore.IsWellFormed(token))
                 {
                     token = string.Empty;
                 }

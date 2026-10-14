@@ -43,6 +43,7 @@ public sealed class App : Application
             var services = AppComposition.Create(http, records, wineOverrides, journal);
             UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);
             var vm = services.CreateViewModel();
+            vm.Parity = services.Parity; // w3/parity hook
             tokenNoticeTarget = vm;
             UiExceptionGuard.SetReporter(message =>
             {

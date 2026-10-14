@@ -7,6 +7,7 @@ using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Launch;
 using RHI.Platform.Linux.Network;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop;
@@ -39,6 +40,7 @@ internal sealed class AppComposition
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
+    public ParityFeatures? Parity { get; init; }
     // w3/vmsplit rows
     // w3/dllnames rows
 
@@ -175,6 +177,11 @@ internal sealed class AppComposition
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        var parity = new ParityFeatures
+        {
+            GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
+                new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new SecretFileStore(GitHubTokenSettingsService.DefaultTokenPath, "github-token"))),
+        };
         // w3/vmsplit rows
         // w3/dllnames rows
         return new AppComposition
@@ -199,6 +206,7 @@ internal sealed class AppComposition
             // w3/journal rows
             // w3/scan rows
             // w3/parity rows
+            Parity = parity,
             // w3/vmsplit rows
             // w3/dllnames rows
         };

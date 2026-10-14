@@ -709,7 +709,8 @@ public sealed partial class MainWindow : Window
                 new TabItem { Header = "Shaders/Add-ons", Content = new ScrollViewer { Content = managerTab } },
                 new TabItem { Header = "DLSS/Streamline", Content = new ScrollViewer { Content = dlssTab } },
                 new TabItem { Header = UiLocalizationService.Text("Ui.UxTab"), Content = new ScrollViewer { Content = uxTab } },
-                new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } }
+                new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } },
+                ParitySettingsTab.Create(vm.Parity) // w3/parity hook
             }
         };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };

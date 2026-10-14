@@ -87,6 +87,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
+    /// <summary>w3/parity features (Settings → Accounts &amp; updates, shortcuts, hand-off); set by App. Integrator hook.</summary>
+    public ParityFeatures? Parity { get; set; }
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     public ObservableCollection<string> DlssSrVersions { get; } = [];
     public ObservableCollection<string> DlssRrVersions { get; } = [];

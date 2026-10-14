@@ -632,6 +632,29 @@ internal static class UiStrings
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        ("Parity.AccountsTab", "Contas e atualizações", "Accounts & updates"),
+        ("Parity.GitHubTokenHeading", "Token do GitHub", "GitHub token"),
+        ("Parity.GitHubTokenNote", "Opcional. Com um token, o GitHub permite 5.000 consultas por hora em vez de 60. Use um token clássico sem permissões (scopes). Ele fica só neste computador, legível apenas pela sua conta.", "Optional. With a token GitHub allows 5,000 lookups an hour instead of 60. Use a classic token with no scopes. It stays on this computer, readable by your account only."),
+        ("Parity.GitHubTokenPlaceholder", "Cole o token aqui", "Paste the token here"),
+        ("Parity.GitHubTokenSave", "Verificar e salvar", "Check and save"),
+        ("Parity.GitHubTokenCheck", "Verificar o token salvo", "Check saved token"),
+        ("Parity.GitHubTokenClear", "Apagar token", "Clear token"),
+        ("Parity.GitHubTokenSaveTip", "O RHI pergunta ao GitHub se o token funciona (uma consulta) e só o salva se o GitHub aceitar.", "RHI asks GitHub whether the token works (one lookup) and saves it only if GitHub accepts it."),
+        ("Parity.GitHubTokenIsSaved", "Um token está salvo.", "A token is saved."),
+        ("Parity.GitHubTokenNoneSaved", "Nenhum token salvo; o RHI usa acesso anônimo (60 consultas por hora).", "No token saved; RHI uses anonymous access (60 lookups an hour)."),
+        ("Parity.GitHubTokenChecking", "Verificando com o GitHub…", "Checking with GitHub…"),
+        ("Parity.GitHubTokenSaved", "O GitHub aceitou o token; salvo.", "GitHub accepted the token; saved."),
+        ("Parity.GitHubTokenSavedWorks", "O GitHub aceita o token salvo.", "GitHub accepts the saved token."),
+        ("Parity.GitHubTokenLimit", "Restam {0} de {1} consultas nesta hora.", "{0} of {1} lookups left this hour."),
+        ("Parity.GitHubTokenRejectedNotSaved", "O GitHub recusou este token (revogado, expirado ou digitado errado); nada foi salvo.", "GitHub refused this token (revoked, expired or mistyped); nothing was saved."),
+        ("Parity.GitHubTokenSavedRejected", "O GitHub recusa o token salvo (revogado ou expirado); cole um novo ou apague-o.", "GitHub refuses the saved token (revoked or expired); paste a new one or clear it."),
+        ("Parity.GitHubTokenMalformed", "Isto não parece um token (vazio, longo demais ou com espaços); nada foi enviado nem salvo.", "This does not look like a token (empty, too long or with spaces); nothing was sent or saved."),
+        ("Parity.GitHubTokenSavedMalformed", "O arquivo do token salvo não contém um token utilizável; cole um novo ou apague-o.", "The saved token file holds no usable token; paste a new one or clear it."),
+        ("Parity.GitHubTokenCouldNotCheckNotSaved", "Não foi possível falar com o GitHub agora; nada foi salvo. Tente de novo mais tarde.", "Could not reach GitHub just now; nothing was saved. Try again later."),
+        ("Parity.GitHubTokenCouldNotCheck", "Não foi possível falar com o GitHub agora; o token salvo foi mantido.", "Could not reach GitHub just now; the saved token was kept."),
+        ("Parity.GitHubTokenSaveFailed", "O GitHub aceitou o token, mas o arquivo não pôde ser gravado (detalhes no rhi.log); nada foi alterado.", "GitHub accepted the token but the file could not be written (details in rhi.log); nothing was changed."),
+        ("Parity.GitHubTokenCleared", "Token apagado; o RHI usa acesso anônimo.", "Token cleared; RHI uses anonymous access."),
+        ("Parity.GitHubTokenNotCleared", "O token não pôde ser apagado: {0}", "The token could not be cleared: {0}"),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

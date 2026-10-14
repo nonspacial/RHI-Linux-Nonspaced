@@ -139,4 +139,11 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #163 — Settings: paste, check and clear a GitHub token (2.8.6)
+
+- Settings → **Accounts & updates** → GitHub token: paste a token, **Check and save**. As upstream `128bc14` (validate before apply), RHI asks GitHub once (`GET https://api.github.com/rate_limit` under the GitHub API host policy) and saves only when GitHub accepts the token; a refused (401), malformed (blank, over 512 characters, whitespace inside), unreachable or rate-limited check saves nothing and keeps the token already saved. The status line shows the hourly limit and what is left of it, never the token; the box masks it and is emptied once saved.
+- Saved to the same `~/.config/rhi-linux/github_api.txt` the app already reads (#36/#133), atomically at mode 0600 (the temporary file is created 0600, so the token is never readable by other users, even briefly); a symlinked token file stays a link and the file it points at is replaced. **Check saved token** re-checks the saved file; **Clear token** deletes the file (a symlink is removed, not the file it points at) and the app goes back to anonymous access at once (the handler sees the file gone).
+- The check runs on its own HTTP client, outside the session's ETag cache (a cached answer must never vouch for another token) and outside the token handler (it sends the candidate, not the saved token). Upstream's classic-PAT advice is kept in the note ("no scopes"); any GitHub token format is accepted. The device-flow sign-in stays parked (#134).
+- The token file rule (what counts as a token) is now one rule for the handler and the Settings field (`SecretFileStore.IsWellFormed`), the 0600 store the Nexus Mods key uses too (#99).
+
 ## Parity notes (feature-parity backlog)
