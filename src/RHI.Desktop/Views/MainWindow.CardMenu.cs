@@ -35,16 +35,20 @@ public partial class MainWindow
             Placement = atPointer ? PlacementMode.Pointer : PlacementMode.BottomEdgeAlignedLeft,
             ShowMode = FlyoutShowMode.Standard
         };
+        // The app's menu surface and text colour, as the toolbar's '…' menu (App.axaml).
+        menu.FlyoutPresenterClasses.Add(OverflowMenuClass);
         foreach (var entry in vm.CardMenuFor(row))
         {
             if (entry.SeparatorBefore && menu.Items.Count > 0) menu.Items.Add(new Separator());
-            menu.Items.Add(new MenuItem
+            var item = new MenuItem
             {
                 Header = entry.Label,
                 Command = entry.Command,
                 IsEnabled = entry.IsEnabled,
                 Name = "CardMenu-" + entry.Id
-            });
+            };
+            item.Classes.Add(OverflowMenuClass);
+            menu.Items.Add(item);
         }
         menu.Closed += (_, _) => { if (ReferenceEquals(OpenCardMenu, menu)) OpenCardMenu = null; };
         OpenCardMenu = menu;

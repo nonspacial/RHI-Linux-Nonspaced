@@ -174,8 +174,8 @@
       <Setter Property="Padding" Value="10,7"/>
     </Style>
 
-    <!-- The toolbar '…' overflow menu uses the tooltip surface and the button text colour (scoped: other menus,
-         e.g. text-box context menus, keep the theme defaults). -->
+    <!-- The toolbar '…' overflow menu and the library card menu use the tooltip surface and the button text colour
+         (scoped: other menus, e.g. text-box context menus, keep the theme defaults). -->
     <Style Selector="MenuFlyoutPresenter.toolbarOverflow">
       <Setter Property="Background" Value="#101419"/>
       <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>
