@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 
@@ -51,11 +52,15 @@ public sealed class ControlUeFrameGenerationService
 
     private readonly OptiScalerDeploymentService _optiScaler;
     private readonly LinuxDeploymentRecordStore _records;
+    private readonly DeploymentJournal? _journal;
 
-    public ControlUeFrameGenerationService(OptiScalerDeploymentService optiScaler, LinuxDeploymentRecordStore records)
+    /// <param name="journal">The deployment journal the FgSlHdr10 edit is journaled in; null = the OptiScaler service's
+    /// (the app's journal), or in-process rollback only when that has none.</param>
+    public ControlUeFrameGenerationService(OptiScalerDeploymentService optiScaler, LinuxDeploymentRecordStore records, DeploymentJournal? journal = null)
     {
         _optiScaler = optiScaler;
         _records = records;
+        _journal = journal ?? optiScaler?.Journal;
     }
 
     /// <summary>
@@ -91,7 +96,7 @@ public sealed class ControlUeFrameGenerationService
         }
 
         // Step 7 runs whatever step 6 did, as upstream.
-        notes += SetHdrKey(game, useHdr);
+        notes += await SetHdrKeyAsync(game, useHdr).ConfigureAwait(false);
         return optiScaler.Success ? ComponentOperationResult.Ok(notes) : ComponentOperationResult.Fail(notes);
     }
 
@@ -112,42 +117,51 @@ public sealed class ControlUeFrameGenerationService
     /// <summary>
     /// Writes <c>FgSlHdr10</c> (1 with HDR, else 0) under <c>[renodx-preset1]</c> through the owned-key state kept on the
     /// RenoDX record, so RenoDX removal restores it; a value the user changed since is kept. Returns the note.
+    /// <para>Journaled (review nit 5): reshade.ini (the file a link resolves to) is tracked with a verified copy before
+    /// the edit and the edit declared; the commit point is the RenoDX record saved with the key's ownership (stamped). A
+    /// failure, or a crash before that save, puts reshade.ini back, so the key is never left without an owner. Runs after
+    /// RenoDX's own install committed, as its own unit; never cancelled.</para>
     /// </summary>
-    internal string SetHdrKey(DetectedGame game, bool useHdr)
+    internal async Task<string> SetHdrKeyAsync(DetectedGame game, bool useHdr)
     {
         var renoDx = _records.Find(game, ManagedComponentKind.RenoDX);
         if (renoDx is null || string.IsNullOrWhiteSpace(game.BinaryDirectory))
             return HdrNotSetPrefix + HdrNoRenoDxMessage;
-        if (RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory) is null)
+        if (RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory) is not { } iniPath)
             return HdrNotSetPrefix + HdrNoIniMessage;
         var previous = renoDx.Metadata.TryGetValue(HdrMetadataKey, out var json) ? RenoDxIniOverrideManager.Deserialize(json) : null;
         var value = useHdr ? "1" : "0";
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, $"Control UE FgSlHdr10: {game.Name}", game, ManagedComponentKind.RenoDX, CancellationToken.None).ConfigureAwait(false);
+        if (journalRefusal is not null) return HdrNotSetPrefix + journalRefusal;
+        await using var scope = opened!;
         RenoDxIniOverrideApplyResult applied;
         try
         {
+            // The INI writer follows a link to its target (UserFileLinkPolicy), so the target is what changes.
+            var written = File.ResolveLinkTarget(iniPath, returnFinalTarget: true)?.FullName ?? iniPath;
+            await scope.TrackAsync(written, CancellationToken.None).ConfigureAwait(false);
             applied = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, new Dictionary<string, string> { [HdrKey] = value },
                 previous, gameRoot: game.InstallPath, section: HdrSection);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            return HdrNotSetPrefix + ex.Message;
-        }
-        if (applied.State is null) return HdrNotSetPrefix + HdrNoIniMessage;
-        try
-        {
-            renoDx.Metadata[HdrMetadataKey] = RenoDxIniOverrideManager.Serialize(applied.State);
-            _records.Upsert(renoDx);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            // Nothing would own the key: put it back rather than leave an unowned edit.
-            try { RenoDxIniOverrideManager.Cleanup(applied.State, gameRoot: game.InstallPath); }
-            catch (Exception undo) when (undo is IOException or UnauthorizedAccessException)
+            if (applied.State is null)
             {
-                AppLog.Warn("control-ue", "FgSlHdr10 could not be taken back after the RenoDX record save failed", undo);
+                await scope.RollbackAsync().ConfigureAwait(false);
+                return HdrNotSetPrefix + HdrNoIniMessage;
             }
-            return HdrNotSetPrefix + ex.Message;
+            await scope.DeclareWrittenContentAsync(written, CancellationToken.None).ConfigureAwait(false);
+            renoDx.Metadata[HdrMetadataKey] = RenoDxIniOverrideManager.Serialize(applied.State);
+            // The commit point: nothing owns the key until this save lands; a failure before it puts reshade.ini back.
+            _records.Upsert(scope.Stamp(renoDx));
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("control-ue", $"FgSlHdr10 rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return HdrNotSetPrefix + ex.Message + DeploymentScope.RollbackNote(rollback);
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
         return applied.AppliedCount > 0 ? HdrSetPrefix + value : HdrNotSetPrefix + HdrUserValueKeptMessage;
     }
 }

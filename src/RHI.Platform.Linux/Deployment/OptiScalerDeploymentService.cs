@@ -95,6 +95,9 @@ public sealed partial class OptiScalerDeploymentService
     public LinuxDeploymentRecord? GetRecord(DetectedGame game)
         => _records.Find(game, ManagedComponentKind.OptiScaler);
 
+    /// <summary>The deployment journal this service writes (null without one), for steps that run beside it (#136 FgSlHdr10).</summary>
+    internal DeploymentJournal? Journal => _journal;
+
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = GetRecord(game);

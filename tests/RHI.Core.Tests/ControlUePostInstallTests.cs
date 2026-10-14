@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
@@ -524,7 +525,7 @@ public sealed class ControlUePostInstallTests : IDisposable
         Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
         // SetHdrKey reads only the RenoDX record and reshade.ini (no OptiScaler needed).
         var frameGeneration = new ControlUeFrameGenerationService(null!, store);
-        Assert.Equal(ControlUeFrameGenerationService.HdrSetPrefix + "1", frameGeneration.SetHdrKey(game, useHdr: true));
+        Assert.Equal(ControlUeFrameGenerationService.HdrSetPrefix + "1", await frameGeneration.SetHdrKeyAsync(game, useHdr: true));
         Assert.Contains("[renodx-preset1]\nFgSlHdr10=1\n", File.ReadAllText(ini));
 
         _srVersion = "310.9.9"; // the update has something to do
@@ -535,6 +536,59 @@ public sealed class ControlUePostInstallTests : IDisposable
         var removed = await service.RemoveAsync(game);
         Assert.True(removed.Success, removed.Message);
         Assert.Equal(original, File.ReadAllText(ini));
+    }
+
+    // Review nit 5: the FgSlHdr10 write and the RenoDX record save that owns it are one journaled unit. A crash between
+    // the reshade.ini write and the save puts reshade.ini back at the next start (no unowned key left in the user's INI);
+    // an in-process save failure does the same and says so.
+    [Fact]
+    public async Task FrameGenerationHdrKey_CrashBeforeTheRecordSave_NextStartPutsReshadeIniBack()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        const string original = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(ini, original);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var journalDir = Path.Combine(_root, "journal");
+        var (journal, overrides) = SimulatedDeath.NewJournal(journalDir, store);
+        // The app's wiring: the step takes the OptiScaler service's journal (no journal passed of its own).
+        var optiScaler = new OptiScalerDeploymentService(new TransactionalFileDeploymentService(), store, overrides, null!, journal: journal);
+        var frameGeneration = new ControlUeFrameGenerationService(optiScaler, store);
+        var ledgerBefore = File.ReadAllText(Path.Combine(_root, "records.json"));
+        using var death = new SimulatedDeath(journal);
+        store.SaveFaultForTesting = death.Die;
+
+        var (died, _) = await death.RunUntilDeathAsync(() => frameGeneration.SetHdrKeyAsync(game, useHdr: true));
+        Assert.True(died);
+        Assert.Contains("FgSlHdr10=1", File.ReadAllText(ini));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, Path.Combine(_root, "records.json"));
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        Assert.Equal(original, File.ReadAllText(ini));
+        Assert.Equal(ledgerBefore, File.ReadAllText(Path.Combine(_root, "records.json")));
+    }
+
+    [Fact]
+    public async Task FrameGenerationHdrKey_RecordSaveFails_PutsReshadeIniBack_AndSaysSo()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        const string original = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(ini, original);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var journalDir = Path.Combine(_root, "journal-fail");
+        var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+        var frameGeneration = new ControlUeFrameGenerationService(null!, store, journal);
+        store.SaveFaultForTesting = () => new IOException("disk full (test)");
+
+        var note = await frameGeneration.SetHdrKeyAsync(game, useHdr: true);
+
+        store.SaveFaultForTesting = null;
+        Assert.Equal(ControlUeFrameGenerationService.HdrNotSetPrefix + "disk full (test)", note);
+        Assert.Equal(original, File.ReadAllText(ini));
+        Assert.False(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
+        Assert.Empty(Directory.GetFiles(journalDir));
     }
 
     private (DetectedGame Game, RenoDxDeploymentService Service, LinuxDeploymentRecordStore Store) Arrange(string name)
