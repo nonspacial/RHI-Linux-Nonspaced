@@ -17,7 +17,7 @@ public sealed class OptiScalerProbeTests : IDisposable
         Directory.CreateDirectory(bin);
         var dxgi = Path.Combine(bin, "dxgi.dll");
         var reshade = Path.Combine(bin, "ReShade64.dll");
-        WriteSignature(dxgi, "OptiScaler middleware");
+        WriteSignature(dxgi, "optiscaler/OptiScaler middleware");
         WriteSignature(reshade, "ReShade crosire reshade.me");
         var game = new DetectedGame { Name = "Game", InstallPath = _root, BinaryDirectory = bin, Runner = "Proton" };
 
@@ -36,7 +36,7 @@ public sealed class OptiScalerProbeTests : IDisposable
         var ini = Path.Combine(bin, "OptiScaler.ini");
         var nestedDll = Path.Combine(nested, "OptiScaler.dll");
         File.WriteAllText(ini, "[Plugins]\nLoadReshade=auto\n");
-        WriteSignature(nestedDll, "OptiScaler middleware");
+        WriteSignature(nestedDll, "optiscaler/OptiScaler middleware");
         var game = new DetectedGame { Name = "Game", InstallPath = _root, BinaryDirectory = bin, Runner = "Proton" };
 
         var result = ComponentProbe.Probe(game, [ini, nestedDll]);

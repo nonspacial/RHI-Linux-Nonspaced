@@ -145,4 +145,11 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - Prerelease-only repos opt in to the list endpoint explicitly, as upstream's manifest does (`e9eef5d`): the offline fallbacks for MFG Ada Unlock, DLSS5 DX11 Bridge and the DLSS5 Feeder (add-on and full stack) now say `/releases?per_page=1`.
 - The pinned fallback manifest moved from the 2.7.5 commit `a94a574` to the `RHI-2.8.7` tag commit `4bb5e5c`, so a broken live manifest URL falls back to the same `?per_page=1` URLs instead of the old `/latest` ones.
 
+### #154 — OptiScaler identified by its version resource (2.8.6/2.8.7)
+
+- A DLL counts as OptiScaler when its PE version resource says `FileDescription = OptiScaler` and `CompanyName = nitec` (both fields, as upstream `7920ae6`); a file whose resource names any other tool is not OptiScaler, whatever strings it carries (`5031d97`). RTX Encore's proxies (SilyNoMeta, they mention "OptiScaler") no longer show the OptiScaler badge, and installing over one gives the foreign-DLL refusal instead of "OptiScaler occupies dxgi.dll". Checked on real builds: OptiScaler 0.9.4 and F5 DLSSNR 0.1.30 = OptiScaler, RTX Encore 1.0.0-rc.2 = not.
+- Only a file without a version resource is read for strings, and only for OptiScaler's own (`optiscaler/OptiScaler`, `OptiScaler_DontLoad`), never the bare name. Upstream also matches `optiscaler.dll` case-sensitively; the fork's string search ignores ASCII case, which would turn it into the common `OptiScaler.dll`, so it is left out.
+- A file with OptiScaler's version resource is never read as ReShade: OptiScaler's own DLL contains "ReShade", which used to send an external OptiScaler down the "ReShade is already present" refusal and blocked ReShade (`ReShade64.dll`) beside an RHI-managed OptiScaler with a real OptiScaler build.
+- Protection is unchanged: a DLL that is neither is still refused as foreign by every install path.
+
 ## Parity notes (feature-parity backlog)

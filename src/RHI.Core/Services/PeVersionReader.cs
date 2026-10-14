@@ -3,8 +3,16 @@ using System.Text;
 
 namespace RHI.Core.Services;
 
-/// <summary>Version strings and numbers from a PE file's RT_VERSION resource.</summary>
-public sealed record PeVersionInfo(string? ProductVersion, string? FileVersion, Version? FixedFileVersion);
+/// <summary>
+/// Version strings and numbers from a PE file's RT_VERSION resource. <see cref="FileDescription"/> and
+/// <see cref="CompanyName"/> identify the binary (OptiScaler writes "OptiScaler" / "nitec"; #154).
+/// </summary>
+public sealed record PeVersionInfo(
+    string? ProductVersion,
+    string? FileVersion,
+    Version? FixedFileVersion,
+    string? FileDescription = null,
+    string? CompanyName = null);
 
 /// <summary>
 /// Reads the <c>VS_VERSIONINFO</c> resource of a Windows PE file. <c>FileVersionInfo</c> on Linux
@@ -164,7 +172,7 @@ public static class PeVersionReader
             }
         }
 
-        string? product = null, file = null;
+        string? product = null, file = null, description = null, company = null;
         foreach (var info in Children(blob, root))
         {
             if (info.Key != "StringFileInfo") continue;
@@ -179,11 +187,16 @@ public static class PeVersionReader
                     if (text.Length == 0) continue;
                     if (entry.Key == "ProductVersion") product ??= text;
                     else if (entry.Key == "FileVersion") file ??= text;
+                    else if (entry.Key == "FileDescription") description ??= text;
+                    else if (entry.Key == "CompanyName") company ??= text;
                 }
-                if (product is not null || file is not null) break; // first table with versions wins
+                // The first table that names the file wins (versions or identity).
+                if (product is not null || file is not null || description is not null || company is not null) break;
             }
         }
-        return product is null && file is null && fixedVersion is null ? null : new PeVersionInfo(product, file, fixedVersion);
+        return product is null && file is null && fixedVersion is null && description is null && company is null
+            ? null
+            : new PeVersionInfo(product, file, fixedVersion, description, company);
     }
 
     private readonly record struct Block(string Key, int ValueOffset, int ValueLength, int ChildrenOffset, int End);

@@ -202,7 +202,7 @@ public sealed class OptiScalerPackageProviderTests : IDisposable
             var dll = new byte[300_000];
             dll[0] = (byte)'M';
             dll[1] = (byte)'Z';
-            Encoding.ASCII.GetBytes("OptiScaler official package").CopyTo(dll, 512);
+            Encoding.ASCII.GetBytes("optiscaler/OptiScaler official package").CopyTo(dll, 512);
             File.WriteAllBytes(Path.Combine(root, "OptiScaler.dll"), dll);
             File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n");
             File.WriteAllBytes(Path.Combine(root, "nvngx.dll_dlssnr.dll"), dll);

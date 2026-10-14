@@ -3,11 +3,40 @@ namespace RHI.Core.Services;
 /// <summary>Small binary-string classifier used for conservative foreign-DLL protection.</summary>
 public static class BinarySignatureInspector
 {
+    /// <summary>
+    /// ReShade by its strings. A file whose version resource names OptiScaler is never ReShade: OptiScaler's own DLL
+    /// carries "ReShade" (it can load ReShade), and reading it as ReShade sent an OptiScaler proxy down the
+    /// external-ReShade refusal and blocked ReShade beside an RHI-managed OptiScaler (#154).
+    /// </summary>
     public static bool LooksLikeReShade(string path)
-        => ContainsAny(path, "ReShade", "reshade.me", "crosire");
+        => ContainsAny(path, "ReShade", "reshade.me", "crosire") && !IsOptiScalerVersionResource(PeVersionReader.Read(path));
 
+    /// <summary>
+    /// OptiScaler identification (#154, upstream 2.8.6/2.8.7 7920ae6, 5031d97). The PE version resource decides when
+    /// the file has one: OptiScaler always writes <c>FileDescription = OptiScaler</c> and <c>CompanyName = nitec</c>,
+    /// and a resource naming anything else (RTX Encore's proxies say SilyNoMeta, yet mention "OptiScaler") is not
+    /// OptiScaler. Only a file without a version resource falls back to strings, and only to ones OptiScaler's own
+    /// binary carries (its GitHub path and its registry escape key), never the bare name other tools mention. A file
+    /// this rejects is not trusted as anything: install paths still refuse it as a foreign DLL.
+    /// </summary>
     public static bool LooksLikeOptiScaler(string path)
-        => ContainsAny(path, "OptiScaler", "optiscaler", "OptiScaler.ini");
+    {
+        var version = PeVersionReader.Read(path);
+        return version is not null
+            ? IsOptiScalerVersionResource(version)
+            : ContainsAny(path, OptiScalerOwnStrings);
+    }
+
+    /// <summary>True for OptiScaler's version resource (<c>FileDescription</c> "OptiScaler", <c>CompanyName</c> "nitec").</summary>
+    public static bool IsOptiScalerVersionResource(PeVersionInfo? version)
+        => version is not null
+           && string.Equals(version.FileDescription, "OptiScaler", StringComparison.OrdinalIgnoreCase)
+           && string.Equals(version.CompanyName, "nitec", StringComparison.OrdinalIgnoreCase);
+
+    // Upstream also matches "optiscaler.dll" case-sensitively; the shared search ignores ASCII case, which turns that
+    // needle into the common "OptiScaler.dll" any tool can mention, so it is left out. Both real builds checked
+    // (OptiScaler 0.9.4, F5 DLSSNR 0.1.30) carry "optiscaler/OptiScaler".
+    private static readonly string[] OptiScalerOwnStrings = ["optiscaler/OptiScaler", "OptiScaler_DontLoad"];
 
     public static bool LooksLikeRenoDx(string path)
         => Path.GetFileName(path).Contains("renodx", StringComparison.OrdinalIgnoreCase) ||
