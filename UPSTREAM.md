@@ -140,3 +140,8 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 ## Parity notes (upstream 2.8.6–2.8.7)
 
 ## Parity notes (feature-parity backlog)
+
+### #90 — Xbox / Game Pass games in the library
+- Upstream (`GameDetectionService.Xbox.cs`) finds Xbox installs through Windows' package manager, `.GamingRoot` files and the registry; none exist on Linux, which has no official client. The fork reads the two Linux installers instead (owner, 2026-10-14): Xodus's package folders (`.xodus-streaming.msixvc` or a PartingX Appx record plus `MicrosoftGame.config`/`appxmanifest.xml`, under `~/Games` and listed folders) and PartingX's records (`settings.json` storage roots, `.partingx-owned`, `envs/default/<id>/partingx.json`, runtime bundles, user recipes, catalogue names). Upstream's `MicrosoftGame.config` test (GDK) is kept, case-insensitively.
+- Cards are listed straight away; unfinished downloads are hidden. Play opens the owning app (PartingX's instance script or launcher, the Xodus GUI once it exists) and never runs the game or `xodus-cli run`; without one it is disabled with a 2 s tooltip.
+- MSIXVC exes are encrypted on disk, so the bitness comes from the package (`ProcessorArchitecture`). RHI refuses to write the encrypted exes, the msixvc, the package config/manifest, PartingX's markers and the DXVK/VKD3D/NVAPI DLLs PartingX places in a title prefix, and refuses any change while PartingX has a job queued for the title.

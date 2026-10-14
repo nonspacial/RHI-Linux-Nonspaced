@@ -390,8 +390,11 @@ internal static partial class DetectionHelpers
         var currentArchitecture = !string.IsNullOrWhiteSpace(game.ExecutablePath) && File.Exists(game.ExecutablePath)
             ? RHI.Core.Services.PeArchitectureDetector.Detect(game.ExecutablePath)
             : PeArchitecture.Unknown;
+        // An Xbox package's exe is encrypted on disk (no readable PE header): the bitness its package states is not
+        // contradicted by an unreadable header, so the package's own exe stays the target (Refs #90).
         var forcedExecutableMismatch = forcedArchitecture is PeArchitecture.X86 or PeArchitecture.X64
-            && currentArchitecture != forcedArchitecture.Value;
+            && currentArchitecture != forcedArchitecture.Value
+            && !(currentArchitecture == PeArchitecture.Unknown && game.XboxPackage is not null);
 
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath) || forcedExecutableMismatch)
         {

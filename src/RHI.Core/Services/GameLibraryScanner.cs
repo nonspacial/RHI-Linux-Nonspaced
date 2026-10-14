@@ -273,6 +273,7 @@ public sealed class GameLibraryScanner
             // w3/sync rows
             // w3/journal rows
             // w3/scan rows
+            first.XboxPackage ??= candidate.XboxPackage;
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows

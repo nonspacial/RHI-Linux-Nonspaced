@@ -53,7 +53,9 @@ public sealed class LinuxGameRuntimeProbe : IGameRuntimeProbe
                 {
                     game.CanonicalManifestName ??= gameOverride.GameName;
                     game.EngineHint = gameOverride.EngineHint ?? gameOverride.EngineOverride;
-                    game.ForcedArchitecture = gameOverride.ForcedArchitecture;
+                    // An Xbox package states its bitness (its exe is encrypted on disk); only a manifest value replaces it (Refs #90).
+                    game.ForcedArchitecture = gameOverride.ForcedArchitecture
+                        ?? (game.XboxPackage is not null ? game.ForcedArchitecture : null);
                     game.EngineIniProjectOverride = gameOverride.EngineIniProjectOverride;
                     game.ManifestGraphicsApiOverride = gameOverride.GraphicsApiOverride;
                     game.ManifestGraphicsApis = gameOverride.GraphicsApiOverrides;

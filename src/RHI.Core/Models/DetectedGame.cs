@@ -185,6 +185,8 @@ public sealed class DetectedGame
     // w3/sync rows
     // w3/journal rows
     // w3/scan rows
+    /// <summary>Set on an Xbox / Game Pass install (Refs #90): its store id and the app that owns it (Play opens that app).</summary>
+    public XboxPackageInfo? XboxPackage { get; set; }
     // w3/parity rows
     // w3/vmsplit rows
     // w3/dllnames rows

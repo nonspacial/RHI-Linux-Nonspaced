@@ -109,6 +109,7 @@ public static class HdrLaunchText
             LaunchHandoff.Steam => TF("Hdr.ApplyInSteam", plan.LaunchOptions),
             LaunchHandoff.Heroic => TF("Hdr.ApplyInHeroic", entry, Settings(plan, "Hdr.WrapperCommand")),
             LaunchHandoff.Lutris => TF("Hdr.ApplyInLutris", entry, Settings(plan, "Hdr.CommandPrefix")),
+            LaunchHandoff.Xbox => TF("Scan.HdrApplyInOwningApp", game.XboxPackage?.OwningApp ?? entry), // w3/scan hook (Refs #90)
             _ => TF("Hdr.ApplyInOtherLauncher", Settings(plan, "Hdr.WrapperCommand"))
         };
     }

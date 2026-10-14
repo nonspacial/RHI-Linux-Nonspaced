@@ -64,7 +64,20 @@ internal sealed partial class LauncherOwnedPrefixes
     {
         var canonical = PathIdentity.Canonicalize(prefixPath);
         return _lutrisPrefixes.Contains(canonical) ||
-               canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal);
+               canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal) ||
+               InPartingXEnvironment(canonical);
+    }
+
+    /// <summary>
+    /// A title prefix (<c>&lt;env&gt;/default/&lt;id&gt;/prefix</c>) or runtime template under PartingX's environment folder
+    /// (Refs #90): PartingX lists, prepares and launches those itself; the Xbox detector lists their games.
+    /// </summary>
+    private static bool InPartingXEnvironment(string prefix)
+    {
+        var current = Path.GetDirectoryName(prefix);
+        for (var level = 0; current is not null && level < 4; level++, current = Path.GetDirectoryName(current))
+            if (Xbox.PartingXInstance.IsEnvironmentRoot(current)) return true;
+        return false;
     }
 
     /// <summary>

@@ -38,6 +38,8 @@ internal sealed class AppComposition
     // w3/sync rows
     // w3/journal rows
     // w3/scan rows
+    /// <summary>The "PartingX / Xbox folders" setting the Xbox detector reads (Settings hosts it through <see cref="ViewModels.XboxFoldersPresenter"/>).</summary>
+    public RHI.Platform.Linux.Detection.Xbox.XboxFolderStore XboxFolders { get; init; } = new();
     // w3/parity rows
     // w3/vmsplit rows
     // w3/dllnames rows
@@ -78,6 +80,7 @@ internal sealed class AppComposition
             new WinePrefixDetector(),
             new ManualGameDetector(libraryStore),
             // w3/scan rows (new store detectors)
+            new RHI.Platform.Linux.Detection.Xbox.XboxGameDetector(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore()),
         };
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var pcgwData = new PcgwCentralDataService(http);

@@ -980,6 +980,9 @@ public static class UiLocalizationService
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
+        ("PartingX is working on this game (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O PartingX está trabalhando neste jogo (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
+        ("PartingX's job list could not be read, so RHI cannot tell whether PartingX is changing this game. File: ", "Não foi possível ler a lista de tarefas do PartingX, então o RHI não sabe se o PartingX está alterando este jogo. Arquivo: "),
+        ("RHI never changes this file of an Xbox package: the game would no longer start, or PartingX/Xodus would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o PartingX/Xodus o restauraria. Arquivo: "),
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
