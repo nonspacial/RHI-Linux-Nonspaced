@@ -118,6 +118,74 @@ public sealed class NexusApiClientTests
     }
 
     [Fact]
+    public async Task RedirectAnswer_IsRefused_AndNothingIsSentToItsTarget()
+    {
+        var fake = new FakeNexus(_ =>
+        {
+            var moved = new HttpResponseMessage(HttpStatusCode.Found);
+            moved.Headers.Location = new Uri("https://elsewhere.example/v1/users/validate.json");
+            return moved;
+        });
+
+        var error = await Assert.ThrowsAsync<NexusApiException>(() => new NexusApiClient(new HttpClient(fake)).ValidateKeyAsync(Key));
+
+        Assert.Equal(HttpStatusCode.Found, error.Status);
+        Assert.Equal("api.nexusmods.com", Assert.Single(fake.Requests).RequestUri!.Host);
+    }
+
+    [Fact]
+    public void TheAppsNexusClient_NeverFollowsARedirect_TheApikeyHeaderWouldGoAlong()
+    {
+        Assert.False(NexusApiClient.CreateDefault().OwnHandler!.AllowAutoRedirect);
+
+        using var http = new HttpClient(new FakeNexus(_ => throw new HttpRequestException("offline")));
+        var wineOverrides = new RHI.Platform.Linux.Deployment.WineDllOverrideService();
+        var services = RHI.Desktop.AppComposition.Create(http, new RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore(), wineOverrides,
+            RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(wineOverrides));
+        Assert.False(services.Parity!.NexusAccount.Api.OwnHandler?.AllowAutoRedirect ?? true, "the app's Nexus client must be NexusApiClient.CreateDefault()");
+    }
+
+    /// <summary>A body of <paramref name="length"/> bytes with no announced length (chunked), produced as it is read.</summary>
+    private sealed class Unannounced(long length) : Stream
+    {
+        public long Served { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => Served; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = (int)Math.Min(count, length - Served);
+            for (var i = 0; i < n; i++) buffer[offset + i] = (byte)(Served + i == 0 ? '[' : Served + i == length - 1 ? ']' : ' ');
+            Served += n;
+            return n;
+        }
+    }
+
+    [Fact]
+    public async Task AnswerWithoutContentLength_IsCappedAt16MiB_AsItStreams()
+    {
+        const long cap = 16L * 1024 * 1024;
+        var over = new Unannounced(cap + 1);
+        var fake = new FakeNexus(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(over) });
+        var link = NxmLink.TryParse("nxm://cyberpunk2077/mods/107/files/12345?key=abc&expires=99")!;
+
+        var error = await Assert.ThrowsAsync<NexusApiException>(() => new NexusApiClient(new HttpClient(fake)).GetDownloadLinksAsync(Key, link));
+
+        Assert.Equal(NexusApiClient.OversizedMessage, error.Message);
+        Assert.True(over.Served <= cap + 81920, $"read {over.Served} bytes");
+
+        var exactly = new FakeNexus(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new Unannounced(cap)) });
+        Assert.Empty(await new NexusApiClient(new HttpClient(exactly)).GetDownloadLinksAsync(Key, link)); // at the cap: read whole ("[  …  ]")
+    }
+
+    [Fact]
     public async Task RateLimited_IsRetriedOnceAfterRetryAfter_CappedAt30Seconds()
     {
         var calls = 0;

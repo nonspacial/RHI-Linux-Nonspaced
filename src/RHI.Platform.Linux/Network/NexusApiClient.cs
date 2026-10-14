@@ -27,10 +27,13 @@ public sealed class NexusApiException(string message, HttpStatusCode? status, Ex
 /// The Nexus Mods v1 REST API, as upstream <c>NexusDownloadService</c> uses it: <c>users/validate</c> (key check),
 /// <c>games/{game}/mods/{mod}/files</c> (file names), <c>…/files/{file}/download_link</c> (with an nxm link's
 /// key+expires, or none for Premium). Every request is HTTPS to api.nexusmods.com under <see cref="DownloadSources.NexusApi"/>
-/// (host checked before sending and after redirects), carries the key in the <c>apikey</c> header and the
+/// (host checked before sending and on the answer), carries the key in the <c>apikey</c> header and the
 /// <c>Application-Name</c>/<c>Application-Version</c> Nexus asks for, and is answered with a structured result or a
 /// <see cref="NexusApiException"/> whose message never holds the key. A 429 is retried once after Nexus's Retry-After
 /// (at most 30 s), as upstream (60 s there).
+/// <para>Redirects are never followed: <c>apikey</c> is a custom header, which .NET's redirect handling carries to the
+/// next host (it strips only <c>Authorization</c>), so the app's client comes from <see cref="CreateDefault"/> and
+/// any 3xx answer is refused. Answers are read up to the policy's metadata cap whether or not they announce a length.</para>
 /// </summary>
 public sealed class NexusApiClient
 {
@@ -44,6 +47,26 @@ public sealed class NexusApiClient
 
     private readonly HttpClient _http;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+
+    /// <summary>Largest answer read (the Nexus API policy's cap, at most the metadata cap).</summary>
+    public static long MaxAnswerBytes => Math.Min(DownloadSources.NexusApi.MaxBytes, TrustedDownload.MetadataMaxBytes);
+
+    /// <summary>The app's Nexus API client: its own HTTP stack that never follows a redirect (see the class summary).</summary>
+    public static NexusApiClient CreateDefault()
+    {
+        var handler = CreateHandler();
+        return new NexusApiClient(new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) }) { OwnHandler = handler };
+    }
+
+    /// <summary>The handler <see cref="CreateDefault"/> built (null for a client handed in); wiring tests read it.</summary>
+    internal SocketsHttpHandler? OwnHandler { get; private init; }
+
+    internal static SocketsHttpHandler CreateHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        AutomaticDecompression = DecompressionMethods.All,
+        ConnectTimeout = TimeSpan.FromSeconds(15)
+    };
 
     /// <param name="delay">Test seam for the 429 wait.</param>
     public NexusApiClient(HttpClient http, Func<TimeSpan, CancellationToken, Task>? delay = null)
@@ -113,13 +136,32 @@ public sealed class NexusApiClient
                     await _delay(wait, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
+                // A 3xx is never followed (the key would go along): refused like any other non-success answer.
                 if (!response.IsSuccessStatusCode)
                     throw new NexusApiException($"{AnsweredPrefix}{(int)response.StatusCode}.", response.StatusCode);
-                if (response.Content.Headers.ContentLength is long announced && announced > TrustedDownload.MetadataMaxBytes)
-                    throw new NexusApiException(OversizedMessage, response.StatusCode);
-                return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                return await ReadCappedAsync(response, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>The answer as UTF-8 text, refused past <see cref="MaxAnswerBytes"/> (announced or as it streams in).</summary>
+    private static async Task<string> ReadCappedAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var cap = MaxAnswerBytes;
+        if (response.Content.Headers.ContentLength is long announced && announced > cap)
+            throw new NexusApiException(OversizedMessage, response.StatusCode);
+        await using var body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await body.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > cap) throw new NexusApiException(OversizedMessage, response.StatusCode);
+            buffer.Write(chunk, 0, read);
+        }
+        buffer.Position = 0;
+        using var reader = new StreamReader(buffer, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private sealed class ValidateResponse

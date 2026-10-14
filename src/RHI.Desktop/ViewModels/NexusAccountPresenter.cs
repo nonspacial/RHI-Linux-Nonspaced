@@ -44,6 +44,9 @@ public sealed partial class NexusAccountPresenter : ObservableObject
         SyncAccount();
     }
 
+    /// <summary>The Nexus API client this presenter checks keys with (wiring tests).</summary>
+    internal NexusApiClient Api => _api;
+
     /// <summary>Nexus's registration of this application for SSO; null hides the login button (API key only).</summary>
     public string? SsoSlug { get; }
     public bool SsoAvailable => SsoSlug is not null;

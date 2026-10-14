@@ -181,7 +181,7 @@ internal sealed class AppComposition
         // w3/scan rows
         // w3/parity rows
         var accounts = new AccountsPreferenceStore();
-        var nexusApi = new NexusApiClient(http);
+        var nexusApi = NexusApiClient.CreateDefault(); // its own client: never follows a redirect with the key
         var nexusAccount = new NexusAccountPresenter(new SecretFileStore(NexusAccountPresenter.DefaultKeyPath, "nexus"), nexusApi, accounts,
             new NxmHandlerRegistration(), ssoSlug: NexusApplication.SsoSlug);
         var parity = new ParityFeatures
