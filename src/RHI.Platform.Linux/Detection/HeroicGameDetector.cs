@@ -45,7 +45,7 @@ public sealed class HeroicGameDetector : IGameDetector
             foreach (var file in SafeJsonFiles(heroicRoot))
             {
                 ct.ThrowIfCancellationRequested();
-                ParseFile(file, result, StoreHintFromPath(file), visitedFiles);
+                ParseFile(file, result, StoreHintFromPath(file), ct, visitedFiles);
             }
         }
 
@@ -56,7 +56,7 @@ public sealed class HeroicGameDetector : IGameDetector
         {
             ct.ThrowIfCancellationRequested();
             var installed = Path.Combine(legendaryRoot, "installed.json");
-            ParseFile(installed, result, "legendary", visitedFiles);
+            ParseFile(installed, result, "legendary", ct, visitedFiles);
         }
 
         // Prefer exact prefix data from per-game Heroic settings when available, then fall
@@ -71,6 +71,7 @@ public sealed class HeroicGameDetector : IGameDetector
         string file,
         IDictionary<string, DetectedGame> result,
         string? sourceHint,
+        CancellationToken ct,
         ISet<string>? visitedFiles = null)
     {
         if (!File.Exists(file)) return;
@@ -80,7 +81,7 @@ public sealed class HeroicGameDetector : IGameDetector
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(file));
-            Visit(doc.RootElement, result, sourceHint);
+            Visit(doc.RootElement, result, sourceHint, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -164,7 +165,7 @@ public sealed class HeroicGameDetector : IGameDetector
         return null;
     }
 
-    private static void Visit(JsonElement element, IDictionary<string, DetectedGame> result, string? sourceHint)
+    private static void Visit(JsonElement element, IDictionary<string, DetectedGame> result, string? sourceHint, CancellationToken ct)
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
@@ -209,7 +210,7 @@ public sealed class HeroicGameDetector : IGameDetector
                 var runner = NormalizeRunner(explicitRunner ?? sourceHint ?? "heroic");
                 var appName = StringValue(merged, "app_name", "appName", "app_name_string");
                 var executablePath = ResolveExecutable(install, executable)
-                    ?? DetectionHelpers.FindLikelyExecutable(install);
+                    ?? DetectionHelpers.FindLikelyExecutable(install, cancellationToken: ct);
 
                 var game = new DetectedGame
                 {
@@ -228,11 +229,11 @@ public sealed class HeroicGameDetector : IGameDetector
                 result[game.InstallPath] = game;
             }
 
-            foreach (var p in props.Values) Visit(p, result, sourceHint);
+            foreach (var p in props.Values) Visit(p, result, sourceHint, ct);
         }
         else if (element.ValueKind == JsonValueKind.Array)
         {
-            foreach (var item in element.EnumerateArray()) Visit(item, result, sourceHint);
+            foreach (var item in element.EnumerateArray()) Visit(item, result, sourceHint, ct);
         }
     }
 
@@ -512,10 +513,10 @@ public sealed class HeroicGameDetector : IGameDetector
     private static string EscapeShell(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
     // Internal hooks for focused tests; production uses the same parser/path candidate code.
-    internal static IReadOnlyList<DetectedGame> ParseInstalledJsonForTests(string file, string sourceHint)
+    internal static IReadOnlyList<DetectedGame> ParseInstalledJsonForTests(string file, string sourceHint, CancellationToken ct = default)
     {
         var result = new Dictionary<string, DetectedGame>(StringComparer.OrdinalIgnoreCase);
-        ParseFile(file, result, sourceHint);
+        ParseFile(file, result, sourceHint, ct);
         return result.Values.ToArray();
     }
 

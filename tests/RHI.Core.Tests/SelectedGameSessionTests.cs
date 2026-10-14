@@ -198,6 +198,7 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.DlssPathOverride), nameof(DetectedGame.StreamlinePathOverride),
             // w3/journal rows
             // w3/scan rows
+            nameof(DetectedGame.XboxPackage),
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows

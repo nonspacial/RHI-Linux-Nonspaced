@@ -59,7 +59,8 @@ public static partial class ManualGamePathInference
                    File.Exists(Path.Combine(directory, "steam_api.dll")) ||
                    Directory.Exists(Path.Combine(directory, ".egstore")) ||
                    File.Exists(Path.Combine(directory, "goglog.ini")) ||
-                   File.Exists(Path.Combine(directory, "MicrosoftGame.config")) ||
+                   // GDK packages spell it MicrosoftGame.config or MicrosoftGame.Config (Refs #90).
+                   Xbox.XboxPackageReader.FindChild(directory, Xbox.XboxPackageReader.ConfigFileName) is not null ||
                    File.Exists(Path.Combine(directory, ".build.info")) ||
                    File.Exists(Path.Combine(directory, "UnityPlayer.dll")) ||
                    Directory.Exists(Path.Combine(directory, "Engine")) ||

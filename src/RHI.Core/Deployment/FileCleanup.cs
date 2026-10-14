@@ -17,6 +17,8 @@ public static class FileCleanup
         error = null;
         try
         {
+            // An Xbox package file RHI must never change is never deleted either (Refs #90): reported, not removed.
+            RHI.Core.Services.PackageFileProtection.ThrowIfProtected(path); // w3/scan hook
             if (File.Exists(path)) File.Delete(path);
             return true;
         }

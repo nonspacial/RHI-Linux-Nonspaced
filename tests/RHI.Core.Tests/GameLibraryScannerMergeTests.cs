@@ -229,6 +229,7 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
+        if (t == typeof(XboxPackageInfo)) return new XboxPackageInfo("9X", "PartingX", "x", "/j");
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows

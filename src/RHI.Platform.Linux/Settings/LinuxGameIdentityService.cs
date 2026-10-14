@@ -146,7 +146,14 @@ public static class LinuxGameIdentityService
         // matched no detector source.
         var command = game.LaunchCommand ?? string.Empty;
         if (command.Contains("steam://", StringComparison.OrdinalIgnoreCase)) return "Steam";
-        return Launch.LaunchHandoffClassifier.Classify(game) == Launch.LaunchHandoff.Heroic ? "Heroic" : null;
+        return Launch.LaunchHandoffClassifier.Classify(game) switch
+        {
+            Launch.LaunchHandoff.Heroic => "Heroic",
+            // An Xbox / Game Pass install (its own card, or a manual entry merged with one), Refs #90.
+            Launch.LaunchHandoff.Xbox => "Xbox",
+            _ when game.XboxPackage is not null && string.IsNullOrWhiteSpace(game.LaunchCommand) => "Xbox",
+            _ => null
+        };
     }
 
     public static bool IsSharedLauncherExecutable(string? executablePath)

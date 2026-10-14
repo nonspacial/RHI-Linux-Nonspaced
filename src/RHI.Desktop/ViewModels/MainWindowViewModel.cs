@@ -446,6 +446,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         // orphaned-Proton case): it becomes applicable once Edit game gives the card a command (w2-launch re-review 2).
         { } game when !_launcher.CanLaunch(game) && D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game)
             => T("Vm.LaunchRuntimeUnknownSetCommandInEdit"),
+        { } game when !_launcher.CanLaunch(game) && XboxCardText.PlayUnavailable(game) is { } xbox => xbox, // w3/scan hook (Refs #90)
         { } game when !_launcher.CanLaunch(game) => T("Vm.NoLaunchCommandSetOneInEdit"),
         _ => null
     };
@@ -918,6 +919,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return T("Vm.WindowsReShadeSettingsNotAppliedNative");
         if (!SelectedGame.HasConfirmedPatchTarget)
             return T("Vm.SetTargetGameExecutableEditGame");
+        if (XboxWriteGate.Refusal(SelectedGame) is { } xbox) return UiLocalizationService.Present(xbox); // w3/scan hook (Refs #90)
         if (CurrentAnalysis is not { } probe ||
             !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
                 component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))

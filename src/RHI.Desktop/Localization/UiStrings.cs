@@ -647,6 +647,17 @@ internal static class UiStrings
         ("Journal.RefStorageNotFound", "Nenhuma pasta _storage_ na pasta do jogo.", "No _storage_ folder in the game folder."),
         ("Journal.RefStorageNoGame", "Selecione um jogo primeiro.", "Select a game first."),
         // w3/scan rows
+        ("Scan.PlayStartFromOwningApp", "Indisponível: inicie este jogo pelo {0}. O RHI não encontrou como abrir o {0} (adicione a pasta dele em Configurações → Pastas do PartingX / Xbox).", "Unavailable: start this game from {0}. RHI found no way to open {0} (add its folder in Settings → PartingX / Xbox folders)."),
+        ("Scan.HdrApplyInOwningApp", "O {0} inicia este jogo, então o RHI não aplica o perfil HDR ao Iniciar. Ative o HDR para este jogo no {0}.", "{0} starts this game, so RHI does not apply the HDR profile on Launch. Turn HDR on for this game in {0}."),
+        ("Scan.XboxFoldersLabel", "Pastas do PartingX / Xbox", "PartingX / Xbox folders"),
+        ("Scan.XboxFoldersTip", "Pastas de dados do PartingX (a que contém settings.json, ou a pasta da instância) ou pastas com jogos instalados pelo Xodus. A pasta padrão do PartingX ({0}) e ~/Games são sempre verificadas.", "PartingX data folders (the one holding settings.json, or the instance folder) or folders of games installed by Xodus. PartingX's default folder ({0}) and ~/Games are always searched."),
+        ("Scan.XboxFoldersAdd", "Adicionar pasta…", "Add folder…"),
+        ("Scan.XboxFoldersRemove", "Remover", "Remove"),
+        ("Scan.WhatXboxFolders", "a lista de pastas do PartingX / Xbox", "the PartingX / Xbox folder list"),
+        ("Scan.ShowInOwningApp", "Mostrar no {0}", "Show in {0}"),
+        ("Scan.ShowInOwningAppExited", "Não foi possível abrir o {0}: ele terminou com o código {1}.", "Could not open {0}: it exited with code {1}."),
+        ("Scan.ShowInOwningAppExited2", "Não foi possível abrir o {0}: ele terminou com o código {1}: {2}", "Could not open {0}: it exited with code {1}: {2}"),
+        ("Scan.ShowInOwningAppFailed", "Não foi possível abrir o {0}: {1}", "Could not open {0}: {1}"),
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
