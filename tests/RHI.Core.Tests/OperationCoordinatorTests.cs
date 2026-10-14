@@ -126,7 +126,7 @@ public sealed class OperationCoordinatorTests
         using var fx = await ViewModelFixture.StartAsync([]);
         fx.HangWhen = request => request.RequestUri?.Host == "api.github.com";
 
-        var load = fx.Vm.LoadNeuralVersionHistoryCommand.ExecuteAsync(null);
+        var load = fx.Vm.Extras.LoadNeuralVersionHistoryCommand.ExecuteAsync(null);
         await WaitUntil(() => fx.Vm.IsBusy);
         Assert.True(fx.Vm.Operations.CanCancel);
 
@@ -152,7 +152,7 @@ public sealed class OperationCoordinatorTests
         await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy);
         fx.HangWhen = _ => true;
 
-        var check = fx.Vm.CheckShortFuseUpdateCommand.ExecuteAsync(null);
+        var check = fx.Vm.Extras.CheckShortFuseUpdateCommand.ExecuteAsync(null);
         await WaitUntil(() => fx.Vm.IsBusy);
         fx.Vm.Operations.Cancel();
         await check.WaitAsync(TimeSpan.FromSeconds(5));

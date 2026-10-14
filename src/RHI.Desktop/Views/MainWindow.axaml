@@ -429,7 +429,8 @@
                     </StackPanel>
                   </Grid>
 
-                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10">
+                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10"
+                          DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel">
                     <StackPanel Spacing="7">
                       <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
                         <TextBlock Text="{DynamicResource Ui.NrVersions}" Classes="muted" VerticalAlignment="Center"/>
@@ -541,6 +542,7 @@
             </Border>
 
             <Border x:Name="ExtrasSection" Tag="Extras" Classes="card" BorderBrush="#3A3348"
+                    DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">

@@ -28,12 +28,14 @@ public sealed partial class MainWindow
         if (_summaryViewModel is not null)
         {
             _summaryViewModel.PropertyChanged -= SummaryViewModel_PropertyChanged;
+            _summaryViewModel.Extras.PropertyChanged -= SummaryViewModel_PropertyChanged;
             _summaryViewModel.Components.CollectionChanged -= SummaryComponents_CollectionChanged;
         }
         _summaryViewModel = vm;
         if (vm is not null)
         {
             vm.PropertyChanged += SummaryViewModel_PropertyChanged;
+            vm.Extras.PropertyChanged += SummaryViewModel_PropertyChanged;
             vm.Components.CollectionChanged += SummaryComponents_CollectionChanged;
         }
         QueueSectionSummaryRefresh();
@@ -44,8 +46,8 @@ public sealed partial class MainWindow
         if (e.PropertyName is null or ""
             or nameof(MainWindowViewModel.SelectedGame)
             or nameof(MainWindowViewModel.SelectedGraphicsApiOverride)
-            or nameof(MainWindowViewModel.UalStatusText)
-            or nameof(MainWindowViewModel.ShortFuseStatusText))
+            or nameof(ExtrasViewModel.UalStatusText)
+            or nameof(ExtrasViewModel.ShortFuseStatusText))
             QueueSectionSummaryRefresh();
     }
 
@@ -92,7 +94,7 @@ public sealed partial class MainWindow
     {
         "Runtime" => DetailSectionSummaryPresenter.Runtime(vm.SelectedGame),
         "ManagedComponents" => DetailSectionSummaryPresenter.ManagedComponents(vm.Components),
-        "Extras" => DetailSectionSummaryPresenter.Extras(vm.UalInstalled, vm.ShortFuseInstalled, vm.ShortFuseInstalledVersion),
+        "Extras" => DetailSectionSummaryPresenter.Extras(vm.Extras.UalInstalled, vm.Extras.ShortFuseInstalled, vm.Extras.ShortFuseInstalledVersion),
         _ => []
     };
 }

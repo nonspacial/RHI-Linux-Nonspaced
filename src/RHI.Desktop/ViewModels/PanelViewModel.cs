@@ -36,6 +36,8 @@ internal interface IPanelHost
     LinuxGameLibraryState LibraryState { get; }
     /// <summary>Raises the shell's selection-wide notifications (header, paths, every panel).</summary>
     void NotifySelected();
+    /// <summary>Raises the DLSS stack's notifications (DLSS section, pin dropdowns, NR recommendation).</summary>
+    void NotifyDlss();
 }
 
 /// <summary>

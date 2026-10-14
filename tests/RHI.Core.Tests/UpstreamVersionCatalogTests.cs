@@ -224,9 +224,9 @@ public sealed class NeuralVersionRefreshViewModelTests
 
         Assert.Equal(beforeRefresh[Feeder] + 1, fetches[Feeder]);
         Assert.Equal(beforeRefresh[Bridge] + 1, fetches[Bridge]);
-        Assert.Contains($"v{fetches[Feeder]}", fx.Vm.Dlss5FeederVersionOptions);
-        Assert.Contains($"v{fetches[Bridge]}", fx.Vm.Dlss5BridgeVersionOptions);
-        Assert.Contains(fx.Vm.ShortFuseVersionOptions,
+        Assert.Contains($"v{fetches[Feeder]}", fx.Vm.Extras.Dlss5FeederVersionOptions);
+        Assert.Contains($"v{fetches[Bridge]}", fx.Vm.Extras.Dlss5BridgeVersionOptions);
+        Assert.Contains(fx.Vm.Extras.ShortFuseVersionOptions,
             tag => tag.StartsWith(Prefix(ShortFuse), StringComparison.Ordinal) && int.Parse(tag[Prefix(ShortFuse).Length..]) > beforeRefresh[ShortFuse]);
     }
 
