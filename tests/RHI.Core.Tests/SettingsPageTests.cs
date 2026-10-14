@@ -18,6 +18,21 @@ public sealed class SettingsPageTests
         Assert.True(settings.CacheAllShaders);
     }
 
+    // w3 review major 3 (#91): every channel the Settings list offers survives a save and a load, No Addons included.
+    [Fact]
+    public void SettingsStore_KeepsEveryOfferedReShadeChannel_AsTheDefault()
+    {
+        using var temp = new TempDir();
+        var store = NewStore(temp.Path);
+        Assert.Contains("NoAddons", RHI.Desktop.ViewModels.OptionLists.ReShadeChannel.Values);
+        foreach (var channel in RHI.Desktop.ViewModels.OptionLists.ReShadeChannel.Values)
+        {
+            store.Save(new LinuxAppSettings { ReShadeChannel = channel });
+            Assert.Equal(channel, store.Load().ReShadeChannel);
+            Assert.Equal(channel, new LinuxSettingsStore(store.SettingsPath, store.CacheRoot, store.DataRoot).Load().ReShadeChannel);
+        }
+    }
+
     [Fact]
     public void SettingsStore_SaveAndLoadRoundTripsPortableSettings()
     {

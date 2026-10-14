@@ -35,6 +35,11 @@ public sealed class LinuxAppSettings
     public string DefaultDlssnrVersion { get; set; } = "";
     public string DefaultStreamlineVersion { get; set; } = "";
 
+    /// <summary>
+    /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
+    /// same list as the ReShade profile, <c>OptionLists.ReShadeChannel</c>); a channel added there needs its row here, or
+    /// the Settings default silently falls back to Stable. "NoAddons" is the w3/dllnames row (#91).
+    /// </summary>
     public LinuxAppSettings Normalize()
     {
         UiLanguage = NormalizeUiLanguage(UiLanguage);
@@ -43,6 +48,7 @@ public sealed class LinuxAppSettings
             "Nightly" => "Nightly",
             "Legacy" => "Legacy",
             "Custom" => "Custom",
+            "NoAddons" => "NoAddons", // w3/dllnames (#91)
             _ => "Stable"
         };
         ScreenshotPath = ScreenshotPath?.Trim() ?? "";
