@@ -37,13 +37,16 @@ public sealed class GitHubReShadeAddonDeploymentService
     private readonly GitHubReShadeAddonDefinition _definition;
     private readonly GitHubReleaseAssetResolver _releaseResolver;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
     public GitHubReShadeAddonDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         GitHubReShadeAddonDefinition definition,
-        string? cacheDir = null)
+        string? cacheDir = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _definition = definition;
@@ -152,23 +155,44 @@ public sealed class GitHubReShadeAddonDeploymentService
             return ComponentOperationResult.Fail($"Could not resolve latest {_definition.DisplayName} release: {ex.Message}");
         }
 
+        string cached;
+        VerifiedDownload download;
         try
         {
-            var (cached, download) = await DownloadAsync(release, architecture, deployFileName, cancellationToken).ConfigureAwait(false);
+            (cached, download) = await DownloadAsync(release, architecture, deployFileName, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"{_definition.DisplayName} install failed: {ex.Message}");
+        }
+
+        // Journaled (#23): the add-on, the auxiliary config RHI creates and a previous build under another name are
+        // tracked before they change; the record carrying the operation id is the commit point. Before this a failure
+        // after the copy left the add-on with no record (refused as external afterwards).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, $"{_definition.DisplayName} install: {game.Name}", game, _definition.Kind, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        try
+        {
             // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the copied add-on with no record).
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            var targetHash = await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var targetHash = await scope.PlaceCopyAsync(cached, target, cancellationToken).ConfigureAwait(false);
+            if (AuxiliaryConfigPath(deployDir) is { } auxiliaryPath)
+                await scope.TrackAsync(auxiliaryPath, cancellationToken).ConfigureAwait(false);
             var auxiliaryConfig = TryEnsureAuxiliaryConfigIfAbsent(deployDir);
+            if (auxiliaryConfig.Created && auxiliaryConfig.Path is { } createdConfig)
+                await scope.DeclareWrittenContentAsync(createdConfig, cancellationToken).ConfigureAwait(false);
 
             if (existingManaged is not null &&
                 !Path.GetFullPath(existingManaged.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal) &&
                 File.Exists(existingManaged.Path))
             {
-                File.Delete(existingManaged.Path);
+                await scope.DeleteAsync(existingManaged.Path, cancellationToken).ConfigureAwait(false);
             }
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -199,14 +223,16 @@ public sealed class GitHubReShadeAddonDeploymentService
                     [VerifiedDownload.MetadataSha256Key] = download.Sha256,
                     [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
-            });
-
-            return ComponentOperationResult.Ok($"{_definition.DisplayName} {release.Version} installed → {target}", target);
+            }));
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"{_definition.DisplayName} install failed: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"{_definition.DisplayName} install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"{_definition.DisplayName} {release.Version} installed → {target}", target);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -215,25 +241,37 @@ public sealed class GitHubReShadeAddonDeploymentService
         if (record is null)
             return ComponentOperationResult.Fail($"{_definition.DisplayName} is not managed by RHI Linux. Removal is locked to protect the external installation.");
 
+        // Every file is checked before the first one is deleted: a modified second file used to stop the removal after
+        // the first was already gone.
+        foreach (var file in record.Files)
+        {
+            if (!File.Exists(file.Path)) continue;
+            var currentHash = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
+        }
+
+        // Journaled (#23): a crash before the record is gone puts the files back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, $"{_definition.DisplayName} removal: {game.Name}", game, _definition.Kind, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         try
         {
             // The removal never stops half-way.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             foreach (var file in record.Files)
-            {
-                if (!File.Exists(file.Path)) continue;
-                var currentHash = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
-                File.Delete(file.Path);
-            }
+                await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, _definition.Kind);
-            return ComponentOperationResult.Ok($"RHI-managed {_definition.DisplayName} removed.");
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"{_definition.DisplayName} removal failed: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "github-addon");
+            return ComponentOperationResult.Fail($"{_definition.DisplayName} removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RHI-managed {_definition.DisplayName} removed.");
     }
 
     internal Task<GitHubAddonRelease> ResolveLatestAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
@@ -395,14 +433,25 @@ public sealed class GitHubReShadeAddonDeploymentService
             .ToArray();
     }
 
+    private (string FileName, string Content)? AuxiliaryTemplate => _definition.Kind switch
+    {
+        ManagedComponentKind.ReLimiter => ("relimiter.ini", "[UltraLimiter]\n"),
+        ManagedComponentKind.DisplayCommander => ("DisplayCommander.ini", "[DisplayCommander]\n"),
+        _ => null
+    };
+
+    // The path the auxiliary config would be created at (null when the add-on has none, or one is already there).
+    private string? AuxiliaryConfigPath(string deployDir)
+    {
+        if (AuxiliaryTemplate is not { } template || !Directory.Exists(deployDir)) return null;
+        var exists = Directory.EnumerateFiles(deployDir, "*", SearchOption.TopDirectoryOnly)
+            .Any(path => Path.GetFileName(path).Equals(template.FileName, StringComparison.OrdinalIgnoreCase));
+        return exists ? null : Path.Combine(deployDir, template.FileName);
+    }
+
     private (string? Path, bool Created, string? Error) TryEnsureAuxiliaryConfigIfAbsent(string deployDir)
     {
-        (string FileName, string Content)? template = _definition.Kind switch
-        {
-            ManagedComponentKind.ReLimiter => ("relimiter.ini", "[UltraLimiter]\n"),
-            ManagedComponentKind.DisplayCommander => ("DisplayCommander.ini", "[DisplayCommander]\n"),
-            _ => null
-        };
+        var template = AuxiliaryTemplate;
         if (template is null) return (null, false, null);
 
         try

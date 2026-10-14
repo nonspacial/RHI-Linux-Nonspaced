@@ -316,12 +316,15 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
-    /// <summary>Test seam: when set, every save fails with this exception before anything is written.</summary>
-    internal Func<Exception>? SaveFaultForTesting { get; set; }
+    /// <summary>
+    /// Test seam: when set, every save asks it first and fails with the exception it returns, before anything is written
+    /// (null = this save goes through, so a test can fail the n-th save).
+    /// </summary>
+    internal Func<Exception?>? SaveFaultForTesting { get; set; }
 
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
-        if (SaveFaultForTesting is { } fault) throw fault();
+        if (SaveFaultForTesting?.Invoke() is { } fault) throw fault;
         // The store-file writer (#31, #57): unique temp, fsync, full verify, rename, directory fsync; a symlinked
         // deployments.json stays a link (its target is replaced) and keeps its mode, as every other store does.
         AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));

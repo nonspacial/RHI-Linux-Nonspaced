@@ -96,7 +96,7 @@ internal sealed class AppComposition
             unityDatabase: new RenoDxUnityDatabaseService(http),
             controlUe: new ControlUePostInstallService(deployment, dlss));
         var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest);
-        var relimiter = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
+        var relimiter = new GitHubReShadeAddonDeploymentService(http, records, journal: journal, definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
             "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
@@ -104,7 +104,7 @@ internal sealed class AppComposition
             "relimiter.addon32",
             100 * 1024,
             ManagedComponentKind.DisplayCommander));
-        var displayCommander = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
+        var displayCommander = new GitHubReShadeAddonDeploymentService(http, records, journal: journal, definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.DisplayCommander,
             "Display Commander",
             "https://api.github.com/repos/pmnoxx/display-commander/releases/tags/latest",
@@ -113,7 +113,7 @@ internal sealed class AppComposition
             500 * 1024,
             ManagedComponentKind.ReLimiter,
             @"Version in binaries\*\*:\s*([0-9.]+)"));
-        var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, new UpstreamRhiAddonDeploymentOptions(
+        var mfgAdaUnlock = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
             "MFG Ada Unlock",
@@ -128,7 +128,7 @@ internal sealed class AppComposition
         var dlssEnablerStandalone = new StandaloneDlssEnablerDeploymentService(http, records, wineOverrides, dlssEnablerPreferences, journal: journal);
         var rtx40MfgPreferences = new Rtx40MfgPreferenceStore();
         var rtx40Mfg = new Rtx40MfgStandaloneDeploymentService(http, records, wineOverrides, rtx40MfgPreferences, journal: journal);
-        var dlss5Bridge = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, new UpstreamRhiAddonDeploymentOptions(
+        var dlss5Bridge = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
             "DLSS5 DX11 Bridge",
@@ -137,7 +137,7 @@ internal sealed class AppComposition
             ExactAssetName64: "dlss5-bridge.addon64",
             DeployFileName64: "dlss5-bridge.addon64",
             X64Only: true));
-        var dlss5FeederAddonOnly = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, new UpstreamRhiAddonDeploymentOptions(
+        var dlss5FeederAddonOnly = new UpstreamRhiAddonDeploymentService(http, records, upstreamManifest, journal: journal, options: new UpstreamRhiAddonDeploymentOptions(
             ManagedComponentKind.Dlss5Feeder,
             "dlss5-feed",
             "DLSS5 Feeder",
