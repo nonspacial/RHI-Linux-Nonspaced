@@ -36,6 +36,8 @@ internal sealed class AppComposition
     public required LumaCatalogService LumaCatalog { get; init; }
     public required UpstreamRhiManifestService UpstreamManifest { get; init; }
     // w3/sync rows
+    /// <summary>RHI Unity database for the Available HDR mods list (#126); the RenoDX installer keeps its own instance (same disk cache, ETag revalidated).</summary>
+    public RenoDxUnityDatabaseService? RenoDxUnityDatabase { get; init; }
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
@@ -172,6 +174,7 @@ internal sealed class AppComposition
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog);
         // w3/sync rows
+        var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
@@ -196,6 +199,7 @@ internal sealed class AppComposition
             LumaCatalog = lumaCatalog,
             UpstreamManifest = upstreamManifest,
             // w3/sync rows
+            RenoDxUnityDatabase = renodxUnityDatabase,
             // w3/journal rows
             // w3/scan rows
             // w3/parity rows

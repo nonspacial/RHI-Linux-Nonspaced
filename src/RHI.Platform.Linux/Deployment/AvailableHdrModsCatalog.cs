@@ -26,38 +26,48 @@ public sealed record AvailableHdrModsSnapshot(
 
 /// <summary>
 /// Catalogue-wide list of games with a RenoDX and/or Luma mod, built from the catalogues RHI
-/// already uses for installs. Like upstream it is not limited to the user's library.
+/// already uses for installs, plus the RHI Unity database (#126). Like upstream it is not limited to the user's library.
 /// </summary>
-public sealed class AvailableHdrModsCatalog(RenoDxCatalogService renoDx, LumaCatalogService luma)
+public sealed class AvailableHdrModsCatalog(RenoDxCatalogService renoDx, LumaCatalogService luma, RenoDxUnityDatabaseService? unity = null)
 {
     public async Task<AvailableHdrModsSnapshot> LoadAsync(CancellationToken cancellationToken = default)
     {
         var renoDxTask = renoDx.FetchAsync(cancellationToken);
         var lumaTask = luma.FetchAsync(cancellationToken);
+        var unityTask = unity is null ? Task.FromResult<RenoDxUnityDatabase?>(null) : unity.GetAsync(cancellationToken);
 
-        IReadOnlyList<RenoDxModEntry> renoDxEntries;
-        try { renoDxEntries = await renoDxTask.ConfigureAwait(false); }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch { renoDxEntries = []; }
-
-        IReadOnlyList<LumaCatalogEntry> lumaEntries;
-        try { lumaEntries = await lumaTask.ConfigureAwait(false); }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch { lumaEntries = []; }
+        var renoDxEntries = await LoadOrEmptyAsync(renoDxTask, "RenoDX catalogue", [], cancellationToken).ConfigureAwait(false);
+        var lumaEntries = await LoadOrEmptyAsync(lumaTask, "Luma catalogue", [], cancellationToken).ConfigureAwait(false);
+        var unityDatabase = await LoadOrEmptyAsync(unityTask, "RenoDX Unity database", null, cancellationToken).ConfigureAwait(false);
 
         return new AvailableHdrModsSnapshot(
-            Merge(renoDxEntries, lumaEntries),
+            Merge(renoDxEntries, lumaEntries, unityDatabase?.Entries),
             renoDxEntries.Count == 0,
             lumaEntries.Count == 0);
     }
 
+    // A source that cannot be loaded leaves its column empty; the dialog says which one (the reason goes to the log).
+    private static async Task<T> LoadOrEmptyAsync<T>(Task<T> load, string source, T empty, CancellationToken cancellationToken)
+    {
+        try { return await load.ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            RHI.Core.Services.AppLog.Warn("hdr-mods", $"Available HDR mods: the {source} could not be loaded", ex);
+            return empty;
+        }
+    }
+
     /// <summary>
-    /// Merges both catalogues by normalised game name (the identity both catalogues already use);
-    /// the RenoDX spelling wins, as upstream keeps the RenoDX entry and adds Luma to it.
+    /// Merges the catalogues by normalised game name (the identity both catalogues already use); the RenoDX spelling
+    /// wins, as upstream keeps the RenoDX entry and adds Luma to it. RHI Unity database games no named RenoDX mod covers
+    /// join the RenoDX column (upstream 2.7.9 <c>GetAllHdrMods</c>: the generic Unity add-on is a RenoDX mod), ✓ or 🔨 by
+    /// their <c>Status</c>, with no RenoDX link, as upstream; Luma then merges into them by name.
     /// </summary>
     public static IReadOnlyList<HdrModEntry> Merge(
         IEnumerable<RenoDxModEntry> renoDxEntries,
-        IEnumerable<LumaCatalogEntry> lumaEntries)
+        IEnumerable<LumaCatalogEntry> lumaEntries,
+        IEnumerable<RenoDxUnityDbEntry>? unityEntries = null)
     {
         var merged = new Dictionary<string, HdrModEntry>(StringComparer.Ordinal);
         foreach (var mod in renoDxEntries)
@@ -71,6 +81,17 @@ public sealed class AvailableHdrModsCatalog(RenoDxCatalogService renoDx, LumaCat
                 SafeLink(RenoDxCatalogService.ResolveAddonUrl(mod.SnapshotUrl64 ?? mod.SnapshotUrl32)),
                 HdrModAvailability.None,
                 null);
+        }
+
+        foreach (var game in unityEntries ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(game.Name)) continue;
+            var key = RenoDxCatalogService.NormalizeName(game.Name);
+            if (key.Length == 0 || merged.ContainsKey(key)) continue; // a named mod already covers it
+            var status = string.Equals(game.Status?.Trim(), "WIP", StringComparison.OrdinalIgnoreCase)
+                ? HdrModAvailability.WorkInProgress
+                : HdrModAvailability.Available;
+            merged[key] = new HdrModEntry(game.Name.Trim(), status, null, HdrModAvailability.None, null);
         }
 
         foreach (var mod in lumaEntries)

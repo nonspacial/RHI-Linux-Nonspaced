@@ -183,3 +183,10 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 4. Layers are not owners. A wrapper such as the Cost Scaler needs an owner; it refuses when the owner's file no longer matches the owner's hash, keeps the moved original (`nvngx_dlssnr_real.dll`) under its own record, and must be removed before the owner updates, swaps or removes the runtime. Removing the layer restores the owner's file byte for byte.
 
 ## Parity notes (feature-parity backlog)
+
+### #126 — Available HDR mods: RHI Unity database games (2.7.9 parity)
+
+- The Available HDR mods list now also lists the games in the RHI Unity database (`RenoDXdb-unity.json`, the same file the RenoDX installer reads, #15) in the RenoDX column, as upstream's `GetAllHdrMods` adds `_dbUnityEntries`. They show ✓, or 🔨 when their `Status` is `WIP`. A named RenoDX mod for the same game (joined by the normalised name, e.g. `Hades™ II` = `Hades II`) keeps its own row, status and link; Luma merges into a Unity row like any other.
+- Unity rows have no RenoDX link, as upstream (`RenoDXUrl: null`; the generic Unity add-on is installed by RHI, not downloaded from this list); their Download button offers the Luma link when there is one. The ticket text says "linked to the Unity add-on snapshot, as upstream does", but upstream gives no link, so upstream's behaviour was kept.
+- A database that cannot be loaded leaves those rows out (reason in the log); the list's sources are now each logged when they fail instead of being skipped silently. Still absent (#11 deviation): upstream's UE-Extended database rows and Nexus/Discord-only RenoDX mods.
+

@@ -74,6 +74,9 @@ public sealed class RenoDxUnityDatabase
 
     public int Count => _entries.Count;
 
+    /// <summary>Every named entry (one per name; the last duplicate won when parsing), for the Available HDR mods list (#126).</summary>
+    public IEnumerable<RenoDxUnityDbEntry> Entries => _entries.Values;
+
     /// <summary>Parses the JSON array; returns null when it holds no named entries.</summary>
     public static RenoDxUnityDatabase? Parse(ReadOnlySpan<byte> json)
     {
