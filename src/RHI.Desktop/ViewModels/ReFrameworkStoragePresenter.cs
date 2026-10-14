@@ -32,7 +32,7 @@ public sealed class ReFrameworkStoragePresenter(MainWindowViewModel vm, LinuxMan
     /// </summary>
     public async Task<ComponentOperationResult> DeleteAsync()
     {
-        if (vm.SelectedGame is not { } game) return ComponentOperationResult.Fail(UiLocalizationService.Text("Journal.RefStorageNoGame"));
+        if (vm.SelectedGame is not { } game) return ComponentOperationResult.Fail(UiLocalizationService.Text("Vm.SelectGameFirst"));
         using var op = vm.Operations.TryBegin("reframework-storage", cancellable: false);
         if (op is null)
         {

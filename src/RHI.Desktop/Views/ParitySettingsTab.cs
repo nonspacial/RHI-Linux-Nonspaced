@@ -124,7 +124,7 @@ internal static class ParitySettingsTab
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Name = "NexusKeyBox"
         };
-        var save = Button(T("Parity.NexusKeySave"), T("Parity.NexusKeySaveTip"));
+        var save = Button(T("Parity.CheckAndSave"), T("Parity.NexusKeySaveTip"));
         // The one way in (owner decision #99): API-key page in the browser + paste box. The SSO window is not offered.
         var connect = Button(T("Parity.NexusConnect"), T("Parity.NexusConnectTip"));
         connect.Name = "NexusConnectButton";
@@ -200,7 +200,7 @@ internal static class ParitySettingsTab
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Name = "GitHubTokenBox"
         };
-        var save = Button(T("Parity.GitHubTokenSave"), T("Parity.GitHubTokenSaveTip"));
+        var save = Button(T("Parity.CheckAndSave"), T("Parity.GitHubTokenSaveTip"));
         var check = Button(T("Parity.GitHubTokenCheck"));
         var clear = Button(T("Parity.GitHubTokenClear"));
 

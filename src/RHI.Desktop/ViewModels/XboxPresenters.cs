@@ -82,7 +82,7 @@ public sealed class XboxFoldersPresenter
     public static string Label => UiLocalizationService.Text("Scan.XboxFoldersLabel");
     public static string ToolTip => UiLocalizationService.Format("Scan.XboxFoldersTip", XboxFolderStore.DefaultPartingXStateFolder);
     public static string AddText => UiLocalizationService.Text("Scan.XboxFoldersAdd");
-    public static string RemoveText => UiLocalizationService.Text("Scan.XboxFoldersRemove");
+    public static string RemoveText => UiLocalizationService.Text("Vm.Remove");
 
     /// <summary>Adds a folder; null when saved (or already listed), else the refusal to show.</summary>
     public string? Add(string folder)

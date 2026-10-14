@@ -18,8 +18,8 @@ public sealed class NrCostScalerRow : ContentControl
     private static string T(string key) => UiLocalizationService.Text(key);
 
     private readonly TextBlock _status = new() { Classes = { "muted" }, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _install = new() { Content = T("Parity.NrScalerInstall"), Padding = new Thickness(12, 6), Name = "NrCostScalerInstall" };
-    private readonly Button _remove = new() { Content = T("Parity.NrScalerRemove"), Padding = new Thickness(12, 6), Name = "NrCostScalerRemove" };
+    private readonly Button _install = new() { Content = T("Vm.Install"), Padding = new Thickness(12, 6), Name = "NrCostScalerInstall" };
+    private readonly Button _remove = new() { Content = T("Vm.Remove"), Padding = new Thickness(12, 6), Name = "NrCostScalerRemove" };
     private MainWindowViewModel? _vm;
 
     public NrCostScalerRow()

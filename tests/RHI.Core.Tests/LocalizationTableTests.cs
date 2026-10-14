@@ -33,6 +33,18 @@ public sealed class LocalizationTableTests
     public void EveryKey_HasBothLanguages()
         => Assert.Empty(UiLocalizationService.KeysMissingAPair);
 
+    // w3 integration: lanes appended rows under their own anchors; a text both languages already have is one key, so a
+    // Portuguese text never stands for two keys (it held on fdf95e5, before the lanes' rows).
+    [Fact]
+    public void EveryPortugueseText_BelongsToOneKey()
+    {
+        var shared = UiStrings.Entries.GroupBy(row => row.PtBr, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"{group.Key}: {string.Join(", ", group.Select(row => row.Key))}")
+            .ToArray();
+        Assert.True(shared.Length == 0, "PT-BR text under several keys:\n" + string.Join("\n", shared));
+    }
+
     [Fact]
     public void EveryKey_IsTranslated_WithTheSamePlaceholders_AndNoPortugueseInEnglish()
     {
