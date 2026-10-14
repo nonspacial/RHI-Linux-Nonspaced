@@ -114,7 +114,7 @@ public static class LaunchHandoffClassifier
             string.Equals(open, game.LaunchCommand, StringComparison.Ordinal))
             return LaunchHandoff.Xbox;
         if (!string.IsNullOrWhiteSpace(game.LaunchCommand))
-            return ClassifyCommand(game.LaunchCommand);
+            return ClassifyCommand(game.LaunchCommand, 0, OwningAppPrograms(game.XboxPackage));
 
         var source = game.Source ?? string.Empty;
         if (source.Equals("Steam", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
@@ -126,13 +126,37 @@ public static class LaunchHandoffClassifier
 
     public static bool IsHandoff(DetectedGame game) => Classify(game) != LaunchHandoff.None;
 
-    internal static LaunchHandoff ClassifyCommand(string command) => ClassifyCommand(command, 0);
+    internal static LaunchHandoff ClassifyCommand(string command) => ClassifyCommand(command, 0, []);
 
-    private static LaunchHandoff ClassifyCommand(string command, int nesting)
+    private static LaunchHandoff ClassifyCommand(string command, int nesting, IReadOnlyCollection<string> owningApps)
     {
         var words = ProgramCommand(SimpleCommands(command));
-        return words is null ? LaunchHandoff.None : ClassifyWords(words, nesting);
+        return words is null ? LaunchHandoff.None : ClassifyWords(words, nesting, owningApps);
     }
+
+    /// <summary>
+    /// The programs that start an Xbox card's owning app (scan re-review minor 1): its Play/Show entry point's launcher
+    /// (the breadcrumb's <c>argv[0]</c>, e.g. a PartingX instance's <c>run.sh</c>) and the opener's program. A command
+    /// the user typed that runs one of them is still the owning app's hand-off, whatever the file is called.
+    /// </summary>
+    private static IReadOnlyCollection<string> OwningAppPrograms(XboxPackageInfo? package)
+    {
+        if (package is null) return [];
+        var programs = new HashSet<string>(StringComparer.Ordinal);
+        if (package.PlayArgv is [var play, ..] && !string.IsNullOrWhiteSpace(play)) programs.Add(play);
+        if (package.ShowArgv is [var show, ..] && !string.IsNullOrWhiteSpace(show)) programs.Add(show);
+        // The opener counts only as a launcher file of its own (an instance's run.sh), never a generic program it goes
+        // through (xdg-open, flatpak, a shell, env): those start anything.
+        if (package.OpenCommand is { } open && ProgramCommand(SimpleCommands(open)) is { } words &&
+            SkipToProgram(words, 0) is var index && index < words.Count && Path.IsPathRooted(words[index]) &&
+            !IsGenericProgram(Path.GetFileName(words[index])))
+            programs.Add(words[index]);
+        return programs;
+    }
+
+    private static bool IsGenericProgram(string program)
+        => UriOpeners.Contains(program, StringComparer.OrdinalIgnoreCase) || Shells.Contains(program, StringComparer.Ordinal) ||
+           program.Equals("flatpak", StringComparison.OrdinalIgnoreCase) || program.Equals("env", StringComparison.Ordinal);
 
     /// <summary>
     /// The simple command that runs the program: shell set-up before it (<c>cd</c>, <c>export</c>, a bare
@@ -151,12 +175,13 @@ public static class LaunchHandoffClassifier
         return null;
     }
 
-    private static LaunchHandoff ClassifyWords(List<string> words, int nesting)
+    private static LaunchHandoff ClassifyWords(List<string> words, int nesting, IReadOnlyCollection<string> owningApps)
     {
         var index = SkipToProgram(words, 0);
         if (index >= words.Count) return LaunchHandoff.None;
 
         var word = words[index];
+        if (owningApps.Contains(word)) return LaunchHandoff.Xbox;
         if (word.Contains("://", StringComparison.Ordinal)) return ByUri(word);
         var program = Path.GetFileName(word);
         if (SteamPrograms.Contains(program, StringComparer.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
@@ -177,7 +202,7 @@ public static class LaunchHandoffClassifier
         {
             // `sh -c 'steam -applaunch 1'`: the inner command decides; a script file is the user's own launch.
             var inner = ShellCommandString(words, index + 1);
-            if (inner is not null && nesting < MaxNesting) return ClassifyCommand(inner, nesting + 1);
+            if (inner is not null && nesting < MaxNesting) return ClassifyCommand(inner, nesting + 1, owningApps);
         }
         else if (program.Equals("flatpak", StringComparison.OrdinalIgnoreCase) &&
                  ByFlatpakApp(words, index + 1) is var flatpak && flatpak != LaunchHandoff.None)

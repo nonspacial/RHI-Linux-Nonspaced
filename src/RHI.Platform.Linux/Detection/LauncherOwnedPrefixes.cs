@@ -28,7 +28,9 @@ internal sealed partial class LauncherOwnedPrefixes
     /// </param>
     /// <param name="partingXEnvironments">
     /// Environment roots of the PartingX instances RHI knows (<see cref="Xbox.PartingXInstance.KnownEnvironmentRoots"/>):
-    /// every prefix under one is PartingX's, whatever that folder holds yet (Refs #90).
+    /// a prefix under one is PartingX's when PartingX's marker says so (its title environment's <c>partingx.json</c>
+    /// beside the prefix, or a runtime template under <c>.templates/</c>), whatever else that folder holds yet (Refs #90).
+    /// A broad root (a whole <c>~/Games</c>) therefore never hides the user's own Wine prefixes under it.
     /// </param>
     public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null,
         IReadOnlyList<string>? partingXEnvironments = null)
@@ -72,8 +74,18 @@ internal sealed partial class LauncherOwnedPrefixes
         var canonical = PathIdentity.Canonicalize(prefixPath);
         return _lutrisPrefixes.Contains(canonical) ||
                canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal) ||
-               _partingXEnvironments.Any(root => canonical.StartsWith(root + "/", StringComparison.Ordinal)) ||
+               _partingXEnvironments.Any(root => canonical.StartsWith(root + "/", StringComparison.Ordinal) && HasPartingXMarker(canonical, root)) ||
                InPartingXEnvironment(canonical);
+    }
+
+    // Scan re-review nit 3: PartingX writes partingx.json into every title environment (<root>/<account>/<id>/), which
+    // holds the title's prefix (and its cached runtime templates); shared templates live under <root>/.templates/.
+    private static bool HasPartingXMarker(string prefix, string root)
+    {
+        if (prefix.StartsWith(root + "/.templates/", StringComparison.Ordinal)) return true;
+        for (var dir = Path.GetDirectoryName(prefix); dir is not null && dir.StartsWith(root + "/", StringComparison.Ordinal); dir = Path.GetDirectoryName(dir))
+            if (File.Exists(Path.Combine(dir, Xbox.PartingXInstance.EnvironmentFile))) return true;
+        return false;
     }
 
     /// <summary>
@@ -85,7 +97,7 @@ internal sealed partial class LauncherOwnedPrefixes
     {
         var current = Path.GetDirectoryName(prefix);
         for (var level = 0; current is not null && level < 4; level++, current = Path.GetDirectoryName(current))
-            if (Xbox.PartingXInstance.IsEnvironmentRoot(current)) return true;
+            if (Xbox.PartingXInstance.IsEnvironmentRoot(current)) return HasPartingXMarker(prefix, current);
         return false;
     }
 

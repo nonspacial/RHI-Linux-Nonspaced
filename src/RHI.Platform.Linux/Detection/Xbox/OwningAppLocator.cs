@@ -45,6 +45,9 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
     /// <summary>
     /// An argument vector and its environment as one shell line (<c>env 'K=V' … 'argv0' 'arg' …</c>), for display and
     /// for Edit game's detected launch: typed back as a command it does the same. RHI itself executes the vector.
+    /// <c>env</c> reads a word starting with <c>-</c> as an option and any word holding <c>=</c> as an assignment, so a
+    /// variable name starting with <c>-</c> gets <c>--</c> before the assignments, and a program path holding <c>=</c>
+    /// is started through <c>sh -c 'exec "$0" "$@"'</c> (scan re-review nit 2).
     /// </summary>
     public static string Render(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string>? environment)
     {
@@ -52,7 +55,9 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         if (environment is { Count: > 0 })
         {
             words.Add("env");
+            if (environment.Keys.Any(name => name.StartsWith('-'))) words.Add("--");
             words.AddRange(environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => Shell($"{pair.Key}={pair.Value}")));
+            if (argv.Count > 0 && argv[0].Contains('=')) words.AddRange(["sh", "-c", Shell("exec \"$0\" \"$@\"")]);
         }
         words.AddRange(argv.Select(Shell));
         return string.Join(' ', words);

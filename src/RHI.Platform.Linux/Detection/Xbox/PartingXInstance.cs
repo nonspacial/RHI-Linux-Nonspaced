@@ -13,6 +13,8 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 internal sealed class PartingXInstance
 {
     public const string OwnedMarker = ".partingx-owned";
+    /// <summary>PartingX's per-title environment file, beside the title's <c>prefix/</c>.</summary>
+    public const string EnvironmentFile = "partingx.json";
     public const string PartialMarker = ".partingx-partial";
     // PartingX's spec: the environment of the (only) local account.
     private const string AccountId = "default";
@@ -182,7 +184,7 @@ internal sealed class PartingXInstance
         var prefix = Path.Combine(dir, "prefix");
         var hasPrefix = Directory.Exists(Path.Combine(prefix, "drive_c"));
         string? runtime = null, wine = null, wineServer = null;
-        var file = Path.Combine(dir, "partingx.json");
+        var file = Path.Combine(dir, EnvironmentFile);
         if (File.Exists(file))
         {
             try

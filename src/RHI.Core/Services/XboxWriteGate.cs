@@ -23,6 +23,9 @@ namespace RHI.Core.Services;
 /// (<c>AtomicFile</c>, <c>FileCleanup.TryDelete</c>) passes <see cref="PackageFileProtection.ThrowIfProtected"/>.
 /// The job rule is not re-checked by the low-level primitives on purpose: a rollback must always be able to put back
 /// what the operation changed, even if PartingX queued a job meanwhile.
+/// Protection is decided from disk on every call (an exe without <c>MZ</c>, markers found by walking up), so a file whose
+/// status flips between track and rollback (a package marker appearing mid-operation) can refuse its rollback; that
+/// rollback then keeps every copy and reports it, it never loses data (scan re-review nit 5).
 /// </summary>
 public static class XboxWriteGate
 {

@@ -292,10 +292,11 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         Assert.Equal("/bin/sh", LinuxGameLauncher.BuildStartInfo(game, new GameLaunchOptions()).FileName);
         Assert.Equal(LaunchHandoff.None, LaunchHandoffClassifier.Classify(game));
 
-        // The user types the entry point's line back as their own command: it is theirs, read by its words (a shell runs it).
+        // The user types the entry point's line back as their own command: it is theirs (a shell runs it), and since its
+        // program is the card's PartingX launcher it is still PartingX's hand-off (scan re-review minor 1).
         LinuxGameIdentityService.ApplyDetectedIdentity(game, new LinuxGameEditOverride { LaunchCommand = entry });
         Assert.Null(LinuxGameLauncher.XboxEntryPoint(game));
-        Assert.Equal(LaunchHandoff.None, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
 
         LinuxGameIdentityService.ApplyDetectedIdentity(game, null);
         Assert.Equal(entry, game.LaunchCommand);
@@ -311,10 +312,12 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         var envs = _tree.Dir("home", "Games", "px-envs");
         var prefix = _tree.Dir("home", "Games", "px-envs", "default", "9P", "prefix");
         _tree.File("", "home", "Games", "px-envs", "default", "9P", "prefix", "system.reg");
+        _tree.File("{}", "home", "Games", "px-envs", "default", "9P", PartingXInstance.EnvironmentFile);
         _tree.Exe("home", "Games", "px-envs", "default", "9P", "prefix", "drive_c", "Program Files", "Tool", "Tool.exe");
         var settingsEnvs = _tree.Dir("home", "Games", "settings-envs");
         var settingsPrefix = _tree.Dir("home", "Games", "settings-envs", "default", "9Q", "prefix");
         _tree.File("", "home", "Games", "settings-envs", "default", "9Q", "prefix", "system.reg");
+        _tree.File("{}", "home", "Games", "settings-envs", "default", "9Q", PartingXInstance.EnvironmentFile);
         _tree.Exe("home", "Games", "settings-envs", "default", "9Q", "prefix", "drive_c", "Program Files", "Other", "Other.exe");
         _tree.File("", "home", "Games", "standalone", "system.reg");
         _tree.Exe("home", "Games", "standalone", "drive_c", "Program Files", "Free", "Free.exe");
@@ -333,5 +336,33 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         Assert.True(owned.Owns(settingsPrefix)); // the user's folder names the instance folder itself
         Assert.Equal(["Free"], listed.Select(g => g.Name));
         Assert.Empty(warnings);
+    }
+
+    // Scan re-review nit 3: a breadcrumb naming a broad environment root (the whole ~/Games) hides only PartingX's own
+    // prefixes there (its partingx.json beside the prefix, or a template), never the user's other Wine prefixes.
+    [Fact]
+    public async Task ABroadEnvironmentRoot_HidesOnlyPrefixesPartingXMarked()
+    {
+        var home = _tree.Dir("home");
+        var games = _tree.Dir("home", "Games");
+        var title = _tree.Dir("home", "Games", "default", "9P", "prefix");
+        _tree.File("", "home", "Games", "default", "9P", "prefix", "system.reg");
+        _tree.File("{}", "home", "Games", "default", "9P", PartingXInstance.EnvironmentFile);
+        _tree.Exe("home", "Games", "default", "9P", "prefix", "drive_c", "Program Files", "Tool", "Tool.exe");
+        var template = _tree.Dir("home", "Games", ".templates", "rt1", "prefix");
+        var cachedTemplate = _tree.Dir("home", "Games", "default", "9P", "cache", "rt1", "prefix");
+        var own = _tree.Dir("home", "Games", "standalone");
+        _tree.File("", "home", "Games", "standalone", "system.reg");
+        _tree.Exe("home", "Games", "standalone", "drive_c", "Program Files", "Free", "Free.exe");
+        WriteCrumb("broad.json", Crumb(_tree.Dir("px", "state"), [_tree.Dir("px", "payloads")], null, games));
+
+        var owned = LauncherOwnedPrefixes.Load(home, [], partingXEnvironments: PartingXInstance.KnownEnvironmentRoots(_crumbs, []));
+        var listed = await new WinePrefixDetector(home, [_tree.Dir("lutris")], _tree.Path_("data"), []).DetectAsync();
+
+        Assert.True(owned.Owns(title));
+        Assert.True(owned.Owns(template));
+        Assert.True(owned.Owns(cachedTemplate));
+        Assert.False(owned.Owns(own));
+        Assert.Equal(["Free"], listed.Select(g => g.Name));
     }
 }

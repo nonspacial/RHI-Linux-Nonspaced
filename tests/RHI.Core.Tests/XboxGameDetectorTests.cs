@@ -411,6 +411,7 @@ public sealed class XboxGameDetectorTests : IDisposable
         // A PartingX environment folder under ~/Games: title prefixes (3 levels down) and runtime templates.
         var prefix = _tree.Dir("home", "Games", "envs", "default", "9P", "prefix");
         _tree.File("", "home", "Games", "envs", "default", "9P", "prefix", "system.reg");
+        _tree.File("{}", "home", "Games", "envs", "default", "9P", PartingXInstance.EnvironmentFile);
         var template = _tree.Dir("home", "Games", "envs", ".templates", "rt1");
         _tree.File("", "home", "Games", "envs", ".templates", "rt1", "system.reg");
         _tree.Bytes(PlainPe, "home", "Games", "envs", ".templates", "rt1", "drive_c", "Program Files", "Tool", "Tool.exe");
@@ -491,6 +492,95 @@ public sealed class XboxGameDetectorTests : IDisposable
         game.LaunchCommand = "'/px/run.sh'";
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
         game.LaunchCommand = null;
+        Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
+    }
+
+    // Scan re-review minor 1: a user-edited line whose program is the card's PartingX launcher (the breadcrumb's argv[0],
+    // here a run.sh) is PartingX's hand-off, so launch profiles and HDR are refused/redirected as for the card's own command.
+    [Theory]
+    [InlineData("/px/run.sh --play 9A", LaunchHandoff.Xbox)]
+    [InlineData("env 'XDG_STATE_HOME=/s' '/px/run.sh' --show 9A", LaunchHandoff.Xbox)]
+    [InlineData("gamemoderun /px/run.sh --play 9A", LaunchHandoff.Xbox)]
+    [InlineData("sh -c '/px/run.sh --play 9A'", LaunchHandoff.Xbox)]
+    [InlineData("/px/other.sh --play 9A", LaunchHandoff.None)]
+    [InlineData("/elsewhere/run.sh --play 9A", LaunchHandoff.None)]
+    public void Classifier_AUserCommandRunningTheCardsPartingXLauncher_IsAnXboxHandoff(string command, LaunchHandoff expected)
+    {
+        var game = new DetectedGame
+        {
+            Name = "G", Source = "Xbox", LaunchCommand = command, UserLaunchCommand = command,
+            XboxPackage = new XboxPackageInfo("9A", "PartingX", "env 'XDG_STATE_HOME=/s' '/px/run.sh' --play 9A", null,
+                PlayArgv: ["/px/run.sh", "--play", "9A"], ShowArgv: ["/px/run.sh", "--show", "9A"])
+        };
+        Assert.Equal(expected, LaunchHandoffClassifier.Classify(game));
+        // A card whose package has no launcher of its own learns nothing from another card's.
+        Assert.Equal(LaunchHandoff.None, LaunchHandoffClassifier.Classify(new DetectedGame { Name = "Other", LaunchCommand = "/px/run.sh --play 9A" }));
+    }
+
+    // Scan re-review nit 2: Edit game's line, typed back and run by a shell, does what the vector does even when env would
+    // misread it (a variable name starting with '-', a launcher path holding '=').
+    [Fact]
+    public void RenderedEntryPoint_RunByAShell_PassesTheSameProgramArgumentsAndEnvironment()
+    {
+        var dir = _tree.Dir("odd=dir");
+        var record = _tree.Path_("record.txt");
+        var script = _tree.File($"#!/bin/sh\nprintf '%s\\n' \"$0\" \"$@\" > '{record}'\nenv | grep -E '^(-DASH|PLAIN)=' | sort >> '{record}'\n", "odd=dir", "run.sh");
+        File.SetUnixFileMode(script, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var line = OwningAppLocator.Render([script, "--play", "9A B"], new Dictionary<string, string> { ["-DASH"] = "1", ["PLAIN"] = "x y" });
+
+        var shell = new System.Diagnostics.ProcessStartInfo("/bin/sh") { UseShellExecute = false, RedirectStandardError = true };
+        shell.ArgumentList.Add("-c");
+        shell.ArgumentList.Add(line);
+        using (var run = System.Diagnostics.Process.Start(shell)!)
+        {
+            var stderr = run.StandardError.ReadToEnd();
+            run.WaitForExit();
+            Assert.True(run.ExitCode == 0, $"{line}: {stderr}");
+        }
+
+        Assert.Equal([script, "--play", "9A B", "-DASH=1", "PLAIN=x y"], File.ReadAllLines(record));
+        Assert.StartsWith(dir, script);
+    }
+
+    // The entry point's launcher counts even when the rendered card command starts it through `sh -c` (a path with '=').
+    [Fact]
+    public void Classifier_TheEntryPointsLauncher_CountsWhenTheCardCommandWrapsIt()
+    {
+        string[] play = ["/px=1/run.sh", "--play", "9A"];
+        var open = OwningAppLocator.Render(play, new Dictionary<string, string> { ["K"] = "V" });
+        var game = new DetectedGame
+        {
+            Name = "G", LaunchCommand = "/px=1/run.sh --play 9A", UserLaunchCommand = "/px=1/run.sh --play 9A",
+            XboxPackage = new XboxPackageInfo("9A", "PartingX", open, null, PlayArgv: play)
+        };
+        Assert.Contains("sh -c", open, StringComparison.Ordinal);
+        Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
+    }
+
+    // The opener's program counts only when it is a launcher file of its own: an opener going through a generic program
+    // (xdg-open, flatpak) must not turn every user command using that program into PartingX's hand-off.
+    [Theory]
+    [InlineData("/usr/bin/xdg-open partingx://open", "/usr/bin/xdg-open https://example.org/guide")]
+    [InlineData("/usr/bin/flatpak run io.github.partingx.PartingX", "/usr/bin/flatpak run org.example.Tool")]
+    [InlineData("/bin/sh -c 'partingx'", "/bin/sh /home/u/mine.sh")]
+    public void Classifier_AGenericOpenerProgram_DoesNotMakeEveryCommandAnXboxHandoff(string opener, string command)
+    {
+        var game = new DetectedGame
+        {
+            Name = "G", LaunchCommand = command, UserLaunchCommand = command,
+            XboxPackage = new XboxPackageInfo("9A", "PartingX", opener, null)
+        };
+        Assert.NotEqual(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
+    }
+
+    [Fact]
+    public void Classifier_AUserCommandRunningTheOpenersProgram_IsAnXboxHandoff()
+    {
+        var game = new DetectedGame
+        {
+            Name = "G", LaunchCommand = "'/px/run.sh' --verbose", UserLaunchCommand = "'/px/run.sh' --verbose",
+            XboxPackage = new XboxPackageInfo("9A", "PartingX", "'/px/run.sh'", null)
+        };
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
     }
 
