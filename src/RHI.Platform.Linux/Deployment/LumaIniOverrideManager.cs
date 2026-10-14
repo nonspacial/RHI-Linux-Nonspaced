@@ -1,3 +1,5 @@
+using RHI.Core.Deployment;
+using RHI.Core.Services;
 using System.Text;
 using System.Text.Json;
 
@@ -102,7 +104,7 @@ internal static class LumaIniOverrideManager
         }
 
         if (changed)
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
 
         return new LumaIniOverrideState(
             iniPath,
@@ -146,7 +148,7 @@ internal static class LumaIniOverrideManager
         }
 
         if (changed)
-            File.WriteAllLines(state.IniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(state.IniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
     }
 
     public static string Serialize(LumaIniOverrideState state) => JsonSerializer.Serialize(state);
@@ -155,7 +157,11 @@ internal static class LumaIniOverrideManager
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<LumaIniOverrideState>(json); }
-        catch { return null; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("luma-ini", "Stored deployment state could not be read; it is treated as absent", ex);
+            return null;
+        }
     }
 
     private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string section)

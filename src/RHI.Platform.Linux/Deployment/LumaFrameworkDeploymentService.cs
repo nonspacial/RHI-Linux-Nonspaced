@@ -1007,7 +1007,11 @@ public sealed class LumaFrameworkDeploymentService
     {
         if (record is null || !record.Metadata.TryGetValue(key, out var json) || string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<ReShadeDx9MigrationState>(json); }
-        catch { return null; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("luma", "Stored deployment state could not be read; it is treated as absent", ex);
+            return null;
+        }
     }
 
     private static string ReadDgVoodooVersion(LinuxDeploymentRecord record)
