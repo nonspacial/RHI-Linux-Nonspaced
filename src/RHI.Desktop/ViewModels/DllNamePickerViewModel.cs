@@ -80,8 +80,24 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
             Refresh();
     }
 
+    /// <summary>
+    /// The UI thread the list is bound to: whether the caller is on it, and how to run work there. Avalonia's dispatcher
+    /// while an application runs (the app, the UI harness); none in plain view-model tests, where refreshes run where
+    /// they are raised (Apply is serialised by its lock). Test seam: a stand-in UI thread.
+    /// </summary>
+    internal (Func<bool> IsCurrent, Action<Action> Post)? UiThread { get; set; } = Avalonia.Application.Current is null
+        ? null
+        : (() => Avalonia.Threading.Dispatcher.UIThread.CheckAccess(), action => Avalonia.Threading.Dispatcher.UIThread.Post(action));
+
     private void Refresh()
     {
+        // Options is bound to the UI: a change raised on another thread refreshes on the UI thread, so the list is only
+        // ever rebuilt there (merge review nit 5; the await in RefreshAsync resumes on the UI thread's context).
+        if (UiThread is { } ui && !ui.IsCurrent())
+        {
+            ui.Post(Refresh);
+            return;
+        }
         var game = _shell.SelectedGame;
         var generation = Interlocked.Increment(ref _generation);
         Refreshed = RefreshAsync(game, generation);

@@ -127,6 +127,67 @@ public sealed class DllNamePickerTests
         Assert.Empty(picker.Options);
     }
 
+    // Merge review nit 5: the list is bound to the UI, so a change raised on another thread (here the graphics API override
+    // set from a pool thread) rebuilds it on the UI thread the picker lives on, never on the raising thread.
+    [Fact]
+    public async Task Picker_AChangeRaisedOffTheUiThread_RebuildsTheListOnTheUiThread()
+    {
+        using var ui = new PumpContext();
+        var (fx, picker, threads) = await ui.RunAsync(async () =>
+        {
+            var (f, _) = await StartAsync("Ui Thread Game");
+            var p = f.Vm.DllNamePicker;
+            p.UiThread = (() => Environment.CurrentManagedThreadId == ui.ThreadId, action => ui.Post(_ => action(), null));
+            await SettledAsync(p);
+            var seen = new System.Collections.Concurrent.ConcurrentBag<int>();
+            p.Options.CollectionChanged += (_, _) => seen.Add(Environment.CurrentManagedThreadId);
+            return (f, p, seen);
+        });
+        using var __ = fx;
+        Assert.Equal("Automatic (dxgi.dll)", picker.Options[0].Display);
+
+        await Task.Run(() => fx.Vm.Runtime.SelectedGraphicsApiOverride = fx.Vm.Runtime.GraphicsApiOverrideOptions.ForDisplay("DirectX 9"));
+        for (var i = 0; i < 400 && (picker.Options.Count == 0 || picker.Options[0].Display != "Automatic (d3d9.dll)"); i++) await Task.Delay(10);
+
+        Assert.Equal("Automatic (d3d9.dll)", picker.Options[0].Display);
+        Assert.NotEmpty(threads);
+        Assert.All(threads, id => Assert.Equal(ui.ThreadId, id));
+    }
+
+    /// <summary>A one-thread UI stand-in: posted callbacks run in order on its own thread, with itself as the context.</summary>
+    private sealed class PumpContext : SynchronizationContext, IDisposable
+    {
+        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = new();
+        private readonly Thread _thread;
+
+        public PumpContext()
+        {
+            _thread = new Thread(() =>
+            {
+                SetSynchronizationContext(this);
+                foreach (var (callback, state) in _queue.GetConsumingEnumerable()) callback(state);
+            }) { IsBackground = true, Name = "test-ui" };
+            _thread.Start();
+        }
+
+        public int ThreadId => _thread.ManagedThreadId;
+
+        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+
+        public Task<T> RunAsync<T>(Func<Task<T>> work)
+        {
+            var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Post(async _ =>
+            {
+                try { done.SetResult(await work()); }
+                catch (Exception ex) { done.SetException(ex); }
+            }, null);
+            return done.Task;
+        }
+
+        public void Dispose() => _queue.CompleteAdding();
+    }
+
     private static async Task<(ViewModelFixture Fixture, DetectedGame Game)> StartAsync(string name, string language = "en-US", string runner = "Proton")
     {
         var root = Path.Combine(Path.GetTempPath(), $"rhi-dll-picker-{Guid.NewGuid():N}");
