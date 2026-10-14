@@ -239,6 +239,103 @@ public sealed class ControlUePostInstallTests : IDisposable
         Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
     }
 
+    // w3 review major 1 (#124): the user's DLSS DLL and HDR preset stay theirs across EVERY later update, not only the
+    // one that found the change. The list is saved with the RenoDX record and dropped on removal.
+    [Fact]
+    public async Task Updates_TwoAndThreeInARow_NeverApplyTheStepToTheUsersDllOrPresetAgain()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var bin = game.BinaryDirectory!;
+        var sr = Path.Combine(bin, "nvngx_dlss.dll");
+        var ini = Path.Combine(bin, "renderer.ini");
+        File.WriteAllText(ini, RendererIni);
+        File.WriteAllText(sr, "OLD-SR");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+
+        File.WriteAllText(sr, "USER-SR");
+        var userIni = RendererIni.Replace("\"m_eHDRPreset\": 0", "\"m_eHDRPreset\": 1");
+        File.WriteAllText(ini, userIni);
+
+        foreach (var (n, version) in new[] { (1, "310.5.0"), (2, "310.6.0"), (3, "310.7.0") })
+        {
+            File.WriteAllText(Path.Combine(_sources, "nvngx_dlss.dll"), $"SR-{n}");
+            File.WriteAllText(Path.Combine(_sources, "nvngx_dlssd.dll"), $"RR-{n}");
+            _srVersion = version;
+            var update = await service.UpdateAsync(game, [game.ExecutablePath!]);
+
+            Assert.True(update.Success, update.Message);
+            Assert.Equal("USER-SR", File.ReadAllText(sr));
+            Assert.Equal(userIni, File.ReadAllText(ini));
+            Assert.Equal($"RR-{n}", File.ReadAllText(Path.Combine(bin, "nvngx_dlssd.dll")));
+            Assert.DoesNotContain("m_eHDRPreset 1 → 2", update.Message);
+            Assert.DoesNotContain($"nvngx_dlss.dll → {version}", update.Message);
+            Assert.Contains("nvngx_dlss.dll" + ControlUePostInstallService.UserChangeKeptNote, update.Message);
+            Assert.Contains("renderer.ini" + ControlUePostInstallService.UserChangeKeptNote, update.Message);
+            Assert.False(File.Exists(sr + ControlUePostInstallService.PreviousSnapshotSuffix));
+            var saved = ControlUePostInstallService.Deserialize(store.Find(game, ManagedComponentKind.RenoDX))!;
+            Assert.Equal(new[] { Path.GetFullPath(sr), Path.GetFullPath(ini) }.Order(StringComparer.Ordinal), saved.UserKept);
+            AssertNotGenericInPortuguese(update.Message);
+        }
+
+        var remove = await service.RemoveAsync(game);
+        Assert.True(remove.Success, remove.Message);
+        Assert.Equal("USER-SR", File.ReadAllText(sr));
+        Assert.Equal(userIni, File.ReadAllText(ini));
+        Assert.False(File.Exists(Path.Combine(bin, "nvngx_dlssd.dll")));
+        Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
+    }
+
+    // When the user changed every file the step touches, nothing stays owned but the list still rides on the record:
+    // later updates leave all three alone.
+    [Fact]
+    public async Task Updates_AfterUserChangedEveryFile_KeepAllOfThemOnEachLaterUpdate()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var bin = game.BinaryDirectory!;
+        var sr = Path.Combine(bin, "nvngx_dlss.dll");
+        var rr = Path.Combine(bin, "nvngx_dlssd.dll");
+        var ini = Path.Combine(bin, "renderer.ini");
+        File.WriteAllText(ini, RendererIni);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+
+        File.WriteAllText(sr, "USER-SR");
+        File.WriteAllText(rr, "USER-RR");
+        var userIni = RendererIni.Replace("\"m_eHDRPreset\": 0", "\"m_eHDRPreset\": 3");
+        File.WriteAllText(ini, userIni);
+
+        for (var n = 1; n <= 3; n++)
+        {
+            File.WriteAllText(Path.Combine(_sources, "nvngx_dlss.dll"), $"SR-{n}");
+            File.WriteAllText(Path.Combine(_sources, "nvngx_dlssd.dll"), $"RR-{n}");
+            var update = await service.UpdateAsync(game, [game.ExecutablePath!]);
+
+            Assert.True(update.Success, update.Message);
+            Assert.Equal("USER-SR", File.ReadAllText(sr));
+            Assert.Equal("USER-RR", File.ReadAllText(rr));
+            Assert.Equal(userIni, File.ReadAllText(ini));
+            var saved = ControlUePostInstallService.Deserialize(store.Find(game, ManagedComponentKind.RenoDX))!;
+            Assert.Empty(saved.Dlls);
+            Assert.Null(saved.RendererIni);
+            Assert.Equal(3, saved.UserKept!.Count);
+        }
+
+        Assert.True((await service.RemoveAsync(game)).Success);
+        Assert.Equal("USER-SR", File.ReadAllText(sr));
+        Assert.Equal("USER-RR", File.ReadAllText(rr));
+        Assert.Equal(userIni, File.ReadAllText(ini));
+    }
+
+    // A state written before the list existed reads as "nothing kept".
+    [Fact]
+    public void Deserialize_StateWithoutTheKeptList_ReadsAsNothingKept()
+    {
+        var record = new LinuxDeploymentRecord();
+        record.Metadata[ControlUePostInstallService.MetadataKey] = "{\"Dlls\":[],\"RendererIni\":null}";
+        var state = ControlUePostInstallService.Deserialize(record)!;
+        Assert.True(state.IsEmpty);
+        Assert.Null(state.UserKept);
+    }
+
     // #124 finding 3 (tests for the data-safety claims): a user-changed HDR preset is left alone on removal.
     [Fact]
     public async Task Remove_AfterUserChangedThePreset_LeavesIt()

@@ -28,8 +28,18 @@ internal sealed record ControlUePostInstallState(
     IReadOnlyList<ControlUeOwnedDll> Dlls,
     ControlUeRendererIniEdit? RendererIni)
 {
+    /// <summary>
+    /// Full paths of the files the user changed after an install (a DLSS DLL, renderer.ini's HDR preset): saved with the
+    /// RenoDX record and carried by every later update, so no update ever applies the step to them again; dropped on
+    /// removal with the rest of the state (#124). Absent in states written before the list existed.
+    /// </summary>
+    public IReadOnlyList<string>? UserKept { get; init; }
+
     [JsonIgnore]
-    public bool IsEmpty => Dlls.Count == 0 && RendererIni is null;
+    public bool OwnsNothing => Dlls.Count == 0 && RendererIni is null;
+
+    [JsonIgnore]
+    public bool IsEmpty => OwnsNothing && (UserKept is null || UserKept.Count == 0);
 }
 
 internal sealed record ControlUeSources(
@@ -186,7 +196,7 @@ public sealed class ControlUePostInstallService
         }
 
         notes.Add(DriverProfileNote);
-        var state = new ControlUePostInstallState(dlls, ini);
+        var state = new ControlUePostInstallState(dlls, ini) { UserKept = KeptList(keepUserChanges) };
         return new ControlUePostInstallResult(state.IsEmpty ? null : state, notes);
     }
 
@@ -267,7 +277,10 @@ public sealed class ControlUePostInstallService
     {
         var notes = new List<string>();
         var remaining = new List<ControlUeOwnedDll>();
-        var keptUserChanges = new HashSet<string>(StringComparer.Ordinal);
+        // Files left to the user by an earlier update stay theirs: an update never applies the step to them again (#124).
+        var keptUserChanges = new HashSet<string>(
+            (state.UserKept ?? []).Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => Path.GetFullPath(path)),
+            StringComparer.Ordinal);
         foreach (var dll in state.Dlls.Reverse())
         {
             try
@@ -297,9 +310,12 @@ public sealed class ControlUePostInstallService
             }
         }
 
-        var left = new ControlUePostInstallState(remaining, ini);
-        return new ControlUeRestoreResult(left.IsEmpty ? null : left, notes) { KeptUserChanges = keptUserChanges };
+        var left = new ControlUePostInstallState(remaining, ini) { UserKept = KeptList(keptUserChanges) };
+        return new ControlUeRestoreResult(left.OwnsNothing ? null : left, notes) { KeptUserChanges = keptUserChanges };
     }
+
+    private static IReadOnlyList<string>? KeptList(IReadOnlySet<string>? kept)
+        => kept is null || kept.Count == 0 ? null : kept.Order(StringComparer.Ordinal).ToList();
 
     /// <returns>False when the DLL was changed outside RHI and was left as it is.</returns>
     private async Task<bool> RestoreDllAsync(ControlUeOwnedDll dll, List<string> notes)
