@@ -3329,6 +3329,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
         LinuxGameEditOverride? target, string? launchProvider, string? userCommand, Action? saved)
     {
+        var targetFieldsBlank = target is null;
         var game = SelectedGame!;
         var commandChanged = !string.Equals(userCommand, game.UserLaunchCommand, StringComparison.Ordinal);
         // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
@@ -3336,6 +3337,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var state = WorkingLibraryCopy();
         var key = LinuxGameLibraryStore.GameKey(game);
         if (target is null) state.GameEdits.TryGetValue(key, out target);
+        // Blank target fields with a new command keep the saved target; the status line says so (Refs #151).
+        var targetKept = target is { HasPatchTarget: true } && targetFieldsBlank;
         var edit = new LinuxGameEditOverride
         {
             LaunchProvider = launchProvider,
@@ -3355,6 +3358,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var refreshed = await RefreshWhenIdleAsync(NoDetectors);
         var message = !refreshed ? TF("Vm.ModificationTargetSavedButLibraryWas", name)
             : !commandChanged ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
+            : targetKept
+                ? userCommand is null ? TF("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", name) : TF("Vm.EditSavedTargetKeptPlayUsesYourCommand", name)
             : userCommand is null ? TF("Vm.EditSavedPlayUsesDetectedCommand", name)
             : TF("Vm.EditSavedPlayUsesYourCommand", name);
         StatusText = message;

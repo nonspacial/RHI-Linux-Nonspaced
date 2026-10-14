@@ -128,6 +128,49 @@ public sealed class EditGameLaunchCommandTests
         }
     }
 
+    // #151 part 3: blank target fields with a new command keep the saved target, and the status line says so; a card
+    // without a saved target keeps the plain line (there is no target to keep).
+    [Fact]
+    public async Task BlankTargetFieldsWithANewCommand_KeepTheSavedTarget_AndTheStatusLineSaysSo()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"rhi-edit-cmd-{Guid.NewGuid():N}");
+        var install = Directory.CreateDirectory(Path.Combine(root, "Kept Game")).FullName;
+        var bin = Directory.CreateDirectory(Path.Combine(install, "bin")).FullName;
+        var exe = Path.Combine(bin, "Kept.exe");
+        File.WriteAllBytes(exe, [0x4D, 0x5A]);
+        var game = new DetectedGame { Name = "Kept Game", Source = "Wine", InstallPath = install, Runner = "wine", LaunchCommand = "wine Kept.exe" };
+        try
+        {
+            using var fx = await ViewModelFixture.StartAsync([game], seed: library =>
+            {
+                var state = library.Load();
+                state.GameEdits[LinuxGameLibraryStore.GameKey(game)] = new LinuxGameEditOverride
+                {
+                    PatchExecutablePath = exe, GameRootPath = install, BinaryDirectory = bin
+                };
+                library.Save(state);
+            });
+            await SelectAsync(fx, "Kept Game");
+
+            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync("", " ", "", null, "my-wrapper wine Kept.exe");
+
+            Assert.True(saved, message);
+            Assert.Equal(UiLocalizationService.Format("Vm.EditSavedTargetKeptPlayUsesYourCommand", "Kept Game"), message);
+            Assert.StartsWith(message, fx.Vm.StatusText, StringComparison.Ordinal);
+            var edit = Assert.Single(fx.Library.Load().GameEdits).Value;
+            Assert.Equal((exe, install, bin, "my-wrapper wine Kept.exe"), (edit.PatchExecutablePath, edit.GameRootPath, edit.BinaryDirectory, edit.LaunchCommand));
+
+            await SelectAsync(fx, "Kept Game");
+            var (back, again) = await fx.Vm.SaveSelectedGameEditAsync("", "", "", null, "");
+            Assert.True(back, again);
+            Assert.Equal(UiLocalizationService.Format("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", "Kept Game"), again);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
+    }
+
     // A launcher card (no patch target to show, e.g. a Lutris game inside a launcher's prefix) gets a command with the
     // three target fields left blank; blank fields with no new command still ask for the target as before.
     [Fact]
@@ -151,6 +194,7 @@ public sealed class EditGameLaunchCommandTests
 
             var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(" ", "", "", null, "lutris lutris:rungame/launcher-game");
             Assert.True(saved, message);
+            Assert.Equal(UiLocalizationService.Format("Vm.EditSavedPlayUsesYourCommand", "Launcher Game"), message);
             await SelectAsync(fx, "Launcher Game");
             Assert.True(fx.Vm.CanLaunch);
             Assert.Null(fx.Vm.LaunchToolTip);
