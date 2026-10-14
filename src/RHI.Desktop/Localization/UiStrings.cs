@@ -785,6 +785,16 @@ internal static class UiStrings
         ("Parity.ShaderProfileImportFailed", "O perfil não pôde ser importado: {0}", "The profile could not be imported: {0}"),
         ("Parity.ShaderProfileImported", "Perfil \"{0}\" importado ({1} pacotes). Carregue-o e use Aplicar.", "Profile \"{0}\" imported ({1} packs). Load it and use Apply."),
         ("Parity.ShaderProfileNumbered", "Perfil {0}", "Profile {0}"),
+        ("Parity.NrScalerTip", "Faz o Neural Rendering rodar numa escala menor (75% por padrão, em nvngx_dlssnr.ini) para economizar GPU mantendo o detalhe nativo. Fica sobre o método de Neural Rendering instalado pelo RHI.", "Runs Neural Rendering at a reduced scale (75 % by default, in nvngx_dlssnr.ini) for GPU savings while keeping native detail. Sits on top of the Neural Rendering method RHI installed."),
+        ("Parity.NrScalerInstall", "Instalar", "Install"),
+        ("Parity.NrScalerInstallTip", "Baixa o NR Cost Scaler, guarda o nvngx_dlssnr.dll do método como nvngx_dlssnr_real.dll e coloca o proxy no lugar. Remova-o antes de atualizar ou remover o método.", "Downloads NR Cost Scaler, keeps the method's nvngx_dlssnr.dll as nvngx_dlssnr_real.dll and puts the proxy in its place. Remove it before updating or removing the method."),
+        ("Parity.NrScalerRemove", "Remover", "Remove"),
+        ("Parity.NrScalerInstalled", "Instalado ({0}); remova antes de atualizar ou remover o método de Neural Rendering.", "Installed ({0}); remove it before updating or removing the Neural Rendering method."),
+        ("Parity.NrScalerAvailable", "Pode ser instalado sobre {0}.", "Can be installed over {0}."),
+        ("Parity.NrScalerBusy", "Outra operação está em andamento; tente de novo quando ela terminar.", "Another operation is running; try again when it finishes."),
+        ("Parity.NrScalerInstalling", "{0}: instalando o NR Cost Scaler…", "{0}: installing NR Cost Scaler…"),
+        ("Parity.NrScalerRemoving", "{0}: removendo o NR Cost Scaler…", "{0}: removing NR Cost Scaler…"),
+        ("Parity.NrScalerCancelled", "NR Cost Scaler cancelado antes de qualquer mudança.", "NR Cost Scaler cancelled before any change."),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

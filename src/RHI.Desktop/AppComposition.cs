@@ -171,10 +171,11 @@ internal sealed class AppComposition
         var lumaPolicy = new LumaPolicyService(upstreamManifest, lumaModeStore);
         var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         var updateLog = new ComponentUpdateLogStore();
+        var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
-            updateLog);
+            updateLog, nrCostScaler: nrCostScaler); // w3/parity hook (#96): named argument
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
@@ -187,6 +188,7 @@ internal sealed class AppComposition
         {
             NexusAccount = nexusAccount,
             ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
+            NrCostScaler = new NrCostScalerPresenter(managedComponents),
             NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),

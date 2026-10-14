@@ -16,6 +16,7 @@ public sealed class ParityFeatures
     public required NexusAccountPresenter NexusAccount { get; init; }
     public required NexusLinkPresenter NexusLinks { get; init; }
     public required ShaderProfilePresenter ShaderProfiles { get; init; }
+    public required NrCostScalerPresenter NrCostScaler { get; init; }
 
     /// <summary>A request a shortcut or link brought to this RHI (its own command line or the hand-off). UI thread.</summary>
     public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch

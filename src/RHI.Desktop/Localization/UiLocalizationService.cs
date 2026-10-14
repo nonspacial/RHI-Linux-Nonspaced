@@ -993,6 +993,20 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Settings.ShaderProfileArchive.TooLargeMessage, "A exportação do perfil de shaders passa do limite (512 MiB)."),
         (RHI.Platform.Linux.Settings.ShaderProfileArchive.NotAProfileMessage, "Este zip não é um perfil de shaders (não tem shader_import.json)."),
         (RHI.Platform.Linux.Settings.ShaderProfileArchive.UnreadableProfileMessage, "O perfil de shaders deste zip não pode ser lido."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.NoOwnerMessage, "O NR Cost Scaler precisa antes de um método de Neural Rendering instalado pelo RHI (ShortFuse, DLSS5 Feeder ou OptiScaler DLSS NR)."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerModifiedPrefix, "NR Cost Scaler não instalado: o nvngx_dlssnr.dll não confere mais com o que o RHI instalou para "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.AlreadyInstalledMessage, "O NR Cost Scaler já está instalado para este jogo."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.NotInstalledMessage, "O NR Cost Scaler não foi instalado pelo RHI para este jogo."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.ForeignFilePrefix, "NR Cost Scaler não instalado: um arquivo que o RHI não gravou está no caminho: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.ScalerModifiedPrefix, "NR Cost Scaler não removido: seus arquivos mudaram desde a instalação pelo RHI (mantidos como estão): "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.DownloadFailedPrefix, "O download do NR Cost Scaler falhou; nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.PackageIncompleteMessage, "A versão do NR Cost Scaler não contém nvngx_dlssnr.dll e nvngx_dlssnr.ini; nada foi alterado."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.InstalledPrefix, "NR Cost Scaler instalado sobre "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.RemovedMessage, "NR Cost Scaler removido; o runtime de Neural Rendering voltou a ser como era."),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.FailedRolledBackPrefix, "O NR Cost Scaler falhou e foi desfeito: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerBlockedPrefix, "Remova o NR Cost Scaler antes: ele envolve o nvngx_dlssnr.dll de "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NrCostScaler.RefusalPrefix,
+            "Download recusado: links do NR Cost Scaler devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

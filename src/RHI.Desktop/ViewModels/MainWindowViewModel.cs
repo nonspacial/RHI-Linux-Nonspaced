@@ -2032,6 +2032,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// restore, ShortFuse load order): the cached file index is dropped and rebuilt so the next install sees the new
     /// files and backups (Refs #83), and the operation's line stays on screen.
     /// </summary>
+    internal Task ReprobeSelectedAsync(DetectedGame game) => ReprobeKeepingStatusAsync(game); // w3/parity hook (#96)
+
     private async Task ReprobeKeepingStatusAsync(DetectedGame game)
     {
         var line = StatusText;
