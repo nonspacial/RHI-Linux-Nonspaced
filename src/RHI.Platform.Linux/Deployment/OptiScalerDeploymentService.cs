@@ -118,7 +118,7 @@ public sealed partial class OptiScalerDeploymentService
             }
             var label = VariantLabel(variant);
             if (!update && record.Metadata.GetValueOrDefault(OptiPatcherVersionMetadataKey) is { Length: > 0 } patcher
-                && await TryLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false) is { } latestPatcher
+                && await TryResolveLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false) is { } latestPatcher
                 && !string.Equals(patcher, latestPatcher.Version, StringComparison.OrdinalIgnoreCase))
                 // OptiPatcher's rolling build moved on (upstream refreshes it silently): an update of this component.
                 return new ManagedUpdateCheck(true, true, OptiPatcherUpdatePrefix + $"{patcher} → {latestPatcher.Version}", record.Version, latest.Version);
@@ -357,7 +357,7 @@ public sealed partial class OptiScalerDeploymentService
         OptiPatcherBuild? optiPatcher = null;
         if (_optiPatcher is not null)
         {
-            try { optiPatcher = await _optiPatcher.GetLatestAsync(cancellationToken).ConfigureAwait(false); }
+            try { optiPatcher = await FetchLatestOptiPatcherAsync(_optiPatcher, cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 optiPatcherNote = OptiPatcherSkippedPrefix + ex.Message;
@@ -551,14 +551,32 @@ public sealed partial class OptiScalerDeploymentService
     private static string OptiPatcherTarget(string binaryDirectory)
         => Path.GetFullPath(Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
 
-    /// <summary>The newest OptiPatcher, or null when there is no source or it cannot be had now (logged, never a failure).</summary>
+    private static async Task<OptiPatcherBuild> FetchLatestOptiPatcherAsync(IOptiPatcherProvider provider, CancellationToken cancellationToken)
+        => await provider.FetchAsync(await provider.ResolveLatestAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+
+    /// <summary>The newest OptiPatcher, downloaded, or null when there is no source or it cannot be had now (logged, never a failure).</summary>
     private async Task<OptiPatcherBuild?> TryLatestOptiPatcherAsync(CancellationToken cancellationToken)
     {
         if (_optiPatcher is null) return null;
-        try { return await _optiPatcher.GetLatestAsync(cancellationToken).ConfigureAwait(false); }
+        try { return await FetchLatestOptiPatcherAsync(_optiPatcher, cancellationToken).ConfigureAwait(false); }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             AppLog.Warn("optiscaler", "OptiPatcher could not be checked or downloaded; the deployed build stays", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The update check's view of OptiPatcher: the newest build's version and digest only, never its file (upstream
+    /// <c>CheckOptiPatcherUpdateAsync</c>); null when there is no source or it cannot be read now (logged).
+    /// </summary>
+    private async Task<OptiPatcherRelease?> TryResolveLatestOptiPatcherAsync(CancellationToken cancellationToken)
+    {
+        if (_optiPatcher is null) return null;
+        try { return await _optiPatcher.ResolveLatestAsync(cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("optiscaler", "OptiPatcher could not be checked; the deployed build stays", ex);
             return null;
         }
     }

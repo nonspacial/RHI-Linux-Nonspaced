@@ -9,10 +9,21 @@ namespace RHI.Platform.Linux.Deployment;
 /// <summary>One OptiPatcher build: the rolling release's build commit and the verified cache entry of its <c>.asi</c>.</summary>
 public sealed record OptiPatcherBuild(string Version, string SourceUrl, VerifiedDownload Download);
 
-/// <summary>The newest OptiPatcher (#98); OptiScaler deploys it beside itself.</summary>
+/// <summary>The newest OptiPatcher build as the release names it (metadata only; nothing downloaded).</summary>
+public sealed record OptiPatcherRelease(string Version, string SourceUrl, string? PublishedDigest);
+
+/// <summary>
+/// The newest OptiPatcher (#98); OptiScaler deploys it beside itself. Split in two so an update check reads the
+/// release's build and digest only (<see cref="ResolveLatestAsync"/>, as upstream's <c>CheckOptiPatcherUpdateAsync</c>)
+/// and the <c>.asi</c> is downloaded only by an install or update (<see cref="FetchAsync"/>).
+/// </summary>
 public interface IOptiPatcherProvider
 {
-    Task<OptiPatcherBuild> GetLatestAsync(CancellationToken cancellationToken = default);
+    /// <summary>The newest build's version, link and published digest (one API request; never the file).</summary>
+    Task<OptiPatcherRelease> ResolveLatestAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Downloads (or reuses the stamped cache entry of) <paramref name="release"/>'s <c>.asi</c>, verified.</summary>
+    Task<OptiPatcherBuild> FetchAsync(OptiPatcherRelease release, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -41,19 +52,30 @@ public sealed class OptiPatcherProvider : IOptiPatcherProvider
         _cacheDir = cacheDir;
     }
 
-    public async Task<OptiPatcherBuild> GetLatestAsync(CancellationToken cancellationToken = default)
+    public async Task<OptiPatcherRelease> ResolveLatestAsync(CancellationToken cancellationToken = default)
     {
         var json = await TrustedDownload.GetStringAsync(_http, ReleaseApiUrl, DownloadSources.GitHubApi, accept: "application/vnd.github+json",
             cancellationToken: cancellationToken).ConfigureAwait(false);
         var (version, url, digest) = ParseRelease(json);
-        var entry = Path.Combine(_cacheDir, version, FileName);
-        var verified = await TrustedDownload.EnsureVerifiedAsync(_http, url, entry, DownloadSources.OptiPatcher, version, digest,
+        return new OptiPatcherRelease(version, url, digest);
+    }
+
+    public async Task<OptiPatcherBuild> FetchAsync(OptiPatcherRelease release, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(release);
+        var entry = Path.Combine(_cacheDir, release.Version, FileName);
+        var verified = await TrustedDownload.EnsureVerifiedAsync(_http, release.SourceUrl, entry, DownloadSources.OptiPatcher, release.Version,
+            release.PublishedDigest,
             validate: (path, _) => PeArchitectureDetector.Detect(path) == PeArchitecture.X64
                 ? Task.CompletedTask
                 : Task.FromException(new InvalidDataException(NotWindowsDllMessage)),
             cancellationToken: cancellationToken).ConfigureAwait(false);
-        return new OptiPatcherBuild(version, url, verified);
+        return new OptiPatcherBuild(release.Version, release.SourceUrl, verified);
     }
+
+    /// <summary>The newest build, downloaded and verified (<see cref="ResolveLatestAsync"/> then <see cref="FetchAsync"/>).</summary>
+    public async Task<OptiPatcherBuild> GetLatestAsync(CancellationToken cancellationToken = default)
+        => await FetchAsync(await ResolveLatestAsync(cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
 
     /// <summary>The build (lower-case commit, else the asset digest's first 12 hex), the asset link and its digest.</summary>
     internal static (string Version, string Url, string? Digest) ParseRelease(string json)

@@ -14,16 +14,25 @@ public sealed partial class OptiScalerDeploymentServiceTests
     {
         public string Version { get; set; } = "c3f758a";
         public bool Fail { get; set; }
+        /// <summary>Release lookups (metadata).</summary>
         public int Calls { get; private set; }
+        /// <summary>Downloads of the .asi.</summary>
+        public int Fetches { get; private set; }
 
-        public Task<OptiPatcherBuild> GetLatestAsync(CancellationToken cancellationToken = default)
+        public Task<OptiPatcherRelease> ResolveLatestAsync(CancellationToken cancellationToken = default)
         {
             Calls++;
             if (Fail) throw new HttpRequestException("GitHub is down (test)");
-            var path = Path.Combine(root, Version, OptiPatcherProvider.FileName);
+            return Task.FromResult(new OptiPatcherRelease(Version, "https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi", null));
+        }
+
+        public Task<OptiPatcherBuild> FetchAsync(OptiPatcherRelease release, CancellationToken cancellationToken = default)
+        {
+            Fetches++;
+            var path = Path.Combine(root, release.Version, OptiPatcherProvider.FileName);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            if (!File.Exists(path)) File.WriteAllBytes(path, OptiPatcherProviderTests.Pe64((byte)Version[0]));
-            return Task.FromResult(new OptiPatcherBuild(Version, "https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi",
+            if (!File.Exists(path)) File.WriteAllBytes(path, OptiPatcherProviderTests.Pe64((byte)release.Version[0]));
+            return Task.FromResult(new OptiPatcherBuild(release.Version, release.SourceUrl,
                 new VerifiedDownload(path, FileHash.Sha256Hex(path), PublishedSha256: FileHash.Sha256Hex(path))));
         }
     }
@@ -104,9 +113,13 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.False(current.UpdateAvailable, current.Message);
 
         patcher.Version = "4662cb0";
+        var fetchesBefore = patcher.Fetches;
         var check = await service.CheckUpdateAsync(game);
         Assert.True(check.UpdateAvailable);
         Assert.Equal(OptiScalerDeploymentService.OptiPatcherUpdatePrefix + "c3f758a → 4662cb0", check.Message);
+        // The check reads the build only; the new .asi is downloaded by the update the user approves (review minor 2).
+        Assert.Equal(fetchesBefore, patcher.Fetches);
+        Assert.False(Directory.Exists(Path.Combine(_root, "optipatcher-update-cache", "4662cb0")));
 
         var updated = await service.UpdateAsync(game);
         Assert.True(updated.Success, updated.Message);
@@ -120,6 +133,36 @@ public sealed partial class OptiScalerDeploymentServiceTests
         var offline = await service.CheckUpdateAsync(game);
         Assert.False(offline.UpdateAvailable);
         Assert.False(offline.CouldNotCheck);
+    }
+
+    [Fact]
+    public async Task UpdateCheck_WithTheRealProvider_ReadsTheReleaseOnly_NeverDownloadsTheNewAsi()
+    {
+        var (game, store) = CreateGame("optipatcher-check-real", GraphicsApi.DirectX12);
+        var build = "c3f758a";
+        var asi = OptiPatcherProviderTests.Pe64(0x41);
+        var assetRequests = 0;
+        using var http = new HttpClient(new OptiPatcherProviderTests.Fake(request =>
+        {
+            if (request.RequestUri!.Host == "api.github.com")
+                return OptiPatcherProviderTests.Json(OptiPatcherProviderTests.Release($"**Build commit:** {build}",
+                    "sha256:" + FileHash.Sha256HexOf(asi).ToLowerInvariant()));
+            assetRequests++;
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(asi) };
+        }));
+        var cache = Path.Combine(_root, "optipatcher-check-real-cache");
+        var service = NewServiceWithOptiPatcher(store, new FakePackageProvider(CreatePackage("optipatcher-check-real-package")),
+            new OptiPatcherProvider(http, cache));
+        Assert.True((await service.InstallAsync(game)).Success);
+        Assert.Equal(1, assetRequests);
+
+        build = "4662cb0";
+        asi = OptiPatcherProviderTests.Pe64(0x42);
+        var check = await service.CheckUpdateAsync(game);
+
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.Equal(1, assetRequests);
+        Assert.False(Directory.Exists(Path.Combine(cache, "4662cb0")));
     }
 
     [Fact]

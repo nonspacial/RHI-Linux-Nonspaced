@@ -86,6 +86,31 @@ public sealed class OptiPatcherProviderTests : IDisposable
     }
 
     [Fact]
+    public async Task ResolveLatest_ReadsTheReleaseOnly_AndFetchDownloadsThatBuild()
+    {
+        var asi = Pe64(0x43);
+        var digest = "sha256:" + FileHash.Sha256HexOf(asi).ToLowerInvariant();
+        var downloads = 0;
+        var handler = new Fake(request => request.RequestUri!.Host == "api.github.com"
+            ? Json(Release("**Build commit:** c3f758a", digest))
+            : Bytes(asi, ref downloads));
+        using var http = new HttpClient(handler);
+        var cache = Path.Combine(_root, "cache-resolve");
+        var provider = new OptiPatcherProvider(http, cache);
+
+        var release = await provider.ResolveLatestAsync();
+
+        Assert.Equal(new OptiPatcherRelease("c3f758a", "https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi", digest), release);
+        Assert.Equal(0, downloads);
+        Assert.False(Directory.Exists(cache));
+
+        var fetched = await provider.FetchAsync(release);
+        Assert.Equal(1, downloads);
+        Assert.Equal(asi, File.ReadAllBytes(fetched.Download.Path));
+        Assert.True(fetched.Download.DigestVerified);
+    }
+
+    [Fact]
     public async Task GetLatest_AnAssetLinkOffGitHub_IsRefusedWithOptiPatchersOwnPolicy()
     {
         var json = Release("**Build commit:** c3f758a", null).Replace("https://github.com/optiscaler", "https://evil.example.org/optiscaler");
@@ -127,7 +152,7 @@ public sealed class OptiPatcherProviderTests : IDisposable
         finally { File.Delete(path); }
     }
 
-    private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+    internal static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     private static HttpResponseMessage Bytes(byte[] bytes, ref int count)
     {
@@ -135,7 +160,7 @@ public sealed class OptiPatcherProviderTests : IDisposable
         return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
     }
 
-    private sealed class Fake(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    internal sealed class Fake(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(respond(request));
