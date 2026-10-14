@@ -170,6 +170,34 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
+    /// <summary>
+    /// Puts <paramref name="operationId"/> under <see cref="LinuxDeploymentRecovery.RemovalOperationIdMetadataKey"/> on
+    /// every record <see cref="Remove"/> would remove for this game and component (the removal's commit probe: the
+    /// removal is committed once no record carries it). Leaves <see cref="LinuxDeploymentRecord.SavedAtUtc"/> as it is:
+    /// nothing was installed, so the Wine recovery's "later record" check must not see one. Returns how many records
+    /// were stamped (0 = nothing to remove; the ledger is not written). Throws while the ledger is unreadable.
+    /// </summary>
+    public int StampRemoval(DetectedGame game, ManagedComponentKind component, string operationId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        lock (_gate)
+        {
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            var stamped = 0;
+            for (var i = 0; i < records.Count; i++)
+            {
+                if (!GameRecordIdentity.Matches(records[i].GameKey, game) || records[i].Component != component) continue;
+                var copy = Clone(records[i]);
+                copy.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey] = operationId;
+                records[i] = copy;
+                stamped++;
+            }
+            if (stamped > 0) SaveUnsafe(records);
+            return stamped;
+        }
+    }
+
     public void Remove(DetectedGame game, ManagedComponentKind component)
     {
         lock (_gate)

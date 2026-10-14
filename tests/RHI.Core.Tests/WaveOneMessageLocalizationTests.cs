@@ -150,6 +150,7 @@ public sealed class WaveOneMessageLocalizationTests
             yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + reason;
         // w3/sync rows
         // w3/journal rows
+        yield return $"{LinuxDeploymentRecovery.RemovalUnmarkedPrefix}Access to the path '{P}' is denied.); nothing was changed.";
         // w3/scan rows
         // w3/parity rows
         // w3/vmsplit rows

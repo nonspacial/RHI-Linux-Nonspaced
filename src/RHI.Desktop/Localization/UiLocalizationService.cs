@@ -979,6 +979,9 @@ public static class UiLocalizationService
         ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto."),
         // w3/sync rows
         // w3/journal rows
+        // A journaled removal could not mark its record before the first change (record-removed commit probe).
+        (RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.RemovalUnmarkedPrefix,
+         "O registro de implantações não pôde ser atualizado antes da remoção ("),
         // w3/scan rows
         // w3/parity rows
         // w3/vmsplit rows

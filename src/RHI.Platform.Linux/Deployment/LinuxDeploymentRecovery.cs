@@ -237,11 +237,77 @@ public static class LinuxDeploymentRecovery
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)
         => $"record|{component}|{LinuxDeploymentRecordStore.GameKey(game)}";
 
-    /// <summary>The game key of a <see cref="RecordCommitProbe"/>, or null for any other probe.</summary>
+    /// <summary>
+    /// Record metadata key holding the id of the journaled removal now taking the record away (see
+    /// <see cref="BeginRecordRemovalAsync"/>). A key left by a removal that was rolled back is inert: no journal entry
+    /// carries that id any more, and the next removal overwrites it.
+    /// </summary>
+    public const string RemovalOperationIdMetadataKey = "Rhi.RemovalOperationId";
+
+    /// <summary>Commit probe for a removal whose commit point is taking <paramref name="component"/>'s record out of the ledger.</summary>
+    public static string RecordRemovalProbe(DetectedGame game, ManagedComponentKind component)
+        => $"{RecordRemovedProbePrefix}{component}|{LinuxDeploymentRecordStore.GameKey(game)}";
+
+    private const string RecordRemovedProbePrefix = "record-removed|";
+
+    /// <summary>The game key of a <see cref="RecordCommitProbe"/> or <see cref="RecordRemovalProbe"/>, or null for any other probe.</summary>
     public static string? GameKeyOfCommitProbe(string? probe)
     {
         var parts = probe?.Split('|', 3);
-        return parts is { Length: 3 } && parts[0] == "record" && parts[2].Length > 0 ? parts[2] : null;
+        return parts is { Length: 3 } && parts[0] is "record" or "record-removed" && parts[2].Length > 0 ? parts[2] : null;
+    }
+
+    /// <summary>Fixed text of the refusal when a removal cannot be marked in the ledger; the reason follows.</summary>
+    public const string RemovalUnmarkedPrefix = "The deployment ledger could not be updated before the removal (";
+
+    /// <summary>
+    /// Opens the journaled operation of a removal whose commit point is taking <paramref name="component"/>'s record out
+    /// of the ledger (<see cref="LinuxDeploymentRecordStore.Remove"/>), then stamps the operation id on that record
+    /// (<see cref="RemovalOperationIdMetadataKey"/>; <see cref="LinuxDeploymentRecordStore.StampRemoval"/>). Start-up
+    /// recovery counts the removal committed once no record carries that id: a crash before the record went away rolls
+    /// the tracked files back (the record still describes them), a crash after it keeps them removed. Call before the
+    /// first change, track every file before deleting or restoring it, and <see cref="DeploymentOperation.CommitAsync"/>
+    /// right after <c>Remove</c>. A removal that ends by saving a narrowed record instead calls
+    /// <see cref="EndRemoval"/> on it before the save, which then is the commit point.
+    /// No journal (tests, tools): no operation and no refusal, and the ledger is not touched. A journal or ledger that
+    /// cannot be written refuses before anything changes (the opened operation is rolled back; it changed nothing).
+    /// </summary>
+    public static async Task<(DeploymentOperation? Operation, string? Refusal)> BeginRecordRemovalAsync(
+        DeploymentJournal? journal, LinuxDeploymentRecordStore records, string description, DetectedGame game,
+        ManagedComponentKind component, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        if (journal is null) return (null, null);
+        DeploymentOperation operation;
+        try
+        {
+            operation = await journal.BeginAsync(description, RecordRemovalProbe(game, component), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
+        }
+        try
+        {
+            records.StampRemoval(game, component, operation.Id);
+            return (operation, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // Nothing tracked yet: the rollback only drops the entry.
+            await operation.RollbackAsync().ConfigureAwait(false);
+            return (null, $"{RemovalUnmarkedPrefix}{ex.Message}); nothing was changed.");
+        }
+    }
+
+    /// <summary>
+    /// For a removal that keeps a narrowed record (part of the component stays): drops the removal stamp from
+    /// <paramref name="record"/> so saving it commits the removal. Returns the record.
+    /// </summary>
+    public static LinuxDeploymentRecord EndRemoval(LinuxDeploymentRecord record)
+    {
+        record.Metadata.Remove(RemovalOperationIdMetadataKey);
+        return record;
     }
 
     /// <summary>Fixed text of the refusal when an operation cannot be journaled; the reason follows.</summary>
@@ -425,14 +491,21 @@ public static class LinuxDeploymentRecovery
     /// <summary>
     /// Committed when any record carries the operation's id (ids are unique). Not matched on the game
     /// key: a record re-keyed (#38) or rebased by "Repair after move" since must still count.
+    /// <para>A removal (<see cref="RecordRemovalProbe"/>) is committed once no record carries its id under
+    /// <see cref="RemovalOperationIdMetadataKey"/>: the record it stamped was removed (or saved narrowed through
+    /// <see cref="EndRemoval"/>). Matched on the id alone for the same reason.</para>
     /// </summary>
     private static bool IsCommitted(JournalEntryInfo entry, LinuxDeploymentRecordStore records)
     {
-        if (entry.CommitProbe is not { } probe || !probe.StartsWith("record|", StringComparison.Ordinal)) return false;
-        return records.All().Any(record =>
-            record.Metadata.TryGetValue(OperationIdMetadataKey, out var id) &&
-            id == entry.Id);
+        if (entry.CommitProbe is not { } probe) return false;
+        if (probe.StartsWith(RecordRemovedProbePrefix, StringComparison.Ordinal))
+            return !records.All().Any(record => CarriesId(record, RemovalOperationIdMetadataKey, entry.Id));
+        if (!probe.StartsWith("record|", StringComparison.Ordinal)) return false;
+        return records.All().Any(record => CarriesId(record, OperationIdMetadataKey, entry.Id));
     }
+
+    private static bool CarriesId(LinuxDeploymentRecord record, string key, string id)
+        => record.Metadata.TryGetValue(key, out var value) && value == id;
 }
 
 /// <summary>What <see cref="LinuxDeploymentRecovery.RunAtStartupAsync"/> did.</summary>
