@@ -715,7 +715,8 @@ public sealed partial class MainWindow : Window
                 new TabItem { Header = "DLSS/Streamline", Content = new ScrollViewer { Content = dlssTab } },
                 new TabItem { Header = UiLocalizationService.Text("Ui.UxTab"), Content = new ScrollViewer { Content = uxTab } },
                 new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } },
-                ParitySettingsTab.Create(vm.Parity) // w3/parity hook
+                XboxFoldersSettingsTab.Create(vm.Settings.XboxFolders, status, PickFolderAsync), // w3/scan Settings row (#90)
+                ParitySettingsTab.Create(vm.Settings.Parity) // w3/parity Settings rows (#100 #163 #99)
             }
         };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };

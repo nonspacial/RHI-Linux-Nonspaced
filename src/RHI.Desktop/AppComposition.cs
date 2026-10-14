@@ -49,8 +49,12 @@ internal sealed class AppComposition
     // w3/dllnames rows
 
     public MainWindowViewModel CreateViewModel()
-        => new(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
+    {
+        var vm = new MainWindowViewModel(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
             UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
+        vm.Settings.UseXboxFolders(XboxFolders); // w3/scan Settings row (#90): the one store the detectors read
+        return vm;
+    }
 
     /// <summary>The Wine override service every registry edit goes through, and the deployment journal over it.</summary>
     internal sealed record WineRecovery(WineDllOverrideService Overrides, DeploymentJournal Journal);

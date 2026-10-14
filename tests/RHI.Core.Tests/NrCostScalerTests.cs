@@ -471,3 +471,47 @@ public sealed class NrCostScalerUpdateAllTests
         public bool IsRunning(DetectedGame game) => false;
     }
 }
+
+/// <summary>
+/// #96 through vmsplit's Update All (w3 integration): the toolbar's Update All status line says the method's update is
+/// held by NR Cost Scaler, and nothing is attempted.
+/// </summary>
+[Collection(UiLanguageCollection.Name)]
+[System.Runtime.Versioning.SupportedOSPlatform("linux")]
+public sealed class NrCostScalerUpdateAllScreenTests : IDisposable
+{
+    private readonly string _root = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-nr-held-" + Guid.NewGuid().ToString("N"))).FullName;
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
+    }
+
+    [Fact]
+    public async Task UpdateAll_ShowsTheMethodHeldByNrCostScaler()
+    {
+        var dir = Directory.CreateDirectory(Path.Combine(_root, "Scaled")).FullName;
+        var exe = Path.Combine(dir, "Scaled.exe");
+        File.WriteAllBytes(exe, CacheForeignFileRejectionTests.Pe(0x8664, 4096, 7));
+        var game = new DetectedGame { Name = "Scaled", Source = "Manual", Runner = "Manual Windows", InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir };
+        using var fx = await ViewModelFixture.StartAsync([game], httpResponse: request
+            => request.RequestUri!.AbsoluteUri == ShortFuseDeploymentService.ReleasesApiUrl
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""[{"tag_name":"renodx-dlss-SF-2.0","assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf/releases/download/2.0/renodx-dlss.addon64"}]}]""") }
+                : null);
+        var listed = fx.Vm.Games.Single(row => row.Name == "Scaled").Game;
+        LinuxDeploymentRecord Record(ManagedComponentKind kind) => new()
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(listed), GameName = listed.Name, Component = kind, BinaryDirectory = dir, Version = "1.0"
+        };
+        fx.Records.Upsert(Record(ManagedComponentKind.ShortFuse));
+        var scaler = Record(ManagedComponentKind.NrCostScaler);
+        scaler.Metadata["NrCostScaler.Owner"] = "ShortFuse";
+        fx.Records.Upsert(scaler);
+        fx.Vm.Updates.SetLibraryHasManagedTargets(true);
+
+        await fx.Vm.Updates.UpdateAllCommand.ExecuteAsync(null);
+
+        Assert.Contains("1 held by NR Cost Scaler (remove it to update the method)", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.Equal("1.0", fx.Records.Find(listed, ManagedComponentKind.ShortFuse)!.Version);
+    }
+}
