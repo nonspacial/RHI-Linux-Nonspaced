@@ -982,6 +982,13 @@ public static class UiLocalizationService
         // A journaled removal could not mark its record before the first change (record-removed commit probe).
         (RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.RemovalUnmarkedPrefix,
          "O registro de implantações não pôde ser atualizado antes da remoção ("),
+        // RE Framework ⚙ "Delete _storage_ folder" (#159); a path follows each.
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageNotFoundPrefix, "Nenhuma pasta _storage_ foi encontrada na pasta do jogo: "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageLinkRefusedPrefix, "A pasta _storage_ é um link para outro lugar, então o RHI não a apagou: "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageOutsideGameRefusedPrefix, "A pasta _storage_ não está dentro da pasta do jogo, então o RHI não a apagou: "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageWineRunningPrefix, "O jogo está em execução no prefixo Wine; feche-o antes de apagar a pasta _storage_: "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageDeletedPrefix, "Pasta _storage_ apagada (o RE Framework a refaz na próxima abertura): "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StoragePartlyDeletedPrefix, "A pasta _storage_ não pôde ser apagada por completo; o que restou está listado no rhi.log: "),
         ("RE Framework removal failed and was rolled back: ", "A remoção do RE Framework falhou e foi desfeita: "),
         ("RE Framework update rolled back: ", "A atualização do RE Framework foi desfeita: "),
         // Start-up recovery of a rolled-back removal puts a restored Wine override back after Wine exits.

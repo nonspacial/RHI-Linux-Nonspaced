@@ -139,4 +139,9 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #159 — RE Framework: delete the _storage_ cache folder (2.8.6)
+
+- Ported: the RE Framework row has a ⚙ while RE Framework is installed (upstream enables its cog only then); it opens a dialog with "Delete _storage_ folder" and a line with the folder's path, or "No _storage_ folder in the game folder." with the button off. The path is one line with a middle ellipsis and the full path in a 2 s tooltip. No confirmation step, as upstream (the folder is REF's cache, rebuilt at every launch).
+- Linux differences: the folder is looked for beside the game executable first (where REF's dinput8.dll lives), then in the game root where upstream looks. A `_storage_` that is a link, or whose real place is outside the game folder (an executable folder reached through a link), is refused and left as it is; a link inside the folder is removed as a link, its target untouched. The delete is refused while the game's Wine prefix runs, goes through the patch-target guard like every other change, and runs under the busy gate. Once started it runs to the end; anything it could not delete is listed in rhi.log and the status line says the folder was only partly deleted.
+
 ## Parity notes (feature-parity backlog)

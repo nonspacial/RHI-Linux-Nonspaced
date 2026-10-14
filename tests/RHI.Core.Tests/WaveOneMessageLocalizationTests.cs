@@ -152,6 +152,12 @@ public sealed class WaveOneMessageLocalizationTests
         // w3/journal rows
         yield return $"{LinuxDeploymentRecovery.RemovalUnmarkedPrefix}Access to the path '{P}' is denied.); nothing was changed.";
         yield return WineOverrideReapplyCompensator.DeferredPrefix + "dxgi (/prefixo)";
+        yield return REFrameworkDeploymentService.StorageNotFoundPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageLinkRefusedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageOutsideGameRefusedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageWineRunningPrefix + P;
+        yield return REFrameworkDeploymentService.StorageDeletedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StoragePartlyDeletedPrefix + P + "/_storage_";
         yield return $"RE Framework removal failed and was rolled back: {E}";
         yield return $"RE Framework update rolled back: {E}{DeploymentScope.RollbackIncompletePrefix}{P}: rollback failed ({E}); every copy was kept.); every copy was kept.";
         // w3/scan rows

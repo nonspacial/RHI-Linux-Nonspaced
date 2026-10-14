@@ -1354,6 +1354,9 @@ public sealed partial class MainWindow : Window
         await ShowFittedDialogAsync(dialog);
     });
 
+    // w3/journal hook (#159): RE Framework ⚙ dialog (Views/ReFrameworkSettingsDialog.cs).
+    private void ReFrameworkSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(() => DataContext is MainWindowViewModel { SelectedGame: { } game } vm ? ShowFittedDialogAsync(ReFrameworkSettingsDialog.Create(vm.ReFrameworkStorage, game.Name)) : Task.CompletedTask);
+
     private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtx40MfgSettings) return;

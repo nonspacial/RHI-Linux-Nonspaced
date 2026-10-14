@@ -84,6 +84,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
         && component.Availability is not ComponentAvailability.Unsupported;
     public bool HasRtx40MfgSettings => component.Kind == ManagedComponentKind.Rtx40MfgStandalone
         && component.Availability is not ComponentAvailability.Unsupported;
+    public bool HasReFrameworkSettings => ReFrameworkStoragePresenter.HasSettings(component); // w3/journal hook (#159)
+    public string ReFrameworkSettingsTip => ReFrameworkStoragePresenter.SettingsTip; // w3/journal hook (#159)
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

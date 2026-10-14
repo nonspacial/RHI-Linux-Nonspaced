@@ -288,6 +288,80 @@ public sealed class REFrameworkDeploymentService
     internal static string ResolveDeployDirectory(DetectedGame game)
         => !string.IsNullOrWhiteSpace(game.BinaryDirectory) ? game.BinaryDirectory! : game.InstallPath;
 
+    /// <summary>The cache folder RE Engine games keep beside the executable (upstream 2.8.6 REF ⚙, PAR-D72).</summary>
+    public const string StorageFolderName = "_storage_";
+
+    /// <summary>
+    /// Where the game's <c>_storage_</c> folder is: beside the executable (where REF's dinput8.dll lives), else in the
+    /// game root (where upstream looks). Returns the first one that exists as a folder or a link, or null when neither
+    /// does. Read only.
+    /// </summary>
+    public static string? FindStorageFolder(DetectedGame game)
+    {
+        foreach (var directory in new[] { ResolveDeployDirectory(game), game.InstallPath }.Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.Ordinal))
+        {
+            var candidate = Path.Combine(directory, StorageFolderName);
+            if (Directory.Exists(candidate) || new FileInfo(candidate).LinkTarget is not null) return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>Fixed refusal texts of <see cref="DeleteStorageFolderAsync"/> (PT-BR rows under the journal anchor); a path follows.</summary>
+    public const string StorageNotFoundPrefix = "No _storage_ folder was found in the game folder: ";
+    public const string StorageLinkRefusedPrefix = "The _storage_ folder is a link to another place, so RHI did not delete it: ";
+    public const string StorageOutsideGameRefusedPrefix = "The _storage_ folder is not inside the game folder, so RHI did not delete it: ";
+    public const string StorageWineRunningPrefix = "The game is running in its Wine prefix; close it before deleting the _storage_ folder: ";
+    public const string StorageDeletedPrefix = "Deleted the _storage_ folder (RE Framework rebuilds it at the next launch): ";
+    public const string StoragePartlyDeletedPrefix = "The _storage_ folder could not be deleted completely; what is left is listed in rhi.log: ";
+
+    /// <summary>
+    /// Deletes the game's <c>_storage_</c> folder, RE Framework's cache that the game rebuilds at the next launch
+    /// (upstream 2.8.6 REF ⚙ "Delete _storage_ folder"; a user action on a folder RHI does not own). Refuses, changing
+    /// nothing, when the folder is missing, is a link (or its path leads outside the game root through one), or while
+    /// the game's Wine prefix runs. Walks the folder without following links (a link inside is removed as a link, its
+    /// target untouched) and deletes children before parents; once it has started it runs to the end (a cache folder half
+    /// deleted is still a cache, and the user asked for all of it). The caller applies the patch-target guard.
+    /// </summary>
+    public Task<ComponentOperationResult> DeleteStorageFolderAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => Task.Run(() => DeleteStorageFolder(game, cancellationToken), cancellationToken);
+
+    private ComponentOperationResult DeleteStorageFolder(DetectedGame game, CancellationToken cancellationToken)
+    {
+        var folder = FindStorageFolder(game);
+        if (folder is null)
+            return ComponentOperationResult.Fail(StorageNotFoundPrefix + Path.Combine(ResolveDeployDirectory(game), StorageFolderName));
+        if (new DirectoryInfo(folder).LinkTarget is not null)
+            return ComponentOperationResult.Fail(StorageLinkRefusedPrefix + folder);
+        // The parent may itself be reached through a link: the folder's real place must stay inside the game root.
+        if (string.IsNullOrWhiteSpace(game.InstallPath) || !PathIdentity.IsSameOrInside(folder, game.InstallPath))
+            return ComponentOperationResult.Fail(StorageOutsideGameRefusedPrefix + folder);
+        if (!string.IsNullOrWhiteSpace(game.PrefixPath) && _overrides.Registry.IsPrefixInUse(game.PrefixPath))
+            return ComponentOperationResult.Fail(StorageWineRunningPrefix + game.PrefixPath);
+
+        // The walk below is never cancelled part-way: Cancel counts only up to here.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
+        var failures = new List<string>();
+        // Links (to files or folders) are entries of their own: removed as links, never followed.
+        var entries = SafeFileEnumeration.Entries(folder).ToList();
+        foreach (var entry in entries.Where(entry => entry is FileInfo || entry.LinkTarget is not null))
+        {
+            try { File.Delete(entry.FullName); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failures.Add($"{entry.FullName} ({ex.Message})"); }
+        }
+        foreach (var directory in entries.OfType<DirectoryInfo>().Where(d => d.LinkTarget is null)
+                     .Select(d => d.FullName).Append(folder).OrderByDescending(path => path.Length))
+        {
+            try { Directory.Delete(directory, recursive: false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failures.Add($"{directory} ({ex.Message})"); }
+        }
+        if (failures.Count > 0)
+        {
+            AppLog.Warn("reframework", $"_storage_ folder only partly deleted ({folder}): {string.Join("; ", failures)}");
+            return ComponentOperationResult.Fail(StoragePartlyDeletedPrefix + folder);
+        }
+        return ComponentOperationResult.Ok(StorageDeletedPrefix + folder, folder);
+    }
+
     internal static string? FindCaseInsensitiveFile(string directory, string fileName)
     {
         if (!Directory.Exists(directory)) return null;
