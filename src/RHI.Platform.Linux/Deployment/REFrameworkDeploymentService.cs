@@ -313,6 +313,7 @@ public sealed class REFrameworkDeploymentService
     public const string StorageWineRunningPrefix = "The game is running in its Wine prefix; close it before deleting the _storage_ folder: ";
     public const string StorageDeletedPrefix = "Deleted the _storage_ folder (RE Framework rebuilds it at the next launch): ";
     public const string StoragePartlyDeletedPrefix = "The _storage_ folder could not be deleted completely; what is left is listed in rhi.log: ";
+    public const string StorageUnreadablePrefix = "The _storage_ folder could not be read, so RHI deleted nothing (the reason is in rhi.log): ";
 
     /// <summary>
     /// Deletes the game's <c>_storage_</c> folder, RE Framework's cache that the game rebuilds at the next launch
@@ -341,8 +342,16 @@ public sealed class REFrameworkDeploymentService
         // The walk below is never cancelled part-way: Cancel counts only up to here.
         _ = OperationCancellation.BeginWrites(cancellationToken);
         var failures = new List<string>();
-        // Links (to files or folders) are entries of their own: removed as links, never followed.
-        var entries = SafeFileEnumeration.Entries(folder).ToList();
+        // Links (to files or folders) are entries of their own: removed as links, never followed. The whole folder is
+        // read before anything is deleted: a sub-folder that cannot be read refuses the delete, changing nothing, with a
+        // line the dialog shows (review w3-journal #5; it used to throw past the dialog, which then showed nothing).
+        List<FileSystemInfo> entries;
+        try { entries = SafeFileEnumeration.Entries(folder).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("reframework", $"_storage_ folder could not be read ({folder}); nothing was deleted", ex);
+            return ComponentOperationResult.Fail(StorageUnreadablePrefix + folder);
+        }
         foreach (var entry in entries.Where(entry => entry is FileInfo || entry.LinkTarget is not null))
         {
             try { File.Delete(entry.FullName); }

@@ -989,6 +989,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageWineRunningPrefix, "O jogo está em execução no prefixo Wine; feche-o antes de apagar a pasta _storage_: "),
         (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageDeletedPrefix, "Pasta _storage_ apagada (o RE Framework a refaz na próxima abertura): "),
         (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StoragePartlyDeletedPrefix, "A pasta _storage_ não pôde ser apagada por completo; o que restou está listado no rhi.log: "),
+        (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StorageUnreadablePrefix, "A pasta _storage_ não pôde ser lida, então o RHI não apagou nada (o motivo está no rhi.log): "),
         ("RE Framework removal failed and was rolled back: ", "A remoção do RE Framework falhou e foi desfeita: "),
         ("RE Framework update rolled back: ", "A atualização do RE Framework foi desfeita: "),
         // ShortFuse removed; the ASI Loader it installed could not be (it is removed last, as its own operation).

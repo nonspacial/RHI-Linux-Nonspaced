@@ -137,4 +137,30 @@ public sealed partial class REFrameworkDeploymentServiceTests
         Assert.False(refused.Success);
         Assert.True(Directory.Exists(storage));
     }
+
+    // Review w3-journal #5: a sub-folder RHI cannot read refuses the delete before anything goes, with a line the dialog
+    // shows (it used to throw past the dialog, which then showed no result at all).
+    [Fact]
+    public async Task DeleteStorage_AnUnreadableSubFolder_RefusesWithALineAndDeletesNothing()
+    {
+        var (service, game) = StorageFixture();
+        var storage = Path.Combine(game.InstallPath, "_storage_");
+        var locked = Path.Combine(storage, "locked");
+        Directory.CreateDirectory(locked);
+        File.WriteAllText(Path.Combine(storage, "a.bin"), "cache");
+        File.SetUnixFileMode(locked, UnixFileMode.None);
+        try
+        {
+            var result = await service.DeleteStorageFolderAsync(game);
+
+            Assert.False(result.Success);
+            Assert.Equal(REFrameworkDeploymentService.StorageUnreadablePrefix + storage, result.Message);
+            Assert.True(File.Exists(Path.Combine(storage, "a.bin")));
+            Assert.True(Directory.Exists(locked));
+        }
+        finally
+        {
+            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
 }

@@ -9,8 +9,9 @@ namespace RHI.Desktop.Views;
 
 /// <summary>
 /// RE Framework ⚙ dialog (#159, upstream 2.8.6): one "Delete _storage_ folder" button and a line saying where the
-/// folder is or that there is none. The button is off when there is nothing to delete; after a delete the line is read
-/// again. Paths are one line with a middle ellipsis and the full path in a 2 s tooltip.
+/// folder is or that there is none. The button is hidden when there is nothing to delete (the owner's rule: buttons
+/// that do not apply are hidden, not disabled; the "No _storage_ folder" line says why); after a delete the line is
+/// read again. Paths are one line with a middle ellipsis and the full path in a 2 s tooltip.
 /// </summary>
 public static class ReFrameworkSettingsDialog
 {
@@ -51,7 +52,8 @@ public static class ReFrameworkSettingsDialog
             found.Text = presenter.StatusLine;
             folder.FullText = path;
             folder.IsVisible = path is not null;
-            delete.IsEnabled = path is not null;
+            delete.IsVisible = path is not null;
+            delete.IsEnabled = true;
         }
 
         delete.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>

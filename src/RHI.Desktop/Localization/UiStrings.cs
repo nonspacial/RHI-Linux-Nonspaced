@@ -632,7 +632,7 @@ internal static class UiStrings
         // w3/journal rows
         ("Journal.RefSettingsTip", "RE Framework — apagar a pasta de cache _storage_", "RE Framework — delete the _storage_ cache folder"),
         ("Journal.RefSettingsTitle", "Configurações do RE Framework", "RE Framework settings"),
-        ("Journal.RefStorageIntro", "O RE Framework guarda um cache na pasta _storage_ do jogo e o refaz a cada abertura, então apagá-la é seguro. Feche o jogo antes.", "RE Framework keeps a cache in the game's _storage_ folder and rebuilds it at every launch, so deleting it is safe. Close the game first."),
+        ("Journal.RefStorageIntro", "O RE Framework guarda um cache na pasta _storage_ do jogo e o refaz a cada abertura, então apagá-la é seguro (add-ons que guardam configurações ali, como o ReLimiter, voltam aos padrões). Feche o jogo antes.", "RE Framework keeps a cache in the game's _storage_ folder and rebuilds it at every launch, so deleting it is safe (add-ons that keep settings there, such as ReLimiter, start from defaults). Close the game first."),
         ("Journal.RefStorageDelete", "Apagar a pasta _storage_", "Delete _storage_ folder"),
         ("Journal.RefStorageDeleting", "Apagando…", "Deleting…"),
         ("Journal.RefStorageFound", "Pasta _storage_ encontrada:", "_storage_ folder found:"),

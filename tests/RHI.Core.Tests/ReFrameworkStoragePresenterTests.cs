@@ -80,6 +80,36 @@ public sealed class ReFrameworkStoragePresenterTests
         }
     }
 
+    // Review w3-journal #5: an unreadable sub-folder comes back as a result line (shown in the dialog and the status
+    // bar), never as an exception the dialog's handler only logs.
+    [Fact]
+    public async Task Delete_AnUnreadableSubFolder_ComesBackAsAStatusLine()
+    {
+        var root = Directory.CreateTempSubdirectory("rhi-ref-storage-locked-").FullName;
+        var locked = Path.Combine(root, "_storage_", "locked");
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "re.exe"), "MZ");
+            Directory.CreateDirectory(locked);
+            File.SetUnixFileMode(locked, UnixFileMode.None);
+            using var fx = await ViewModelFixture.StartAsync([Game(root)]);
+            await SelectAsync(fx);
+
+            var result = await fx.Vm.ReFrameworkStorage.DeleteAsync();
+
+            Assert.False(result.Success);
+            Assert.StartsWith(REFrameworkDeploymentService.StorageUnreadablePrefix, result.Message, StringComparison.Ordinal);
+            Assert.Contains(REFrameworkDeploymentService.StorageUnreadablePrefix, fx.Vm.StatusText, StringComparison.Ordinal);
+            Assert.True(Directory.Exists(locked));
+            Assert.False(fx.Vm.IsBusy);
+        }
+        finally
+        {
+            if (Directory.Exists(locked)) File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            try { Directory.Delete(root, true); } catch (IOException) { }
+        }
+    }
+
     [Fact]
     public async Task InPortuguese_TheResultLineIsPortuguese()
     {

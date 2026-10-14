@@ -158,6 +158,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return REFrameworkDeploymentService.StorageWineRunningPrefix + P;
         yield return REFrameworkDeploymentService.StorageDeletedPrefix + P + "/_storage_";
         yield return REFrameworkDeploymentService.StoragePartlyDeletedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageUnreadablePrefix + P + "/_storage_";
         yield return ShortFuseDeploymentService.UalKeptPrefix + E;
         yield return $"RE Framework removal failed and was rolled back: {E}";
         // Review w3-journal #4/#8: removal failures and the ShortFuse success lines this lane added or reworded.
