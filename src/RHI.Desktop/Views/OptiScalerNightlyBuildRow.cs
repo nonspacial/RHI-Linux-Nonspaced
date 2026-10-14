@@ -29,7 +29,8 @@ public sealed class OptiScalerNightlyBuildRow : UserControl
         };
         ToolTip.SetTip(label, UiLocalizationService.Text("Sync.OptiScalerNightlyBuildTip"));
         ToolTip.SetShowDelay(label, 2000);
-        _combo = new ComboBox { ItemsSource = presenter.Options, MinWidth = 260, HorizontalAlignment = HorizontalAlignment.Stretch };
+        // Sized like the channel combo above it (its 260 px minimum, left-aligned), so the two rows line up.
+        _combo = new ComboBox { ItemsSource = presenter.Options, MinWidth = 260 };
         ToolTip.SetTip(_combo, UiLocalizationService.Text("Sync.OptiScalerNightlyBuildTip"));
         ToolTip.SetShowDelay(_combo, 2000);
         _combo.SelectionChanged += (_, _) =>
