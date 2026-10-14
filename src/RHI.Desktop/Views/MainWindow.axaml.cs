@@ -561,7 +561,12 @@ public sealed partial class MainWindow : Window
         openData.Click += (_, _) => OpenFolder(snapshot.DataRoot);
 
         var purgeCache = new Button { Content = T("Win.ClearCache"), Padding = new Avalonia.Thickness(12, 6) };
-        purgeCache.Click += (_, _) => status.Text = vm.PurgeLinuxCache();
+        purgeCache.Click += (_, _) => RunUiSafe(async () =>
+        {
+            purgeCache.IsEnabled = false;
+            try { status.Text = await vm.PurgeLinuxCacheAsync(); }
+            finally { purgeCache.IsEnabled = true; }
+        });
         var reset = new Button { Content = UiLocalizationService.Text("Ui.ResetSettings"), Padding = new Avalonia.Thickness(12, 6) };
         reset.Click += (_, _) =>
         {

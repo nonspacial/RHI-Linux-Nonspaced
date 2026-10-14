@@ -806,12 +806,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         return UiLocalizationService.Text("Vm.SettingsRestoredLinuxDefaults");
     }
 
-    public string PurgeLinuxCache()
+    /// <summary>
+    /// Settings → Clear cache (Refs #84): the cache folder (downloaded packages, shader packs) is counted and deleted off
+    /// the UI thread, holding the busy gate so no install, update or scan reads a package while it disappears. Refused
+    /// while another operation runs; it cannot be cancelled part-way (a half-deleted cache would only be re-downloaded,
+    /// but the count would be wrong).
+    /// </summary>
+    public async Task<string> PurgeLinuxCacheAsync()
     {
+        using var op = BeginOperation("clear-cache", cancellable: false);
+        if (op is null) return T("Vm.AnotherRHIOperationAlreadyRunning");
         int removed;
         try
         {
-            removed = _settingsStore.PurgeCache();
+            removed = await Task.Run(_settingsStore.PurgeCache);
         }
         catch (Exception ex)
         {
