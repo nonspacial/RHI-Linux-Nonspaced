@@ -1119,6 +1119,10 @@ public static class UiLocalizationService
         ("a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.", "já existe um plugins/OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
         ("The OptiPatcher rolling release lists no OptiPatcher.asi download.", "A versão contínua do OptiPatcher não lista o download OptiPatcher.asi."),
         ("The downloaded OptiPatcher.asi is not a 64-bit Windows DLL.", "O OptiPatcher.asi baixado não é uma DLL Windows de 64 bits."),
+        // #97 OptiScaler per-GPU INI templates.
+        (" OptiScaler.ini comes from your INI template: ", " O OptiScaler.ini vem do seu modelo de INI: "),
+        (" The OptiScaler INI template could not be prepared, so the package's OptiScaler.ini was used: ",
+            " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

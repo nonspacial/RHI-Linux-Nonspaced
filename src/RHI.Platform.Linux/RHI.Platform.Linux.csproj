@@ -9,6 +9,10 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.11.71" />
   </ItemGroup>
   <ItemGroup>
+    <!-- #97: upstream RHI 2.8.7's per-GPU OptiScaler.ini templates (GPL-3, as this project), seeded once, never overwritten. -->
+    <EmbeddedResource Include="Deployment/OptiScalerTemplates/*.ini" LogicalName="OptiScalerTemplates.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>RHI.Core.Tests</_Parameter1>
     </AssemblyAttribute>

@@ -79,6 +79,12 @@ public sealed partial class OptiScalerDeploymentService
         _dlssEnabler = dlssEnabler;
     }
 
+    /// <summary>
+    /// Per-GPU INI templates (#97): a new install deploys the user's template for its channel and GPU setup as the game's
+    /// OptiScaler.ini instead of the package's. Null = the package's OptiScaler.ini (tests, tools).
+    /// </summary>
+    public OptiScalerIniTemplates? IniTemplates { get; set; }
+
     public LinuxDeploymentRecord? GetRecord(DetectedGame game)
         => _records.Find(game, ManagedComponentKind.OptiScaler);
 
@@ -319,6 +325,22 @@ public sealed partial class OptiScalerDeploymentService
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
 
+        // The user's INI template for this channel and GPU setup (#97), seeded on first use; the package's INI otherwise.
+        string? iniTemplate = null;
+        var iniTemplateNote = "";
+        if (IniTemplates is { } templates)
+        {
+            try
+            {
+                iniTemplate = templates.EnsureSeeded(variant);
+                iniTemplateNote = OptiScalerIniTemplates.NotePrefix + iniTemplate;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                iniTemplateNote = OptiScalerIniTemplates.UnavailablePrefix + ex.Message;
+            }
+        }
+
         // OptiPatcher (#98) goes with every OptiScaler install, as upstream; its download failing never fails OptiScaler.
         var optiPatcherNote = "";
         OptiPatcherBuild? optiPatcher = null;
@@ -382,6 +404,12 @@ public sealed partial class OptiScalerDeploymentService
             }
 
             BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
+            if (iniTemplate is not null)
+            {
+                var iniTarget = Path.GetFullPath(Path.Combine(binaryDirectory, "OptiScaler.ini"));
+                var at = requested.FindIndex(item => Path.GetFullPath(item.Target).Equals(iniTarget, StringComparison.Ordinal));
+                if (at >= 0) requested[at] = (iniTemplate, requested[at].Target);
+            }
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
             if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
             foreach (var (_, target) in requested)
@@ -469,7 +497,7 @@ public sealed partial class OptiScalerDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(
             $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as {proxyName}" +
-            (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled.") + optiPatcherNote,
+            (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled.") + iniTemplateNote + optiPatcherNote,
             proxyTarget);
     }
 

@@ -65,7 +65,9 @@ public sealed class SettingsViewModel : PanelViewModel
             DefaultDlssdVersion = Host.Settings.DefaultDlssdVersion,
             DefaultDlssgVersion = Host.Settings.DefaultDlssgVersion,
             DefaultDlssnrVersion = Host.Settings.DefaultDlssnrVersion,
-            DefaultStreamlineVersion = Host.Settings.DefaultStreamlineVersion
+            DefaultStreamlineVersion = Host.Settings.DefaultStreamlineVersion,
+            OptiScalerGpuType = Host.Settings.OptiScalerGpuType, // w3/dllnames hook (#97)
+            OptiScalerDlssInputs = Host.Settings.OptiScalerDlssInputs // w3/dllnames hook (#97)
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

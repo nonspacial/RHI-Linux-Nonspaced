@@ -157,6 +157,17 @@ public static class OptionLists
         new("Custom", "Ui.OptionCustom", null, "Personalizado"),
         new("NoAddons", "Names.OptionNoAddons", null, "No Addons", "Sem add-ons")); // w3/dllnames (#91)
 
+    /// <summary>w3/dllnames (#97): the GPU an OptiScaler INI template is for; brand names, not translated (upstream's list).</summary>
+    public static readonly OptionList<string> OptiScalerGpuType = new("NVIDIA", StringComparer.OrdinalIgnoreCase,
+        new("NVIDIA", null, "NVIDIA"),
+        new("AMD", null, "AMD"),
+        new("Intel", null, "Intel"));
+
+    /// <summary>w3/dllnames (#97): OptiScaler "DLSS inputs" for AMD/Intel templates (Yes first, upstream's order).</summary>
+    public static readonly OptionList<bool> OptiScalerDlssInputs = new(true, null,
+        new(true, "Names.Yes"),
+        new(false, "Names.No"));
+
     /// <summary>UI languages are listed by their own (untranslated) names.</summary>
     public static readonly OptionList<string> UiLanguage = new("pt-BR", StringComparer.OrdinalIgnoreCase,
         new("pt-BR", null, "Português (Brasil)"),

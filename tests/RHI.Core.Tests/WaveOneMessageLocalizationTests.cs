@@ -246,6 +246,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.ReleaseIncompleteMessage;
         yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.NotWindowsDllMessage;
         yield return OptiScalerDeploymentService.OptiPatcherUpdatePrefix + "c3f758a → 4662cb0";
+        yield return P + OptiScalerIniTemplates.NotePrefix + "/home/u/.config/rhi-linux/inis/OptiScaler.amd-dlss.ini";
+        yield return P + OptiScalerIniTemplates.UnavailablePrefix + P;
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
     }
 

@@ -159,6 +159,8 @@ internal sealed class ViewModelFixture : IDisposable
         var feeder = new Dlss5FeederFullDeploymentService(http, records, dlss, feederAddon, overrides: wineOverrides, reShade: reshade, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         var optiscaler = new OptiScalerDeploymentService(deployment, records, wineOverrides, new OptiScalerPackageProvider(http, new OptiScalerArchiveExtractor()), dlss, dlssEnabler,
             optiPatcher: new OptiPatcherProvider(http, Path.Combine(cacheDir, "optipatcher"))); // w3/dllnames hook (#98)
+        optiscaler.IniTemplates = new OptiScalerIniTemplates(Path.Combine(settingsStore.ConfigRoot, "inis"), // w3/dllnames hook (#97)
+            () => OptiScalerIniTemplates.ChoiceFrom(settingsStore.Load()));
         var ual = new UltimateAsiLoaderDeploymentService(http, records, wineOverrides);
         var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ual, dlss);
         var lumaCatalog = new LumaCatalogService(http, upstreamManifest);

@@ -180,6 +180,8 @@ internal sealed class AppComposition
         var optiScalerVariantStore = new OptiScalerVariantPreferenceStore();
         var neuralAddonVersionStore = new NeuralAddonVersionPreferenceStore();
         var settingsStore = new LinuxSettingsStore();
+        optiscaler.IniTemplates = new OptiScalerIniTemplates(Path.Combine(settingsStore.ConfigRoot, "inis"), // w3/dllnames hook (#97)
+            () => OptiScalerIniTemplates.ChoiceFrom(settingsStore.Load()));
         var lumaModeStore = new LumaModePreferenceStore();
         var lumaPolicy = new LumaPolicyService(upstreamManifest, lumaModeStore);
         var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);

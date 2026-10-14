@@ -849,6 +849,12 @@ internal static class UiStrings
         ("Names.ControlUeHdrTip", "Sim grava FgSlHdr10=1 no reshade.ini para o shader de FG usar HDR10. Só disponível com o FG do OptiScaler.", "Yes writes FgSlHdr10=1 to reshade.ini so the FG shader uses HDR10. Only available with OptiScaler FG."),
         ("Names.No", "Não", "No"),
         ("Names.Yes", "Sim", "Yes"),
+        // #97 OptiScaler per-GPU INI templates (Settings).
+        ("Names.OptiScalerTemplateHeading", "Modelo de INI do OptiScaler", "OptiScaler INI template"),
+        ("Names.OptiScalerGpuType", "Tipo de GPU", "GPU type"),
+        ("Names.OptiScalerDlssInputs", "Entradas DLSS (AMD/Intel)", "DLSS inputs (AMD/Intel)"),
+        ("Names.OpenOptiScalerTemplates", "Abrir pasta de modelos INI", "Open INI templates folder"),
+        ("Names.OptiScalerTemplateNote", "Uma nova instalação do OptiScaler copia o modelo do seu canal e desta configuração de GPU como o OptiScaler.ini do jogo. Cada modelo é criado uma vez na pasta de INIs e nunca é sobrescrito, então suas edições nele valem para todas as instalações seguintes.", "A new OptiScaler install copies the template for its channel and this GPU setup as the game's OptiScaler.ini. Each template is created once in the INIs folder and never overwritten, so your edits there apply to every later install."),
         ("Names.ControlUeLinuxNote", "O passo do preset SR no perfil do driver NVIDIA é ignorado no Linux. Remover o RenoDX restaura as DLLs e o renderer.ini anteriores, exceto o que você mesmo alterar depois da instalação.", "The NVIDIA driver-profile SR preset step is skipped on Linux. Removing RenoDX restores the previous DLLs and renderer.ini, except anything you change yourself after the install."),
     ];
 }
