@@ -83,7 +83,7 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     private void Refresh()
     {
         var game = _shell.SelectedGame;
-        var generation = ++_generation;
+        var generation = Interlocked.Increment(ref _generation);
         Refreshed = RefreshAsync(game, generation);
         UiExceptionGuard.Forget(Refreshed, "DLL name picker");
     }
@@ -104,9 +104,17 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
                     architecture == PeArchitecture.X86);
             }).ConfigureAwait(true);
         }
-        if (generation != _generation) return;
-        Apply(game, state);
+        // One Apply at a time, and only the latest refresh's: without a UI synchronisation context (tests, a caller off
+        // the UI thread) two refreshes finish on pool threads and would rebuild Options at once (w3 integration: the
+        // Runtime panel's override change and the re-analysis it starts refresh back to back).
+        lock (_applyGate)
+        {
+            if (generation != Volatile.Read(ref _generation)) return;
+            Apply(game, state);
+        }
     }
+
+    private readonly object _applyGate = new();
 
     private void Apply(DetectedGame? game, PickerState? state)
     {
