@@ -704,6 +704,7 @@ public sealed partial class ReShadeDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var overrideRestores = new List<(WineOverrideRecord Record, WineOverrideRestoreResult Result)>();
+        LinuxDeploymentRecord? optiScalerBefore = null;
         LinuxDeploymentRecord? optiScalerAfter = null;
 
         // Cancel is honoured only up to here: a removal that stopped half-way would be refused on retry by the hash check
@@ -718,6 +719,7 @@ public sealed partial class ReShadeDeploymentService
                 await scope.TrackAsync(optiIni, cancellationToken).ConfigureAwait(false);
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false, ReadOnlyUserFile.WriteKeepingLock);
                 await scope.DeclareWrittenContentAsync(optiIni, cancellationToken).ConfigureAwait(false);
+                optiScalerBefore = _records.Find(game, ManagedComponentKind.OptiScaler);
                 optiScalerAfter = await ManagedOptiScalerWithIniHashAsync(game).ConfigureAwait(false);
             }
 
@@ -757,8 +759,11 @@ public sealed partial class ReShadeDeploymentService
         }
         catch (Exception ex)
         {
-            // ReShade's record goes back (still stamped) before the files roll back; OptiScaler's record was never changed.
-            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reshade").ConfigureAwait(false);
+            // ReShade's record goes back (still stamped) before the files roll back. In the chain the commit write also
+            // saved OptiScaler's record with the LoadReshade=false INI hash: when that write landed and then failed, its
+            // record goes back as it was before, beside ReShade's, so it matches the INI the rollback restores.
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reshade",
+                alongside: optiScalerAfter is not null && optiScalerBefore is not null ? [optiScalerBefore] : null).ConfigureAwait(false);
             foreach (var (overrideRecord, result) in overrideRestores.AsEnumerable().Reverse())
                 if (result.Outcome == WineOverrideRestoreOutcome.Restored)
                     _overrides.TryReapply(game.PrefixPath, overrideRecord);
