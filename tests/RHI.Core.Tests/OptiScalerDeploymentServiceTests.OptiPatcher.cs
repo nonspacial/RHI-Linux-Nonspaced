@@ -76,8 +76,25 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.True(installed.Success, installed.Message);
         Assert.Contains(OptiScalerDeploymentService.OptiPatcherSkippedPrefix + "GitHub is down (test)", installed.Message);
         Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, "plugins")));
-        Assert.DoesNotContain("LoadAsiPlugins", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
+        // LoadAsiPlugins is on at every install, as upstream (review nit 6).
+        Assert.Contains("LoadAsiPlugins=true", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
         Assert.False(store.Find(game, ManagedComponentKind.OptiScaler)!.Metadata.ContainsKey(OptiScalerDeploymentService.OptiPatcherVersionMetadataKey));
+    }
+
+    [Fact]
+    public async Task Install_WithoutAnOptiPatcherSource_StillTurnsLoadAsiPluginsOn()
+    {
+        var (game, store) = CreateGame("optipatcher-none", GraphicsApi.DirectX12);
+        var service = NewService(store, CreatePackage("optipatcher-none-package"));
+
+        var installed = await service.InstallAsync(game);
+
+        Assert.True(installed.Success, installed.Message);
+        var ini = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
+        Assert.Contains("LoadAsiPlugins=true", File.ReadAllText(ini));
+        // The edit is RHI's (declared): the record's INI hash is the edited file's.
+        Assert.Equal(FileHash.Sha256Hex(ini), store.Find(game, ManagedComponentKind.OptiScaler)!.Files
+            .Single(file => Path.GetFileName(file.Path) == "OptiScaler.ini").Sha256, ignoreCase: true);
     }
 
     [Fact]
@@ -95,6 +112,8 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.True(installed.Success, installed.Message);
         Assert.Contains(OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiScalerDeploymentService.OptiPatcherForeignMessage, installed.Message);
         Assert.Equal("the user's own OptiPatcher", File.ReadAllText(asi));
+        // The user's own OptiPatcher loads: LoadAsiPlugins is on whether or not RHI deployed one (upstream).
+        Assert.Contains("LoadAsiPlugins=true", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
         Assert.DoesNotContain(store.Find(game, ManagedComponentKind.OptiScaler)!.Files, file => Path.GetFullPath(file.Path) == Path.GetFullPath(asi));
         Assert.True((await service.RemoveAsync(game)).Success);
         Assert.Equal("the user's own OptiPatcher", File.ReadAllText(asi));

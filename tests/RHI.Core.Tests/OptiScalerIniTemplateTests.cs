@@ -96,14 +96,15 @@ public sealed class OptiScalerIniTemplateTests : IDisposable
         Assert.True(installed.Success, installed.Message);
         Assert.Contains(OptiScalerIniTemplates.NotePrefix + userTemplate, installed.Message);
         var ini = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
-        Assert.Equal(File.ReadAllText(userTemplate), File.ReadAllText(ini));
+        // The template, with LoadAsiPlugins on: every install turns it on, as upstream (review nit 6).
+        Assert.Equal(WithAsiPluginsOn(File.ReadAllText(userTemplate)), File.ReadAllText(ini));
         Assert.Contains(store.Find(game, ManagedComponentKind.OptiScaler)!.Files, file => file.Path == ini && file.AllowUserChanges);
 
         // Another GPU setup on another game: its own template, seeded on first use.
         var (game2, store2, package2) = Arrange("install-nvidia");
         choice = new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true);
         Assert.True((await Service(store2, package2, templates).InstallAsync(game2)).Success);
-        Assert.Equal(File.ReadAllBytes(Path.Combine(_root, "inis", "OptiScaler.nvidia.ini")), File.ReadAllBytes(Path.Combine(game2.BinaryDirectory!, "OptiScaler.ini")));
+        Assert.Equal(WithAsiPluginsOn(File.ReadAllText(Path.Combine(_root, "inis", "OptiScaler.nvidia.ini"))), File.ReadAllText(Path.Combine(game2.BinaryDirectory!, "OptiScaler.ini")));
     }
 
     [Fact]
@@ -118,7 +119,16 @@ public sealed class OptiScalerIniTemplateTests : IDisposable
 
         Assert.True(installed.Success, installed.Message);
         Assert.Contains(OptiScalerIniTemplates.UnavailablePrefix, installed.Message);
-        Assert.Equal(File.ReadAllText(Path.Combine(package.RootDirectory, "OptiScaler.ini")), File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
+        var deployed = File.ReadAllText(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini"));
+        Assert.Contains("\nLoadAsiPlugins=true", deployed);
+        Assert.Equal(File.ReadAllText(Path.Combine(package.RootDirectory, "OptiScaler.ini")).TrimEnd('\n'),
+            deployed.Replace("LoadAsiPlugins=true", "", StringComparison.Ordinal).TrimEnd('\n'));
+    }
+
+    private static string WithAsiPluginsOn(string template)
+    {
+        Assert.Equal(1, template.Split("LoadAsiPlugins=auto").Length - 1);
+        return template.Replace("LoadAsiPlugins=auto", "LoadAsiPlugins=true", StringComparison.Ordinal);
     }
 
     private static OptiScalerDeploymentService Service(LinuxDeploymentRecordStore store, OptiScalerPackage package, OptiScalerIniTemplates templates)

@@ -447,12 +447,10 @@ public sealed partial class OptiScalerDeploymentService
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
                 await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
             }
-            if (optiPatcher is not null)
-            {
-                // OptiScaler loads plugins/*.asi only with LoadAsiPlugins on (upstream enforces it at install).
-                OptiScalerIniEditor.SetValue(binaryDirectory, "Plugins", "LoadAsiPlugins", "true");
-                await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
-            }
+            // OptiScaler loads plugins/*.asi only with LoadAsiPlugins on. Upstream turns it on at every install, whether
+            // or not OptiPatcher was deployed (a user's own plugins/OptiPatcher.asi then loads too); review nit 6.
+            OptiScalerIniEditor.SetValue(binaryDirectory, "Plugins", "LoadAsiPlugins", "true");
+            await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
 
             record = new LinuxDeploymentRecord
             {
