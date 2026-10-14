@@ -99,23 +99,24 @@ public sealed class OperationCoordinatorTests
     public async Task DialogWriters_AreRefused_WhileAnotherOperationRuns()
     {
         using var fx = await ViewModelFixture.StartAsync([]);
-        var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
-        {
-            Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
-        });
-        Assert.True(added, message);
-        // The selection's analysis writes its own "Ready" line; let it land before asserting the status line.
-        await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy && fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal));
+        // The selection's analysis writes its own "Ready" line: wait for that analysis to end (its Completed event,
+        // raised after the VM wrote the line), never for a status line within a time limit (#164).
+        await AddAndAnalyseAsync(fx, "Tunic");
         using var running = fx.Vm.Operations.TryBegin("background-update")!;
 
-        Assert.False(fx.Vm.SetOptiScalerAdvancedSetting("x", "y").Success);
-        Assert.False(fx.Vm.SetRenoDxCompatibilitySetting("x", "y").Success);
-        Assert.False(fx.Vm.SetDlssg2030Preferences("RTX 20", "dxgi.dll").Success);
-        Assert.False(fx.Vm.SetStandaloneDlssEnablerPreferences("dxgi.dll").Success);
+        string? refusal = null;
+        // The status lines these refusals wrote themselves (the line changes once: the same refusal repeats).
+        var lines = LinesWrittenBy(fx, () =>
+        {
+            Assert.False(fx.Vm.SetOptiScalerAdvancedSetting("x", "y").Success);
+            Assert.False(fx.Vm.SetRenoDxCompatibilitySetting("x", "y").Success);
+            Assert.False(fx.Vm.SetDlssg2030Preferences("RTX 20", "dxgi.dll").Success);
+            Assert.False(fx.Vm.SetStandaloneDlssEnablerPreferences("dxgi.dll").Success);
+            refusal = fx.Vm.ApplyGlobalReShadeSettingsToSelectedGame(new());
+        });
         Assert.False((await fx.Vm.UpdateDlssg2030Async()).Success);
-        Assert.Equal("Another RHI operation is already running.", fx.Vm.ApplyGlobalReShadeSettingsToSelectedGame(new()));
-        Assert.StartsWith("Another RHI operation is already running.", fx.Vm.StatusText);
+        Assert.Equal("Another RHI operation is already running.", refusal);
+        Assert.All(lines, line => Assert.StartsWith("Another RHI operation is already running.", line));
         Assert.True(fx.Vm.IsBusy);
     }
 
@@ -126,8 +127,9 @@ public sealed class OperationCoordinatorTests
         using var fx = await ViewModelFixture.StartAsync([]);
         fx.HangWhen = request => request.RequestUri?.Host == "api.github.com";
 
+        var busy = BusyAsync(fx);
         var load = fx.Vm.Extras.LoadNeuralVersionHistoryCommand.ExecuteAsync(null);
-        await WaitUntil(() => fx.Vm.IsBusy);
+        await busy;
         Assert.True(fx.Vm.Operations.CanCancel);
 
         var started = DateTime.UtcNow;
@@ -143,17 +145,12 @@ public sealed class OperationCoordinatorTests
     public async Task StalledComponentCheck_Cancel_SaysCancelled_NotFailed()
     {
         using var fx = await ViewModelFixture.StartAsync([]);
-        var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
-        {
-            Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
-        });
-        Assert.True(added, message);
-        await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy);
+        await AddAndAnalyseAsync(fx, "Tunic");
         fx.HangWhen = _ => true;
 
+        var busy = BusyAsync(fx);
         var check = fx.Vm.Extras.CheckShortFuseUpdateCommand.ExecuteAsync(null);
-        await WaitUntil(() => fx.Vm.IsBusy);
+        await busy;
         fx.Vm.Operations.Cancel();
         await check.WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -199,12 +196,7 @@ public sealed class OperationCoordinatorTests
                 Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(addon)))
             }]
         });
-        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
-        {
-            Name = "Moved Game", InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
-        });
-        Assert.True(added, message);
-        await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy);
+        await AddAndAnalyseAsync(fx, "Moved Game");
         var asked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         fx.Vm.ConfirmAsync = (_, _, _) => { asked.TrySetResult(); return answer.Task; };
@@ -222,9 +214,63 @@ public sealed class OperationCoordinatorTests
         Assert.Equal(game.InstallPath, fx.Records.Find(fx.Vm.SelectedGame!, ManagedComponentKind.DofFix)?.BinaryDirectory);
     }
 
-    private static async Task WaitUntil(Func<bool> condition)
+    // Deterministic waits (#164): each awaits the event that marks the state, set up before the action that causes it.
+    // The bound is only a hang guard (a test that would otherwise block forever), never the thing a pass depends on.
+    private static readonly TimeSpan HangGuard = TimeSpan.FromMinutes(2);
+
+    /// <summary>Adds the fixture game as a manual entry (which selects it) and waits until its analysis has ended.</summary>
+    private static async Task AddAndAnalyseAsync(ViewModelFixture fx, string name)
     {
-        for (var i = 0; i < 200 && !condition(); i++) await Task.Delay(10);
-        Assert.True(condition());
+        var game = fx.Game(name);
+        var analysed = new TaskCompletionSource<AnalysisOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnCompleted(AnalysisOutcome outcome)
+        {
+            if (outcome.Game.Name == name) analysed.TrySetResult(outcome);
+        }
+        fx.Vm.Session.Completed += OnCompleted;
+        try
+        {
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
+            {
+                Name = name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
+            });
+            Assert.True(added, message);
+            await analysed.Task.WaitAsync(HangGuard);
+        }
+        finally { fx.Vm.Session.Completed -= OnCompleted; }
+        Assert.False(fx.Vm.IsSelectionProbeBusy);
+    }
+
+    /// <summary>Completes when the shell's busy gate is claimed (already, or by the action started after this call).</summary>
+    private static Task BusyAsync(ViewModelFixture fx)
+    {
+        var busy = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(fx.Vm.IsBusy) && fx.Vm.IsBusy) busy.TrySetResult();
+        }
+        fx.Vm.PropertyChanged += OnChanged;
+        if (fx.Vm.IsBusy) busy.TrySetResult();
+        return busy.Task.WaitAsync(HangGuard).ContinueWith(t =>
+        {
+            fx.Vm.PropertyChanged -= OnChanged;
+            t.GetAwaiter().GetResult();
+        }, TaskScheduler.Default);
+    }
+
+    /// <summary>The status lines <paramref name="action"/> itself wrote on this thread (never another writer's).</summary>
+    private static List<string> LinesWrittenBy(ViewModelFixture fx, Action action)
+    {
+        var thread = Environment.CurrentManagedThreadId;
+        var lines = new List<string>();
+        void Record(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(fx.Vm.StatusText) && Environment.CurrentManagedThreadId == thread) lines.Add(fx.Vm.StatusText);
+        }
+        fx.Vm.PropertyChanged += Record;
+        try { action(); }
+        finally { fx.Vm.PropertyChanged -= Record; }
+        Assert.NotEmpty(lines);
+        return lines;
     }
 }
