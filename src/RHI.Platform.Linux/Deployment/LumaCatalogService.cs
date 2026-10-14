@@ -61,15 +61,95 @@ public sealed class LumaCatalogService
         _wikiUrl = wikiUrl ?? WikiUrl;
     }
 
+    /// <summary>
+    /// The Completed Mods table merged with the mods built in Filoppi's latest release but not yet on the wiki (#94,
+    /// upstream 2.7.6 <c>748ab76</c>): the wiki wins; a wiki row without a download link takes the release asset's; a
+    /// release-only mod is added. Release assets are an enrichment: when they cannot be read the wiki alone is used
+    /// (logged); the wiki itself is still required, as before.
+    /// </summary>
     public async Task<IReadOnlyList<LumaCatalogEntry>> FetchAsync(CancellationToken cancellationToken = default)
     {
         if (_cache is not null) return _cache;
         var html = await FetchWikiHtmlAsync(cancellationToken).ConfigureAwait(false);
+        var releases = await FetchReleaseModsAsync(cancellationToken).ConfigureAwait(false);
         lock (_resolutionLock)
         {
-            _cache ??= ParseCompletedMods(html);
+            _cache ??= MergeReleaseMods(ParseCompletedMods(html), releases);
             return _cache;
         }
+    }
+
+    /// <summary>Filoppi's release list (upstream reads the first 5 and uses the newest).</summary>
+    public const string ReleasesListApiUrl = "https://api.github.com/repos/Filoppi/Luma-Framework/releases?per_page=5";
+
+    // Generics and developer tools, not game mods (upstream's exclusions).
+    private static readonly HashSet<string> ReleaseExclusions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Generic Mod", "Unreal Engine", "Unity Engine", "Graphics Analyzer"
+    };
+
+    private async Task<IReadOnlyList<LumaCatalogEntry>> FetchReleaseModsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var json = await RHI.Core.Deployment.TrustedDownload.GetStringAsync(_http, ReleasesListApiUrl, DownloadSources.GitHubApi,
+                accept: "application/vnd.github+json", cancellationToken: cancellationToken).ConfigureAwait(false);
+            return ParseReleaseMods(json);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested
+                                   && ex is HttpRequestException or IOException or System.Text.Json.JsonException
+                                       or RHI.Core.Deployment.UntrustedDownloadException or InvalidOperationException or TaskCanceledException)
+        {
+            RHI.Core.Services.AppLog.Warn("luma-catalog", "Could not read Luma's release assets; using the wiki's mods only", ex);
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Named game mods among the newest release's assets: <c>Luma-&lt;Game_Name&gt;[-x32|-x64].zip</c> (upstream's rule:
+    /// <c>-Test</c>/<c>-Dev</c> builds skipped, <c>_</c> → space, <c>.</c> → apostrophe, generics excluded, one per name).
+    /// </summary>
+    internal static IReadOnlyList<LumaCatalogEntry> ParseReleaseMods(string json)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0) return [];
+        var latest = doc.RootElement[0];
+        if (!latest.TryGetProperty("assets", out var assets) || assets.ValueKind != System.Text.Json.JsonValueKind.Array) return [];
+        var result = new List<LumaCatalogEntry>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var asset in assets.EnumerateArray())
+        {
+            var name = asset.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            if (!name.StartsWith("Luma-", StringComparison.OrdinalIgnoreCase) || !name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) continue;
+            if (name.Contains("-Test", StringComparison.OrdinalIgnoreCase) || name.Contains("-Dev", StringComparison.OrdinalIgnoreCase)) continue;
+            var stem = name[5..^4];
+            if (stem.EndsWith("-x32", StringComparison.OrdinalIgnoreCase) || stem.EndsWith("-x64", StringComparison.OrdinalIgnoreCase)) stem = stem[..^4];
+            var game = stem.Replace('_', ' ').Replace('.', '\'').Trim();
+            if (game.Length == 0 || ReleaseExclusions.Contains(game) || !seen.Add(NormalizeName(game))) continue;
+            var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
+            if (string.IsNullOrWhiteSpace(url)) continue;
+            result.Add(new LumaCatalogEntry(game, "", url, "✅", null, null));
+        }
+        return result;
+    }
+
+    /// <summary>Upstream's wiki-wins merge (<c>LumaService.MergeLumaMods</c>), matched by the catalogue's own name normalisation.</summary>
+    internal static IReadOnlyList<LumaCatalogEntry> MergeReleaseMods(IReadOnlyList<LumaCatalogEntry> wiki, IReadOnlyList<LumaCatalogEntry> releases)
+    {
+        var byName = new Dictionary<string, LumaCatalogEntry>(StringComparer.Ordinal);
+        foreach (var release in releases) byName.TryAdd(NormalizeName(release.Name), release);
+        var merged = new List<LumaCatalogEntry>(wiki.Count + releases.Count);
+        var wikiNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var entry in wiki)
+        {
+            var key = NormalizeName(entry.Name);
+            wikiNames.Add(key);
+            merged.Add(string.IsNullOrWhiteSpace(entry.DownloadUrl) && byName.TryGetValue(key, out var release)
+                ? entry with { DownloadUrl = release.DownloadUrl }
+                : entry);
+        }
+        merged.AddRange(releases.Where(release => !wikiNames.Contains(NormalizeName(release.Name))));
+        return merged;
     }
 
     public async Task<IReadOnlyDictionary<string, LumaGenericGameEntry>> FetchGenericUnrealAsync(

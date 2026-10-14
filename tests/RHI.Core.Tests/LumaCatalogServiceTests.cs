@@ -108,9 +108,9 @@ public sealed class LumaCatalogServiceTests
     {
         const string wikiUrl = "https://example.test/luma-wiki";
         var calls = 0;
-        using var http = new HttpClient(new FakeHandler(_ =>
+        using var http = new HttpClient(new FakeHandler(req =>
         {
-            calls++;
+            if (req.RequestUri!.AbsoluteUri == wikiUrl) calls++; // the release list (#94) is a second, separate request
             return Text(WikiRow("Nioh", "Luma-Nioh.zip"), "text/html");
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
@@ -167,9 +167,9 @@ public sealed class LumaCatalogServiceTests
         const string wikiUrl = "https://example.test/luma-wiki";
         var calls = 0;
         var html = WikiRow("Nioh", "Luma-Nioh.zip") + GenericWiki();
-        using var http = new HttpClient(new FakeHandler(_ =>
+        using var http = new HttpClient(new FakeHandler(req =>
         {
-            calls++;
+            if (req.RequestUri!.AbsoluteUri == wikiUrl) calls++; // the release list (#94) is a second, separate request
             return Text(html, "text/html");
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
@@ -178,6 +178,73 @@ public sealed class LumaCatalogServiceTests
         _ = await catalog.FetchGenericUnrealAsync();
 
         Assert.Equal(1, calls);
+    }
+
+    private const string Releases = """
+    [{"tag_name":"latest-741","assets":[
+      {"name":"Luma-Batman_Arkham_Knight-Test.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Batman_Arkham_Knight-Test.zip"},
+      {"name":"Luma-Batman_Arkham_Knight.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Batman_Arkham_Knight.zip"},
+      {"name":"Luma-BioShock_Series-x32.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-BioShock_Series-x32.zip"},
+      {"name":"Luma-Deus_Ex_Human_Revolution_Director.s_Cut-x32.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Deus_Ex_Human_Revolution_Director.s_Cut-x32.zip"},
+      {"name":"Luma-Generic_Mod.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Generic_Mod.zip"},
+      {"name":"Luma-Graphics_Analyzer-Dev.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Graphics_Analyzer-Dev.zip"},
+      {"name":"Luma-Nioh.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Nioh.zip"},
+      {"name":"Source code.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/archive/x.zip"}]},
+     {"tag_name":"latest-740","assets":[{"name":"Luma-Older_Only.zip","browser_download_url":"https://github.com/Filoppi/Luma-Framework/releases/download/latest-740/Luma-Older_Only.zip"}]}]
+    """;
+
+    [Fact]
+    public void ReleaseAssets_NameTheGameMods_OfTheNewestReleaseOnly()
+    {
+        var mods = LumaCatalogService.ParseReleaseMods(Releases);
+
+        Assert.Equal(["Batman Arkham Knight", "BioShock Series", "Deus Ex Human Revolution Director's Cut", "Nioh"], mods.Select(m => m.Name));
+        Assert.Equal("https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-BioShock_Series-x32.zip", mods[1].DownloadUrl);
+    }
+
+    [Fact]
+    public void Merge_WikiWins_WikiRowWithoutLinkTakesTheAsset_ReleaseOnlyModsAreAdded()
+    {
+        var wiki = new[]
+        {
+            new LumaCatalogEntry("Batman: Arkham Knight", "Filoppi", "https://github.com/Filoppi/Luma-Framework/releases/latest/download/wiki.zip", "✅", "notes", null),
+            new LumaCatalogEntry("Nioh", "Pumbo", null, "🚧", "wip", "features")
+        };
+
+        var merged = LumaCatalogService.MergeReleaseMods(wiki, LumaCatalogService.ParseReleaseMods(Releases));
+
+        Assert.Equal("https://github.com/Filoppi/Luma-Framework/releases/latest/download/wiki.zip", merged[0].DownloadUrl);
+        Assert.Equal(new LumaCatalogEntry("Nioh", "Pumbo", "https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-Nioh.zip", "🚧", "wip", "features"), merged[1]);
+        Assert.Equal(["BioShock Series", "Deus Ex Human Revolution Director's Cut"], merged.Skip(2).Select(m => m.Name));
+    }
+
+    [Fact]
+    public async Task ResolveAsync_FindsAModOnlyBuiltInTheRelease_NotOnTheWikiYet()
+    {
+        const string wikiUrl = "https://example.test/luma-wiki";
+        using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
+        {
+            wikiUrl => Text(WikiRow("Nioh", "Luma-Nioh.zip"), "text/html"),
+            LumaCatalogService.ReleasesListApiUrl => Text(Releases, "application/json"),
+            var url => throw new InvalidOperationException("Unexpected URL: " + url)
+        }));
+        var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
+
+        var resolved = await catalog.ResolveAsync(new DetectedGame { Name = "BioShock Series", InstallPath = "/games/bioshock" });
+
+        Assert.Equal("https://github.com/Filoppi/Luma-Framework/releases/download/latest-741/Luma-BioShock_Series-x32.zip", resolved?.DownloadUrl);
+    }
+
+    [Fact]
+    public async Task ReleaseListUnreadable_TheWikiAloneIsUsed()
+    {
+        const string wikiUrl = "https://example.test/luma-wiki";
+        using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri == wikiUrl
+            ? Text(WikiRow("Nioh", "Luma-Nioh.zip"), "text/html")
+            : throw new HttpRequestException("offline test")));
+        var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
+
+        Assert.Equal(["Nioh"], (await catalog.FetchAsync()).Select(m => m.Name));
     }
 
     private static string GenericWiki() => """
