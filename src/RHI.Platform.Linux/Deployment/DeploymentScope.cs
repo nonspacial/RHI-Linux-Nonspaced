@@ -1,5 +1,6 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
+using RHI.Core.Services;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -97,6 +98,34 @@ public sealed class DeploymentScope : IAsyncDisposable
         var sha = sourceSha256 ?? await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false);
         await DeclareWriteAsync(target, sha, cancellationToken).ConfigureAwait(false);
         return await AtomicFile.CopyAsync(source, target, sha, CancellationToken.None, overwrite).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Renames a verified copy staged beside <paramref name="target"/> (<see cref="AtomicFile.StageCopyAsync"/>) into
+    /// place after tracking the target and declaring the staged content. With <paramref name="overwrite"/> false a file
+    /// that appeared meanwhile makes it throw and stays as it is.
+    /// </summary>
+    public async Task PlaceStagedAsync(StagedFile staged, string target, CancellationToken cancellationToken = default, bool overwrite = true)
+    {
+        await TrackAsync(target, cancellationToken).ConfigureAwait(false);
+        await DeclareWriteAsync(target, staged.Sha256, cancellationToken).ConfigureAwait(false);
+        AtomicFile.MoveIntoPlace(staged.Path, target, overwrite);
+    }
+
+    /// <summary>
+    /// After a removal failed and was rolled back: puts <paramref name="record"/> back when the ledger no longer has it
+    /// (the save that took it away failed after replacing the file), so the restored files stay owned. Never throws.
+    /// </summary>
+    public static void KeepRecordAfterFailedRemoval(LinuxDeploymentRecordStore records, DetectedGame game, LinuxDeploymentRecord record, string logArea)
+    {
+        try
+        {
+            if (records.Find(game, record.Component) is null) records.Upsert(LinuxDeploymentRecovery.EndRemoval(record));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            AppLog.Warn(logArea, "Removal rollback could not put the deployment record back", ex);
+        }
     }
 
     /// <summary>Writes <paramref name="bytes"/> to the tracked-and-declared <paramref name="target"/> (verified, durable, atomic).</summary>

@@ -276,6 +276,7 @@ public sealed class REFrameworkDeploymentService
             // Keep the game usable: put RHI's value back where this removal restored it (a value set since stays, #30).
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "reframework");
             return ComponentOperationResult.Fail($"RE Framework removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record is gone: the commit point. Nothing after it rolls back.

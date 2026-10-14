@@ -48,4 +48,21 @@ internal sealed class SimulatedDeath : IDisposable
         _journal.OperationStartedForTesting = null;
         _release.Set();
     }
+
+    /// <summary>A journal (and its override service) the way the app builds it, with Wine never running.</summary>
+    public static (DeploymentJournal Journal, RHI.Platform.Linux.Deployment.WineDllOverrideService Overrides) NewJournal(
+        string directory, RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore records)
+    {
+        var overrides = new RHI.Platform.Linux.Deployment.WineDllOverrideService(new RHI.Platform.Linux.Deployment.WineRegistryEditor(_ => false));
+        return (RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(overrides, directory, _ => false, records), overrides);
+    }
+
+    /// <summary>The next start's recovery: a fresh ledger reader (the dead thread still holds the old store's lock).</summary>
+    public static Task<JournalRecoveryReport?> RecoverAsync(string journalDirectory, string ledgerPath)
+    {
+        var ledger = new RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore(ledgerPath);
+        var overrides = new RHI.Platform.Linux.Deployment.WineDllOverrideService(new RHI.Platform.Linux.Deployment.WineRegistryEditor(_ => false));
+        return RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.RecoverAsync(
+            RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(overrides, journalDirectory, _ => false, ledger), ledger);
+    }
 }

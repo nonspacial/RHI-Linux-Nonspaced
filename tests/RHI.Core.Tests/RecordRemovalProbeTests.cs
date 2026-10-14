@@ -161,6 +161,25 @@ public sealed class RecordRemovalProbeTests : IDisposable
         Assert.False(File.Exists(P("game", "dxgi.dll")));
     }
 
+    [Fact]
+    public void KeepRecordAfterFailedRemoval_PutsAVanishedRecordBack_WithoutTheStamp_AndLeavesAPresentOneAlone()
+    {
+        var records = InstalledReShade();
+        var record = records.Find(Game, ManagedComponentKind.ReShade)!;
+        record.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey] = "dead-op";
+        var present = records.Find(Game, ManagedComponentKind.ReShade)!.SavedAtUtc;
+
+        DeploymentScope.KeepRecordAfterFailedRemoval(records, Game, record, "test");
+        Assert.Equal(present, records.Find(Game, ManagedComponentKind.ReShade)!.SavedAtUtc); // untouched
+
+        records.Remove(Game, ManagedComponentKind.ReShade);
+        DeploymentScope.KeepRecordAfterFailedRemoval(records, Game, record, "test");
+
+        var back = records.Find(Game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(P("game", "dxgi.dll"), Assert.Single(back.Files).Path);
+        Assert.False(back.Metadata.ContainsKey(LinuxDeploymentRecovery.RemovalOperationIdMetadataKey));
+    }
+
     private string Prefix()
     {
         var prefix = P("pfx");

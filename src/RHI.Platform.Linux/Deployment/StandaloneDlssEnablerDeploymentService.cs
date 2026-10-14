@@ -165,15 +165,15 @@ public sealed class StandaloneDlssEnablerDeploymentService
 
         string? tempPath = null;
         WineOverrideRecord? wineOverride = null;
-        var moved = false;
         var recordWritten = false;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "DLSS Enabler Standalone install: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
+        var operation = scope.Operation;
         // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
@@ -183,8 +183,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
             tempPath = staged.Path;
             ValidatePayload(tempPath);
             wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, selectedProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
-            AtomicFile.MoveIntoPlace(tempPath, targetPath, overwrite: false);
-            moved = true;
+            // Tracked and declared first (#23): a crash before the record is saved removes it at the next start.
+            await scope.PlaceStagedAsync(staged, targetPath, cancellationToken, overwrite: false).ConfigureAwait(false);
 
             var payloadHash = staged.Sha256;
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -219,24 +219,23 @@ public sealed class StandaloneDlssEnablerDeploymentService
                 ],
                 Metadata = metadata
             }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             recordWritten = true;
             _preferences.Set(game, new StandaloneDlssEnablerPreferences { ProxyName = selectedProxy });
 
+            // The record carries the operation id: it is the commit point.
+            await scope.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok(
                 $"DLSS Enabler Standalone {release.Version} instalado como {selectedProxy}. O deploy é independente do OptiScaler; a compatibilidade sob Wine/Proton deve ser confirmada no jogo.",
                 targetPath);
         }
         catch (Exception ex)
         {
-            if (moved && !FileCleanup.TryDelete(targetPath, out var deleteError))
-                AppLog.Warn("dlss-enabler", $"Install rollback could not remove {targetPath}", deleteError);
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, wineOverride);
             try { if (recordWritten) _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone); }
             catch (Exception recordError) { AppLog.Warn("dlss-enabler", "Install rollback could not drop the deployment record", recordError); }
-            return ComponentOperationResult.Fail($"DLSS Enabler Standalone install rolled back: {ex.Message}");
+            return ComponentOperationResult.Fail($"DLSS Enabler Standalone install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
     }
 
@@ -266,39 +265,34 @@ public sealed class StandaloneDlssEnablerDeploymentService
                 return ComponentOperationResult.Fail($"A DLL gerenciada {proxyName} foi modificada fora do RHI. Remoção bloqueada antes de alterar o override Wine.");
         }
 
-        var tempPath = targetPath + $".rhi-remove-{Guid.NewGuid():N}";
-        var moved = false;
+        // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the proxy
+        // and the override back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "DLSS Enabler Standalone removal: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            if (File.Exists(targetPath))
-            {
-                File.Move(targetPath, tempPath);
-                moved = true;
-            }
-            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            await scope.DeleteAsync(targetPath, cancellationToken).ConfigureAwait(false);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.DlssEnablerStandalone);
-            if (File.Exists(tempPath)) File.Delete(tempPath);
+            // The record is gone: the commit point.
+            await scope.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok("DLSS Enabler Standalone removido e o override Wine anterior foi restaurado."
                 + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
-            try
-            {
-                if (moved && File.Exists(tempPath) && !File.Exists(targetPath)) File.Move(tempPath, targetPath);
-                // Put RHI's value back only where this removal restored it; a later value stays (#30).
-                if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
-                    _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-                _records.Upsert(record);
-            }
-            catch (Exception rollbackError)
-            {
-                AppLog.Warn("dlss-enabler", $"Removal rollback did not complete; the managed proxy may be at {tempPath}", rollbackError);
-            }
-            return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}");
+            // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
+            // value stays, #30); the record kept so the restored files stay owned.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "dlss-enabler");
+            return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
     }
 
@@ -361,16 +355,20 @@ public sealed class StandaloneDlssEnablerDeploymentService
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone update check/download failed: {ex.Message}");
         }
 
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "DLSS Enabler Standalone update: " + game.Name, game, ManagedComponentKind.DlssEnablerStandalone, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         string? staged = null;
-        var previous = targetPath + $".rhi-previous-{Guid.NewGuid():N}";
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
             var stagedCopy = await AtomicFile.StageCopyAsync(payloadPath, targetPath, null, null, cancellationToken).ConfigureAwait(false);
             staged = stagedCopy.Path;
             ValidatePayload(staged);
-            AtomicFile.Rename(targetPath, previous);
-            AtomicFile.MoveIntoPlace(staged, targetPath, overwrite: false);
+            // Tracked with a verified copy of the previous DLL first: a failure (or a crash before the record is saved)
+            // puts it back.
+            await scope.PlaceStagedAsync(stagedCopy, targetPath, cancellationToken).ConfigureAwait(false);
             var newHash = stagedCopy.Sha256;
 
             fileRecord.Sha256 = newHash;
@@ -382,27 +380,16 @@ public sealed class StandaloneDlssEnablerDeploymentService
             record.Metadata[MetaAssetSha256] = latest.AssetSha256 ?? "";
             record.Metadata[MetaPayloadSha256] = newHash;
             VerifiedDownload.Record(record.Metadata, newHash, !string.IsNullOrWhiteSpace(latest.AssetSha256));
-            _records.Upsert(record);
-            FileCleanup.TryDelete(previous);
+            _records.Upsert(scope.Stamp(record));
+            await scope.CommitAsync().ConfigureAwait(false);
             return ComponentOperationResult.Ok($"DLSS Enabler Standalone atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
         }
         catch (Exception ex)
         {
             if (staged is not null) FileCleanup.TryDelete(staged);
-            if (File.Exists(previous))
-            {
-                try
-                {
-                    // The previous DLL is moved back over whatever the failed update left, never deleted first.
-                    AtomicFile.Rename(previous, targetPath, overwrite: true);
-                }
-                catch (Exception restoreError)
-                {
-                    AppLog.Warn("dlss-enabler", $"Update rollback could not put the previous {proxyName} back; it is kept at {previous}", restoreError);
-                    return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{previous}");
-                }
-            }
-            return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed and was rolled back as far as possible: {ex.Message}");
+            // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
     }
 
