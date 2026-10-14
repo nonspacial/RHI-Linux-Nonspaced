@@ -417,7 +417,11 @@ public sealed class XboxGameDetectorTests : IDisposable
     public void EncryptedExe_StaysThePatchTarget_UnderThePackagesBitness()
     {
         var dir = Title("9KEEP", "Game.exe");
-        _tree.Bytes(PlainPe, "px", "payloads", "9KEEP", "Other", "BigOther.exe");
+        // A readable x64 PE elsewhere in the package: re-picking "an exe of the stated bitness" would choose it.
+        var pe = new byte[8192];
+        pe[0] = (byte)'M'; pe[1] = (byte)'Z'; pe[0x3C] = 0x40;
+        pe[0x40] = (byte)'P'; pe[0x41] = (byte)'E'; pe[0x44] = 0x64; pe[0x45] = 0x86;
+        _tree.Bytes(pe, "px", "payloads", "9KEEP", "Other", "BigOther.exe");
         var game = Assert.Single(Detect(Inputs()).Games);
 
         DetectionHelpers.ApplyRuntimeMetadata(game, GameFileIndexer.Build(dir));
@@ -606,5 +610,27 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Null(presenter.Remove(_state));
         Assert.Empty(store.Folders());
         Assert.Equal((3, 2), (saves, changed));
+    }
+
+    [Fact]
+    public async Task ManifestEntryWithoutBitness_KeepsThePackagesBitness()
+    {
+        Title("9MAN", "Game.exe", title: "Hollow Knight");
+        var game = Assert.Single(Detect(Inputs()).Games);
+        const string manifestJson = "{ \"version\": 2, \"engineHintOverrides\": { \"Hollow Knight\": \"Unity\" } }";
+        using var http = new HttpClient(new JsonHandler(manifestJson));
+        var probe = new LinuxGameRuntimeProbe(new UpstreamRhiManifestService(http, "https://example.test/manifest.json"));
+
+        await probe.ProbeAsync(game, GameFileIndexer.Build(game.InstallPath));
+
+        Assert.Equal("Unity", game.EngineHint); // the manifest entry applied
+        Assert.Equal(PeArchitecture.X64, game.ForcedArchitecture);
+        Assert.Equal(Path.Combine(game.InstallPath, "Game.exe"), game.ExecutablePath);
+    }
+
+    private sealed class JsonHandler(string json) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") });
     }
 }
