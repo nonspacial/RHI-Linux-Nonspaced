@@ -231,6 +231,66 @@ public sealed class DllNameTests : IDisposable
         Assert.False(File.Exists(Path.Combine(fx.Bin, "dxgi.dll")));
     }
 
+    // w3 review nit 6: a chosen name RHI's own RE Framework already uses is refused naming that component, not as a
+    // foreign file.
+    [Fact]
+    public async Task Install_UnderANameRhisReFrameworkHolds_SaysWhichComponent()
+    {
+        var fx = Fixture("held");
+        var dinput8 = Path.Combine(fx.Bin, "dinput8.dll");
+        WriteSigned(dinput8, "REFramework");
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(fx.Game), GameName = fx.Game.Name, Component = ManagedComponentKind.REFramework,
+            BinaryDirectory = fx.Bin, Version = "1", Files = [new LinuxDeployedFile { Path = dinput8, Sha256 = FileHash.Sha256Hex(dinput8) }]
+        });
+        fx.Names.SetReShade(fx.Game, "dinput8.dll");
+        var before = File.ReadAllBytes(dinput8);
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Equal(ReShadeDeploymentService.NameHeldByRhiComponentPrefix + "dinput8.dll (RE Framework)", result.Message);
+        Assert.Equal(before, File.ReadAllBytes(dinput8));
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+    }
+
+    // w3 review nit 8: ReShade64.dll chosen with RHI's OptiScaler installed is the coexistence case: OptiScaler's
+    // LoadReshade is turned on (nothing else loads ReShade64.dll) and off again on removal. RHI's OptiScaler proxy, which
+    // mentions ReShade, is not taken for a second ReShade.
+    [Fact]
+    public async Task ReShade64Chosen_WithRhisOptiScaler_TurnsOnLoadReshade_AndRemovalTurnsItOff()
+    {
+        var fx = Fixture("opti-own-name");
+        var dxgi = Path.Combine(fx.Bin, "dxgi.dll");
+        WriteSigned(dxgi, "OptiScaler proxy LoadReshade");
+        var optiIni = Path.Combine(fx.Bin, "OptiScaler.ini");
+        File.WriteAllText(optiIni, "[Plugins]\nLoadReshade=false\n");
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(fx.Game), GameName = fx.Game.Name, Component = ManagedComponentKind.OptiScaler,
+            BinaryDirectory = fx.Bin, Version = "0.9",
+            Files =
+            [
+                new LinuxDeployedFile { Path = dxgi, Sha256 = FileHash.Sha256Hex(dxgi) },
+                new LinuxDeployedFile { Path = optiIni, Sha256 = FileHash.Sha256Hex(optiIni), AllowUserChanges = true }
+            ]
+        });
+        fx.Names.SetReShade(fx.Game, "ReShade64.dll");
+
+        var install = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(install.Success, install.Message);
+        Assert.True(File.Exists(Path.Combine(fx.Bin, "ReShade64.dll")));
+        Assert.Contains("LoadReshade=true", File.ReadAllText(optiIni));
+        Assert.Contains("OptiScaler coexistence", install.Message);
+
+        var remove = await fx.Service.RemoveAsync(fx.Game);
+        Assert.True(remove.Success, remove.Message);
+        Assert.Contains("LoadReshade=false", File.ReadAllText(optiIni));
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "ReShade64.dll")));
+    }
+
     // Luma and ShortFuse need an RHI-owned ReShade and install it automatically: with the user's ReShade under another
     // name than the chosen one, nothing is installed (their dependency guard sees it under any offered name).
     [Theory]

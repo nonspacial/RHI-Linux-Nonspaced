@@ -43,12 +43,15 @@ public static class ProxyPayloadLocator
     public static bool HasReShadeOnDisk(string binaryDirectory) => FindReShadeOnDisk(binaryDirectory) is not null;
 
     /// <summary>The first file that makes <see cref="HasReShadeOnDisk"/> true (any spelling of an offered name), or null.</summary>
-    public static string? FindReShadeOnDisk(string binaryDirectory)
+    /// <param name="knownNotReShade">Full paths known to be another component (RHI's OptiScaler proxy, which mentions
+    /// ReShade); skipped.</param>
+    public static string? FindReShadeOnDisk(string binaryDirectory, IReadOnlySet<string>? knownNotReShade = null)
     {
         foreach (var name in ProxyDllNames.Offered)
         {
-            if (ReShadeDeploymentService.FindFileCaseInsensitive(binaryDirectory, name) is { } path && ProxyDllNames.HasReShadeSignatureUnder(path))
-                return path;
+            if (ReShadeDeploymentService.FindFileCaseInsensitive(binaryDirectory, name) is not { } path) continue;
+            if (knownNotReShade?.Contains(Path.GetFullPath(path)) == true) continue;
+            if (ProxyDllNames.HasReShadeSignatureUnder(path)) return path;
         }
         return null;
     }

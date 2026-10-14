@@ -129,6 +129,15 @@ public sealed partial class ReShadeDeploymentService
     public const string OtherReShadePresentPrefix =
         "ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ";
 
+    /// <summary>Fixed text before "name (component)" when another RHI component already sits under the DLL name ReShade
+    /// would use (PT-BR presentation pair).</summary>
+    public const string NameHeldByRhiComponentPrefix =
+        "Another component RHI installed on this game already uses this DLL name, so ReShade cannot be installed under it; choose another DLL name for ReShade. Name and component: ";
+
+    private static IReadOnlySet<string> OwnedPaths(LinuxDeploymentRecord? record)
+        => (record?.Files ?? []).Where(file => !string.IsNullOrWhiteSpace(file.Path))
+            .Select(file => Path.GetFullPath(file.Path)).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>Fixed text before the name when a chosen DLL name does not suit the game's bitness (PT-BR presentation pair).</summary>
     public const string NameNotForBitnessPrefix = "The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ";
 
@@ -243,18 +252,29 @@ public sealed partial class ReShadeDeploymentService
                     return ComponentOperationResult.Fail($"OptiScaler coexistence target is occupied by an unknown DLL: {target}");
                 }
             }
+            else if (_records.FindAll(game).FirstOrDefault(record => record.Component != ManagedComponentKind.ReShade &&
+                         OwnedPaths(record).Contains(Path.GetFullPath(directTarget))) is { } holder)
+            {
+                // RHI's own component under that name (RE Framework's dinput8.dll on an RE Engine game): say which.
+                return ComponentOperationResult.Fail(NameHeldByRhiComponentPrefix + $"{directProxy} ({LinuxManagedComponentService.DisplayDependencyName(holder.Component)})");
+            }
             else
             {
                 return ComponentOperationResult.Fail($"Foreign DLL protection: '{directProxy}' already exists and is not recognized as ReShade or OptiScaler. Nothing was overwritten.");
             }
         }
 
+        // ReShade64.dll chosen as the name with RHI's OptiScaler here: nothing but OptiScaler's LoadReshade loads it, so
+        // the install is the coexistence case (LoadReshade on, off again on removal), as an update of it already is.
+        if (existingRecord is null && managedOptiScaler is not null && Path.GetFileName(target).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase))
+            coexist = true;
+
         // One ReShade per game (#120): with no RHI ReShade here, a ReShade under any other name it can be installed as
         // (the user's own, or one another component left) means a second copy would load beside it. Refused before any
         // download or change, whichever path asked (profile Apply, Luma/ShortFuse dependency, a manifest name). The
-        // target-name checks above ran first: the target is absent by now, and in RHI's OptiScaler coexistence case the
-        // OptiScaler proxy was already found not to be ReShade, so neither needs an exception here.
-        if (existingRecord is null && ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory) is { } other)
+        // target-name checks above ran first, so the target is absent by now; RHI's own OptiScaler files are not ReShade.
+        if (existingRecord is null &&
+            ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory, OwnedPaths(managedOptiScaler)) is { } other)
             return ComponentOperationResult.Fail(OtherReShadePresentPrefix + other);
 
         D3DCompilerPlan? d3dCompilerPlan = null;
