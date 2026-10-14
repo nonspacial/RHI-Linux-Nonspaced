@@ -1061,6 +1061,8 @@ public static class UiLocalizationService
             result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
         if (result.UncheckedCount > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
+        if (result.HeldCount > 0) // w3/parity (#96)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

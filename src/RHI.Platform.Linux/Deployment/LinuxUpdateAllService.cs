@@ -19,7 +19,10 @@ public sealed record ManagedUpdateCheck(
     // The check could not tell (remote unreachable, no validators, game files missing): no update.
     bool CouldNotCheck = false,
     // Updates are refused for this game (no confirmed patch target): a failure, never "current".
-    bool Blocked = false);
+    bool Blocked = false,
+    // w3/parity (#96): an update exists but a layer over the component (NR Cost Scaler) holds it: not a failure, not
+    // "current", not attempted. The layer's display name.
+    string? HeldBy = null);
 
 public sealed record LinuxUpdateItemResult(
     string GameName,
@@ -30,21 +33,25 @@ public sealed record LinuxUpdateItemResult(
     string Message,
     bool Unchecked = false,
     // Counted as failed because updates are refused for this game (no confirmed patch target).
-    bool Blocked = false);
+    bool Blocked = false,
+    // w3/parity (#96): held by a layer (ManagedUpdateCheck.HeldBy); counted on its own.
+    string? HeldBy = null);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
     public int ChangedCount => Items.Count(item => item.Changed);
     public int FailedCount => Items.Count(item => !item.Success && !item.Deferred);
     public int DeferredCount => Items.Count(item => item.Deferred);
-    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked);
+    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked && item.HeldBy is null);
     public int UncheckedCount => Items.Count(item => item.Unchecked);
+    public int HeldCount => Items.Count(item => item.HeldBy is not null); // w3/parity (#96)
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
         : $"Update All: {ChangedCount} updated · {CurrentCount} current · {DeferredCount} deferred · {FailedCount} failed"
-          + (UncheckedCount > 0 ? $" · {UncheckedCount} could not be checked." : ".");
+          + (UncheckedCount > 0 ? $" · {UncheckedCount} could not be checked" : "")
+          + (HeldCount > 0 ? $" · {HeldCount} held by " + string.Join(", ", Items.Select(item => item.HeldBy).OfType<string>().Distinct()) : "") + ".";
 }
 
 public interface ILinuxManagedUpdateBackend
@@ -214,6 +221,11 @@ public sealed class LinuxUpdateAllService
                             if (check.Blocked)
                             {
                                 results.Add(new LinuxUpdateItemResult(game.Name, component, false, false, false, check.Message, Blocked: true));
+                                continue;
+                            }
+                            if (check.HeldBy is not null) // w3/parity (#96): left as it is while a layer wraps it
+                            {
+                                results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, check.Message, HeldBy: check.HeldBy));
                                 continue;
                             }
                             if (!check.Managed || !check.UpdateAvailable)

@@ -372,3 +372,57 @@ public sealed class NrCostScalerTests : IDisposable
         }
     }
 }
+
+/// <summary>
+/// #96 (w3 parity review, minor 8): while NR Cost Scaler wraps a method's runtime, Update All reports the method's
+/// update as held by the scaler (not attempted, not a failure, not "current"), through the app's real services.
+/// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("linux")]
+public sealed class NrCostScalerUpdateAllTests
+{
+    private const string NewerShortFuse = """[{"tag_name":"renodx-dlss-SF-2.0","assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf/releases/download/2.0/renodx-dlss.addon64"}]}]""";
+
+    private static HttpResponseMessage? Respond(HttpRequestMessage request)
+        => request.RequestUri!.AbsoluteUri == ShortFuseDeploymentService.ReleasesApiUrl
+            ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewerShortFuse) }
+            : null;
+
+    [Fact]
+    public async Task MethodUpdateWhileTheScalerIsInstalled_IsHeldByNrCostScaler_NeverAFailure()
+    {
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: Respond);
+        var dir = Directory.CreateDirectory(Path.Combine(fx.Root, "games", "Scaled")).FullName;
+        var exe = Path.Combine(dir, "Scaled.exe");
+        File.WriteAllBytes(exe, CacheForeignFileRejectionTests.Pe(0x8664, 4096, 7));
+        var game = new DetectedGame { Name = "Scaled", Source = "Manual", Runner = "Manual Windows", InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir };
+        LinuxDeploymentRecord Record(ManagedComponentKind kind) => new()
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = dir, Version = "1.0"
+        };
+        fx.Records.Upsert(Record(ManagedComponentKind.ShortFuse));
+        Assert.True((await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.ShortFuse, [])).UpdateAvailable); // the update exists
+        var scaler = Record(ManagedComponentKind.NrCostScaler);
+        scaler.Metadata["NrCostScaler.Owner"] = "ShortFuse";
+        fx.Records.Upsert(scaler);
+
+        var check = await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.ShortFuse, []);
+
+        Assert.False(check.UpdateAvailable);
+        Assert.Equal(NrCostScalerService.DisplayName, check.HeldBy);
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount, result.HeldCount));
+            Assert.Equal("Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 held by NR Cost Scaler (remove it to update the method).",
+                RHI.Desktop.Localization.UiLocalizationService.UpdateAllSummaryFor("en-US", result));
+            Assert.Equal("Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 retido(s) pelo NR Cost Scaler (remova-o para atualizar o método).",
+                RHI.Desktop.Localization.UiLocalizationService.UpdateAllSummaryFor("pt-BR", result));
+        }
+        Assert.Equal("1.0", fx.Records.Find(game, ManagedComponentKind.ShortFuse)!.Version); // never attempted
+    }
+
+    private sealed class NeverRunning : IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game) => false;
+    }
+}

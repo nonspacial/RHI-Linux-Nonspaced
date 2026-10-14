@@ -795,6 +795,7 @@ internal static class UiStrings
         ("Parity.NrScalerInstalling", "{0}: instalando o NR Cost Scaler…", "{0}: installing NR Cost Scaler…"),
         ("Parity.NrScalerRemoving", "{0}: removendo o NR Cost Scaler…", "{0}: removing NR Cost Scaler…"),
         ("Parity.NrScalerCancelled", "NR Cost Scaler cancelado antes de qualquer mudança.", "NR Cost Scaler cancelled before any change."),
+        ("Parity.UpdateAllHeld", " · {0} retido(s) pelo NR Cost Scaler (remova-o para atualizar o método)", " · {0} held by NR Cost Scaler (remove it to update the method)"),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

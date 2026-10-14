@@ -1808,7 +1808,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var patchGuard = PatchTargetUpdateGuard(game);
         if (patchGuard is not null) return patchGuard;
 
-        return component switch
+        return HeldByLayer(game, component, component switch // w3/parity (#96)
         {
             ManagedComponentKind.ReShade => await CheckReShadeManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.RenoDX => await _renodx.CheckUpdateAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false),
@@ -1824,8 +1824,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
-        };
+        });
     }
+
+    // w3/parity (#96): an NR method's update found while NR Cost Scaler wraps its runtime is held, not attempted (the
+    // update itself is refused by LayerGuard): Update All reports it as held by the scaler, never as a failure.
+    private ManagedUpdateCheck HeldByLayer(DetectedGame game, ManagedComponentKind component, ManagedUpdateCheck check)
+        => check.UpdateAvailable && NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered
+            ? check with { UpdateAvailable = false, Message = layered, HeldBy = NrCostScalerService.DisplayName }
+            : check;
 
     private async Task<ManagedUpdateCheck> CheckReShadeManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken)
     {
