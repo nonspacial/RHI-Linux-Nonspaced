@@ -181,6 +181,7 @@ internal sealed class AppComposition
         var parity = new ParityFeatures
         {
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
+            Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
                 new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new SecretFileStore(GitHubTokenSettingsService.DefaultTokenPath, "github-token"))),
         };

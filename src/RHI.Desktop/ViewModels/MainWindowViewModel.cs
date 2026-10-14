@@ -89,6 +89,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
     /// <summary>w3/parity features (Settings → Accounts &amp; updates, shortcuts, hand-off); set by App. Integrator hook.</summary>
     public ParityFeatures? Parity { get; set; }
+    internal IReadOnlyList<DetectedGame> AllLibraryGames => _library.AllGames; // w3/parity hook (shortcut launch by key)
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     public ObservableCollection<string> DlssSrVersions { get; } = [];
     public ObservableCollection<string> DlssRrVersions { get; } = [];

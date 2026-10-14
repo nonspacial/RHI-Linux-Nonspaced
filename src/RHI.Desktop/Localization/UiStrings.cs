@@ -670,6 +670,21 @@ internal static class UiStrings
         ("Parity.AppUpdateNoReleases", "Nenhuma versão publicada para comparar; esta é a {0}.", "No published release to compare with; this is {0}."),
         ("Parity.AppUpdateCouldNotCheck", "Não foi possível procurar agora (sem conexão ou limite do GitHub); esta é a {0}.", "Could not check just now (offline or GitHub's limit); this is {0}."),
         ("Parity.AppUpdateNotice", "RHI-Linux {0} está disponível (esta é a {1}) — veja Configurações → Contas e atualizações.", "RHI-Linux {0} is available (this is {1}) — see Settings → Accounts & updates."),
+        ("Parity.ShortcutCreate", "Criar atalho", "Create shortcut"),
+        ("Parity.ShortcutTip", "Cria um atalho que inicia este jogo pelo RHI, como o botão Jogar (perfil HDR incluído).", "Creates a launcher that starts this game through RHI, as Play does (HDR profile included)."),
+        ("Parity.ShortcutOnDesktopItem", "Na área de trabalho", "On the desktop"),
+        ("Parity.ShortcutInMenuItem", "No menu de aplicativos", "In the applications menu"),
+        ("Parity.ShortcutOnDesktop", "na área de trabalho", "on the desktop"),
+        ("Parity.ShortcutInMenu", "no menu de aplicativos", "in the applications menu"),
+        ("Parity.ShortcutCreated", "{0}: atalho criado {1} ({2}).", "{0}: shortcut created {1} ({2})."),
+        ("Parity.ShortcutUpdated", "{0}: atalho {1} atualizado ({2}).", "{0}: shortcut {1} updated ({2})."),
+        ("Parity.ShortcutNoDesktopFolder", "Não há pasta de área de trabalho configurada (o xdg-user-dir aponta para a sua pasta pessoal); use o menu de aplicativos.", "No desktop folder is set up (xdg-user-dir names your home folder); use the applications menu instead."),
+        ("Parity.ShortcutForeignFile", "Um arquivo que o RHI não criou já tem o nome do atalho; ele foi mantido: {0}", "A file RHI did not create already has the shortcut's name; it was left alone: {0}"),
+        ("Parity.ShortcutNoRhiCommand", "O RHI não consegue saber como foi iniciado, então um atalho não poderia iniciá-lo.", "RHI cannot tell how it was started, so a shortcut could not start it."),
+        ("Parity.ShortcutUnusableKey", "{0}: a chave deste jogo na biblioteca não pode ser gravada num atalho.", "{0}: this game's library key cannot be written into a shortcut."),
+        ("Parity.ShortcutFailed", "{0}: o atalho não pôde ser gravado: {1}", "{0}: the shortcut could not be written: {1}"),
+        ("Parity.ShortcutGameNotFound", "Um atalho pediu um jogo que não está mais na biblioteca (movido ou removido); crie o atalho de novo pelo cartão do jogo.", "A shortcut asked for a game that is no longer in the library (moved or removed); create the shortcut again from the game's card."),
+        ("Parity.ShortcutCannotLaunch", "{0}: o atalho não conseguiu iniciá-lo — {1}", "{0}: the shortcut could not start it — {1}"),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

@@ -53,8 +53,15 @@ public sealed class App : Application
             if (recovery.NeedsNotice)
                 Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
             desktop.Exit += (_, _) => vm.Dispose();
-            if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), notice only
+            if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), single-instance hand-off (#162, #99)
+            {
                 UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
+                var handoff = RHI.Platform.Linux.Ux.InstanceHandoff.Listen(request =>
+                    Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, request), "handoff")));
+                desktop.Exit += (_, _) => handoff?.Dispose();
+                if (Program.PendingHandoff is { } pending)
+                    Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, pending), "handoff"));
+            }
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

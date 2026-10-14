@@ -1,3 +1,5 @@
+using RHI.Platform.Linux.Ux;
+
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
@@ -10,4 +12,18 @@ public sealed class ParityFeatures
 {
     public required GitHubTokenPresenter GitHubToken { get; init; }
     public required AppUpdatePresenter AppUpdate { get; init; }
+    public required GameShortcutPresenter Shortcuts { get; init; }
+
+    /// <summary>A request a shortcut or link brought to this RHI (its own command line or the hand-off). UI thread.</summary>
+    public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch
+    {
+        HandoffKind.Launch => Shortcuts.LaunchByKeyAsync(vm, request.Value),
+        _ => Ignore(request)
+    };
+
+    private static Task Ignore(HandoffRequest request)
+    {
+        RHI.Core.Services.AppLog.Warn("handoff", $"Ignored a {request.Kind} request: not handled by this build");
+        return Task.CompletedTask;
+    }
 }
