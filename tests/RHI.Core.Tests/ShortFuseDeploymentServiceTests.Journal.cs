@@ -130,6 +130,37 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.Equal("native,builtin", Override(fixture, "winmm"));
     }
 
+    // Journal re-review minor 1: the commit write replaces the ledger (ShortFuse gone, ReShade renamed back to dxgi.dll)
+    // and then reports failure. The rollback moves ReShade's file back to ReShade64.asi, so ReShade's record must go back
+    // with it (the catch's `alongside:`), or it names a dxgi.dll that is no longer there.
+    [Fact]
+    public async Task Remove_CommitWriteLandsThenFails_PutsReShadesRecordBackWithItsFile()
+    {
+        using var fixture = CreateGame("commit-written-then-failed");
+        var (ctx, _, _, _, editor) = JournaledContext(fixture);
+        using var _ = ctx;
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+        var asi = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName);
+        // The first registry edit of the removal is ReShade's override re-enable; the next ledger save is the commit write.
+        editor.InsideLockForTesting = _ => ctx.Records.SaveWrittenFaultForTesting ??= () =>
+        {
+            ctx.Records.SaveWrittenFaultForTesting = () => null;
+            return new IOException("ledger written, then the directory sync failed");
+        };
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+
+        Assert.False(remove.Success);
+        Assert.True(File.Exists(asi));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "dxgi.dll")));
+        var after = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        Assert.NotNull(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        var reshade = after.Find(fixture.Game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(asi, reshade.Files.Single().Path);
+        Assert.True(File.Exists(reshade.Files.Single().Path));
+    }
+
     // Review w3-journal #6: ShortFuse's record goes and ReShade's renamed-back record is saved in ONE ledger write. Split
     // into two writes, a crash between them left ReShade's record naming ReShade64.asi while the file was back at its
     // original name. The process dies at the first ledger write after the commit write here; whatever the next start

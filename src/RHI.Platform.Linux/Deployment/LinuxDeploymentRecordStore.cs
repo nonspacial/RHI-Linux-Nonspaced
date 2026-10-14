@@ -322,6 +322,12 @@ public sealed class LinuxDeploymentRecordStore
     /// </summary>
     internal Func<Exception?>? SaveFaultForTesting { get; set; }
 
+    /// <summary>
+    /// Test seam: when set, every save asks it once the ledger has been replaced and fails with the exception it returns
+    /// (a write that landed and then reported failure, e.g. the directory fsync); null = this save succeeds.
+    /// </summary>
+    internal Func<Exception?>? SaveWrittenFaultForTesting { get; set; }
+
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
         if (SaveFaultForTesting?.Invoke() is { } fault) throw fault;
@@ -331,6 +337,7 @@ public sealed class LinuxDeploymentRecordStore
         _cached = records;
         var info = new FileInfo(_path);
         _cachedStamp = (info.LastWriteTimeUtc, info.Length);
+        if (SaveWrittenFaultForTesting?.Invoke() is { } written) throw written;
     }
 }
 
