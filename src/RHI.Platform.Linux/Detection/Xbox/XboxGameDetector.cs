@@ -136,6 +136,21 @@ public sealed class XboxGameDetector : IGameDetector
         => new[] { folder, Path.Combine(folder, XboxInstallerApp.FolderName), Path.Combine(folder, "state", XboxInstallerApp.FolderName) }
             .FirstOrDefault(dir => File.Exists(Path.Combine(dir, "settings.json")));
 
+    /// <summary>
+    /// The installed product's name, except where it is only the package's own name with "Standard Edition" added (the
+    /// store's name for the plain game, "Forza Horizon 6 Standard Edition" for the "Forza Horizon 6" package): then the
+    /// package's shorter name, which is also the one mod lists use. An edition that differs (Control Ultimate Edition over
+    /// the "Control Standard Edition" package) keeps the product's name (#175).
+    /// </summary>
+    internal static string? CardName(string? productTitle, string? packageTitle)
+    {
+        if (productTitle is null) return packageTitle;
+        if (packageTitle is null) return productTitle;
+        var plain = System.Text.RegularExpressions.Regex.Replace(productTitle, @"\s*(?:[-–:]\s*)?Standard Edition\s*$", "",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return string.Equals(plain.Trim(), packageTitle.Trim(), StringComparison.OrdinalIgnoreCase) ? packageTitle : productTitle;
+    }
+
     private static DetectedGame FromInstallerApp(XboxInstallerInstance instance, XboxInstallerInstance.Install install)
     {
         var package = XboxPackageReader.Read(install.Directory, instance.RecipeExecutable(install.StoreId));
@@ -146,7 +161,7 @@ public sealed class XboxGameDetector : IGameDetector
             DetectorDiagnostics.Warn($"Xbox app title {install.StoreId} ({install.Directory}): {package?.Problem ?? "no package config"}; listed without a modding target");
         var environment = instance.Environment(install.StoreId);
         // The product the user installed names the card (#175): the marker and package name a shared base package.
-        var name = instance.InstalledProductTitle(install.StoreId) ?? install.Title ?? package?.DisplayName ?? install.StoreId;
+        var name = CardName(instance.InstalledProductTitle(install.StoreId), install.Title) ?? package?.DisplayName ?? install.StoreId;
         var game = Card(name, install.Directory, verified ? package : null, Package(instance, install.StoreId));
         game.PrefixPath = environment.Prefix;
         game.WineBinaryPath = environment.Wine;

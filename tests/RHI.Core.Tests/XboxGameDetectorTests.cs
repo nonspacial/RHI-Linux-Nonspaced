@@ -278,6 +278,16 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.True(RHI.Platform.Linux.Deployment.ControlUePostInstallService.IsControlUltimateEdition(games["9ULT"]));
     }
 
+    [Theory]
+    [InlineData("Control Ultimate Edition", "Control Standard Edition", "Control Ultimate Edition")]
+    [InlineData("Forza Horizon 6 Standard Edition", "Forza Horizon 6", "Forza Horizon 6")]
+    [InlineData("Halo: Campaign Evolved - Standard Edition", "Halo: Campaign Evolved", "Halo: Campaign Evolved")]
+    [InlineData("Game Deluxe Edition", "Game", "Game Deluxe Edition")]
+    [InlineData(null, "Package Title", "Package Title")]
+    [InlineData("Product", null, "Product")]
+    public void CardName_IsTheProduct_UnlessItOnlyAddsStandardEditionToThePackage(string? product, string? package, string expected)
+        => Assert.Equal(expected, XboxGameDetector.CardName(product, package));
+
     [Fact]
     public void Name_FallsBackFromMarkerToCatalogueToShellVisuals_IgnoringResourceReferences()
     {
