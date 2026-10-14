@@ -1583,17 +1583,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// The right-click menu of a library card (Refs #161, upstream 2.8.6): opening it selects the card, then offers the
     /// actions the detail header already has for it — Open folder, Favourite, Hide/Show — and View notes when the
     /// game has a note. Nothing here is new behaviour; the entries run the same commands as the header buttons.
+    /// Every entry is listed only where it applies to this card (the owner's rule: inapplicable options are hidden,
+    /// never shown disabled): Open folder only once the game folder is confirmed, View notes only with a note.
     /// </summary>
     public IReadOnlyList<CardMenuItem> CardMenuFor(GameRowViewModel row)
     {
         if (!ReferenceEquals(SelectedGame, row.Game)) SelectedGame = row.Game;
         var game = row.Game;
-        var items = new List<CardMenuItem>
-        {
-            new("open-folder", T("Ui.OpenFolder"), OpenGameFolderCommand, IsEnabled: game.HasConfirmedPatchTarget),
-            new("favourite", FavouriteActionText, ToggleFavouriteCommand),
-            new("hide", HideActionText, ToggleHiddenCommand),
-        };
+        var items = new List<CardMenuItem>();
+        if (game.HasConfirmedPatchTarget) items.Add(new("open-folder", T("Ui.OpenFolder"), OpenGameFolderCommand));
+        items.Add(new("favourite", FavouriteActionText, ToggleFavouriteCommand));
+        items.Add(new("hide", HideActionText, ToggleHiddenCommand));
         if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
         // Named slot for parity's "Create shortcut" (#162): add its entry here, last, with SeparatorBefore: true.
         // w3/parity card menu slot

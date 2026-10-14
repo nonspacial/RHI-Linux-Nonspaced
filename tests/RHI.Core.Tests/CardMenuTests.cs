@@ -25,7 +25,7 @@ public sealed class CardMenuTests : IDisposable
         Assert.Equal("Beta Quest", fx.Vm.SelectedGame?.Name);
         Assert.Equal(["open-folder", "favourite", "hide"], menu.Select(i => i.Id));
         Assert.Equal([UiLocalizationService.Text("Ui.OpenFolder"), fx.Vm.FavouriteActionText, fx.Vm.HideActionText], menu.Select(i => i.Label));
-        Assert.All(menu, item => Assert.True(item.IsEnabled, item.Id));
+        Assert.All(menu, item => Assert.True(item.Command.CanExecute(null), item.Id)); // nothing greyed out
 
         menu.Single(i => i.Id == "favourite").Command.Execute(null);
         Assert.True(Row(fx, "Beta Quest").Game.IsFavourite);
@@ -54,7 +54,7 @@ public sealed class CardMenuTests : IDisposable
 
         var plain = fx.Vm.CardMenuFor(Row(fx, "Plain Quest"));
         Assert.DoesNotContain(plain, i => i.Id == "notes");
-        Assert.False(plain.Single(i => i.Id == "open-folder").IsEnabled); // no confirmed game folder yet
+        Assert.Equal(["favourite", "hide"], plain.Select(i => i.Id)); // no confirmed game folder yet: Open folder is left out
 
         var menu = fx.Vm.CardMenuFor(Row(fx, "Noted Quest"));
         var notes = menu.Last();
@@ -63,6 +63,34 @@ public sealed class CardMenuTests : IDisposable
 
         Assert.Equal(new GameNotesViewModel(UiLocalizationService.Format("Card.NotesTitle", "Noted Quest"), "Use the DX11 renderer.",
             "https://github.com/rhi-tests/notes", "Guide"), shown);
+    }
+
+    /// <summary>
+    /// Review w3 major 1: an action that does not apply to the card is left out, never shown greyed (the owner's rule for
+    /// every button and option). Open folder needs a confirmed game folder: a folder-missing entry, a folder RHI may not
+    /// touch and a card still waiting for its target in Edit game have none.
+    /// </summary>
+    [Theory]
+    [InlineData("folder missing")]
+    [InlineData("folder not allowed")]
+    [InlineData("target not chosen")]
+    public async Task OpenFolder_IsLeftOut_ForACardWithoutAConfirmedFolder(string state)
+    {
+        var game = Game("Odd Quest");
+        switch (state)
+        {
+            case "folder missing": game.FolderMissing = true; break;
+            case "folder not allowed": game.GameRootNotAllowed = true; break;
+            default: game.RequiresExplicitPatchTarget = true; game.ExecutablePath = null; break;
+        }
+        using var fx = await ViewModelFixture.StartAsync([game, Game("Plain Quest")]);
+        Assert.False(Row(fx, "Odd Quest").Game.HasConfirmedPatchTarget, state);
+
+        var menu = fx.Vm.CardMenuFor(Row(fx, "Odd Quest"));
+
+        Assert.Equal(["favourite", "hide"], menu.Select(i => i.Id));
+        Assert.All(menu, item => Assert.True(item.Command.CanExecute(null), item.Id));
+        Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "open-folder"); // a confirmed folder keeps it
     }
 
     [Fact]

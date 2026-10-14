@@ -44,7 +44,6 @@ public partial class MainWindow
             {
                 Header = entry.Label,
                 Command = entry.Command,
-                IsEnabled = entry.IsEnabled,
                 Name = "CardMenu-" + entry.Id
             };
             item.Classes.Add(OverflowMenuClass);
