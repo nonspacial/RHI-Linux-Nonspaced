@@ -99,7 +99,7 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
             state = await Task.Run(() =>
             {
                 if (_components.ResolveReShadeProxyName(game) is not { } resolution) return null;
-                var architecture = string.IsNullOrWhiteSpace(game.ExecutablePath) ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
+                var architecture = GameArchitecture.Of(game);
                 return new PickerState(resolution, _components.ReShadeDllNames.GetReShade(game), _components.InstalledReShadeProxyName(game),
                     architecture == PeArchitecture.X86);
             }).ConfigureAwait(true);

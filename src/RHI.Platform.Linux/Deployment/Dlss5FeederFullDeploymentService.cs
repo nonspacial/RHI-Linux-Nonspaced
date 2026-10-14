@@ -308,7 +308,7 @@ public sealed class Dlss5FeederFullDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
             return ComponentOperationResult.Fail("Remove ShortFuse before installing DLSS5 Feeder Full. Both workflows own the DLSS/Streamline stack and must not be stacked.");
-        var gameArchitecture = PeArchitectureDetector.Detect(game.ExecutablePath!);
+        var gameArchitecture = GameArchitecture.Of(game);
         FeederCompilerPlan compilerPlan;
         try
         {
@@ -1017,7 +1017,7 @@ public sealed class Dlss5FeederFullDeploymentService
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return ComponentOperationResult.Fail("Game executable was not detected.");
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("DLSS5 Feeder Full requires a recognized x86/x64 Windows executable.");
         if (architecture == PeArchitecture.X86 && consumer != Dlss5FeederConsumer.RenoDxDlss5)

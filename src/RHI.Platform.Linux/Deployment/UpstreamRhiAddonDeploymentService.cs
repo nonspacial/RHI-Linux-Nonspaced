@@ -64,7 +64,7 @@ public sealed class UpstreamRhiAddonDeploymentService
             return ComponentOperationResult.Fail("Remove ShortFuse before installing DLSS5 DX11 Bridge. Both workflows own incompatible injection/orchestration state.");
 
         if (_options.X64Only && !string.IsNullOrWhiteSpace(game.ExecutablePath) &&
-            PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+            GameArchitecture.Of(game) != PeArchitecture.X64)
             return ComponentOperationResult.Fail($"{_options.DisplayName} is available only for 64-bit Windows games.");
 
         UpstreamAddonPackDefinition pack;

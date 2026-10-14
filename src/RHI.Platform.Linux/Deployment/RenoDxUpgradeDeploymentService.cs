@@ -214,14 +214,7 @@ public sealed class RenoDxUpgradeDeploymentService
         return ComponentOperationResult.Ok("RHI-managed RenoDX Upgrade removed. User/external files were left untouched.", changed.ToArray());
     }
 
-    public static PeArchitecture ResolveArchitecture(DetectedGame game)
-    {
-        if (game.ForcedArchitecture is PeArchitecture.X86 or PeArchitecture.X64)
-            return game.ForcedArchitecture.Value;
-        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return PeArchitecture.Unknown;
-        return PeArchitectureDetector.Detect(game.ExecutablePath);
-    }
+    public static PeArchitecture ResolveArchitecture(DetectedGame game) => GameArchitecture.Of(game);
 
     internal static IReadOnlyList<string> FindUpgradeAddonFiles(string deployDir)
     {

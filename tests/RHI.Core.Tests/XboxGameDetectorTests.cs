@@ -121,7 +121,7 @@ public sealed class XboxGameDetectorTests : IDisposable
         // Play opens PartingX (its instance script), never the game.
         Assert.Equal($"'{script}'", game.LaunchCommand);
         Assert.Equal("PartingX", game.ParentLauncherName);
-        Assert.Equal(new XboxPackageInfo("9ABC", "PartingX", $"'{script}'", Path.Combine(_state, "jobs.json")), game.XboxPackage);
+        Assert.Equal(new XboxPackageInfo("9ABC", "PartingX", $"'{script}'", Path.Combine(_state, "jobs.json"), Architecture: PeArchitecture.X64), game.XboxPackage);
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
     }
 
@@ -273,7 +273,7 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Equal(dir, game.InstallPath);
         Assert.Null(game.PrefixPath);
         Assert.Null(game.LaunchCommand);
-        Assert.Equal(new XboxPackageInfo("9BP", "Xodus", null, null), game.XboxPackage);
+        Assert.Equal(new XboxPackageInfo("9BP", "Xodus", null, null, Architecture: PeArchitecture.X64), game.XboxPackage);
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
 
         // Once the Xodus GUI is installed, Play opens it.
@@ -579,11 +579,26 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public async Task InstallOnAnEncryptedXboxExe_RefusesWithThePlainReason_UntilBitnessComesFromThePackage()
+    public void AnEncryptedXboxExe_TakesItsBitnessFromThePackage()
     {
         Title("9ENC");
         var game = Assert.Single(Detect(Inputs()).Games);
+
         Assert.True(game.HasConfirmedPatchTarget);
+        Assert.Equal(PeArchitecture.X64, game.XboxPackage!.Architecture);
+        Assert.Null(game.ForcedArchitecture); // the RHI manifest's override stays the manifest's
+        Assert.Equal(PeArchitecture.X64, GameArchitecture.Of(game));
+        Assert.Null(XboxWriteGate.InstallRefusal(game));
+    }
+
+    [Fact]
+    public async Task InstallOnAnEncryptedXboxExe_WhosePackageDeclaresNoArchitecture_RefusesWithThePlainReason()
+    {
+        Title("9ENC", config: GdkConfig("Game.exe", "9ENC", arch: "neutral"));
+        _tree.File(Manifest("Game.exe", arch: "neutral"), "px", "payloads", "9ENC", "appxmanifest.xml");
+        var game = Assert.Single(Detect(Inputs()).Games);
+        Assert.True(game.HasConfirmedPatchTarget);
+        Assert.Null(game.XboxPackage!.Architecture);
         var service = new LinuxManagedComponentService(new LinuxDeploymentRecordStore(_tree.Path_("deployments.json")), reshade: null!,
             addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!, relimiter: null!, displayCommander: null!,
             mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!,

@@ -18,6 +18,10 @@ namespace RHI.Core.Models;
 /// </param>
 /// <param name="ShowArgv">The same for <c>entryPoints.show</c> ("Show in PartingX"); null without one.</param>
 /// <param name="LaunchEnvironment">The breadcrumb's <c>launch.env</c>, applied to both entry points.</param>
+/// <param name="Architecture">
+/// The package's declared <c>ProcessorArchitecture</c> (appxmanifest.xml, else MicrosoftGame.config): the game's bitness
+/// when its exe is encrypted on disk (<see cref="RHI.Core.Services.GameArchitecture"/>, #167); null when it declares none.
+/// </param>
 public sealed record XboxPackageInfo(
     string? StoreId,
     string OwningApp,
@@ -25,4 +29,5 @@ public sealed record XboxPackageInfo(
     string? JobsFile,
     IReadOnlyList<string>? PlayArgv = null,
     IReadOnlyList<string>? ShowArgv = null,
-    IReadOnlyDictionary<string, string>? LaunchEnvironment = null);
+    IReadOnlyDictionary<string, string>? LaunchEnvironment = null,
+    PeArchitecture? Architecture = null);

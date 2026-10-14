@@ -59,7 +59,7 @@ public sealed record SelectionFacts(
             managed.GetShortFuseZzzLoadOrderInEffect(game),
             managed.IsDlss5FeederFullManaged(game),
             managed.HasNativeDlssForNeuralRendering(game, dlss.DlssPaths.Count > 0),
-            game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath),
+            GameArchitecture.Of(game),
             !string.IsNullOrWhiteSpace(game.ExecutablePath) && File.Exists(game.ExecutablePath),
             Backups(dlss.DlssPaths),
             Backups(dlss.DlssdPaths),

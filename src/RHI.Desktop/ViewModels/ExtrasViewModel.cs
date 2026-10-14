@@ -662,7 +662,7 @@ public sealed partial class ExtrasViewModel : PanelViewModel
 
     /// <summary>The executable's architecture for UAL's per-architecture release (off the UI thread when it is read).</summary>
     private static PeArchitecture? GetUalArchitecture(DetectedGame game)
-        => UalArchitecture(game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath));
+        => UalArchitecture(GameArchitecture.Of(game));
 
     private static PeArchitecture? UalArchitecture(PeArchitecture architecture)
         => architecture is PeArchitecture.X86 or PeArchitecture.X64 ? architecture : null;

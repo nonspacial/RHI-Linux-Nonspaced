@@ -315,10 +315,7 @@ public sealed class DofFixDeploymentService
 
     internal static bool IsExplicitly32Bit(DetectedGame game)
     {
-        if (game.ForcedArchitecture == PeArchitecture.X86) return true;
-        if (game.ForcedArchitecture == PeArchitecture.X64) return false;
-        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath)) return false;
-        return PeArchitectureDetector.Detect(game.ExecutablePath) == PeArchitecture.X86;
+        return GameArchitecture.Of(game) == PeArchitecture.X86;
     }
 
     internal static string ResolveDeployDirectory(DetectedGame game)

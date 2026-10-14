@@ -41,11 +41,11 @@ public static class XboxWriteGate
         "PartingX owns this game, but RHI does not know which PartingX instance installed it, so it cannot tell whether PartingX is changing it. Nothing was changed. Start that PartingX once, or add its folder in Settings → PartingX / Xbox folders. Folder: ";
 
     /// <summary>
-    /// The install refusal on an Xbox card whose exe RHI cannot read (encrypted on disk): the existing "32-bit or
-    /// 64-bit" refusal, with the reason. Bitness from the package is #167.
+    /// The install refusal on an Xbox card whose exe RHI cannot read (encrypted on disk) and whose package declares no
+    /// architecture either: the existing "32-bit or 64-bit" refusal, with the reason (#167 reads a declared one).
     /// </summary>
     public const string EncryptedExecutableMessage =
-        "Could not determine whether the game executable is 32-bit or 64-bit: this Xbox / Game Pass package keeps it encrypted on disk, so RHI cannot install mods on it yet.";
+        "Could not determine whether the game executable is 32-bit or 64-bit: this Xbox / Game Pass package keeps it encrypted on disk and does not declare its architecture, so RHI cannot install mods on it.";
 
     // A PartingX title folder whose instance is unknown is recognised by these files (PartingX's own layout).
     private const string OwnedMarker = ".partingx-owned";
@@ -86,8 +86,9 @@ public static class XboxWriteGate
     }
 
     /// <summary>
-    /// <see cref="Refusal(DetectedGame)"/>, then the install-only refusal of an Xbox card whose exe cannot be read
-    /// (until #167 reads the bitness from the package, no installer can tell 32 from 64 bits). Removal never asks this.
+    /// <see cref="Refusal(DetectedGame)"/>, then the install-only refusal of an Xbox card whose bitness nothing tells:
+    /// the exe cannot be read and the package declares no architecture (<see cref="GameArchitecture"/>, #167), so no
+    /// installer can tell 32 from 64 bits. Removal never asks this.
     /// </summary>
     public static string? InstallRefusal(DetectedGame game)
         => Refusal(game) ?? (HasUnreadableExecutable(game) ? EncryptedExecutableMessage : null);
@@ -120,10 +121,9 @@ public static class XboxWriteGate
 
     private static bool HasUnreadableExecutable(DetectedGame game)
         => game.XboxPackage is not null &&
-           game.ForcedArchitecture is null &&
            !string.IsNullOrWhiteSpace(game.ExecutablePath) &&
            File.Exists(game.ExecutablePath) &&
-           PeArchitectureDetector.Detect(game.ExecutablePath) == PeArchitecture.Unknown;
+           GameArchitecture.Of(game) == PeArchitecture.Unknown;
 
     private static string? PathJobRefusal(string? path)
     {

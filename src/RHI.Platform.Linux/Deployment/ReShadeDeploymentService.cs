@@ -189,7 +189,7 @@ public sealed partial class ReShadeDeploymentService
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return ComponentOperationResult.Fail("Game executable was not detected.");
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
@@ -769,7 +769,7 @@ public sealed partial class ReShadeDeploymentService
                 }
                 case ReShadeChannel.Nightly:
                 {
-                    var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
+                    var architecture = GameArchitecture.Of(game);
                     // Identity is the GitHub Actions run (and the artifact digest GitHub published for it), never the zip size (#27).
                     var artifact = await ResolveNightlyArtifactAsync(architecture == PeArchitecture.X86, cancellationToken).ConfigureAwait(false);
                     if (artifact is null) return new(true, false, NightlyLookupFailedMessage, record.Version, null, channel, CouldNotCheck: true);

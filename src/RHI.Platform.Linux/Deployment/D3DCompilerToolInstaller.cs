@@ -144,7 +144,7 @@ public sealed class D3DCompilerToolInstaller
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
             return ComponentOperationResult.Fail("Wine/Proton prefix is not initialized/detected.");
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is not (PeArchitecture.X64 or PeArchitecture.X86))
             return ComponentOperationResult.Fail("Game PE architecture is unknown/unsupported, so the D3DCompiler install was not started.");
         // Running a prefix tool while the game uses the prefix is unsafe as well: refuse before starting it.

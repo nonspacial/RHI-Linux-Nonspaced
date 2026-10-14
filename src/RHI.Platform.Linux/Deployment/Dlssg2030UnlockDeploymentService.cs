@@ -645,12 +645,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             throw new InvalidDataException("RTX 20 FG Unlock legado payload is not a Windows x64 PE DLL.");
     }
 
-    internal static PeArchitecture ResolveArchitecture(DetectedGame game)
-    {
-        if (game.ForcedArchitecture is PeArchitecture.X86 or PeArchitecture.X64)
-            return game.ForcedArchitecture.Value;
-        return PeArchitectureDetector.Detect(game.ExecutablePath);
-    }
+    internal static PeArchitecture ResolveArchitecture(DetectedGame game) => GameArchitecture.Of(game);
 
     internal static string? ResolveBinaryDirectory(DetectedGame game)
     {

@@ -75,7 +75,7 @@ public sealed class RenoDxDeploymentService
         if (record is null) return new ManagedUpdateCheck(false, false, "RenoDX is not managed by RHI Linux.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
-        var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
         try
@@ -217,7 +217,7 @@ public sealed class RenoDxDeploymentService
         if (!HasReShade(game.BinaryDirectory))
             return ComponentOperationResult.Fail("Install ReShade with full add-on support first. RenoDX is a ReShade add-on.");
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("Could not determine game bitness for the RenoDX add-on.");
 

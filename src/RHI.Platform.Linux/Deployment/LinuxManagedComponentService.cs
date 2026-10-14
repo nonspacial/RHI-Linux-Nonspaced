@@ -512,7 +512,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                             component.ActionAllowed = false;
                             component.Note = "Universal MFG já está ativo. Remova-o antes de instalar MFG Ada Unlock; mantenha uma única autoridade de Frame Generation.";
                         }
-                        else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+                        else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                         {
                             component.ActionAllowed = false;
                             component.Note = "MFG Ada Unlock is a 64-bit ReShade add-on.";
@@ -529,7 +529,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     }
                     else if (component.Kind == ManagedComponentKind.Dlss5Dx11Bridge && component.Availability == ComponentAvailability.Available)
                     {
-                        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+                        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                         {
                             component.ActionAllowed = false;
                             component.Note = "DLSS5 DX11 Bridge is currently enabled only for 64-bit Windows games.";
@@ -555,7 +555,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     {
                         var feederArchitecture = string.IsNullOrWhiteSpace(game.ExecutablePath)
                             ? PeArchitecture.Unknown
-                            : (game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath));
+                            : GameArchitecture.Of(game);
                         var feederApiSupported = feederArchitecture == PeArchitecture.X86
                             ? game.EffectiveGraphicsApi is GraphicsApi.DirectX9 or GraphicsApi.DirectX10 or GraphicsApi.DirectX11
                             : feederArchitecture == PeArchitecture.X64
@@ -727,7 +727,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "ShortFuse upstream supports 64-bit Windows targets except OpenGL; this game is detected as OpenGL.";
                     }
-                    else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+                    else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                     {
                         component.ActionAllowed = false;
                         component.Note = "ShortFuse is enabled for detected 64-bit Windows games.";
@@ -758,7 +758,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "O OptiScaler suporta mais APIs, mas o deployment automático de proxy é habilitado apenas para jogos DX11/DX12 detectados. Vulkan exige primeiro uma escolha explícita de loader.";
                     }
-                    else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+                    else if (string.IsNullOrWhiteSpace(game.ExecutablePath) || GameArchitecture.Of(game) != PeArchitecture.X64)
                     {
                         component.ActionAllowed = false;
                         component.Note = "Automatic OptiScaler deployment is currently limited to detected 64-bit Windows executables.";
@@ -873,8 +873,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             : ComponentOperationResult.Fail(
                 "Alvo de modificações não definido. Use Editar jogo para selecionar o executável real do jogo; o executável do launcher nunca é usado como destino de patches.");
 
-    // Installs also refuse an Xbox card whose exe cannot be read (encrypted on disk): no installer can tell its bitness
-    // until #167, so the card never claims one and says why (Refs #90). Removal and updates of what exists never ask this.
+    // Installs also refuse an Xbox card whose exe cannot be read (encrypted on disk) when its package declares no
+    // architecture either: no installer can tell its bitness, so it says why (Refs #90, #167). Removal and updates of
+    // what exists never ask this.
     private ComponentOperationResult? InstallGuard(DetectedGame game) // w3/scan hook
         => PatchTargetGuard(game) ?? (XboxWriteGate.InstallRefusal(game) is { } install ? ComponentOperationResult.Fail(install) : null);
 
@@ -1477,7 +1478,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
             return ComponentOperationResult.Fail($"{requiredBy} dependency resolution requires an initialized Wine/Proton prefix.");
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is not (PeArchitecture.X86 or PeArchitecture.X64))
             return ComponentOperationResult.Fail($"{requiredBy} dependency resolution could not determine x86/x64 architecture.");
         if (ReShadeDeploymentService.FindNativeD3DCompilerForGame(game, architecture) is not null)
@@ -2116,7 +2117,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// </summary>
     public static ManagedComponentKind RecommendedNeuralRenderingMethod(DetectedGame game, bool hasNativeDlss)
     {
-        var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture == PeArchitecture.X86)
             return ManagedComponentKind.Dlss5Feeder;
         if (!hasNativeDlss)

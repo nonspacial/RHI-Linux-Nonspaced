@@ -153,9 +153,8 @@ public sealed class LumaFrameworkDeploymentService
         var knownUe5 = game.EngineHint.Contains("Unreal Engine 5", StringComparison.OrdinalIgnoreCase);
         if ((knownUe5 || (!knownUe4 && game.EngineHint.Equals("Unreal Engine", StringComparison.OrdinalIgnoreCase))) &&
             !explicitDx11) return false;
-        if (game.ForcedArchitecture == PeArchitecture.X86) return false;
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath)) return false;
-        if (PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64) return false;
+        if (GameArchitecture.Of(game) != PeArchitecture.X64) return false;
         // Pinned RHI suppresses a generic entry explicitly marked DLSS/FSR-blocked when the
         // same table does not advertise HDR support for that title.
         if (metadata is { DlssFsrBlocked: true, HdrSupported: false }) return false;
@@ -180,10 +179,10 @@ public sealed class LumaFrameworkDeploymentService
             return knownUe5
                 ? "RHI generic Luma excludes UE5 unless the user explicitly forces DirectX 11. Set the per-game API override to DirectX 11 only when the game really supports that launch path."
                 : "Local disk evidence identifies Unreal Engine but not its generation. Generic Luma remains unavailable because the game may be UE5; an explicit DirectX 11 override is required to authorize generic Luma.";
-        if (game.ForcedArchitecture == PeArchitecture.X86)
+        if (GameArchitecture.Of(game) == PeArchitecture.X86)
             return "Generic Luma is currently enabled for 64-bit Windows games.";
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath) ||
-            PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+            GameArchitecture.Of(game) != PeArchitecture.X64)
             return "Generic Luma requires a detected 64-bit Windows executable.";
         if (metadata is { DlssFsrBlocked: true, HdrSupported: false })
             return $"The Luma generic table explicitly blocks DLSS/FSR for '{metadata.Name}' and does not mark HDR support; pinned RHI suppresses generic Luma for this entry.";
@@ -200,7 +199,7 @@ public sealed class LumaFrameworkDeploymentService
         if (string.IsNullOrWhiteSpace(entry.DownloadUrl)) return false;
         if (!IsTrustedFiloppiUrl(entry.DownloadUrl)) return false;
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath)) return false;
-        var detected = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
+        var detected = GameArchitecture.Of(game);
         return detected is PeArchitecture.X64 or PeArchitecture.X86;
     }
 
@@ -214,7 +213,7 @@ public sealed class LumaFrameworkDeploymentService
             return $"Named Luma match '{entry.Name}' points outside Filoppi's GitHub namespace and is blocked by the Linux trust policy.";
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return $"Named Luma match '{entry.Name}' requires a detected Windows executable.";
-        var detected = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
+        var detected = GameArchitecture.Of(game);
         if (detected is not (PeArchitecture.X64 or PeArchitecture.X86))
             return $"Named Luma match '{entry.Name}' requires a recognized x86/x64 Windows executable.";
         return string.IsNullOrWhiteSpace(entry.Author)
@@ -290,7 +289,7 @@ public sealed class LumaFrameworkDeploymentService
                 return ComponentOperationResult.Fail("Luma Framework is a Windows/ReShade component and cannot be installed into a native Linux game.");
             if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
                 return ComponentOperationResult.Fail("Local Luma install requires a detected Windows executable.");
-            var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath);
+            var architecture = GameArchitecture.Of(game);
             if (architecture is not (PeArchitecture.X64 or PeArchitecture.X86))
                 return ComponentOperationResult.Fail("Local Luma install requires a recognized x86/x64 Windows executable.");
 
@@ -460,7 +459,7 @@ public sealed class LumaFrameworkDeploymentService
         {
             if (requiresDgVoodoo && sharedDx9Record is null)
             {
-                var architecture = game.ForcedArchitecture ?? PeArchitectureDetector.Detect(game.ExecutablePath!);
+                var architecture = GameArchitecture.Of(game);
                 try
                 {
                     var preferred = dgVoodooVersions.FirstOrDefault(pair =>

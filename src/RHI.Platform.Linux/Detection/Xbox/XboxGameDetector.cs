@@ -203,12 +203,12 @@ public sealed class XboxGameDetector : IGameDetector
             LaunchExecutablePath = executable,
             // A launcher (Fallout 4's, a menu shim) is no patch target until the user picks the game's exe in Edit game.
             RequiresExplicitPatchTarget = package is null || package.ExecutableIsLauncher,
-            // The exe is encrypted on disk, so its bitness is unknown: the card never claims one, and installs refuse with
-            // the plain reason (XboxWriteGate.InstallRefusal) until #167 reads it from the package.
             LaunchCommand = openCommand,
             // PartingX's Play entry point starts the game itself; only an opener leaves the user to start it in the app.
             ParentLauncherName = openCommand is null || info.PlayArgv is not null ? null : info.OwningApp,
-            XboxPackage = info
+            // The exe is encrypted on disk, so its bitness comes from the package (GameArchitecture, #167); the exe's own
+            // header still wins when it can be read (a plain Appx).
+            XboxPackage = info with { Architecture = package?.Architecture }
         };
     }
 

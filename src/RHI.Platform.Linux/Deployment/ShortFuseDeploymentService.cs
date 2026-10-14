@@ -383,7 +383,7 @@ public sealed class ShortFuseDeploymentService
         if (GetRecord(game) is not null)
             return ComponentOperationResult.Fail("ShortFuse is already managed for this game. Remove it before reinstalling.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath) ||
-            PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+            GameArchitecture.Of(game) != PeArchitecture.X64)
             return ComponentOperationResult.Fail("ShortFuse auto-setup currently requires a detected 64-bit Windows executable.");
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
             return ComponentOperationResult.Fail("Game binary directory is not available for ShortFuse.");

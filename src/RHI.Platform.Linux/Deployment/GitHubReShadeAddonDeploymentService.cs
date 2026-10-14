@@ -66,7 +66,7 @@ public sealed class GitHubReShadeAddonDeploymentService
             return new ManagedUpdateCheck(false, false, $"{_definition.DisplayName} is not managed by RHI Linux.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new ManagedUpdateCheck(true, false, "Game executable is unavailable; update check skipped.", record.Version, CouldNotCheck: true);
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return new ManagedUpdateCheck(true, false, "Game architecture is unknown; update check skipped.", record.Version, CouldNotCheck: true);
         try
@@ -103,7 +103,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         var preflight = ValidateTarget(game);
         if (preflight is not null) return preflight;
 
-        var architecture = PeArchitectureDetector.Detect(game.ExecutablePath!);
+        var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail($"Could not determine game bitness for {_definition.DisplayName}.");
 

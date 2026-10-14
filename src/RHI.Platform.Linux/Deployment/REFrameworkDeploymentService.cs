@@ -47,10 +47,7 @@ public sealed class REFrameworkDeploymentService
     public static bool IsGameEligible(DetectedGame game)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)) return false;
-        if (game.ForcedArchitecture == PeArchitecture.X86) return false;
-        if (!string.IsNullOrWhiteSpace(game.ExecutablePath) && File.Exists(game.ExecutablePath) &&
-            game.ForcedArchitecture is null && PeArchitectureDetector.Detect(game.ExecutablePath) == PeArchitecture.X86)
-            return false;
+        if (GameArchitecture.Of(game) == PeArchitecture.X86) return false;
         return !string.IsNullOrWhiteSpace(game.EngineHint) &&
                game.EngineHint.Contains("RE Engine", StringComparison.OrdinalIgnoreCase);
     }
@@ -59,9 +56,7 @@ public sealed class REFrameworkDeploymentService
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return "RE Framework is a Windows dinput8 injection component and is not used for native-Linux targets.";
-        if (game.ForcedArchitecture == PeArchitecture.X86 ||
-            (!string.IsNullOrWhiteSpace(game.ExecutablePath) && File.Exists(game.ExecutablePath) &&
-             game.ForcedArchitecture is null && PeArchitectureDetector.Detect(game.ExecutablePath) == PeArchitecture.X86))
+        if (GameArchitecture.Of(game) == PeArchitecture.X86)
             return "The current monolithic RE Framework nightly package is enabled only for 64-bit RE Engine games.";
         if (string.IsNullOrWhiteSpace(game.EngineHint) ||
             !game.EngineHint.Contains("RE Engine", StringComparison.OrdinalIgnoreCase))

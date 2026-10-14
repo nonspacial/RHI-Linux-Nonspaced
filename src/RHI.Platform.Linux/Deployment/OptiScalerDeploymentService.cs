@@ -249,7 +249,7 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail("Game binary directory is not known yet.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return ComponentOperationResult.Fail("Game executable was not detected.");
-        if (PeArchitectureDetector.Detect(game.ExecutablePath) != PeArchitecture.X64)
+        if (GameArchitecture.Of(game) != PeArchitecture.X64)
             return ComponentOperationResult.Fail("Current OptiScaler packages are deployed by RHI Linux only to 64-bit Windows games.");
         if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
             return ComponentOperationResult.Fail("Start the Windows game once so its Wine/Proton prefix is initialized before installing OptiScaler.");
