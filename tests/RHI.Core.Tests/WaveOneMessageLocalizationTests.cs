@@ -251,6 +251,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return P + OptiScalerIniTemplates.UnavailablePrefix + P;
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
         yield return OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "DXGI.dll";
+        yield return OptiScalerDeploymentService.OptiScalerHeldByRhiComponentPrefix + "version.dll (DLSS Enabler)";
+        yield return OptiScalerDeploymentService.FolderUnreadablePrefix + P;
         yield return ControlUeFrameGenerationService.NotSetUpPrefix + OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "dxgi.dll"
             + ControlUeFrameGenerationService.HdrSetPrefix + "0";
     }
