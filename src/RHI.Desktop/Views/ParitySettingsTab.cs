@@ -11,7 +11,7 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// Settings → "Accounts &amp; updates" (w3/parity): RHI-Linux updates (#100), GitHub token (#163). Built in code like the other Settings tabs, from
+/// Settings → "Accounts &amp; updates" (w3/parity): RHI-Linux updates (#100), GitHub token (#163), Nexus Mods (#99). Built in code like the other Settings tabs, from
 /// the parity presenters only; the Settings dialog adds it with one line. Hidden when the app was built without the
 /// parity features (tests that build the window over a bare view model).
 /// </summary>
@@ -27,6 +27,7 @@ internal static class ParitySettingsTab
         panel.Children.Add(new TextBlock { Text = T("Parity.AccountsTab"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         panel.Children.Add(AppUpdateSection(parity.AppUpdate));
         panel.Children.Add(GitHubTokenSection(parity.GitHubToken));
+        panel.Children.Add(NexusSection(parity.NexusAccount));
         tab.Content = new ScrollViewer { Content = panel };
         return tab;
     }
@@ -105,6 +106,82 @@ internal static class ParitySettingsTab
         section.Children.Add(atStartup);
         section.Children.Add(Buttons(checkNow, openPage));
         section.Children.Add(status);
+        return section;
+    }
+
+    private static Control NexusSection(NexusAccountPresenter presenter)
+    {
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(Heading(T("Parity.NexusHeading")));
+        section.Children.Add(Note(T("Parity.NexusNote")));
+        var account = new TextBlock { TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold };
+        var status = Status();
+        var box = new TextBox
+        {
+            PasswordChar = '•',
+            PlaceholderText = T("Parity.NexusKeyPlaceholder"),
+            MinWidth = 200,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Name = "NexusKeyBox"
+        };
+        var save = Button(T("Parity.NexusKeySave"), T("Parity.NexusKeySaveTip"));
+        var login = Button(T("Parity.NexusLogin"), T("Parity.NexusLoginTip"));
+        login.Name = "NexusLoginButton";
+        var keyPage = Button(T("Parity.NexusKeyPage"), T("Parity.NexusKeyPageTip"));
+        var disconnect = Button(T("Parity.NexusDisconnect"));
+        var handler = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.85 };
+        var register = Button(T("Parity.NexusHandlerRegister"), T("Parity.NexusHandlerRegisterTip"));
+        var unregister = Button(T("Parity.NexusHandlerUnregister"));
+
+        void Sync()
+        {
+            account.Text = presenter.AccountText;
+            status.Text = presenter.StatusText;
+            handler.Text = presenter.HandlerText;
+            disconnect.IsVisible = presenter.IsConnected;
+            login.IsVisible = presenter.SsoAvailable; // no Nexus registration for RHI-Linux yet: API key only
+            register.IsVisible = !presenter.HandlerIsRhi;
+            unregister.IsVisible = presenter.HandlerIsRhi;
+            save.IsEnabled = login.IsEnabled = box.IsEnabled = !presenter.IsBusy;
+        }
+        Bind(section, presenter, Sync);
+        section.AttachedToVisualTree += (_, _) => UiExceptionGuard.Forget(presenter.RefreshHandlerAsync(), "NexusHandlerQuery");
+
+        async Task SaveAsync()
+        {
+            if (await presenter.SaveKeyAsync(box.Text)) box.Text = "";
+        }
+        async Task LoginAsync()
+        {
+            if (TopLevel.GetTopLevel(section) is not Window owner) return;
+            await ParityDialogs.NexusLogin(presenter.CreateSso()).ShowDialog<bool>(owner);
+        }
+        async Task RegisterAsync()
+        {
+            if (presenter.OtherHandler is { } other && TopLevel.GetTopLevel(section) is Window owner
+                && !await ParityDialogs.AskAsync(owner, T("Parity.NexusHandlerHeading"), UiLocalizationService.Format("Parity.NexusHandlerReplace", other), T("Parity.NexusHandlerRegister")))
+                return;
+            await presenter.RegisterHandlerAsync();
+        }
+        save.Click += (_, _) => UiExceptionGuard.Forget(SaveAsync(), "NexusKeySave");
+        login.Click += (_, _) => UiExceptionGuard.Forget(LoginAsync(), "NexusLogin");
+        keyPage.Click += (_, _) => presenter.OpenKeyPage();
+        disconnect.Click += (_, _) => presenter.Disconnect();
+        register.Click += (_, _) => UiExceptionGuard.Forget(RegisterAsync(), "NxmRegister");
+        unregister.Click += (_, _) => UiExceptionGuard.Forget(presenter.UnregisterHandlerAsync(), "NxmUnregister");
+
+        var entry = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
+        entry.Children.Add(box);
+        entry.Children.Add(save);
+        Grid.SetColumn(save, 1);
+        section.Children.Add(account);
+        section.Children.Add(Buttons(login, keyPage, disconnect));
+        section.Children.Add(entry);
+        section.Children.Add(status);
+        section.Children.Add(new TextBlock { Text = T("Parity.NexusHandlerHeading"), FontWeight = FontWeight.SemiBold, Margin = new Thickness(0, 6, 0, 0) });
+        section.Children.Add(Note(T("Parity.NexusHandlerNote")));
+        section.Children.Add(handler);
+        section.Children.Add(Buttons(register, unregister));
         return section;
     }
 

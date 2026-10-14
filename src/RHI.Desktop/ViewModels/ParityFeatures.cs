@@ -13,17 +13,13 @@ public sealed class ParityFeatures
     public required GitHubTokenPresenter GitHubToken { get; init; }
     public required AppUpdatePresenter AppUpdate { get; init; }
     public required GameShortcutPresenter Shortcuts { get; init; }
+    public required NexusAccountPresenter NexusAccount { get; init; }
+    public required NexusLinkPresenter NexusLinks { get; init; }
 
     /// <summary>A request a shortcut or link brought to this RHI (its own command line or the hand-off). UI thread.</summary>
     public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch
     {
         HandoffKind.Launch => Shortcuts.LaunchByKeyAsync(vm, request.Value),
-        _ => Ignore(request)
+        _ => NexusLinks.HandleAsync(vm, request.Value)
     };
-
-    private static Task Ignore(HandoffRequest request)
-    {
-        RHI.Core.Services.AppLog.Warn("handoff", $"Ignored a {request.Kind} request: not handled by this build");
-        return Task.CompletedTask;
-    }
 }

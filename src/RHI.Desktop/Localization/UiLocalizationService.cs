@@ -981,6 +981,15 @@ public static class UiLocalizationService
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusApi.RefusalPrefix,
+            "Download recusado: links da API do Nexus Mods devem ser HTTPS em um host confiável (api.nexusmods.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusFiles.RefusalPrefix,
+            "Download recusado: links de arquivos do Nexus Mods devem ser HTTPS em um host confiável (servidores de arquivos do Nexus Mods, nexus-cdn.com). Link recusado: "),
+        (RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage, "Não foi possível falar com o Nexus Mods."),
+        (RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage, "O Nexus Mods não deu nenhum link de download que o RHI aceite para este arquivo."),
+        (RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage, "O Nexus Mods respondeu à verificação da chave sem uma conta."),
+        (RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage, "O Nexus Mods enviou mais do que uma resposta de dados."),
+        (RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix, "O Nexus Mods respondeu "),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

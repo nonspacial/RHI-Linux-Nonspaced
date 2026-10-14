@@ -58,7 +58,8 @@ exec_path="${exec_path//%/%%}"
 desktop_tmp="$(mktemp "$APPS_DIR/.rhi-linux.desktop.XXXXXX")"
 while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" == Exec=* ]]; then
-        printf 'Exec="%s"\n' "$exec_path"
+        # %u: a Nexus Mods "Mod Manager Download" (nxm://) link, when the desktop hands one to RHI (#99).
+        printf 'Exec="%s" %%u\n' "$exec_path"
     else
         printf '%s\n' "$line"
     fi

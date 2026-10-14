@@ -178,8 +178,13 @@ internal sealed class AppComposition
         // w3/scan rows
         // w3/parity rows
         var accounts = new AccountsPreferenceStore();
+        var nexusApi = new NexusApiClient(http);
+        var nexusAccount = new NexusAccountPresenter(new SecretFileStore(NexusAccountPresenter.DefaultKeyPath, "nexus"), nexusApi, accounts,
+            new NxmHandlerRegistration(), ssoSlug: NexusApplication.SsoSlug);
         var parity = new ParityFeatures
         {
+            NexusAccount = nexusAccount,
+            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(

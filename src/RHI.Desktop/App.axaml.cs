@@ -69,6 +69,7 @@ public sealed class App : Application
                 HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog),
                 UpstreamManifest = services.UpstreamManifest
             };
+            if (services.Parity is { } windowParity) ((MainWindow)desktop.MainWindow).AttachParity(windowParity); // w3/parity hook (#99)
         }
         base.OnFrameworkInitializationCompleted();
     }

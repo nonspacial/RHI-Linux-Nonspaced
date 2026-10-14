@@ -89,7 +89,7 @@ find "$appdir/usr/bin" -name '*.pdb' -delete
     || fail "publish did not produce a self-contained RHI (usr/bin/RHI, libcoreclr.so)"
 
 install -m 0755 packaging/appimage/AppRun "$appdir/AppRun"
-sed -e 's/^Exec=.*/Exec=RHI/' packaging/rhi-linux.desktop > "$appdir/rhi-linux.desktop"
+sed -e 's/^Exec=.*/Exec=RHI %u/' packaging/rhi-linux.desktop > "$appdir/rhi-linux.desktop"
 printf 'X-AppImage-Version=%s\n' "$version" >> "$appdir/rhi-linux.desktop"
 cp "$appdir/rhi-linux.desktop" "$appdir/usr/share/applications/rhi-linux.desktop"
 install -m 0644 src/RHI.Desktop/Assets/providers/rhi.png "$appdir/rhi-linux.png"

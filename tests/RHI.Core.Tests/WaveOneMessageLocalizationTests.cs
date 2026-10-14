@@ -152,6 +152,11 @@ public sealed class WaveOneMessageLocalizationTests
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        yield return RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage;
+        yield return RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage;
+        yield return RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix + "503.";
         // w3/vmsplit rows
         // w3/dllnames rows
     }
