@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Avalonia;
 
+using RtxEncoreText = RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService;
+
 namespace RHI.Desktop.Localization;
 
 public static class UiLocalizationService
@@ -170,6 +172,7 @@ public static class UiLocalizationService
         ["Ui.DlssEnablerStandaloneUpdate"] = "Atualizar",
         ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Compatibilidade experimental: confirme em jogo real sob Wine/Proton que o proxy escolhido é carregado sem crash, tela preta ou perda do dispositivo.",
         ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — geração da GPU, DLL proxy e atualização",
+        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — nome do arquivo, Neural Rendering e atualização",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
         ["Ui.Rtx40MfgIntro"] = "Instala o Universal RTXMFG como uma única DLL proxy ao lado do executável alvo. RTX 40 usa DX12 e Vulkan experimental; RTX 30 usa somente DX12 e permanece experimental upstream. Exige uma pilha funcional de Streamline DLSS Frame Generation, fornecida pelo jogo ou pelo fluxo OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. O RHI valida SHA-256/PE x64 e protege slots existentes.",
         ["Ui.Rtx40MfgGpuGeneration"] = "Geração da GPU",
@@ -397,6 +400,7 @@ public static class UiLocalizationService
         ["Ui.DlssEnablerStandaloneUpdate"] = "Update",
         ["Ui.DlssEnablerStandaloneCompatibilityNote"] = "Experimental compatibility: confirm in a real game under Wine/Proton that the selected proxy loads without crashes, black screens, or device loss.",
         ["Ui.Rtx40MfgSettingsTip"] = "Universal MFG — GPU generation, proxy DLL and updates",
+        ["Ui.RtxEncoreSettingsTip"] = "RTX Encore — file name, Neural Rendering and updates",
         ["Ui.Rtx40MfgTitle"] = "Universal MFG — Experimental",
         ["Ui.Rtx40MfgIntro"] = "Installs Universal RTXMFG as a single proxy DLL beside the target executable. RTX 40 uses DX12 plus experimental Vulkan; RTX 30 is DX12-only and remains experimental upstream. A functional Streamline DLSS Frame Generation stack is required, either game-provided or managed through OptiScaler Nightly/DLSS NR/F5 DLSSNR + Streamline/DLSS Enabler. RHI validates SHA-256/PE x64 and protects occupied slots.",
         ["Ui.Rtx40MfgGpuGeneration"] = "GPU generation",
@@ -1115,6 +1119,44 @@ public static class UiLocalizationService
         ("RenoDX is not installed by RHI on this game.", "o RenoDX não foi instalado pelo RHI neste jogo."),
         ("the value was changed outside RHI and was kept.", "o valor foi alterado fora do RHI e foi mantido."),
         // #98 OptiPatcher.
+        // w4/encore (#158): RTX Encore service messages.
+        (RHI.Platform.Linux.Deployment.DownloadSources.RtxEncore.RefusalPrefix,
+            "Download recusado: links do RTX Encore devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        (RtxEncoreText.NotYetConfirmedNote, "Ainda não confirmado no Linux: geração de quadros ×3–×6 e Neural Rendering podem funcionar pelo DLSS do Proton; Smooth Motion não (precisa do driver do Windows)."),
+        (RtxEncoreText.NativeLinuxMessage, "O RTX Encore é uma DLL do Windows; não se aplica a jogos nativos do Linux."),
+        (RtxEncoreText.NeedsX64Message, "O RTX Encore precisa de um jogo Windows de 64 bits."),
+        (RtxEncoreText.ApiMessage, "O RTX Encore funciona apenas com jogos DirectX 11, DirectX 12 e Vulkan."),
+        (RtxEncoreText.NeedsDlssMessage, "O RTX Encore funciona pelo DLSS do próprio jogo; este jogo não tem DLSS."),
+        (RtxEncoreText.PrefixMessage, "Inicie o jogo uma vez para criar o prefixo Wine/Proton antes de instalar o RTX Encore."),
+        (RtxEncoreText.AlreadyInstalledMessage, "O RTX Encore já está instalado pelo RHI neste jogo."),
+        (RtxEncoreText.NotInstalledMessage, "O RTX Encore não está instalado pelo RHI neste jogo."),
+        (RtxEncoreText.NameLockedMessage, "O RTX Encore está instalado: remova-o para escolher outro nome."),
+        (RtxEncoreText.NameNotOfferedPrefix, "O RTX Encore não pode usar este nome neste jogo; escolha outro no ⚙: "),
+        (RtxEncoreText.NameHeldPrefix, "Este nome já pertence a outro componente do RHI; escolha outro no ⚙: "),
+        (RtxEncoreText.KeptCopyInTheWayPrefix, "RTX Encore não instalado: uma cópia guardada antes está no caminho; mova-a para outro lugar primeiro: "),
+        (RtxEncoreText.DownloadFailedPrefix, "O download do RTX Encore falhou; nada foi alterado: "),
+        (RtxEncoreText.NeuralRenderingUnavailableMessage, "A lista do DLSS não oferece mais o arquivo de Neural Rendering 310.8.0 da NVIDIA, o único que o RTX Encore aceita; nada foi alterado."),
+        (RtxEncoreText.NeuralRenderingMismatchMessage, "O arquivo de Neural Rendering 310.8.0 baixado não é o que o RTX Encore aceita; nada foi alterado."),
+        (RtxEncoreText.NeuralRenderingNeedsDlssListMessage, "A lista do DLSS não está disponível, então o arquivo de Neural Rendering não pode ser baixado; nada foi alterado."),
+        (RtxEncoreText.FailedRolledBackPrefix, "O RTX Encore falhou e foi desfeito: "),
+        (RtxEncoreText.ModifiedPrefix, "RTX Encore não alterado: um arquivo mudou desde a instalação pelo RHI (mantido como está): "),
+        (RtxEncoreText.MissingPrefix, "RTX Encore não atualizado: o arquivo dele sumiu; remova-o e instale de novo: "),
+        (RtxEncoreText.InstalledPrefix, "RTX Encore instalado; pressione Insert no jogo para abrir o menu. Ainda não confirmado no Linux. Nome: "),
+        (RtxEncoreText.InstalledWithNeuralRenderingSuffix, " (com o arquivo de Neural Rendering 310.8.0)"),
+        (RtxEncoreText.RemovedMessage, "RTX Encore removido; os arquivos guardados de antes voltaram."),
+        (RtxEncoreText.KeptCopyMissingPrefix, " A cópia guardada de antes não foi encontrada, então nada foi reposto: "),
+        (RtxEncoreText.UpToDatePrefix, "O RTX Encore está atualizado: "),
+        (RtxEncoreText.UpdatedPrefix, "RTX Encore atualizado para "),
+        (RtxEncoreText.UpdateAvailablePrefix, "Atualização do RTX Encore disponível: "),
+        (RtxEncoreText.LatestPrefix, "RTX Encore mais recente: "),
+        (RtxEncoreText.CheckFailedPrefix, "Não foi possível verificar o RTX Encore: "),
+        (RtxEncoreText.NeuralRenderingOnMessage, "RTX Encore: arquivo de Neural Rendering 310.8.0 instalado."),
+        (RtxEncoreText.NeuralRenderingOffMessage, "RTX Encore: arquivo de Neural Rendering removido; um arquivo guardado de antes voltou."),
+        (RtxEncoreText.NeuralRenderingAlreadyMessage, "RTX Encore: nada a alterar."),
+        (RtxEncoreText.SavedWithNeuralRenderingMessage, "Salvo: o RTX Encore será instalado com o arquivo de Neural Rendering 310.8.0."),
+        (RtxEncoreText.SavedWithoutNeuralRenderingMessage, "Salvo: o RTX Encore será instalado sem o arquivo de Neural Rendering."),
+        (RtxEncoreText.SavedNamePrefix, "Salvo: o RTX Encore será instalado como "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.RtxEncoreOwnerMessage, "O NR Cost Scaler não pode envolver o arquivo de Neural Rendering do RTX Encore: o RTX Encore só aceita o arquivo 310.8.0 original da NVIDIA."),
         (RHI.Platform.Linux.Deployment.DownloadSources.OptiPatcher.RefusalPrefix,
             "Download recusado: links do OptiPatcher devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (" OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado em plugins/ (LoadAsiPlugins do OptiScaler ativado). Build: "),

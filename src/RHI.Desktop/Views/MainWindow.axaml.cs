@@ -1137,6 +1137,14 @@ public sealed partial class MainWindow : Window
         await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.UniversalMfg));
     });
 
+    // w4/encore (#158)
+    private void RtxEncoreSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
+    {
+        if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtxEncoreSettings) return;
+        if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
+        await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.RtxEncore));
+    });
+
     /// <summary>A component dialog: the window's content is its view model, laid out by its data template (App.axaml).</summary>
     private async Task ShowComponentDialogAsync(ProxyComponentDialogViewModel model)
     {

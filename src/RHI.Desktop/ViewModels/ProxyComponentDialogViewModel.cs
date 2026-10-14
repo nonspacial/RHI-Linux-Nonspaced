@@ -2,13 +2,14 @@ using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>The component dialogs that share one layout: a proxy DLL (and GPU generation) choice, then check / update.</summary>
-public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg }
+public enum ProxyComponentDialogKind { Dlssg2030, DlssEnabler, UniversalMfg, RtxEncore }
 
 /// <summary>
 /// The DLSS FG 20/30 unlock, standalone DLSS Enabler and Universal MFG settings dialogs (epic #89 unit 7): one view
@@ -80,6 +81,32 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 (Width, Height, MinWidth, MinHeight) = (660, 470, 540, 380);
                 break;
             }
+            case ProxyComponentDialogKind.RtxEncore: // w4/encore (#158)
+            {
+                var record = shell.GetRtxEncoreRecord();
+                Title = RtxEncoreDeploymentService.DisplayName; // a product name, the same in every language
+                Intro = T("Ui.RtxEncoreIntro");
+                ProxyLabel = T("Ui.RtxEncoreName");
+                ProxyTip = T("Ui.RtxEncoreNameTip");
+                var chosen = shell.RtxEncoreChosenName();
+                var offered = shell.RtxEncoreOfferedNames();
+                // The saved/installed name is always listed, so the dropdown never blanks it.
+                ProxyOptions = offered.Contains(chosen, StringComparer.OrdinalIgnoreCase) ? offered : [chosen, .. offered];
+                SelectedProxy = chosen;
+                ProxyMinWidth = 240;
+                HasNeuralRendering = true;
+                NeuralRenderingLabel = T("Ui.RtxEncoreNeuralRendering");
+                NeuralRenderingTip = T("Ui.RtxEncoreNeuralRenderingTip");
+                NeuralRenderingChosen = shell.RtxEncoreNeuralRenderingChosen();
+                IsInstalled = record is not null;
+                InstalledText = record is null ? null : TF("Win.RtxEncoreInstalled", record.Version ?? "?", chosen);
+                CheckLabel = T("Ui.RtxEncoreCheck");
+                UpdateLabel = T("Vm.Update");
+                FooterNote = T("Ui.RtxEncoreFooter");
+                FooterIsWarning = true;
+                (Width, Height, MinWidth, MinHeight) = (660, 500, 540, 400);
+                break;
+            }
             default:
             {
                 var preferences = shell.GetRtx40MfgPreferences();
@@ -127,6 +154,7 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     public bool HasGpu => GpuOptions.Count > 0;
     public double GpuMinWidth { get; }
     public string ProxyLabel { get; }
+    public string? ProxyTip { get; }
     public IReadOnlyList<string> ProxyOptions { get; }
     public double ProxyMinWidth { get; }
     public string? CompatibilityText { get; }
@@ -141,6 +169,15 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
     /// <summary>The footer is a warning (gold) rather than a plain note.</summary>
     public bool FooterIsWarning { get; }
     public bool FooterIsPlain => !FooterIsWarning;
+
+    /// <summary>RTX Encore's "Neural Rendering file" choice (#158); hidden in the other dialogs.</summary>
+    public bool HasNeuralRendering { get; }
+    /// <summary>RTX Encore installed: the name is shown as text (it cannot change until removal).</summary>
+    public bool ShowsProxyAsText => HasNeuralRendering && IsInstalled;
+    public string NeuralRenderingLabel { get; } = "";
+    public string? NeuralRenderingTip { get; }
+    [ObservableProperty] private bool neuralRenderingChosen;
+    [ObservableProperty] private bool canChangeNeuralRendering = true;
 
     [ObservableProperty] private string? selectedGpu;
     [ObservableProperty] private string? selectedProxy;
@@ -174,6 +211,32 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
         if (!string.IsNullOrEmpty(value)) SavePreferences();
     }
 
+    // Saved before install; once installed the file goes in or out at once (busy gate, journaled). Refused = put back.
+    partial void OnNeuralRenderingChosenChanged(bool value)
+    {
+        if (_loading || _reverting || !HasNeuralRendering) return;
+        PendingNeuralRendering = ApplyNeuralRenderingAsync(value);
+        UiExceptionGuard.Forget(PendingNeuralRendering, "RtxEncoreNeuralRendering");
+    }
+
+    /// <summary>The last Neural Rendering change started (tests await it).</summary>
+    internal Task? PendingNeuralRendering { get; private set; }
+
+    private async Task ApplyNeuralRenderingAsync(bool value)
+    {
+        CanChangeNeuralRendering = false;
+        try
+        {
+            var (result, shown) = await _shell.SetRtxEncoreNeuralRenderingAsync(value);
+            Message = shown;
+            if (result.Success) return;
+            _reverting = true;
+            try { NeuralRenderingChosen = _shell.RtxEncoreNeuralRenderingChosen(); }
+            finally { _reverting = false; }
+        }
+        finally { CanChangeNeuralRendering = true; }
+    }
+
     /// <summary>
     /// Saves the dropdowns' choice. A dropdown left empty keeps the stored value — never the component's default, which
     /// would overwrite the user's saved preference just by opening the dialog.
@@ -198,6 +261,9 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                 case ProxyComponentDialogKind.DlssEnabler:
                     SelectedProxy = _shell.GetStandaloneDlssEnablerPreferences().ProxyName;
                     break;
+                case ProxyComponentDialogKind.RtxEncore:
+                    SelectedProxy = _shell.RtxEncoreChosenName();
+                    break;
                 default:
                     var mfg = _shell.GetRtx40MfgPreferences();
                     SelectedGpu = mfg.GpuGeneration;
@@ -216,6 +282,8 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
                     return _shell.SetDlssg2030Preferences(Chosen(SelectedGpu, storedFg.GpuGeneration), Chosen(SelectedProxy, storedFg.ProxyName));
                 case ProxyComponentDialogKind.DlssEnabler:
                     return _shell.SetStandaloneDlssEnablerPreferences(Chosen(SelectedProxy, _shell.GetStandaloneDlssEnablerPreferences().ProxyName));
+                case ProxyComponentDialogKind.RtxEncore:
+                    return _shell.SetRtxEncoreName(Chosen(SelectedProxy, _shell.RtxEncoreChosenName()));
                 default:
                     var storedMfg = _shell.GetRtx40MfgPreferences();
                     return _shell.SetRtx40MfgPreferences(Chosen(SelectedGpu, storedMfg.GpuGeneration), Chosen(SelectedProxy, storedMfg.ProxyName));
@@ -235,6 +303,7 @@ public sealed partial class ProxyComponentDialogViewModel : ObservableObject, ID
             {
                 ProxyComponentDialogKind.Dlssg2030 => await _shell.CheckDlssg2030UpdateAsync() is var a ? (a.Success, a.HasUpdate, a.Message) : default,
                 ProxyComponentDialogKind.DlssEnabler => await _shell.CheckStandaloneDlssEnablerUpdateAsync() is var b ? (b.Success, b.HasUpdate, b.Message) : default,
+                ProxyComponentDialogKind.RtxEncore => await _shell.CheckRtxEncoreUpdateAsync() is var e ? (e.Success, e.HasUpdate, e.Message) : default,
                 _ => await _shell.CheckRtx40MfgUpdateAsync() is var c ? (c.Success, c.HasUpdate, c.Message) : default
             };
             Message = UiLocalizationService.Present(text);

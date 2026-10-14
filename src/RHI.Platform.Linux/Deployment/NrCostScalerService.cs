@@ -43,6 +43,7 @@ public sealed class NrCostScalerService
     public const string RemovedMessage = "NR Cost Scaler removed; the Neural Rendering runtime is back as it was.";
     public const string FailedRolledBackPrefix = "NR Cost Scaler failed and was rolled back: ";
     public const string OwnerBlockedPrefix = "Remove NR Cost Scaler first: it wraps nvngx_dlssnr.dll for ";
+    public const string RtxEncoreOwnerMessage = "NR Cost Scaler cannot wrap RTX Encore's Neural Rendering file: RTX Encore accepts only NVIDIA's own 310.8.0 file.";
 
     private const string MetaOwner = "NrCostScaler.Owner";
     private const string MetaOwnerSha = "NrCostScaler.OwnerSha256";
@@ -86,6 +87,9 @@ public sealed class NrCostScalerService
         return OwnerBlockedPrefix + (scaler.Metadata.TryGetValue(MetaOwner, out var name) ? name : owner.ToString());
     }
 
+    /// <summary>Whether the scaler can wrap this owner's runtime: not RTX Encore's (#158), which accepts only NVIDIA's file.</summary>
+    public static bool CanWrap(string owner) => owner != NeuralRenderingRuntimeOwnership.RtxEncoreOwnerName;
+
     public static bool IsInstalledIn(string directory) => File.Exists(Path.Combine(directory, RealDllName));
 
     /// <summary>
@@ -108,6 +112,8 @@ public sealed class NrCostScalerService
     {
         if (GetRecord(game) is not null) return ComponentOperationResult.Fail(AlreadyInstalledMessage);
         if (FindOwner(game) is not { } owner) return ComponentOperationResult.Fail(NoOwnerMessage);
+        // w4/encore (#158): RTX Encore checks the runtime's SHA-256 and would refuse the scaler's proxy.
+        if (!CanWrap(owner.Owner)) return ComponentOperationResult.Fail(RtxEncoreOwnerMessage);
         var proxyPath = owner.File.Path;
         var directory = Path.GetDirectoryName(proxyPath)!;
         if (!File.Exists(proxyPath) || owner.File.Sha256 is not { Length: > 0 } ownerSha || !FileHash.HexEquals(FileHash.Sha256Hex(proxyPath), ownerSha))

@@ -419,7 +419,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (SelectedGame is not null && CurrentAnalysis is { } cached)
         {
             Components.Clear();
-            foreach (var item in cached.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
+            foreach (var item in cached.Components.Where(ComponentRowViewModel.IsShown)) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
         }
 
         NotifySelected();
@@ -761,7 +761,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             Components.Clear();
             if (analysis is not null)
-                foreach (var item in analysis.Components) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
+                foreach (var item in analysis.Components.Where(ComponentRowViewModel.IsShown)) Components.Add(new ComponentRowViewModel(item, ManageComponentCommand));
         }
         Dlss.Detection = analysis?.Dlss ?? new();
         if (analysis is not null && published)
@@ -1203,6 +1203,51 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public async Task<ComponentOperationResult> UpdateRtx40MfgAsync(CancellationToken cancellationToken = default)
         => (await RunComponentUpdateAsync((game, token) => _managedComponents.UpdateRtx40MfgAsync(game, token), cancellationToken)).Result;
 
+    // w4/encore (#158): RTX Encore's ⚙ dialog.
+    public LinuxDeploymentRecord? GetRtxEncoreRecord()
+        => SelectedGame is null ? null : _managedComponents.GetRtxEncoreRecord(SelectedGame);
+
+    public IReadOnlyList<string> RtxEncoreOfferedNames()
+        => SelectedGame is { } game && _managedComponents.RtxEncore is { } encore ? encore.OfferedNames(game) : [];
+
+    public string RtxEncoreChosenName()
+        => SelectedGame is { } game && _managedComponents.RtxEncore is { } encore ? encore.ChosenName(game) : RtxEncoreDeploymentService.DefaultName;
+
+    public bool RtxEncoreNeuralRenderingChosen()
+        => SelectedGame is { } game && _managedComponents.RtxEncore is { } encore && encore.NeuralRenderingChosen(game);
+
+    public ComponentOperationResult SetRtxEncoreName(string name)
+    {
+        if (SelectedGame is null)
+            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        if (RefuseWhileBusy() is { } busy) return busy;
+        var game = SelectedGame;
+        return PersistPreference(() => _managedComponents.SetRtxEncoreName(game, name));
+    }
+
+    /// <summary>The Neural Rendering choice: saved before install; once installed the file is put in or taken out under the busy gate.</summary>
+    internal async Task<(ComponentOperationResult Result, string Shown)> SetRtxEncoreNeuralRenderingAsync(bool enabled)
+    {
+        if (SelectedGame is not { } game || _managedComponents.RtxEncore is not { } encore)
+            return (ComponentOperationResult.Fail(T("Vm.SelectGameFirst")), T("Vm.SelectGameFirst"));
+        if (encore.GetRecord(game) is null)
+        {
+            if (RefuseWhileBusy() is { } busy) return (busy, UiLocalizationService.Present(busy.Message));
+            var saved = PersistPreference(() => encore.SetNeuralRenderingPreference(game, enabled));
+            return (saved, UiLocalizationService.Present(saved.Message));
+        }
+        return await RunComponentUpdateAsync((g, token) => _managedComponents.SetRtxEncoreNeuralRenderingAsync(g, enabled, token));
+    }
+
+    public async Task<RtxEncoreUpdateStatus> CheckRtxEncoreUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        if (SelectedGame is null)
+            return new(false, null, null, false, T("Vm.SelectGameFirst"));
+        var status = await _managedComponents.CheckRtxEncoreUpdateAsync(SelectedGame, cancellationToken).ConfigureAwait(true);
+        StatusText = UiLocalizationService.Present(status.Message);
+        return status;
+    }
+
     /// <summary>
     /// A component dialog's Update (FG 20/30 unlock, DLSS Enabler, Universal MFG) under the busy gate: the result and the
     /// line shown for it — "Operation cancelled." when the dialog's Cancel stopped it, otherwise the presented message.
@@ -1228,6 +1273,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             ProxyComponentDialogKind.Dlssg2030 => (game, token) => _managedComponents.UpdateDlssg2030Async(game, token),
             ProxyComponentDialogKind.DlssEnabler => (game, token) => _managedComponents.UpdateStandaloneDlssEnablerAsync(game, token),
+            ProxyComponentDialogKind.RtxEncore => (game, token) => _managedComponents.UpdateManagedAsync(game, ManagedComponentKind.RtxEncore, [], token),
             _ => (game, token) => _managedComponents.UpdateRtx40MfgAsync(game, token)
         })).Shown;
 

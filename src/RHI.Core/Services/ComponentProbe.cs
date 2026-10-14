@@ -42,6 +42,11 @@ public static class ComponentProbe
             return ProxyDllNames.IsReShadeOnDisk(path);
         });
 
+        // RTX Encore (#158) under any of its names beside the executable, or its .asi in an ASI loader's folder; its version
+        // resource decides (its body mentions ReShade and OptiScaler).
+        var rtxEncoreInstalled = binaryDirectory is not null && indexedFiles.Any(path => IsRtxEncoreCandidate(path, binaryDirectory)
+            && BinarySignatureInspector.LooksLikeRtxEncore(path));
+
         // RHI's own OptiScaler FG stack (OptiScaler/Streamline/sl.*) is not the game's Streamline: the DLSS panel and
         // Universal MFG already ignore the OptiScaler/ folder, and MFG Ada Unlock needs the game's own integration.
         var stackRoot = !string.IsNullOrWhiteSpace(game.InstallPath) ? game.InstallPath : game.BinaryDirectory;
@@ -74,6 +79,8 @@ public static class ComponentProbe
             // Universal RTXMFG is also a generic proxy DLL; ownership records are the safe
             // authority for Installed state. A bare version/dxgi/etc. must never be adopted.
             Make(ManagedComponentKind.Rtx40MfgStandalone, "Universal MFG (Experimental)", false),
+            // Generic proxy names as well, but identified by its own version resource; RHI's record marks it managed.
+            Make(ManagedComponentKind.RtxEncore, RtxEncoreDisplayName, rtxEncoreInstalled),
             Make(ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", files.Any(IsDlss5FeederAddonFileName)),
             Make(ManagedComponentKind.Dlss5Dx11Bridge, "DLSS5 DX11 Bridge", files.Any(IsDlss5BridgeAddonFileName)),
             Make(ManagedComponentKind.ShortFuse, "ShortFuse / DLSS Frame Generation", files.Contains("renodx-dlss.addon64") || files.Contains("zzz_renodx-dlss.addon64")),
@@ -104,6 +111,20 @@ public static class ComponentProbe
         }
 
         return result;
+    }
+
+    /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>
+    public const string RtxEncoreDisplayName = "RTX Encore (Beta)";
+
+    private static bool IsRtxEncoreCandidate(string path, string binaryDirectory)
+    {
+        var name = Path.GetFileName(path);
+        var parent = Path.GetDirectoryName(path);
+        if (parent is null || RtxEncoreNames.Canonical(name) is null) return false;
+        var folder = Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar);
+        if (folder.Equals(binaryDirectory, StringComparison.Ordinal)) return true;
+        return RtxEncoreNames.IsAsi(name)
+               && RtxEncoreNames.AsiFolders.Any(sub => folder.Equals(Path.Combine(binaryDirectory, sub), StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsPrimaryRenoDxAddonFileName(string fileName)

@@ -9,7 +9,25 @@ public static class BinarySignatureInspector
     /// external-ReShade refusal and blocked ReShade beside an RHI-managed OptiScaler (#154).
     /// </summary>
     public static bool LooksLikeReShade(string path)
-        => ContainsAny(path, "ReShade", "reshade.me", "crosire") && !IsOptiScalerVersionResource(PeVersionReader.Read(path));
+    {
+        if (!ContainsAny(path, "ReShade", "reshade.me", "crosire")) return false;
+        // RTX Encore's proxies also mention ReShade (#158): their own resource rules ReShade out, as OptiScaler's does.
+        var version = PeVersionReader.Read(path);
+        return !IsOptiScalerVersionResource(version) && !IsRtxEncoreVersionResource(version);
+    }
+
+    /// <summary>
+    /// RTX Encore (SilyNoMeta/rtx-encore, #158) by its PE version resource: every build checked (v1.0.0-rc.3 main DLL, its
+    /// pre-named proxies and the ASI) writes <c>CompanyName = SilyNoMeta</c> and a <c>FileDescription</c> starting
+    /// "RTX Encore". Its body mentions both ReShade and OptiScaler, so strings never identify it.
+    /// </summary>
+    public static bool LooksLikeRtxEncore(string path) => IsRtxEncoreVersionResource(PeVersionReader.Read(path));
+
+    /// <summary>True for RTX Encore's version resource (<c>CompanyName</c> SilyNoMeta, description "RTX Encore…").</summary>
+    public static bool IsRtxEncoreVersionResource(PeVersionInfo? version)
+        => version is not null
+           && string.Equals(version.CompanyName?.Trim(), "SilyNoMeta", StringComparison.OrdinalIgnoreCase)
+           && version.FileDescription?.TrimStart().StartsWith("RTX Encore", StringComparison.OrdinalIgnoreCase) == true;
 
     /// <summary>
     /// OptiScaler identification (#154, upstream 2.8.6/2.8.7 7920ae6, 5031d97). The PE version resource decides when

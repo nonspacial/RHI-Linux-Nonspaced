@@ -6,6 +6,13 @@ namespace RHI.Desktop.ViewModels;
 
 public sealed class ComponentRowViewModel(ManagedComponent component, ICommand command)
 {
+    /// <summary>
+    /// Whether the row is listed. Owner rule: options that cannot apply are hidden — RTX Encore (#158) is left out where
+    /// it cannot work (not a 64-bit DX11/DX12/Vulkan Windows game with its own DLSS); an RTX Encore found on disk still shows.
+    /// </summary>
+    public static bool IsShown(ManagedComponent component)
+        => !(component.Kind == ManagedComponentKind.RtxEncore && component.Availability == ComponentAvailability.Unsupported);
+
     public ManagedComponentKind Kind => component.Kind;
     public ComponentAvailability Availability => component.Availability;
     public string? InstalledVersion => component.InstalledVersion;
@@ -32,7 +39,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
             };
 
             // API-driven add-ons expose their installed version in the picker.
-            if (component.Kind is ManagedComponentKind.RenoDXUpgrade or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework)
+            if (component.Kind is ManagedComponentKind.RenoDXUpgrade or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or ManagedComponentKind.RtxEncore)
             {
                 // Show the version actually installed on disk. If no installed version is
                 // available yet, fall back to the newest resolved version as informational data.
@@ -84,6 +91,9 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
         && component.Availability is not ComponentAvailability.Unsupported;
     public bool HasRtx40MfgSettings => component.Kind == ManagedComponentKind.Rtx40MfgStandalone
         && component.Availability is not ComponentAvailability.Unsupported;
+    public bool HasRtxEncoreSettings => component.Kind == ManagedComponentKind.RtxEncore
+        && component.Availability is not ComponentAvailability.Unsupported
+        && (component.ManagedByRhi || component.Availability == ComponentAvailability.Available); // not for an RTX Encore RHI did not install
     public bool HasReFrameworkSettings => ReFrameworkStoragePresenter.HasSettings(component); // w3/journal hook (#159)
     public string ReFrameworkSettingsTip => ReFrameworkStoragePresenter.SettingsTip; // w3/journal hook (#159)
     public ICommand Command => command;

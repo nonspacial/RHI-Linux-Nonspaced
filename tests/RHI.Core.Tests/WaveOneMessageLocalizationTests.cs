@@ -215,6 +215,43 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.NrCostScalerService.RemovedMessage;
         yield return RHI.Platform.Linux.Deployment.NrCostScalerService.FailedRolledBackPrefix + "No space left on device : '/jogos'";
         yield return RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerBlockedPrefix + "DLSS5 Feeder";
+        // w4/encore (#158) rows
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NotYetConfirmedNote;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NativeLinuxMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeedsX64Message;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.ApiMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeedsDlssMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.PrefixMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.AlreadyInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NotInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NameLockedMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NameNotOfferedPrefix + "dxgi.dll";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NameHeldPrefix + "dinput8.dll";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.KeptCopyInTheWayPrefix + "/jogos/Exemplo/version.dll.original";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.DownloadFailedPrefix + "No space left on device : '/jogos'";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingUnavailableMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingMismatchMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingNeedsDlssListMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.FailedRolledBackPrefix + "No space left on device : '/jogos'";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.ModifiedPrefix + "/jogos/Exemplo/version.dll";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.MissingPrefix + "/jogos/Exemplo/version.dll";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.InstalledPrefix + "version.dll";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.InstalledPrefix + "version.dll" + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.InstalledWithNeuralRenderingSuffix;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.RemovedMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.RemovedMessage + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.KeptCopyMissingPrefix + "/jogos/Exemplo/version.dll.original";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.UpToDatePrefix + "1.0.0-rc.3";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.UpdatedPrefix + "1.0.0-rc.4";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.UpdateAvailablePrefix + "1.0.0-rc.3 → 1.0.0-rc.4";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.LatestPrefix + "1.0.0-rc.3";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.CheckFailedPrefix + "No space left on device : '/jogos'";
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingOnMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingOffMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeuralRenderingAlreadyMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SavedWithNeuralRenderingMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SavedWithoutNeuralRenderingMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SavedNamePrefix + "winmm.dll";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.RtxEncoreOwnerMessage;
+        yield return RHI.Platform.Linux.Deployment.NeuralRenderingRuntimeOwnership.RefusalFor("RTX Encore");
         // w3/vmsplit rows
         // w3/dllnames rows
         yield return $"Control UE restore incomplete; RenoDX was kept: nvngx_dlss.dll not changed: {ControlUePostInstallService.SnapshotInTheWayPrefix}{P}.rhi-control-previous";

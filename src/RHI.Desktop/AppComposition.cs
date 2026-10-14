@@ -190,7 +190,8 @@ internal sealed class AppComposition
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
-            updateLog, nrCostScaler: nrCostScaler); // w3/parity hook (#96): named argument
+            updateLog, nrCostScaler: nrCostScaler, // w3/parity hook (#96): named argument
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal)); // w4/encore (#158)
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows

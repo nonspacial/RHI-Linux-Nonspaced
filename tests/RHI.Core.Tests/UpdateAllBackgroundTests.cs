@@ -10,7 +10,8 @@ public sealed class UpdateAllBackgroundTests
     [Fact]
     public void SupportedComponents_MirrorsLinuxNativeFamilies()
     {
-        Assert.Equal(13, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Equal(14, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Contains(ManagedComponentKind.RtxEncore, LinuxUpdateAllService.SupportedComponents); // w4/encore (#158)
         Assert.Contains(ManagedComponentKind.ReShade, LinuxUpdateAllService.SupportedComponents);
         Assert.Contains(ManagedComponentKind.RenoDX, LinuxUpdateAllService.SupportedComponents);
         Assert.Contains(ManagedComponentKind.ReLimiter, LinuxUpdateAllService.SupportedComponents);
@@ -48,7 +49,7 @@ public sealed class UpdateAllBackgroundTests
 
         Assert.Equal([ManagedComponentKind.ReShade], backend.UpdateCalls);
         Assert.Equal(LinuxUpdateAllService.SupportedComponents.Where(c => c != ManagedComponentKind.ReShade).Order(), backend.CheckCalls.Order());
-        Assert.Equal((1, 12, 0), (result.ChangedCount, result.CurrentCount, result.FailedCount));
+        Assert.Equal((1, 13, 0), (result.ChangedCount, result.CurrentCount, result.FailedCount));
     }
 
     [Theory]

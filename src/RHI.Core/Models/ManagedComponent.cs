@@ -25,7 +25,9 @@ public enum ManagedComponentKind
     DlssEnablerStandalone = 18,
     Rtx40MfgStandalone = 19,
     // w3/parity (#96): a layer over the nvngx_dlssnr.dll owner, never an owner itself.
-    NrCostScaler = 20
+    NrCostScaler = 20,
+    // w4/encore (#158): a proxy DLL under a chosen name; owns nvngx_dlssnr.dll only with its Neural Rendering file.
+    RtxEncore = 21
 }
 
 public enum ComponentAvailability

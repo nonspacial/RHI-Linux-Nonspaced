@@ -122,6 +122,10 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy OptiPatcher = new(
         "OptiPatcher", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
 
+    /// <summary>RTX Encore (#158): SilyNoMeta/rtx-encore GitHub releases (a ~120 MB zip; GitHub's digest and SHA256SUMS are checked).</summary>
+    public static readonly TrustedDownloadPolicy RtxEncore = new(
+        "RTX Encore", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -137,5 +141,6 @@ public static class DownloadSources
         // w3/vmsplit rows
         // w3/dllnames rows
         OptiPatcher,
+        RtxEncore,
     ];
 }
