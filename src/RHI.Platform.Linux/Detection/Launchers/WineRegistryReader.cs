@@ -28,31 +28,60 @@ internal sealed class WineRegistryReader
         if (!File.Exists(hivePath)) return Empty;
         if (new FileInfo(hivePath).Length > MaxHiveBytes)
             throw new IOException($"Wine registry {hivePath} is larger than {MaxHiveBytes} bytes; not read.");
-        using var reader = new StreamReader(hivePath, Encoding.Latin1, detectEncodingFromByteOrderMarks: false);
-        return Parse(reader, roots);
+        return Parse(File.ReadAllBytes(hivePath), roots);
     }
 
     internal static WineRegistryReader Parse(TextReader reader, IReadOnlyCollection<string> roots)
+        => Parse(Encoding.Latin1.GetBytes(reader.ReadToEnd()), roots);
+
+    /// <summary>
+    /// One pass over the hive's bytes (Latin-1, one entry per line): a key line is matched against the roots on its raw
+    /// bytes (the hive doubles backslashes), so the many keys outside them (Software\Classes…) are never decoded; value
+    /// lines are decoded only inside a wanted key.
+    /// </summary>
+    internal static WineRegistryReader Parse(ReadOnlySpan<byte> hive, IReadOnlyCollection<string> roots)
     {
         var keys = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        var spelled = roots.Select(root => Encoding.Latin1.GetBytes(root.Replace("\\", "\\\\", StringComparison.Ordinal))).ToArray();
         Dictionary<string, string>? current = null;
-        string? line;
-        while ((line = reader.ReadLine()) is not null)
+        while (!hive.IsEmpty)
         {
-            if (line.Length == 0) continue;
-            if (line[0] == '[')
+            var newline = hive.IndexOf((byte)'\n');
+            var bytes = newline < 0 ? hive : hive[..newline];
+            hive = newline < 0 ? default : hive[(newline + 1)..];
+            if (!bytes.IsEmpty && bytes[^1] == (byte)'\r') bytes = bytes[..^1];
+            if (bytes.IsEmpty) continue;
+            if (bytes[0] == (byte)'[')
             {
-                var end = line.LastIndexOf(']');
-                var name = end > 1 ? Unescape(line[1..end]) : null;
-                current = name is not null && roots.Any(root => IsSameOrBelow(name, root)) ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : null;
-                if (current is not null) keys[name!] = current;
+                var end = bytes.LastIndexOf((byte)']');
+                var raw = end > 1 ? bytes[1..end] : default;
+                current = null;
+                var wanted = false;
+                foreach (var root in spelled)
+                    if (StartsWithIgnoringAsciiCase(raw, root)) { wanted = true; break; }
+                if (!wanted) continue;
+                var name = Unescape(Encoding.Latin1.GetString(raw));
+                if (!roots.Any(root => IsSameOrBelow(name, root))) continue;
+                current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                keys[name] = current;
                 continue;
             }
-            if (current is null) continue;
-            if (TryValue(line, out var valueName, out var value)) current[valueName] = value;
+            if (current is null || bytes[0] is not ((byte)'"' or (byte)'@')) continue;
+            if (TryValue(Encoding.Latin1.GetString(bytes), out var valueName, out var value)) current[valueName] = value;
         }
         return new WineRegistryReader(keys);
     }
+
+    // The raw key text starts with the spelled root and the root ends there or at a (doubled) path separator.
+    private static bool StartsWithIgnoringAsciiCase(ReadOnlySpan<byte> raw, byte[] root)
+    {
+        if (raw.Length < root.Length) return false;
+        for (var i = 0; i < root.Length; i++)
+            if (AsciiLower(raw[i]) != AsciiLower(root[i])) return false;
+        return raw.Length == root.Length || raw[root.Length] == (byte)'\\';
+    }
+
+    private static byte AsciiLower(byte b) => b is >= (byte)'A' and <= (byte)'Z' ? (byte)(b + 32) : b;
 
     /// <summary>One string value, or null when the key or value is absent.</summary>
     public string? Value(string key, string name)
