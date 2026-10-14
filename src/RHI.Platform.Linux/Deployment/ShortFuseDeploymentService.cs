@@ -1127,17 +1127,7 @@ public sealed class ShortFuseDeploymentService
     private static string? FindReShadeIni(string binaryDir)
         => new[] { "ReShade.ini", "reshade.ini" }.Select(name => Path.Combine(binaryDir, name)).FirstOrDefault(File.Exists);
 
-    private static bool IsReShadePayload(string path)
-    {
-        var name = Path.GetFileName(path);
-        return name.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("d3d11.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("opengl32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals(ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsReShadePayload(string path) => ProxyPayloadLocator.IsReShadePayloadPath(path); // w3/dllnames hook (#120)
 
     private static string Sanitize(string value)
         => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_'));

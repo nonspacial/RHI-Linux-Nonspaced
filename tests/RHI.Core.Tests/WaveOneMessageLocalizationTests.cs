@@ -217,6 +217,18 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.NrCostScalerService.OwnerBlockedPrefix + "DLSS5 Feeder";
         // w3/vmsplit rows
         // w3/dllnames rows
+        yield return $"Control UE restore incomplete; RenoDX was kept: nvngx_dlss.dll not changed: {ControlUePostInstallService.SnapshotInTheWayPrefix}{P}.rhi-control-previous";
+        yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll was changed outside RHI and was left as it is.{ControlUePostInstallService.SnapshotKeptPrefix}{P}.rhi-control-previous";
+        yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll{ControlUePostInstallService.UserChangeKeptNote} renderer.ini{ControlUePostInstallService.UserChangeKeptNote}";
+        yield return ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + "RenoDX HDR";
+        yield return ReShadeDeploymentService.NoAddonsUpdateAvailablePrefix + "6.7.3 → 6.8.0.";
+        yield return ReShadeDeploymentService.NoAddonsCurrentPrefix + "6.8.0.";
+        yield return ReShadeDeploymentService.NoAddonsLinkMissingMessage;
+        yield return ReShadeDeploymentService.NameNotForBitnessPrefix + "ReShade64.dll";
+        yield return ReShadeDeploymentService.OtherReShadePresentPrefix + $"{P}/dxgi.dll";
+        yield return Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
+        yield return ReShadeDeploymentService.NameHeldByRhiComponentPrefix + "dinput8.dll (RE Framework)";
+        yield return "Luma Framework installation rolled back: " + Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
     }
 
     [Theory]

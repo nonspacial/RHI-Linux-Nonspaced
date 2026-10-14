@@ -154,7 +154,8 @@ public static class OptionLists
         new("Stable", "Ui.OptionStable"),
         new("Nightly", "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
         new("Legacy", "Ui.OptionLegacy", null, "Legado"),
-        new("Custom", "Ui.OptionCustom", null, "Personalizado"));
+        new("Custom", "Ui.OptionCustom", null, "Personalizado"),
+        new("NoAddons", "Names.OptionNoAddons", null, "No Addons", "Sem add-ons")); // w3/dllnames (#91)
 
     /// <summary>UI languages are listed by their own (untranslated) names.</summary>
     public static readonly OptionList<string> UiLanguage = new("pt-BR", StringComparer.OrdinalIgnoreCase,

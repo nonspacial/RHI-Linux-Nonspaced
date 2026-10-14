@@ -28,8 +28,18 @@ internal sealed record ControlUePostInstallState(
     IReadOnlyList<ControlUeOwnedDll> Dlls,
     ControlUeRendererIniEdit? RendererIni)
 {
+    /// <summary>
+    /// Full paths of the files the user changed after an install (a DLSS DLL, renderer.ini's HDR preset): saved with the
+    /// RenoDX record and carried by every later update, so no update ever applies the step to them again; dropped on
+    /// removal with the rest of the state (#124). Absent in states written before the list existed.
+    /// </summary>
+    public IReadOnlyList<string>? UserKept { get; init; }
+
     [JsonIgnore]
-    public bool IsEmpty => Dlls.Count == 0 && RendererIni is null;
+    public bool OwnsNothing => Dlls.Count == 0 && RendererIni is null;
+
+    [JsonIgnore]
+    public bool IsEmpty => OwnsNothing && (UserKept is null || UserKept.Count == 0);
 }
 
 internal sealed record ControlUeSources(
@@ -39,8 +49,15 @@ internal sealed record ControlUeSources(
 
 internal sealed record ControlUePostInstallResult(ControlUePostInstallState? State, IReadOnlyList<string> Notes);
 
-/// <summary>Restore outcome: whatever could not be put back stays owned in <see cref="Remaining"/>.</summary>
-internal sealed record ControlUeRestoreResult(ControlUePostInstallState? Remaining, IReadOnlyList<string> Notes);
+/// <summary>
+/// Restore outcome: whatever could not be put back stays owned in <see cref="Remaining"/>. <see cref="KeptUserChanges"/>
+/// lists the files left alone because they were changed outside RHI since (a DLSS version or HDR preset the user chose):
+/// an update must not apply the step to them again (#124).
+/// </summary>
+internal sealed record ControlUeRestoreResult(ControlUePostInstallState? Remaining, IReadOnlyList<string> Notes)
+{
+    public IReadOnlySet<string> KeptUserChanges { get; init; } = new HashSet<string>();
+}
 
 /// <summary>
 /// Linux port of upstream RHI 2.7.9 <c>ControlUePostInstallService</c>. When the Control Ultimate
@@ -61,6 +78,13 @@ public sealed class ControlUePostInstallService
     internal const string PreviousSnapshotSuffix = ".rhi-control-previous";
     internal const string DriverProfileNote =
         "NVIDIA driver-profile SR preset step skipped: no driver profiles under Wine/Proton.";
+    /// <summary>Fixed text before the path when an earlier copy blocks a DLL step (PT-BR presentation pair).</summary>
+    internal const string SnapshotInTheWayPrefix =
+        "an earlier copy RHI kept from a previous Control UE install is in the way; move it aside and reinstall RenoDX to update this DLL: ";
+    /// <summary>Fixed text before the path when a changed DLL's earlier copy is kept (PT-BR presentation pair).</summary>
+    internal const string SnapshotKeptPrefix = " The copy RHI kept from before its install stays at ";
+    /// <summary>Fixed text after a file name the update leaves as the user set it (PT-BR presentation pair).</summary>
+    internal const string UserChangeKeptNote = ": changed outside RHI since the install; kept, not applied again.";
     private const int MaxRendererIniBytes = 1024 * 1024;
 
     private static readonly Regex HdrPresetPattern = new("\"m_eHDRPreset\"\\s*:\\s*(-?\\d+)", RegexOptions.CultureInvariant);
@@ -124,16 +148,27 @@ public sealed class ControlUePostInstallService
     /// Applies the three Linux-applicable steps. Each step stands alone, as upstream: a failure is
     /// reported and the others still run. Not cancellable once started, so a step is never left half done.
     /// </summary>
-    internal async Task<ControlUePostInstallResult> ApplyAsync(DetectedGame game, string gameDirectory, ControlUeSources sources)
+    /// <param name="keepUserChanges">Files a restore just left alone because the user changed them
+    /// (<see cref="ControlUeRestoreResult.KeptUserChanges"/>): the step skips them, so an update never overwrites a
+    /// DLSS version or HDR preset chosen after the install (#124).</param>
+    internal async Task<ControlUePostInstallResult> ApplyAsync(
+        DetectedGame game, string gameDirectory, ControlUeSources sources, IReadOnlySet<string>? keepUserChanges = null)
     {
         var notes = new List<string>(sources.Notes);
         var dlls = new List<ControlUeOwnedDll>();
+        bool Kept(string path) => keepUserChanges?.Contains(Path.GetFullPath(path)) == true;
         foreach (var (source, dllName) in new[] { (sources.SuperResolution, "nvngx_dlss.dll"), (sources.RayReconstruction, "nvngx_dlssd.dll") })
         {
             if (source is not { } found) continue;
+            var target = ResolveExisting(gameDirectory, dllName);
+            if (Kept(target))
+            {
+                notes.Add(dllName + UserChangeKeptNote);
+                continue;
+            }
             try
             {
-                var owned = await DeployDllAsync(found.Path, found.Version, ResolveExisting(gameDirectory, dllName)).ConfigureAwait(false);
+                var owned = await DeployDllAsync(found.Path, found.Version, target).ConfigureAwait(false);
                 if (owned is null) notes.Add($"{dllName}: already {found.Version}.");
                 else
                 {
@@ -150,7 +185,10 @@ public sealed class ControlUePostInstallService
         ControlUeRendererIniEdit? ini = null;
         try
         {
-            ini = PatchRendererIni(game, gameDirectory, notes);
+            if (ResolveRendererIni(game, gameDirectory) is { } rendererIni && Kept(rendererIni))
+                notes.Add(RendererIniName + UserChangeKeptNote);
+            else
+                ini = PatchRendererIni(game, gameDirectory, notes);
         }
         catch (Exception ex)
         {
@@ -158,7 +196,7 @@ public sealed class ControlUePostInstallService
         }
 
         notes.Add(DriverProfileNote);
-        var state = new ControlUePostInstallState(dlls, ini);
+        var state = new ControlUePostInstallState(dlls, ini) { UserKept = KeptList(keepUserChanges) };
         return new ControlUePostInstallResult(state.IsEmpty ? null : state, notes);
     }
 
@@ -175,8 +213,9 @@ public sealed class ControlUePostInstallService
             if (await FileHash.Sha256HexAsync(source).ConfigureAwait(false) == await FileHash.Sha256HexAsync(target).ConfigureAwait(false))
                 return null;
             snapshot = target + PreviousSnapshotSuffix;
+            // Left by an earlier install whose DLL the user then changed (kept on purpose, #124): never overwritten.
             if (File.Exists(snapshot))
-                throw new IOException($"a previous snapshot already exists at {snapshot}; move it aside first.");
+                throw new IOException(SnapshotInTheWayPrefix + snapshot);
             AtomicFile.Copy(target, snapshot, overwrite: false);
         }
 
@@ -238,11 +277,16 @@ public sealed class ControlUePostInstallService
     {
         var notes = new List<string>();
         var remaining = new List<ControlUeOwnedDll>();
+        // Files left to the user by an earlier update stay theirs: an update never applies the step to them again (#124).
+        var keptUserChanges = new HashSet<string>(
+            (state.UserKept ?? []).Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => Path.GetFullPath(path)),
+            StringComparer.Ordinal);
         foreach (var dll in state.Dlls.Reverse())
         {
             try
             {
-                await RestoreDllAsync(dll, notes).ConfigureAwait(false);
+                if (!await RestoreDllAsync(dll, notes).ConfigureAwait(false))
+                    keptUserChanges.Add(Path.GetFullPath(dll.Path));
             }
             catch (Exception ex)
             {
@@ -256,7 +300,8 @@ public sealed class ControlUePostInstallService
         {
             try
             {
-                RestoreRendererIni(ini, notes);
+                if (!RestoreRendererIni(ini, notes))
+                    keptUserChanges.Add(Path.GetFullPath(ini.Path));
                 ini = null;
             }
             catch (Exception ex)
@@ -265,38 +310,57 @@ public sealed class ControlUePostInstallService
             }
         }
 
-        var left = new ControlUePostInstallState(remaining, ini);
-        return new ControlUeRestoreResult(left.IsEmpty ? null : left, notes);
+        var left = new ControlUePostInstallState(remaining, ini) { UserKept = KeptList(keptUserChanges) };
+        return new ControlUeRestoreResult(left.OwnsNothing ? null : left, notes) { KeptUserChanges = keptUserChanges };
     }
 
-    private async Task RestoreDllAsync(ControlUeOwnedDll dll, List<string> notes)
+    private static IReadOnlyList<string>? KeptList(IReadOnlySet<string>? kept)
+        => kept is null || kept.Count == 0 ? null : kept.Order(StringComparer.Ordinal).ToList();
+
+    /// <returns>False when the DLL was changed outside RHI and was left as it is.</returns>
+    private async Task<bool> RestoreDllAsync(ControlUeOwnedDll dll, List<string> notes)
     {
         var name = Path.GetFileName(dll.Path);
         var present = File.Exists(dll.Path);
-        if (present && !string.Equals(await FileHash.Sha256HexAsync(dll.Path).ConfigureAwait(false), dll.AppliedSha256, StringComparison.OrdinalIgnoreCase))
+        if (present)
         {
-            if (dll.PreviousSnapshotPath is { } stale) FileCleanup.TryDelete(stale);
-            notes.Add($"{name} was changed outside RHI and was left as it is.");
-            return;
+            var current = await FileHash.Sha256HexAsync(dll.Path).ConfigureAwait(false);
+            if (!string.Equals(current, dll.AppliedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                var note = $"{name} was changed outside RHI and was left as it is.";
+                // The earlier copy (the DLL in place at install time) is the only one of its bytes: it stays unless the
+                // current file or the .original backup already holds exactly those bytes (#124).
+                if (dll.PreviousSnapshotPath is { } snapshot && File.Exists(snapshot))
+                {
+                    var snapshotHash = await FileHash.Sha256HexAsync(snapshot).ConfigureAwait(false);
+                    var backup = dll.Path + TransactionalFileDeploymentService.BackupExtension;
+                    var redundant = string.Equals(snapshotHash, current, StringComparison.OrdinalIgnoreCase)
+                                    || (File.Exists(backup) && string.Equals(snapshotHash, await FileHash.Sha256HexAsync(backup).ConfigureAwait(false), StringComparison.OrdinalIgnoreCase));
+                    if (!redundant || !FileCleanup.TryDelete(snapshot, out _))
+                        note += SnapshotKeptPrefix + snapshot;
+                }
+                notes.Add(note);
+                return false;
+            }
         }
 
         if (!dll.ExistedBefore)
         {
             if (present) File.Delete(dll.Path);
             notes.Add($"{name}: removed.");
-            return;
+            return true;
         }
 
-        if (dll.PreviousSnapshotPath is { } snapshot)
+        if (dll.PreviousSnapshotPath is { } previous)
         {
-            if (!File.Exists(snapshot))
+            if (!File.Exists(previous))
             {
-                notes.Add($"{name}: previous copy is missing ({snapshot}); left as it is.");
-                return;
+                notes.Add($"{name}: previous copy is missing ({previous}); left as it is.");
+                return true;
             }
-            File.Move(snapshot, dll.Path, overwrite: true);
+            File.Move(previous, dll.Path, overwrite: true);
             notes.Add($"{name}: restored.");
-            return;
+            return true;
         }
 
         if (dll.OriginalBackupCreatedByRhi)
@@ -304,20 +368,22 @@ public sealed class ControlUePostInstallService
             if (!File.Exists(dll.Path + TransactionalFileDeploymentService.BackupExtension))
             {
                 notes.Add($"{name}: {TransactionalFileDeploymentService.BackupExtension} backup is missing; left as it is.");
-                return;
+                return true;
             }
             var restore = await _files.RestoreAsync(dll.Path, CancellationToken.None).ConfigureAwait(false);
             if (!restore.Success) throw new IOException(restore.Error ?? "restore failed.");
             notes.Add($"{name}: restored.");
         }
+        return true;
     }
 
-    private static void RestoreRendererIni(ControlUeRendererIniEdit ini, List<string> notes)
+    /// <returns>False when the user changed the HDR preset since the install and it was left as it is.</returns>
+    private static bool RestoreRendererIni(ControlUeRendererIniEdit ini, List<string> notes)
     {
         if (!File.Exists(ini.Path))
         {
             notes.Add($"{RendererIniName} no longer exists; nothing to restore.");
-            return;
+            return true;
         }
 
         var current = File.ReadAllBytes(ini.Path);
@@ -325,7 +391,7 @@ public sealed class ControlUePostInstallService
         {
             AtomicFile.ReplaceUserFile(ini.Path, Convert.FromBase64String(ini.OriginalBase64));
             notes.Add($"{RendererIniName}: restored.");
-            return;
+            return true;
         }
 
         // The game rewrites renderer.ini when settings change. Keep those changes and only put the
@@ -335,10 +401,11 @@ public sealed class ControlUePostInstallService
         if (!match.Success || match.Groups[1].Value != HdrPresetValue)
         {
             notes.Add($"{RendererIniName}: m_eHDRPreset was changed outside RHI and was left as it is.");
-            return;
+            return false;
         }
         AtomicFile.ReplaceUserFile(ini.Path, Encode(HdrPresetPattern.Replace(text, $"\"m_eHDRPreset\": {ini.PreviousValue}"), bom));
         notes.Add($"{RendererIniName}: m_eHDRPreset restored to {ini.PreviousValue}; other settings kept.");
+        return true;
     }
 
     internal static string? ResolveRendererIni(DetectedGame game, string gameDirectory)

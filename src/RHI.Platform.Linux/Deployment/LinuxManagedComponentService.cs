@@ -263,7 +263,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "Start the Windows game once so its Wine/Proton prefix is created before installing ReShade.";
                     }
-                    else if (managedOptiScaler is not null)
+                    else if (managedOptiScaler is not null &&
+                             // w3/dllnames (#120): only when ReShade's name is the one OptiScaler holds.
+                             (_reshade?.ResolveProxyName(game) is not { } proxy ||
+                              managedOptiScaler.Files.Any(f => Path.GetFileName(f.Path).Equals(proxy.Name, StringComparison.OrdinalIgnoreCase))))
                     {
                         component.Note = "Will coexist with RHI-managed OptiScaler as ReShade64.dll; RHI enables OptiScaler's LoadReshade setting automatically.";
                     }
@@ -805,6 +808,14 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             }
         }
 
+        // w3/dllnames (#91): add-ons are not offered over the No Addons build; the note says why (last, so it wins).
+        if (ReShadeDeploymentService.LacksAddonSupport(Find(ManagedComponentKind.ReShade)))
+            foreach (var component in components.Where(c => LinuxComponentDependencyPolicy.IsReShadeAddon(c.Kind) && c.Availability == ComponentAvailability.Available))
+            {
+                component.ActionAllowed = false;
+                component.Note = ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + component.DisplayName;
+            }
+
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
     }
 
@@ -925,7 +936,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         [
             _addonManager, _neuralVersionPins, _updateLog,
             _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
-            _shortFuse?.GameState, _lumaPolicy?.GameState
+            _shortFuse?.GameState, _lumaPolicy?.GameState,
+            _reshade?.DllNames // w3/dllnames (#120)
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
@@ -1257,6 +1269,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     private ComponentOperationResult? DependencyConflictGuard(DetectedGame game, ManagedComponentKind target)
     {
+        // w3/dllnames (#91): a ReShade add-on cannot load in the No Addons build.
+        if (LinuxComponentDependencyPolicy.IsReShadeAddon(target) && ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade)))
+            return ComponentOperationResult.Fail(ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + DisplayDependencyName(target));
+
         if (target == ManagedComponentKind.ReLimiter && _records.Find(game, ManagedComponentKind.DisplayCommander) is not null)
             return ComponentOperationResult.Fail("Display Commander já está ativo. ReLimiter e Display Commander são mutuamente exclusivos.");
         if (target == ManagedComponentKind.DisplayCommander && _records.Find(game, ManagedComponentKind.ReLimiter) is not null)
@@ -1372,12 +1388,26 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
+        // w3/dllnames (#91): no add-on selection for the No Addons build (clearing the selection stays possible).
+        if (guard is null && selectedIds.Count > 0 && ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade)))
+            guard = ComponentOperationResult.Fail(ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + "ReShade Addon Manager");
         return guard is null
             ? _addonManager.ApplySelectionAsync(game, selectedIds, cancellationToken)
             : Task.FromResult(guard);
     }
 
     public bool IsReShadeManaged(DetectedGame game) => _reshade.IsManaged(game);
+
+    // w3/dllnames (#120): the per-game ReShade DLL name.
+    /// <summary>The store of per-game proxy DLL names chosen before install.</summary>
+    public DllNamePreferenceStore ReShadeDllNames => _reshade.DllNames;
+
+    /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
+    public ProxyNameResolution? ResolveReShadeProxyName(DetectedGame game) => _reshade.ResolveProxyName(game);
+
+    /// <summary>The file name RHI's ReShade is installed under on <paramref name="game"/>, or null when RHI has not installed it.</summary>
+    public string? InstalledReShadeProxyName(DetectedGame game)
+        => ProxyPayloadLocator.ReShadePayload(_records.Find(game, ManagedComponentKind.ReShade)) is { } payload ? Path.GetFileName(payload.Path) : null;
 
     public ReShadeInstallOptions GetReShadeOptions(DetectedGame game) => _reshade.GetInstalledOptions(game);
 

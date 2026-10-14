@@ -258,6 +258,29 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
         Assert.Null(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
     }
 
+    // #120: ReShade installed under a chosen proxy name is still found as ShortFuse's payload, moved to the ASI name
+    // and put back under the chosen name on removal.
+    [Fact]
+    public async Task InstallAndRemove_WithReShadeUnderAChosenName_MovesAndRestoresThatFile()
+    {
+        using var fixture = CreateGame("chosen-name");
+        var ctx = CreateContext(fixture, fullNetwork: true);
+        var reshadePath = AddManagedReShade(ctx.Records, fixture, withWineOverride: true, proxyName: "version.dll");
+        var reshadeBytes = File.ReadAllBytes(reshadePath);
+
+        var install = await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true);
+        Assert.True(install.Success, install.Message);
+        var asi = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName);
+        Assert.Equal(reshadeBytes, File.ReadAllBytes(asi));
+        Assert.False(File.Exists(reshadePath));
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+        Assert.True(remove.Success, remove.Message);
+        Assert.Equal(reshadeBytes, File.ReadAllBytes(reshadePath));
+        Assert.False(File.Exists(asi));
+        Assert.Equal(reshadePath, ProxyPayloadLocator.ReShadePayload(ctx.Records.Find(fixture.Game, ManagedComponentKind.ReShade))!.Path);
+    }
+
     [Fact]
     public async Task Remove_ModifiedShortFuseOwnedFile_BlocksBeforeTeardown()
     {
@@ -807,16 +830,16 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
         return new(records, ual, sf, http);
     }
 
-    private string AddManagedReShade(LinuxDeploymentRecordStore records, GameFixture fixture, bool withWineOverride = false)
+    private string AddManagedReShade(LinuxDeploymentRecordStore records, GameFixture fixture, bool withWineOverride = false, string proxyName = "dxgi.dll")
     {
-        var path = Path.Combine(fixture.Bin, "dxgi.dll");
+        var path = Path.Combine(fixture.Bin, proxyName);
         var bytes = CreatePe(0x8664, 128 * 1024, 0x44);
         File.WriteAllBytes(path, bytes);
         WineOverrideRecord? wine = null;
         if (withWineOverride)
         {
             var svc = new WineDllOverrideService();
-            wine = svc.EnsureNativeBuiltin(fixture.Prefix, "dxgi.dll", "Game.exe");
+            wine = svc.EnsureNativeBuiltin(fixture.Prefix, proxyName, "Game.exe");
         }
         records.Upsert(new LinuxDeploymentRecord
         {

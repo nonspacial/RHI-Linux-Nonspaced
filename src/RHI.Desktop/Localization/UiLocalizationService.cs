@@ -115,7 +115,7 @@ public static class UiLocalizationService
         ["Ui.RepairMoveTip"] = "O jogo mudou de pasta e os registros ou configurações do RHI ainda apontam para a antiga. Confere a nova pasta e atualiza registros e configurações; nada muda se algo não bater.",
 
         ["Ui.DlssNote"] = "O gerenciador local substitui apenas DLLs de DLSS/Streamline que o próprio jogo já fornece. Jogos sem DLSS usam o DLSS5 Feeder Full; trocas diretas ficam bloqueadas enquanto o Feeder Full controla sua pilha privada de SR/NR. Aplicar padrões usa as versões salvas; um padrão vazio significa não alterar o componente. O selo ✓ RHI aplicado indica que existe backup .original do RHI e a restauração está disponível.",
-        ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
+        ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado, Sem add-ons e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
         ["Ui.ManagedProfileControls"] = "Controles do perfil gerenciado pelo RHI",
         ["Ui.Channel"] = "Canal",
         ["Ui.LegacyVersion"] = "Versão legada",
@@ -342,7 +342,7 @@ public static class UiLocalizationService
         ["Ui.RepairMoveTip"] = "The game moved and RHI's records or settings still point to its old folder. Checks the new folder and updates the records and settings; nothing changes if anything does not match.",
 
         ["Ui.DlssNote"] = "The local manager only replaces DLSS/Streamline DLLs that the game already ships. Games without DLSS use DLSS5 Feeder Full; direct swaps stay blocked while Feeder Full controls its private SR/NR stack. Apply defaults uses the saved versions; an empty default means do not change that component. The ✓ RHI applied badge means an RHI .original backup exists and restore is available.",
-        ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
+        ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy and No Addons channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
         ["Ui.ManagedProfileControls"] = "RHI-managed profile controls",
         ["Ui.Channel"] = "Channel",
         ["Ui.LegacyVersion"] = "Legacy version",
@@ -1063,6 +1063,27 @@ public static class UiLocalizationService
             "Download recusado: links do NR Cost Scaler devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         // w3/vmsplit rows
         // w3/dllnames rows
+        // #124 Control UE: an earlier copy kept beside a DLL the user changed; a user change an update leaves alone.
+        ("an earlier copy RHI kept from a previous Control UE install is in the way; move it aside and reinstall RenoDX to update this DLL: ",
+            "uma cópia anterior que o RHI guardou de uma instalação anterior do Control UE está no caminho; mova-a para outro lugar e reinstale o RenoDX para atualizar esta DLL: "),
+        (" The copy RHI kept from before its install stays at ", " A cópia que o RHI guardou de antes da instalação continua em "),
+        (": changed outside RHI since the install; kept, not applied again.", ": alterado fora do RHI desde a instalação; mantido, não aplicado de novo."),
+        ("RenoDX installed: ", "RenoDX instalado: "),
+        // #91 ReShade No Addons channel.
+        ("ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ",
+            "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no perfil do ReShade e aplique antes: "),
+        ("ReShade No Addons update available: ", "Atualização do ReShade Sem add-ons disponível: "),
+        ("ReShade No Addons is current: ", "O ReShade Sem add-ons está atualizado: "),
+        ("Could not find the current ReShade download without add-on support on reshade.me.", "Não foi possível encontrar no reshade.me o download atual do ReShade sem suporte a add-ons."),
+        // #120 ReShade DLL name.
+        ("The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ",
+            "O nome de DLL do ReShade escolhido é para a outra arquitetura de jogo Windows; escolha outro nome: "),
+        ("ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ",
+            "O ReShade já está na pasta deste jogo, mas não foi instalado pelo RHI Linux; um segundo ReShade carregaria duas vezes, então nada foi instalado. Remova esse ReShade antes ou continue usando-o: "),
+        ("Another component RHI installed on this game already uses this DLL name, so ReShade cannot be installed under it; choose another DLL name for ReShade. Name and component: ",
+            "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o ReShade não pode ser instalado com ele; escolha outro nome de DLL para o ReShade. Nome e componente: "),
+        ("The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ",
+            "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como Automático, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

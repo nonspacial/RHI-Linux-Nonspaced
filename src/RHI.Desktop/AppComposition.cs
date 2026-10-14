@@ -47,6 +47,7 @@ internal sealed class AppComposition
     public ParityFeatures? Parity { get; init; }
     // w3/vmsplit rows
     // w3/dllnames rows
+    public required DllNamePreferenceStore DllNames { get; init; }
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -236,6 +237,7 @@ internal sealed class AppComposition
             Parity = parity,
             // w3/vmsplit rows
             // w3/dllnames rows
+            DllNames = reshade.DllNames,
         };
     }
 }

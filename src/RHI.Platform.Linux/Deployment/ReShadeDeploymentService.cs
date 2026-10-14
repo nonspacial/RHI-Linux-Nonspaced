@@ -17,6 +17,16 @@ public sealed partial class ReShadeDeploymentService
     // The one setup URL for a stable/legacy version: what EnsureSetupStagedAsync stamps and what the
     // outage fallback looks the stamp up with must be byte-identical (#142).
     internal static string StableSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}_Addon.exe";
+    /// <summary>The setup of the build without add-on support (#91, upstream <c>NormalReShadeUpdateService</c>); same rule as <see cref="StableSetupUrl"/>.</summary>
+    internal static string NoAddonsSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}.exe";
+
+    /// <summary>Fixed text before the component name when an add-on is refused over No Addons ReShade (PT-BR presentation pair).</summary>
+    public const string NoAddonsBlocksAddonPrefix =
+        "ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ";
+
+    /// <summary>True when RHI's ReShade on this game is the No Addons build (#91): ReShade add-ons cannot load.</summary>
+    public static bool LacksAddonSupport(LinuxDeploymentRecord? reShadeRecord)
+        => reShadeRecord is not null && ParseChannel(reShadeRecord.Metadata.GetValueOrDefault(MetaChannel)) == ReShadeChannel.NoAddons;
     // Upstream 2.8.5's nightly links (ReShadeNightlyService): the newest successful build.yml run on main, served by
     // nightly.link because GitHub's own artifact download needs a login. Used as is only when the GitHub API lookup
     // below is unavailable (#27).
@@ -70,6 +80,7 @@ public sealed partial class ReShadeDeploymentService
     private readonly ReShadeShaderPackService _shaderPacks;
     private readonly string _cacheDir;
     private readonly DeploymentJournal? _journal;
+    private readonly DllNamePreferenceStore _dllNames;
 
     public ReShadeDeploymentService(
         HttpClient http,
@@ -80,9 +91,11 @@ public sealed partial class ReShadeDeploymentService
         string? cacheDir = null,
         ReShadeShaderPackService? shaderPacks = null,
         UpstreamRhiManifestService? upstreamManifest = null,
-        DeploymentJournal? journal = null)
+        DeploymentJournal? journal = null,
+        DllNamePreferenceStore? dllNames = null)
     {
         _journal = journal;
+        _dllNames = dllNames ?? new DllNamePreferenceStore();
         _http = http;
         _files = files;
         _records = records;
@@ -104,6 +117,29 @@ public sealed partial class ReShadeDeploymentService
     public void SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
         => _shaderPacks.SetExcludedFiles(packId, excluded);
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.ReShade) is not null;
+
+    /// <summary>The per-game proxy DLL names chosen before install (#120); "Repair after move" carries them.</summary>
+    public DllNamePreferenceStore DllNames => _dllNames;
+
+    /// <summary>The proxy name the next install of ReShade on <paramref name="game"/> uses, and why (#120).</summary>
+    public ProxyNameResolution? ResolveProxyName(DetectedGame game) => ProxyPayloadLocator.Resolve(game, _dllNames.GetReShade(game));
+
+    /// <summary>Fixed text before the path when ReShade not installed by RHI already sits in the game folder under another
+    /// name (PT-BR presentation pair).</summary>
+    public const string OtherReShadePresentPrefix =
+        "ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ";
+
+    /// <summary>Fixed text before "name (component)" when another RHI component already sits under the DLL name ReShade
+    /// would use (PT-BR presentation pair).</summary>
+    public const string NameHeldByRhiComponentPrefix =
+        "Another component RHI installed on this game already uses this DLL name, so ReShade cannot be installed under it; choose another DLL name for ReShade. Name and component: ";
+
+    private static IReadOnlySet<string> OwnedPaths(LinuxDeploymentRecord? record)
+        => (record?.Files ?? []).Where(file => !string.IsNullOrWhiteSpace(file.Path))
+            .Select(file => Path.GetFullPath(file.Path)).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>Fixed text before the name when a chosen DLL name does not suit the game's bitness (PT-BR presentation pair).</summary>
+    public const string NameNotForBitnessPrefix = "The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ";
 
     public ReShadeInstallOptions GetInstalledOptions(DetectedGame game)
     {
@@ -159,9 +195,21 @@ public sealed partial class ReShadeDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var directProxy = SelectProxyName(game.EffectiveGraphicsApi);
-        if (directProxy is null)
+        // The proxy name: the user's choice, else the RHI manifest's, else the API's (#120). An installed ReShade keeps
+        // the name it was installed under (the record decides below); a new name needs a removal first.
+        var resolution = ResolveProxyName(game);
+        if (resolution is null)
             return ComponentOperationResult.Fail("This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
+        if (!ProxyDllNames.OfferedFor(architecture == PeArchitecture.X86).Contains(resolution.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (resolution.Source == ProxyNameSource.User)
+                return ComponentOperationResult.Fail(NameNotForBitnessPrefix + resolution.Name);
+            resolution = new ProxyNameResolution(SelectProxyName(game.EffectiveGraphicsApi)!, ProxyNameSource.GraphicsApi, resolution.Name);
+        }
+        var directProxy = resolution.Name;
+
+        // Switching to No Addons with add-ons installed is allowed, as upstream: they stay in place and simply stop
+        // loading (owner decision #91; a warning is #170).
 
         var existingRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
@@ -171,7 +219,7 @@ public sealed partial class ReShadeDeploymentService
 
         if (existingRecord is not null)
         {
-            var payload = existingRecord.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+            var payload = ProxyPayloadLocator.ReShadePayload(existingRecord);
             if (payload is null)
                 return ComponentOperationResult.Fail("RHI has a ReShade record for this game, but its managed DLL path is missing. Update is blocked until the record is repaired or removed safely.");
             target = payload.Path;
@@ -204,11 +252,30 @@ public sealed partial class ReShadeDeploymentService
                     return ComponentOperationResult.Fail($"OptiScaler coexistence target is occupied by an unknown DLL: {target}");
                 }
             }
+            else if (_records.FindAll(game).FirstOrDefault(record => record.Component != ManagedComponentKind.ReShade &&
+                         OwnedPaths(record).Contains(Path.GetFullPath(directTarget))) is { } holder)
+            {
+                // RHI's own component under that name (RE Framework's dinput8.dll on an RE Engine game): say which.
+                return ComponentOperationResult.Fail(NameHeldByRhiComponentPrefix + $"{directProxy} ({LinuxManagedComponentService.DisplayDependencyName(holder.Component)})");
+            }
             else
             {
                 return ComponentOperationResult.Fail($"Foreign DLL protection: '{directProxy}' already exists and is not recognized as ReShade or OptiScaler. Nothing was overwritten.");
             }
         }
+
+        // ReShade64.dll chosen as the name with RHI's OptiScaler here: nothing but OptiScaler's LoadReshade loads it, so
+        // the install is the coexistence case (LoadReshade on, off again on removal), as an update of it already is.
+        if (existingRecord is null && managedOptiScaler is not null && Path.GetFileName(target).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase))
+            coexist = true;
+
+        // One ReShade per game (#120): with no RHI ReShade here, a ReShade under any other name it can be installed as
+        // (the user's own, or one another component left) means a second copy would load beside it. Refused before any
+        // download or change, whichever path asked (profile Apply, Luma/ShortFuse dependency, a manifest name). The
+        // target-name checks above ran first, so the target is absent by now; RHI's own OptiScaler files are not ReShade.
+        if (existingRecord is null &&
+            ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory, OwnedPaths(managedOptiScaler)) is { } other)
+            return ComponentOperationResult.Fail(OtherReShadePresentPrefix + other);
 
         D3DCompilerPlan? d3dCompilerPlan = null;
         if (options.ShaderPackIds.Count > 0 || !string.IsNullOrWhiteSpace(options.D3DCompiler47Path))
@@ -261,7 +328,7 @@ public sealed partial class ReShadeDeploymentService
         // Last point Cancel is honoured: from the update snapshot on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
-        var previousPayload = existingRecord?.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+        var previousPayload = ProxyPayloadLocator.ReShadePayload(existingRecord);
         var existedBefore = previousPayload?.ExistedBeforeInstall ?? File.Exists(target);
         var previousOverride = existingRecord?.WineOverride;
         var previousAdditionalOverrides = existingRecord?.AdditionalWineOverrides ?? new List<WineOverrideRecord>();
@@ -395,14 +462,24 @@ public sealed partial class ReShadeDeploymentService
             WineOverrideRecord? overrideRecord = previousOverride;
             if (!coexist)
             {
-                if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
-                    throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
-                if (overrideRecord is null)
+                // The override is for the name ReShade sits under (#120); ReShade64/32.dll chosen as a name are loaded by
+                // another mod, never by Wine, so they get none. ShortFuse's .asi keeps the API name as before.
+                var targetName = Path.GetFileName(target);
+                if (ProxyDllNames.NeedsWineOverride(targetName))
                 {
-                    overrideRecord = await _overrides.EnsureNativeBuiltinAsync(
-                        operation, prefix, directProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
-                    appliedOverride = overrideRecord;
-                    overrideCreatedThisAttempt = true;
+                    if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
+                        throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
+                    if (overrideRecord is null)
+                    {
+                        // ShortFuse's .asi is loaded by its ASI loader; the override stays with the name ReShade had before.
+                        var overrideName = !targetName.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase) ? targetName
+                            : existingRecord?.Metadata.GetValueOrDefault(MetaShortFuseOriginalPayloadPath) is { Length: > 0 } original ? Path.GetFileName(original)
+                            : directProxy;
+                        overrideRecord = await _overrides.EnsureNativeBuiltinAsync(
+                            operation, prefix, overrideName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                        appliedOverride = overrideRecord;
+                        overrideCreatedThisAttempt = true;
+                    }
                 }
             }
             else
@@ -682,6 +759,14 @@ public sealed partial class ReShadeDeploymentService
                     var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase);
                     return new(true, update, update ? $"Stable update available: {record.Version} → {latest.Version}." : $"Stable {record.Version} is current.", record.Version, latest.Version, channel);
                 }
+                case ReShadeChannel.NoAddons:
+                {
+                    var latest = await GetLatestStableAsync(cancellationToken, addonBuild: false).ConfigureAwait(false);
+                    var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase);
+                    return new(true, update, update
+                        ? $"{NoAddonsUpdateAvailablePrefix}{record.Version} → {latest.Version}."
+                        : $"{NoAddonsCurrentPrefix}{record.Version}.", record.Version, latest.Version, channel);
+                }
                 case ReShadeChannel.Nightly:
                 {
                     var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
@@ -716,6 +801,11 @@ public sealed partial class ReShadeDeploymentService
             return new(true, false, $"ReShade update check failed: {ex.Message}", record.Version, null, channel, CouldNotCheck: true);
         }
     }
+
+    /// <summary>Fixed texts of the No Addons update check (PT-BR presentation pairs).</summary>
+    public const string NoAddonsUpdateAvailablePrefix = "ReShade No Addons update available: ";
+    public const string NoAddonsCurrentPrefix = "ReShade No Addons is current: ";
+    public const string NoAddonsLinkMissingMessage = "Could not find the current ReShade download without add-on support on reshade.me.";
 
     private D3DCompilerPlan BuildD3DCompilerPlan(
         DetectedGame game,
@@ -888,36 +978,45 @@ public sealed partial class ReShadeDeploymentService
         => options.Channel switch
         {
             ReShadeChannel.Stable => await EnsureLatestStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
+            ReShadeChannel.NoAddons => await EnsureLatestStagedAsync(architecture, cancellationToken, addonBuild: false).ConfigureAwait(false),
             ReShadeChannel.Nightly => await EnsureNightlyStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
             ReShadeChannel.Legacy => await EnsureLegacyStagedAsync(options.LegacyVersion, architecture, cancellationToken).ConfigureAwait(false),
             ReShadeChannel.Custom => await EnsureCustomStagedAsync(options.CustomDllPath, architecture, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException("Unknown ReShade channel.")
         };
 
-    internal async Task<ReShadeStagedDll> EnsureLatestStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
+    /// <param name="addonBuild">False for the build without add-on support (No Addons, #91): its own setup link on
+    /// reshade.me, its own cache folder and outage fallback, never mixed with the add-on build.</param>
+    internal async Task<ReShadeStagedDll> EnsureLatestStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default, bool addonBuild = true)
     {
+        var channel = addonBuild ? ReShadeChannel.Stable : ReShadeChannel.NoAddons;
         (string Version, string Url) latest;
         try
         {
-            latest = await GetLatestStableAsync(cancellationToken).ConfigureAwait(false);
+            latest = await GetLatestStableAsync(cancellationToken, addonBuild).ConfigureAwait(false);
         }
         catch (ReShadeSiteUnavailableException ex)
         {
             // Outage, not a bad page: fall back to the newest stable copy already staged in the cache.
-            return FindCachedStable(architecture, ex.Message)
+            return FindCachedStable(architecture, ex.Message, channel)
                    ?? throw new ReShadeSiteUnavailableException($"{ex.Message} No cached ReShade copy is available yet; try again later.", ex);
         }
         try
         {
-            return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
+            return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine(CacheFolder(channel), latest.Version), channel, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (SetupDownloadOutage(ex, cancellationToken) is { } reason)
         {
             // The page answered but the setup download hit an outage (5xx, unreachable, timed out): same as a page outage.
-            return FindCachedStable(architecture, reason)
+            return FindCachedStable(architecture, reason, channel)
                    ?? throw new ReShadeSiteUnavailableException($"{reason} No cached ReShade copy is available yet; try again later.", ex);
         }
     }
+
+    private static string CacheFolder(ReShadeChannel channel) => channel == ReShadeChannel.NoAddons ? "noaddons" : "stable";
+
+    private static string SetupUrl(ReShadeChannel channel, string version)
+        => channel == ReShadeChannel.NoAddons ? NoAddonsSetupUrl(version) : StableSetupUrl(version);
 
     // A server-side or network failure of the setup download, not a bad file or a 4xx: null when it is not an outage.
     private static string? SetupDownloadOutage(Exception ex, CancellationToken cancellationToken) => ex switch
@@ -931,9 +1030,9 @@ public sealed partial class ReShadeDeploymentService
         _ => null
     };
 
-    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason)
+    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason, ReShadeChannel channel)
     {
-        var root = Path.Combine(_cacheDir, "stable");
+        var root = Path.Combine(_cacheDir, CacheFolder(channel));
         if (!Directory.Exists(root)) return null;
         var dllName = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
         var best = Directory.EnumerateDirectories(root)
@@ -943,16 +1042,16 @@ public sealed partial class ReShadeDeploymentService
             // filtered before ordering, so an unstamped newer folder never hides a stamped older one.
             .Where(entry => entry.Parsed is not null
                             && IsValidReShadeDll(Path.Combine(entry.Dir, dllName))
-                            && CacheStamp.IsValid(Path.Combine(entry.Dir, dllName), StableSetupUrl(entry.Name), entry.Name))
+                            && CacheStamp.IsValid(Path.Combine(entry.Dir, dllName), SetupUrl(channel, entry.Name), entry.Name))
             .OrderByDescending(entry => entry.Parsed)
             .FirstOrDefault();
         if (best.Dir is null) return null;
         return new(
             Path.Combine(best.Dir, dllName),
             best.Name,
-            StableSetupUrl(best.Name),
+            SetupUrl(channel, best.Name),
             $"version:{best.Name}",
-            ReShadeChannel.Stable,
+            channel,
             FromCache: true,
             FallbackReason: reason);
     }
@@ -1138,7 +1237,8 @@ public sealed partial class ReShadeDeploymentService
         // (#142); anything else in the cache is replaced, never deployed.
         if (CacheStamp.IsValid(staged, url, version) && IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
 
-        var setup = Path.Combine(versionDir, $"ReShade_Setup_{version}_Addon.exe");
+        // The setup's own file name (the add-on and the No Addons builds differ only in it).
+        var setup = Path.Combine(versionDir, Path.GetFileName(new Uri(url).AbsolutePath));
         // reshade.me publishes no digest and upstream pins none: the setup is accepted on HTTPS + the reshade.me host
         // policy (redirects included) and a PE check, its SHA-256 recorded in the stamp and rhi.log (#27). A stamped
         // copy is reused only while it still hashes to the recorded value.
@@ -1178,7 +1278,7 @@ public sealed partial class ReShadeDeploymentService
     // reshade.me intermittently answers HTTP 5xx while still rendering the full page (upstream 2.8.3).
     // A 5xx body is trusted only when it carries the add-on download link; the setup exe it points to is
     // still downloaded with a success check and PE-validated. 4xx and other statuses stay failures.
-    private async Task<(string Version, string Url)> GetLatestStableAsync(CancellationToken cancellationToken)
+    private async Task<(string Version, string Url)> GetLatestStableAsync(CancellationToken cancellationToken, bool addonBuild = true)
     {
         string html;
         HttpStatusCode status;
@@ -1201,12 +1301,14 @@ public sealed partial class ReShadeDeploymentService
             throw new ReShadeSiteUnavailableException("reshade.me did not answer in time.", ex);
         }
 
-        var match = AddonDownloadRegex().Match(html);
+        var match = (addonBuild ? AddonDownloadRegex() : NoAddonsDownloadRegex()).Match(html);
         if (!match.Success)
         {
             if ((int)status >= 500)
                 throw new ReShadeSiteUnavailableException($"reshade.me is temporarily unavailable (HTTP {(int)status}) and its page has no ReShade download link.");
-            throw new InvalidOperationException("Could not find the current full add-on ReShade download on reshade.me.");
+            throw new InvalidOperationException(addonBuild
+                ? "Could not find the current full add-on ReShade download on reshade.me."
+                : NoAddonsLinkMissingMessage);
         }
         var version = match.Groups[1].Value;
         // The captured version names cache folders and the setup file: only a plain dotted number is accepted ("..", "9..9" are not).
@@ -1218,7 +1320,7 @@ public sealed partial class ReShadeDeploymentService
         }
         // Built from the captured version, not match.Value: the regex ignores case and has no host, so the
         // page's casing would stamp a URL the outage fallback could never match (#142).
-        return (version, StableSetupUrl(version));
+        return (version, addonBuild ? StableSetupUrl(version) : NoAddonsSetupUrl(version));
     }
 
     private void CleanupManagedIni(LinuxDeploymentRecord record)
@@ -1275,17 +1377,6 @@ public sealed partial class ReShadeDeploymentService
         _ => null
     };
 
-    private static bool IsReShadePayloadPath(string path)
-    {
-        var name = Path.GetFileName(path);
-        return name.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("opengl32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
-    }
-
     private static bool IsValidReShadeDll(string path)
         => File.Exists(path) && new FileInfo(path).Length > MinDllSize && BinarySignatureInspector.HasPeSignature(path, MinDllSize);
 
@@ -1339,6 +1430,10 @@ public sealed partial class ReShadeDeploymentService
 
     [GeneratedRegex(@"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe", RegexOptions.IgnoreCase)]
     private static partial Regex AddonDownloadRegex();
+
+    // Upstream NormalReShadeUpdateService's pattern: the setup without the _Addon suffix.
+    [GeneratedRegex(@"/downloads/ReShade_Setup_([\d.]+)\.exe", RegexOptions.IgnoreCase)]
+    private static partial Regex NoAddonsDownloadRegex();
 
     [GeneratedRegex(@"^\d+(?:\.\d+){1,3}$", RegexOptions.CultureInvariant)]
     private static partial Regex LegacyVersionRegex();

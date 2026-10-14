@@ -38,16 +38,8 @@ public static class ComponentProbe
                 if (parent is null || !Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar).Equals(binaryDirectory, StringComparison.Ordinal))
                     return false;
             }
-            var name = Path.GetFileName(path);
-            if (name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("ReShade64.asi", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("d3d11.dll", StringComparison.OrdinalIgnoreCase) ||
-                name.Equals("opengl32.dll", StringComparison.OrdinalIgnoreCase))
-                return BinarySignatureInspector.LooksLikeReShade(path);
-            return false;
+            // Any name ReShade can be installed under (#120), judged by ProxyDllNames' rules.
+            return ProxyDllNames.IsReShadeOnDisk(path);
         });
 
         // RHI's own OptiScaler FG stack (OptiScaler/Streamline/sl.*) is not the game's Streamline: the DLSS panel and

@@ -384,18 +384,22 @@ public sealed class RenoDxDeploymentService
 
             // Put the previous Control UE changes back first, then apply afresh, so the first
             // pre-RHI state stays the restore point. A partial restore keeps what is left owned.
+            // A file the user changed since (DLSS version, HDR preset) is left as they set it and
+            // not applied again (#124).
             var controlNotes = new List<string>();
             var controlState = previousControlState;
             ControlUePostInstallState? controlApplied = null;
+            IReadOnlySet<string>? controlKeptUserChanges = null;
             if (previousControlState is not null)
             {
                 var restored = await _controlUe.RestoreAsync(previousControlState).ConfigureAwait(false);
                 controlState = restored.Remaining;
+                controlKeptUserChanges = restored.KeptUserChanges;
                 if (restored.Remaining is not null) controlNotes.AddRange(restored.Notes);
             }
             if (controlSources is not null && controlState is null)
             {
-                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources).ConfigureAwait(false);
+                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources, controlKeptUserChanges).ConfigureAwait(false);
                 controlState = controlApplied = applied.State;
                 controlNotes.AddRange(applied.Notes);
             }
@@ -447,7 +451,7 @@ public sealed class RenoDxDeploymentService
             }
             var iniSummary = iniApply.AppliedCount > 0
                 ? unityUpgrades.Count > 0
-                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database + manifest)"
+                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database / manifest)"
                     : $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
                 : iniApply.PreservedUserEdits > 0
                     ? $" · {iniApply.PreservedUserEdits} user-edited [renodx] override(s) preserved"
@@ -955,14 +959,7 @@ public sealed class RenoDxDeploymentService
         catch (HttpRequestException ex) { return (null, ex.Message); }
     }
 
-    private static bool HasReShade(string binaryDirectory)
-    {
-        foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll", "dxgi.dll", "d3d9.dll", "d3d11.dll", "opengl32.dll" })
-        {
-            var path = Path.Combine(binaryDirectory, name);
-            if (File.Exists(path) && BinarySignatureInspector.LooksLikeReShade(path)) return true;
-        }
-        return false;
-    }
+    // ReShade under any name it can be installed as (#120).
+    private static bool HasReShade(string binaryDirectory) => ProxyPayloadLocator.HasReShadeOnDisk(binaryDirectory);
 
 }

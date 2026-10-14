@@ -43,7 +43,7 @@ public sealed class OptionListsTests
     [Fact]
     public void ListsHoldTheValuesTheStoresUse()
     {
-        Assert.Equal(["Stable", "Nightly", "Legacy", "Custom"], OptionLists.ReShadeChannel.Values);
+        Assert.Equal(["Stable", "Nightly", "Legacy", "Custom", "NoAddons"], OptionLists.ReShadeChannel.Values);
         Assert.Equal(["pt-BR", "en-US"], OptionLists.UiLanguage.Values);
         Assert.Equal(["Detail", "Compact"], OptionLists.ViewMode.Values);
         Assert.Equal(Enum.GetValues<OptiScalerVariant>(), OptionLists.OptiScalerVariant.Values);

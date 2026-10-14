@@ -55,6 +55,7 @@ internal static class RenoDxIniGrammar
 /// </summary>
 internal static class RenoDxIniOverrideManager
 {
+    // The name predates #15: it also holds the RHI Unity database keys. Kept, because existing records use it.
     internal const string MetadataKey = "RenoDx.ManifestIniOverrides";
     private const string SectionName = "renodx";
 

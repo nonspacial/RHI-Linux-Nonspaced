@@ -133,6 +133,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>The selected game's analysis (unit 1 of the split; Refs #71, #72, #74, #82, #83).</summary>
     public SelectedGameSession Session => _session;
+    public DllNamePickerViewModel DllNamePicker => DllNamePickerViewModel.For(this, _managedComponents, TryPersist); // w3/dllnames (#120)
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1307,9 +1308,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
             if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
-                ConfirmAsync is { } confirm &&
-                !await confirm(T("Vm.ControlUltimateEditionRenoDXMod"), T("Vm.NOTHDRModFixesRTNoise"),
-                    T("Vm.Install")))
+                ConfirmAsync is { } confirm && new ControlUeInstallDialogModel() is var controlUe &&
+                !await confirm(controlUe.Title, controlUe.Message, controlUe.AcceptText))
             {
                 StatusText = T("Vm.RenoDXInstallationCancelled");
                 return;
