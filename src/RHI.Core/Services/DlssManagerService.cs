@@ -58,16 +58,34 @@ public sealed class DlssManagerService
     /// </summary>
     public TimeSpan ManifestFetchTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
-    public async Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
+    public Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
+        => FetchManifestAsync(conditional: true, cancellationToken);
+
+    private async Task<DlssManifestData> FetchManifestAsync(bool conditional, CancellationToken cancellationToken)
     {
         var cachePath = Path.Combine(_cacheRoot, "dlss_manifest.json");
+        var etagPath = cachePath + ".etag";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ManifestFetchTimeout);
         try
         {
+            // Conditional GET (#35 residual): the cached copy's ETag, so an unchanged manifest costs a 304 and no body.
+            var cachedEtag = conditional && File.Exists(cachePath) ? ReadManifestEtag(etagPath) : null;
             using var request = new HttpRequestMessage(HttpMethod.Get, ManifestUrl);
             request.Headers.UserAgent.Add(new ProductInfoHeaderValue("RHI-Linux", RhiProductInfo.Version));
+            if (cachedEtag is not null) request.Headers.IfNoneMatch.Add(cachedEtag);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cachedEtag is not null)
+            {
+                if (await TryReadCachedManifestAsync(cachePath, cancellationToken).ConfigureAwait(false) is { } unchanged)
+                {
+                    _manifest = unchanged;
+                    return unchanged;
+                }
+                // The cache no longer reads: forget its ETag and ask for the whole manifest again.
+                FileCleanup.TryDelete(etagPath);
+                return await FetchManifestAsync(conditional: false, cancellationToken).ConfigureAwait(false);
+            }
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
             var parsed = JsonSerializer.Deserialize<DlssManifestData>(json, JsonOptions())
@@ -80,11 +98,16 @@ public sealed class DlssManagerService
             // must not turn into the outer fallback that returns the older cached copy instead.
             try
             {
+                // The ETag never outlives the copy it describes: dropped first, written only after this copy is in place.
+                FileCleanup.TryDelete(etagPath);
                 await AtomicFile.WriteAllTextAsync(cachePath, json, CancellationToken.None).ConfigureAwait(false);
                 ManifestCacheWriteError = null;
+                if (response.Headers.ETag is { } etag)
+                    await AtomicFile.WriteAllTextAsync(etagPath, etag.ToString(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                FileCleanup.TryDelete(etagPath);
                 ManifestCacheWriteError = ex.Message;
                 AppLog.Warn("dlss-manifest", $"The downloaded DLSS manifest is in use but could not be cached at {cachePath}; the next offline start uses the older copy", ex);
             }
@@ -104,6 +127,35 @@ public sealed class DlssManagerService
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException($"DLSS manifest did not answer and no cached copy exists (timeout {ManifestFetchTimeout.TotalSeconds:0} s).");
+        }
+    }
+
+    private static EntityTagHeaderValue? ReadManifestEtag(string etagPath)
+    {
+        try
+        {
+            return File.Exists(etagPath) && EntityTagHeaderValue.TryParse(File.ReadAllText(etagPath).Trim(), out var etag) ? etag : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss-manifest", $"The DLSS manifest ETag could not be read ({etagPath}); asking for the whole manifest", ex);
+            return null;
+        }
+    }
+
+    private static async Task<DlssManifestData?> TryReadCachedManifestAsync(string cachePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<DlssManifestData>(await File.ReadAllTextAsync(cachePath, cancellationToken).ConfigureAwait(false), JsonOptions());
+            if (parsed is null) return null;
+            ValidateManifest(parsed);
+            return parsed;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            AppLog.Warn("dlss-manifest", $"The cached DLSS manifest no longer reads ({cachePath}); asking for the whole manifest", ex);
+            return null;
         }
     }
 
