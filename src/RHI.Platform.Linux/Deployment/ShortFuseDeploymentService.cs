@@ -750,13 +750,14 @@ public sealed class ShortFuseDeploymentService
         }
         catch (Exception ex)
         {
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // ReShade's record goes back as it was when the commit write had renamed it (one write with ShortFuse's).
+            var rollback = await scope.RollbackRemovalAsync(
+                _records, game, record, "shortfuse", alongside: reshadeAfter is null ? null : [reshadeRecord!]).ConfigureAwait(false);
             if (!rollback.Success)
                 AppLog.Warn("shortfuse", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             // Registry: undo exactly what this removal changed, per key (atomic, locked, refused while Wine runs).
             if (reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryRestore(game.PrefixPath, reshadeRecord!.WineOverride);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "shortfuse");
             return ComponentOperationResult.Fail(
                 $"ShortFuse removal failed; the installed ShortFuse/ReShade/INI/registry state was restored from transaction snapshots where possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }

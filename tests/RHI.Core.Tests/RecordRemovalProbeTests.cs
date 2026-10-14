@@ -162,22 +162,79 @@ public sealed class RecordRemovalProbeTests : IDisposable
     }
 
     [Fact]
-    public void KeepRecordAfterFailedRemoval_PutsAVanishedRecordBack_WithoutTheStamp_AndLeavesAPresentOneAlone()
+    public async Task RollbackRemoval_Unjournaled_PutsAVanishedRecordBackWithoutAStamp_AndLeavesAPresentOneAlone()
     {
         var records = InstalledReShade();
         var record = records.Find(Game, ManagedComponentKind.ReShade)!;
         record.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey] = "dead-op";
         var present = records.Find(Game, ManagedComponentKind.ReShade)!.SavedAtUtc;
 
-        DeploymentScope.KeepRecordAfterFailedRemoval(records, Game, record, "test");
+        await using (var scope = DeploymentScope.Unjournaled())
+            Assert.True((await scope.RollbackRemovalAsync(records, Game, record, "test")).Success);
         Assert.Equal(present, records.Find(Game, ManagedComponentKind.ReShade)!.SavedAtUtc); // untouched
 
         records.Remove(Game, ManagedComponentKind.ReShade);
-        DeploymentScope.KeepRecordAfterFailedRemoval(records, Game, record, "test");
+        await using (var scope = DeploymentScope.Unjournaled())
+            await scope.RollbackRemovalAsync(records, Game, record, "test");
 
         var back = records.Find(Game, ManagedComponentKind.ReShade)!;
         Assert.Equal(P("game", "dxgi.dll"), Assert.Single(back.Files).Path);
         Assert.False(back.Metadata.ContainsKey(LinuxDeploymentRecovery.RemovalOperationIdMetadataKey));
+    }
+
+    // Review w3-journal #2: the record of a failed removal goes back STAMPED and BEFORE the rollback. Here the save that
+    // took it away replaced the ledger and then failed, and the rollback cannot finish (the folder is read-only): the
+    // journal entry stays for the next start, which must put the file back, not count the removal committed and
+    // release the copy the user was told was kept.
+    [Fact]
+    public async Task RollbackRemoval_RecordGoneAndRollbackUnfinished_NextStartStillPutsTheFileBack()
+    {
+        var records = InstalledReShade();
+        var record = records.Find(Game, ManagedComponentKind.ReShade)!;
+        var (opened, refusal) = await DeploymentScope.BeginRemovalAsync(
+            new DeploymentJournal(P("journal")), records, "ReShade removal: Example", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+        Assert.Null(refusal);
+        var scope = opened!;
+        await scope.DeleteAsync(P("game", "dxgi.dll"));
+        records.Remove(Game, ManagedComponentKind.ReShade); // written, then the save "failed"
+        File.SetUnixFileMode(P("game"), UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        OwnedFileSetRollback rollback;
+        try { rollback = await scope.RollbackRemovalAsync(records, Game, record, "test"); }
+        finally { File.SetUnixFileMode(P("game"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+        Assert.False(rollback.Success);
+        Assert.False(File.Exists(P("game", "dxgi.dll")));
+        var back = records.Find(Game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(scope.Operation!.Id, back.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey]);
+        scope.Operation.AbandonAsIfCrashed();
+
+        var report = await LinuxDeploymentRecovery.RecoverAsync(new DeploymentJournal(P("journal")), records);
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        Assert.Equal("reshade payload", File.ReadAllText(P("game", "dxgi.dll")));
+        Assert.NotNull(records.Find(Game, ManagedComponentKind.ReShade));
+    }
+
+    // Review w3-journal #2: a crash between the rollback and putting the record back used to leave the restored file
+    // with no record. Put back first, a crash there leaves the removal as it was committed: file and record both gone.
+    [Fact]
+    public async Task RollbackRemoval_CrashWhilePuttingTheRecordBack_NeverLeavesARestoredFileWithoutItsRecord()
+    {
+        var records = InstalledReShade();
+        var record = records.Find(Game, ManagedComponentKind.ReShade)!;
+        var journal = new DeploymentJournal(P("journal"));
+        using var death = new SimulatedDeath(journal);
+        var (opened, _) = await DeploymentScope.BeginRemovalAsync(
+            journal, records, "ReShade removal: Example", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+        await opened!.DeleteAsync(P("game", "dxgi.dll"));
+        records.Remove(Game, ManagedComponentKind.ReShade); // written, then the save "failed"
+        records.SaveFaultForTesting = death.Die;            // the next ledger write dies
+
+        var (died, _) = await death.RunUntilDeathAsync(() => opened.RollbackRemovalAsync(records, Game, record, "test"));
+        Assert.True(died);
+        await SimulatedDeath.RecoverAsync(P("journal"), P("deployments.json"));
+
+        var after = new LinuxDeploymentRecordStore(P("deployments.json")).Find(Game, ManagedComponentKind.ReShade);
+        Assert.Equal(File.Exists(P("game", "dxgi.dll")), after is not null);
     }
 
     private string Prefix()

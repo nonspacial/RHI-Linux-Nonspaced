@@ -113,19 +113,36 @@ public sealed class DeploymentScope : IAsyncDisposable
     }
 
     /// <summary>
-    /// After a removal failed and was rolled back: puts <paramref name="record"/> back when the ledger no longer has it
-    /// (the save that took it away failed after replacing the file), so the restored files stay owned. Never throws.
+    /// The catch of a failed removal: first puts <paramref name="record"/> back when the ledger no longer has it (the
+    /// save that took it away failed after replacing the file), together with <paramref name="alongside"/> (records the
+    /// commit point changed in the same write, as they were before it) — still carrying this removal's stamp
+    /// (<see cref="LinuxDeploymentRecovery.RemovalOperationIdMetadataKey"/>) — and only then rolls back. Start-up
+    /// recovery therefore counts the removal uncommitted until the rollback has finished: a crash during it, or a rollback
+    /// left for the next start, puts the files back instead of releasing the copies the user was told were kept, and the
+    /// restored files are never left without their record. A rolled-back removal's stamp is inert (the journal entry is
+    /// gone), and the next removal stamps the record again. Putting the record back never throws (logged).
     /// </summary>
-    public static void KeepRecordAfterFailedRemoval(LinuxDeploymentRecordStore records, DetectedGame game, LinuxDeploymentRecord record, string logArea)
+    public async Task<OwnedFileSetRollback> RollbackRemovalAsync(
+        LinuxDeploymentRecordStore records, DetectedGame game, LinuxDeploymentRecord record, string logArea,
+        IReadOnlyList<LinuxDeploymentRecord>? alongside = null)
     {
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(record);
         try
         {
-            if (records.Find(game, record.Component) is null) records.Upsert(LinuxDeploymentRecovery.EndRemoval(record));
+            if (records.Find(game, record.Component) is null)
+            {
+                var back = LinuxDeploymentRecordStore.Clone(record);
+                if (Operation is not null) back.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey] = Operation.Id;
+                else LinuxDeploymentRecovery.EndRemoval(back);
+                records.Commit([back, .. alongside ?? []]);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             AppLog.Warn(logArea, "Removal rollback could not put the deployment record back", ex);
         }
+        return await RollbackAsync().ConfigureAwait(false);
     }
 
     /// <summary>Writes <paramref name="bytes"/> to the tracked-and-declared <paramref name="target"/> (verified, durable, atomic).</summary>

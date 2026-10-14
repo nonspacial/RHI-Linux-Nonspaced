@@ -288,10 +288,9 @@ public sealed class StandaloneDlssEnablerDeploymentService
         {
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss-enabler").ConfigureAwait(false);
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "dlss-enabler");
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
     }

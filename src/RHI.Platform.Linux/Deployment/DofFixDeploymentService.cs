@@ -241,8 +241,7 @@ public sealed class DofFixDeploymentService
         }
         catch (Exception ex)
         {
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "dof-fix");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dof-fix").ConfigureAwait(false);
             return ComponentOperationResult.Fail($"DOF Fix removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

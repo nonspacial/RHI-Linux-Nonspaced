@@ -204,8 +204,7 @@ public sealed class RenoDxUpgradeDeploymentService
         }
         catch (Exception ex)
         {
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "renodx-upgrade");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "renodx-upgrade").ConfigureAwait(false);
             return ComponentOperationResult.Fail($"RenoDX Upgrade removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

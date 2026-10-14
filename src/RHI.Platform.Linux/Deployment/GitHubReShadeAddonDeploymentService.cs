@@ -266,8 +266,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         }
         catch (Exception ex)
         {
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "github-addon");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "github-addon").ConfigureAwait(false);
             return ComponentOperationResult.Fail($"{_definition.DisplayName} removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

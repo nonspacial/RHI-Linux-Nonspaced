@@ -420,10 +420,9 @@ public sealed class UltimateAsiLoaderDeploymentService
         {
             // Back to the managed-installed state so a retry remains possible: files from the scope's copies, and the
             // override this removal restored (only where it did, #30) since the record stays.
-            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "ual").ConfigureAwait(false);
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "ual");
             if (!rollback.Success)
                 AppLog.Warn("ual", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
