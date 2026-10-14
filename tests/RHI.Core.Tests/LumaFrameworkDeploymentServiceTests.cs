@@ -347,6 +347,37 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Null(records.Find(game, ManagedComponentKind.LumaFramework));
     }
 
+    // #120: with RHI's ReShade under a chosen name (version.dll), the package's bundled ReShade (dxgi.dll) is still
+    // skipped, so no second ReShade appears; a package file with the chosen name is refused like any foreign target.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Install_WithReShadeUnderAChosenName_NeverAddsASecondReShadeOrTouchesIt(bool packageShipsThatName)
+    {
+        var game = CreateGame();
+        var records = NewRecords($"chosen-name-{packageShipsThatName}.json");
+        var reshade = Path.Combine(game.BinaryDirectory!, "version.dll");
+        File.WriteAllText(reshade, "rhi-reshade-proxy");
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = game.BinaryDirectory!, Version = "test",
+            Files = [new LinuxDeployedFile { Path = reshade, Sha256 = Sha256(Encoding.UTF8.GetBytes("rhi-reshade-proxy")) }]
+        });
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini"), "[ADDON]\nAddonPath=.\\addons\n");
+        var zip = packageShipsThatName ? MakeLumaZip("version.dll") : MakeLumaZip();
+        using var http = BuildHttp(zip, Sha256(zip));
+        var service = new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, $"cache-chosen-name-{packageShipsThatName}"));
+
+        var install = await service.InstallAsync(game);
+
+        Assert.Equal(!packageShipsThatName, install.Success);
+        if (packageShipsThatName) Assert.Contains("Foreign Luma protection", install.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("rhi-reshade-proxy", File.ReadAllText(reshade));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "ReShade64.dll")));
+    }
+
     [Fact]
     public async Task InstallAndRemove_DeploysOwnedFilesPreservesRhiProxiesAndRestoresLumaIni()
     {
@@ -820,7 +851,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
             }
         });
 
-    private static byte[] MakeLumaZip()
+    private static byte[] MakeLumaZip(params string[] extraFiles)
     {
         using var output = new MemoryStream();
         using (var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
@@ -832,6 +863,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
             WriteEntry(zip, "ReShade64.dll", Encoding.UTF8.GetBytes("bundled reshade must be skipped"));
             WriteEntry(zip, "ReShade.ini", Encoding.UTF8.GetBytes("bundled ini must be skipped"));
             WriteEntry(zip, "nvngx_dlss.dll", Encoding.UTF8.GetBytes("bundled dlss must be skipped"));
+            foreach (var extra in extraFiles) WriteEntry(zip, extra, Encoding.UTF8.GetBytes("package file " + extra));
         }
         return output.ToArray();
     }

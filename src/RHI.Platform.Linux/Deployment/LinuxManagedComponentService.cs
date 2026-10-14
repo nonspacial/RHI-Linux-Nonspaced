@@ -261,7 +261,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = false;
                         component.Note = "Start the Windows game once so its Wine/Proton prefix is created before installing ReShade.";
                     }
-                    else if (managedOptiScaler is not null)
+                    else if (managedOptiScaler is not null &&
+                             // w3/dllnames (#120): only when ReShade's name is the one OptiScaler holds.
+                             (_reshade?.ResolveProxyName(game) is not { } proxy ||
+                              managedOptiScaler.Files.Any(f => Path.GetFileName(f.Path).Equals(proxy.Name, StringComparison.OrdinalIgnoreCase))))
                     {
                         component.Note = "Will coexist with RHI-managed OptiScaler as ReShade64.dll; RHI enables OptiScaler's LoadReshade setting automatically.";
                     }
@@ -907,7 +910,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         [
             _addonManager, _neuralVersionPins, _updateLog,
             _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
-            _shortFuse?.GameState, _lumaPolicy?.GameState
+            _shortFuse?.GameState, _lumaPolicy?.GameState,
+            _reshade?.DllNames // w3/dllnames (#120)
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
@@ -1367,6 +1371,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     }
 
     public bool IsReShadeManaged(DetectedGame game) => _reshade.IsManaged(game);
+
+    // w3/dllnames (#120): the per-game ReShade DLL name.
+    /// <summary>The store of per-game proxy DLL names chosen before install.</summary>
+    public DllNamePreferenceStore ReShadeDllNames => _reshade.DllNames;
+
+    /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
+    public ProxyNameResolution? ResolveReShadeProxyName(DetectedGame game) => _reshade.ResolveProxyName(game);
+
+    /// <summary>The file name RHI's ReShade is installed under on <paramref name="game"/>, or null when RHI has not installed it.</summary>
+    public string? InstalledReShadeProxyName(DetectedGame game)
+        => ProxyPayloadLocator.ReShadePayload(_records.Find(game, ManagedComponentKind.ReShade)) is { } payload ? Path.GetFileName(payload.Path) : null;
 
     public ReShadeInstallOptions GetReShadeOptions(DetectedGame game) => _reshade.GetInstalledOptions(game);
 

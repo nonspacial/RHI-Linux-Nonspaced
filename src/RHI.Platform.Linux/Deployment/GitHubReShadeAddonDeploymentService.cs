@@ -352,15 +352,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         return (payload, download);
     }
 
-    internal static bool HasReShade(string binaryDirectory)
-    {
-        foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll", "dxgi.dll", "d3d9.dll", "d3d11.dll", "opengl32.dll" })
-        {
-            var path = Path.Combine(binaryDirectory, name);
-            if (File.Exists(path) && BinarySignatureInspector.LooksLikeReShade(path)) return true;
-        }
-        return false;
-    }
+    internal static bool HasReShade(string binaryDirectory) => ProxyPayloadLocator.HasReShadeOnDisk(binaryDirectory); // w3/dllnames hook (#120)
 
     internal static bool HasConflictingAddonOnDisk(string deployDir, ManagedComponentKind kind)
         => FindComponentAddonFiles(deployDir, kind).Count > 0;

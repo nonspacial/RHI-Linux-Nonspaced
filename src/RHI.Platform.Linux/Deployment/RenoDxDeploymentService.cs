@@ -959,14 +959,7 @@ public sealed class RenoDxDeploymentService
         catch (HttpRequestException ex) { return (null, ex.Message); }
     }
 
-    private static bool HasReShade(string binaryDirectory)
-    {
-        foreach (var name in new[] { "ReShade64.dll", "ReShade32.dll", "dxgi.dll", "d3d9.dll", "d3d11.dll", "opengl32.dll" })
-        {
-            var path = Path.Combine(binaryDirectory, name);
-            if (File.Exists(path) && BinarySignatureInspector.LooksLikeReShade(path)) return true;
-        }
-        return false;
-    }
+    // ReShade under any name it can be installed as (#120).
+    private static bool HasReShade(string binaryDirectory) => ProxyPayloadLocator.HasReShadeOnDisk(binaryDirectory);
 
 }

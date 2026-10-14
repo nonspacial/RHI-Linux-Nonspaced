@@ -633,6 +633,15 @@ internal static class UiStrings
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        ("Names.DllNameLabel", "Nome da DLL", "DLL name"),
+        ("Names.DllNameAutomatic", "Automático ({0})", "Automatic ({0})"),
+        ("Names.DllNameTipApi", "O ReShade será instalado como {0}, o arquivo que a API gráfica do jogo carrega.", "ReShade will be installed as {0}, the file the game's graphics API loads."),
+        ("Names.DllNameTipManifest", "O ReShade será instalado como {0}: o manifesto do RHI define este nome para este jogo.", "ReShade will be installed as {0}: the RHI manifest sets this name for this game."),
+        ("Names.DllNameTipManifestIgnored", "O ReShade será instalado como {0}. O nome {1} do manifesto do RHI não é usado: a API gráfica deste jogo não o carregaria.", "ReShade will be installed as {0}. The RHI manifest's {1} is not used: this game's graphics API would not load it."),
+        ("Names.DllNameTipChosen", "O ReShade será instalado como {0}, o nome que você escolheu. Escolha Automático para voltar a {1}.", "ReShade will be installed as {0}, the name you chose. Choose Automatic to go back to {1}."),
+        ("Names.DllNameTipInstalled", "O ReShade está instalado como {0}. Remova o ReShade para instalá-lo com outro nome.", "ReShade is installed as {0}. Remove ReShade to install it under another name."),
+        ("Names.DllNameTipOwnName", " Nada carrega {0} sozinho; use-o só com um mod que carregue o ReShade (OptiScaler).", " Nothing loads {0} by itself; use it only with a mod that loads ReShade (OptiScaler)."),
+        ("Names.DllNameTipOtherApi", " A API gráfica deste jogo pode não carregar {0}.", " This game's graphics API may not load {0}."),
         ("Names.OptionNoAddons", "Sem add-ons", "No Addons"),
         ("Names.ControlUeNotHdrMod", "⚠ Este NÃO é um mod HDR.", "⚠ This is NOT an HDR mod."),
         ("Names.ControlUeStrategies", "Ele corrige o ruído do RT com Ray Reconstruction. Duas estratégias (escolha uma; são mutuamente exclusivas):\n• Desative o denoiser de RT do jogo e use o preset M ou L do DLSS Super Resolution\n• Use Ray Reconstruction com entradas extras derivadas dos shaders do jogo (o denoiser do jogo também fica desativado — o RR exige isso)\n\nDLSS, Ray Tracing e SSAO precisam estar ativados no jogo para o Ray Reconstruction funcionar corretamente.", "It fixes RT noise using Ray Reconstruction. Two strategies (pick one; they are mutually exclusive):\n• Turn off the in-game RT denoiser and use DLSS Super Resolution preset M or L\n• Use Ray Reconstruction with extra inputs derived from the game's shaders (the game denoiser is turned off here too — RR needs that)\n\nDLSS, Ray Tracing and SSAO must all be enabled in-game for Ray Reconstruction to work correctly."),

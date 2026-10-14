@@ -84,6 +84,7 @@ public sealed partial class ReShadeDeploymentService
     private readonly ReShadeShaderPackService _shaderPacks;
     private readonly string _cacheDir;
     private readonly DeploymentJournal? _journal;
+    private readonly DllNamePreferenceStore _dllNames;
 
     public ReShadeDeploymentService(
         HttpClient http,
@@ -94,9 +95,11 @@ public sealed partial class ReShadeDeploymentService
         string? cacheDir = null,
         ReShadeShaderPackService? shaderPacks = null,
         UpstreamRhiManifestService? upstreamManifest = null,
-        DeploymentJournal? journal = null)
+        DeploymentJournal? journal = null,
+        DllNamePreferenceStore? dllNames = null)
     {
         _journal = journal;
+        _dllNames = dllNames ?? new DllNamePreferenceStore();
         _http = http;
         _files = files;
         _records = records;
@@ -118,6 +121,15 @@ public sealed partial class ReShadeDeploymentService
     public void SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
         => _shaderPacks.SetExcludedFiles(packId, excluded);
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.ReShade) is not null;
+
+    /// <summary>The per-game proxy DLL names chosen before install (#120); "Repair after move" carries them.</summary>
+    public DllNamePreferenceStore DllNames => _dllNames;
+
+    /// <summary>The proxy name the next install of ReShade on <paramref name="game"/> uses, and why (#120).</summary>
+    public ProxyNameResolution? ResolveProxyName(DetectedGame game) => ProxyPayloadLocator.Resolve(game, _dllNames.GetReShade(game));
+
+    /// <summary>Fixed text before the name when a chosen DLL name does not suit the game's bitness (PT-BR presentation pair).</summary>
+    public const string NameNotForBitnessPrefix = "The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ";
 
     public ReShadeInstallOptions GetInstalledOptions(DetectedGame game)
     {
@@ -173,9 +185,18 @@ public sealed partial class ReShadeDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var directProxy = SelectProxyName(game.EffectiveGraphicsApi);
-        if (directProxy is null)
+        // The proxy name: the user's choice, else the RHI manifest's, else the API's (#120). An installed ReShade keeps
+        // the name it was installed under (the record decides below); a new name needs a removal first.
+        var resolution = ResolveProxyName(game);
+        if (resolution is null)
             return ComponentOperationResult.Fail("This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
+        if (!ProxyDllNames.OfferedFor(architecture == PeArchitecture.X86).Contains(resolution.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (resolution.Source == ProxyNameSource.User)
+                return ComponentOperationResult.Fail(NameNotForBitnessPrefix + resolution.Name);
+            resolution = new ProxyNameResolution(SelectProxyName(game.EffectiveGraphicsApi)!, ProxyNameSource.GraphicsApi, resolution.Name);
+        }
+        var directProxy = resolution.Name;
 
         if (options.Channel == ReShadeChannel.NoAddons)
         {
@@ -195,7 +216,7 @@ public sealed partial class ReShadeDeploymentService
 
         if (existingRecord is not null)
         {
-            var payload = existingRecord.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+            var payload = ProxyPayloadLocator.ReShadePayload(existingRecord);
             if (payload is null)
                 return ComponentOperationResult.Fail("RHI has a ReShade record for this game, but its managed DLL path is missing. Update is blocked until the record is repaired or removed safely.");
             target = payload.Path;
@@ -285,7 +306,7 @@ public sealed partial class ReShadeDeploymentService
         // Last point Cancel is honoured: from the update snapshot on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
-        var previousPayload = existingRecord?.Files.FirstOrDefault(f => IsReShadePayloadPath(f.Path));
+        var previousPayload = ProxyPayloadLocator.ReShadePayload(existingRecord);
         var existedBefore = previousPayload?.ExistedBeforeInstall ?? File.Exists(target);
         var previousOverride = existingRecord?.WineOverride;
         var previousAdditionalOverrides = existingRecord?.AdditionalWineOverrides ?? new List<WineOverrideRecord>();
@@ -419,14 +440,24 @@ public sealed partial class ReShadeDeploymentService
             WineOverrideRecord? overrideRecord = previousOverride;
             if (!coexist)
             {
-                if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
-                    throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
-                if (overrideRecord is null)
+                // The override is for the name ReShade sits under (#120); ReShade64/32.dll chosen as a name are loaded by
+                // another mod, never by Wine, so they get none. ShortFuse's .asi keeps the API name as before.
+                var targetName = Path.GetFileName(target);
+                if (ProxyDllNames.NeedsWineOverride(targetName))
                 {
-                    overrideRecord = await _overrides.EnsureNativeBuiltinAsync(
-                        operation, prefix, directProxy, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
-                    appliedOverride = overrideRecord;
-                    overrideCreatedThisAttempt = true;
+                    if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
+                        throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before installing ReShade.");
+                    if (overrideRecord is null)
+                    {
+                        // ShortFuse's .asi is loaded by its ASI loader; the override stays with the name ReShade had before.
+                        var overrideName = !targetName.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase) ? targetName
+                            : existingRecord?.Metadata.GetValueOrDefault(MetaShortFuseOriginalPayloadPath) is { Length: > 0 } original ? Path.GetFileName(original)
+                            : directProxy;
+                        overrideRecord = await _overrides.EnsureNativeBuiltinAsync(
+                            operation, prefix, overrideName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                        appliedOverride = overrideRecord;
+                        overrideCreatedThisAttempt = true;
+                    }
                 }
             }
             else
@@ -1323,17 +1354,6 @@ public sealed partial class ReShadeDeploymentService
         GraphicsApi.OpenGL => "opengl32.dll",
         _ => null
     };
-
-    private static bool IsReShadePayloadPath(string path)
-    {
-        var name = Path.GetFileName(path);
-        return name.Equals("dxgi.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("opengl32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals("ReShade32.dll", StringComparison.OrdinalIgnoreCase) ||
-               name.Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase);
-    }
 
     private static bool IsValidReShadeDll(string path)
         => File.Exists(path) && new FileInfo(path).Length > MinDllSize && BinarySignatureInspector.HasPeSignature(path, MinDllSize);

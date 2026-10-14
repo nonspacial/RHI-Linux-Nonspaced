@@ -381,6 +381,14 @@
                     </Grid>
                   </Grid>
 
+                  <!-- w3/dllnames (#120): ReShade's proxy DLL name; DllNamePickerViewModel. -->
+                  <Grid ColumnDefinitions="120,220,*" ColumnSpacing="10" IsVisible="{Binding DllNamePicker.IsAvailable}">
+                    <TextBlock Text="{Binding DllNamePicker.Label}" Classes="muted" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding DllNamePicker.Options}"
+                              SelectedItem="{Binding DllNamePicker.SelectedOption, Mode=TwoWay}" IsEnabled="{Binding DllNamePicker.CanChoose}"
+                              ToolTip.Tip="{Binding DllNamePicker.Hint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+                  </Grid>
+
                   <Grid ColumnDefinitions="120,*" ColumnSpacing="8">
                     <TextBlock Text="D3DCompiler 47" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
                     <StackPanel Grid.Column="1" Spacing="7">

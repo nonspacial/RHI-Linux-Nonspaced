@@ -41,6 +41,7 @@ internal sealed class AppComposition
     // w3/parity rows
     // w3/vmsplit rows
     // w3/dllnames rows
+    public required DllNamePreferenceStore DllNames { get; init; }
 
     public MainWindowViewModel CreateViewModel()
         => new(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
@@ -201,6 +202,7 @@ internal sealed class AppComposition
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows
+            DllNames = reshade.DllNames,
         };
     }
 }

@@ -129,6 +129,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>The selected game's analysis (unit 1 of the split; Refs #71, #72, #74, #82, #83).</summary>
     public SelectedGameSession Session => _session;
+    public DllNamePickerViewModel DllNamePicker => DllNamePickerViewModel.For(this, _managedComponents, TryPersist); // w3/dllnames (#120)
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;

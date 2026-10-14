@@ -162,6 +162,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeDeploymentService.NoAddonsUpdateAvailablePrefix + "6.7.3 → 6.8.0.";
         yield return ReShadeDeploymentService.NoAddonsCurrentPrefix + "6.8.0.";
         yield return ReShadeDeploymentService.NoAddonsLinkMissingMessage;
+        yield return ReShadeDeploymentService.NameNotForBitnessPrefix + "ReShade64.dll";
     }
 
     [Theory]

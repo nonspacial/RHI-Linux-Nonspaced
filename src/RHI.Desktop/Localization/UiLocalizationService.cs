@@ -997,6 +997,9 @@ public static class UiLocalizationService
         ("ReShade No Addons update available: ", "Atualização do ReShade Sem add-ons disponível: "),
         ("ReShade No Addons is current: ", "O ReShade Sem add-ons está atualizado: "),
         ("Could not find the current ReShade download without add-on support on reshade.me.", "Não foi possível encontrar no reshade.me o download atual do ReShade sem suporte a add-ons."),
+        // #120 ReShade DLL name.
+        ("The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ",
+            "O nome de DLL do ReShade escolhido é para a outra arquitetura de jogo Windows; escolha outro nome: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";
