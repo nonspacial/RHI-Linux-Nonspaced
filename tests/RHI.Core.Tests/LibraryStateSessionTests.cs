@@ -60,7 +60,7 @@ public sealed class LibraryStateSessionTests
             FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { "restored-key" }
         });
 
-        var (added, _) = await fx.Vm.TryAddManualGameAsync(new() { Name = "Hades", InstallPath = hades.InstallPath, Runner = "Manual Windows" });
+        var (added, _) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = "Hades", InstallPath = hades.InstallPath, Runner = "Manual Windows" });
         Assert.False(added);
         await AddAndSelectAsync(fx, fx.Game("Celeste"));
 
@@ -94,7 +94,7 @@ public sealed class LibraryStateSessionTests
             {
                 case "favourite": fx.Vm.ToggleFavouriteCommand.Execute(null); break;
                 case "hidden": fx.Vm.ToggleHiddenCommand.Execute(null); break;
-                case "hdr": fx.Vm.SelectedHdrMode = RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope"); break;
+                case "hdr": fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope")); break;
                 default: fx.Vm.LibraryFilterMode = "Favourites"; break;
             }
 
@@ -140,13 +140,13 @@ public sealed class LibraryStateSessionTests
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
         var before = File.ReadAllText(fx.Library.LibraryPath);
-        var off = fx.Vm.SelectedHdrMode;
+        var off = fx.Vm.Runtime.SelectedHdrMode.Display;
 
         fx.Vm.LibraryRepairRunning = true;
-        try { fx.Vm.SelectedHdrMode = RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope"); }
+        try { fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope")); }
         finally { fx.Vm.LibraryRepairRunning = false; }
 
-        Assert.Equal(off, fx.Vm.SelectedHdrMode);
+        Assert.Equal(off, fx.Vm.Runtime.SelectedHdrMode.Display);
         Assert.StartsWith("Wait for Repair after move to finish", fx.Vm.StatusText);
         Assert.Equal(before, File.ReadAllText(fx.Library.LibraryPath));
     }
@@ -163,7 +163,7 @@ public sealed class LibraryStateSessionTests
         fx.Vm.LibraryRepairRunning = true;
         try
         {
-            var (added, message) = await fx.Vm.TryAddManualGameAsync(new() { Name = "Celeste", InstallPath = celeste.InstallPath, Runner = "Manual Windows" });
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = "Celeste", InstallPath = celeste.InstallPath, Runner = "Manual Windows" });
             Assert.False(added);
             Assert.StartsWith("Wait for Repair after move to finish", message);
         }
@@ -262,7 +262,7 @@ public sealed class LibraryStateSessionTests
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, RHI.Core.Models.DetectedGame game)
     {
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

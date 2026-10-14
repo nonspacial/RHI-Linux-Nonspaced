@@ -56,12 +56,15 @@ public sealed partial class MainWindow
         _addonWatcher.CandidateDetected += candidate =>
             Dispatcher.UIThread.Post(() => RunUiSafe(() => HandleWatchedCandidateAsync(candidate)));
 
+        DataContextChanged += (_, _) => AttachDetailScrollReset(DataContext as MainWindowViewModel);
+
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (DataContext is MainWindowViewModel confirmVm)
             {
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
+                confirmVm.ShowNotesAsync = ShowGameNotesAsync;
             }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -91,6 +94,23 @@ public sealed partial class MainWindow
             _addonWatcher.Dispose();
             RemoveTrayIcon();
         };
+    }
+
+    private MainWindowViewModel? _scrollResetVm;
+
+    /// <summary>A different game selected: the detail pane goes back to its top (Refs #152).</summary>
+    private void AttachDetailScrollReset(MainWindowViewModel? vm)
+    {
+        if (ReferenceEquals(vm, _scrollResetVm)) return;
+        if (_scrollResetVm is not null) _scrollResetVm.SelectedGameSwitched -= ScrollDetailToTop;
+        _scrollResetVm = vm;
+        if (vm is not null) vm.SelectedGameSwitched += ScrollDetailToTop;
+    }
+
+    private void ScrollDetailToTop()
+    {
+        if (this.FindControl<ScrollViewer>("DetailScroller") is { } scroller && scroller.Offset.Y != 0)
+            scroller.Offset = new Vector(scroller.Offset.X, 0);
     }
 
     private void GameLibrary_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -220,7 +240,7 @@ public sealed partial class MainWindow
                 };
                 // Closes as soon as the entry is saved: a refresh that waits for a running operation
                 // reports to the main status line, not to a disabled dialog with no message.
-                var (added, result) = await vm.TryAddManualGameAsync(entry, saved: dialog.Close);
+                var (added, result) = await vm.ManualGames.TryAddManualGameAsync(entry, saved: dialog.Close);
                 if (!added) status.Text = result;
             }
             catch (Exception ex)
@@ -444,7 +464,7 @@ public sealed partial class MainWindow
             try
             {
                 // Closes once the reset is saved; a refusal (managed components present) stays visible here.
-                var (reset, message) = await vm.ResetSelectedGameEditAsync(saved: dialog.Close);
+                var (reset, message) = await vm.ManualGames.ResetSelectedGameEditAsync(saved: dialog.Close);
                 if (!reset) status.Text = message;
             }
             catch (Exception ex)
@@ -463,7 +483,7 @@ public sealed partial class MainWindow
             {
                 var chosenProvider = provider.SelectedIndex >= 0 ? providerValues[provider.SelectedIndex] : null;
                 // Closes as soon as the edit is saved; the outcome goes to the main status line.
-                var (saved, message) = await vm.SaveSelectedGameEditAsync(
+                var (saved, message) = await vm.ManualGames.SaveSelectedGameEditAsync(
                     patchExecutable.Text?.Trim() ?? "",
                     gameRoot.Text?.Trim() ?? "",
                     binaryDirectory.Text?.Trim() ?? "",

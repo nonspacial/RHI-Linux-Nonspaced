@@ -253,6 +253,12 @@ public sealed class JsonFileStore<T> where T : class
     private readonly Func<byte[], T?> _parse;
     private readonly Func<T, byte[]> _serialize;
     private readonly JsonStoreKind _kind;
+    // The bytes last read and the file version they came from (Refs #63): a load whose file is unchanged parses these
+    // again (callers still get their own fresh value) instead of reading the file once more, so per-game preference
+    // getters on the UI thread cost a stat, not a read. Any change of inode, ctime, mtime or length re-reads.
+    private readonly object _bytesGate = new();
+    private JsonFileVersion? _cachedVersion;
+    private byte[]? _cachedBytes;
 
     public JsonFileStore(
         string path,
@@ -288,7 +294,7 @@ public sealed class JsonFileStore<T> where T : class
                 JsonStoreQuarantine.Forget(FilePath);
                 return new(JsonStoreLoadStatus.Missing, null, null);
             }
-            bytes = File.ReadAllBytes(FilePath);
+            bytes = ReadBytes();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -320,6 +326,38 @@ public sealed class JsonFileStore<T> where T : class
         return new(JsonStoreLoadStatus.Loaded, value, null);
     }
 
+    /// <summary>
+    /// The file's bytes: the cached copy while the file's version (taken before reading, so a write racing the read only
+    /// causes one more read later) is unchanged, otherwise read from disk. A version that cannot be told (no statx
+    /// ctime/inode) is never cached.
+    /// </summary>
+    private byte[] ReadBytes()
+    {
+        var version = JsonFileVersion.Of(FilePath);
+        lock (_bytesGate)
+        {
+            if (version is not null && _cachedBytes is not null && _cachedVersion == version)
+                return (byte[])_cachedBytes.Clone();
+        }
+        var bytes = File.ReadAllBytes(FilePath);
+        JsonStoreReads.Count(FilePath);
+        lock (_bytesGate)
+        {
+            _cachedVersion = version;
+            _cachedBytes = version is null ? null : (byte[])bytes.Clone();
+        }
+        return bytes;
+    }
+
+    private void ForgetCachedBytes()
+    {
+        lock (_bytesGate)
+        {
+            _cachedVersion = null;
+            _cachedBytes = null;
+        }
+    }
+
     /// <summary>The loaded value, or <paramref name="fallback"/> when the file is missing or unreadable.</summary>
     public T LoadOr(Func<T> fallback) => Load().Value ?? fallback();
 
@@ -338,6 +376,7 @@ public sealed class JsonFileStore<T> where T : class
         ArgumentNullException.ThrowIfNull(value);
         EnsureWritable();
         if (_kind == JsonStoreKind.Cache) Load(); // copies an unreadable cache aside before replacing it
+        ForgetCachedBytes();
         AtomicFile.WriteStoreFile(FilePath, _serialize(value));
         JsonStoreQuarantine.Forget(FilePath);
     }
@@ -367,6 +406,7 @@ public sealed class JsonFileStore<T> where T : class
     public void ResetKeepingUnreadable()
     {
         var current = Load();
+        ForgetCachedBytes();
         if (!File.Exists(FilePath)) return;
         if (current.IsUnreadable && current.QuarantinePath is null)
         {
@@ -390,5 +430,43 @@ public sealed class JsonFileStore<T> where T : class
             if (b is not ((byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
                 return false;
         return true;
+    }
+}
+
+/// <summary>A store file's version as the filesystem tells it: identity (device, inode), ctime, mtime and length.</summary>
+internal readonly record struct JsonFileVersion(FileIdentity Identity, DateTime ChangedUtc, DateTime WrittenUtc, long Length)
+{
+    public static JsonFileVersion? Of(string path)
+    {
+        try
+        {
+            if (FileIdentity.TryGet(path) is not { } identity || FileChangeTime.TryGetUtc(path, followLinks: true) is not { } changed)
+                return null;
+            var info = new FileInfo(path);
+            if (info.LinkTarget is not null && info.ResolveLinkTarget(returnFinalTarget: true) is FileInfo target) info = target;
+            return new JsonFileVersion(identity, changed, info.LastWriteTimeUtc, info.Length);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null; // read the file itself; its own errors are reported by the load
+        }
+    }
+}
+
+/// <summary>
+/// Counts store-file reads per path (tests measure per-selection reads with it; Refs #63). Internal: a test seam, not
+/// part of the assembly's API (the test project sees it through InternalsVisibleTo).
+/// </summary>
+internal static class JsonStoreReads
+{
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> Reads = new(StringComparer.Ordinal);
+
+    internal static void Count(string path) => Reads.AddOrUpdate(Path.GetFullPath(path), 1, (_, n) => n + 1);
+
+    /// <summary>Reads of files under <paramref name="root"/> so far (whole-file reads; cache hits are not reads).</summary>
+    public static int Under(string root)
+    {
+        var prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+        return Reads.Where(entry => entry.Key.StartsWith(prefix, StringComparison.Ordinal)).Sum(entry => entry.Value);
     }
 }

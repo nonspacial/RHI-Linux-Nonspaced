@@ -49,7 +49,7 @@ public sealed class ErrorPresentationTests
         try
         {
             var game = fx.Game("Exemplo");
-            var (added, message) = await fx.Vm.TryAddManualGameAsync(new() { Name = game.Name, InstallPath = game.InstallPath, Runner = "Manual Windows" });
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = game.Name, InstallPath = game.InstallPath, Runner = "Manual Windows" });
             Assert.True(added, message);
             // The selection's analysis ends with its own status line; under load it used to land after the refusal.
             for (var i = 0; i < 500 && (fx.Vm.IsSelectionProbeBusy || fx.Vm.Session.Analysis is null); i++) await Task.Delay(10);
@@ -73,7 +73,7 @@ public sealed class ErrorPresentationTests
     [Fact]
     public void CacheNotCleared_InPortuguese_PresentsTheReason()
     {
-        var shown = InPortuguese(() => MainWindowViewModel.CacheNotClearedText(new UnauthorizedAccessException($"Access to the path '{P}' is denied.")));
+        var shown = InPortuguese(() => SettingsViewModel.CacheNotClearedText(new UnauthorizedAccessException($"Access to the path '{P}' is denied.")));
 
         Assert.Equal($"O cache não foi totalmente limpo: Acesso ao caminho '{P}' negado.", shown);
     }

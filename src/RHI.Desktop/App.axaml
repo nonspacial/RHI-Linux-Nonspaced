@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
              x:Class="RHI.Desktop.App"
              RequestedThemeVariant="Dark">
   <Application.Resources>
@@ -20,6 +21,39 @@
       <SolidColorBrush x:Key="RhiRemoveBorderBrush">#563030</SolidColorBrush>
     </ResourceDictionary>
   </Application.Resources>
+
+  <!-- Component dialogs bound from data templates (epic #89 unit 7): a dialog window's content is its view model. -->
+  <Application.DataTemplates>
+    <DataTemplate DataType="vm:ProxyComponentDialogViewModel" x:DataType="vm:ProxyComponentDialogViewModel">
+      <StackPanel Spacing="12" Margin="18">
+        <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding Intro}" TextWrapping="Wrap" Opacity="0.76"/>
+        <TextBlock Text="{Binding RouteNote}" TextWrapping="Wrap" Foreground="#D7B65A" IsVisible="{Binding HasRouteNote}"/>
+        <Grid ColumnDefinitions="220,*" ColumnSpacing="12" IsVisible="{Binding HasGpu}">
+          <TextBlock Text="{Binding GpuLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          <ComboBox Grid.Column="1" ItemsSource="{Binding GpuOptions}" SelectedItem="{Binding SelectedGpu}" MinWidth="{Binding GpuMinWidth}"
+                    IsEnabled="{Binding CanChoose}"/>
+        </Grid>
+        <Grid ColumnDefinitions="220,*" ColumnSpacing="12">
+          <TextBlock Text="{Binding ProxyLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyOptions}" SelectedItem="{Binding SelectedProxy}" MinWidth="{Binding ProxyMinWidth}"
+                    IsEnabled="{Binding CanChoose}"/>
+        </Grid>
+        <TextBlock Text="{Binding CompatibilityText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding HasCompatibility}"/>
+        <TextBlock Text="{Binding InstalledText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsInstalled}"/>
+        <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsInstalled}">
+          <Button Classes="rhi" Content="{Binding CheckLabel}" Command="{Binding CheckCommand}" IsEnabled="{Binding CanCheck}"/>
+          <Button Classes="rhi" Content="{Binding UpdateLabel}" Command="{Binding UpdateCommand}" IsEnabled="{Binding CanUpdate}"/>
+          <!-- The main window's overlay Cancel is behind this modal dialog: its own Cancel stops its update. -->
+          <Button Classes="rhi" Content="{DynamicResource Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
+                  IsVisible="{Binding ShowCancel}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.82"/>
+        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" IsVisible="{Binding FooterIsPlain}"/>
+        <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Foreground="#D7B65A" Opacity="0.78" IsVisible="{Binding FooterIsWarning}"/>
+      </StackPanel>
+    </DataTemplate>
+  </Application.DataTemplates>
 
   <Application.Styles>
     <FluentTheme />
@@ -140,8 +174,8 @@
       <Setter Property="Padding" Value="10,7"/>
     </Style>
 
-    <!-- The toolbar '…' overflow menu uses the tooltip surface and the button text colour (scoped: other menus,
-         e.g. text-box context menus, keep the theme defaults). -->
+    <!-- The toolbar '…' overflow menu and the library card menu use the tooltip surface and the button text colour
+         (scoped: other menus, e.g. text-box context menus, keep the theme defaults). -->
     <Style Selector="MenuFlyoutPresenter.toolbarOverflow">
       <Setter Property="Background" Value="#101419"/>
       <Setter Property="BorderBrush" Value="{DynamicResource RhiAccentBorderBrush}"/>

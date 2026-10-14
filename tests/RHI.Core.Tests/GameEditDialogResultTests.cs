@@ -30,7 +30,7 @@ public sealed class GameEditDialogResultTests
             var game = fx.Game("Tunic");
             await AddAndSelectAsync(fx, game);
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+            var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
             Assert.True(saved, message);
             Assert.Contains(language == "pt-BR" ? "alvo de modificações salvo" : "modification target saved", message);
@@ -49,7 +49,7 @@ public sealed class GameEditDialogResultTests
             var outside = fx.Game("Elsewhere");
             await AddAndSelectAsync(fx, game);
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(outside.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+            var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(outside.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
             Assert.False(saved);
             Assert.Contains("dentro da raiz do jogo", message);
@@ -64,7 +64,7 @@ public sealed class GameEditDialogResultTests
         var game = fx.Game("Tunic");
         await AddAndSelectAsync(fx, game);
 
-        var (reset, message) = await fx.Vm.ResetSelectedGameEditAsync();
+        var (reset, message) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
         Assert.True(reset, message);
 
         fx.Records.Upsert(new LinuxDeploymentRecord
@@ -72,14 +72,14 @@ public sealed class GameEditDialogResultTests
             GameKey = LinuxDeploymentRecordStore.GameKey(fx.Vm.SelectedGame!), GameName = game.Name,
             Component = ManagedComponentKind.ReShade, BinaryDirectory = game.BinaryDirectory!, Version = "6.0"
         });
-        (reset, message) = await fx.Vm.ResetSelectedGameEditAsync();
+        (reset, message) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
         Assert.False(reset);
         Assert.Contains("Remove RHI-managed components", message);
     }
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, DetectedGame game)
     {
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

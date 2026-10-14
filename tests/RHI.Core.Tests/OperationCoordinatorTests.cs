@@ -85,10 +85,10 @@ public sealed class OperationCoordinatorTests
         var background = fx.Vm.Operations.TryBegin("background-update")!;
 
         var refused = await Assert.ThrowsAsync<OperationRefusedException>(
-            () => fx.Vm.ApplyDlssBatchAsync([game], new LinuxDlssVersionDefaults("310.1.0", "", "", "", "")));
+            () => fx.Vm.Dlss.ApplyDlssBatchAsync([game], new LinuxDlssVersionDefaults("310.1.0", "", "", "", "")));
         Assert.Equal("Another RHI operation is already running.", refused.Message);
-        await Assert.ThrowsAsync<OperationRefusedException>(() => fx.Vm.RestoreDlssBatchAsync([game]));
-        Assert.Null(await fx.Vm.GetDlssBatchCandidatesAsync());
+        await Assert.ThrowsAsync<OperationRefusedException>(() => fx.Vm.Dlss.RestoreDlssBatchAsync([game]));
+        Assert.Null(await fx.Vm.Dlss.GetDlssBatchCandidatesAsync());
         Assert.True(fx.Vm.IsBusy);
 
         background.Dispose();
@@ -100,7 +100,7 @@ public sealed class OperationCoordinatorTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
         });
@@ -126,7 +126,7 @@ public sealed class OperationCoordinatorTests
         using var fx = await ViewModelFixture.StartAsync([]);
         fx.HangWhen = request => request.RequestUri?.Host == "api.github.com";
 
-        var load = fx.Vm.LoadNeuralVersionHistoryCommand.ExecuteAsync(null);
+        var load = fx.Vm.Extras.LoadNeuralVersionHistoryCommand.ExecuteAsync(null);
         await WaitUntil(() => fx.Vm.IsBusy);
         Assert.True(fx.Vm.Operations.CanCancel);
 
@@ -144,7 +144,7 @@ public sealed class OperationCoordinatorTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
         });
@@ -152,7 +152,7 @@ public sealed class OperationCoordinatorTests
         await WaitUntil(() => !fx.Vm.IsSelectionProbeBusy);
         fx.HangWhen = _ => true;
 
-        var check = fx.Vm.CheckShortFuseUpdateCommand.ExecuteAsync(null);
+        var check = fx.Vm.Extras.CheckShortFuseUpdateCommand.ExecuteAsync(null);
         await WaitUntil(() => fx.Vm.IsBusy);
         fx.Vm.Operations.Cancel();
         await check.WaitAsync(TimeSpan.FromSeconds(5));
@@ -199,7 +199,7 @@ public sealed class OperationCoordinatorTests
                 Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(addon)))
             }]
         });
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Moved Game", InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

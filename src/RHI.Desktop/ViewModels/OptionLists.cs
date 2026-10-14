@@ -69,6 +69,12 @@ public sealed class OptionList<T>
 
     internal IReadOnlyList<OptionEntry<T>> Entries => _entries;
 
+    /// <summary>
+    /// The options as <c>{Value, Display}</c> items for a dropdown bound to values (UI-12/20, Refs #89 unit 6): the
+    /// selection is the item, never its label, and a language change relabels the same items in place.
+    /// </summary>
+    public OptionItems<T> Options() => new(_entries.Select(entry => new OptionItem<T>(this, entry.Value)).ToArray(), _comparer, this);
+
     /// <summary>Replaces <paramref name="target"/>'s items with the labels in the current UI language.</summary>
     public void Fill(ObservableCollection<string> target)
     {
@@ -80,6 +86,59 @@ public sealed class OptionList<T>
 
     private static string Label(OptionEntry<T> entry)
         => entry.TextKey is { } key ? UiLocalizationService.Text(key) : entry.FixedLabel ?? entry.Value?.ToString() ?? "";
+}
+
+/// <summary>A dropdown option as the view sees it: its label in the current UI language (item templates bind this).</summary>
+public abstract class OptionItem : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
+{
+    public abstract string Display { get; }
+
+    /// <summary>The UI language changed: the bound label follows.</summary>
+    internal void Relabel() => OnPropertyChanged(nameof(Display));
+
+    public override string ToString() => Display;
+}
+
+/// <summary>One dropdown option: its stored value and its label in the current UI language.</summary>
+public sealed class OptionItem<T> : OptionItem
+{
+    private readonly OptionList<T> _list;
+
+    internal OptionItem(OptionList<T> list, T value)
+    {
+        _list = list;
+        Value = value;
+    }
+
+    public T Value { get; }
+
+    public override string Display => _list.Display(Value);
+}
+
+/// <summary>A list's <see cref="OptionItem{T}"/>s, created once; look one up by value or by any of its labels.</summary>
+public sealed class OptionItems<T> : System.Collections.ObjectModel.ReadOnlyCollection<OptionItem<T>>
+{
+    private readonly IEqualityComparer<T> _comparer;
+    private readonly OptionList<T> _list;
+
+    internal OptionItems(IList<OptionItem<T>> items, IEqualityComparer<T> comparer, OptionList<T> list) : base(items)
+    {
+        _comparer = comparer;
+        _list = list;
+    }
+
+    /// <summary>The item holding <paramref name="value"/>, or the list's fallback item.</summary>
+    public OptionItem<T> For(T value)
+        => this.FirstOrDefault(item => _comparer.Equals(item.Value, value)) ?? this.First(item => _comparer.Equals(item.Value, _list.Fallback));
+
+    /// <summary>The item a label (either language, stored value or an old alias) stands for.</summary>
+    public OptionItem<T> ForDisplay(string? display) => For(_list.Value(display));
+
+    /// <summary>The UI language changed: every item's label follows (the same items stay selected).</summary>
+    public void Relabel()
+    {
+        foreach (var item in this) item.Relabel();
+    }
 }
 
 /// <summary>

@@ -40,7 +40,7 @@
         <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
                 ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
@@ -91,6 +91,7 @@
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGameRow}"
                    SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" ClipToBounds="True"
+                   ContextRequested="GameLibrary_ContextRequested" KeyUp="GameLibrary_KeyUp"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>
@@ -148,7 +149,7 @@
               <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.Edit}" Click="EditGame_Click" IsEnabled="{Binding CanEditSelectedGame}"
                       ToolTip.Tip="{DynamicResource Ui.EditTip}"/>
               <!-- Only manually added games can be removed; hide the button for everything else. -->
-              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding RemoveManualGameCommand}" IsEnabled="{Binding CanRemoveManualGame}"
+              <Button views:DetailHeaderPanel.Role="Action" Classes="rhi" Content="{DynamicResource Ui.RemoveManual}" Command="{Binding ManualGames.RemoveManualGameCommand}" IsEnabled="{Binding ManualGames.CanRemoveManualGame}"
                       IsVisible="{Binding SelectedGame.IsManuallyAdded, FallbackValue=False, TargetNullValue=False}"
                       ToolTip.Tip="{DynamicResource Ui.RemoveManualTip}"/>
               <!-- Only shown when RHI's records still point to the folder the game was moved from. -->
@@ -203,52 +204,66 @@
                   <views:MiddleEllipsisText Grid.Row="5" Grid.Column="1" FullText="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="6" Grid.Column="0" Text="{DynamicResource Ui.GraphicsApi}" Classes="muted"/>
-                  <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="6" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="7" Grid.Column="0" Text="{DynamicResource Ui.ForceApi}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4">
+                  <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <ComboBox Width="180" HorizontalAlignment="Left"
                               ItemsSource="{Binding GraphicsApiOverrideOptions}"
                               SelectedItem="{Binding SelectedGraphicsApiOverride, Mode=TwoWay}"
-                              IsEnabled="{Binding CanSelectGraphicsApiOverride}"/>
+                              IsEnabled="{Binding CanSelectGraphicsApiOverride}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock Text="{Binding GraphicsApiOverrideHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="8" Grid.Column="0" Text="{DynamicResource Ui.LumaMode}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="8" Grid.Column="1" Spacing="4">
+                  <StackPanel Grid.Row="8" Grid.Column="1" Spacing="4" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <ComboBox Width="180" HorizontalAlignment="Left"
                               ItemsSource="{Binding LumaModeOptions}"
                               SelectedItem="{Binding SelectedLumaModePreference, Mode=TwoWay}"
-                              IsEnabled="{Binding CanSelectLumaMode}"/>
+                              IsEnabled="{Binding CanSelectLumaMode}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock Text="{Binding LumaPolicyText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5">
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
-                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"/>
+                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                      </ComboBox>
                       <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
                                 ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
-                      <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}" Padding="10,5"/>
+                      <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}"
+                              IsVisible="{Binding ShowHdrLaunchProfile}" Padding="10,5"/>
                     </WrapPanel>
                     <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap" IsVisible="{Binding ShowHdrLaunchProfile}"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
-                  <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="11" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
               </StackPanel>
             </Border>
 
             <Border x:Name="DlssStreamlineSection" Tag="DlssStreamline" Classes="card" BorderBrush="#1E4858"
+                    DataContext="{Binding Dlss}" x:DataType="vm:DlssPanelViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
@@ -426,7 +441,8 @@
                     </StackPanel>
                   </Grid>
 
-                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10">
+                  <Border Background="#0D141C" BorderBrush="#223247" BorderThickness="1" CornerRadius="7" Padding="10"
+                          DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel">
                     <StackPanel Spacing="7">
                       <Grid ColumnDefinitions="120,*,Auto" ColumnSpacing="8">
                         <TextBlock Text="{DynamicResource Ui.NrVersions}" Classes="muted" VerticalAlignment="Center"/>
@@ -541,6 +557,7 @@
             </Border>
 
             <Border x:Name="ExtrasSection" Tag="Extras" Classes="card" BorderBrush="#3A3348"
+                    DataContext="{Binding Extras}" x:DataType="vm:ExtrasViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">

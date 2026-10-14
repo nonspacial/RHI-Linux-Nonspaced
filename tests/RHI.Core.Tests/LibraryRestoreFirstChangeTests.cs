@@ -53,28 +53,28 @@ public sealed class LibraryRestoreFirstChangeTests
             using var fx = await ViewModelFixture.StartAsync([tunic], seed: store => File.WriteAllText(store.LibraryPath, "{ not json"));
             fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
             var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame);
-            Assert.Equal(UiLocalizationService.Text("Ui.HdrOff"), fx.Vm.SelectedHdrMode);
+            Assert.Equal(UiLocalizationService.Text("Ui.HdrOff"), fx.Vm.Runtime.SelectedHdrMode.Display);
             var restored = new LinuxGameLibraryState();
             restored.HdrProfiles[key] = touched == "legacy"
                 ? new LinuxHdrGameProfile { Mode = LinuxHdrModes.Gamescope, EnableLegacyWsi = false }
                 : new LinuxHdrGameProfile { Mode = LinuxHdrModes.Off, EnableLegacyWsi = true };
             Restore(fx, restored);
 
-            if (touched == "legacy") fx.Vm.HdrLegacyWsi = true;
-            else fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrNativeWayland");
+            if (touched == "legacy") fx.Vm.Runtime.HdrLegacyWsi = true;
+            else fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(UiLocalizationService.Text("Ui.HdrNativeWayland"));
 
             var profile = fx.Library.Load().HdrProfiles[key];
             if (touched == "legacy")
             {
                 Assert.Equal(LinuxHdrModes.Gamescope, profile.Mode); // the restored mode is kept
                 Assert.True(profile.EnableLegacyWsi);
-                Assert.Equal(UiLocalizationService.Text("Ui.HdrGamescope"), fx.Vm.SelectedHdrMode);
+                Assert.Equal(UiLocalizationService.Text("Ui.HdrGamescope"), fx.Vm.Runtime.SelectedHdrMode.Display);
             }
             else
             {
                 Assert.Equal(LinuxHdrModes.NativeWayland, profile.Mode);
                 Assert.True(profile.EnableLegacyWsi); // the restored legacy flag is kept
-                Assert.True(fx.Vm.HdrLegacyWsi);
+                Assert.True(fx.Vm.Runtime.HdrLegacyWsi);
             }
         }
         finally { Directory.Delete(Path.GetDirectoryName(tunic.InstallPath)!, recursive: true); }
@@ -85,7 +85,7 @@ public sealed class LibraryRestoreFirstChangeTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var celeste = fx.Game("Celeste");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Celeste", InstallPath = celeste.InstallPath, ExecutablePath = celeste.ExecutablePath, Runner = "Manual Windows"
         });

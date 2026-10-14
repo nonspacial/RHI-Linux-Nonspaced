@@ -33,7 +33,7 @@ public sealed class SelectedGameSessionTests
         await WaitForAnalysisAsync(fx);
         Assert.Equal(GraphicsApi.DirectX11, shared.GraphicsApi);
         Assert.Equal("probe evidence", shared.GraphicsApiEvidence);
-        Assert.StartsWith("DirectX 11", fx.Vm.SelectedApi);
+        Assert.StartsWith("DirectX 11", fx.Vm.Runtime.SelectedApi);
     }
 
     // UI-03: after the analysis, the panels read its snapshot; a file changing on disk shows only after a re-analysis.
@@ -47,15 +47,15 @@ public sealed class SelectedGameSessionTests
         File.WriteAllBytes(dll + TransactionalFileDeploymentService.BackupExtension, [0x4D, 0x5A]);
         await AddAsync(fx, game);
         await WaitForAnalysisAsync(fx);
-        Assert.True(fx.Vm.DlssSrRestoreAvailable);
-        var state = fx.Vm.DlssSrDeploymentState;
+        Assert.True(fx.Vm.Dlss.DlssSrRestoreAvailable);
+        var state = fx.Vm.Dlss.DlssSrDeploymentState;
 
         File.Delete(dll + TransactionalFileDeploymentService.BackupExtension);
-        Assert.True(fx.Vm.DlssSrRestoreAvailable);          // no disk read in the getter
-        Assert.Equal(state, fx.Vm.DlssSrDeploymentState);
+        Assert.True(fx.Vm.Dlss.DlssSrRestoreAvailable);          // no disk read in the getter
+        Assert.Equal(state, fx.Vm.Dlss.DlssSrDeploymentState);
 
         await fx.Vm.Session.ReprobeAsync(fx.Vm.SelectedGame!);
-        Assert.False(fx.Vm.DlssSrRestoreAvailable);
+        Assert.False(fx.Vm.Dlss.DlssSrRestoreAvailable);
     }
 
     // UI-04: a bulk operation that drops the cache re-analyses the selected game even when nothing changed.
@@ -71,8 +71,8 @@ public sealed class SelectedGameSessionTests
         var selected = fx.Vm.SelectedGame!;
 
         var result = mode == "apply"
-            ? await fx.Vm.ApplyDlssBatchAsync([selected], new LinuxDlssVersionDefaults("310.1.0", "", "", "", ""))
-            : await fx.Vm.RestoreDlssBatchAsync([selected]);
+            ? await fx.Vm.Dlss.ApplyDlssBatchAsync([selected], new LinuxDlssVersionDefaults("310.1.0", "", "", "", ""))
+            : await fx.Vm.Dlss.RestoreDlssBatchAsync([selected]);
         Assert.Equal(0, result.ChangedCount);
         await WaitForAnalysisAsync(fx);
 
@@ -99,11 +99,11 @@ public sealed class SelectedGameSessionTests
         var selected = fx.Vm.SelectedGame!;
         Assert.Contains(backup, fx.Vm.Session.CachedFiles(selected)!);
 
-        await fx.Vm.RestoreDlssComponentCommand.ExecuteAsync("SR");
+        await fx.Vm.Dlss.RestoreDlssComponentCommand.ExecuteAsync("SR");
 
         Assert.False(File.Exists(backup));
         Assert.DoesNotContain(backup, fx.Vm.Session.CachedFiles(selected)!);
-        Assert.False(fx.Vm.DlssSrRestoreAvailable);
+        Assert.False(fx.Vm.Dlss.DlssSrRestoreAvailable);
         Assert.StartsWith("Super resolution: original DLL restored.", fx.Vm.StatusText);
     }
 
@@ -353,10 +353,10 @@ public sealed class SelectedGameSessionTests
     [Fact]
     public void HdrHost_BeforeAnyProbe_IsTheNotProbedStandIn_NeverAProbe()
     {
-        Assert.Same(LinuxHdrHostSnapshotNotProbed, MainWindowViewModel.HdrHostFor(null, null));
-        Assert.False(MainWindowViewModel.HdrHostFor(null, null).Probed);
+        Assert.Same(LinuxHdrHostSnapshotNotProbed, RuntimePanelViewModel.HdrHostFor(null, null));
+        Assert.False(RuntimePanelViewModel.HdrHostFor(null, null).Probed);
         var startup = new RHI.Platform.Linux.Hdr.LinuxHdrHostSnapshot(true, "KDE", true, "595.1", false);
-        Assert.Same(startup, MainWindowViewModel.HdrHostFor(null, startup));
+        Assert.Same(startup, RuntimePanelViewModel.HdrHostFor(null, startup));
         Assert.True(startup.Probed);
     }
 
@@ -378,7 +378,7 @@ public sealed class SelectedGameSessionTests
 
     private static async Task<(bool Added, string Message)> AddAsync(ViewModelFixture fx, DetectedGame game)
     {
-        var result = await fx.Vm.TryAddManualGameAsync(new()
+        var result = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

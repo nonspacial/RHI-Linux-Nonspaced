@@ -24,21 +24,21 @@ public sealed class OptiScalerNightlyBuildPresenterTests
     {
         var fx = await ViewModelFixture.StartAsync([], lang, httpResponse: http);
         var game = fx.Game("Control");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new() { Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows" });
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows" });
         Assert.True(added, message);
         for (var i = 0; i < 200 && (fx.Vm.IsSelectionProbeBusy || fx.Vm.SelectedGame is null); i++) await Task.Delay(25);
         return (fx, fx.Vm.SelectedGame!);
     }
 
     private static void ChooseNightly(ViewModelFixture fx)
-        => fx.Vm.SelectedOptiScalerVariant = OptionLists.OptiScalerVariant.Display(OptiScalerVariant.Nightly);
+        => fx.Vm.Runtime.SelectedOptiScalerVariant = fx.Vm.Runtime.OptiScalerVariantOptions.For(OptiScalerVariant.Nightly);
 
     [Fact]
     public async Task Row_ShowsForNightlyOnly_ListsTheBuilds_AndSavesThePinPerGame()
     {
         var (fx, game) = await StartAsync(NightlyList);
         using var _ = fx;
-        var row = fx.Vm.OptiScalerNightlyBuild;
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
         await row.RefreshAsync(fetchList: true);
         Assert.False(row.IsVisible);
 
@@ -68,7 +68,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
         using var _ = fx;
         fx.Managed.SetOptiScalerNightlyBuild(game, "20261004");
         ChooseNightly(fx);
-        var row = fx.Vm.OptiScalerNightlyBuild;
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
 
         await row.RefreshAsync(fetchList: true);
 
@@ -90,7 +90,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
         });
         fx.Managed.SetOptiScalerNightlyBuild(game, "20261012"); // a later preference never overrides what is installed
         ChooseNightly(fx);
-        var row = fx.Vm.OptiScalerNightlyBuild;
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
 
         await row.RefreshAsync(fetchList: true);
 
@@ -109,7 +109,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
         var (fx, game) = await StartAsync(NightlyList);
         using var _ = fx;
         ChooseNightly(fx);
-        var row = fx.Vm.OptiScalerNightlyBuild;
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
         await row.RefreshAsync(fetchList: true);
         var prefs = Path.Combine(fx.ConfigDir, "prefs");
         Directory.CreateDirectory(prefs);
@@ -137,7 +137,7 @@ public sealed class OptiScalerNightlyBuildPresenterTests
             var (fx, _) = await StartAsync(NightlyList, "pt-BR");
             using var _fx = fx;
             ChooseNightly(fx);
-            var row = fx.Vm.OptiScalerNightlyBuild;
+            var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
             await row.RefreshAsync(fetchList: true);
 
             Assert.Equal(["Mais recente (atualização automática)", "2026-10-13", "2026-10-12", "2026-10-04"], row.Options);

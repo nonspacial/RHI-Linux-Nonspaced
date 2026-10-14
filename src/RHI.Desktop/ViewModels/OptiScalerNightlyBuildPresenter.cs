@@ -41,12 +41,15 @@ public static class OptiScalerNightlyBuildOptions
 /// The OptiScaler ⚙ \"Nightly build\" row (#156, upstream 2.8.6): shown only for the Nightly channel, locked while
 /// OptiScaler is installed (like the channel selector: the installed build is fixed until removal), and saving the
 /// choice per game through the view model's <c>TryPersist</c>. The build downloads when OptiScaler is installed.
+/// Hosted by the Runtime panel (<see cref="RuntimePanelViewModel.OptiScalerNightlyBuild"/>), whose OptiScaler channel it
+/// follows (w3 integration: re-homed from the shell after the #89 split).
 /// </summary>
 public sealed partial class OptiScalerNightlyBuildPresenter : ObservableObject
 {
     private static readonly ConditionalWeakTable<MainWindowViewModel, OptiScalerNightlyBuildPresenter> Instances = new();
 
     private readonly MainWindowViewModel _vm;
+    private readonly RuntimePanelViewModel _runtime;
     private readonly LinuxManagedComponentService _managed;
     private readonly Func<Action, string, bool, bool, string?> _tryPersist;
     private IReadOnlyList<string> _builds = [];
@@ -61,24 +64,28 @@ public sealed partial class OptiScalerNightlyBuildPresenter : ObservableObject
 
     public static OptiScalerNightlyBuildPresenter For(
         MainWindowViewModel vm,
+        RuntimePanelViewModel runtime,
         LinuxManagedComponentService managed,
         Func<Action, string, bool, bool, string?> tryPersist)
-        => Instances.GetValue(vm, owner => new OptiScalerNightlyBuildPresenter(owner, managed, tryPersist));
+        => Instances.GetValue(vm, owner => new OptiScalerNightlyBuildPresenter(owner, runtime, managed, tryPersist));
 
     private OptiScalerNightlyBuildPresenter(
         MainWindowViewModel vm,
+        RuntimePanelViewModel runtime,
         LinuxManagedComponentService managed,
         Func<Action, string, bool, bool, string?> tryPersist)
     {
         _vm = vm;
+        _runtime = runtime;
         _managed = managed;
         _tryPersist = tryPersist;
         _vm.PropertyChanged += OnViewModelChanged;
+        _runtime.PropertyChanged += OnViewModelChanged;
     }
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainWindowViewModel.SelectedOptiScalerVariant) or nameof(MainWindowViewModel.SelectedGame))
+        if (e.PropertyName is nameof(RuntimePanelViewModel.SelectedOptiScalerVariant) or nameof(MainWindowViewModel.SelectedGame))
             UiExceptionGuard.Forget(RefreshAsync(fetchList: false), "optiscaler-nightly-build");
     }
 
@@ -86,7 +93,7 @@ public sealed partial class OptiScalerNightlyBuildPresenter : ObservableObject
     public async Task RefreshAsync(bool fetchList, CancellationToken cancellationToken = default)
     {
         var game = _vm.SelectedGame;
-        IsVisible = game is not null && OptionLists.OptiScalerVariant.Value(_vm.SelectedOptiScalerVariant) == OptiScalerVariant.Nightly;
+        IsVisible = game is not null && _runtime.SelectedOptiScalerVariant?.Value == OptiScalerVariant.Nightly;
         if (!IsVisible || game is null) return;
         var installed = _managed.GetInstalledOptiScalerVariant(game) is not null;
         IsEnabled = !installed;

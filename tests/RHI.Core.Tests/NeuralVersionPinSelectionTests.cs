@@ -29,7 +29,7 @@ public sealed class NeuralVersionPinSelectionTests
 
         Assert.Empty(violations);
         Assert.Equal(("v9.9-feeder", "v9.9-bridge", "renodx-dlss-SF-9.9", "310.9.9"),
-            (fx.Vm.SelectedDlss5FeederVersion, fx.Vm.SelectedDlss5BridgeVersion, fx.Vm.SelectedShortFuseVersion, fx.Vm.SelectedNeuralRenderingDllVersion));
+            (fx.Vm.Extras.SelectedDlss5FeederVersion, fx.Vm.Extras.SelectedDlss5BridgeVersion, fx.Vm.Extras.SelectedShortFuseVersion, fx.Vm.Extras.SelectedNeuralRenderingDllVersion));
     }
 
     [Fact]
@@ -41,18 +41,18 @@ public sealed class NeuralVersionPinSelectionTests
         fx.Managed.SetNeuralAddonVersionPin(pinned, ManagedComponentKind.Dlss5Feeder, "v9.9-feeder");
         fx.Managed.SetNeuralRenderingDllVersionPin(pinned, "310.9.9");
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
-        Assert.Equal("v9.9-feeder", fx.Vm.SelectedDlss5FeederVersion);
+        Assert.Equal("v9.9-feeder", fx.Vm.Extras.SelectedDlss5FeederVersion);
         var violations = Watch(fx.Vm);
-        var settings = fx.Vm.GetLinuxSettingsSnapshot().Settings;
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
         settings.UiLanguage = "pt-BR";
         try
         {
-            fx.Vm.SaveLinuxSettings(settings);
+            fx.Vm.Settings.SaveLinuxSettings(settings);
 
             Assert.Empty(violations);
-            Assert.Equal(("v9.9-feeder", "310.9.9"), (fx.Vm.SelectedDlss5FeederVersion, fx.Vm.SelectedNeuralRenderingDllVersion));
-            Assert.Equal(UiLocalizationService.TextFor("pt-BR", "Ui.OptionLatest"), fx.Vm.SelectedDlss5BridgeVersion);
-            Assert.Contains(fx.Vm.SelectedDlss5BridgeVersion, fx.Vm.Dlss5BridgeVersionOptions);
+            Assert.Equal(("v9.9-feeder", "310.9.9"), (fx.Vm.Extras.SelectedDlss5FeederVersion, fx.Vm.Extras.SelectedNeuralRenderingDllVersion));
+            Assert.Equal(UiLocalizationService.TextFor("pt-BR", "Ui.OptionLatest"), fx.Vm.Extras.SelectedDlss5BridgeVersion);
+            Assert.Contains(fx.Vm.Extras.SelectedDlss5BridgeVersion, fx.Vm.Extras.Dlss5BridgeVersionOptions);
         }
         finally
         {
@@ -66,15 +66,15 @@ public sealed class NeuralVersionPinSelectionTests
         var violations = new List<string>();
         var lists = new Dictionary<string, Func<IEnumerable<string>>>
         {
-            [nameof(MainWindowViewModel.SelectedDlss5FeederVersion)] = () => vm.Dlss5FeederVersionOptions,
-            [nameof(MainWindowViewModel.SelectedDlss5BridgeVersion)] = () => vm.Dlss5BridgeVersionOptions,
-            [nameof(MainWindowViewModel.SelectedShortFuseVersion)] = () => vm.ShortFuseVersionOptions,
-            [nameof(MainWindowViewModel.SelectedNeuralRenderingDllVersion)] = () => vm.NeuralRenderingDllVersionOptions,
+            [nameof(ExtrasViewModel.SelectedDlss5FeederVersion)] = () => vm.Extras.Dlss5FeederVersionOptions,
+            [nameof(ExtrasViewModel.SelectedDlss5BridgeVersion)] = () => vm.Extras.Dlss5BridgeVersionOptions,
+            [nameof(ExtrasViewModel.SelectedShortFuseVersion)] = () => vm.Extras.ShortFuseVersionOptions,
+            [nameof(ExtrasViewModel.SelectedNeuralRenderingDllVersion)] = () => vm.Extras.NeuralRenderingDllVersionOptions,
         };
-        vm.PropertyChanged += (_, e) =>
+        vm.Extras.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is not { } name || !lists.TryGetValue(name, out var options)) return;
-            var value = (string?)typeof(MainWindowViewModel).GetProperty(name)!.GetValue(vm);
+            var value = (string?)typeof(ExtrasViewModel).GetProperty(name)!.GetValue(vm.Extras);
             if (value is not null && !options().Contains(value)) violations.Add($"{name}={value}");
         };
         return violations;
@@ -83,7 +83,7 @@ public sealed class NeuralVersionPinSelectionTests
     private static async Task<DetectedGame> AddAsync(ViewModelFixture fx, string name)
     {
         var game = fx.Game(name);
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

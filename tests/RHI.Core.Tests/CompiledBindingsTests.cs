@@ -23,6 +23,16 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(ComponentRowViewModel), nameof(ComponentRowViewModel.Status))]
     [InlineData(typeof(ComponentRowViewModel), nameof(ComponentRowViewModel.Command))]
     [InlineData(typeof(GameRowViewModel), nameof(GameRowViewModel.Name))]
+    // Split panels (epic #89 units 4–7): each section binds its own view model through a compiled DataContext.
+    [InlineData(typeof(DlssPanelViewModel), nameof(DlssPanelViewModel.DlssSrPath))]
+    [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.UalStatusText))]
+    [InlineData(typeof(ExtrasViewModel), nameof(ExtrasViewModel.SelectedNeuralRenderingDllVersion))]
+    [InlineData(typeof(RuntimePanelViewModel), nameof(RuntimePanelViewModel.HdrProfileHint))]
+    [InlineData(typeof(RuntimePanelViewModel), nameof(RuntimePanelViewModel.ShowHdrLaunchProfile))]
+    [InlineData(typeof(OptionItem), nameof(OptionItem.Display))]
+    [InlineData(typeof(UpdatesViewModel), nameof(UpdatesViewModel.CanUpdateAll))]
+    [InlineData(typeof(ManualGamesViewModel), nameof(ManualGamesViewModel.CanRemoveManualGame))]
+    [InlineData(typeof(ProxyComponentDialogViewModel), nameof(ProxyComponentDialogViewModel.ShowCancel))]
     public void MainWindow_BindingPaths_AreCompiledAgainstTheirDataType(Type dataType, string property)
         => Assert.Contains($"{dataType.FullName},{dataType.Assembly.GetName().Name}.{property}!Getter", CompiledAccessors);
 }

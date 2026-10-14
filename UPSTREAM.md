@@ -204,6 +204,11 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - Icon: the game's Steam library art when Steam has it (`appcache/librarycache/<AppID>/<sha1>.jpg`, the older `<AppID>_icon.jpg`, else the header), copied into `$XDG_DATA_HOME/rhi-linux/shortcut-icons/` so it outlives Steam's cache; otherwise RHI's own icon (`rhi-linux`). Upstream reads the icon out of the game's exe; PE icon extraction would be new code and is not ported (question to the owner).
 - Single-instance hand-off (shared with nxm:// links, #99): a second RHI started with `--launch`/an nxm link passes it to the running one over a Unix socket in `$XDG_RUNTIME_DIR/rhi-linux` (refused unless the folder is the user's own, mode 0700, not a link; the sender's uid is checked with `SO_PEERCRED`; one JSON line, 8 KiB cap, 3 s timeouts; a stale socket from a crash is replaced) and exits without a window. What arrives is untrusted: the key is only looked up in the library. A plain second start is unchanged — several RHI windows may still run, as before (upstream instead brings the running window forward; question to the owner).
 
+### #161 — Library card right-click menu (PAR-D74a; upstream `6cc2b2d`, `27c66b7`, `f63579f`, `f38fb34`)
+- Ported: right-click (or the menu key / Shift+F10) on a library card selects it and opens Open folder, Favourite/Unfavourite, Hide/Show and, when the game has a note, View notes — the same commands as the detail header, no new behaviour. Every entry is listed only where it applies to the card (owner rule: inapplicable options are hidden, not disabled): Open folder only once the game folder is confirmed (not for a folder-missing or not-allowed entry, nor a card still waiting for its target in Edit game), View notes only with a note.
+- View notes shows the upstream manifest's `gameNotes` entry for the game (upstream's card notes come from the same entry, plus the RenoDX wiki note, which the fork does not keep per card), with its link button when the entry has one.
+- Not ported here: "Discussion / Instructions" (upstream `NameUrl`; no fork data) and "Create Desktop Shortcut" (#162, parity lane: one entry in the menu's named slot in `MainWindowViewModel.CardMenuFor`).
+
 ## Parity notes (feature-parity backlog)
 
 ### #126 — Available HDR mods: RHI Unity database games (2.7.9 parity)

@@ -80,8 +80,8 @@ public sealed class HdrHandoffLaunchViewModelTests : IDisposable
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == game.Name).Game;
         for (var i = 0; i < 200 && (fx.Vm.IsSelectionProbeBusy || !fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal)); i++)
             await Task.Delay(25);
-        fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrGamescope");
-        Assert.True(fx.Vm.SelectedHdrPlan.Enabled);
+        fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(UiLocalizationService.Text("Ui.HdrGamescope"));
+        Assert.True(fx.Vm.Runtime.SelectedHdrPlan.Enabled);
         return fx;
     }
 

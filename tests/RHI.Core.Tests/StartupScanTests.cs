@@ -177,6 +177,49 @@ public sealed class StartupScanTests : IDisposable
         }
     }
 
+    // Scan's #48 hook (w3): the Refresh operation's token is the scan's token, so the overlay's Cancel stops a detector
+    // that is still walking the disk, and the library list stays as it was.
+    [Fact]
+    public async Task RefreshCancel_ReachesTheDetectors()
+    {
+        var detector = new BlockingDetector();
+        var dlss = new DlssManagerService(new HttpClient(new HangingHandler()), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache"))
+        {
+            ManifestFetchTimeout = TimeSpan.FromMilliseconds(200)
+        };
+        using var vm = CreateViewModel(dlss, detector);
+        await vm.Initialization.WaitAsync(TimeSpan.FromSeconds(10));
+
+        detector.Block = true;
+        var refresh = vm.RefreshCommand.ExecuteAsync(null);
+        await detector.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("refresh", vm.Operations.CurrentKind);
+        Assert.True(vm.Operations.CanCancel);
+        vm.Operations.CancelCommand.Execute(null);
+        await refresh.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(detector.SawCancellation);
+        Assert.False(vm.IsBusy);
+        Assert.StartsWith("Operation cancelled.", vm.StatusText, StringComparison.Ordinal);
+    }
+
+    private sealed class BlockingDetector : IGameDetector
+    {
+        public bool Block { get; set; }
+        public bool SawCancellation { get; private set; }
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public string Name => "Manual";
+
+        public async Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            if (!Block) return [];
+            Entered.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, cancellationToken); }
+            catch (OperationCanceledException) { SawCancellation = true; throw; }
+            return [];
+        }
+    }
+
     private sealed class SignallingDetector(TaskCompletionSource started) : IGameDetector
     {
         public string Name => "Manual";

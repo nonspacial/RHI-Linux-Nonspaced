@@ -10,7 +10,8 @@ namespace RHI.Desktop.Views;
 
 /// <summary>
 /// The NR Cost Scaler row in the Neural Rendering versions box (#96): one AXAML element (<c>&lt;views:NrCostScalerRow/&gt;</c>)
-/// over the shell's DataContext; all state comes from <see cref="NrCostScalerPresenter"/>. Hidden when it does not apply.
+/// inside the Extras section (DataContext <see cref="ExtrasViewModel"/> since the #89 split; it reads the shell through it);
+/// all state comes from <see cref="NrCostScalerPresenter"/>. Hidden when it does not apply.
 /// </summary>
 public sealed class NrCostScalerRow : ContentControl
 {
@@ -47,7 +48,7 @@ public sealed class NrCostScalerRow : ContentControl
     {
         base.OnDataContextChanged(e);
         if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
-        _vm = DataContext as MainWindowViewModel;
+        _vm = DataContext as MainWindowViewModel ?? (DataContext as PanelViewModel)?.Shell; // w3 integration: hosted by Extras
         if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
         Sync();
     }

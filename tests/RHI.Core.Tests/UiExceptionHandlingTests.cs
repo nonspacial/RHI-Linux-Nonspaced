@@ -198,10 +198,10 @@ public sealed class UiExceptionHandlingTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([]);
         var settingsBefore = File.ReadAllText(fx.Settings.SettingsPath);
         File.SetUnixFileMode(fx.ConfigDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        var changed = fx.Vm.GetLinuxSettingsSnapshot().Settings;
+        var changed = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
         changed.UiLanguage = "pt-BR";
 
-        var message = fx.Vm.SaveLinuxSettings(changed);
+        var message = fx.Vm.Settings.SaveLinuxSettings(changed);
 
         Assert.StartsWith("Could not save the settings:", message);
         Assert.EndsWith("Nothing was changed.", message);
@@ -219,7 +219,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
         File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
 
-        await fx.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+        await fx.Vm.ManualGames.RemoveManualGameCommand.ExecuteAsync(null);
 
         Assert.StartsWith("Could not save the game library:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
@@ -233,16 +233,16 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedGraphicsApiOverride;
+        var before = fx.Vm.Runtime.SelectedGraphicsApiOverride;
         LockPreferences(fx);
-        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
+        var other = fx.Vm.Runtime.GraphicsApiOverrideOptions.Last(option => option != before);
 
-        fx.Vm.SelectedGraphicsApiOverride = other;
+        fx.Vm.Runtime.SelectedGraphicsApiOverride = other;
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Same(before, fx.Vm.Runtime.SelectedGraphicsApiOverride);
         Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
     }
 
@@ -256,18 +256,18 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedGraphicsApiOverride;
+        var before = fx.Vm.Runtime.SelectedGraphicsApiOverride;
         var prefs = Path.Combine(fx.ConfigDir, "prefs");
         Directory.CreateDirectory(prefs);
         var file = Path.Combine(prefs, "api.json");
         File.WriteAllText(file, "{ not json");
-        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
+        var other = fx.Vm.Runtime.GraphicsApiOverrideOptions.Last(option => option != before);
 
-        fx.Vm.SelectedGraphicsApiOverride = other;
+        fx.Vm.Runtime.SelectedGraphicsApiOverride = other;
 
         var copy = Assert.Single(Directory.GetFiles(prefs, "api.json.corrupt-*"));
         Assert.StartsWith($"Not saved: api.json could not be read (a copy is at {copy}).", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Same(before, fx.Vm.Runtime.SelectedGraphicsApiOverride);
         Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
         Assert.Equal("{ not json", File.ReadAllText(file));
     }
@@ -316,15 +316,15 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedLumaModePreference;
+        var before = fx.Vm.Runtime.SelectedLumaModePreference;
         LockPreferences(fx);
 
-        fx.Vm.SelectedLumaModePreference = fx.Vm.LumaModeOptions.Last(option => option != before);
+        fx.Vm.Runtime.SelectedLumaModePreference = fx.Vm.Runtime.LumaModeOptions.Last(option => option != before);
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedLumaModePreference);
+        Assert.Same(before, fx.Vm.Runtime.SelectedLumaModePreference);
     }
 
     [Fact]
@@ -332,15 +332,15 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedOptiScalerVariant;
+        var before = fx.Vm.Runtime.SelectedOptiScalerVariant;
         LockPreferences(fx);
 
-        fx.Vm.SelectedOptiScalerVariant = fx.Vm.OptiScalerVariantOptions.Last(option => option != before);
+        fx.Vm.Runtime.SelectedOptiScalerVariant = fx.Vm.Runtime.OptiScalerVariantOptions.Last(option => option != before);
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedOptiScalerVariant);
+        Assert.Same(before, fx.Vm.Runtime.SelectedOptiScalerVariant);
     }
 
     /// <summary>Review m2: a refused edit must not linger in memory and ride along with the next successful save.</summary>
@@ -352,7 +352,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         await AddAndSelectAsync(fx, game);
         LockLibrary(fx);
 
-        var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+        var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
         Assert.False(saved);
         Assert.StartsWith("Could not save the game library:", message);
@@ -369,11 +369,11 @@ public sealed class UiExceptionHandlingTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([]);
         var game = fx.Game("Tunic");
         await AddAndSelectAsync(fx, game);
-        var (saved, saveMessage) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+        var (saved, saveMessage) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
         Assert.True(saved, saveMessage);
         LockLibrary(fx);
 
-        var (reset, message) = await fx.Vm.ResetSelectedGameEditAsync();
+        var (reset, message) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
 
         Assert.False(reset);
         Assert.EndsWith("Nothing was changed.", message);
@@ -390,7 +390,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         var other = fx.Game("Hades");
         LockLibrary(fx);
 
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = other.Name, InstallPath = other.InstallPath, ExecutablePath = other.ExecutablePath, Runner = "Manual Windows"
         });
@@ -449,7 +449,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, DetectedGame game)
     {
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

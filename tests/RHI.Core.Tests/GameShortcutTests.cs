@@ -490,7 +490,7 @@ public sealed class GameShortcutLaunchTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([Game("Night City", 1091500), Game("Other", 42)], launcher: launcher, hdrProfiles: Gamescope());
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Night City").Game;
         await SettleAsync(fx);
-        fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrGamescope"); // saved for this game
+        fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(UiLocalizationService.Text("Ui.HdrGamescope")); // saved for this game
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Other").Game;
         await SettleAsync(fx);
 
