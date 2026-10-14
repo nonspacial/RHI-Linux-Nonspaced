@@ -97,7 +97,6 @@ internal static class PlatformMessageTranslations
         ("Universal MFG já está ativo. Remova-o antes de instalar MFG Ada Unlock.", "Universal MFG is already active. Remove it before installing MFG Ada Unlock."),
         ("OptiScaler já está ativo. ShortFuse não reescreve automaticamente essa cadeia ReShade/OptiScaler.", "OptiScaler is already active. ShortFuse does not rewrite that ReShade/OptiScaler chain automatically."),
         ("{0} exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; nenhuma dependência foi alterada.", "{0} needs RHI-managed ReShade. An external ReShade was detected and will be kept; no dependency was changed."),
-        ("OptiScaler DLSS NR já está ativo. Feeder e essa variante compartilham nvngx_dlssnr.dll sem ledger de ownership compartilhado.", "OptiScaler DLSS NR is already active. Feeder and that variant share nvngx_dlssnr.dll without a shared ownership ledger."),
         ("Não foi possível instalar automaticamente D3DCompiler_47, dependência de {0}: {1}", "Could not automatically install D3DCompiler_47, a dependency of {0}: {1}"),
         ("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial .zip ou .7z antes que dependências sejam alteradas.", "DLSS5 Feeder Full with Deep Fried Chicken needs the official .zip or .7z package before any dependency is changed."),
         ("{0} não participa do fluxo Atualizar tudo.", "{0} does not take part in Update All."),
