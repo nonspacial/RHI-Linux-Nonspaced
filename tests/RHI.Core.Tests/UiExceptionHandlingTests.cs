@@ -198,10 +198,10 @@ public sealed class UiExceptionHandlingTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([]);
         var settingsBefore = File.ReadAllText(fx.Settings.SettingsPath);
         File.SetUnixFileMode(fx.ConfigDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        var changed = fx.Vm.GetLinuxSettingsSnapshot().Settings;
+        var changed = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
         changed.UiLanguage = "pt-BR";
 
-        var message = fx.Vm.SaveLinuxSettings(changed);
+        var message = fx.Vm.Settings.SaveLinuxSettings(changed);
 
         Assert.StartsWith("Could not save the settings:", message);
         Assert.EndsWith("Nothing was changed.", message);

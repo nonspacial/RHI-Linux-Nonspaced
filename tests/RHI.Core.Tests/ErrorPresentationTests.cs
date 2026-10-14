@@ -73,7 +73,7 @@ public sealed class ErrorPresentationTests
     [Fact]
     public void CacheNotCleared_InPortuguese_PresentsTheReason()
     {
-        var shown = InPortuguese(() => MainWindowViewModel.CacheNotClearedText(new UnauthorizedAccessException($"Access to the path '{P}' is denied.")));
+        var shown = InPortuguese(() => SettingsViewModel.CacheNotClearedText(new UnauthorizedAccessException($"Access to the path '{P}' is denied.")));
 
         Assert.Equal($"O cache não foi totalmente limpo: Acesso ao caminho '{P}' negado.", shown);
     }

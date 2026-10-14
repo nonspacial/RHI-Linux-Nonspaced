@@ -19,7 +19,7 @@ public sealed class ClearCacheTests
             File.WriteAllText(Path.Combine(dir, $"f{i}.bin"), "x");
         }
 
-        var clearing = fx.Vm.PurgeLinuxCacheAsync();
+        var clearing = fx.Vm.Settings.PurgeLinuxCacheAsync();
 
         // The deletion runs on the thread pool: the caller gets an unfinished task back and the gate is held meanwhile.
         Assert.False(clearing.IsCompleted);
@@ -41,7 +41,7 @@ public sealed class ClearCacheTests
         File.WriteAllText(file, "x");
         using var held = fx.Vm.Operations.TryBegin("test");
 
-        var message = await fx.Vm.PurgeLinuxCacheAsync();
+        var message = await fx.Vm.Settings.PurgeLinuxCacheAsync();
 
         Assert.Equal(RHI.Desktop.Localization.UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"), message);
         Assert.True(File.Exists(file));

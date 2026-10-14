@@ -88,6 +88,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>Add game, Edit game and Remove manual entry (unit 7 of the split).</summary>
     public ManualGamesViewModel ManualGames { get; }
 
+    /// <summary>The Settings dialog's snapshot, Save / Reset and Clear cache (unit 7 of the split).</summary>
+    public SettingsViewModel Settings { get; }
+
+    /// <summary>Saved or reset settings take effect: language, view mode, ReShade default, DLSS defaults, background loop.</summary>
+    internal void AdoptSettings(LinuxAppSettings settings, bool restartLoop, bool runImmediate)
+    {
+        _settings = settings;
+        UiLocalizationService.Apply(_settings.UiLanguage);
+        ViewMode = _settings.ViewMode;
+        ReShadeManageIni = _settings.ReShadeManageIni;
+        RefreshLocalizedPresentation();
+        NotifyUxSettings();
+        if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
+        NotifyDlssDefaults();
+    }
+
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
@@ -347,6 +363,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Runtime = new RuntimePanelViewModel(this, _managedComponents, _apiOverrideStore, _optiScalerVariantStore, _hdrProfiles);
         Updates = new UpdatesViewModel(this, _updateAll);
         ManualGames = new ManualGamesViewModel(this);
+        Settings = new SettingsViewModel(this, _settingsStore);
         _session.Changed += OnSessionChanged;
         _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
@@ -383,95 +400,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
     internal Task Initialization { get; }
-
-    public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
-    {
-        var copy = new LinuxAppSettings
-        {
-            UiLanguage = _settings.UiLanguage,
-            ReShadeChannel = _settings.ReShadeChannel,
-            ReShadeManageIni = _settings.ReShadeManageIni,
-            ScreenshotPath = _settings.ScreenshotPath,
-            OverlayHotkey = _settings.OverlayHotkey,
-            ScreenshotHotkey = _settings.ScreenshotHotkey,
-            PerGameScreenshotFolders = _settings.PerGameScreenshotFolders,
-            AddonWatchFolder = _settings.AddonWatchFolder,
-            AddonWatcherEnabled = _settings.AddonWatcherEnabled,
-            ViewMode = _settings.ViewMode,
-            TrayIconEnabled = _settings.TrayIconEnabled,
-            CloseToTray = _settings.CloseToTray,
-            ShowMotdOnStartup = _settings.ShowMotdOnStartup,
-            CacheAllShaders = _settings.CacheAllShaders,
-            VerboseLogging = _settings.VerboseLogging,
-            AutoUpdateComponents = _settings.AutoUpdateComponents,
-            UpdateCheckIntervalHours = _settings.UpdateCheckIntervalHours,
-            DefaultDlssVersion = _settings.DefaultDlssVersion,
-            DefaultDlssdVersion = _settings.DefaultDlssdVersion,
-            DefaultDlssgVersion = _settings.DefaultDlssgVersion,
-            DefaultDlssnrVersion = _settings.DefaultDlssnrVersion,
-            DefaultStreamlineVersion = _settings.DefaultStreamlineVersion
-        };
-        return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
-    }
-
-    public string SaveLinuxSettings(LinuxAppSettings settings)
-    {
-        var previousAutoUpdate = _settings.AutoUpdateComponents;
-        var previousInterval = _settings.UpdateCheckIntervalHours;
-        if (TryPersist(() => _settingsStore.Save(settings), "Ui.WhatSettings", sessionOnly: false) is { } notSaved) return notSaved;
-        _settings = _settingsStore.Load();
-        UiLocalizationService.Apply(_settings.UiLanguage);
-        ViewMode = _settings.ViewMode;
-        ReShadeManageIni = _settings.ReShadeManageIni;
-        RefreshLocalizedPresentation();
-        NotifyUxSettings();
-        if (previousAutoUpdate != _settings.AutoUpdateComponents || previousInterval != _settings.UpdateCheckIntervalHours)
-            Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
-        NotifyDlssDefaults();
-        return UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
-    }
-
-    public string ResetLinuxSettings()
-    {
-        LinuxAppSettings? reset = null;
-        if (TryPersist(() => reset = _settingsStore.Reset(), "Ui.WhatSettings", sessionOnly: false) is { } notReset) return notReset;
-        _settings = reset!;
-        UiLocalizationService.Apply(_settings.UiLanguage);
-        ViewMode = _settings.ViewMode;
-        ReShadeManageIni = _settings.ReShadeManageIni;
-        RefreshLocalizedPresentation();
-        NotifyUxSettings();
-        Updates.RestartBackgroundUpdateLoop(runImmediate: false);
-        NotifyDlssDefaults();
-        return UiLocalizationService.Text("Vm.SettingsRestoredLinuxDefaults");
-    }
-
-    /// <summary>
-    /// Settings → Clear cache (Refs #84): the cache folder (downloaded packages, shader packs) is counted and deleted off
-    /// the UI thread, holding the busy gate so no install, update or scan reads a package while it disappears. Refused
-    /// while another operation runs; it cannot be cancelled part-way (a half-deleted cache would only be re-downloaded,
-    /// but the count would be wrong).
-    /// </summary>
-    public async Task<string> PurgeLinuxCacheAsync()
-    {
-        using var op = BeginOperation("clear-cache", cancellable: false);
-        if (op is null) return T("Vm.AnotherRHIOperationAlreadyRunning");
-        int removed;
-        try
-        {
-            removed = await Task.Run(_settingsStore.PurgeCache);
-        }
-        catch (Exception ex)
-        {
-            UiExceptionGuard.Log.TryWrite("purge cache", ex);
-            return CacheNotClearedText(ex);
-        }
-        return removed == 0 ? UiLocalizationService.Text("Vm.RHILinuxCacheAlreadyEmpty") : UiLocalizationService.Format("Vm.FileSRemovedFromCache", removed);
-    }
-
-    /// <summary>Clear-cache failure line; the exception's text in the UI language's presentation.</summary>
-    internal static string CacheNotClearedText(Exception ex)
-        => UiLocalizationService.Format("Ui.CacheNotCleared", UiLocalizationService.Present(ex.Message));
 
     private void RefreshLocalizedPresentation()
     {

@@ -384,7 +384,7 @@ public sealed partial class MainWindow : Window
     private void Settings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
-        var snapshot = vm.GetLinuxSettingsSnapshot();
+        var snapshot = vm.Settings.GetLinuxSettingsSnapshot();
         var settings = snapshot.Settings;
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
 
@@ -564,7 +564,7 @@ public sealed partial class MainWindow : Window
         purgeCache.Click += (_, _) => RunUiSafe(async () =>
         {
             purgeCache.IsEnabled = false;
-            try { status.Text = await vm.PurgeLinuxCacheAsync(); }
+            try { status.Text = await vm.Settings.PurgeLinuxCacheAsync(); }
             finally { purgeCache.IsEnabled = true; }
         });
         var reset = new Button { Content = UiLocalizationService.Text("Ui.ResetSettings"), Padding = new Avalonia.Thickness(12, 6) };
@@ -593,7 +593,7 @@ public sealed partial class MainWindow : Window
             defaultDlssg.SelectedItem = OptionLists.DoNotChangeDisplay();
             defaultDlssnr.SelectedItem = OptionLists.DoNotChangeDisplay();
             defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
-            status.Text = vm.ResetLinuxSettings();
+            status.Text = vm.Settings.ResetLinuxSettings();
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
             SyncTrayIcon();
@@ -674,7 +674,7 @@ public sealed partial class MainWindow : Window
         var save = new Button { Content = UiLocalizationService.Text("Ui.Save"), Padding = new Avalonia.Thickness(14, 7) };
         save.Click += (_, _) =>
         {
-            status.Text = vm.SaveLinuxSettings(ReadControls());
+            status.Text = vm.Settings.SaveLinuxSettings(ReadControls());
             save.Content = UiLocalizationService.Text("Ui.Save");
             reset.Content = UiLocalizationService.Text("Ui.ResetSettings");
             ApplyViewMode();
@@ -692,7 +692,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 var current = ReadControls();
-                vm.SaveLinuxSettings(current);
+                vm.Settings.SaveLinuxSettings(current);
                 ApplyViewMode();
                 SyncAddonWatcherFromSettings();
                 SyncTrayIcon();

@@ -37,9 +37,9 @@ public sealed class RuntimeOptionItemsTests
             runtime.SelectedHdrMode.PropertyChanged += (_, e) => relabelled.Add(e.PropertyName);
             var automatic = runtime.GraphicsApiOverrideOptions.For(null);
 
-            var settings = fx.Vm.GetLinuxSettingsSnapshot().Settings;
+            var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
             settings.UiLanguage = "pt-BR";
-            fx.Vm.SaveLinuxSettings(settings);
+            fx.Vm.Settings.SaveLinuxSettings(settings);
 
             Assert.Equal(lists, (runtime.GraphicsApiOverrideOptions, runtime.HdrModeOptions, runtime.LumaModeOptions, runtime.OptiScalerVariantOptions));
             Assert.Equal(selected, (runtime.SelectedGraphicsApiOverride, runtime.SelectedHdrMode, runtime.SelectedLumaModePreference, runtime.SelectedOptiScalerVariant));

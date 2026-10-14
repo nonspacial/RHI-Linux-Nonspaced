@@ -43,11 +43,11 @@ public sealed class NeuralVersionPinSelectionTests
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Name == "Tunic").Game;
         Assert.Equal("v9.9-feeder", fx.Vm.Extras.SelectedDlss5FeederVersion);
         var violations = Watch(fx.Vm);
-        var settings = fx.Vm.GetLinuxSettingsSnapshot().Settings;
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
         settings.UiLanguage = "pt-BR";
         try
         {
-            fx.Vm.SaveLinuxSettings(settings);
+            fx.Vm.Settings.SaveLinuxSettings(settings);
 
             Assert.Empty(violations);
             Assert.Equal(("v9.9-feeder", "310.9.9"), (fx.Vm.Extras.SelectedDlss5FeederVersion, fx.Vm.Extras.SelectedNeuralRenderingDllVersion));
