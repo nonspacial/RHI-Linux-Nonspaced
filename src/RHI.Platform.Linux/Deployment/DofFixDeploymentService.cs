@@ -156,38 +156,38 @@ public sealed class DofFixDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
-        var deployedHash = await scope.PlaceCopyAsync(cached.Path, target, cancellationToken).ConfigureAwait(false);
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
+            var deployedHash = await scope.PlaceCopyAsync(cached.Path, target, cancellationToken).ConfigureAwait(false);
 
-        _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
-        {
-            GameKey = LinuxDeploymentRecordStore.GameKey(game),
-            GameName = game.Name,
-            Component = ManagedComponentKind.DofFix,
-            BinaryDirectory = deployDir,
-            SourceUrl = release.AssetUrl,
-            Version = release.Version,
-            InstalledAtUtc = DateTime.UtcNow,
-            Files =
-            [
-                new LinuxDeployedFile
-                {
-                    Path = target,
-                    ExistedBeforeInstall = false,
-                    Sha256 = deployedHash,
-                    AllowUserChanges = false
-                }
-            ],
-            Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
-                ["DofFix.TagPrefix"] = TagPrefix,
-                ["DofFix.AssetName"] = release.AssetName,
-                ["DofFix.ManifestForced"] = game.DofFixForcedByManifest ? "1" : "0",
-                ["DofFix.EngineHint"] = game.EngineHint ?? "",
-                [VerifiedDownload.MetadataSha256Key] = cached.Sha256,
-                [VerifiedDownload.MetadataIntegrityKey] = cached.Integrity
-            }
-        }));
+                GameKey = LinuxDeploymentRecordStore.GameKey(game),
+                GameName = game.Name,
+                Component = ManagedComponentKind.DofFix,
+                BinaryDirectory = deployDir,
+                SourceUrl = release.AssetUrl,
+                Version = release.Version,
+                InstalledAtUtc = DateTime.UtcNow,
+                Files =
+                [
+                    new LinuxDeployedFile
+                    {
+                        Path = target,
+                        ExistedBeforeInstall = false,
+                        Sha256 = deployedHash,
+                        AllowUserChanges = false
+                    }
+                ],
+                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["DofFix.TagPrefix"] = TagPrefix,
+                    ["DofFix.AssetName"] = release.AssetName,
+                    ["DofFix.ManifestForced"] = game.DofFixForcedByManifest ? "1" : "0",
+                    ["DofFix.EngineHint"] = game.EngineHint ?? "",
+                    [VerifiedDownload.MetadataSha256Key] = cached.Sha256,
+                    [VerifiedDownload.MetadataIntegrityKey] = cached.Integrity
+                }
+            }));
         }
         catch (Exception ex)
         {
