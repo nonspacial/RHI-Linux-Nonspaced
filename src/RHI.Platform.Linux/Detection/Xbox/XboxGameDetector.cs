@@ -145,7 +145,8 @@ public sealed class XboxGameDetector : IGameDetector
         if (!verified)
             DetectorDiagnostics.Warn($"PartingX title {install.StoreId} ({install.Directory}): {package?.Problem ?? "no package config"}; listed without a modding target");
         var environment = instance.Environment(install.StoreId);
-        var name = install.Title ?? instance.CatalogueTitle(install.StoreId) ?? package?.DisplayName ?? install.StoreId;
+        // The product the user installed names the card (#175): the marker and package name a shared base package.
+        var name = instance.InstalledProductTitle(install.StoreId) ?? install.Title ?? package?.DisplayName ?? install.StoreId;
         var game = Card(name, install.Directory, verified ? package : null, Package(instance, install.StoreId));
         game.PrefixPath = environment.Prefix;
         game.WineBinaryPath = environment.Wine;

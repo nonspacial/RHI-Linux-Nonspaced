@@ -244,6 +244,41 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
+    public void Name_IsTheInstalledProduct_NotTheSharedBasePackage()
+    {
+        // #175: Control Ultimate Edition (9P7LVXNVQ6K7) installs Control's base package, whose marker and package config
+        // say "Control Standard Edition". The payload folder is the product the user installed; its catalogue record names it.
+        Title("9ULT", title: "Control Standard Edition", config: GdkConfig("Game.exe", "9BASE", display: "Control Standard Edition"),
+            marker: JsonSerializer.Serialize(new { storeId = "9ULT", installedAt = 1, packageProductId = "9BASE", packageTitle = "Control Standard Edition" }));
+        _tree.File(JsonSerializer.Serialize(new
+        {
+            ProductId = "9ULT",
+            LocalizedProperties = new[] { new { Language = "fr", ProductTitle = "Control Édition Ultime" }, new { Language = "en", ProductTitle = "Control Ultimate Edition" } }
+        }), "px", "state", "partingx", "catalogue", "products", "9ULT.json");
+        // No catalogue record: the newest job PartingX ran for the product names it.
+        Title("9JOB", title: "Base Game");
+        Title("9KEEP", title: "Marker Title");
+        _tree.File(JsonSerializer.Serialize(new
+        {
+            queue = Array.Empty<object>(),
+            history = new object[]
+            {
+                new { id = "j1", kind = "Install", titleId = "9JOB", title = "Old Name", state = "Done", created = 1 },
+                new { id = "j2", kind = "Launch", titleId = "9JOB", title = "Job Game Deluxe", state = "Cancelled", created = 5 },
+                new { id = "j3", kind = "Launch", titleId = "9OTHER", title = "Elsewhere", state = "Done", created = 9 }
+            }
+        }), "px", "state", "partingx", "jobs.json");
+
+        var games = Detect(Inputs()).Games.ToDictionary(g => g.XboxPackage!.StoreId!);
+
+        Assert.Equal("Control Ultimate Edition", games["9ULT"].Name);
+        Assert.Equal("Job Game Deluxe", games["9JOB"].Name);
+        Assert.Equal("Marker Title", games["9KEEP"].Name);
+        // The Control UE features (RenoDX confirmation with the OptiScaler FG offer, post-install) key on that name.
+        Assert.True(RHI.Platform.Linux.Deployment.ControlUePostInstallService.IsControlUltimateEdition(games["9ULT"]));
+    }
+
+    [Fact]
     public void Name_FallsBackFromMarkerToCatalogueToShellVisuals_IgnoringResourceReferences()
     {
         Title("9CAT", title: null);

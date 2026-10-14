@@ -157,6 +157,68 @@ internal sealed class PartingXInstance
         return _catalogue.GetValueOrDefault(storeId);
     }
 
+    /// <summary>
+    /// The name of the product the user installed, which the payload folder is named after (#175): an edition such as
+    /// Control Ultimate Edition installs the shared base package, whose marker and package config name the base game
+    /// (Control Standard Edition). The catalogue's product record (<c>catalogue/products/&lt;id&gt;.json</c>) first, then the
+    /// catalogue index, then the newest job PartingX ran for that product (<c>jobs.json</c>, which names it the same way).
+    /// Names only; null when none of them knows the product.
+    /// </summary>
+    public string? InstalledProductTitle(string storeId)
+        => CatalogueProductTitle(storeId) ?? CatalogueTitle(storeId) ?? JobTitle(storeId);
+
+    private string? CatalogueProductTitle(string storeId)
+    {
+        if (!IsStoreId(storeId)) return null;
+        var file = Path.Combine(StateDir, "catalogue", "products", storeId + ".json");
+        if (!File.Exists(file)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(ReadSmall(file, 16 * 1024 * 1024));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || String(root, "ProductId") is { } id && !string.Equals(id, storeId, StringComparison.OrdinalIgnoreCase))
+                return null;
+            if (!root.TryGetProperty("LocalizedProperties", out var localized) || localized.ValueKind != JsonValueKind.Array) return null;
+            var entries = localized.EnumerateArray().Where(entry => entry.ValueKind == JsonValueKind.Object).ToList();
+            // English first (the language the rest of the card's data uses), else the first language listed.
+            return entries.Where(entry => String(entry, "Language")?.StartsWith("en", StringComparison.OrdinalIgnoreCase) == true)
+                       .Concat(entries)
+                       .Select(entry => String(entry, "ProductTitle"))
+                       .FirstOrDefault(title => !string.IsNullOrWhiteSpace(title))?.Trim();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            AppLog.Warn("scan", $"PartingX catalogue product {file} unreadable; the name comes from elsewhere", ex);
+            return null;
+        }
+    }
+
+    private string? JobTitle(string storeId)
+    {
+        if (!File.Exists(JobsFile)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(ReadSmall(JobsFile, 64 * 1024 * 1024));
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            var jobs = new List<(long Created, string Title)>();
+            foreach (var list in new[] { "queue", "history" })
+            {
+                if (!doc.RootElement.TryGetProperty(list, out var entries) || entries.ValueKind != JsonValueKind.Array) continue;
+                foreach (var job in entries.EnumerateArray())
+                    if (job.ValueKind == JsonValueKind.Object && String(job, "titleId") == storeId && String(job, "title") is { } title &&
+                        !string.IsNullOrWhiteSpace(title))
+                        jobs.Add((job.TryGetProperty("created", out var created) && created.ValueKind == JsonValueKind.Number &&
+                                  created.TryGetInt64(out var at) ? at : 0, title.Trim()));
+            }
+            return jobs.OrderByDescending(job => job.Created).Select(job => job.Title).FirstOrDefault();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            AppLog.Warn("scan", $"PartingX jobs {JobsFile} unreadable for the title's name", ex);
+            return null;
+        }
+    }
+
     /// <summary>The executable a user recipe tells PartingX to run instead of the package's own.</summary>
     public string? RecipeExecutable(string storeId)
     {
