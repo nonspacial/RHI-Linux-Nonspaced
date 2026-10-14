@@ -86,17 +86,13 @@ public sealed partial class AppUpdatePresenter : ObservableObject
     /// <summary>Saves the start-up choice; on a refused save the box goes back and the status line says why.</summary>
     public void SetCheckAtStartup(bool value)
     {
-        try
+        if (ParityPersistence.TryPersist(() => _preferences.Update(p => p with { CheckAppUpdatesAtStartup = value }), "Parity.WhatAccounts") is { } notSaved)
         {
-            _preferences.Update(p => p with { CheckAppUpdatesAtStartup = value });
-            CheckAtStartup = value;
-        }
-        catch (IOException ex)
-        {
-            AppLog.Warn("app-update", "Could not save the start-up update check choice", ex);
-            StatusText = TF("Parity.AccountsNotSaved", UiLocalizationService.Present(ex.Message));
+            StatusText = notSaved;
             CheckAtStartup = _preferences.Load().CheckAppUpdatesAtStartup;
+            return;
         }
+        CheckAtStartup = value;
     }
 
     /// <summary>Opens the newer release's page in the browser (nothing is downloaded by RHI).</summary>

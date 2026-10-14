@@ -241,6 +241,33 @@ public sealed class ReShadeShaderPackService
     }
 
     /// <summary>
+    /// w3/parity hook (#93, shader-profile zip export; read-only): the files a sync of <paramref name="packId"/> would
+    /// deploy — its staged <c>Shaders/…</c> and <c>Textures/…</c> files minus the user's and the global exclusions — with
+    /// the path of each staged copy. Stages the pack first, as <see cref="ListPackFilesAsync"/> does.
+    /// </summary>
+    public async Task<IReadOnlyList<(string Selector, string StagedPath)>> ListDeployedPackFilesAsync(
+        string packId,
+        CancellationToken cancellationToken = default)
+    {
+        await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var pack = _packs.FirstOrDefault(p => p.Id.Equals(packId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Unknown ReShade shader pack id: {packId}");
+        var staged = pack.IsCustom ? EnsureCustomPack() : await EnsurePackAsync(pack, cancellationToken).ConfigureAwait(false);
+        var excluded = new HashSet<string>(GetExcludedFiles(pack.Id), StringComparer.OrdinalIgnoreCase);
+        if (!pack.IsCustom) excluded.UnionWith(GloballyExcludedShaderFiles);
+        var result = new List<(string, string)>();
+        foreach (var category in new[] { "Shaders", "Textures" })
+        {
+            var root = Path.Combine(staged, category);
+            if (!Directory.Exists(root)) continue;
+            foreach (var file in SafeFileEnumeration.Files(root))
+                if (!IsExcluded(excluded, category, root, file))
+                    result.Add(($"{category}/{Path.GetRelativePath(root, file).Replace('\\', '/')}", file));
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Everything a sync needs from the network (catalogue, packs, core headers), staged and checked against the game
     /// folder, with nothing in it changed: a deployment prepares the sync before its write gate and applies it with
     /// <see cref="ApplySync"/> after (w2 merge review, minor 1: the packs used to download after ReShade was copied).

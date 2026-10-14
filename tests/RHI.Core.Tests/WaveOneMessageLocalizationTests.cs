@@ -157,6 +157,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage;
         yield return RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage;
         yield return RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix + "503.";
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.TooLargeMessage;
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.NotAProfileMessage;
+        yield return RHI.Platform.Linux.Settings.ShaderProfileArchive.UnreadableProfileMessage;
         // w3/vmsplit rows
         // w3/dllnames rows
     }

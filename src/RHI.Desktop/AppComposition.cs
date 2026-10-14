@@ -90,7 +90,9 @@ internal sealed class AppComposition
         var pcgwGraphics = new PcGamingWikiGraphicsApiService(http);
         var runtimeProbe = new LinuxGameRuntimeProbe(upstreamManifest, pcgwGraphics, pcgwData);
         var reshadeExtractor = new ReShadeArchiveExtractor();
-        var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, upstreamManifest: upstreamManifest, journal: journal);
+        // w3/parity hook (#93): the one shader-pack service, shared with the shader-profile export (same cache dir as before).
+        var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest);
+        var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, shaderPacks: shaderPacks, upstreamManifest: upstreamManifest, journal: journal);
         var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
@@ -184,6 +186,7 @@ internal sealed class AppComposition
         var parity = new ParityFeatures
         {
             NexusAccount = nexusAccount,
+            ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
             NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),

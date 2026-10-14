@@ -990,6 +990,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage, "O Nexus Mods respondeu à verificação da chave sem uma conta."),
         (RHI.Platform.Linux.Network.NexusApiClient.OversizedMessage, "O Nexus Mods enviou mais do que uma resposta de dados."),
         (RHI.Platform.Linux.Network.NexusApiClient.AnsweredPrefix, "O Nexus Mods respondeu "),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.TooLargeMessage, "A exportação do perfil de shaders passa do limite (512 MiB)."),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.NotAProfileMessage, "Este zip não é um perfil de shaders (não tem shader_import.json)."),
+        (RHI.Platform.Linux.Settings.ShaderProfileArchive.UnreadableProfileMessage, "O perfil de shaders deste zip não pode ser lido."),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

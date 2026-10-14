@@ -814,6 +814,8 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        shaderRoot.Children.Insert(0, ShaderProfilePanel.Create(vm.Parity, () => shaderChecks.Where(x => x.Box.IsChecked == true).Select(x => x.Id).ToArray(), ids => { foreach (var (id, box) in shaderChecks) box.IsChecked = ids.Contains(id, StringComparer.OrdinalIgnoreCase); })); // w3/parity hook (#93)
+
         var addonRoot = new StackPanel { Spacing = 8, Margin = new Avalonia.Thickness(12) };
         foreach (var addon in snapshot.Addons.OrderBy(x => x.ManagedByComponent).ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase))
         {
