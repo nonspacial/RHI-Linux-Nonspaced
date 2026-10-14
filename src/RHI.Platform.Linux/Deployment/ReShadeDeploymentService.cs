@@ -676,7 +676,6 @@ public sealed partial class ReShadeDeploymentService
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
         var coexist = managedOptiScaler is not null &&
             record.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
-        var disabledOptiLoader = false;
 
         try
         {
@@ -688,60 +687,108 @@ public sealed partial class ReShadeDeploymentService
                 if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
+        }
+        catch (Exception ex)
+        {
+            // Nothing changed yet (a Cancel or an unreadable file during the check).
+            return ComponentOperationResult.Fail($"ReShade removal failed: {ex.Message}");
+        }
 
-            // Cancel is honoured only up to here: a removal that stopped half-way would be refused on retry by the
-            // hash check above (restored originals no longer match RHI's hash), so it always runs to the end.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        // Journaled (#23, #31; the record-removed probe): ReShade's record is stamped with the removal's id first; every
+        // file the teardown touches (proxy, compiler, ReShade.ini, OptiScaler.ini's LoadReshade) is tracked with a
+        // verified copy, and every override restore journals its put-back. The commit point is one ledger write that takes
+        // ReShade's record away and, in the OptiScaler chain, saves OptiScaler's record with its edited INI. A failure, or
+        // a crash before that write, puts every file and override back. Shader-pack folders are not journaled yet (#169).
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, $"ReShade removal: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        var overrideRestores = new List<(WineOverrideRecord Record, WineOverrideRestoreResult Result)>();
+        LinuxDeploymentRecord? optiScalerAfter = null;
+
+        // Cancel is honoured only up to here: a removal that stopped half-way would be refused on retry by the hash check
+        // above (restored originals no longer match RHI's hash), so it always runs to the end or rolls back.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
             if (coexist)
             {
                 // A removal is never blocked by the user's lock on OptiScaler.ini: written, kept read-only.
+                var optiIni = Path.Combine(binaryDirectory, "OptiScaler.ini");
+                await scope.TrackAsync(optiIni, cancellationToken).ConfigureAwait(false);
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, false, ReadOnlyUserFile.WriteKeepingLock);
-                await RefreshManagedOptiScalerIniHashAsync(game, cancellationToken).ConfigureAwait(false);
-                disabledOptiLoader = true;
+                await scope.DeclareWrittenContentAsync(optiIni, cancellationToken).ConfigureAwait(false);
+                optiScalerAfter = await ManagedOptiScalerWithIniHashAsync(game).ConfigureAwait(false);
             }
 
             _shaderPacks.Cleanup(binaryDirectory);
-            CleanupManagedIni(record);
+            if (record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } managedIni)
+            {
+                await scope.TrackAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
+                CleanupManagedIni(record);
+                await scope.DeclareWrittenContentAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
+            }
 
             foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
             {
+                await scope.TrackAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
                 {
+                    await scope.DeclareWriteAsync(file.Path, scope.Files.Find(file.Path)!.BackupPreSha256
+                        ?? await FileHash.Sha256HexAsync(file.Path + TransactionalFileDeploymentService.BackupExtension, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
                     if (!restored.Success) throw new IOException(restored.Error ?? $"Could not restore {file.Path}");
                 }
                 else if (File.Exists(file.Path))
                 {
-                    File.Delete(file.Path);
+                    AtomicFile.Delete(file.Path);
                 }
             }
 
-            var overrideRestores = new List<WineOverrideRestoreResult>();
             if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
             {
                 foreach (var additionalOverride in record.AdditionalWineOverrides.AsEnumerable().Reverse())
-                    overrideRestores.Add(_overrides.Restore(prefix, additionalOverride));
-                overrideRestores.Add(_overrides.Restore(prefix, record.WineOverride));
+                    overrideRestores.Add((additionalOverride, await _overrides.RestoreAsync(scope.Operation, prefix, additionalOverride, cancellationToken).ConfigureAwait(false)));
+                if (record.WineOverride is { } main)
+                    overrideRestores.Add((main, await _overrides.RestoreAsync(scope.Operation, prefix, main, cancellationToken).ConfigureAwait(false)));
             }
-            _records.Remove(game, ManagedComponentKind.ReShade);
-            return ComponentOperationResult.Ok((coexist
-                ? "RHI-managed ReShade removed; OptiScaler LoadReshade was disabled. RHI shader files were cleaned and user-edited ReShade.ini content was preserved."
-                : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.")
-                + WineDllOverrideService.KeptValueNotes([.. overrideRestores]));
+            // The commit point: ReShade's record goes and, in the chain, OptiScaler's (INI hash) is saved in the same write.
+            _records.Commit(optiScalerAfter is null ? [] : [optiScalerAfter], [(game, ManagedComponentKind.ReShade)]);
         }
         catch (Exception ex)
         {
-            if (disabledOptiLoader)
-            {
-                try
-                {
-                    OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true, ReadOnlyUserFile.WriteKeepingLock);
-                    await RefreshManagedOptiScalerIniHashAsync(game, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch { }
-            }
-            return ComponentOperationResult.Fail($"ReShade removal failed: {ex.Message}");
+            // ReShade's record goes back (still stamped) before the files roll back; OptiScaler's record was never changed.
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reshade").ConfigureAwait(false);
+            foreach (var (overrideRecord, result) in overrideRestores.AsEnumerable().Reverse())
+                if (result.Outcome == WineOverrideRestoreOutcome.Restored)
+                    _overrides.TryReapply(game.PrefixPath, overrideRecord);
+            if (!rollback.Success)
+                AppLog.Warn("reshade", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"{RemovalFailedPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok((coexist
+            ? "RHI-managed ReShade removed; OptiScaler LoadReshade was disabled. RHI shader files were cleaned and user-edited ReShade.ini content was preserved."
+            : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.")
+            + WineDllOverrideService.KeptValueNotes([.. overrideRestores.Select(item => item.Result)]));
+    }
+
+    /// <summary>Fixed text of a failed, rolled-back ReShade removal; the reason follows (PT-BR pair exists).</summary>
+    public const string RemovalFailedPrefix = "ReShade removal failed and was rolled back; ReShade stays installed: ";
+
+    /// <summary>
+    /// OptiScaler's record with its <c>OptiScaler.ini</c> hash taken from disk (user-editable), for saving in the same
+    /// write as the operation's commit point; null when RHI does not manage OptiScaler here or its INI is gone.
+    /// </summary>
+    private async Task<LinuxDeploymentRecord?> ManagedOptiScalerWithIniHashAsync(DetectedGame game)
+    {
+        var record = _records.Find(game, ManagedComponentKind.OptiScaler);
+        var ini = record?.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase));
+        if (record is null || ini is null || !File.Exists(ini.Path)) return null;
+        ini.Sha256 = await FileHash.Sha256HexAsync(ini.Path, CancellationToken.None).ConfigureAwait(false);
+        ini.AllowUserChanges = true;
+        return record;
     }
 
     public async Task<ReShadeUpdateStatus> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)

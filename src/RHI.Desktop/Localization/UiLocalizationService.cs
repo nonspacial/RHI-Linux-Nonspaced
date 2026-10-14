@@ -1084,6 +1084,11 @@ public static class UiLocalizationService
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o ReShade não pode ser instalado com ele; escolha outro nome de DLL para o ReShade. Nome e componente: "),
         ("The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ",
             "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como Automático, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
+        // Phase B (#23/#31 journaling): a failed removal is rolled back whole and says so.
+        ("OptiScaler removal failed and was rolled back; OptiScaler stays installed: ",
+            "A remoção do OptiScaler falhou e foi desfeita; o OptiScaler continua instalado: "),
+        ("ReShade removal failed and was rolled back; ReShade stays installed: ",
+            "A remoção do ReShade falhou e foi desfeita; o ReShade continua instalado: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

@@ -91,19 +91,12 @@ public sealed partial class OptiScalerDeploymentService
         if (GetPinnedNightlyBuild(record) is { } pinned)
             return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
 
-        try
-        {
-            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return ComponentOperationResult.Fail($"Could not give back an OptiScaler file an older DLSS swap replaced: {ex.Message}");
-        }
-
+        var legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
         foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
         {
             if (!File.Exists(file.Path) || string.IsNullOrWhiteSpace(file.Sha256))
                 return ComponentOperationResult.Fail($"OptiScaler managed file is missing or has no ownership hash: {file.Path}");
+            if (legacySwaps.Contains(file.Path)) continue; // RHI's own bytes sit in its .original; given back below
             var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed OptiScaler file was modified outside RHI and will not be updated: {file.Path}");
@@ -134,15 +127,20 @@ public sealed partial class OptiScalerDeploymentService
         catch (Exception ex) { return ComponentOperationResult.Fail($"OptiScaler update package layout is invalid: {ex.Message}"); }
 
         var byPath = record.Files.ToDictionary(file => Path.GetFullPath(file.Path), StringComparer.Ordinal);
-        var backupRoot = Path.Combine(Path.GetTempPath(), $"rhi-optiscaler-update-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(backupRoot);
-        var backups = new Dictionary<string, string>(StringComparer.Ordinal);
-        var newlyCreated = new List<string>();
         var createdDirs = new List<string>();
+
+        // Journaled (#23, #31): every replaced file is tracked with a verified copy and every new one declared before it
+        // is placed; the record (stamped with the operation id) is the commit point. A failure, or a crash before the
+        // record is saved, puts every file back (no temporary backups of its own).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, $"OptiScaler update: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Downloaded and checked: from the first replaced file on, the update runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
+            await GiveBackLegacyDlssSwapsAsync(legacySwaps, scope, cancellationToken).ConfigureAwait(false);
             foreach (var (source, targetRaw) in requested)
             {
                 var target = Path.GetFullPath(targetRaw);
@@ -150,20 +148,14 @@ public sealed partial class OptiScalerDeploymentService
                 {
                     if (owned.AllowUserChanges)
                         continue; // OptiScaler.ini is user state and never overwritten by Update All.
-                    var backup = Path.Combine(backupRoot, $"{backups.Count:D4}-{Path.GetFileName(target)}");
-                    File.Copy(target, backup, overwrite: false);
-                    backups[target] = backup;
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    owned.Sha256 = await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    owned.Sha256 = await scope.PlaceCopyAsync(source, target, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
                 if (File.Exists(target))
                     throw new InvalidOperationException($"New OptiScaler package file collides with an external/untracked file: {target}");
                 EnsureTargetDirectory(binaryDirectory, target, createdDirs);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                var copiedHash = await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
-                newlyCreated.Add(target);
+                var copiedHash = await scope.PlaceCopyAsync(source, target, cancellationToken, overwrite: false).ConfigureAwait(false);
                 var added = new LinuxDeployedFile
                 {
                     Path = target,
@@ -187,27 +179,19 @@ public sealed partial class OptiScalerDeploymentService
             else VerifiedDownload.Forget(record.Metadata);
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
-            _records.Upsert(record);
-            return ComponentOperationResult.Ok($"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
-                requested.Select(item => item.Target).Where(path => !Path.GetFileName(path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            foreach (var pair in backups)
-            {
-                try { if (File.Exists(pair.Value)) File.Copy(pair.Value, pair.Key, overwrite: true); } catch { }
-            }
-            foreach (var path in newlyCreated.AsEnumerable().Reverse())
-            {
-                try { if (File.Exists(path)) File.Delete(path); } catch { }
-            }
+            // Compensation must run even when the failure *is* a cancellation; never cancelled itself.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             CleanupDirectories(createdDirs);
-            return ComponentOperationResult.Fail($"OptiScaler update rolled back: {ex.Message}");
+            return ComponentOperationResult.Fail($"OptiScaler update rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
-        finally
-        {
-            try { Directory.Delete(backupRoot, recursive: true); } catch { }
-        }
+        // The record carries the operation id: it is the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"OptiScaler {VariantLabel(variant)} updated to {package.Version}; OptiScaler.ini, ReShade coexistence and Wine override ownership were preserved.",
+            requested.Select(item => item.Target).Where(path => !Path.GetFileName(path).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)).ToArray());
     }
 
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -278,26 +262,28 @@ public sealed partial class OptiScalerDeploymentService
 
         var binaryDirectory = Path.GetFullPath(game.BinaryDirectory);
         var proxyTarget = Path.Combine(binaryDirectory, "dxgi.dll");
-        ReShadeMigration? migration = null;
+        LinuxDeploymentRecord? migratedReShade = null;
         WineOverrideRecord? overrideRecord = null;
         var overrideCreatedHere = false;
-        var deployed = false;
         var createdDirectories = new List<string>();
         var requested = new List<(string Source, string Target)>();
         var existedBefore = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-        // The Wine override is journaled before it is written (#23): a crash before the record is saved
-        // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        // Journaled (#23, #31): the Wine override is journaled before it is written and every file is tracked with a
+        // verified copy (and every placed content declared) before it changes. The commit point is one ledger write that
+        // saves OptiScaler's record (stamped with the operation id) and, when RHI's ReShade moved aside, ReShade's. A
+        // failure, or a crash before that write, puts every file, ReShade's name and the override back.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, $"OptiScaler install: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
 
         // Downloaded: from the first change on, the install runs to completion or full rollback (Cancel is refused).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        LinuxDeploymentRecord record;
         try
         {
-            migration = await MigrateManagedReShadeIfNeededAsync(game, proxyTarget, cancellationToken).ConfigureAwait(false);
+            migratedReShade = await MigrateManagedReShadeIfNeededAsync(game, proxyTarget, scope, cancellationToken).ConfigureAwait(false);
 
             if (File.Exists(proxyTarget))
             {
@@ -308,10 +294,11 @@ public sealed partial class OptiScalerDeploymentService
                 throw new InvalidOperationException("Foreign DLL protection: dxgi.dll is occupied by an unknown DLL. Nothing was overwritten.");
             }
 
-            overrideRecord = migration?.TransferredOverride;
+            // ReShade's override for this name passes to OptiScaler with the file it guarded (no registry change).
+            overrideRecord = migratedReShade is not null ? _records.Find(game, ManagedComponentKind.ReShade)?.WineOverride : null;
             if (overrideRecord is null)
             {
-                overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "dxgi.dll", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+                overrideRecord = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, prefix, "dxgi.dll", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
                 overrideCreatedHere = true;
             }
 
@@ -322,17 +309,24 @@ public sealed partial class OptiScalerDeploymentService
                 existedBefore[target] = File.Exists(target);
                 if (File.Exists(target) && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
                     throw new InvalidOperationException($"Backup collision protection: {target}.original already exists. RHI will not guess which previous tool owns that backup.");
+            }
+            foreach (var (source, target) in requested)
+            {
                 EnsureTargetDirectory(binaryDirectory, target, createdDirectories);
+                await scope.TrackAsync(target, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(target, await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
             }
 
             var batch = await _files.ReplaceBatchAsync(requested, cancellationToken).ConfigureAwait(false);
             if (!batch.Success) throw new InvalidOperationException(batch.Error ?? "OptiScaler file deployment failed.");
-            deployed = true;
 
-            if (migration is not null)
+            if (migratedReShade is not null)
+            {
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
+                await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
+            }
 
-            var record = new LinuxDeploymentRecord
+            record = new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -351,7 +345,6 @@ public sealed partial class OptiScalerDeploymentService
             };
             if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
             package.Download?.RecordIn(record.Metadata);
-            if (operation is not null) record.Metadata[LinuxDeploymentRecovery.OperationIdMetadataKey] = operation.Id;
 
             foreach (var (_, target) in requested)
             {
@@ -359,30 +352,32 @@ public sealed partial class OptiScalerDeploymentService
                 {
                     Path = target,
                     ExistedBeforeInstall = existedBefore[target],
-                    Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false),
+                    Sha256 = await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false),
                     AllowUserChanges = Path.GetFileName(target).Equals("OptiScaler.ini", StringComparison.OrdinalIgnoreCase)
                 });
             }
 
-            _records.Upsert(record);
-            // The record carries the operation id: it is the commit point even if this cleanup fails.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok(
-                $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as dxgi.dll" +
-                (migration is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled."),
-                proxyTarget);
+            // The commit point: OptiScaler's stamped record and, after a move, ReShade's renamed record in one write.
+            _records.Commit(migratedReShade is null ? [scope.Stamp(record)] : [scope.Stamp(record), migratedReShade]);
         }
         catch (Exception ex)
         {
-            // Compensation must run even when the failure *is* a cancellation.
-            if (deployed)
-                await RollbackDeploymentAsync(requested, existedBefore, createdDirectories, CancellationToken.None).ConfigureAwait(false);
+            // Compensation must run even when the failure *is* a cancellation; never cancelled itself. Files (ReShade's
+            // name included) come back from the scope's copies, then the override this install wrote.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (overrideCreatedHere && overrideRecord is not null)
                 _overrides.TryRestore(prefix, overrideRecord);
-            if (migration is not null)
-                await RollbackReShadeMigrationAsync(migration, CancellationToken.None).ConfigureAwait(false);
-            return ComponentOperationResult.Fail($"OptiScaler install failed: {ex.Message}");
+            CleanupDirectories(createdDirectories);
+            if (!rollback.Success)
+                AppLog.Warn("optiscaler", $"Install rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"OptiScaler install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: it is the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(
+            $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as dxgi.dll" +
+            (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled."),
+            proxyTarget);
     }
 
     internal static OptiScalerVariant GetInstalledVariant(LinuxDeploymentRecord record)
@@ -438,30 +433,20 @@ public sealed partial class OptiScalerDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var changed = false;
-        ComponentOperationResult FailKeepingProgress(string message)
-        {
-            // Files already removed/restored must leave the record, or a restored .original blocks every retry.
-            if (changed)
-            {
-                PruneFgStackOwnership(record);
-                _records.Upsert(record);
-            }
-            return ComponentOperationResult.Fail(message);
-        }
-
+        IReadOnlySet<string> legacySwaps;
+        var moveReShadeBack = false;
         try
         {
-            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+            legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
 
-            // Preflight every destructive action before changing any file. Kept/taken-over files are
-            // hash-checked too: restoring their .original would overwrite a file the user replaced.
+            // Preflight every destructive action before changing any file. Kept/taken-over files are hash-checked too:
+            // restoring their .original would overwrite a file the user replaced.
             foreach (var file in record.Files)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
                     return ComponentOperationResult.Fail($"Cannot safely remove OptiScaler: preserved original is missing for {file.Path}.");
-                if (!File.Exists(file.Path) || file.AllowUserChanges) continue;
+                if (!File.Exists(file.Path) || file.AllowUserChanges || legacySwaps.Contains(file.Path)) continue;
                 var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so OptiScaler was not removed.");
@@ -485,58 +470,90 @@ public sealed partial class OptiScalerDeploymentService
                     return ComponentOperationResult.Fail("Cannot safely remove OptiScaler while ReShade depends on it: the managed dxgi.dll record is missing.");
                 if (proxyRecord is { ExistedBeforeInstall: true })
                     return ComponentOperationResult.Fail("Remove RHI-managed ReShade first. OptiScaler preserved a pre-existing dxgi.dll, so ReShade64.dll cannot be moved back to dxgi.dll without overwriting that original.");
+                moveReShadeBack = reShadeRecord is not null;
             }
-
-            // Cancel is honoured only up to here: the teardown never stops half-way (a restored original no longer
-            // matches RHI's hash, so a retry would be refused).
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            foreach (var file in record.Files.OrderByDescending(file => file.Path.Length).ToArray())
-            {
-                if (file.ExistedBeforeInstall)
-                {
-                    var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
-                    if (!restored.Success) return FailKeepingProgress(restored.Error ?? $"Could not restore {file.Path}");
-                }
-                else
-                {
-                    try { if (File.Exists(file.Path)) File.Delete(file.Path); }
-                    catch (Exception ex) { return FailKeepingProgress($"Could not remove {file.Path}: {ex.Message}"); }
-                }
-                record.Files.Remove(file);
-                changed = true;
-            }
-
-            var keptReShade = false;
-            WineOverrideRestoreResult? overrideRestore = null;
-            if (reShadeRecord is not null && reShade64 is not null && File.Exists(reShade64.Path))
-            {
-                if (File.Exists(dxgi))
-                    return FailKeepingProgress("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
-                // From the move on, nothing may be cancelled before the ReShade record follows the file. The
-                // content is the ReShade64.dll the preflight just hash-checked, so its recorded hash stays valid.
-                File.Move(reShade64.Path, dxgi);
-                reShade64.Path = dxgi;
-                reShadeRecord.WineOverride = record.WineOverride;
-                _records.Upsert(reShadeRecord);
-                keptReShade = true;
-            }
-            else if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
-            {
-                overrideRestore = _overrides.Restore(prefix, record.WineOverride);
-            }
-
-            CleanupDirectories(record.DirectoriesCreatedByRhi);
-            _records.Remove(game, ManagedComponentKind.OptiScaler);
-            return ComponentOperationResult.Ok((keptReShade
-                ? "RHI-managed OptiScaler removed; ReShade64.dll was moved back to dxgi.dll and retained its Wine override."
-                : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.")
-                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
-            return FailKeepingProgress($"OptiScaler removal failed: {ex.Message}");
+            // Nothing changed yet (a Cancel or an unreadable file during the check).
+            return ComponentOperationResult.Fail($"OptiScaler removal failed: {ex.Message}");
         }
+
+        // Journaled (#23, #31): the record is stamped with the removal's id first; every file the teardown touches is
+        // tracked with a verified copy (and every placed content declared) before it changes. The commit point is one
+        // ledger write that takes OptiScaler's record away and saves ReShade's moved-back record. A failure, or a crash
+        // before that write, puts every file, ReShade's name and the override back; a removal never stops half-way.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, $"OptiScaler removal: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        WineOverrideRestoreResult? overrideRestore = null;
+        LinuxDeploymentRecord? reShadeAfter = null;
+
+        // Cancel is honoured only up to here: the teardown runs to the end or rolls back.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            await GiveBackLegacyDlssSwapsAsync(legacySwaps, scope, cancellationToken).ConfigureAwait(false);
+            foreach (var file in record.Files.OrderByDescending(file => file.Path.Length).ToArray())
+            {
+                await scope.TrackAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                if (file.ExistedBeforeInstall)
+                {
+                    await scope.DeclareWriteAsync(file.Path, scope.Files.Find(file.Path)!.BackupPreSha256
+                        ?? await FileHash.Sha256HexAsync(file.Path + TransactionalFileDeploymentService.BackupExtension, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                    var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                    if (!restored.Success) throw new IOException(restored.Error ?? $"Could not restore {file.Path}");
+                }
+                else if (File.Exists(file.Path))
+                {
+                    AtomicFile.Delete(file.Path);
+                }
+            }
+
+            if (moveReShadeBack)
+            {
+                if (File.Exists(dxgi))
+                    throw new IOException("OptiScaler files were removed, but dxgi.dll is unexpectedly occupied; RHI did not move ReShade back over it.");
+                // The content is the ReShade64.dll the preflight just hash-checked, so its recorded hash stays valid.
+                await scope.TrackAsync(reShade64!.Path, cancellationToken).ConfigureAwait(false);
+                await scope.TrackAsync(dxgi, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(dxgi, scope.Files.Find(reShade64.Path)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(reShade64.Path, dxgi);
+                reShadeAfter = LinuxDeploymentRecordStore.Clone(reShadeRecord!);
+                reShadeAfter.Files.First(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase)).Path = dxgi;
+                reShadeAfter.WineOverride = record.WineOverride;
+            }
+            else if (game.PrefixPath is { } prefix && Directory.Exists(prefix))
+            {
+                overrideRestore = await _overrides.RestoreAsync(scope.Operation, prefix, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            }
+
+            // The commit point: OptiScaler's record goes and ReShade's (moved back) is saved in the same write.
+            _records.Commit(reShadeAfter is null ? [] : [reShadeAfter], [(game, ManagedComponentKind.OptiScaler)]);
+        }
+        catch (Exception ex)
+        {
+            // OptiScaler's record goes back (still stamped) with ReShade's as it was, before the files roll back.
+            var rollback = await scope.RollbackRemovalAsync(
+                _records, game, record, "optiscaler", alongside: reShadeAfter is null ? null : [reShadeRecord!]).ConfigureAwait(false);
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            if (!rollback.Success)
+                AppLog.Warn("optiscaler", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"{RemovalFailedPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        // The record is gone: the commit point. Empty folders RHI created go after it (nothing to roll back).
+        await scope.CommitAsync().ConfigureAwait(false);
+        CleanupDirectories(record.DirectoriesCreatedByRhi);
+        return ComponentOperationResult.Ok((reShadeAfter is not null
+            ? "RHI-managed OptiScaler removed; ReShade64.dll was moved back to dxgi.dll and retained its Wine override."
+            : "RHI-managed OptiScaler removed; preserved game files and the Wine DLL override were restored.")
+            + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
+
+    /// <summary>Fixed text of a failed, rolled-back OptiScaler removal; the reason follows (PT-BR pair exists).</summary>
+    public const string RemovalFailedPrefix = "OptiScaler removal failed and was rolled back; OptiScaler stays installed: ";
 
     /// <summary>
     /// Before #135 the direct DLSS flows (Quick Apply / Batch Deploy with a Streamline default, the panel's Streamline
@@ -544,12 +561,12 @@ public sealed partial class OptiScalerDeploymentService
     /// <c>&lt;name&gt;.original</c> (the DLSS swap backup) and no longer matched the record. Those flows no longer reach
     /// OptiScaler's files, so that backup would be stranded and every disable/redeploy/removal refused. When a managed
     /// file RHI created (not a kept original) mismatches its recorded hash and its <c>.original</c> carries exactly that
-    /// hash, the backup is RHI's own file: it is moved back, which only returns ownership and overwrites nothing foreign.
-    /// Returns the files given back.
+    /// hash, the backup is RHI's own file. Read only: returns those files (full paths); <see cref="GiveBackLegacyDlssSwapsAsync"/>
+    /// moves them back inside the operation.
     /// </summary>
-    private async Task<IReadOnlyList<string>> RestoreLegacyDlssSwapsAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
+    private static async Task<IReadOnlySet<string>> FindLegacyDlssSwapsAsync(LinuxDeploymentRecord record, CancellationToken cancellationToken)
     {
-        var restored = new List<string>();
+        var found = new HashSet<string>(StringComparer.Ordinal);
         foreach (var file in record.Files)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -558,19 +575,37 @@ public sealed partial class OptiScalerDeploymentService
             if (!File.Exists(file.Path) || !File.Exists(backup)) continue;
             if (string.Equals(await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
             if (!string.Equals(await FileHash.Sha256HexAsync(backup, cancellationToken).ConfigureAwait(false), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
-            restored.Add(file.Path);
+            found.Add(file.Path);
         }
-        if (restored.Count == 0) return restored;
-        // Checked: the give-back runs for every file found, whatever Cancel says.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
-        foreach (var path in restored)
-            File.Move(path + TransactionalFileDeploymentService.BackupExtension, path, overwrite: true);
-        return restored;
+        return found;
     }
 
-    private async Task<ReShadeMigration?> MigrateManagedReShadeIfNeededAsync(
+    /// <summary>
+    /// Moves RHI's own bytes back from each <c>.original</c> found by <see cref="FindLegacyDlssSwapsAsync"/>, tracked and
+    /// declared in <paramref name="scope"/>: this only returns ownership and overwrites nothing foreign, and a rollback
+    /// puts both copies back as they were.
+    /// </summary>
+    private static async Task GiveBackLegacyDlssSwapsAsync(IReadOnlySet<string> paths, DeploymentScope scope, CancellationToken cancellationToken)
+    {
+        foreach (var path in paths)
+        {
+            await scope.TrackAsync(path, cancellationToken).ConfigureAwait(false);
+            var backupSha = scope.Files.Find(path)!.BackupPreSha256
+                ?? await FileHash.Sha256HexAsync(path + TransactionalFileDeploymentService.BackupExtension, CancellationToken.None).ConfigureAwait(false);
+            await scope.DeclareWriteAsync(path, backupSha, cancellationToken).ConfigureAwait(false);
+            AtomicFile.Rename(path + TransactionalFileDeploymentService.BackupExtension, path, overwrite: true);
+        }
+    }
+
+    /// <summary>
+    /// RHI's ReShade at <paramref name="proxyTarget"/> moves to <c>ReShade64.dll</c> (tracked and declared in
+    /// <paramref name="scope"/>), so OptiScaler can load it through LoadReshade. Returns ReShade's record as it must be
+    /// saved with OptiScaler's (renamed, its override passed on), or null when nothing moved; nothing is saved here.
+    /// </summary>
+    private async Task<LinuxDeploymentRecord?> MigrateManagedReShadeIfNeededAsync(
         DetectedGame game,
         string proxyTarget,
+        DeploymentScope scope,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(proxyTarget)) return null;
@@ -588,56 +623,14 @@ public sealed partial class OptiScalerDeploymentService
         if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Managed ReShade dxgi.dll was modified outside RHI and will not be migrated automatically.");
 
-        var oldPath = file.Path;
-        var oldHash = file.Sha256;
-        var oldOverride = record.WineOverride;
-        File.Move(proxyTarget, reShade64);
+        await scope.TrackAsync(proxyTarget, cancellationToken).ConfigureAwait(false);
+        await scope.TrackAsync(reShade64, cancellationToken).ConfigureAwait(false);
+        await scope.DeclareWriteAsync(reShade64, current, cancellationToken).ConfigureAwait(false);
+        AtomicFile.Rename(proxyTarget, reShade64);
         file.Path = reShade64;
-        file.Sha256 = await FileHash.Sha256HexAsync(reShade64, cancellationToken).ConfigureAwait(false);
+        file.Sha256 = current;
         record.WineOverride = null;
-        _records.Upsert(record);
-        return new ReShadeMigration(record, file, oldPath, oldHash, reShade64, oldOverride);
-    }
-
-    private async Task RollbackReShadeMigrationAsync(ReShadeMigration migration, CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (File.Exists(migration.NewPath) && !File.Exists(migration.OldPath))
-                File.Move(migration.NewPath, migration.OldPath);
-            migration.File.Path = migration.OldPath;
-            migration.File.Sha256 = File.Exists(migration.OldPath)
-                ? await FileHash.Sha256HexAsync(migration.OldPath, cancellationToken).ConfigureAwait(false)
-                : migration.OldHash;
-            migration.Record.WineOverride = migration.TransferredOverride;
-            _records.Upsert(migration.Record);
-        }
-        catch { }
-    }
-
-    private async Task RollbackDeploymentAsync(
-        IReadOnlyList<(string Source, string Target)> requested,
-        IReadOnlyDictionary<string, bool> existedBefore,
-        IReadOnlyList<string> createdDirectories,
-        CancellationToken cancellationToken)
-    {
-        foreach (var (_, target) in requested.Reverse())
-        {
-            try
-            {
-                var existed = existedBefore.TryGetValue(target, out var value) && value;
-                if (existed && File.Exists(target + TransactionalFileDeploymentService.BackupExtension))
-                {
-                    await _files.RestoreAsync(target, cancellationToken).ConfigureAwait(false);
-                }
-                else if (!existed && File.Exists(target))
-                {
-                    File.Delete(target);
-                }
-            }
-            catch { }
-        }
-        CleanupDirectories(createdDirectories);
+        return record;
     }
 
     internal static void BuildDeploymentPlan(
@@ -718,12 +711,4 @@ public sealed partial class OptiScalerDeploymentService
             catch { }
         }
     }
-
-    private sealed record ReShadeMigration(
-        LinuxDeploymentRecord Record,
-        LinuxDeployedFile File,
-        string OldPath,
-        string? OldHash,
-        string NewPath,
-        WineOverrideRecord? TransferredOverride);
 }

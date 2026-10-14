@@ -95,8 +95,10 @@ public sealed partial class OptiScalerFgStackDlssgTests
         Assert.Equal(Dlssg(0x6F), File.ReadAllBytes(interposer + ".original"));
     }
 
+    // w3/dllnames phase B (#23, #31): the disable is journaled, so a failure part-way puts the whole stack back (it used
+    // to save the progress and leave half a stack) and a retry completes.
     [Fact]
-    public async Task DisableFgStack_PartialFailureSavesProgressAndARetryCompletes()
+    public async Task DisableFgStack_FailurePartWay_RollsBackTheWholeStackAndARetryCompletes()
     {
         var fx = CreateFixture("partial-disable");
         var optiScaler = Path.Combine(fx.Bin, "OptiScaler");
@@ -105,22 +107,26 @@ public sealed partial class OptiScalerFgStackDlssgTests
         Directory.CreateDirectory(Path.GetDirectoryName(dlssg)!);
         File.WriteAllBytes(dlssg, Dlssg(0x7A));
         Assert.True((await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "true")).Success);
+        var deployedDlssg = File.ReadAllBytes(dlssg);
+        var recordBefore = File.ReadAllText(fx.RecordsPath);
 
         // Longer paths go first: the Streamline files (incl. the kept dlssg) are handled, then
-        // deleting OptiScaler/dlss-enabler-headless.dll fails in the read-only folder.
+        // OptiScaler/dlss-enabler-headless.dll cannot be touched in the read-only folder.
         ComponentOperationResult failed;
         using (ReadOnly(optiScaler))
             failed = await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false");
 
         Assert.False(failed.Success);
         Assert.Contains(DlssEnablerFile, failed.Message);
-        Assert.Equal(Dlssg(0x7A), File.ReadAllBytes(dlssg));
-        Assert.False(File.Exists(dlssg + ".original"));
+        Assert.Equal(deployedDlssg, File.ReadAllBytes(dlssg));
+        Assert.Equal(Dlssg(0x7A), File.ReadAllBytes(dlssg + ".original"));
+        Assert.True(File.Exists(interposer));
+        Assert.True(File.Exists(Path.Combine(optiScaler, DlssEnablerFile)));
         var saved = new LinuxDeploymentRecordStore(fx.RecordsPath).Find(fx.Game, ManagedComponentKind.OptiScaler)!;
-        Assert.DoesNotContain(saved.Files, file => file.Path == dlssg || file.Path == interposer);
-        Assert.DoesNotContain(DlssgRelative, OwnedStackFiles(saved));
-        Assert.DoesNotContain("OptiScaler/Streamline/sl.interposer.dll", OwnedStackFiles(saved));
-        Assert.Contains("OptiScaler/" + DlssEnablerFile, OwnedStackFiles(saved));
+        Assert.Contains(saved.Files, file => file.Path == dlssg);
+        Assert.Contains(DlssgRelative, OwnedStackFiles(saved));
+        Assert.Equal(recordBefore, File.ReadAllText(fx.RecordsPath));
+        Assert.Empty(Directory.GetFiles(fx.Bin, "*.rhi-*", SearchOption.AllDirectories));
 
         var retry = await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "false");
 
@@ -133,7 +139,7 @@ public sealed partial class OptiScalerFgStackDlssgTests
     }
 
     [Fact]
-    public async Task RemoveOptiScaler_PartialFailureSavesProgressAndARetryCompletes()
+    public async Task RemoveOptiScaler_FailurePartWay_RollsBackEverythingAndARetryCompletes()
     {
         var fx = CreateFixture("partial-remove");
         var optiScaler = Path.Combine(fx.Bin, "OptiScaler");
@@ -141,17 +147,21 @@ public sealed partial class OptiScalerFgStackDlssgTests
         Directory.CreateDirectory(Path.GetDirectoryName(dlssg)!);
         File.WriteAllBytes(dlssg, Dlssg(0x7B));
         Assert.True((await fx.Service.SetAdvancedSettingAsync(fx.Game, OptiScalerDeploymentService.DeployStreamlineDlssEnablerSettingId, "true")).Success);
+        var deployedDlssg = File.ReadAllBytes(dlssg);
 
         ComponentOperationResult failed;
         using (ReadOnly(optiScaler))
             failed = await fx.Service.RemoveAsync(fx.Game);
 
         Assert.False(failed.Success);
-        Assert.Equal(Dlssg(0x7B), File.ReadAllBytes(dlssg));
-        Assert.False(File.Exists(dlssg + ".original"));
+        Assert.StartsWith(OptiScalerDeploymentService.RemovalFailedPrefix, failed.Message);
+        Assert.Equal(deployedDlssg, File.ReadAllBytes(dlssg));
+        Assert.Equal(Dlssg(0x7B), File.ReadAllBytes(dlssg + ".original"));
+        Assert.True(File.Exists(Path.Combine(optiScaler, DlssEnablerFile)));
         var saved = new LinuxDeploymentRecordStore(fx.RecordsPath).Find(fx.Game, ManagedComponentKind.OptiScaler)!;
-        Assert.DoesNotContain(saved.Files, file => file.Path == dlssg);
-        Assert.DoesNotContain(DlssgRelative, OwnedStackFiles(saved));
+        Assert.Contains(saved.Files, file => file.Path == dlssg);
+        Assert.Contains(DlssgRelative, OwnedStackFiles(saved));
+        Assert.Empty(Directory.GetFiles(fx.Bin, "*.rhi-*", SearchOption.AllDirectories));
 
         var retry = await fx.Service.RemoveAsync(fx.Game);
 

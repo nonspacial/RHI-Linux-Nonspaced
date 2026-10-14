@@ -194,7 +194,7 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
 
     private const string DlssEnablerFile = "dlss-enabler-headless.dll";
 
-    private Fixture CreateFixture(string name, bool withDlssg = true, OptiScalerVariant variant = OptiScalerVariant.Nightly)
+    private Fixture CreateFixture(string name, bool withDlssg = true, OptiScalerVariant variant = OptiScalerVariant.Nightly, bool journaled = false)
     {
         var root = Path.Combine(_root, name);
         var bin = Path.Combine(root, "game", "bin");
@@ -240,8 +240,11 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
             http, store, new WineDllOverrideService(),
             new StandaloneDlssEnablerPreferenceStore(Path.Combine(root, "prefs.json")),
             Path.Combine(root, "enabler-cache"));
-        var service = new OptiScalerDeploymentService(files, store, new WineDllOverrideService(), new NeverPackageProvider(), dlss, enabler);
-        return new Fixture(bin, ini, recordsPath, game, store, service, dlss);
+        // w3/dllnames phase B: a journaled fixture (crash tests) runs with the app's journal over the same ledger.
+        var journalDir = Path.Combine(root, "journal");
+        var journal = journaled ? SimulatedDeath.NewJournal(journalDir, store).Journal : null;
+        var service = new OptiScalerDeploymentService(files, store, new WineDllOverrideService(), new NeverPackageProvider(), dlss, enabler, journal);
+        return new Fixture(bin, ini, recordsPath, game, store, service, dlss) { Journal = journal, JournalDir = journalDir };
     }
 
     private static string[] OwnedStackFiles(LinuxDeploymentRecord record)
@@ -289,7 +292,11 @@ public sealed partial class OptiScalerFgStackDlssgTests : IDisposable
         DetectedGame Game,
         LinuxDeploymentRecordStore Store,
         OptiScalerDeploymentService Service,
-        DlssManagerService Dlss);
+        DlssManagerService Dlss)
+    {
+        public RHI.Core.Deployment.DeploymentJournal? Journal { get; init; }
+        public string JournalDir { get; init; } = "";
+    }
 
     private sealed class NeverPackageProvider : IOptiScalerPackageProvider
     {
