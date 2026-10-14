@@ -139,4 +139,9 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #161 — Library card right-click menu (PAR-D74a; upstream `6cc2b2d`, `27c66b7`, `f63579f`, `f38fb34`)
+- Ported: right-click (or the menu key / Shift+F10) on a library card selects it and opens Open folder, Favourite/Unfavourite, Hide/Show and, when the game has a note, View notes — the same commands as the detail header, no new behaviour. Open folder is disabled until the game folder is confirmed, as in the header.
+- View notes shows the upstream manifest's `gameNotes` entry for the game (upstream's card notes come from the same entry, plus the RenoDX wiki note, which the fork does not keep per card), with its link button when the entry has one.
+- Not ported here: "Discussion / Instructions" (upstream `NameUrl`; no fork data) and "Create Desktop Shortcut" (#162, parity lane: one entry in the menu's named slot in `MainWindowViewModel.CardMenuFor`).
+
 ## Parity notes (feature-parity backlog)

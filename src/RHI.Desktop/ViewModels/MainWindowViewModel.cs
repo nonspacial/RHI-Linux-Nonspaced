@@ -2871,6 +2871,43 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusText = TF("Vm.CouldNotOpenGameFolder", UiLocalizationService.Present(error));
     }
 
+    /// <summary>The selected game has a note from the upstream manifest (View notes, Refs #161).</summary>
+    public bool SelectedGameHasNotes => !string.IsNullOrWhiteSpace(SelectedGame?.ManifestGameNote);
+
+    /// <summary>Set by the window: shows a game's notes (title, text, optional link).</summary>
+    public Func<GameNotesViewModel, Task>? ShowNotesAsync { get; set; }
+
+    [RelayCommand]
+    private async Task ViewNotesAsync()
+    {
+        if (SelectedGame is not { } game || !SelectedGameHasNotes || ShowNotesAsync is not { } show) return;
+        var url = game.ManifestGameNoteUrl;
+        await show(new GameNotesViewModel(TF("Card.NotesTitle", game.Name), game.ManifestGameNote!.Trim(),
+            string.IsNullOrWhiteSpace(url) ? null : url,
+            string.IsNullOrWhiteSpace(game.ManifestGameNoteUrlLabel) ? T("Card.OpenNotesLink") : game.ManifestGameNoteUrlLabel!));
+    }
+
+    /// <summary>
+    /// The right-click menu of a library card (Refs #161, upstream 2.8.6): opening it selects the card, then offers the
+    /// actions the detail header already has for it — Open folder, Favourite, Hide/Show — and View notes when the
+    /// game has a note. Nothing here is new behaviour; the entries run the same commands as the header buttons.
+    /// </summary>
+    public IReadOnlyList<CardMenuItem> CardMenuFor(GameRowViewModel row)
+    {
+        if (!ReferenceEquals(SelectedGame, row.Game)) SelectedGame = row.Game;
+        var game = row.Game;
+        var items = new List<CardMenuItem>
+        {
+            new("open-folder", T("Ui.OpenFolder"), OpenGameFolderCommand, IsEnabled: game.HasConfirmedPatchTarget),
+            new("favourite", FavouriteActionText, ToggleFavouriteCommand),
+            new("hide", HideActionText, ToggleHiddenCommand),
+        };
+        if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
+        // Named slot for parity's "Create shortcut" (#162): add its entry here, last, with SeparatorBefore: true.
+        // w3/parity card menu slot
+        return items;
+    }
+
     [RelayCommand]
     private void OpenPrefix()
     {
@@ -4235,6 +4272,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedEngineHint));
         NotifyHdrProfile();
         OnPropertyChanged(nameof(HasSelectedGame));
+        OnPropertyChanged(nameof(SelectedGameHasNotes));
         OnPropertyChanged(nameof(CanLaunch));
         OnPropertyChanged(nameof(LaunchToolTip));
         OnPropertyChanged(nameof(CanEditSelectedGame));

@@ -634,6 +634,9 @@ internal static class UiStrings
         // w3/parity rows
         // w3/vmsplit rows
         ("Vm.EditSavedTargetKeptPlayUsesYourCommand", "{0}: alterações salvas; o alvo de modificações salvo foi mantido. Jogar executa o comando de execução que você informou.", "{0}: changes saved; the saved modification target was kept. Play runs the launch command you entered."),
+        ("Card.ViewNotes", "Ver notas", "View notes"),
+        ("Card.NotesTitle", "Notas — {0}", "Notes — {0}"),
+        ("Card.OpenNotesLink", "Abrir link", "Open link"),
         ("Vm.RefreshQueued", "A atualização da biblioteca começa quando a operação atual terminar.", "The library refresh will start when the current operation finishes."),
         ("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", "{0}: alterações salvas; o alvo de modificações salvo foi mantido. Jogar volta a usar o comando de execução detectado.", "{0}: changes saved; the saved modification target was kept. Play uses the detected launch command again."),
         // w3/dllnames rows

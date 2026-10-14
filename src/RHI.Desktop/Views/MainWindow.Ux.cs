@@ -64,6 +64,7 @@ public sealed partial class MainWindow
             {
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
+                confirmVm.ShowNotesAsync = ShowGameNotesAsync;
             }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
