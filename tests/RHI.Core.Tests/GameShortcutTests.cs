@@ -295,11 +295,23 @@ internal static class GLibDesktopEntry
             var flags = Run(pkgConfig, ["--cflags", "--libs", "glib-2.0"]);
             if (flags is null) return null;
             var dir = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "rhi-glib-exec-" + Guid.NewGuid().ToString("N"))).FullName;
+            // Parity re-review nit 3: the build folder goes when the test run ends (or at once when the build fails).
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => DeleteBuild(dir);
             File.WriteAllText(Path.Combine(dir, "exec.c"), Source);
             var output = Path.Combine(dir, "exec");
-            if (Run(gcc, [Path.Combine(dir, "exec.c"), "-o", output, .. flags.Split(' ', StringSplitOptions.RemoveEmptyEntries)]) is null) return null;
+            if (Run(gcc, [Path.Combine(dir, "exec.c"), "-o", output, .. flags.Split(' ', StringSplitOptions.RemoveEmptyEntries)]) is null)
+            {
+                DeleteBuild(dir);
+                return null;
+            }
             return _tool = output;
         }
+    }
+
+    private static void DeleteBuild(string dir)
+    {
+        try { Directory.Delete(dir, recursive: true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
     }
 
     private static string? Run(string tool, IEnumerable<string> args)
