@@ -93,6 +93,18 @@ public sealed class RtxEncoreAppTests
     }
 
     [Fact]
+    public async Task WithoutAConfirmedPatchTarget_ItIsStillHiddenWhereItCannotApply()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = EligibleGame(fx, "Unconfirmed", GraphicsApi.DirectX9);
+        game.RequiresExplicitPatchTarget = true;
+        game.BinaryDirectory = null;
+        Assert.False(game.HasConfirmedPatchTarget);
+
+        Assert.False(ComponentRowViewModel.IsShown(Row(Decorated(fx, game), ManagedComponentKind.RtxEncore)));
+    }
+
+    [Fact]
     public async Task AnRtxEncoreRhiDidNotInstall_StaysListed_ProtectedAndWithoutSettings()
     {
         using var fx = await ViewModelFixture.StartAsync([]);

@@ -172,6 +172,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 continue;
             }
 
+            // w4/encore (#158): hidden where it cannot apply, with or without a confirmed patch target (never RHI's own install).
+            if (component.Kind == ManagedComponentKind.RtxEncore && component.Availability == ComponentAvailability.Available
+                && Find(ManagedComponentKind.RtxEncore) is null && HideRtxEncore(game, component, components))
+                continue;
+
             if (!game.HasConfirmedPatchTarget)
             {
                 component.ActionAllowed = false;
@@ -841,17 +846,20 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     // w4/encore (#158): RTX Encore's row before install. Hidden (Unsupported) where it cannot apply: not a 64-bit Windows
     // DX11/DX12/Vulkan game, or a game without its own DLSS (everything RTX Encore can do under Proton works through it).
-    private void DecorateRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
+    private bool HideRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
     {
         var gameHasDlss = components.Any(c => c.Kind == ManagedComponentKind.Dlss && c.Availability == ComponentAvailability.Installed);
         var ineligible = _rtxEncore is null ? RtxEncoreDeploymentService.NotInstalledMessage : RtxEncoreDeploymentService.IneligibleReason(game, gameHasDlss);
-        if (_rtxEncore is null || ineligible is not null)
-        {
-            component.Availability = ComponentAvailability.Unsupported;
-            component.ActionAllowed = false;
-            component.Note = ineligible ?? "";
-            return;
-        }
+        if (ineligible is null) return false;
+        component.Availability = ComponentAvailability.Unsupported;
+        component.ActionAllowed = false;
+        component.Note = ineligible;
+        return true;
+    }
+
+    private void DecorateRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
+    {
+        if (_rtxEncore is null || HideRtxEncore(game, component, components)) return;
         var name = _rtxEncore.ChosenName(game);
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
         {
