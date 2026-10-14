@@ -69,13 +69,28 @@ public sealed partial class REFrameworkDeploymentServiceTests
         return fixture;
     }
 
+    // The handler builds the zip per request (release metadata, then the download): the entry's time is fixed, or a
+    // request pair straddling a 2-second DOS-time step hands out two different zips and the digest check fails.
     private static byte[] ZipOf(byte[] dll)
     {
         using var output = new MemoryStream();
         using (var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
-        using (var stream = zip.CreateEntry(REFrameworkDeploymentService.DllFileName, CompressionLevel.NoCompression).Open())
+        {
+            var entry = zip.CreateEntry(REFrameworkDeploymentService.DllFileName, CompressionLevel.NoCompression);
+            entry.LastWriteTime = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            using var stream = entry.Open();
             stream.Write(dll);
+        }
         return output.ToArray();
+    }
+
+    [Fact]
+    public async Task FixtureZip_IsTheSameBytesWhenBuiltAgainLater()
+    {
+        var payload = MakePePayload(0x8664, 4096);
+        var first = ZipOf(payload);
+        await Task.Delay(2100); // past the next DOS-time step
+        Assert.Equal(first, ZipOf(payload));
     }
 
     private static byte[] Variant(byte[] payload, byte marker)
