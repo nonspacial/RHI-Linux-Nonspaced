@@ -12,6 +12,7 @@ using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Hdr;
+using RHI.Platform.Linux.Launch;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
 using RHI.Platform.Linux.Settings;
@@ -1603,12 +1604,41 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var game = row.Game;
         var items = new List<CardMenuItem>();
         if (game.HasConfirmedPatchTarget) items.Add(new("open-folder", T("Ui.OpenFolder"), OpenGameFolderCommand));
+        // w3/scan (#90): a PartingX title with a breadcrumb "show" entry point opens its page in PartingX.
+        if (XboxCardActions.ShowInOwningAppLabel(game) is { } showLabel)
+            items.Add(new("show-in-owning-app", showLabel, new AsyncRelayCommand(() => ShowInOwningAppAsync(game))));
         items.Add(new("favourite", FavouriteActionText, ToggleFavouriteCommand));
         items.Add(new("hide", HideActionText, ToggleHiddenCommand));
         if (SelectedGameHasNotes) items.Add(new("notes", T("Card.ViewNotes"), ViewNotesCommand, SeparatorBefore: true));
-        // Named slot for parity's "Create shortcut" (#162): add its entry here, last, with SeparatorBefore: true.
-        // w3/parity card menu slot
+        // w3/parity card menu slot: Create shortcut (#162; only from this explicit choice, owner decision) and the game's
+        // Nexus Mods page (#99; only when the manifest names one). Both are left out where they do not apply.
+        var separated = false;
+        if (Parity is { } parity)
+        {
+            items.Add(new("create-shortcut", T("Parity.ShortcutCreate"), CardMenuItem.OpensSubmenu, SeparatorBefore: true,
+                Children:
+                [
+                    new("shortcut-desktop", T("Parity.ShortcutOnDesktopItem"), new AsyncRelayCommand(async () => StatusText = await parity.Shortcuts.CreateAsync(game, ShortcutPlace.Desktop))),
+                    new("shortcut-menu", T("Parity.ShortcutInMenuItem"), new AsyncRelayCommand(async () => StatusText = await parity.Shortcuts.CreateAsync(game, ShortcutPlace.ApplicationsMenu)))
+                ],
+                Tip: T("Parity.ShortcutTip")));
+            separated = true;
+        }
+        if (NexusLinkPresenter.PageFor(game) is { } nexusUrl)
+            items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
         return items;
+    }
+
+    private async Task ShowInOwningAppAsync(DetectedGame game)
+    {
+        if (_launcher is not LinuxGameLauncher launcher) return;
+        if (await XboxCardActions.ShowInOwningAppAsync(game, launcher) is { } refused) StatusText = refused;
+    }
+
+    private void OpenNexusPage(string url)
+    {
+        if (!LinuxDesktopOpener.TryOpenUri(url, out var error))
+            StatusText = TF("Parity.LinkNotOpened", UiLocalizationService.Present(error));
     }
 
     [RelayCommand]

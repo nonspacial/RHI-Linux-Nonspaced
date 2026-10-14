@@ -54,18 +54,27 @@ public partial class MainWindow
         foreach (var entry in vm.CardMenuFor(row))
         {
             if (entry.SeparatorBefore && menu.Items.Count > 0) menu.Items.Add(new Separator());
-            var item = new MenuItem
-            {
-                Header = entry.Label,
-                Command = entry.Command,
-                Name = "CardMenu-" + entry.Id
-            };
-            item.Classes.Add(OverflowMenuClass);
-            menu.Items.Add(item);
+            menu.Items.Add(CardMenuEntry(entry));
         }
         menu.Closed += (_, _) => { if (ReferenceEquals(OpenCardMenu, menu)) OpenCardMenu = null; };
         OpenCardMenu = menu;
         menu.ShowAt(anchor, showAtPointer: atPointer);
+    }
+
+    private static MenuItem CardMenuEntry(CardMenuItem entry)
+    {
+        var item = new MenuItem { Header = entry.Label, Name = "CardMenu-" + entry.Id };
+        item.Classes.Add(OverflowMenuClass);
+        if (entry.Children is { Count: > 0 } children)
+            foreach (var child in children) item.Items.Add(CardMenuEntry(child));
+        else
+            item.Command = entry.Command;
+        if (entry.Tip is { } tip)
+        {
+            ToolTip.SetTip(item, tip);
+            ToolTip.SetShowDelay(item, MiddleEllipsisText.TooltipDelay);
+        }
+        return item;
     }
 
     /// <summary>View notes: the game's note in a small scrolling dialog, with its link when the manifest gives one.</summary>

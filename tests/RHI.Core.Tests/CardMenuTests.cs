@@ -126,6 +126,58 @@ public sealed class CardMenuTests : IDisposable
         finally { UiLocalizationService.Apply("en-US"); }
     }
 
+    [Fact]
+    public async Task ShowInPartingX_IsOfferedOnlyForATitleWithAShowEntryPoint()
+    {
+        var xbox = Game("Xbox Quest");
+        xbox.XboxPackage = new XboxPackageInfo("9ABC", "PartingX", null, null, ShowArgv: ["/opt/partingx/run.sh", "--show", "9ABC"]);
+        var noShow = Game("Opener Quest");
+        noShow.XboxPackage = new XboxPackageInfo("9DEF", "PartingX", "'/opt/partingx/run.sh'", null);
+        using var fx = await ViewModelFixture.StartAsync([xbox, noShow, Game("Plain Quest")]);
+
+        var menu = fx.Vm.CardMenuFor(Row(fx, "Xbox Quest"));
+
+        var show = Assert.Single(menu, i => i.Id == "show-in-owning-app");
+        Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningApp", "PartingX"), show.Label);
+        Assert.Equal(["open-folder", "show-in-owning-app", "favourite", "hide"], menu.Select(i => i.Id));
+        Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Opener Quest")), i => i.Id == "show-in-owning-app");
+        Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "show-in-owning-app");
+    }
+
+    [Fact]
+    public async Task ParityEntries_CreateShortcutSubmenu_AndNexusPageOnlyWhereTheManifestNamesOne()
+    {
+        var nexus = Game("Nexus Quest");
+        nexus.NexusUrlOverride = "https://www.nexusmods.com/games/nexusquest";
+        using var fx = await ViewModelFixture.StartAsync([nexus, Game("Plain Quest")]);
+        Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id is "create-shortcut" or "nexus-page"); // built without parity
+        using var http = new HttpClient(new OfflineHandler());
+        var wine = new RHI.Platform.Linux.Deployment.WineDllOverrideService();
+        var services = RHI.Desktop.AppComposition.Create(http,
+            new RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore(Path.Combine(_root, "app-records.json")), wine,
+            RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(wine, Path.Combine(_root, "journal")));
+        fx.Vm.Parity = services.Parity;
+
+        var plain = fx.Vm.CardMenuFor(Row(fx, "Plain Quest"));
+        var noted = fx.Vm.CardMenuFor(Row(fx, "Nexus Quest"));
+
+        var shortcut = Assert.Single(plain, i => i.Id == "create-shortcut");
+        Assert.True(shortcut.SeparatorBefore);
+        Assert.Equal(["shortcut-desktop", "shortcut-menu"], shortcut.Children!.Select(i => i.Id));
+        Assert.Equal(UiLocalizationService.Text("Parity.ShortcutCreate"), shortcut.Label);
+        Assert.DoesNotContain(plain, i => i.Id == "nexus-page");
+        Assert.Equal(["open-folder", "favourite", "hide", "create-shortcut", "nexus-page"], noted.Select(i => i.Id));
+        var page = noted.Single(i => i.Id == "nexus-page");
+        Assert.Equal("https://www.nexusmods.com/games/nexusquest", page.Tip);
+        Assert.False(page.SeparatorBefore); // one separator before the parity group
+    }
+
+    private sealed class OfflineHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new HttpRequestException("offline test");
+    }
+
     private static GameRowViewModel Row(ViewModelFixture fx, string name) => fx.Vm.Games.Single(row => row.Name == name);
 
     private static string LinuxGameLibraryStoreKey(ViewModelFixture fx, string name)
