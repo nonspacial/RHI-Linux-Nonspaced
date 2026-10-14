@@ -993,6 +993,27 @@ public static class UiLocalizationService
         ("RE Framework update rolled back: ", "A atualização do RE Framework foi desfeita: "),
         // ShortFuse removed; the ASI Loader it installed could not be (it is removed last, as its own operation).
         (RHI.Platform.Linux.Deployment.ShortFuseDeploymentService.UalKeptPrefix, "O Ultimate ASI Loader instalado pelo ShortFuse continua instalado (remova-o separadamente): "),
+        // Review w3-journal #4/#8: removal, install and update failures of the journaled services and ShortFuse's success
+        // lines (the one without "UAL state" when the ASI Loader stays installed). The name comes first, so the generic
+        // tails read "<component>: …".
+        (RHI.Platform.Linux.Deployment.DofFixDeploymentService.RemovalRolledBackPrefix, "A remoção do DOF Fix falhou e foi desfeita: "),
+        (RHI.Platform.Linux.Deployment.RenoDxUpgradeDeploymentService.RemovalRolledBackPrefix, "A remoção do RenoDX Upgrade falhou e foi desfeita: "),
+        (RHI.Platform.Linux.Deployment.ShortFuseDeploymentService.RemovalFailedPrefix,
+         "A remoção do ShortFuse falhou; o estado instalado de ShortFuse/ReShade/INI/registro foi restaurado a partir das cópias da transação onde possível: "),
+        (RHI.Platform.Linux.Deployment.ShortFuseDeploymentService.RemovedMessage,
+         "ShortFuse removido. O RHI restaurou os arquivos DLSS/Streamline anteriores, o nome do ReShade, os valores do reshade.ini, o estado do UAL e a posse do override Wine do ReShade."),
+        (RHI.Platform.Linux.Deployment.ShortFuseDeploymentService.RemovedUalKeptMessage,
+         "ShortFuse removido. O RHI restaurou os arquivos DLSS/Streamline anteriores, o nome do ReShade, os valores do reshade.ini e a posse do override Wine do ReShade."),
+        (" removal failed and was rolled back as far as possible: ", ": a remoção falhou e foi desfeita na medida do possível: "),
+        (" update failed and was rolled back as far as possible: ", ": a atualização falhou e foi desfeita na medida do possível: "),
+        (" install failed and was rolled back as far as possible: ", ": a instalação falhou e foi desfeita na medida do possível: "),
+        (" install rolled back: ", ": a instalação foi desfeita: "),
+        (" removal failed: ", ": a remoção falhou: "),
+        (" install failed: ", ": a instalação falhou: "),
+        ("Ultimate ASI Loader update failed: ", "Falha na atualização do Ultimate ASI Loader: "),
+        ("ReShade Addon Manager failed: ", "Falha no ReShade Addon Manager: "),
+        ("Protected modified file: ", "Arquivo modificado protegido: "),
+        (" no longer matches the RHI-managed hash, so it was not deleted.", " não confere mais com o hash gerenciado pelo RHI, por isso não foi apagado."),
         // Start-up recovery of a rolled-back removal puts a restored Wine override back after Wine exits.
         (RHI.Platform.Linux.Deployment.WineOverrideReapplyCompensator.DeferredPrefix,
          "O Wine está em execução neste prefixo e sobrescreveria a alteração ao sair; por isso este override do Wine será reaplicado na próxima inicialização: "),

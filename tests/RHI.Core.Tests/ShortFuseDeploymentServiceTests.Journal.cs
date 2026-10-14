@@ -118,6 +118,9 @@ public sealed partial class ShortFuseDeploymentServiceTests
 
         Assert.True(remove.Success, remove.Message);
         Assert.Contains(ShortFuseDeploymentService.UalKeptPrefix, remove.Message, StringComparison.Ordinal);
+        // Review w3-journal #8: the success line no longer claims the UAL state was restored when the loader stays.
+        Assert.StartsWith(ShortFuseDeploymentService.RemovedUalKeptMessage, remove.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("UAL state", remove.Message, StringComparison.Ordinal);
         Assert.Null(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
         // ReShade's record follows its file back to its name in the same ledger write as the ShortFuse record's removal.
         Assert.Equal(Path.Combine(fixture.Bin, "dxgi.dll"), ctx.Records.Find(fixture.Game, ManagedComponentKind.ReShade)!.Files.Single().Path);

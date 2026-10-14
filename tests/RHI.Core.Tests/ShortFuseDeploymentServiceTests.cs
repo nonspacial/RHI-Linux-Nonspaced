@@ -243,6 +243,7 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
 
         var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
+        Assert.StartsWith(ShortFuseDeploymentService.RemovedMessage, remove.Message, StringComparison.Ordinal); // UAL removed too
         Assert.True(File.Exists(reshadePath));
         Assert.Equal(reshadeBytes, File.ReadAllBytes(reshadePath));
         Assert.False(File.Exists(asi));

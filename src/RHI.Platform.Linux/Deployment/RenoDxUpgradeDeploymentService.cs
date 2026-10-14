@@ -165,6 +165,9 @@ public sealed class RenoDxUpgradeDeploymentService
         return ComponentOperationResult.Ok($"RenoDX Upgrade snapshot installed → {target}", target);
     }
 
+    /// <summary>Fixed text of a failed, rolled-back removal (PT-BR row under the journal anchor); the reason follows.</summary>
+    public const string RemovalRolledBackPrefix = "RenoDX Upgrade removal failed and was rolled back: ";
+
     public async Task<ComponentOperationResult> RemoveAsync(
         DetectedGame game,
         CancellationToken cancellationToken = default)
@@ -205,7 +208,7 @@ public sealed class RenoDxUpgradeDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "renodx-upgrade").ConfigureAwait(false);
-            return ComponentOperationResult.Fail($"RenoDX Upgrade removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"{RemovalRolledBackPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok("RHI-managed RenoDX Upgrade removed. User/external files were left untouched.", changed.ToArray());

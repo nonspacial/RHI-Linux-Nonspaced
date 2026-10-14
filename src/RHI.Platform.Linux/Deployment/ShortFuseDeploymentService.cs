@@ -758,22 +758,31 @@ public sealed class ShortFuseDeploymentService
             // Registry: undo exactly what this removal changed, per key (atomic, locked, refused while Wine runs).
             if (reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryRestore(game.PrefixPath, reshadeRecord!.WineOverride);
-            return ComponentOperationResult.Fail(
-                $"ShortFuse removal failed; the installed ShortFuse/ReShade/INI/registry state was restored from transaction snapshots where possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+            return ComponentOperationResult.Fail($"{RemovalFailedPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
 
         // The ASI Loader ShortFuse installed is removed last, as its own operation: if that fails, ShortFuse is gone and
         // the loader stays installed with its own record (removable on its own), never half-removed.
+        // When the loader stays, the success line does not claim its state was restored (review w3-journal #8).
         var ualNote = "";
         if (ualByUs && _ual.GetRecord(game) is not null)
         {
             var ualResult = await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false);
             if (!ualResult.Success) ualNote = $" {UalKeptPrefix}{ualResult.Message}";
         }
-        return ComponentOperationResult.Ok("ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership."
+        return ComponentOperationResult.Ok((ualNote.Length == 0 ? RemovedMessage : RemovedUalKeptMessage)
             + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack) + ualNote);
     }
+
+    /// <summary>Success line of a removal (PT-BR rows under the journal anchor).</summary>
+    public const string RemovedMessage = "ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership.";
+
+    /// <summary>Success line of a removal whose ASI Loader stays installed (<see cref="UalKeptPrefix"/> follows).</summary>
+    public const string RemovedUalKeptMessage = "ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values and ReShade Wine override ownership.";
+
+    /// <summary>Fixed text of a failed, rolled-back removal; the reason follows.</summary>
+    public const string RemovalFailedPrefix = "ShortFuse removal failed; the installed ShortFuse/ReShade/INI/registry state was restored from transaction snapshots where possible: ";
 
     /// <summary>Appended when ShortFuse was removed but the ASI Loader it installed could not be; the loader's reason follows.</summary>
     public const string UalKeptPrefix = "The Ultimate ASI Loader ShortFuse installed stays installed (remove it on its own): ";
