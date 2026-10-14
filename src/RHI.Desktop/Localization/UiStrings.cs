@@ -652,6 +652,8 @@ internal static class UiStrings
         ("Scan.XboxFoldersAdd", "Adicionar pasta…", "Add folder…"),
         ("Scan.WhatXboxFolders", "a lista de pastas do Xbox / Game Pass", "the Xbox / Game Pass folder list"),
         ("Scan.InstallerAppName", "app que o instalou", "the app that installed it"),
+        ("Scan.XboxFoldersIntro", "O RHI lista os jogos do Xbox e do Game Pass instalados no Linux. O Xodus, um futuro cliente do Game Pass para Linux, é uma forma de instalá-los; jogos em ~/Games são encontrados automaticamente. Adicione uma pasta aqui só se seus jogos estiverem em outro lugar.", "RHI lists the Xbox and Game Pass games installed on Linux. Xodus, an upcoming Game Pass client for Linux, is one way to install them; games in ~/Games are found automatically. Add a folder here only if your games are somewhere else."),
+        ("Scan.XodusLink", "Xodus no GitHub", "Xodus on GitHub"),
         ("Scan.ShowInOwningApp", "Mostrar no {0}", "Show in {0}"),
         ("Scan.ShowInOwningAppExited", "Não foi possível abrir o {0}: ele terminou com o código {1}.", "Could not open {0}: it exited with code {1}."),
         ("Scan.ShowInOwningAppExited2", "Não foi possível abrir o {0}: ele terminou com o código {1}: {2}", "Could not open {0}: it exited with code {1}: {2}"),

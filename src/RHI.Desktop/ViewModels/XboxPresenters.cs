@@ -86,7 +86,13 @@ public sealed class XboxFoldersPresenter
 
     public event Action? Changed;
 
+    /// <summary>Xodus' project page (the upcoming Linux Game Pass client the tab's description names).</summary>
+    public const string XodusUrl = "https://github.com/xodus-gaming/xodus";
+
     public static string Label => UiLocalizationService.Text("Scan.XboxFoldersLabel");
+    /// <summary>The tab's plain description: what is listed, Xodus as an upcoming client, when to add a folder.</summary>
+    public static string Intro => UiLocalizationService.Text("Scan.XboxFoldersIntro");
+    public static string XodusLinkText => UiLocalizationService.Text("Scan.XodusLink");
     public static string ToolTip => UiLocalizationService.Text("Scan.XboxFoldersTip");
     public static string AddText => UiLocalizationService.Text("Scan.XboxFoldersAdd");
     public static string RemoveText => UiLocalizationService.Text("Vm.Remove");

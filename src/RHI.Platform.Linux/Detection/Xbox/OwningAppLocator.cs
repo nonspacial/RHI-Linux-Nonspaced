@@ -1,3 +1,4 @@
+using RHI.Platform.Linux.Paths;
 using System.Text.Json;
 using RHI.Core.Services;
 
@@ -15,14 +16,14 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
 {
     public static OwningAppLocator FromEnvironment(string home, string dataHome)
     {
-        var dataDirs = (Environment.GetEnvironmentVariable("XDG_DATA_DIRS") is { Length: > 0 } dirs ? dirs : "/usr/local/share:/usr/share")
+        var dataDirs = (LinuxPaths.Environment("XDG_DATA_DIRS") is { Length: > 0 } dirs ? dirs : "/usr/local/share:/usr/share")
             .Split(':', StringSplitOptions.RemoveEmptyEntries);
         var applications = new[] { dataHome, Path.Combine(dataHome, "flatpak", "exports", "share"), "/var/lib/flatpak/exports/share" }
             .Concat(dataDirs)
             .Select(dir => Path.Combine(dir, "applications"))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var path = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+        var path = (LinuxPaths.Environment("PATH") ?? string.Empty)
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Append(Path.Combine(home, ".local", "bin"))
             .Distinct(StringComparer.Ordinal)
