@@ -918,6 +918,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return T("Vm.WindowsReShadeSettingsNotAppliedNative");
         if (!SelectedGame.HasConfirmedPatchTarget)
             return T("Vm.SetTargetGameExecutableEditGame");
+        if (XboxWriteGate.Refusal(SelectedGame) is { } xbox) return UiLocalizationService.Present(xbox); // w3/scan hook (Refs #90)
         if (CurrentAnalysis is not { } probe ||
             !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
                 component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))

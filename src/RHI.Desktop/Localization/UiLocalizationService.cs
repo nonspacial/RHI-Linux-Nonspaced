@@ -982,6 +982,7 @@ public static class UiLocalizationService
         // w3/scan rows
         ("PartingX is working on this game (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O PartingX está trabalhando neste jogo (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
         ("PartingX's job list could not be read, so RHI cannot tell whether PartingX is changing this game. File: ", "Não foi possível ler a lista de tarefas do PartingX, então o RHI não sabe se o PartingX está alterando este jogo. Arquivo: "),
+        ("PartingX owns this game, but RHI does not know which PartingX instance installed it, so it cannot tell whether PartingX is changing it. Nothing was changed. Start that PartingX once, or add its folder in Settings → PartingX / Xbox folders. Folder: ", "Este jogo pertence ao PartingX, mas o RHI não sabe qual instância do PartingX o instalou, então não sabe se o PartingX está alterando o jogo. Nada foi alterado. Abra esse PartingX uma vez ou adicione a pasta dele em Configurações → Pastas do PartingX / Xbox. Pasta: "),
         ("RHI never changes this file of an Xbox package: the game would no longer start, or PartingX/Xodus would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o PartingX/Xodus o restauraria. Arquivo: "),
         // w3/parity rows
         // w3/vmsplit rows

@@ -296,7 +296,7 @@ public sealed class DeploymentOperation : IAsyncDisposable
     /// about to change, so it ends the operation's cancellable phase (<see cref="OperationCancellation.BeginWrites"/>).
     /// </summary>
     public Task TrackFileAsync(string path, CancellationToken cancellationToken = default, bool includeBackup = true)
-        => Files.TrackWithSnapshotAsync(RHI.Core.Services.PackageFileProtection.Checked(path), OperationCancellation.BeginWrites(cancellationToken), includeBackup); // w3/scan hook: Xbox package files (Refs #90)
+        => Files.TrackWithSnapshotAsync(RHI.Core.Services.XboxWriteGate.Checked(path), OperationCancellation.BeginWrites(cancellationToken), includeBackup); // w3/scan hook: Xbox package files (Refs #90)
 
     /// <summary>Journals how to undo a side effect; call before making it. Ends the cancellable phase.</summary>
     public async Task AddCompensationAsync(string kind, string data, CancellationToken cancellationToken = default)

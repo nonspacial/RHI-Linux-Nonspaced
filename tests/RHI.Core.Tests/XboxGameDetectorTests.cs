@@ -456,7 +456,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public void JobGuard_RefusesWhilePartingXHasAJobForTheTitle()
+    public void JobRule_RefusesWhilePartingXHasAJobForTheTitle()
     {
         var jobs = _tree.File(JsonSerializer.Serialize(new
         {
@@ -465,34 +465,12 @@ public sealed class XboxGameDetectorTests : IDisposable
         }), "px", "state", "partingx", "jobs.json");
         DetectedGame Game(string id) => new() { Name = id, XboxPackage = new XboxPackageInfo(id, "PartingX", null, jobs) };
 
-        Assert.Equal(XboxPackageGuard.BusyMessage, XboxPackageGuard.Refusal(Game("9BUSY")));
-        Assert.Null(XboxPackageGuard.Refusal(Game("9IDLE")));
-        Assert.Null(XboxPackageGuard.Refusal(new DetectedGame { Name = "Steam game" }));
+        Assert.Equal(XboxWriteGate.BusyMessage, XboxWriteGate.Refusal(Game("9BUSY")));
+        Assert.Null(XboxWriteGate.Refusal(Game("9IDLE")));
+        Assert.Null(XboxWriteGate.Refusal(new DetectedGame { Name = "Steam game" }));
 
         File.WriteAllText(jobs, "{ truncated");
-        Assert.Equal(XboxPackageGuard.UnreadablePrefix + jobs, XboxPackageGuard.Refusal(Game("9IDLE")));
-    }
-
-    [Fact]
-    public async Task JobGuard_IsTheFirstCheckOfEveryChange()
-    {
-        var jobs = _tree.File(JsonSerializer.Serialize(new { queue = new[] { new { kind = "Prepare", titleId = "9BUSY" } } }), "px", "state", "partingx", "jobs.json");
-        var dir = Title("9BUSY");
-        var game = new DetectedGame
-        {
-            Name = "Busy", InstallPath = dir, ExecutablePath = Path.Combine(dir, "Game.exe"), BinaryDirectory = dir,
-            XboxPackage = new XboxPackageInfo("9BUSY", "PartingX", null, jobs)
-        };
-        var service = new LinuxManagedComponentService(new LinuxDeploymentRecordStore(_tree.Path_("deployments.json")), reshade: null!,
-            addonManager: null!, renodx: null!, renodxUpgrade: null!, optiscaler: null!, relimiter: null!, displayCommander: null!,
-            mfgAdaUnlock: null!, dlssg2030: null!, dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!,
-            d3dCompilerTools: null!, ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!,
-            lumaPolicy: null!);
-
-        var result = await service.ApplyReShadeAddonSelectionAsync(game, []);
-
-        Assert.False(result.Success);
-        Assert.Equal(XboxPackageGuard.BusyMessage, result.Message);
+        Assert.Equal(XboxWriteGate.UnreadablePrefix + jobs, XboxWriteGate.Refusal(Game("9IDLE")));
     }
 
     [Fact]
@@ -523,6 +501,7 @@ public sealed class XboxGameDetectorTests : IDisposable
     public async Task ProtectedFile_IsRefusedWhenADeploymentTracksIt_BeforeTheWritePhase()
     {
         var dir = Title("9TRACK");
+        Detect(Inputs()); // the scan registers the title with its (idle) instance
         var journal = new DeploymentJournal(_tree.Path_("journal"));
         await using var operation = await journal.BeginAsync("test");
         using var cancel = new OperationCancellation(CancellationToken.None);

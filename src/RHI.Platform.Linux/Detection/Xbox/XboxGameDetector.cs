@@ -142,6 +142,8 @@ public sealed class XboxGameDetector : IGameDetector
         game.CompatibilityTool = environment.RuntimeName;
         game.CompatibilityLayerType = environment.Prefix is null ? null : "wine";
         game.Runner = environment.RuntimeName is null ? PartingXApp : $"{PartingXApp} · {environment.RuntimeName}";
+        // Writes into the payload folder or the title environment are checked against this instance's job list.
+        XboxWriteGate.Register(game.XboxPackage!, install.Directory, environment.Prefix is null ? null : Path.GetDirectoryName(environment.Prefix));
         return game;
     }
 
@@ -157,6 +159,7 @@ public sealed class XboxGameDetector : IGameDetector
         var game = Card(name, dir, package.HasExecutable ? package : null, ownedByPartingX ? PartingXApp : XodusApp,
             package.StoreId, ownedByPartingX ? null : xodusCommand, jobsFile: null);
         game.Runner = ownedByPartingX ? PartingXApp : XodusApp;
+        XboxWriteGate.Register(game.XboxPackage!, dir);
         return game;
     }
 

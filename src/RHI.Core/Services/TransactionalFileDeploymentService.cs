@@ -30,6 +30,7 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
     {
         var precheck = CheckReplaceInputs(sourcePath, targetPath);
         if (precheck is not null) return precheck;
+        if (XboxWriteGate.Refusal(targetPath) is { } xbox) return new(false, targetPath, null, xbox); // w3/scan hook (Refs #90)
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
         var outcome = await RunAsync($"replace {targetPath}", async set =>
@@ -48,6 +49,7 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
         var backupPath = targetPath + BackupExtension;
         if (!File.Exists(backupPath))
             return new(false, targetPath, null, "No .original backup exists.");
+        if (XboxWriteGate.Refusal(targetPath) is { } xbox) return new(false, targetPath, null, xbox); // w3/scan hook (Refs #90)
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
         var outcome = await RunAsync($"restore {targetPath}", async set =>
@@ -67,6 +69,9 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
     {
         var requested = files.ToArray();
         if (requested.Length == 0) return new(true, Array.Empty<FileDeploymentResult>());
+        // The whole batch is refused before anything changes (Refs #90).
+        if (XboxWriteGate.Refusal(requested.Select(file => file.Target)) is { } xbox) // w3/scan hook
+            return new(false, Array.Empty<FileDeploymentResult>(), xbox);
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
         var results = new List<FileDeploymentResult>(requested.Length);
@@ -106,6 +111,8 @@ public sealed class TransactionalFileDeploymentService : IFileDeploymentService
             if (!File.Exists(target + BackupExtension))
                 return new(false, Array.Empty<FileDeploymentResult>(), $"No .original backup exists for {target}.");
         }
+        if (XboxWriteGate.Refusal(requested) is { } xbox) // w3/scan hook (Refs #90)
+            return new(false, Array.Empty<FileDeploymentResult>(), xbox);
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
 
         var results = new List<FileDeploymentResult>(requested.Length);

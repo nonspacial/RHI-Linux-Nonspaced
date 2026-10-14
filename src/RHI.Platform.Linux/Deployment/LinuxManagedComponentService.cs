@@ -854,7 +854,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // Every mutating entry point goes through this: an unconfirmed patch target, or records left
     // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
     private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
-        => Detection.Xbox.XboxPackageGuard.Refusal(game) is { } busy ? ComponentOperationResult.Fail(busy) // w3/scan hook (Refs #90)
+        => XboxWriteGate.Refusal(game) is { } busy ? ComponentOperationResult.Fail(busy) // w3/scan hook (Refs #90)
             : game.HasConfirmedPatchTarget
             ? _relocation.Guard(game)
             : ComponentOperationResult.Fail(

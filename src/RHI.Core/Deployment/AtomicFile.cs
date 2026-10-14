@@ -44,9 +44,16 @@ public static class AtomicFile
     public static string TempPathFor(string target, string? id = null)
         => target + TempMarker + (string.IsNullOrEmpty(id) ? Guid.NewGuid().ToString("N") : id);
 
+    /// <summary>
+    /// Every primitive here that places, replaces, renames or deletes a file passes its game-side paths through this
+    /// first: an Xbox package file RHI must never change is refused before anything is written (Refs #90,
+    /// <see cref="PackageFileProtection"/>). Store files (<see cref="WriteStoreFile"/>, <see cref="WriteNew"/>) are RHI's own.
+    /// </summary>
+    private static string Checked(string path) => PackageFileProtection.Checked(path); // w3/scan hook (Refs #90)
+
     // ---- whole-content writes -------------------------------------------------------------------
 
-    public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes) => WriteVerified(path, bytes, null, null);
+    public static void WriteAllBytes(string path, ReadOnlySpan<byte> bytes) => WriteVerified(Checked(path), bytes, null, null);
 
     /// <summary>
     /// <see cref="WriteAllBytes"/> off the calling thread: the same single write path (<see cref="WriteVerified"/>:
@@ -56,6 +63,7 @@ public static class AtomicFile
     public static Task WriteAllBytesAsync(string path, ReadOnlyMemory<byte> bytes, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Checked(path);
         return Task.Run(() => { WriteVerified(path, bytes.Span, null, null); }, cancellationToken);
     }
 
@@ -212,7 +220,7 @@ public static class AtomicFile
         string path, byte[] bytes, UserFileLinkPolicy? linkPolicy = null, Func<Stream, Stream>? wrapOutput = null,
         ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
     {
-        var target = ResolveUserFileTarget(path, linkPolicy);
+        var target = Checked(ResolveUserFileTarget(path, linkPolicy));
         if (string.IsNullOrEmpty(Path.GetDirectoryName(target))) throw new IOException(NoFolderPrefix + path);
         UnixFileMode? mode = null;
         var relockWindowsFile = false;
@@ -322,6 +330,7 @@ public static class AtomicFile
     /// <summary>Synchronous <see cref="CopyAsync"/>.</summary>
     public static string Copy(string source, string target, string? expectedSha256 = null, bool overwrite = true)
     {
+        Checked(target);
         EnsureDistinct(source, target);
         using var input = FileHash.OpenRead(source);
         var staged = StageStream(input, target, expectedSha256, null, long.MaxValue);
@@ -345,6 +354,7 @@ public static class AtomicFile
     public static async Task<StagedFile> StageCopyAsync(
         string source, string target, string? expectedSha256, string? tempId, CancellationToken cancellationToken)
     {
+        Checked(target);
         EnsureDistinct(source, target);
         await using var input = FileHash.OpenRead(source, asynchronous: true);
         return await StageStreamAsync(input, target, expectedSha256, tempId, long.MaxValue, cancellationToken).ConfigureAwait(false);
@@ -361,6 +371,7 @@ public static class AtomicFile
         Stream content, string target, string? expectedSha256, string? tempId, long maxBytes, CancellationToken cancellationToken,
         UnixFileMode? createMode = null)
     {
+        Checked(target);
         var temp = TempPathFor(target, tempId);
         try
         {
@@ -481,6 +492,7 @@ public static class AtomicFile
     /// <summary>Renames <paramref name="staged"/> onto <paramref name="target"/> and fsyncs the directory.</summary>
     public static void MoveIntoPlace(string staged, string target, bool overwrite = true)
     {
+        Checked(target);
         File.Move(staged, target, overwrite);
         FsyncDirectoryOf(target);
     }
@@ -488,6 +500,8 @@ public static class AtomicFile
     /// <summary>Durable rename within one directory (or file system): rename, then fsync both directories.</summary>
     public static void Rename(string from, string to, bool overwrite = false)
     {
+        Checked(from);
+        Checked(to);
         File.Move(from, to, overwrite);
         FsyncDirectoryOf(to);
         var fromDir = Path.GetDirectoryName(Path.GetFullPath(from));
@@ -505,6 +519,8 @@ public static class AtomicFile
     /// </summary>
     public static void MoveDurable(string from, string to)
     {
+        Checked(from);
+        Checked(to);
         if (File.Exists(to) || Directory.Exists(to))
             throw new IOException($"{MoveTargetExistsPrefix}{from} -> {to}");
         if (!SimulateCrossDeviceForTesting.Value && TryRenameNoCopy(from, to))
@@ -580,6 +596,7 @@ public static class AtomicFile
     /// <summary>Deletes a file and makes the removal durable.</summary>
     public static void Delete(string path)
     {
+        Checked(path);
         if (!File.Exists(path)) return;
         File.Delete(path);
         FsyncDirectoryOf(path);

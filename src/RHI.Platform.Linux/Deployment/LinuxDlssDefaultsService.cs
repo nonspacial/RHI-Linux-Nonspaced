@@ -179,6 +179,8 @@ public sealed class LinuxDlssDefaultsService
         defaults = defaults.Normalize();
         if (!defaults.HasAny)
             return new LinuxDlssBatchResult([]);
+        // Refs #90: refused before anything is read or downloaded; the batch reports it as this game's failure.
+        if (XboxWriteGate.Refusal(game) is { } xbox) throw new XboxTitleBusyException(xbox); // w3/scan hook
 
         var candidate = Inspect(game, indexedFiles, cancellationToken);
         if (!candidate.Eligible)
@@ -211,6 +213,7 @@ public sealed class LinuxDlssDefaultsService
         IReadOnlyList<string>? indexedFiles = null,
         CancellationToken cancellationToken = default)
     {
+        if (XboxWriteGate.Refusal(game) is { } xbox) throw new XboxTitleBusyException(xbox); // w3/scan hook (Refs #90)
         var candidate = Inspect(game, indexedFiles, cancellationToken);
         if (!candidate.Eligible)
             return new LinuxDlssBatchResult([

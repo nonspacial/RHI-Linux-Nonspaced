@@ -151,8 +151,9 @@ public sealed class WaveOneMessageLocalizationTests
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
-        yield return RHI.Platform.Linux.Detection.Xbox.XboxPackageGuard.BusyMessage;
-        yield return RHI.Platform.Linux.Detection.Xbox.XboxPackageGuard.UnreadablePrefix + "/jogos/partingx/state/partingx/jobs.json";
+        yield return RHI.Core.Services.XboxWriteGate.BusyMessage;
+        yield return RHI.Core.Services.XboxWriteGate.UnreadablePrefix + "/jogos/partingx/state/partingx/jobs.json";
+        yield return RHI.Core.Services.XboxWriteGate.UnknownInstancePrefix + "/jogos/partingx/payloads/9ABC";
         yield return RHI.Core.Services.PackageFileProtection.RefusalPrefix + "/jogos/pacotes/9ABC/Jogo.exe";
         // w3/parity rows
         // w3/vmsplit rows

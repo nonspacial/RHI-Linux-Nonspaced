@@ -45,6 +45,7 @@ public static class ManagedFileSwap
                 throw new FileNotFoundException("Swap source is missing.", source);
             if (!File.Exists(file.Path))
                 throw new InvalidOperationException($"Managed file is missing: {file.Path}. Reinstall the component instead.");
+            RHI.Core.Services.XboxWriteGate.ThrowIfRefused(file.Path); // w3/scan hook (Refs #90)
             var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(file.Sha256) &&
                 !string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
