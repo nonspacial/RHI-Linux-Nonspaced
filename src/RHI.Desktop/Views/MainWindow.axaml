@@ -251,6 +251,7 @@
             </Border>
 
             <Border x:Name="DlssStreamlineSection" Tag="DlssStreamline" Classes="card" BorderBrush="#1E4858"
+                    DataContext="{Binding Dlss}" x:DataType="vm:DlssPanelViewModel"
                     DragDrop.AllowDrop="True" DragDrop.DragOver="Section_DragOver" DragDrop.Drop="Section_Drop">
               <StackPanel Spacing="10">
                 <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">

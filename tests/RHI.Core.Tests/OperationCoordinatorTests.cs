@@ -85,10 +85,10 @@ public sealed class OperationCoordinatorTests
         var background = fx.Vm.Operations.TryBegin("background-update")!;
 
         var refused = await Assert.ThrowsAsync<OperationRefusedException>(
-            () => fx.Vm.ApplyDlssBatchAsync([game], new LinuxDlssVersionDefaults("310.1.0", "", "", "", "")));
+            () => fx.Vm.Dlss.ApplyDlssBatchAsync([game], new LinuxDlssVersionDefaults("310.1.0", "", "", "", "")));
         Assert.Equal("Another RHI operation is already running.", refused.Message);
-        await Assert.ThrowsAsync<OperationRefusedException>(() => fx.Vm.RestoreDlssBatchAsync([game]));
-        Assert.Null(await fx.Vm.GetDlssBatchCandidatesAsync());
+        await Assert.ThrowsAsync<OperationRefusedException>(() => fx.Vm.Dlss.RestoreDlssBatchAsync([game]));
+        Assert.Null(await fx.Vm.Dlss.GetDlssBatchCandidatesAsync());
         Assert.True(fx.Vm.IsBusy);
 
         background.Dispose();

@@ -151,7 +151,7 @@ public sealed partial class MainWindow : Window
         try
         {
             // Null: another operation is running or the user cancelled the analysis; the status line says which.
-            if (await vm.GetDlssBatchCandidatesAsync() is not { } found) return;
+            if (await vm.Dlss.GetDlssBatchCandidatesAsync() is not { } found) return;
             candidates = found;
         }
         catch (Exception ex)
@@ -187,12 +187,12 @@ public sealed partial class MainWindow : Window
             return IsDoNotChange(value) ? "" : value;
         }
 
-        var defaults = vm.DlssVersionDefaults;
-        var sr = VersionCombo(vm.DlssSrVersions, defaults.SuperResolution);
-        var rr = VersionCombo(vm.DlssRrVersions, defaults.RayReconstruction);
-        var fg = VersionCombo(vm.DlssFgVersions, defaults.FrameGeneration);
-        var nr = VersionCombo(vm.DlssNrVersions, defaults.NeuralRendering);
-        var sl = VersionCombo(vm.StreamlineVersions, defaults.Streamline);
+        var defaults = vm.Dlss.DlssVersionDefaults;
+        var sr = VersionCombo(vm.Dlss.DlssSrVersions, defaults.SuperResolution);
+        var rr = VersionCombo(vm.Dlss.DlssRrVersions, defaults.RayReconstruction);
+        var fg = VersionCombo(vm.Dlss.DlssFgVersions, defaults.FrameGeneration);
+        var nr = VersionCombo(vm.Dlss.DlssNrVersions, defaults.NeuralRendering);
+        var sl = VersionCombo(vm.Dlss.StreamlineVersions, defaults.Streamline);
 
         var rows = new List<(LinuxDlssBatchCandidate Candidate, CheckBox Check)>();
         var gamesPanel = new StackPanel { Spacing = 4 };
@@ -326,8 +326,8 @@ public sealed partial class MainWindow : Window
             {
                 status.Text = restoreMode ? T("Win.RestoringSelectedGames") : T("Win.ApplyingSelectedGames");
                 var result = restoreMode
-                    ? await vm.RestoreDlssBatchAsync(selected)
-                    : await vm.ApplyDlssBatchAsync(selected, chosen);
+                    ? await vm.Dlss.RestoreDlssBatchAsync(selected)
+                    : await vm.Dlss.ApplyDlssBatchAsync(selected, chosen);
                 status.Text = UiLocalizationService.Present(result.Summary);
             }
             catch (OperationRefusedException refused)
@@ -460,11 +460,11 @@ public sealed partial class MainWindow : Window
             return new ComboBox { ItemsSource = items, SelectedItem = selected, MinWidth = 230 };
         }
 
-        var defaultDlss = BuildDlssDefaultCombo(vm.DlssSrVersions, settings.DefaultDlssVersion);
-        var defaultDlssd = BuildDlssDefaultCombo(vm.DlssRrVersions, settings.DefaultDlssdVersion);
-        var defaultDlssg = BuildDlssDefaultCombo(vm.DlssFgVersions, settings.DefaultDlssgVersion);
-        var defaultDlssnr = BuildDlssDefaultCombo(vm.DlssNrVersions, settings.DefaultDlssnrVersion);
-        var defaultStreamline = BuildDlssDefaultCombo(vm.StreamlineVersions, settings.DefaultStreamlineVersion);
+        var defaultDlss = BuildDlssDefaultCombo(vm.Dlss.DlssSrVersions, settings.DefaultDlssVersion);
+        var defaultDlssd = BuildDlssDefaultCombo(vm.Dlss.DlssRrVersions, settings.DefaultDlssdVersion);
+        var defaultDlssg = BuildDlssDefaultCombo(vm.Dlss.DlssFgVersions, settings.DefaultDlssgVersion);
+        var defaultDlssnr = BuildDlssDefaultCombo(vm.Dlss.DlssNrVersions, settings.DefaultDlssnrVersion);
+        var defaultStreamline = BuildDlssDefaultCombo(vm.Dlss.StreamlineVersions, settings.DefaultStreamlineVersion);
 
         var browseScreenshots = new Button { Content = T("Win.Browse"), Padding = new Avalonia.Thickness(12, 6) };
         browseScreenshots.Click += (_, _) => RunUiSafe(async () =>
