@@ -48,7 +48,11 @@ internal sealed record PartingXBreadcrumb(
             : [.. LaunchArgv, .. entry.Select(argument => argument == StoreIdPlaceholder ? storeId : argument)];
 
     /// <summary>Every usable breadcrumb in <paramref name="directory"/>, one per state folder (newest <c>updatedAt</c>).</summary>
-    public static IReadOnlyList<PartingXBreadcrumb> ReadAll(string? directory)
+    /// <param name="reportNewerSchema">
+    /// Whether a newer-schema file is a scan warning of the calling detector: the Xbox detector's (it lists the games);
+    /// the Wine detector only borrows the folders, so it stays quiet rather than report the same file twice.
+    /// </param>
+    public static IReadOnlyList<PartingXBreadcrumb> ReadAll(string? directory, bool reportNewerSchema = true)
     {
         var crumbs = new List<PartingXBreadcrumb>();
         if (directory is null || !Directory.Exists(directory)) return crumbs;
@@ -60,7 +64,7 @@ internal sealed record PartingXBreadcrumb(
             return crumbs;
         }
         foreach (var file in files.Order(StringComparer.Ordinal))
-            if (Read(file) is { } crumb) crumbs.Add(crumb);
+            if (Read(file, reportNewerSchema) is { } crumb) crumbs.Add(crumb);
         return crumbs
             .GroupBy(crumb => PathIdentity.Canonicalize(crumb.StateDir), StringComparer.Ordinal)
             // Newest updatedAt wins; a file without one counts as oldest; equal times: the last file name.
@@ -70,7 +74,7 @@ internal sealed record PartingXBreadcrumb(
             .ToList();
     }
 
-    private static PartingXBreadcrumb? Read(string file)
+    private static PartingXBreadcrumb? Read(string file, bool reportNewerSchema)
     {
         try
         {
@@ -86,7 +90,7 @@ internal sealed record PartingXBreadcrumb(
             if (schema > SupportedSchema)
             {
                 AppLog.Warn("scan", $"PartingX instance file {file}: schema {schema}, this RHI reads {SupportedSchema}");
-                DetectorDiagnostics.Warn(NewerSchemaPrefix + file);
+                if (reportNewerSchema) DetectorDiagnostics.Warn(NewerSchemaPrefix + file);
                 return null;
             }
             if (PartingXInstance.String(root, "app") is { } app && !string.Equals(app, App, StringComparison.Ordinal))

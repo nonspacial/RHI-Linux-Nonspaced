@@ -321,13 +321,17 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         _tree.Dir("user-px", "state", "partingx");
         _tree.File(JsonSerializer.Serialize(new { payloadRoot = "/p", environmentRoot = settingsEnvs }), "user-px", "state", "partingx", "settings.json");
         WriteCrumb("i.json", Crumb(_tree.Dir("px", "state"), [_tree.Dir("px", "payloads")], null, envs));
+        // A newer-schema file is the Xbox detector's scan warning; the Wine detector does not report it a second time.
+        WriteCrumb("newer.json", Crumb(_tree.Dir("px2", "state"), [_tree.Dir("px2", "payloads")], null, schema: 2));
 
         var roots = PartingXInstance.KnownEnvironmentRoots(_crumbs, [_tree.Path_("user-px")]);
         var owned = LauncherOwnedPrefixes.Load(home, [], partingXEnvironments: roots);
-        var listed = await new WinePrefixDetector(home, [_tree.Dir("lutris")], _tree.Path_("data"), [_tree.Path_("user-px")]).DetectAsync();
+        var (listed, warnings) = await DetectorDiagnostics.CollectAsync(() =>
+            new WinePrefixDetector(home, [_tree.Dir("lutris")], _tree.Path_("data"), [_tree.Path_("user-px")]).DetectAsync());
 
         Assert.True(owned.Owns(prefix));
         Assert.True(owned.Owns(settingsPrefix)); // the user's folder names the instance folder itself
         Assert.Equal(["Free"], listed.Select(g => g.Name));
+        Assert.Empty(warnings);
     }
 }

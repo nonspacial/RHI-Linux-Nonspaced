@@ -218,7 +218,7 @@ internal sealed class PartingXInstance
     /// </summary>
     internal static IReadOnlyList<string> KnownEnvironmentRoots(string? breadcrumbDir, IEnumerable<string> stateDirs)
     {
-        var roots = PartingXBreadcrumb.ReadAll(breadcrumbDir).Select(crumb => crumb.EnvironmentRoot).ToList();
+        var roots = PartingXBreadcrumb.ReadAll(breadcrumbDir, reportNewerSchema: false).Select(crumb => crumb.EnvironmentRoot).ToList();
         foreach (var folder in stateDirs)
         {
             var settings = new[] { folder, Path.Combine(folder, "partingx"), Path.Combine(folder, "state", "partingx") }
