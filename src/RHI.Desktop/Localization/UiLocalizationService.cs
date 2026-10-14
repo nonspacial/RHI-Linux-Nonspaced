@@ -1110,6 +1110,15 @@ public static class UiLocalizationService
         ("reshade.ini was not found in the game folder.", "o reshade.ini não foi encontrado na pasta do jogo."),
         ("RenoDX is not installed by RHI on this game.", "o RenoDX não foi instalado pelo RHI neste jogo."),
         ("the value was changed outside RHI and was kept.", "o valor foi alterado fora do RHI e foi mantido."),
+        // #98 OptiPatcher.
+        (RHI.Platform.Linux.Deployment.DownloadSources.OptiPatcher.RefusalPrefix,
+            "Download recusado: links do OptiPatcher devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        (" OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado em plugins/ (LoadAsiPlugins do OptiScaler ativado). Build: "),
+        (" OptiPatcher was not deployed; OptiScaler works without it: ", " O OptiPatcher não foi implantado; o OptiScaler funciona sem ele: "),
+        ("OptiPatcher update available: ", "Atualização do OptiPatcher disponível: "),
+        ("a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.", "já existe um plugins/OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
+        ("The OptiPatcher rolling release lists no OptiPatcher.asi download.", "A versão contínua do OptiPatcher não lista o download OptiPatcher.asi."),
+        ("The downloaded OptiPatcher.asi is not a 64-bit Windows DLL.", "O OptiPatcher.asi baixado não é uma DLL Windows de 64 bits."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

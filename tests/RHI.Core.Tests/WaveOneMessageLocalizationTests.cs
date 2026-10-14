@@ -241,6 +241,11 @@ public sealed class WaveOneMessageLocalizationTests
             + ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage;
         yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoRenoDxMessage;
         yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrUserValueKeptMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherDeployedPrefix + "c3f758abcd2491a950f384efbed579152145bdca";
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiScalerDeploymentService.OptiPatcherForeignMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.ReleaseIncompleteMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.NotWindowsDllMessage;
+        yield return OptiScalerDeploymentService.OptiPatcherUpdatePrefix + "c3f758a → 4662cb0";
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
     }
 

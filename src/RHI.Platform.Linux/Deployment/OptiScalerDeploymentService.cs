@@ -46,7 +46,19 @@ public sealed partial class OptiScalerDeploymentService
     private readonly DlssManagerService? _dlss;
     private readonly StandaloneDlssEnablerDeploymentService? _dlssEnabler;
     private readonly DeploymentJournal? _journal;
+    private readonly IOptiPatcherProvider? _optiPatcher;
 
+    /// <summary>The OptiPatcher build deployed with this install (#98); absent = none (older installs, or it was unavailable).</summary>
+    internal const string OptiPatcherVersionMetadataKey = "OptiScaler.OptiPatcherVersion";
+    internal const string OptiPatcherDownloadPart = "OptiPatcher";
+    /// <summary>Where OptiScaler loads ASI plugins from (relative to the game's binary folder), as upstream.</summary>
+    internal const string OptiPatcherRelativePath = "plugins/" + OptiPatcherProvider.FileName;
+    public const string OptiPatcherDeployedPrefix = " OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ";
+    public const string OptiPatcherSkippedPrefix = " OptiPatcher was not deployed; OptiScaler works without it: ";
+    public const string OptiPatcherUpdatePrefix = "OptiPatcher update available: ";
+    public const string OptiPatcherForeignMessage = "a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.";
+
+    /// <param name="optiPatcher">OptiPatcher source (#98); null = OptiScaler alone (tests, tools).</param>
     public OptiScalerDeploymentService(
         IFileDeploymentService files,
         LinuxDeploymentRecordStore records,
@@ -54,8 +66,10 @@ public sealed partial class OptiScalerDeploymentService
         IOptiScalerPackageProvider packages,
         DlssManagerService? dlss = null,
         StandaloneDlssEnablerDeploymentService? dlssEnabler = null,
-        DeploymentJournal? journal = null)
+        DeploymentJournal? journal = null,
+        IOptiPatcherProvider? optiPatcher = null)
     {
+        _optiPatcher = optiPatcher;
         _journal = journal;
         _files = files;
         _records = records;
@@ -90,6 +104,11 @@ public sealed partial class OptiScalerDeploymentService
                     update = true;
             }
             var label = VariantLabel(variant);
+            if (!update && record.Metadata.GetValueOrDefault(OptiPatcherVersionMetadataKey) is { Length: > 0 } patcher
+                && await TryLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false) is { } latestPatcher
+                && !string.Equals(patcher, latestPatcher.Version, StringComparison.OrdinalIgnoreCase))
+                // OptiPatcher's rolling build moved on (upstream refreshes it silently): an update of this component.
+                return new ManagedUpdateCheck(true, true, OptiPatcherUpdatePrefix + $"{patcher} → {latestPatcher.Version}", record.Version, latest.Version);
             return new ManagedUpdateCheck(true, update,
                 update ? $"OptiScaler {label} update available: {record.Version ?? "unknown"} → {latest.Version}." : $"OptiScaler {label} {record.Version ?? latest.Version} is current.",
                 record.Version, latest.Version);
@@ -131,6 +150,11 @@ public sealed partial class OptiScalerDeploymentService
         {
             return ComponentOperationResult.Fail($"Could not obtain latest OptiScaler {VariantLabel(variant)} package: {ex.Message}");
         }
+        // OptiPatcher is refreshed only where this install carries it (upstream re-copies it only where it is deployed);
+        // its download failing keeps the deployed build.
+        var optiPatcher = record.Metadata.ContainsKey(OptiPatcherVersionMetadataKey)
+            ? await TryLatestOptiPatcherAsync(cancellationToken).ConfigureAwait(false)
+            : null;
 
         var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
         var proxyTarget = Path.Combine(binaryDirectory, GetProxyName(record));
@@ -139,6 +163,7 @@ public sealed partial class OptiScalerDeploymentService
         {
             BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
+            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"OptiScaler update package layout is invalid: {ex.Message}"); }
 
@@ -193,6 +218,11 @@ public sealed partial class OptiScalerDeploymentService
                 record.Metadata.Remove(DlssNrRuntimeVersionMetadataKey);
             if (package.Download is { } updateDownload) updateDownload.RecordIn(record.Metadata);
             else VerifiedDownload.Forget(record.Metadata);
+            if (optiPatcher is not null)
+            {
+                record.Metadata[OptiPatcherVersionMetadataKey] = optiPatcher.Version;
+                optiPatcher.Download.RecordIn(record.Metadata, OptiPatcherDownloadPart);
+            }
             foreach (var dir in createdDirs)
                 if (!record.DirectoriesCreatedByRhi.Contains(dir, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(dir);
             _records.Upsert(scope.Stamp(record));
@@ -289,6 +319,23 @@ public sealed partial class OptiScalerDeploymentService
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
 
+        // OptiPatcher (#98) goes with every OptiScaler install, as upstream; its download failing never fails OptiScaler.
+        var optiPatcherNote = "";
+        OptiPatcherBuild? optiPatcher = null;
+        if (_optiPatcher is not null)
+        {
+            try { optiPatcher = await _optiPatcher.GetLatestAsync(cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                optiPatcherNote = OptiPatcherSkippedPrefix + ex.Message;
+            }
+            if (optiPatcher is not null && File.Exists(OptiPatcherTarget(game.BinaryDirectory)))
+            {
+                optiPatcherNote = OptiPatcherSkippedPrefix + OptiPatcherForeignMessage;
+                optiPatcher = null;
+            }
+        }
+
         var binaryDirectory = Path.GetFullPath(game.BinaryDirectory);
         var proxyTarget = Path.Combine(binaryDirectory, proxyName);
         LinuxDeploymentRecord? migratedReShade = null;
@@ -336,6 +383,7 @@ public sealed partial class OptiScalerDeploymentService
 
             BuildDeploymentPlan(package.RootDirectory, binaryDirectory, proxyTarget, requested);
             if (nrRuntime is not null) requested.Add((nrRuntime, Path.Combine(binaryDirectory, "nvngx_dlssnr.dll")));
+            if (optiPatcher is not null) requested.Add((optiPatcher.Download.Path, OptiPatcherTarget(binaryDirectory)));
             foreach (var (_, target) in requested)
             {
                 existedBefore[target] = File.Exists(target);
@@ -355,6 +403,12 @@ public sealed partial class OptiScalerDeploymentService
             if (migratedReShade is not null)
             {
                 OptiScalerIniEditor.SetLoadReShade(binaryDirectory, true);
+                await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
+            }
+            if (optiPatcher is not null)
+            {
+                // OptiScaler loads plugins/*.asi only with LoadAsiPlugins on (upstream enforces it at install).
+                OptiScalerIniEditor.SetValue(binaryDirectory, "Plugins", "LoadAsiPlugins", "true");
                 await scope.DeclareWrittenContentAsync(Path.Combine(binaryDirectory, "OptiScaler.ini"), cancellationToken).ConfigureAwait(false);
             }
 
@@ -378,6 +432,12 @@ public sealed partial class OptiScalerDeploymentService
             if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
             record.Metadata[ProxyNameMetadataKey] = proxyName;
             package.Download?.RecordIn(record.Metadata);
+            if (optiPatcher is not null)
+            {
+                record.Metadata[OptiPatcherVersionMetadataKey] = optiPatcher.Version;
+                optiPatcher.Download.RecordIn(record.Metadata, OptiPatcherDownloadPart);
+                optiPatcherNote = OptiPatcherDeployedPrefix + optiPatcher.Version;
+            }
 
             foreach (var (_, target) in requested)
             {
@@ -409,7 +469,7 @@ public sealed partial class OptiScalerDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(
             $"OptiScaler {VariantLabel(variant)} {package.Version} installed from the official GitHub release as {proxyName}" +
-            (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled."),
+            (migratedReShade is null ? "." : "; RHI-managed ReShade was moved to ReShade64.dll and OptiScaler LoadReshade was enabled.") + optiPatcherNote,
             proxyTarget);
     }
 
@@ -432,6 +492,21 @@ public sealed partial class OptiScalerDeploymentService
            && ProxyNames.FirstOrDefault(known => known.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } valid
             ? valid
             : DefaultProxyName;
+
+    private static string OptiPatcherTarget(string binaryDirectory)
+        => Path.GetFullPath(Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));
+
+    /// <summary>The newest OptiPatcher, or null when there is no source or it cannot be had now (logged, never a failure).</summary>
+    private async Task<OptiPatcherBuild?> TryLatestOptiPatcherAsync(CancellationToken cancellationToken)
+    {
+        if (_optiPatcher is null) return null;
+        try { return await _optiPatcher.GetLatestAsync(cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("optiscaler", "OptiPatcher could not be checked or downloaded; the deployed build stays", ex);
+            return null;
+        }
+    }
 
     /// <summary>The newest nightly builds a game can be pinned to (dates, newest first).</summary>
     public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
