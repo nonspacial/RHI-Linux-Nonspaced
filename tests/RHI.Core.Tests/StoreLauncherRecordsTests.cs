@@ -57,6 +57,20 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Equal(["5266", "6145"], registry.SubkeyNames(@"software\wow6432node\ubisoft\launcher\installs"));
     }
 
+    [Fact]
+    public void RegistryReader_MatchesWholeKeyNames_AndReadsWindowsLineEnds()
+    {
+        var hive = "WINE REGISTRY Version 2\r\n\r\n" +
+                   "[Software\\\\Ubisoft\\\\LauncherOld\\\\Installs\\\\9] 1\r\n\"InstallDir\"=\"C:\\\\Old\"\r\n\r\n" +
+                   "[software\\\\ubisoft\\\\launcher] 1\r\n\"InstallDir\"=\"C:\\\\Ubi\"\r\n";
+
+        var registry = WineRegistryReader.Parse(new StringReader(hive), [@"Software\Ubisoft\Launcher"]);
+
+        Assert.Equal(@"C:\Ubi", registry.Value(@"Software\Ubisoft\Launcher", "InstallDir"));
+        Assert.Empty(registry.SubkeyNames(@"Software\Ubisoft\LauncherOld"));
+        Assert.Null(registry.Value(@"Software\Ubisoft\LauncherOld\Installs\9", "InstallDir"));
+    }
+
     // ── Windows path mapping ────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

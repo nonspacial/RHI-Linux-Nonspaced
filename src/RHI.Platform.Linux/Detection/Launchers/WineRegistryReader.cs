@@ -49,7 +49,6 @@ internal sealed class WineRegistryReader
             var newline = hive.IndexOf((byte)'\n');
             var bytes = newline < 0 ? hive : hive[..newline];
             hive = newline < 0 ? default : hive[(newline + 1)..];
-            if (!bytes.IsEmpty && bytes[^1] == (byte)'\r') bytes = bytes[..^1];
             if (bytes.IsEmpty) continue;
             if (bytes[0] == (byte)'[')
             {
@@ -72,7 +71,8 @@ internal sealed class WineRegistryReader
         return new WineRegistryReader(keys);
     }
 
-    // The raw key text starts with the spelled root and the root ends there or at a (doubled) path separator.
+    // Prefilter only (the decoded name is checked against the roots after it): the raw key text starts with the spelled
+    // root and the root ends there or at a (doubled) path separator.
     private static bool StartsWithIgnoringAsciiCase(ReadOnlySpan<byte> raw, byte[] root)
     {
         if (raw.Length < root.Length) return false;
