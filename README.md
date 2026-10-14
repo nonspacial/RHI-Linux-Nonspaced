@@ -2,21 +2,23 @@
 
 # RHI Linux
 
-### Native Linux port of RHI for Steam / Proton, Heroic, Lutris and Wine
+### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass (PartingX)
 
-[![Version](https://img.shields.io/badge/RHI%20Linux-v0.9.23.4--beta.1-0ea5e9?style=for-the-badge)](https://github.com/wizardkof/RHI-Linux)
-[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.7.5-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
-[![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/wizardkof/RHI-Linux)
+[![Fork](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-main%20%C2%B7%20based%20on%200.9.23.4--beta.1-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
+[![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.7-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
+[![Linux](https://img.shields.io/badge/Platform-Linux-f59e0b?style=for-the-badge\&logo=linux\&logoColor=white)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512bd4?style=for-the-badge\&logo=dotnet)](https://dotnet.microsoft.com/)
-[![License](https://img.shields.io/github/license/wizardkof/RHI-Linux?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/github/license/nonspacial/RHI-Linux-Nonspaced?style=for-the-badge)](LICENSE)
 
 **RHI Linux brings the RHI workflow to Linux with a native .NET 8 + Avalonia application for Windows games running through Wine and Proton.**
 
 <br>
 
 [Status](#-status) ·
+[What this fork adds](#-what-this-fork-adds) ·
 [Supported Launchers](#-supported-launchers) ·
 [Quick Start](#-quick-start) ·
+[Changes](#-changes-in-this-fork) ·
 [Compatibility](#️-compatibility) ·
 [Upstream](#-upstream) ·
 [License](#-license)
@@ -47,14 +49,15 @@
 
 ## 🚀 Status
 
-**Current public beta:** `v0.9.23.4-beta.1`
-**Upstream target:** `RHI 2.7.5`
+**This repository:** [nonspacial/RHI-Linux-Nonspaced](https://github.com/nonspacial/RHI-Linux-Nonspaced), a fork of [wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux)
+**Based on:** RHI Linux `v0.9.23.4-beta.1` (the app still reports this version; the fork has published no release of its own yet)
+**Upstream target:** `RHI 2.8.7`
 
-RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton.
+RHI Linux is a native Linux port of the RHI workflow, adapted for Windows games running through Wine and Proton. This fork continues that port: it fixes problems found in a full code review, follows upstream RHI up to 2.8.7, and adds Linux-specific safety around installs, downloads and Wine prefixes.
 
 The project targets functional parity with upstream RHI where the same functionality can be implemented reliably on Linux.
 
-This release is published as a **beta** while broader testing continues across different Linux distributions, Wine / Proton versions, GPUs, launchers and games.
+It is still a **beta** while broader testing continues across different Linux distributions, Wine / Proton versions, GPUs, launchers and games.
 
 > [!NOTE]
 > RHI Linux is a native Linux application.
@@ -68,6 +71,23 @@ This release is published as a **beta** while broader testing continues across d
 
 ---
 
+## ✨ What this fork adds
+
+Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork:
+
+* **scans large libraries quickly and in little memory.** A single Lutris entry could make the old scan read every mounted drive through the Wine prefix's drive links, passing 2.8 GB of memory and still growing. A full scan of a 21-game library now takes about 1.4 s and 77 MB.
+* **never leaves a game half-modded.** Installs, updates and removals are journaled and roll back as a whole if anything fails, including after a crash or power cut.
+* **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified.
+* **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
+* **follows upstream RHI to 2.8.7**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler and Control Ultimate Edition frame generation.
+* **lists Xbox / Game Pass games** installed by PartingX or Xodus.
+* **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts and a right-click menu on library cards.**
+* **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
+
+The full list is under [Changes in this fork](#-changes-in-this-fork) and in [`CHANGELOG.md`](CHANGELOG.md).
+
+---
+
 # 🎮 Supported Launchers
 
 ## Steam / Proton
@@ -75,11 +95,13 @@ This release is published as a **beta** while broader testing continues across d
 RHI Linux supports Steam games running through Proton, including:
 
 * Steam library discovery
-* additional Steam libraries
+* additional Steam libraries (each library is read once, even when it is reachable by several paths)
 * AppID detection
 * Proton prefix detection
 * game executable discovery
 * launching through Steam / Proton
+
+Tools, DLC and other entries Steam itself does not class as games are not listed.
 
 ## Heroic
 
@@ -96,15 +118,25 @@ RHI Linux supports games managed through Heroic, including:
 RHI Linux supports Lutris configurations, including:
 
 * game discovery
-* executable detection
+* executable detection, including installer paths written relative to the prefix or with `$GAMEDIR`
 * Wine prefix detection
 * active runner detection
+
+Games installed inside a launcher that runs through Lutris (Ubisoft Connect, Battle.net) get their own cards. They are modded in their real folder and started by opening their launcher through Lutris. Lutris entries with no real game folder (applications such as the launchers themselves) are not listed as games.
 
 ## Standalone Wine
 
 Manually added games and standalone Wine prefixes are also supported.
 
-The game executable and Wine prefix can be configured independently when necessary.
+The game executable and Wine prefix can be configured independently when necessary. **Edit game** can also change the launch command; clearing the box goes back to the detected one.
+
+## Xbox / Game Pass (PartingX and Xodus)
+
+Linux has no official Xbox app. RHI lists Game Pass games installed by PartingX or Xodus straight away; unfinished downloads stay hidden until they complete. If your PartingX or Xodus data lives somewhere unusual, add the folder in **Settings → PartingX / Xbox folders**.
+
+* **Play** asks PartingX to start the game, through its normal launch path (licensing, saves and cloud sync). RHI never starts the game's executable itself. The card's right-click menu also has **Show in PartingX**.
+* Game Pass executables are encrypted on disk. RHI reads the game's bitness from its package instead, but it cannot always see which graphics API the game uses; if a component refuses to install for that reason, set **Force API** for the game.
+* RHI changes nothing in a game while PartingX has a job queued for it, and never touches the encrypted game files, the package files or the files PartingX manages in the game's prefix.
 
 ---
 
@@ -120,11 +152,11 @@ sudo pacman -S --needed dotnet-sdk dotnet-runtime-8.0 7zip git
 
 Building from source needs a .NET 10 SDK (any 10.0 feature band, pinned by `global.json`) and the .NET 8 runtime the app targets. NuGet restores are locked by the committed `packages.lock.json` files; after changing a package reference, run `dotnet restore --force-evaluate` and commit the updated lock files.
 
-Clone RHI Linux:
+Clone this fork:
 
 ```fish
-git clone https://github.com/wizardkof/RHI-Linux.git
-cd RHI-Linux
+git clone https://github.com/nonspacial/RHI-Linux-Nonspaced.git
+cd RHI-Linux-Nonspaced
 ```
 
 Run:
@@ -148,6 +180,11 @@ The validation scripts included in the repository are intended for development a
 ```
 
 This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.local/opt/rhi-linux.prev`), links `~/.local/bin/rhi-linux`, adds a menu entry and icon, and refreshes the desktop and icon caches when `update-desktop-database` / `gtk-update-icon-cache` are installed. It warns when `~/.local/bin` is not on `PATH`; the menu entry uses the full path and works either way.
+
+## Going back to an older build
+
+> [!WARNING]
+> Before going back to a build from before 14 October 2026, **remove OptiScaler F5 DLSSNR from every game that has it and set every pinned OptiScaler Nightly game back to "Latest (auto-update)"**. An older build reads F5 as OptiScaler Stable and ignores nightly pins, so its next update would replace them. Reinstall them once you are back on the current build. Details: [`UPSTREAM.md`](UPSTREAM.md#rolling-back-to-a-build-older-than-wave-3-f5-dlssnr-nightly-pins).
 
 ## Runtime requirements
 
@@ -174,6 +211,77 @@ The script publishes a self-contained `linux-x64` build (it runs on hosts withou
 ```
 
 `validate.sh` keeps existing build outputs unless `--clean` is given. Test results are written to `artifacts/test-results/`.
+
+---
+
+# 🧾 Changes in this fork
+
+Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELOG.md`](CHANGELOG.md); how each upstream feature was adapted for Linux is in [`UPSTREAM.md`](UPSTREAM.md).
+
+## Performance
+
+* **Library scan.** The file indexer no longer follows folder links, so a Wine prefix's drive links (`z:` → `/`, others to your home folder and drives) can no longer pull the whole machine into a scan. Each game folder is capped at 200,000 files, and the scan looks only as deep as it needs to find each game's executable; the full file list is built only for the game you select.
+* **Lutris.** Executables written relative to the prefix or with `$GAMEDIR` are resolved, so these games no longer fall back to the whole prefix as their folder. Result: a full scan in about 1.4 s and 77 MB, where one Lutris entry used to pass 2.8 GB and keep growing.
+* **Add game** rescans only the manually added games, not every launcher.
+* Each Steam library is read once, even when several paths lead to it.
+* The library is listed while the DLSS manifest is still downloading; that download now gives up after 15 seconds instead of holding up start-up for minutes.
+* Selecting a game no longer re-reads the install records hundreds of times. Settings files are re-read only when they have changed, and the analysis of recently viewed games is kept in a small, bounded cache.
+* Searching waits until you stop typing and keeps the selected game if it still matches, instead of restarting its analysis on every key.
+* Large files are scanned once, in a fixed-size window, instead of being read whole for each check.
+* GitHub answers are cached and revalidated, which saves the anonymous API allowance; when GitHub refuses for rate limits, the last answer is used until the limit resets.
+
+## Safety
+
+* **Crash-safe installs.** Every install, update and removal is journaled. Files are written to a temporary copy, checked, then moved into place. If anything fails, or RHI is interrupted, the change is rolled back as a whole the next time RHI starts. Files you changed yourself in the meantime are kept, never overwritten. A removal is marked on its record before it starts, so an interrupted removal is finished or undone, never left half-done.
+* **Cancel.** Cancel stops an operation only before it has changed anything in the game or prefix. After that point the operation finishes or rolls back completely, so a cancelled install never leaves half-installed files.
+* **Verified downloads.** Each source (ReShade, OptiScaler, RenoDX, Luma and the rest) has its own policy: HTTPS only, a fixed list of allowed hosts (checked again after redirects) and a size limit. Checksums are verified whenever the publisher announces one; where none is published, RHI records the SHA-256 of what it installed. Cached downloads are reused only when they still match what was recorded. Archives are unpacked with size limits and integrity checks, and 7-Zip archives that contain links are refused. Per-source details: [`docs/download-trust.md`](docs/download-trust.md).
+* **Wine registry.** RHI does not edit a prefix's registry while Wine is running in that prefix; it changes nothing and asks you to close the game first. DLL overrides you set yourself are kept, and removing a component puts back the value that was there before, unless you have changed it since.
+* **Your files.** RHI never overwrites or deletes a file it did not install. If a ReShade or OptiScaler that RHI did not install is already there, RHI refuses to add a second one rather than have both load. Game settings files you have locked read-only (such as `Engine.ini`) are edited the way upstream does and locked again.
+* **Saved settings.** If a settings or library file cannot be read, RHI sets the original aside, says so, and refuses to save over it instead of starting from empty.
+* **Games that move.** Favourites, hidden games, edits and HDR choices follow a game when you move its Steam library or games folder. When a game with installed components has moved, **Repair after move** checks the new folder and updates every record in one step; nothing changes if anything does not match.
+* The GitHub token and Nexus API key are stored readable by you alone.
+
+## Platforms & launchers
+
+* **Xbox / Game Pass** games from PartingX and Xodus, as described under [Supported Launchers](#xbox--game-pass-partingx-and-xodus).
+* **HDR launch guidance.** For games started by Steam, Heroic or Lutris, RHI does not wrap the store's launch. It tells you exactly where to paste the HDR settings in that launcher (Steam launch options, Heroic's Advanced settings, Lutris's command prefix). Games started directly with a Proton build's `wine` are told that Proton's HDR variables do not apply to them.
+* Wrapper commands (`gamemoderun`, `mangohud`, `gamescope … --` and similar) are seen through, so a launch is always recognised as the store's.
+* A game's error output goes to a capped log file under `~/.local/state/rhi-linux/logs/launch/`; if the game exits at once, the last line is shown.
+* Commands you type for a manual game run in a login shell, so wrappers in `~/.local/bin` are found.
+* A Wine prefix whose runtime cannot be identified is never given the system Wine for helpers such as Winetricks.
+* Manual games whose folder has gone are shown as "folder missing" and stay removable, instead of disappearing.
+* Detectors report entries they had to skip, rather than failing silently.
+* The graphics API is decided from what the executable actually imports. When an executable names several APIs, DirectX is chosen first (there is no Vulkan ReShade path on Linux yet), and the game's own settings files decide where they can.
+
+## Features
+
+* **ReShade:** choose the DLL name ReShade is installed under; a **No Addons** channel (the ReShade build without add-on support); falls back to a cached copy when reshade.me is down.
+* **OptiScaler:** the **F5 DLSSNR** channel; pin a game to a **Nightly build**; **GPU type** INI templates (NVIDIA / AMD / Intel) you can edit once for every later install; **OptiPatcher** is installed and updated with OptiScaler; Force Reflex and game Reflex marker settings; the frame-generation `nvngx_dlssg.dll` joins the Streamline stack.
+* **NR Cost Scaler:** runs Neural Rendering at reduced scale on top of the Neural Rendering method you installed; removing it puts the original file back exactly.
+* **Control Ultimate Edition:** the RenoDX install can also set up OptiScaler frame generation (pinned to the nightly build upstream recommends) and the "Using HDR?" choice, and the dialog lists every required in-game setting.
+* **RE Framework:** a button to delete its `_storage_` cache folder.
+* **Shader profiles:** save, load, rename, export and import named shader-pack selections.
+* **Accounts:** **Settings → Accounts & updates** has **Connect Nexus account** (API key), handling of Nexus "Mod Manager Download" links (each one confirmed before anything is downloaded), and a GitHub token field that checks the token before saving it.
+* **Update notices:** at start-up RHI checks this fork's releases and tells you when a newer one exists. It never downloads or installs anything itself.
+* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), the game's Nexus Mods page where it is known and, for PartingX games, Show in PartingX.
+* **Edit game** can change the launch command.
+* **Ported from upstream RHI 2.7.6–2.8.7:** update history, the Available HDR mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, and manifest DLSS/Streamline folder overrides.
+
+## Interface & languages
+
+* The main window works at every size from **640×480**, landscape or portrait. Toolbar buttons that do not fit move into a **…** menu, the library becomes a slide-out panel (**☰ Library**) below 900 pixels, and long paths are shortened in the middle with the full path in a tooltip. RHI never resizes your window.
+* Every message is available in **English and Brazilian Portuguese**, including errors and launcher guidance.
+* Errors in the interface are logged to `~/.local/state/rhi-linux/logs/rhi.log` instead of closing the app.
+* The Update All summary counts what was really updated, what is current and what could not be checked, and names the first failure.
+
+## In progress
+
+Not on `main` yet; being worked on now:
+
+* RTX Encore as a managed component.
+* Games from other launchers inside Wine prefixes: EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io.
+* Turning installed add-ons off when a game switches to ReShade's No Addons channel.
+* A DLL-name choice for OptiScaler in its settings dialog.
 
 ---
 
@@ -216,14 +324,15 @@ Use game modifications only when permitted by the game and service involved.
 
 # 🔄 Upstream
 
-RHI Linux is a native Linux derivative of:
+This fork builds on:
 
-**[RankFTW/RHI](https://github.com/RankFTW/RHI)**
+* **[wizardkof/RHI-Linux](https://github.com/wizardkof/RHI-Linux)**, the native Linux port, which itself derives from
+* **[RankFTW/RHI](https://github.com/RankFTW/RHI)**, the original Windows application.
 
 The current synchronization target is:
 
 ```text
-RHI 2.7.5
+RHI 2.8.7
 ```
 
 RHI Linux aims to preserve the functionality and workflow of the original RHI project while adapting Windows-specific behavior for Linux, Wine and Proton.
@@ -234,13 +343,13 @@ When an upstream feature can function under Wine or Proton, RHI Linux aims to pr
 
 When Linux does not provide a real equivalent, the corresponding functionality may remain unavailable.
 
-See [`UPSTREAM.md`](UPSTREAM.md) for more information about the relationship with the original project.
+See [`UPSTREAM.md`](UPSTREAM.md) for more information about the relationship with the original project, and for how each upstream feature was adapted.
 
 ---
 
 # 🙏 Original Projects
 
-RHI Linux exists thanks to the original **RHI** project and the wider PC graphics modding ecosystem.
+RHI Linux exists thanks to the original **RHI** project, the **[RHI Linux](https://github.com/wizardkof/RHI-Linux)** port by wizardkof, and the wider PC graphics modding ecosystem.
 
 Original and third-party projects used or supported by RHI Linux include:
 
@@ -248,10 +357,13 @@ Original and third-party projects used or supported by RHI Linux include:
 * [ReShade](https://reshade.me/)
 * [RenoDX](https://github.com/clshortfuse/renodx)
 * [OptiScaler](https://github.com/optiscaler/OptiScaler)
+* [OptiPatcher](https://github.com/optiscaler/OptiPatcher)
 * [Luma Framework](https://github.com/Filoppi/Luma-Framework)
 * [RE Framework](https://github.com/praydog/REFramework)
 * [ReLimiter](https://github.com/RankFTW/ReLimiter)
 * [Display Commander](https://github.com/pmnoxx/display-commander)
+* [DLSSNR Cost Scaler](https://github.com/xenmods/DLSSNR-Cost-Scaler)
+* [OptiScaler F5 DLSSNR](https://github.com/janblade/OptiScaler-F5-DLSSNR-Multipass)
 * Ultimate ASI Loader
 * ShortFuse
 
@@ -286,7 +398,7 @@ Third-party projects and components retain their respective original licenses.
 
 **Native Linux tooling for the RHI ecosystem.**
 
-`v0.9.23.4-beta.1`
+Fork of `v0.9.23.4-beta.1` · upstream RHI `2.8.7`
 
 [Back to top](#rhi-linux)
 
