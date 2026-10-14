@@ -12,11 +12,13 @@ internal sealed partial class LauncherOwnedPrefixes
 {
     private readonly HashSet<string> _lutrisPrefixes;
     private readonly string _umuRoot;
+    private readonly IReadOnlyList<string> _partingXEnvironments;
 
-    private LauncherOwnedPrefixes(HashSet<string> lutrisPrefixes, string umuRoot)
+    private LauncherOwnedPrefixes(HashSet<string> lutrisPrefixes, string umuRoot, IReadOnlyList<string> partingXEnvironments)
     {
         _lutrisPrefixes = lutrisPrefixes;
         _umuRoot = umuRoot;
+        _partingXEnvironments = partingXEnvironments;
     }
 
     /// <param name="dataHome">
@@ -24,7 +26,12 @@ internal sealed partial class LauncherOwnedPrefixes
     /// <c>~/.config/lutris/games</c> configs leave <c>$GAMEDIR</c> prefixes unresolved (the Lutris detector
     /// passes the same value, so both agree on which prefixes Lutris owns).
     /// </param>
-    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
+    /// <param name="partingXEnvironments">
+    /// Environment roots of the PartingX instances RHI knows (<see cref="Xbox.PartingXInstance.KnownEnvironmentRoots"/>):
+    /// every prefix under one is PartingX's, whatever that folder holds yet (Refs #90).
+    /// </param>
+    public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null,
+        IReadOnlyList<string>? partingXEnvironments = null)
     {
         var prefixes = new HashSet<string>(StringComparer.Ordinal);
         var roots = lutrisConfigRoots.Where(Directory.Exists).ToList();
@@ -57,7 +64,7 @@ internal sealed partial class LauncherOwnedPrefixes
             }
         }
         // umu-launcher's default: $HOME/Games/umu/$GAMEID.
-        return new LauncherOwnedPrefixes(prefixes, PathIdentity.Canonicalize(Path.Combine(home, "Games", "umu")));
+        return new LauncherOwnedPrefixes(prefixes, PathIdentity.Canonicalize(Path.Combine(home, "Games", "umu")), partingXEnvironments ?? []);
     }
 
     public bool Owns(string prefixPath)
@@ -65,12 +72,14 @@ internal sealed partial class LauncherOwnedPrefixes
         var canonical = PathIdentity.Canonicalize(prefixPath);
         return _lutrisPrefixes.Contains(canonical) ||
                canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal) ||
+               _partingXEnvironments.Any(root => canonical.StartsWith(root + "/", StringComparison.Ordinal)) ||
                InPartingXEnvironment(canonical);
     }
 
     /// <summary>
-    /// A title prefix (<c>&lt;env&gt;/default/&lt;id&gt;/prefix</c>) or runtime template under PartingX's environment folder
-    /// (Refs #90): PartingX lists, prepares and launches those itself; the Xbox detector lists their games.
+    /// A title prefix (<c>&lt;env&gt;/default/&lt;id&gt;/prefix</c>) or runtime template under a PartingX environment folder RHI
+    /// knows by its layout alone (Refs #90): PartingX lists, prepares and launches those itself; the Xbox detector lists
+    /// their games. Instances RHI knows of are matched by their environment root instead (no layout needed).
     /// </summary>
     private static bool InPartingXEnvironment(string prefix)
     {

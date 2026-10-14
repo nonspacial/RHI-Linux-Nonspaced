@@ -4,10 +4,11 @@ using RHI.Core.Services;
 namespace RHI.Platform.Linux.Detection.Xbox;
 
 /// <summary>
-/// One PartingX instance, read from its state folder (Refs #90). Only the files PartingX's spec fixes are read:
-/// <c>settings.json</c> (storage roots), the payload layout and <c>.partingx-owned</c> marker, the per-title
-/// <c>partingx.json</c> environment file, runtime bundles, user recipes and (for names only) the catalogue index.
-/// Nothing is written and PartingX is never run.
+/// One PartingX instance (Refs #90): from its breadcrumb (<see cref="PartingXBreadcrumb"/>: payload roots, environment
+/// and runtime roots, job list, how to start it) when it left one, else from its state folder's <c>settings.json</c>.
+/// Besides those, only the files PartingX's spec fixes are read: the payload layout and <c>.partingx-owned</c> marker,
+/// the per-title <c>partingx.json</c> environment file, runtime bundles, user recipes and (for names only) the catalogue
+/// index. Nothing is written and PartingX is never run.
 /// </summary>
 internal sealed class PartingXInstance
 {
@@ -18,22 +19,35 @@ internal sealed class PartingXInstance
 
     private Dictionary<string, string>? _catalogue;
 
-    private PartingXInstance(string stateDir, string payloadRoot, string? environmentRoot, string? runtimeRoot)
+    private PartingXInstance(string stateDir, IReadOnlyList<string> payloadRoots, string? environmentRoot, string? runtimeRoot,
+        string? jobsFile, PartingXBreadcrumb? breadcrumb)
     {
         StateDir = stateDir;
-        PayloadRoot = payloadRoot;
+        PayloadRoots = payloadRoots;
         EnvironmentRoot = environmentRoot;
         RuntimeRoot = runtimeRoot;
+        JobsFile = jobsFile ?? Path.Combine(stateDir, "jobs.json");
+        Breadcrumb = breadcrumb;
     }
 
     public string StateDir { get; }
-    public string PayloadRoot { get; }
+    public IReadOnlyList<string> PayloadRoots { get; }
     public string? EnvironmentRoot { get; }
     public string? RuntimeRoot { get; }
-    public string JobsFile => Path.Combine(StateDir, "jobs.json");
+    public string JobsFile { get; }
 
-    /// <summary>The command that opens this instance of PartingX; null when RHI found none (Play is then disabled).</summary>
-    public string? OpenCommand { get; set; }
+    /// <summary>The breadcrumb this instance was read from; null for an instance read from <c>settings.json</c>.</summary>
+    public PartingXBreadcrumb? Breadcrumb { get; }
+
+    /// <summary>
+    /// How to open this instance when its breadcrumb gives no entry point (no breadcrumb, or one without a launch):
+    /// the earlier rule (instance <c>run.sh</c>, desktop entry, PATH); null when RHI found none (Play is then disabled).
+    /// </summary>
+    public string? FallbackOpenCommand { get; set; }
+
+    /// <summary>The instance a breadcrumb describes (the breadcrumb is PartingX's own account of its folders).</summary>
+    public static PartingXInstance FromBreadcrumb(PartingXBreadcrumb crumb)
+        => new(crumb.StateDir, crumb.PayloadRoots, crumb.EnvironmentRoot, crumb.RuntimeRoot, crumb.JobsFile, crumb);
 
     /// <summary>
     /// The instance whose state folder is <paramref name="stateDir"/>; null when it has no readable <c>settings.json</c>
@@ -58,7 +72,7 @@ internal sealed class PartingXInstance
                 DetectorDiagnostics.Warn($"PartingX settings {settings} name no payload folder; its games are not listed");
                 return null;
             }
-            return new PartingXInstance(stateDir, payload, Rooted(String(root, "environmentRoot")), Rooted(String(root, "runtimeRoot")));
+            return new PartingXInstance(stateDir, [payload], Rooted(String(root, "environmentRoot")), Rooted(String(root, "runtimeRoot")), null, null);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
@@ -75,14 +89,16 @@ internal sealed class PartingXInstance
     {
         partials = 0;
         var installs = new List<Install>();
-        string[] dirs;
-        try { dirs = Directory.Exists(PayloadRoot) ? Directory.GetDirectories(PayloadRoot) : []; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        var dirs = new List<string>();
+        foreach (var payloadRoot in PayloadRoots)
         {
-            DetectorDiagnostics.Warn($"PartingX payload folder {PayloadRoot} unreadable; its games are not listed", ex);
-            return installs;
+            try { dirs.AddRange(Directory.Exists(payloadRoot) ? Directory.GetDirectories(payloadRoot).Order(StringComparer.Ordinal) : []); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"PartingX payload folder {payloadRoot} unreadable; its games are not listed", ex);
+            }
         }
-        foreach (var dir in dirs.Order(StringComparer.Ordinal))
+        foreach (var dir in dirs)
         {
             ct.ThrowIfCancellationRequested();
             var id = Path.GetFileName(dir);
@@ -193,6 +209,33 @@ internal sealed class PartingXInstance
             }
         }
         return new(hasPrefix ? prefix : null, runtime, wine, wineServer);
+    }
+
+    /// <summary>
+    /// The environment roots of every PartingX instance RHI can see without scanning payloads (Refs #90, w3-scan review
+    /// minor 6): breadcrumbs, the default state folders' <c>settings.json</c> and the user's PartingX folders. Every Wine
+    /// prefix under one belongs to PartingX, whatever that folder holds yet (no <c>.templates</c> needed).
+    /// </summary>
+    internal static IReadOnlyList<string> KnownEnvironmentRoots(string? breadcrumbDir, IEnumerable<string> stateDirs)
+    {
+        var roots = PartingXBreadcrumb.ReadAll(breadcrumbDir).Select(crumb => crumb.EnvironmentRoot).ToList();
+        foreach (var folder in stateDirs)
+        {
+            var settings = new[] { folder, Path.Combine(folder, "partingx"), Path.Combine(folder, "state", "partingx") }
+                .Select(dir => Path.Combine(dir, "settings.json"))
+                .FirstOrDefault(File.Exists);
+            if (settings is null) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(ReadSmall(settings));
+                roots.Add(Rooted(String(doc.RootElement, "environmentRoot")));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+            {
+                AppLog.Warn("scan", $"PartingX settings {settings} unreadable; its prefixes are recognised by their layout only", ex);
+            }
+        }
+        return roots.OfType<string>().Select(PathIdentity.Canonicalize).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     /// <summary>

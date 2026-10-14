@@ -72,15 +72,17 @@ internal sealed class AppComposition
     public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal)
     {
         var libraryStore = new LinuxGameLibraryStore();
+        // w3/scan hook: one "PartingX / Xbox folders" store for Settings, the Xbox detector and the Wine detector (Refs #90).
+        var xboxFolders = new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore();
         var detectors = new IGameDetector[]
         {
             new SteamGameDetector(),
             new HeroicGameDetector(),
             new LutrisGameDetector(),
-            new WinePrefixDetector(),
+            new WinePrefixDetector(xboxFolders), // w3/scan hook: PartingX instances' prefixes are PartingX's
             new ManualGameDetector(libraryStore),
             // w3/scan rows (new store detectors)
-            new RHI.Platform.Linux.Detection.Xbox.XboxGameDetector(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore()),
+            new RHI.Platform.Linux.Detection.Xbox.XboxGameDetector(xboxFolders),
         };
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var pcgwData = new PcgwCentralDataService(http);
@@ -201,6 +203,7 @@ internal sealed class AppComposition
             // w3/sync rows
             // w3/journal rows
             // w3/scan rows
+            XboxFolders = xboxFolders,
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows

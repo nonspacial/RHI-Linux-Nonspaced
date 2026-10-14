@@ -303,6 +303,9 @@ public sealed class UpstreamGameLibraryPolicyService(
             GraphicsApis = game.GraphicsApis,
             GraphicsApiConfidence = game.GraphicsApiConfidence,
             GraphicsApiEvidence = game.GraphicsApiEvidence,
-            BinaryDirectory = game.BinaryDirectory
+            BinaryDirectory = game.BinaryDirectory,
+            // w3/scan hook (Refs #90): a split Xbox collection keeps its owning app (Play, the write gate) and any bitness.
+            ForcedArchitecture = game.ForcedArchitecture,
+            XboxPackage = game.XboxPackage
         };
 }

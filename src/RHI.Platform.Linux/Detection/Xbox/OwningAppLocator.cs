@@ -4,11 +4,12 @@ using RHI.Core.Services;
 namespace RHI.Platform.Linux.Detection.Xbox;
 
 /// <summary>
-/// Finds how to open the app that owns an Xbox install (Refs #90; owner decision B): PartingX for its titles, the Xodus
-/// GUI for Xodus-only installs. Play on such a card opens that app and never runs the game. Sources, in order:
-/// a PartingX breadcrumb's launcher, the <c>run.sh</c> of a PartingX instance folder (the folder holding its
-/// <c>state/partingx</c>), and, for the user's default state folder only, a desktop entry or a program on PATH (they
-/// start PartingX with the default state, so they would open another instance for any other folder).
+/// Finds how to open the app that owns an Xbox install when PartingX's breadcrumb gives no entry point (Refs #90; spec
+/// item 4: a card without a breadcrumb-backed instance opens the owning app if found, else Play is disabled). Sources,
+/// in order: the <c>run.sh</c> of a PartingX instance folder (the folder holding its <c>state/partingx</c>), and, for
+/// the user's default state folder only, PartingX's own desktop entry or a program on PATH (they start PartingX with
+/// the default state, so they would open another instance for any other folder). The Xodus GUI for Xodus-only
+/// installs. Desktop entries that start one title (a per-game shortcut) are never taken for the app.
 /// </summary>
 internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IReadOnlyList<string> pathDirs)
 {
@@ -29,16 +30,32 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         return new OwningAppLocator(applications, path);
     }
 
-    /// <summary>How to open the PartingX instance in <paramref name="stateDir"/>.</summary>
-    public string? PartingX(string stateDir, bool isDefaultStateDir, XboxBreadcrumb? breadcrumb)
+    /// <summary>How to open the PartingX instance in <paramref name="stateDir"/> without its breadcrumb.</summary>
+    public string? PartingX(string stateDir, bool isDefaultStateDir)
     {
-        if (breadcrumb?.Launcher is { } launcher && IsExecutableFile(launcher))
-            return string.Join(' ', breadcrumb.LauncherArgs.Prepend(launcher).Select(Shell));
         if (InstanceScript(stateDir) is { } script) return Shell(script);
         if (!isDefaultStateDir) return null;
-        return DesktopEntry(stem => stem.Contains("partingx", StringComparison.OrdinalIgnoreCase),
-                   name => name.Equals("PartingX", StringComparison.OrdinalIgnoreCase))
+        // PartingX's own entry: its id (partingx, or an app id ending in .PartingX) or exactly its name.
+        return DesktopEntry(stem => stem.Equals("partingx", StringComparison.OrdinalIgnoreCase) ||
+                                    stem.EndsWith(".partingx", StringComparison.OrdinalIgnoreCase),
+                   name => name.Equals("PartingX", StringComparison.Ordinal))
                ?? OnPath("partingx", "PartingX");
+    }
+
+    /// <summary>
+    /// An argument vector and its environment as one shell line (<c>env 'K=V' … 'argv0' 'arg' …</c>), for display and
+    /// for Edit game's detected launch: typed back as a command it does the same. RHI itself executes the vector.
+    /// </summary>
+    public static string Render(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string>? environment)
+    {
+        var words = new List<string>();
+        if (environment is { Count: > 0 })
+        {
+            words.Add("env");
+            words.AddRange(environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => Shell($"{pair.Key}={pair.Value}")));
+        }
+        words.AddRange(argv.Select(Shell));
+        return string.Join(' ', words);
     }
 
     /// <summary>How to open the Xodus GUI (upstream app id <c>io.github.xodus-gaming.xodus</c>); null while none is installed.</summary>
@@ -83,7 +100,7 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
             foreach (var file in files.Order(StringComparer.Ordinal))
             {
                 var entry = ReadDesktopEntry(file);
-                if (entry is null) continue;
+                if (entry is null || StartsOneTitle(entry.Value.Exec)) continue;
                 if (stemMatches(Path.GetFileNameWithoutExtension(file)) || nameMatches(entry.Value.Name))
                     return entry.Value.Exec;
             }
@@ -117,6 +134,20 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         return command.Length == 0 ? null : (name, command);
     }
 
+    /// <summary>
+    /// A shortcut that starts one game (PartingX's <c>--play</c>/<c>--show</c>/<c>--launch</c>, a store id, a
+    /// <c>partingx://</c> or <c>xodus://</c> link with a target, RHI's own <c>--launch</c> shortcut): never the app's
+    /// own entry, and taken for it, Play on every card would start that one game (w3-scan review minor 8).
+    /// </summary>
+    internal static bool StartsOneTitle(string exec)
+        => exec.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => word.Trim('"', '\''))
+            .Any(word => word is "--play" or "--show" or "--launch" ||
+                         word.StartsWith("--play=", StringComparison.Ordinal) || word.StartsWith("--show=", StringComparison.Ordinal) ||
+                         word.StartsWith("--launch=", StringComparison.Ordinal) ||
+                         System.Text.RegularExpressions.Regex.IsMatch(word, "^(?=.*[0-9])[0-9A-Z]{12}$") ||
+                         System.Text.RegularExpressions.Regex.IsMatch(word, "^(partingx|xodus)://.+", System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+
     private string? OnPath(params string[] programs)
     {
         foreach (var dir in pathDirs)
@@ -128,7 +159,7 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
         return null;
     }
 
-    private static bool IsExecutableFile(string path)
+    internal static bool IsExecutableFile(string path)
     {
         try
         {
@@ -143,47 +174,4 @@ internal sealed class OwningAppLocator(IReadOnlyList<string> applicationDirs, IR
     }
 
     internal static string Shell(string value) => "'" + value.Replace("'", "'\\''") + "'";
-}
-
-/// <summary>
-/// A PartingX instance announcing itself (owner decision C; the file PartingX is asked to write — format proposed here):
-/// <c>$XDG_DATA_HOME/partingx/instances/*.json</c> = <c>{"schema":1,"stateDir":"/abs/state/partingx",
-/// "launcher":"/abs/PartingX.AppImage or run.sh","launcherArgs":[]}</c>. <c>$XDG_DATA_HOME</c> because an instance that
-/// moves its state (the acceptance <c>run.sh</c> sets <c>XDG_STATE_HOME</c>) still shares the user's data home. Unknown
-/// fields are ignored; a file without an absolute <c>stateDir</c> is skipped.
-/// </summary>
-internal sealed record XboxBreadcrumb(string StateDir, string? Launcher, IReadOnlyList<string> LauncherArgs)
-{
-    public static IReadOnlyList<XboxBreadcrumb> ReadAll(string? directory)
-    {
-        var crumbs = new List<XboxBreadcrumb>();
-        if (directory is null || !Directory.Exists(directory)) return crumbs;
-        string[] files;
-        try { files = Directory.GetFiles(directory, "*.json"); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            AppLog.Warn("scan", $"PartingX instance list {directory} unreadable", ex);
-            return crumbs;
-        }
-        foreach (var file in files.Order(StringComparer.Ordinal))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(PartingXInstance.ReadSmall(file, 64 * 1024));
-                var root = doc.RootElement;
-                var state = PartingXInstance.String(root, "stateDir");
-                if (state is null || !Path.IsPathRooted(state)) continue;
-                var launcher = PartingXInstance.String(root, "launcher");
-                var args = root.TryGetProperty("launcherArgs", out var list) && list.ValueKind == JsonValueKind.Array
-                    ? list.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String).Select(a => a.GetString()!).ToArray()
-                    : [];
-                crumbs.Add(new XboxBreadcrumb(state, launcher is not null && Path.IsPathRooted(launcher) ? launcher : null, args));
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-            {
-                AppLog.Warn("scan", $"PartingX instance file {file} unreadable", ex);
-            }
-        }
-        return crumbs;
-    }
 }

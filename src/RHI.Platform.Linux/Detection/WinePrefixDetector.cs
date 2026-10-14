@@ -11,17 +11,27 @@ public sealed class WinePrefixDetector : IGameDetector
     private readonly string _home;
     private readonly string? _dataHome;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
+    private readonly Func<IEnumerable<string>> _partingXStateFolders;
 
     public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome) { }
 
-    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null)
-        : this(home, () => lutrisConfigRoots, dataHome) { }
+    /// <param name="xboxFolders">The "PartingX / Xbox folders" setting (w3/scan): prefixes of those instances are PartingX's.</param>
+    public WinePrefixDetector(Xbox.XboxFolderStore xboxFolders)
+        : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome, xboxFolders.Folders)
+        => XboxFolderStore = xboxFolders;
 
-    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots, string? dataHome)
+    /// <summary>The "PartingX / Xbox folders" setting this detector reads (the app passes its one shared store).</summary>
+    internal Xbox.XboxFolderStore? XboxFolderStore { get; }
+
+    internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null, IEnumerable<string>? xboxFolders = null)
+        : this(home, () => lutrisConfigRoots, dataHome, () => xboxFolders ?? []) { }
+
+    private WinePrefixDetector(string home, Func<IEnumerable<string>> lutrisConfigRoots, string? dataHome, Func<IEnumerable<string>>? xboxFolders = null)
     {
         _home = home;
         _dataHome = dataHome;
         _lutrisConfigRoots = lutrisConfigRoots;
+        _partingXStateFolders = xboxFolders ?? (() => []);
     }
 
     public string Name => "Wine";
@@ -37,7 +47,12 @@ public sealed class WinePrefixDetector : IGameDetector
             Path.Combine(_home, "Games"),
             Path.Combine(_home, ".local", "share", "bottles", "bottles")
         };
-        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome);
+        // PartingX's title prefixes (Refs #90): every environment root its breadcrumbs, default state folders and the
+        // user's PartingX folders name.
+        var partingX = Xbox.PartingXInstance.KnownEnvironmentRoots(
+            Path.Combine(_dataHome ?? Path.Combine(_home, ".local", "share"), "partingx", "instances"),
+            _partingXStateFolders().Append(Path.Combine(_home, ".local", "state", "partingx")));
+        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome, partingX);
         var games = new List<DetectedGame>();
         foreach (var root in roots.Where(Directory.Exists))
         {

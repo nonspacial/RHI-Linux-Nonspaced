@@ -638,6 +638,10 @@ internal static class UiStrings
         ("Scan.XboxFoldersAdd", "Adicionar pasta…", "Add folder…"),
         ("Scan.XboxFoldersRemove", "Remover", "Remove"),
         ("Scan.WhatXboxFolders", "a lista de pastas do PartingX / Xbox", "the PartingX / Xbox folder list"),
+        ("Scan.ShowInOwningApp", "Mostrar no {0}", "Show in {0}"),
+        ("Scan.ShowInOwningAppExited", "Não foi possível abrir o {0}: ele terminou com o código {1}.", "Could not open {0}: it exited with code {1}."),
+        ("Scan.ShowInOwningAppExited2", "Não foi possível abrir o {0}: ele terminou com o código {1}: {2}", "Could not open {0}: it exited with code {1}: {2}"),
+        ("Scan.ShowInOwningAppFailed", "Não foi possível abrir o {0}: {1}", "Could not open {0}: {1}"),
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows

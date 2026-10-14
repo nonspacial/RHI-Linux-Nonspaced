@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Detection.Xbox;
+using RHI.Platform.Linux.Launch;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -16,6 +18,40 @@ public static class XboxCardText
         => game.XboxPackage is { } package && string.IsNullOrWhiteSpace(game.LaunchCommand)
             ? UiLocalizationService.Format("Scan.PlayStartFromOwningApp", package.OwningApp)
             : null;
+}
+
+/// <summary>
+/// "Show in PartingX" (Refs #90, spec item 3), for the library card's right-click menu (#161): the item is shown only for
+/// a card whose PartingX breadcrumb has a show entry point, and runs it (an argument vector, no shell).
+/// </summary>
+public static class XboxCardActions
+{
+    /// <summary>The menu item's text ("Show in PartingX"); null when the card has no such entry point (no item).</summary>
+    public static string? ShowInOwningAppLabel(DetectedGame? game)
+        => game is not null && LinuxGameLauncher.CanShowInOwningApp(game)
+            ? UiLocalizationService.Format("Scan.ShowInOwningApp", game.XboxPackage!.OwningApp)
+            : null;
+
+    /// <summary>Runs the show entry point; null when it started, else the status line saying why not.</summary>
+    public static async Task<string?> ShowInOwningAppAsync(DetectedGame game, LinuxGameLauncher launcher, CancellationToken cancellationToken = default)
+    {
+        var app = game.XboxPackage?.OwningApp ?? XboxGameDetector.PartingXApp;
+        try
+        {
+            await launcher.ShowInOwningAppAsync(game, cancellationToken);
+            return null;
+        }
+        catch (GameLaunchFailedException ex)
+        {
+            return string.IsNullOrWhiteSpace(ex.Detail)
+                ? UiLocalizationService.Format("Scan.ShowInOwningAppExited", app, ex.ExitCode)
+                : UiLocalizationService.Format("Scan.ShowInOwningAppExited2", app, ex.ExitCode, ex.Detail);
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            return UiLocalizationService.Format("Scan.ShowInOwningAppFailed", app, UiLocalizationService.Present(ex.Message));
+        }
+    }
 }
 
 /// <summary>

@@ -2,10 +2,27 @@ namespace RHI.Core.Models;
 
 /// <summary>
 /// An Xbox / Game Pass (MSIXVC or Appx) install found by the Xbox detector (Refs #90). Such a game is started only by the
-/// app that owns its download and licence (PartingX, or Xodus): Play opens that app, never the game exe.
+/// app that owns its download and licence (PartingX, or Xodus): Play hands it to that app, never the game exe.
 /// </summary>
 /// <param name="StoreId">Microsoft Store product id (the PartingX payload folder name), or null when the package names none.</param>
 /// <param name="OwningApp">The app that controls this install: <c>PartingX</c> or <c>Xodus</c>.</param>
-/// <param name="OpenCommand">The command that opens <paramref name="OwningApp"/> (the card's own launch command); null when RHI found no way to open it.</param>
-/// <param name="JobsFile">PartingX's job list for the instance owning the title (<c>jobs.json</c>); null for Xodus-only installs.</param>
-public sealed record XboxPackageInfo(string? StoreId, string OwningApp, string? OpenCommand, string? JobsFile);
+/// <param name="OpenCommand">
+/// The card's own launch command (what Edit game shows as the detected launch): PartingX's Play entry point rendered as a
+/// shell line when <paramref name="PlayArgv"/> is set, else the command that opens <paramref name="OwningApp"/>; null when
+/// RHI found no way to open it.
+/// </param>
+/// <param name="JobsFile">PartingX's job list for the instance owning the title (<c>jobs.json</c>); null for Xodus-only installs and unknown instances.</param>
+/// <param name="PlayArgv">
+/// PartingX's Play entry point for this title (its breadcrumb's <c>launch.argv</c> + <c>entryPoints.play</c>, store id
+/// filled in): executed as an argument vector, no shell. Null without a breadcrumb-backed instance.
+/// </param>
+/// <param name="ShowArgv">The same for <c>entryPoints.show</c> ("Show in PartingX"); null without one.</param>
+/// <param name="LaunchEnvironment">The breadcrumb's <c>launch.env</c>, applied to both entry points.</param>
+public sealed record XboxPackageInfo(
+    string? StoreId,
+    string OwningApp,
+    string? OpenCommand,
+    string? JobsFile,
+    IReadOnlyList<string>? PlayArgv = null,
+    IReadOnlyList<string>? ShowArgv = null,
+    IReadOnlyDictionary<string, string>? LaunchEnvironment = null);

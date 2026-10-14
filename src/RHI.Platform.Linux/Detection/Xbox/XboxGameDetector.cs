@@ -8,7 +8,7 @@ namespace RHI.Platform.Linux.Detection.Xbox;
 /// <param name="Home">The user's home (<c>~/Games</c> is searched for Xodus installs).</param>
 /// <param name="DefaultStateDirs">PartingX's default state folders (<c>$XDG_STATE_HOME/partingx</c>, <c>~/.local/state/partingx</c>).</param>
 /// <param name="UserFolders">The "PartingX / Xbox folders" setting.</param>
-/// <param name="BreadcrumbDir">Where PartingX instances announce themselves (<see cref="XboxBreadcrumb"/>).</param>
+/// <param name="BreadcrumbDir">Where PartingX instances announce themselves (<see cref="PartingXBreadcrumb"/>).</param>
 /// <param name="Apps">How the owning apps are opened.</param>
 internal sealed record XboxDiscoveryInputs(
     string Home,
@@ -21,8 +21,9 @@ internal sealed record XboxDiscoveryInputs(
 /// Xbox / Game Pass games (Refs #90; owner: listed straight away). Linux has no official client: installs come from
 /// Xodus's on-disk package format first (any folder holding <c>.xodus-streaming.msixvc</c> or a PartingX Appx record
 /// plus a package config) and from PartingX's own records second (name, Wine prefix and build, owning instance).
-/// Unfinished downloads are hidden. Each card is owned by the app that installed it: Play opens that app (never the
-/// game exe, never a synthesised <c>xodus-cli run</c>), and is disabled when RHI cannot find it.
+/// Unfinished downloads are hidden. Each card is owned by the app that installed it: Play runs PartingX's own Play entry
+/// point from its breadcrumb (<c>--play &lt;storeId&gt;</c>: licensing, saves, cloud) or, without one, opens the owning
+/// app; never the game exe, never a synthesised <c>xodus-cli run</c>; disabled when RHI finds neither.
 /// </summary>
 public sealed class XboxGameDetector : IGameDetector
 {
@@ -45,7 +46,10 @@ public sealed class XboxGameDetector : IGameDetector
             folders.Folders(),
             Path.Combine(LinuxPaths.DataHome, "partingx", "instances"),
             OwningAppLocator.FromEnvironment(LinuxPaths.Home, LinuxPaths.DataHome)))
-    { }
+        => FolderStore = folders;
+
+    /// <summary>The "PartingX / Xbox folders" setting this detector reads (the app passes its one shared store).</summary>
+    internal XboxFolderStore? FolderStore { get; }
 
     internal XboxGameDetector(Func<XboxDiscoveryInputs> inputs) => _inputs = inputs;
 
@@ -62,12 +66,14 @@ public sealed class XboxGameDetector : IGameDetector
         var payloadRoots = new HashSet<string>(StringComparer.Ordinal);
         var xodusRoots = new List<string> { Path.Combine(inputs.Home, "Games") };
         var defaults = inputs.DefaultStateDirs.Select(PathIdentity.Canonicalize).ToHashSet(StringComparer.Ordinal);
-        var breadcrumbs = XboxBreadcrumb.ReadAll(inputs.BreadcrumbDir);
+        // PartingX's breadcrumbs are the primary source (one per instance, newest per state folder).
+        var breadcrumbs = PartingXBreadcrumb.ReadAll(inputs.BreadcrumbDir)
+            .ToDictionary(crumb => PathIdentity.Canonicalize(crumb.StateDir), StringComparer.Ordinal);
 
-        // State folders: the defaults (quiet when PartingX was never set up), breadcrumbs, then the user's list.
-        var states = new List<(string Dir, bool Report, XboxBreadcrumb? Crumb)>();
-        states.AddRange(inputs.DefaultStateDirs.Select(dir => (dir, false, (XboxBreadcrumb?)null)));
-        states.AddRange(breadcrumbs.Select(crumb => (crumb.StateDir, false, (XboxBreadcrumb?)crumb)));
+        // State folders: breadcrumbs, the defaults (quiet when PartingX was never set up), then the user's list.
+        var states = new List<(string Dir, bool Report)>();
+        states.AddRange(breadcrumbs.Values.Select(crumb => (crumb.StateDir, false)));
+        states.AddRange(inputs.DefaultStateDirs.Select(dir => (dir, false)));
         foreach (var folder in inputs.UserFolders)
         {
             if (!Directory.Exists(folder))
@@ -75,21 +81,26 @@ public sealed class XboxGameDetector : IGameDetector
                 DetectorDiagnostics.Warn($"Xbox folder {folder} not found; nothing listed from it");
                 continue;
             }
-            if (StateDirIn(folder) is { } state) states.Add((state, true, null));
+            if (StateDirIn(folder) is { } state) states.Add((state, true));
             else xodusRoots.Add(folder);
         }
 
-        foreach (var (dir, report, listedCrumb) in states)
+        foreach (var (dir, report) in states)
         {
             ct.ThrowIfCancellationRequested();
-            if (!Directory.Exists(dir) || !seenStates.Add(PathIdentity.Canonicalize(dir))) continue;
-            var instance = PartingXInstance.Load(dir, report);
+            var canonical = PathIdentity.Canonicalize(dir);
+            if (!seenStates.Add(canonical)) continue;
+            // The breadcrumb names the instance's folders itself; settings.json only stands in for an instance without one.
+            var instance = breadcrumbs.TryGetValue(canonical, out var crumb)
+                ? PartingXInstance.FromBreadcrumb(crumb)
+                : Directory.Exists(dir) ? PartingXInstance.Load(dir, report) : null;
             if (instance is null) continue;
-            // A breadcrumb for the same state folder supplies the launcher even when the folder came from elsewhere.
-            var crumb = listedCrumb ?? breadcrumbs.FirstOrDefault(c => PathIdentity.Canonicalize(c.StateDir) == PathIdentity.Canonicalize(dir));
-            instance.OpenCommand = inputs.Apps.PartingX(dir, defaults.Contains(PathIdentity.Canonicalize(dir)), crumb);
-            xodusRoots.Add(instance.PayloadRoot);
-            payloadRoots.Add(PathIdentity.Canonicalize(instance.PayloadRoot));
+            instance.FallbackOpenCommand = inputs.Apps.PartingX(dir, defaults.Contains(canonical));
+            foreach (var payloadRoot in instance.PayloadRoots)
+            {
+                xodusRoots.Add(payloadRoot);
+                payloadRoots.Add(PathIdentity.Canonicalize(payloadRoot));
+            }
             var installs = instance.Installs(ct, out var partials);
             if (partials > 0)
                 AppLog.Warn("scan", $"PartingX {dir}: {partials} unfinished download(s) not listed until they finish");
@@ -135,7 +146,7 @@ public sealed class XboxGameDetector : IGameDetector
             DetectorDiagnostics.Warn($"PartingX title {install.StoreId} ({install.Directory}): {package?.Problem ?? "no package config"}; listed without a modding target");
         var environment = instance.Environment(install.StoreId);
         var name = install.Title ?? instance.CatalogueTitle(install.StoreId) ?? package?.DisplayName ?? install.StoreId;
-        var game = Card(name, install.Directory, verified ? package : null, PartingXApp, install.StoreId, instance.OpenCommand, instance.JobsFile);
+        var game = Card(name, install.Directory, verified ? package : null, Package(instance, install.StoreId));
         game.PrefixPath = environment.Prefix;
         game.WineBinaryPath = environment.Wine;
         game.WineServerPath = environment.WineServer;
@@ -156,16 +167,33 @@ public sealed class XboxGameDetector : IGameDetector
         if (!package.HasExecutable)
             DetectorDiagnostics.Warn($"Xbox package {dir}: {package.Problem}; listed without a modding target");
         var name = package.DisplayName ?? Path.GetFileName(dir);
-        var game = Card(name, dir, package.HasExecutable ? package : null, ownedByPartingX ? PartingXApp : XodusApp,
-            package.StoreId, ownedByPartingX ? null : xodusCommand, jobsFile: null);
+        var game = Card(name, dir, package.HasExecutable ? package : null,
+            new XboxPackageInfo(package.StoreId, ownedByPartingX ? PartingXApp : XodusApp, ownedByPartingX ? null : xodusCommand, JobsFile: null));
         game.Runner = ownedByPartingX ? PartingXApp : XodusApp;
         XboxWriteGate.Register(game.XboxPackage!, dir);
         return game;
     }
 
-    private static DetectedGame Card(string name, string dir, XboxPackage? package, string owningApp, string? storeId, string? openCommand, string? jobsFile)
+    /// <summary>
+    /// The card's package record: Play and Show through the breadcrumb's entry points (an argument vector, PartingX's own
+    /// launch path; spec items 2–3) when its launcher is there, else the instance's fallback opener (spec item 4).
+    /// </summary>
+    private static XboxPackageInfo Package(PartingXInstance instance, string storeId)
+    {
+        var crumb = instance.Breadcrumb;
+        var play = crumb?.Command(crumb.PlayEntry, storeId);
+        if (crumb is not null && play is not null && OwningAppLocator.IsExecutableFile(play[0]))
+            return new XboxPackageInfo(storeId, PartingXApp, OwningAppLocator.Render(play, crumb.LaunchEnvironment), instance.JobsFile,
+                play, crumb.Command(crumb.ShowEntry, storeId), crumb.LaunchEnvironment);
+        if (crumb?.LaunchArgv is { } argv && !OwningAppLocator.IsExecutableFile(argv[0]))
+            AppLog.Warn("scan", $"PartingX launcher {argv[0]} ({crumb.File}) is not an executable file; Play falls back to opening PartingX");
+        return new XboxPackageInfo(storeId, PartingXApp, instance.FallbackOpenCommand, instance.JobsFile);
+    }
+
+    private static DetectedGame Card(string name, string dir, XboxPackage? package, XboxPackageInfo info)
     {
         var executable = package?.Executable;
+        var openCommand = info.OpenCommand;
         return new DetectedGame
         {
             Name = name,
@@ -178,8 +206,9 @@ public sealed class XboxGameDetector : IGameDetector
             // The exe is encrypted on disk, so its bitness is unknown: the card never claims one, and installs refuse with
             // the plain reason (XboxWriteGate.InstallRefusal) until #167 reads it from the package.
             LaunchCommand = openCommand,
-            ParentLauncherName = openCommand is null ? null : owningApp,
-            XboxPackage = new XboxPackageInfo(storeId, owningApp, openCommand, jobsFile)
+            // PartingX's Play entry point starts the game itself; only an opener leaves the user to start it in the app.
+            ParentLauncherName = openCommand is null || info.PlayArgv is not null ? null : info.OwningApp,
+            XboxPackage = info
         };
     }
 

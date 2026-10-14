@@ -63,8 +63,52 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
             LaunchHandoffClassifier.IsHandoff(game))
             throw new InvalidOperationException(HandoffProfileRefused);
 
-        var stderrLog = CreateLaunchLog(game);
-        var process = new Process { StartInfo = BuildStartInfo(game, options, stderrLog) };
+        // PartingX's own Play entry point runs as an argument vector with no shell, so there is no stderr redirection to a
+        // per-launch log: PartingX keeps its own logs, and an early failure is still reported by its exit code.
+        var stderrLog = XboxEntryPoint(game) is null ? CreateLaunchLog(game) : null;
+        await RunAndWatchAsync(BuildStartInfo(game, options, stderrLog), stderrLog).ConfigureAwait(false);
+    }
+
+    /// <summary>True when the card can open its title in the owning app (PartingX's <c>--show</c> entry point, Refs #90).</summary>
+    public static bool CanShowInOwningApp(DetectedGame game) => game.XboxPackage?.ShowArgv is { Count: > 0 };
+
+    /// <summary>
+    /// "Show in PartingX" (Refs #90, spec item 3): executes the breadcrumb's <c>launch.argv</c> + <c>entryPoints.show</c>
+    /// for the title, with <c>launch.env</c>, as an argument vector (no shell), watched for an early failure like Play.
+    /// </summary>
+    public async Task ShowInOwningAppAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (game.XboxPackage is not { ShowArgv: { Count: > 0 } argv } package)
+            throw new InvalidOperationException("This card has no owning app to show it in.");
+        await RunAndWatchAsync(ArgvStartInfo(argv, package.LaunchEnvironment), stderrLog: null).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The card's own PartingX Play entry point while it is the card's command (no Edit game command replaced it); null
+    /// otherwise. Refs #90: Play = PartingX <c>--play &lt;storeId&gt;</c>, PartingX's normal launch path.
+    /// </summary>
+    internal static (IReadOnlyList<string> Argv, IReadOnlyDictionary<string, string>? Environment)? XboxEntryPoint(DetectedGame game)
+        => game.XboxPackage is { PlayArgv: { Count: > 0 } argv } package && game.UserLaunchCommand is null &&
+           string.Equals(package.OpenCommand, game.LaunchCommand, StringComparison.Ordinal)
+            ? (argv, package.LaunchEnvironment)
+            : null;
+
+    /// <summary>An argument vector executed as is: <c>argv[0]</c> is the program, every other entry one argument, no shell.</summary>
+    internal static ProcessStartInfo ArgvStartInfo(IReadOnlyList<string> argv, IReadOnlyDictionary<string, string>? environment)
+    {
+        // A hand-off: the owning app picks the game's working directory itself.
+        var psi = new ProcessStartInfo(argv[0]) { UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in argv.Skip(1)) psi.ArgumentList.Add(argument);
+        if (environment is not null)
+            foreach (var pair in environment)
+                psi.Environment[pair.Key] = pair.Value;
+        return psi;
+    }
+
+    private async Task RunAndWatchAsync(ProcessStartInfo startInfo, string? stderrLog)
+    {
+        var process = new Process { StartInfo = startInfo };
         try
         {
             process.Start();
@@ -93,6 +137,8 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
 
     internal static ProcessStartInfo BuildStartInfo(DetectedGame game, GameLaunchOptions options, string? stderrLog = null)
     {
+        // A hand-off refuses launch options before this point, so the entry point runs exactly as PartingX announced it.
+        if (XboxEntryPoint(game) is { } entry) return ArgvStartInfo(entry.Argv, entry.Environment);
         var psi = new ProcessStartInfo("/bin/sh")
         {
             UseShellExecute = false,

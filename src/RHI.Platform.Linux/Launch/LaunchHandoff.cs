@@ -108,9 +108,10 @@ public static class LaunchHandoffClassifier
     public static LaunchHandoff Classify(DetectedGame game)
     {
         ArgumentNullException.ThrowIfNull(game);
-        // An Xbox card's own command opens its owning app (it may be that app's start script, which names no store);
-        // a command the user typed instead is read like any other.
-        if (game.XboxPackage?.OpenCommand is { } open && string.Equals(open, game.LaunchCommand, StringComparison.Ordinal))
+        // An Xbox card's own command (PartingX's Play entry point, or the owning app's opener, which may be that app's
+        // start script naming no store) is the owning app's hand-off; a command the user typed instead is read by its words.
+        if (game.UserLaunchCommand is null && game.XboxPackage?.OpenCommand is { } open &&
+            string.Equals(open, game.LaunchCommand, StringComparison.Ordinal))
             return LaunchHandoff.Xbox;
         if (!string.IsNullOrWhiteSpace(game.LaunchCommand))
             return ClassifyCommand(game.LaunchCommand);

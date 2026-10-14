@@ -331,19 +331,25 @@ public sealed class XboxGameDetectorTests : IDisposable
     }
 
     [Fact]
-    public void Breadcrumb_FindsAnInstanceNobodyListed_AndItsLauncherOpensIt()
+    public void Breadcrumb_FindsAnInstanceNobodyListed_AndPlayIsItsPlayEntryPoint()
     {
         Title("9CRUMB");
         var launcher = _tree.File("", "px", "PartingX.AppImage");
         File.SetUnixFileMode(launcher, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         var crumbs = _tree.Dir("data", "partingx", "instances");
-        _tree.File(JsonSerializer.Serialize(new { schema = 1, stateDir = _state, launcher, launcherArgs = new[] { "--minimised" }, future = 1 }),
+        _tree.File(JsonSerializer.Serialize(new
+            {
+                schema = 1, app = "PartingX", stateDir = _state, payloadRoots = new[] { _payloads }, environmentRoot = _envs, runtimeRoot = _runtimes,
+                launch = new { argv = new[] { launcher }, env = new { } },
+                entryPoints = new { play = new[] { "--play", "{storeId}" }, show = new[] { "--show", "{storeId}" } }, future = 1
+            }),
             "data", "partingx", "instances", "acceptance.json");
         _tree.File("{ not json", "data", "partingx", "instances", "broken.json");
 
         var game = Assert.Single(Detect(Inputs(userFolders: [], breadcrumbs: crumbs)).Games);
 
-        Assert.Equal($"'{launcher}' '--minimised'", game.LaunchCommand);
+        Assert.Equal($"'{launcher}' '--play' '9CRUMB'", game.LaunchCommand);
+        Assert.Equal([launcher, "--play", "9CRUMB"], game.XboxPackage!.PlayArgv);
     }
 
     [Fact]
@@ -364,6 +370,39 @@ public sealed class XboxGameDetectorTests : IDisposable
         // For the default state folder, the desktop entry is the way to open it.
         var asDefault = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps], defaults: [_state])).Games);
         Assert.Equal("/opt/PartingX.AppImage", asDefault.LaunchCommand);
+    }
+
+    [Fact]
+    public void DesktopEntries_ThatStartOneTitle_AreNeverTakenForTheApp()
+    {
+        Title("9DESK");
+        var apps = _tree.Dir("apps");
+        // A per-title shortcut (PartingX's or RHI's), and PartingX's id with a show argument: neither opens the app.
+        _tree.File("[Desktop Entry]\nName=Blue Prince\nExec=/opt/PartingX.AppImage --play 9N431PX143P8\n", "apps", "partingx-blue-prince.desktop");
+        _tree.File("[Desktop Entry]\nName=PartingX\nExec=/opt/PartingX.AppImage --show 9N431PX143P8\n", "apps", "partingx.desktop");
+        _tree.File("[Desktop Entry]\nName=PartingX\nExec=/opt/PartingX.AppImage partingx://play/9N431PX143P8\n", "apps", "io.example.PartingX.desktop");
+        _tree.File("[Desktop Entry]\nName=PartingX Helper\nExec=/opt/helper\n", "apps", "partingx-helper.desktop");
+
+        var none = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps], defaults: [_state])).Games);
+        Assert.Null(none.LaunchCommand);
+
+        _tree.File("[Desktop Entry]\nName=PartingX\nExec=/opt/PartingX.AppImage %u\n", "apps", "zz-app.desktop");
+        var app = Assert.Single(Detect(Inputs(userFolders: [], applicationDirs: [apps], defaults: [_state])).Games);
+        Assert.Equal("/opt/PartingX.AppImage", app.LaunchCommand);
+    }
+
+    [Fact]
+    public void TheAppBuildsOneXboxFolderStore_ForSettingsAndBothDetectors()
+    {
+        using var http = new HttpClient(new JsonHandler("{}"));
+        var wine = new WineDllOverrideService();
+        var app = RHI.Desktop.AppComposition.Create(http, new LinuxDeploymentRecordStore(_tree.Path_("d.json")), wine,
+            LinuxDeploymentRecovery.CreateJournal(wine, _tree.Path_("journal")));
+        var detectors = (IGameDetector[])typeof(GameLibraryScanner)
+            .GetField("_detectors", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(app.Scanner)!;
+
+        Assert.Same(app.XboxFolders, detectors.OfType<XboxGameDetector>().Single().FolderStore);
+        Assert.Same(app.XboxFolders, detectors.OfType<WinePrefixDetector>().Single().XboxFolderStore);
     }
 
     [Fact]
@@ -652,6 +691,26 @@ public sealed class XboxGameDetectorTests : IDisposable
         Assert.Equal("Unity", game.EngineHint); // the manifest entry applied
         Assert.Null(game.ForcedArchitecture);
         Assert.Equal(Path.Combine(game.InstallPath, "Game.exe"), game.ExecutablePath);
+    }
+
+    [Fact]
+    public async Task ManifestSplitChildren_KeepTheXboxCardsOwningAppAndBitness()
+    {
+        // Upstream splits "DOOM + DOOM II" into its two games; a PartingX collection split that way stays an Xbox card.
+        var dir = Title("9DOOM", title: "DOOM + DOOM II");
+        Directory.CreateDirectory(Path.Combine(dir, "rerelease"));
+        var game = Assert.Single(Detect(Inputs()).Games);
+        game.ForcedArchitecture = PeArchitecture.X64; // a bitness set before the split (manifest or #167) travels too
+        const string manifestJson = "{ \"version\": 3, \"splitGames\": { \"DOOM + DOOM II\": [ { \"name\": \"DOOM (Rerelease)\", \"subPath\": \"rerelease\" } ] } }";
+        using var http = new HttpClient(new JsonHandler(manifestJson));
+        var policy = new UpstreamGameLibraryPolicyService(new UpstreamRhiManifestService(http, "https://example.test/manifest.json"));
+
+        var child = Assert.Single(await policy.ApplyAsync([game]));
+
+        Assert.Equal("DOOM (Rerelease)", child.Name);
+        Assert.Same(game.XboxPackage, child.XboxPackage);
+        Assert.Equal(PeArchitecture.X64, child.ForcedArchitecture);
+        Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(child));
     }
 
     private sealed class JsonHandler(string json) : HttpMessageHandler
