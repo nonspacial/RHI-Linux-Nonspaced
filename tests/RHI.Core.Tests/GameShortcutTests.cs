@@ -393,6 +393,43 @@ public sealed class InstanceHandoffTests : IDisposable
     }
 
     [Fact]
+    public void SymlinkedFolder_EvenToAPrivateOne_NoHandoff()
+    {
+        var real = Directory.CreateDirectory(Path.Combine(_dir, "r"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute).FullName;
+        var link = Path.Combine(_dir, "l");
+        Directory.CreateSymbolicLink(link, real);
+        Assert.True(InstanceHandoff.IsPrivateFolder(real)); // the target itself would do
+
+        Assert.False(InstanceHandoff.IsPrivateFolder(link));
+        Assert.Null(InstanceHandoff.Listen(_ => { }, Path.Combine(link, "handoff.sock")));
+        Assert.False(File.Exists(Path.Combine(real, "handoff.sock")));
+    }
+
+    /// <summary>Sends one raw line of exactly <paramref name="lineBytes"/> bytes (a valid request padded by an unknown field).</summary>
+    private async Task<(string Answer, int Handled)> SendLineOf(int lineBytes)
+    {
+        var handled = 0;
+        using var listener = InstanceHandoff.Listen(_ => Interlocked.Increment(ref handled), Socket);
+        var head = "{\"Kind\":\"Launch\",\"Value\":\"steam:1\",\"Pad\":\"";
+        var line = head + new string('x', lineBytes - head.Length - 2) + "\"}";
+        Assert.Equal(lineBytes, Encoding.UTF8.GetByteCount(line));
+        using var client = new System.Net.Sockets.Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+        client.Connect(new UnixDomainSocketEndPoint(Socket));
+        client.Send(Encoding.UTF8.GetBytes(line + "\n"));
+        var buffer = new byte[16];
+        var read = await client.ReceiveAsync(buffer, SocketFlags.None).WaitAsync(TimeSpan.FromSeconds(10));
+        listener!.Dispose();
+        return (Encoding.UTF8.GetString(buffer, 0, read), Volatile.Read(ref handled));
+    }
+
+    [Fact]
+    public async Task MessageLongerThan8KiB_IsRefused_8KiBIsRead()
+    {
+        Assert.Equal(("ok\n", 1), await SendLineOf(8 * 1024));
+        Assert.Equal(("refused\n", 0), await SendLineOf(8 * 1024 + 1));
+    }
+
+    [Fact]
     public async Task MalformedMessage_IsRefused_AndNothingIsHandled()
     {
         var handled = 0;

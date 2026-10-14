@@ -109,6 +109,18 @@ public sealed class GitHubTokenSettingsTests : IDisposable
     }
 
     [Fact]
+    public void Read_FileOthersCanRead_IsRestrictedTo0600_ThenUsed()
+    {
+        File.WriteAllText(TokenPath, Token);
+        File.SetUnixFileMode(TokenPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+
+        var read = new SecretFileStore(TokenPath).Read();
+
+        Assert.Equal(new SecretFileRead(SecretFileState.Present, Token, Restricted: true), read);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(TokenPath));
+    }
+
+    [Fact]
     public async Task Save_OverAWorldReadableFile_LeavesItPrivate()
     {
         await File.WriteAllTextAsync(TokenPath, "ghp_previous");
