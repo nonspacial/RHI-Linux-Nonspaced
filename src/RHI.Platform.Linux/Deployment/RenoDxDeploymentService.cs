@@ -447,7 +447,7 @@ public sealed class RenoDxDeploymentService
             }
             var iniSummary = iniApply.AppliedCount > 0
                 ? unityUpgrades.Count > 0
-                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database + manifest)"
+                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database / manifest)"
                     : $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
                 : iniApply.PreservedUserEdits > 0
                     ? $" · {iniApply.PreservedUserEdits} user-edited [renodx] override(s) preserved"
