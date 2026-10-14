@@ -41,9 +41,11 @@ Upstream 2.8.6–2.8.7
 
 Features
 
-- **Xbox / Game Pass** games installed by PartingX or Xodus are listed. Play asks PartingX to start the game; the card
-  menu has Show in PartingX. RHI reads bitness from the game's package (the executables are encrypted) and changes
-  nothing while PartingX has a job queued for the game.
+- **Xbox / Game Pass** games are listed from Xodus-format installs and from a configurable list of Xbox game folders.
+  RHI is ready for games installed by Xodus (https://github.com/xodus-gaming/xodus), a Linux Game Pass client that is
+  still in development. Play hands the game to the app that installed it and never starts the executable directly.
+  RHI reads bitness from the game's package (the executables are encrypted; set Force API if a component cannot tell
+  the graphics API) and changes nothing while that app is still downloading or updating the game.
 - **ReShade DLL name**: choose the name ReShade is installed under (Automatic by default).
 - ReShade **No Addons** channel.
 - OptiScaler **GPU type** INI templates (NVIDIA / AMD / Intel), kept in `~/.config/rhi-linux/inis/` and never

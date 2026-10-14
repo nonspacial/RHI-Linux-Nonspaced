@@ -2,7 +2,7 @@
 
 # RHI Linux
 
-### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass (PartingX)
+### Native Linux port of RHI for Steam / Proton, Heroic, Lutris, Wine and Xbox / Game Pass
 
 [![Fork](https://img.shields.io/badge/RHI%20Linux%20Nonspaced-main%20%C2%B7%20based%20on%200.9.23.4--beta.1-0ea5e9?style=for-the-badge)](https://github.com/nonspacial/RHI-Linux-Nonspaced)
 [![Upstream](https://img.shields.io/badge/Upstream%20RHI-2.8.7-6366f1?style=for-the-badge)](https://github.com/RankFTW/RHI)
@@ -80,7 +80,7 @@ Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork
 * **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified.
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
 * **follows upstream RHI to 2.8.7**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler and Control Ultimate Edition frame generation.
-* **lists Xbox / Game Pass games** installed by PartingX or Xodus.
+* **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
 * **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts and a right-click menu on library cards.**
 * **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
 
@@ -130,13 +130,13 @@ Manually added games and standalone Wine prefixes are also supported.
 
 The game executable and Wine prefix can be configured independently when necessary. **Edit game** can also change the launch command; clearing the box goes back to the detected one.
 
-## Xbox / Game Pass (PartingX and Xodus)
+## Xbox / Game Pass
 
-Linux has no official Xbox app. RHI lists Game Pass games installed by PartingX or Xodus straight away; unfinished downloads stay hidden until they complete. If your PartingX or Xodus data lives somewhere unusual, add the folder in **Settings → PartingX / Xbox folders**.
+Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-format installs and from a configurable list of Xbox game folders in **Settings**, and lists them straight away; unfinished downloads stay hidden until they complete. RHI is ready to list games installed by [Xodus](https://github.com/xodus-gaming/xodus), a Linux Game Pass client that is still in development.
 
-* **Play** asks PartingX to start the game, through its normal launch path (licensing, saves and cloud sync). RHI never starts the game's executable itself. The card's right-click menu also has **Show in PartingX**.
+* **Play** hands the game to the app that installed it, so that app's normal launch path (licensing, saves and cloud sync) applies. RHI never starts the game's executable itself. If RHI cannot find that app, Play is disabled and says why. The card's right-click menu can also show the game in that app.
 * Game Pass executables are encrypted on disk. RHI reads the game's bitness from its package instead, but it cannot always see which graphics API the game uses; if a component refuses to install for that reason, set **Force API** for the game.
-* RHI changes nothing in a game while PartingX has a job queued for it, and never touches the encrypted game files, the package files or the files PartingX manages in the game's prefix.
+* RHI changes nothing in a game while the app that installed it is still downloading or updating it, and never touches the encrypted game files, the package files or the files that app manages in the game's prefix.
 
 ---
 
@@ -243,7 +243,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## Platforms & launchers
 
-* **Xbox / Game Pass** games from PartingX and Xodus, as described under [Supported Launchers](#xbox--game-pass-partingx-and-xodus).
+* **Xbox / Game Pass** games, as described under [Xbox / Game Pass](#xbox--game-pass).
 * **HDR launch guidance.** For games started by Steam, Heroic or Lutris, RHI does not wrap the store's launch. It tells you exactly where to paste the HDR settings in that launcher (Steam launch options, Heroic's Advanced settings, Lutris's command prefix). Games started directly with a Proton build's `wine` are told that Proton's HDR variables do not apply to them.
 * Wrapper commands (`gamemoderun`, `mangohud`, `gamescope … --` and similar) are seen through, so a launch is always recognised as the store's.
 * A game's error output goes to a capped log file under `~/.local/state/rhi-linux/logs/launch/`; if the game exits at once, the last line is shown.
@@ -263,7 +263,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 * **Shader profiles:** save, load, rename, export and import named shader-pack selections.
 * **Accounts:** **Settings → Accounts & updates** has **Connect Nexus account** (API key), handling of Nexus "Mod Manager Download" links (each one confirmed before anything is downloaded), and a GitHub token field that checks the token before saving it.
 * **Update notices:** at start-up RHI checks this fork's releases and tells you when a newer one exists. It never downloads or installs anything itself.
-* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), the game's Nexus Mods page where it is known and, for PartingX games, Show in PartingX.
+* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), the game's Nexus Mods page where it is known and, for Xbox games, showing the game in the app that installed it.
 * **Edit game** can change the launch command.
 * **Ported from upstream RHI 2.7.6–2.8.7:** update history, the Available HDR mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, and manifest DLSS/Streamline folder overrides.
 
