@@ -273,7 +273,7 @@ public sealed class Dlss5FeederLifecycleAuditTests
             };
             var dgVoodooZip = Zip(("MS/x64/D3D9.dll", Pe(128 * 1024)), ("MS/x86/D3D9.dll", Pe(128 * 1024)));
             const string dgVoodooUrl = "https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.86/dgVoodoo2_86.zip";
-            responses[GitHubReleaseAssetResolver.NormalizeReleaseApiUrl("https://api.github.com/repos/dege-diosg/dgVoodoo2/releases/latest")]
+            responses["https://api.github.com/repos/dege-diosg/dgVoodoo2/releases/latest"]
                 = Release("2.86", "dgVoodoo2_86.zip", dgVoodooUrl, dgVoodooZip);
             responses[dgVoodooUrl] = dgVoodooZip;
             // The host64 helper's 64-bit ReShade (32-bit games): reshade.me's page and setup, extracted by a stand-in.

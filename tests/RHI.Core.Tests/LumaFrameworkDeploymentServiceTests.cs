@@ -158,7 +158,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         using var http = new HttpClient(new FakeHandler(req =>
         {
             Assert.Equal(
-                GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl),
+                LumaFrameworkDeploymentService.LatestReleaseApiUrl,
                 req.RequestUri!.AbsoluteUri);
             return JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma.zip", digest) + "]");
         }));
@@ -560,7 +560,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         using var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
         {
             wikiUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(wiki, Encoding.UTF8, "text/html") },
-            var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
+            var url when url == LumaFrameworkDeploymentService.LatestReleaseApiUrl
                 => JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma-metadata.zip", digest) + "]"),
             "https://github.com/rhi-tests/luma-metadata.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
@@ -671,7 +671,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         var http = new HttpClient(new FakeHandler(req => req.RequestUri!.AbsoluteUri switch
         {
             wikiUrl => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(wiki, Encoding.UTF8, "text/html") },
-            var url when url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl)
+            var url when url == LumaFrameworkDeploymentService.LatestReleaseApiUrl
                 => JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma-metadata.zip", digest) + "]"),
             "https://github.com/rhi-tests/luma-metadata.zip" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) },
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
@@ -797,7 +797,7 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         => new(new FakeHandler(req =>
         {
             var url = req.RequestUri!.AbsoluteUri;
-            if (url == GitHubReleaseAssetResolver.NormalizeReleaseApiUrl(LumaFrameworkDeploymentService.LatestReleaseApiUrl))
+            if (url == LumaFrameworkDeploymentService.LatestReleaseApiUrl)
                 return JsonResponse("[" + ReleaseJson("latest-630", "https://github.com/rhi-tests/luma.zip", digest) + "]");
             if (url == "https://github.com/rhi-tests/luma.zip")
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zip) };

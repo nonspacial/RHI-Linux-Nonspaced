@@ -25,7 +25,7 @@ public enum Dlss5FeederConsumer
 public sealed class Dlss5FeederFullDeploymentService
 {
     public const Dlss5FeederConsumer DefaultConsumer = Dlss5FeederConsumer.RenoDxDlss5;
-    private const string FeederReleaseApi = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest";
+    private const string FeederReleaseApi = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1";
     private const string FeederArchiveAssetPattern = @"^DLSS5-Feeder-.*\.zip$";
     private const string RhiRepoReleasesApi = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     private const string RenoDx5AssetPattern = @"^renodx-dlss5_.*\.zip$";

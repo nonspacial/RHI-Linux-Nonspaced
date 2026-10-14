@@ -26,7 +26,7 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
           "addonPacks": {
             "mfgunlock": {
               "packageName": "MFG Ada Unlock",
-              "releaseApiUrl": "https://api.github.com/repos/mfg/releases/latest",
+              "releaseApiUrl": "https://api.github.com/repos/mfg/releases?per_page=1",
               "repositoryUrl": "https://github.com/rhi-tests/mfg"
             }
           }
@@ -175,6 +175,82 @@ public sealed class UpstreamRhiAddonDeploymentServiceTests : IDisposable
         Assert.Contains("ShortFuse", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Null(records.Find(game, ManagedComponentKind.Dlss5Dx11Bridge));
     }
+
+    /// <summary>
+    /// #153: with /releases/latest asked as written, the app's offline fallbacks for the three prerelease-only packs
+    /// must name the release list as upstream's manifest does (e9eef5d), or a manifest without the pack makes the
+    /// check compare against GitHub's older "Latest" release. Reads the fallbacks the app really builds.
+    /// </summary>
+    [Theory]
+    [InlineData(ManagedComponentKind.MfgAdaUnlock, "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1")]
+    [InlineData(ManagedComponentKind.Dlss5Dx11Bridge, "https://api.github.com/repos/NIGos/dlss5-bridge/releases?per_page=1")]
+    [InlineData(ManagedComponentKind.Dlss5Feeder, "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1")]
+    public async Task AppFallback_OfPrereleaseOnlyPack_FindsTheNewestPrereleaseWhenTheManifestLacksThePack(ManagedComponentKind kind, string listUrl)
+    {
+        using (var offline = new HttpClient(new FakeHandler(_ => throw new HttpRequestException("offline test"))))
+        {
+            var wine = new WineDllOverrideService();
+            var app = RHI.Desktop.AppComposition.Create(offline, new LinuxDeploymentRecordStore(Path.Combine(_root, "app-records.json")), wine,
+                LinuxDeploymentRecovery.CreateJournal(wine));
+            var options = AddonServices(app.ManagedComponents).Distinct(ReferenceEqualityComparer.Instance).Cast<UpstreamRhiAddonDeploymentService>()
+                .Select(OptionsOf).Single(o => o.Kind == kind);
+            Assert.Equal(listUrl, options.ReleaseApiUrlFallback);
+        }
+
+        var game = CreateGame();
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, kind + "-records.json"));
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game),
+            GameName = game.Name,
+            Component = kind,
+            BinaryDirectory = game.BinaryDirectory!,
+            Version = "1.0.0",
+            Files = []
+        });
+        var latestUrl = listUrl.Replace("releases?per_page=1", "releases/latest", StringComparison.Ordinal);
+        string Release(string tag, bool pre) => JsonSerializer.Serialize(new
+        {
+            tag_name = tag,
+            prerelease = pre,
+            assets = new[] { new { name = "DLSS5-Feeder-x.zip", browser_download_url = "https://github.com/rhi-tests/" + tag } }
+        });
+        using var http = new HttpClient(new FakeHandler(req =>
+        {
+            var url = req.RequestUri!.AbsoluteUri;
+            if (url == "https://manifest.test/current.json") return JsonResponse("""{ "version": 2 }""");
+            if (url == latestUrl) return JsonResponse(Release("v1.0.0", pre: false));
+            if (url == listUrl) return JsonResponse("[" + Release("v2.0.0-pre1", pre: true) + "]");
+            throw new InvalidOperationException("Unexpected URL: " + url);
+        }));
+        var manifest = new UpstreamRhiManifestService(http, "https://manifest.test/current.json");
+        var service = new UpstreamRhiAddonDeploymentService(http, records, manifest, new UpstreamRhiAddonDeploymentOptions(
+            kind, "absent-pack", kind.ToString(), listUrl, 1,
+            AssetNamePattern64: ".*", DeployFileName64: "x.addon64"), Path.Combine(_root, "cache"));
+
+        var check = await service.CheckUpdateAsync(game);
+
+        Assert.False(check.CouldNotCheck, check.Message);
+        Assert.True(check.UpdateAvailable, check.Message);
+        Assert.Equal("2.0.0-pre1", check.LatestVersion);
+    }
+
+    private static IEnumerable<UpstreamRhiAddonDeploymentService> AddonServices(object root)
+    {
+        var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+        foreach (var field in root.GetType().GetFields(flags))
+        {
+            var value = field.GetValue(root);
+            if (value is UpstreamRhiAddonDeploymentService addon) yield return addon;
+            else if (value is Dlss5FeederFullDeploymentService feeder)
+                foreach (var inner in AddonServices(feeder)) yield return inner;
+        }
+    }
+
+    private static UpstreamRhiAddonDeploymentOptions OptionsOf(UpstreamRhiAddonDeploymentService service)
+        => (UpstreamRhiAddonDeploymentOptions)typeof(UpstreamRhiAddonDeploymentService)
+            .GetField("_options", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(service)!;
 
     private DetectedGame CreateGame(ushort machine = 0x8664)
     {

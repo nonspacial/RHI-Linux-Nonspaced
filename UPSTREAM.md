@@ -139,4 +139,10 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #153 — GitHub release lookups honour /releases/latest (2.8.6)
+
+- Untagged release lookups now ask exactly the endpoint they are given, as upstream `2bfb083`: `/releases/latest` is GitHub's "Latest" release. The fork used to rewrite it to `/releases?per_page=1` (newest by creation date), which hands back an older build when a repo marks an earlier-created release as Latest (live 2026-10-14: discord-fix Latest v1.03, list head v1.0.2). This covers every resolver consumer: ReLimiter, MFG Ada Unlock, DLSS5 Bridge/Feeder, RE Framework, Luma, dgVoodoo (Feeder staging).
+- Prerelease-only repos opt in to the list endpoint explicitly, as upstream's manifest does (`e9eef5d`): the offline fallbacks for MFG Ada Unlock, DLSS5 DX11 Bridge and the DLSS5 Feeder (add-on and full stack) now say `/releases?per_page=1`.
+- The pinned fallback manifest moved from the 2.7.5 commit `a94a574` to the `RHI-2.8.7` tag commit `4bb5e5c`, so a broken live manifest URL falls back to the same `?per_page=1` URLs instead of the old `/latest` ones.
+
 ## Parity notes (feature-parity backlog)
