@@ -1360,6 +1360,38 @@ public sealed partial class MainWindow : Window
         });
         panel.Children.Add(new OptiScalerNightlyBuildRow(vm.Runtime.OptiScalerNightlyBuild)); // w3/sync #156 hook
 
+        // #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll), locked while installed, names another RHI
+        // component uses left out; the 2 s tooltip says which name the install takes and why.
+        if (vm.OptiScalerDllName() is { } dllName)
+        {
+            var dllRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
+            var dllLabel = new TextBlock { Text = T("Names.DllNameLabel"), VerticalAlignment = VerticalAlignment.Center };
+            var dllCombo = new ComboBox { ItemsSource = dllName.Options, SelectedItem = dllName.Selected, MinWidth = 260, IsEnabled = dllName.CanChoose };
+            ToolTip.SetTip(dllCombo, dllName.Hint);
+            ToolTip.SetShowOnDisabled(dllCombo, true);
+            ToolTip.SetShowDelay(dllCombo, MiddleEllipsisText.TooltipDelay);
+            var acceptedDll = dllName.Selected;
+            var revertingDll = false;
+            dllCombo.SelectionChanged += (_, _) =>
+            {
+                if (revertingDll || dllCombo.SelectedItem is not DllNameOption chosen || ReferenceEquals(chosen, acceptedDll)) return;
+                if (vm.SaveOptiScalerDllName(chosen.Value))
+                {
+                    acceptedDll = chosen;
+                    if (vm.OptiScalerDllName() is { } refreshed) ToolTip.SetTip(dllCombo, refreshed.Hint);
+                    return;
+                }
+                revertingDll = true;
+                dllCombo.SelectedItem = acceptedDll;
+                revertingDll = false;
+            };
+            Grid.SetColumn(dllLabel, 0);
+            Grid.SetColumn(dllCombo, 1);
+            dllRow.Children.Add(dllLabel);
+            dllRow.Children.Add(dllCombo);
+            panel.Children.Add(dllRow);
+        }
+
         panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Margin = new Avalonia.Thickness(0, 4) });
         panel.Children.Add(new TextBlock
         {

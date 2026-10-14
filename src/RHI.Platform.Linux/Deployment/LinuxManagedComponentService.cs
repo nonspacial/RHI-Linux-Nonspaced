@@ -1424,6 +1424,35 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The store of per-game proxy DLL names chosen before install.</summary>
     public DllNamePreferenceStore ReShadeDllNames => _reshade.DllNames;
 
+    /// <summary>
+    /// The names OptiScaler's DLL-name dropdown offers on <paramref name="game"/> (#172): OptiScaler's names except those a
+    /// file of another RHI component sits under (RHI's own ReShade moves aside for OptiScaler, so its name stays offered).
+    /// </summary>
+    public IReadOnlyList<string> OptiScalerProxyNamesFor(DetectedGame game)
+    {
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory)) return OptiScalerDeploymentService.ProxyNames;
+        var held = _records.FindAll(game)
+            .Where(record => record.Component is not (ManagedComponentKind.OptiScaler or ManagedComponentKind.ReShade))
+            .SelectMany(record => record.Files)
+            .Where(file => !string.IsNullOrWhiteSpace(file.Path))
+            .Select(file => Path.GetFullPath(file.Path))
+            .ToHashSet(StringComparer.Ordinal);
+        var directory = Path.GetFullPath(game.BinaryDirectory);
+        return OptiScalerDeploymentService.ProxyNames.Where(name => !held.Contains(Path.Combine(directory, name))).ToArray();
+    }
+
+    /// <summary>
+    /// The name OptiScaler is (or will be) installed under on <paramref name="game"/> (#172): the recorded one while it is
+    /// installed, else the saved choice while it is still offered, else <see cref="OptiScalerDeploymentService.DefaultProxyName"/>.
+    /// </summary>
+    public string OptiScalerProxyNameFor(DetectedGame game)
+    {
+        if (_records.Find(game, ManagedComponentKind.OptiScaler) is { } record) return OptiScalerDeploymentService.GetProxyName(record);
+        // No ReShade service (a test wiring OptiScaler alone) = no saved choice.
+        return _reshade?.DllNames.GetOptiScaler(game) is { } chosen && OptiScalerProxyNamesFor(game).Contains(chosen, StringComparer.OrdinalIgnoreCase)
+            ? chosen
+            : OptiScalerDeploymentService.DefaultProxyName;
+    }
 
     /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
     public ProxyNameResolution? ResolveReShadeProxyName(DetectedGame game) => _reshade.ResolveProxyName(game);
@@ -1955,7 +1984,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler); // w3/parity (#96)
         return guard is not null
             ? Task.FromResult(guard)
-            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, nightlyBuild, cancellationToken));
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
+                () => _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), cancellationToken)); // #172
     }
 
     /// <summary>
@@ -2023,7 +2053,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.ReShade => _reshade.InstallAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.InstallAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.InstallAsync(game, cancellationToken),
-            ManagedComponentKind.OptiScaler => _optiscaler.InstallAsync(game, cancellationToken),
+            ManagedComponentKind.OptiScaler => _optiscaler.InstallAsync(game, OptiScalerVariant.Stable, null, OptiScalerProxyNameFor(game), cancellationToken), // #172
             ManagedComponentKind.ReLimiter => _relimiter.InstallAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.InstallAsync(game, cancellationToken),
             ManagedComponentKind.MfgAdaUnlock => InstallMfgAdaUnlockAsync(game, cancellationToken),

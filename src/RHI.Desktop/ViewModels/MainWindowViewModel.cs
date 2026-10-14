@@ -1051,6 +1051,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         return result;
     }
 
+    /// <summary>OptiScaler's DLL-name dropdown for the selected game (#172); null without a game folder to install into.</summary>
+    public OptiScalerDllNameState? OptiScalerDllName()
+        => SelectedGame is { HasConfirmedPatchTarget: true } game ? OptiScalerDllNamePresenter.For(_managedComponents, game, IsBusy) : null;
+
+    /// <summary>Saves OptiScaler's DLL name for the selected game (#172; null = Automatic). False when not saved (status says why).</summary>
+    public bool SaveOptiScalerDllName(string? name)
+        => SelectedGame is { } game && _managedComponents.GetInstalledOptiScalerVariant(game) is null
+           && TryPersist(() => _managedComponents.ReShadeDllNames.SetOptiScaler(game, name), "Ui.WhatGamePreferences", false, true) is null;
+
     public OptiScalerAdvancedSnapshot GetOptiScalerAdvancedSettings()
     {
         if (SelectedGame is null)
