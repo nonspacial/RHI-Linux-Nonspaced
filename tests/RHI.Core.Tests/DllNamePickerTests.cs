@@ -132,12 +132,12 @@ public sealed class DllNamePickerTests
     [Fact]
     public async Task Picker_AChangeRaisedOffTheUiThread_RebuildsTheListOnTheUiThread()
     {
-        using var ui = new PumpContext();
+        using var ui = new UiThreadStandIn();
         var (fx, picker, threads) = await ui.RunAsync(async () =>
         {
             var (f, _) = await StartAsync("Ui Thread Game");
             var p = f.Vm.DllNamePicker;
-            p.UiThread = (() => Environment.CurrentManagedThreadId == ui.ThreadId, action => ui.Post(_ => action(), null));
+            p.UiThread = (() => ui.IsCurrent, ui.Post);
             await SettledAsync(p);
             var seen = new System.Collections.Concurrent.ConcurrentBag<int>();
             p.Options.CollectionChanged += (_, _) => seen.Add(Environment.CurrentManagedThreadId);
@@ -152,40 +152,6 @@ public sealed class DllNamePickerTests
         Assert.Equal("Automatic (d3d9.dll)", picker.Options[0].Display);
         Assert.NotEmpty(threads);
         Assert.All(threads, id => Assert.Equal(ui.ThreadId, id));
-    }
-
-    /// <summary>A one-thread UI stand-in: posted callbacks run in order on its own thread, with itself as the context.</summary>
-    private sealed class PumpContext : SynchronizationContext, IDisposable
-    {
-        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = new();
-        private readonly Thread _thread;
-
-        public PumpContext()
-        {
-            _thread = new Thread(() =>
-            {
-                SetSynchronizationContext(this);
-                foreach (var (callback, state) in _queue.GetConsumingEnumerable()) callback(state);
-            }) { IsBackground = true, Name = "test-ui" };
-            _thread.Start();
-        }
-
-        public int ThreadId => _thread.ManagedThreadId;
-
-        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
-
-        public Task<T> RunAsync<T>(Func<Task<T>> work)
-        {
-            var done = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
-            Post(async _ =>
-            {
-                try { done.SetResult(await work()); }
-                catch (Exception ex) { done.SetException(ex); }
-            }, null);
-            return done.Task;
-        }
-
-        public void Dispose() => _queue.CompleteAdding();
     }
 
     private static async Task<(ViewModelFixture Fixture, DetectedGame Game)> StartAsync(string name, string language = "en-US", string runner = "Proton")

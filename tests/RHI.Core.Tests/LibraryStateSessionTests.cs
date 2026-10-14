@@ -22,8 +22,8 @@ public sealed class LibraryStateSessionTests
         File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
         try
         {
-            fx.Vm.ToggleFavouriteCommand.Execute(null);
-            Assert.StartsWith("Could not save the game library:", fx.Vm.StatusText);
+            var lines = LinesWrittenBy(fx, () => fx.Vm.ToggleFavouriteCommand.Execute(null));
+            Assert.StartsWith("Could not save the game library:", lines.Last());
         }
         finally { File.SetUnixFileMode(fx.DataDir, mode); }
 
@@ -142,12 +142,13 @@ public sealed class LibraryStateSessionTests
         var before = File.ReadAllText(fx.Library.LibraryPath);
         var off = fx.Vm.Runtime.SelectedHdrMode.Display;
 
+        List<string> lines;
         fx.Vm.LibraryRepairRunning = true;
-        try { fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope")); }
+        try { lines = LinesWrittenBy(fx, () => fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(RHI.Desktop.Localization.UiLocalizationService.Text("Ui.HdrGamescope"))); }
         finally { fx.Vm.LibraryRepairRunning = false; }
 
         Assert.Equal(off, fx.Vm.Runtime.SelectedHdrMode.Display);
-        Assert.StartsWith("Wait for Repair after move to finish", fx.Vm.StatusText);
+        Assert.StartsWith("Wait for Repair after move to finish", lines.Last());
         Assert.Equal(before, File.ReadAllText(fx.Library.LibraryPath));
     }
 
@@ -181,25 +182,39 @@ public sealed class LibraryStateSessionTests
         var link = Path.Combine(root, "Games");
         Directory.CreateSymbolicLink(link, Path.Combine(root, "media"));
         var heroic = new RHI.Core.Models.DetectedGame { Name = "X", Source = "Heroic", InstallPath = real, Runner = "Proton" };
+        // #164: the view model runs on one UI thread, as in the app. In a plain test the refresh's own status line and the
+        // selection analysis it starts were written from two threads at once (no UI context), racing inside the status
+        // notice and this test's list; now every line is written, and recorded, on the UI stand-in in order.
+        using var ui = new UiThreadStandIn();
         try
         {
-            using var fx = await ViewModelFixture.StartAsync([heroic]);
-            var manual = new RHI.Core.Models.DetectedGame { Name = "X", Source = "Manual", InstallPath = Path.Combine(link, "X"), IsManuallyAdded = true };
-            var manualKey = LinuxGameLibraryStore.GameKey(manual);
-            Restore(fx, new LinuxGameLibraryState
+            var lines = await ui.RunAsync(async () =>
             {
-                ManualGames = [new LinuxManualGameEntry { Name = "X", InstallPath = manual.InstallPath, Runner = "Manual Windows" }],
-                FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { manualKey }
+                using var fx = await ViewModelFixture.StartAsync([heroic]);
+                await AnalysisSettledAsync(fx); // the start's own analysis line lands before the test begins
+                var manual = new RHI.Core.Models.DetectedGame { Name = "X", Source = "Manual", InstallPath = Path.Combine(link, "X"), IsManuallyAdded = true };
+                var manualKey = LinuxGameLibraryStore.GameKey(manual);
+                Restore(fx, new LinuxGameLibraryState
+                {
+                    ManualGames = [new LinuxManualGameEntry { Name = "X", InstallPath = manual.InstallPath, Runner = "Manual Windows" }],
+                    FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { manualKey }
+                });
+                var seen = new List<(string Line, int Thread)>();
+                fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) seen.Add((fx.Vm.StatusText, Environment.CurrentManagedThreadId)); };
+                var mode = File.GetUnixFileMode(fx.DataDir);
+                File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                try
+                {
+                    await fx.Vm.RefreshCommand.ExecuteAsync(null);
+                    await AnalysisSettledAsync(fx); // and the analysis the refresh started for the reselected card
+                }
+                finally { File.SetUnixFileMode(fx.DataDir, mode); }
+                return seen;
             });
-            var lines = new List<string>();
-            fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Add(fx.Vm.StatusText); };
-            var mode = File.GetUnixFileMode(fx.DataDir);
-            File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-            try { await fx.Vm.RefreshCommand.ExecuteAsync(null); }
-            finally { File.SetUnixFileMode(fx.DataDir, mode); }
 
-            Assert.Contains(lines, line => line.Contains("Could not save the game library", StringComparison.Ordinal));
-            Assert.DoesNotContain(lines, line => line.StartsWith("Could not save the game library", StringComparison.Ordinal));
+            Assert.All(lines, line => Assert.Equal(ui.ThreadId, line.Thread));
+            Assert.Contains(lines, line => line.Line.Contains("Could not save the game library", StringComparison.Ordinal));
+            Assert.DoesNotContain(lines, line => line.Line.StartsWith("Could not save the game library", StringComparison.Ordinal));
         }
         finally
         {
@@ -215,15 +230,19 @@ public sealed class LibraryStateSessionTests
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
         var before = File.ReadAllText(fx.Library.LibraryPath);
 
+        List<string> lines;
         fx.Vm.LibraryRepairRunning = true;
         try
         {
-            fx.Vm.ToggleFavouriteCommand.Execute(null);
-            fx.Vm.ToggleHiddenCommand.Execute(null);
+            lines = LinesWrittenBy(fx, () =>
+            {
+                fx.Vm.ToggleFavouriteCommand.Execute(null);
+                fx.Vm.ToggleHiddenCommand.Execute(null);
+            });
         }
         finally { fx.Vm.LibraryRepairRunning = false; }
 
-        Assert.StartsWith("Wait for Repair after move to finish", fx.Vm.StatusText);
+        Assert.StartsWith("Wait for Repair after move to finish", lines.Last());
         Assert.False(fx.Vm.SelectedGame!.IsFavourite);
         Assert.False(fx.Vm.SelectedGame!.IsHidden);
         Assert.Equal(before, File.ReadAllText(fx.Library.LibraryPath));
@@ -246,6 +265,13 @@ public sealed class LibraryStateSessionTests
     private static readonly Regex StoreWrite = new(@"_\w*(Store|store)\.(Save|Set|Reset)\(");
 
     /// <summary>The user puts a readable library file back while RHI runs (from the set-aside copy or a backup).</summary>
+    // The selected card's analysis has finished (its line is written); bounded so a hang fails instead of blocking.
+    private static async Task AnalysisSettledAsync(ViewModelFixture fx)
+    {
+        for (var i = 0; i < 3000 && (fx.Vm.IsSelectionProbeBusy || fx.Vm.IsBusy); i++) await Task.Delay(10);
+        Assert.False(fx.Vm.IsSelectionProbeBusy || fx.Vm.IsBusy);
+    }
+
     private static void Restore(ViewModelFixture fx, LinuxGameLibraryState state)
     {
         var staged = Path.Combine(fx.Root, "restored-" + Guid.NewGuid().ToString("N") + ".json");
@@ -260,6 +286,29 @@ public sealed class LibraryStateSessionTests
         return new RHI.Core.Models.DetectedGame { Name = name, Source = "Heroic", InstallPath = dir, Runner = "Proton" };
     }
 
+    /// <summary>
+    /// The status lines <paramref name="action"/> itself wrote (synchronously, on the calling thread), in order. Status
+    /// assertions in this class read these, never the live <c>StatusText</c>: with no UI thread in a test, another writer
+    /// (a selection's analysis finishing on a pool thread) could replace the live line between the action and the
+    /// assertion (#164). <see cref="AddAndSelectAsync"/> also lets every analysis finish first, so there is none.
+    /// </summary>
+    private static List<string> LinesWrittenBy(ViewModelFixture fx, Action action)
+    {
+        var thread = Environment.CurrentManagedThreadId;
+        var lines = new List<string>();
+        void Record(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(fx.Vm.StatusText) && Environment.CurrentManagedThreadId == thread) lines.Add(fx.Vm.StatusText);
+        }
+        fx.Vm.PropertyChanged += Record;
+        try { action(); }
+        finally { fx.Vm.PropertyChanged -= Record; }
+        Assert.NotEmpty(lines);
+        return lines;
+    }
+
+    // Adds and selects the game, then waits for its analysis: the analysis writes its own "Ready" line, which would
+    // otherwise land on top of the line a test asserts next (#164: SessionOnlyFavourite… failed so in a full suite).
     private static async Task AddAndSelectAsync(ViewModelFixture fx, RHI.Core.Models.DetectedGame game)
     {
         var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
@@ -267,5 +316,8 @@ public sealed class LibraryStateSessionTests
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
         Assert.True(added, message);
+        for (var i = 0; i < 3000 && fx.Vm.SelectedGame?.Name != game.Name; i++) await Task.Delay(10);
+        Assert.Equal(game.Name, fx.Vm.SelectedGame?.Name);
+        await AnalysisSettledAsync(fx);
     }
 }
