@@ -174,6 +174,120 @@ public sealed class DllNameTests : IDisposable
         Assert.Equal("dxgi.dll", fx.Service.ResolveProxyName(fx.Game)!.Name);
     }
 
+    // ── one ReShade per game (w3 review major 2) ────────────────────────────────────────────────────────────────
+
+    // The user's own ReShade as dxgi.dll and a choice of dinput8.dll: a second ReShade would load beside it.
+    [Fact]
+    public async Task Install_UnderAChosenName_WithTheUsersReShadeAsDxgi_IsRefusedBeforeAnyChange()
+    {
+        var fx = Fixture("second-user");
+        var dxgi = Path.Combine(fx.Bin, "dxgi.dll");
+        WriteSigned(dxgi, "ReShade crosire reshade.me");
+        var before = File.ReadAllBytes(dxgi);
+        fx.Names.SetReShade(fx.Game, "dinput8.dll");
+        var registry = fx.Registry();
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Equal(ReShadeDeploymentService.OtherReShadePresentPrefix + dxgi, result.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "dinput8.dll")));
+        Assert.Equal(before, File.ReadAllBytes(dxgi));
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+        Assert.Equal(registry, fx.Registry());
+        Assert.Empty(fx.Handler.Requests);
+    }
+
+    // The manifest names version.dll for the game and the user did nothing: same refusal (no user action at all).
+    [Fact]
+    public async Task Install_UnderTheManifestName_WithTheUsersReShadeAsDxgi_IsRefused()
+    {
+        var fx = Fixture("second-manifest", api: GraphicsApi.DirectX11);
+        fx.Game.ReShadeDllNameOverride = "version.dll";
+        var dxgi = Path.Combine(fx.Bin, "DXGI.dll");
+        WriteSigned(dxgi, "ReShade crosire reshade.me");
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Equal(ReShadeDeploymentService.OtherReShadePresentPrefix + dxgi, result.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "version.dll")));
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+    }
+
+    // The other way round: the user's ReShade under a name only the dropdown knows (dinput8.dll), and an Automatic
+    // install that would put RHI's as dxgi.dll.
+    [Fact]
+    public async Task Install_Automatic_WithTheUsersReShadeAsDinput8_IsRefused()
+    {
+        var fx = Fixture("second-dinput8");
+        var dinput8 = Path.Combine(fx.Bin, "dinput8.dll");
+        WriteSigned(dinput8, "ReShade crosire reshade.me");
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.False(result.Success);
+        Assert.Equal(ReShadeDeploymentService.OtherReShadePresentPrefix + dinput8, result.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "dxgi.dll")));
+    }
+
+    // Luma and ShortFuse need an RHI-owned ReShade and install it automatically: with the user's ReShade under another
+    // name than the chosen one, nothing is installed (their dependency guard sees it under any offered name).
+    [Theory]
+    [InlineData(ManagedComponentKind.LumaFramework)]
+    [InlineData(ManagedComponentKind.ShortFuse)]
+    public async Task AutomaticReShade_ForLumaOrShortFuse_WithTheUsersReShadeAsDxgi_IsRefused(ManagedComponentKind target)
+    {
+        var fx = Fixture("second-" + target);
+        var dxgi = Path.Combine(fx.Bin, "dxgi.dll");
+        WriteSigned(dxgi, "ReShade crosire reshade.me");
+        fx.Names.SetReShade(fx.Game, "dinput8.dll");
+        var managed = Managed(fx);
+        var targetRan = false;
+
+        var result = await managed.InstallWithManagedDependenciesAsync(fx.Game, target, [], () =>
+        {
+            targetRan = true;
+            return Task.FromResult(ComponentOperationResult.Ok("installed"));
+        }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(targetRan);
+        Assert.Contains("Um ReShade externo foi detectado", result.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "dinput8.dll")));
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+    }
+
+    // RHI's own ReShade under another name is reused: a profile Apply after the choice changed keeps the recorded name
+    // and installs nothing beside it.
+    [Fact]
+    public async Task Apply_AfterTheChoiceChanged_ReusesRhisReShadeUnderItsRecordedName()
+    {
+        var fx = Fixture("reuse");
+        fx.Names.SetReShade(fx.Game, "winmm.dll");
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        fx.Names.SetReShade(fx.Game, "version.dll");
+
+        var apply = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(apply.Success, apply.Message);
+        Assert.True(File.Exists(Path.Combine(fx.Bin, "winmm.dll")));
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "version.dll")));
+    }
+
+    // OptiScaler under another name is not ReShade (the scan's rule): the install goes ahead.
+    [Fact]
+    public async Task Install_WithOptiScalerUnderAnotherName_IsNotTakenForASecondReShade()
+    {
+        var fx = Fixture("not-second");
+        WriteSigned(Path.Combine(fx.Bin, "winmm.dll"), "OptiScaler LoadReshade ReShade64.dll");
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(result.Success, result.Message);
+        Assert.True(File.Exists(Path.Combine(fx.Bin, "dxgi.dll")));
+    }
+
     // ── consumers that used to look for fixed names ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -288,6 +402,12 @@ public sealed class DllNameTests : IDisposable
 
     private ManagedComponent ReShadeRow(GameFixture fx)
         => ComponentProbe.Probe(fx.Game, Directory.EnumerateFiles(fx.Bin).ToList()).Single(c => c.Kind == ManagedComponentKind.ReShade);
+
+    private static LinuxManagedComponentService Managed(GameFixture fx)
+        => new(fx.Records, reshade: fx.Service, addonManager: null!, renodx: null!, renodxUpgrade: null!,
+            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
+            ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
 
     private static void WriteSigned(string path, string signature)
     {

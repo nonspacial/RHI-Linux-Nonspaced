@@ -128,6 +128,11 @@ public sealed partial class ReShadeDeploymentService
     /// <summary>The proxy name the next install of ReShade on <paramref name="game"/> uses, and why (#120).</summary>
     public ProxyNameResolution? ResolveProxyName(DetectedGame game) => ProxyPayloadLocator.Resolve(game, _dllNames.GetReShade(game));
 
+    /// <summary>Fixed text before the path when ReShade not installed by RHI already sits in the game folder under another
+    /// name (PT-BR presentation pair).</summary>
+    public const string OtherReShadePresentPrefix =
+        "ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ";
+
     /// <summary>Fixed text before the name when a chosen DLL name does not suit the game's bitness (PT-BR presentation pair).</summary>
     public const string NameNotForBitnessPrefix = "The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ";
 
@@ -254,6 +259,14 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Fail($"Foreign DLL protection: '{directProxy}' already exists and is not recognized as ReShade or OptiScaler. Nothing was overwritten.");
             }
         }
+
+        // One ReShade per game (#120): with no RHI ReShade here, a ReShade under any other name it can be installed as
+        // (the user's own, or one another component left) means a second copy would load beside it. Refused before any
+        // download or change, whichever path asked (profile Apply, Luma/ShortFuse dependency, a manifest name). The
+        // target-name checks above ran first: the target is absent by now, and in RHI's OptiScaler coexistence case the
+        // OptiScaler proxy was already found not to be ReShade, so neither needs an exception here.
+        if (existingRecord is null && ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory) is { } other)
+            return ComponentOperationResult.Fail(OtherReShadePresentPrefix + other);
 
         D3DCompilerPlan? d3dCompilerPlan = null;
         if (options.ShaderPackIds.Count > 0 || !string.IsNullOrWhiteSpace(options.D3DCompiler47Path))

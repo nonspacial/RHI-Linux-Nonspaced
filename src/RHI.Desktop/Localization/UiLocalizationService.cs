@@ -1000,6 +1000,8 @@ public static class UiLocalizationService
         // #120 ReShade DLL name.
         ("The chosen ReShade DLL name is for the other bitness of Windows game; choose another name: ",
             "O nome de DLL do ReShade escolhido é para a outra arquitetura de jogo Windows; escolha outro nome: "),
+        ("ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ",
+            "O ReShade já está na pasta deste jogo, mas não foi instalado pelo RHI Linux; um segundo ReShade carregaria duas vezes, então nada foi instalado. Remova esse ReShade antes ou continue usando-o: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

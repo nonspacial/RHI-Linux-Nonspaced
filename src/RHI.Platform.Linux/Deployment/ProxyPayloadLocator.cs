@@ -40,14 +40,17 @@ public static class ProxyPayloadLocator
     /// Whether <paramref name="binaryDirectory"/> holds ReShade under any name it can be installed as (by signature; the
     /// prerequisite check of ReShade add-ons). OptiScaler under a new name is not taken for ReShade.
     /// </summary>
-    public static bool HasReShadeOnDisk(string binaryDirectory)
+    public static bool HasReShadeOnDisk(string binaryDirectory) => FindReShadeOnDisk(binaryDirectory) is not null;
+
+    /// <summary>The first file that makes <see cref="HasReShadeOnDisk"/> true (any spelling of an offered name), or null.</summary>
+    public static string? FindReShadeOnDisk(string binaryDirectory)
     {
         foreach (var name in ProxyDllNames.Offered)
         {
-            var path = Path.Combine(binaryDirectory, name);
-            if (File.Exists(path) && ProxyDllNames.HasReShadeSignatureUnder(path)) return true;
+            if (ReShadeDeploymentService.FindFileCaseInsensitive(binaryDirectory, name) is { } path && ProxyDllNames.HasReShadeSignatureUnder(path))
+                return path;
         }
-        return false;
+        return null;
     }
 
     /// <summary>
