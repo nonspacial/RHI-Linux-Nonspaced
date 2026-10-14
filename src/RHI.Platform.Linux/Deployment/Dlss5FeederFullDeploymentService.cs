@@ -296,9 +296,8 @@ public sealed class Dlss5FeederFullDeploymentService
         // already owns nvngx_dlssnr.dll, surface that blocker before asking the user to install
         // ReShade or resolve a compiler. This also guarantees the conflict is detected before
         // any package/network work.
-        var optiRecord = _records.Find(game, ManagedComponentKind.OptiScaler);
-        if (optiRecord is not null && OptiScalerDeploymentService.GetInstalledVariant(optiRecord) == OptiScalerVariant.DlssNr)
-            return ComponentOperationResult.Fail("Remove the OptiScaler DLSS NR variant before installing DLSS5 Feeder. Both components would own nvngx_dlssnr.dll and RHI Linux does not yet have a shared-file ownership ledger for that runtime.");
+        if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } nrOwner) // OptiScaler DLSS NR or F5 DLSSNR (#157)
+            return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
 
         var preflight = ValidateTarget(game, consumer);
         if (preflight is not null) return preflight;

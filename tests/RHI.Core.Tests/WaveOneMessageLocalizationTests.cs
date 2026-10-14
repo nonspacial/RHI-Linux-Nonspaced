@@ -149,6 +149,8 @@ public sealed class WaveOneMessageLocalizationTests
                  })
             yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + reason;
         // w3/sync rows
+        yield return NeuralRenderingRuntimeOwnership.RefusalFor("OptiScaler F5 DLSSNR");
+        yield return OptiScalerPackageProvider.ArchivePathRefusedPrefix + @"..\evil.dll";
         yield return OptiScalerDeploymentService.NightlyPinnedCurrentPrefix + "20261004";
         yield return OptiScalerDeploymentService.NightlyPinnedNotUpdatedPrefix + "20261004";
         yield return OptiScalerDeploymentService.NightlyPinWrongChannelMessage;

@@ -15,6 +15,8 @@ public sealed partial class OptiScalerDeploymentService
     public const string NightlyPinnedNotUpdatedPrefix = "OptiScaler Nightly is pinned, so it was not updated: ";
     public const string NightlyPinWrongChannelMessage = "A nightly build can be pinned only for the OptiScaler Nightly channel.";
     public const string NightlyBuildInvalidPrefix = "Not an OptiScaler nightly build date: ";
+    /// <summary>Appended to the OptiScaler row note while DLSS5 Feeder owns nvngx_dlssnr.dll (#157).</summary>
+    public const string FeederBlocksNrVariantsNote = " DLSS NR and F5 DLSSNR are blocked while DLSS5 Feeder is managed because both would own nvngx_dlssnr.dll; Stable/Nightly remain available.";
 
     private static readonly string[] SetupJunkNames =
     [
@@ -63,7 +65,7 @@ public sealed partial class OptiScalerDeploymentService
             var latest = await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
             var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase)
                          || !string.Equals(record.SourceUrl, latest.SourceUrl, StringComparison.OrdinalIgnoreCase);
-            if (variant == OptiScalerVariant.DlssNr && _dlss is not null)
+            if (NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant) && _dlss is not null)
             {
                 await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
                 var latestNr = _dlss.Versions(DlssComponentKind.NeuralRendering).FirstOrDefault();
@@ -253,8 +255,10 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail("Start the Windows game once so its Wine/Proton prefix is initialized before installing OptiScaler.");
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
             return ComponentOperationResult.Fail("Remove ShortFuse before installing OptiScaler. The ShortFuse transaction owns the ReShade/UAL/DLSS/Streamline chain.");
-        if (variant == OptiScalerVariant.DlssNr && _records.Find(game, ManagedComponentKind.Dlss5Feeder) is not null)
-            return ComponentOperationResult.Fail("Remove DLSS5 Feeder before installing the OptiScaler DLSS NR variant. Both components would own nvngx_dlssnr.dll and RHI Linux does not yet have a shared-file ownership ledger for that runtime.");
+        // nvngx_dlssnr.dll has one owner (NeuralRenderingRuntimeOwnership, #157): DLSS NR / F5 refuse while another owner is recorded.
+        if (NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant)
+            && NeuralRenderingRuntimeOwnership.OwnerOtherThan(_records, game, ManagedComponentKind.OptiScaler) is { } nrOwner)
+            return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
         if (_records.Find(game, ManagedComponentKind.OptiScaler) is not null)
             return ComponentOperationResult.Fail("OptiScaler is already managed by RHI Linux for this game. Remove it before reinstalling/updating.");
         if (_overrides.EditRefusal(prefix) is { } wineRunning)
@@ -403,6 +407,7 @@ public sealed partial class OptiScalerDeploymentService
         OptiScalerVariant.Stable => "Stable",
         OptiScalerVariant.Nightly => "Nightly",
         OptiScalerVariant.DlssNr => "DLSS NR",
+        OptiScalerVariant.F5 => "F5 DLSSNR",
         _ => variant.ToString()
     };
 
@@ -410,12 +415,12 @@ public sealed partial class OptiScalerDeploymentService
         OptiScalerVariant variant,
         CancellationToken cancellationToken)
     {
-        if (variant != OptiScalerVariant.DlssNr) return (null, null);
+        if (!NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant)) return (null, null);
         if (_dlss is null)
-            throw new InvalidOperationException("OptiScaler DLSS NR requires the DLSS runtime service so nvngx_dlssnr.dll can be staged safely.");
+            throw new InvalidOperationException($"OptiScaler {VariantLabel(variant)} requires the DLSS runtime service so nvngx_dlssnr.dll can be staged safely.");
         var path = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.NeuralRendering, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            throw new InvalidOperationException("The current DLSS manifest did not provide nvngx_dlssnr.dll for the DLSS NR variant.");
+            throw new InvalidOperationException($"The current DLSS manifest did not provide nvngx_dlssnr.dll for the {VariantLabel(variant)} variant.");
         var version = _dlss.Manifest?.Dlssnr?.FirstOrDefault()?.Version;
         return (path, version);
     }
@@ -654,6 +659,7 @@ public sealed partial class OptiScalerDeploymentService
             if (SetupJunkNames.Any(name => Path.GetFileName(relative).Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
             var segments = relative.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
             if (segments.Any(segment => segment.Equals("Licenses", StringComparison.OrdinalIgnoreCase))) continue;
+            if (IsNonGamePackageEntry(segments)) continue;
 
             var target = Path.GetFullPath(Path.Combine(binaryDirectory, relative));
             var rootWithSep = Path.GetFullPath(binaryDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -661,6 +667,23 @@ public sealed partial class OptiScalerDeploymentService
                 throw new InvalidOperationException($"OptiScaler archive path escapes the game binary directory: {relative}");
             requested.Add((source, target));
         }
+    }
+
+    /// <summary>
+    /// Package entries upstream never copies into the game (2.8.7 install step 5, needed since the F5 DLSSNR package,
+    /// #157): top-level scripts, notes and tools (<c>.bat .sh .ps1 .txt .md .exe .pdb</c>, <c>LICENSE</c>, <c>!!…</c>) and
+    /// the top-level <c>docs</c> and <c>redist</c> folders. Folders OptiScaler loads (<c>OptiScaler/</c>,
+    /// <c>D3D12_Optiscaler/</c>) and every DLL/INI are still deployed.
+    /// </summary>
+    internal static bool IsNonGamePackageEntry(IReadOnlyList<string> segments)
+    {
+        if (segments.Count == 0) return true;
+        if (segments.Count > 1)
+            return segments[0].Equals("docs", StringComparison.OrdinalIgnoreCase) || segments[0].Equals("redist", StringComparison.OrdinalIgnoreCase);
+        var name = segments[0];
+        return name.Equals("LICENSE", StringComparison.OrdinalIgnoreCase)
+               || name.StartsWith("!!", StringComparison.Ordinal)
+               || new[] { ".bat", ".sh", ".ps1", ".txt", ".md", ".exe", ".pdb" }.Any(ext => name.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
     }
 
     private static void EnsureTargetDirectory(string binaryDirectory, string target, List<string> createdDirectories)

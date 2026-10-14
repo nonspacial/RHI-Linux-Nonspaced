@@ -168,4 +168,18 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - Service API for Control UE (#136): `OptiScalerDeploymentService.InstallPinnedNightlyAsync(game, "20261004")`, or `LinuxManagedComponentService.InstallOptiScalerAsync(game, OptiScalerVariant.Nightly, "20261004")`.
 - Not ported: upstream's pre-staging when a build is picked (Linux downloads at install, so browsing the list downloads nothing).
 
+### #157 — OptiScaler F5 DLSSNR variant (2.8.7)
+
+- New channel **F5 DLSSNR** in the OptiScaler ⚙ dialog, beside Stable, Nightly and DLSS NR (upstream `d4aac04`). It installs janblade's multi-pass NR fork from `janblade/OptiScaler-F5-DLSSNR-Multipass` `/releases/latest`, using only the `OptiScaler-DLSSNR-F5-*.zip` asset; the release's "Optional-Vendor-Neutral-DLSS5-Forwarder.zip" companion is never taken (`8dcf55c`, `4f28876`). Downloads go through their own GitHub-only host policy.
+- F5 is treated exactly like DLSS NR. It deploys its bundled forwarder `nvngx.dll_dlssnr.dll` plus the manifest's `nvngx_dlssnr.dll` (the update check also compares that NR version), gets the Nightly-style frame-generation rows and the Streamline stack, and owns `nvngx_dlssnr.dll` under the one-owner rule below. Like every OptiScaler channel it auto-updates and is logged in the update history.
+- The F5 zip is made on Windows and names entries with backslashes (`OptiScaler\libxess.dll`); 7-Zip and bsdtar on Linux extract those as flat file names. RHI moves them to the folders the names mean, as Windows extracts them. A name with `..`, an empty part, or one that collides with another entry refuses the archive (checked on the real 0.1.30 zip: 70 entries).
+- Package files copied into the game now follow upstream's install step: top-level `.bat .sh .ps1 .txt .md .exe .pdb`, `LICENSE`, `!!…`, and the `docs/` and `redist/` folders stay out of the game folder; DLLs, INIs, `OptiScaler/` and `D3D12_Optiscaler/` are copied. This applies to every channel (Stable used to copy its `!! README … .txt`; F5 would otherwise copy its docs).
+- Not ported: upstream's three `OptiScaler_f5.*.ini` templates (Linux deploys the package's own `OptiScaler.ini`) and the info/version links to the fork (PAR-D97).
+
+**`nvngx_dlssnr.dll` sharing rule** (`NeuralRenderingRuntimeOwnership`; the NR Cost Scaler #96 and RTX Encore #158 adopt it):
+1. One owner per game: ShortFuse, DLSS5 Feeder (any record), OptiScaler DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable/Nightly are no owners.
+2. Installing an owner while another is recorded is refused before any download or change, naming the owner ("nvngx_dlssnr.dll already belongs to another RHI component for this game; remove it first: DLSS5 Feeder"). There is no co-ownership.
+3. Only the owner's record (path + hash) governs updating, NR-version swaps and removal of the file.
+4. Layers are not owners. A wrapper such as the Cost Scaler needs an owner; it refuses when the owner's file no longer matches the owner's hash, keeps the moved original (`nvngx_dlssnr_real.dll`) under its own record, and must be removed before the owner updates, swaps or removes the runtime. Removing the layer restores the owner's file byte for byte.
+
 ## Parity notes (feature-parity backlog)

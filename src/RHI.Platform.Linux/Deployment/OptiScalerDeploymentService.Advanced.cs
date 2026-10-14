@@ -143,7 +143,7 @@ public sealed partial class OptiScalerDeploymentService
             new("MenuShortcutKey", "Menu", "OptiScaler menu shortcut", Read("Menu", "ShortcutKey"), EnsureCurrent(ShortcutOptions, Read("Menu", "ShortcutKey")))
         };
 
-        if (variant is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr)
+        if (variant is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr or OptiScalerVariant.F5)
         {
             var insertAt = rows.FindIndex(setting => setting.Id == "FGInput");
             if (insertAt < 0) insertAt = 0;

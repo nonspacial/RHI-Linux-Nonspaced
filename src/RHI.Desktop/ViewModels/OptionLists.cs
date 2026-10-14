@@ -109,7 +109,8 @@ public static class OptionLists
     public static readonly OptionList<OptiScalerVariant> OptiScalerVariant = new(Platform.Linux.Deployment.OptiScalerVariant.Stable, null,
         new(Platform.Linux.Deployment.OptiScalerVariant.Stable, "Ui.OptionStable"),
         new(Platform.Linux.Deployment.OptiScalerVariant.Nightly, "Ui.OptionNightly", null, "Desenvolvimento", "Desenvolvimento (Nightly)"),
-        new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"));
+        new(Platform.Linux.Deployment.OptiScalerVariant.DlssNr, null, "DLSS NR"),
+        new(Platform.Linux.Deployment.OptiScalerVariant.F5, null, "F5 DLSSNR")); // w3/sync #157
 
     public static readonly OptionList<LumaModePreference> LumaMode = new(LumaModePreference.Auto, null,
         new(LumaModePreference.Auto, "Ui.OptionAutomatic"),
