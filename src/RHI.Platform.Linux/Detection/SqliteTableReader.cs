@@ -83,12 +83,21 @@ internal static class SqliteTableReader
     private static bool IsConstraint(string word)
         => word.ToUpperInvariant() is "PRIMARY" or "UNIQUE" or "CHECK" or "FOREIGN" or "CONSTRAINT";
 
-    // An INTEGER PRIMARY KEY column is an alias of the rowid and is stored as NULL in the record.
-    private static string? IntegerPrimaryKey(string sql, IReadOnlyList<string> columns)
-        => columns.FirstOrDefault(column =>
-            System.Text.RegularExpressions.Regex.IsMatch(sql,
-                $@"[(,]\s*[""`\[]?{System.Text.RegularExpressions.Regex.Escape(column)}[""`\]]?\s+INTEGER\s+PRIMARY\s+KEY",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+    // An INTEGER PRIMARY KEY column is an alias of the rowid and is stored as NULL in the record. So is an INTEGER column
+    // that is the table's only key in a `PRIMARY KEY ("id")` constraint (the form butler's tables use, Refs #90).
+    internal static string? IntegerPrimaryKey(string sql, IReadOnlyList<string> columns)
+    {
+        const System.Text.RegularExpressions.RegexOptions IgnoreCase = System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+        static string Quoted(string column) => $@"[""`\[]?{System.Text.RegularExpressions.Regex.Escape(column)}[""`\]]?";
+        var inline = columns.FirstOrDefault(column =>
+            System.Text.RegularExpressions.Regex.IsMatch(sql, $@"[(,]\s*{Quoted(column)}\s+INTEGER\s+PRIMARY\s+KEY", IgnoreCase));
+        if (inline is not null) return inline;
+        var constraint = System.Text.RegularExpressions.Regex.Match(sql, @"PRIMARY\s+KEY\s*\(\s*([^,()]+?)\s*\)", IgnoreCase);
+        if (!constraint.Success) return null;
+        var key = constraint.Groups[1].Value.Trim('"', '`', '[', ']', '\'');
+        return columns.FirstOrDefault(column => column.Equals(key, StringComparison.OrdinalIgnoreCase) &&
+            System.Text.RegularExpressions.Regex.IsMatch(sql, $@"[(,]\s*{Quoted(column)}\s+INTEGER\s*(NOT\s+NULL\s*)?[,)]", IgnoreCase));
+    }
 
     private sealed class Database
     {

@@ -89,6 +89,7 @@ internal sealed class AppComposition
             new HeroicGameDetector(),
             new LutrisGameDetector(),
             new WinePrefixDetector(xboxFolders), // w3/scan hook: PartingX instances' prefixes are PartingX's
+            new ItchGameDetector(), // the native itch app's games (Refs #90)
             new ManualGameDetector(libraryStore),
             // w3/scan rows (new store detectors)
             new RHI.Platform.Linux.Detection.Xbox.XboxGameDetector(xboxFolders),

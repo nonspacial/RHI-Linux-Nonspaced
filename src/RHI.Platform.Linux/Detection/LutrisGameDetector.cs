@@ -108,17 +108,19 @@ public sealed partial class LutrisGameDetector : IGameDetector
                 game.LibraryIdentityPath ??= configFile;
         }
         var listed = games.Select(x => x.Game).ToList();
-        return [.. listed, .. LauncherPrefixGames(games.Select(x => (x.Game, x.ExeResolves)).ToList(), ct)];
+        return [.. listed, .. LauncherPrefixGames(games.Select(x => (x.Game, x.ExeResolves)).ToList(), home, ct)];
     }
 
     /// <summary>
-    /// Games installed inside a listed launcher's prefix (Ubisoft Connect's <c>games</c> folder,
-    /// Battle.net's <c>drive_c/Games</c>, <c>EA Games</c>): one card per game folder, with the launcher's
-    /// prefix and runner. Launch starts the launcher; the user starts the game from there. A folder that is
-    /// (or holds) another listed entry, such as the launcher itself or a game with its own Lutris config, is
-    /// not listed again; neither is a folder with no game executable.
+    /// Games installed inside a listed launcher's prefix: first every game a store launcher recorded there (Ubisoft
+    /// Connect's install keys, Battle.net's product.db, the EA app's and Rockstar's records, Refs #90), wherever its folder
+    /// is, then the store-library folders by layout (Ubisoft Connect's <c>games</c> folder, Battle.net's
+    /// <c>drive_c/Games</c>, <c>EA Games</c>). One card per game folder, with the launcher's prefix and runner. Launch starts
+    /// the launcher's Lutris entry (the store's own client when Lutris lists it); the user starts the game from there. A
+    /// folder that is (or holds) another listed entry, such as the launcher itself or a game with its own Lutris config,
+    /// is not listed again; neither is a folder with no game executable.
     /// </summary>
-    private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<(DetectedGame Game, bool ExeResolves)> configs, CancellationToken ct)
+    private static List<DetectedGame> LauncherPrefixGames(IReadOnlyList<(DetectedGame Game, bool ExeResolves)> configs, string home, CancellationToken ct)
     {
         var found = new List<DetectedGame>();
         var listedRoots = configs.Select(c => PathIdentity.Canonicalize(c.Game.InstallPath)).ToArray();
@@ -131,18 +133,36 @@ public sealed partial class LutrisGameDetector : IGameDetector
             try
             {
                 var prefixPath = sharing.First().Game.PrefixPath!;
+                var recorded = Launchers.StoreLauncherRecords.Find(prefixPath, home, ct)
+                    .Select(record => (Record: record, Folder: PathIdentity.Canonicalize(record.InstallDirectory)))
+                    .ToList();
                 // Only store-library game folders; a library entry that has a library of its own is a launcher.
                 var libraryGames = PrefixGameFolders.Find(Path.Combine(prefixPath, "drive_c"))
                     .Where(entry => entry.Library is not null && entry.Excluded is null)
                     .Select(entry => (Entry: entry, Folder: PathIdentity.Canonicalize(entry.Directory)))
                     .ToList();
-                if (libraryGames.Count == 0) continue;
-                var launcher = PickParentLauncher(sharing, libraryGames.Select(x => x.Folder).ToArray());
+                if (libraryGames.Count == 0 && recorded.Count == 0) continue;
+                var gameFolders = libraryGames.Select(x => x.Folder).Concat(recorded.Select(x => x.Folder)).ToArray();
+                var fallback = PickParentLauncher(sharing, gameFolders);
+
+                foreach (var (record, folder) in recorded)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    // The store's own client when Lutris lists it in this prefix, else the prefix's parent launcher.
+                    var launcher = StoreClientConfig(sharing, record.Store, gameFolders) ?? fallback;
+                    if (launcher is null) continue;
+                    launcher.RequiresExplicitPatchTarget = true;
+                    if (listedRoots.Any(root => IsSameOrUnder(root, folder)) || !seenFolders.Add(folder)) continue;
+                    var exe = record.GameExecutable ?? PrefixGameFolders.FindExecutable(new PrefixGameFolders.Entry(record.InstallDirectory, null, null), ct);
+                    if (exe is null) continue;
+                    found.Add(LauncherPrefixGame(launcher, record.Name, record.InstallDirectory, exe));
+                }
+
                 // Only games share the prefix (no launcher config): nothing to launch the others through.
-                if (launcher is null) continue;
+                if (fallback is null) continue;
                 // The parent launcher is not a game: no patch target or graphics API of its own until the user
                 // picks one in Edit game (Refs #148; a Battle.net/Ubisoft client exe is already caught by name).
-                launcher.RequiresExplicitPatchTarget = true;
+                if (libraryGames.Count > 0) fallback.RequiresExplicitPatchTarget = true;
                 foreach (var (entry, folder) in libraryGames)
                 {
                     ct.ThrowIfCancellationRequested();
@@ -151,23 +171,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                     if (!seenFolders.Add(folder)) continue;
                     var exe = PrefixGameFolders.FindExecutable(entry, ct);
                     if (exe is null) continue;
-                    found.Add(new DetectedGame
-                    {
-                        Name = Path.GetFileName(entry.Directory),
-                        InstallPath = entry.Directory,
-                        Source = "Lutris",
-                        ExecutablePath = exe,
-                        // The launcher is what Launch starts; the game exe stays the patch target.
-                        LaunchExecutablePath = launcher.LaunchExecutablePath,
-                        PrefixPath = launcher.PrefixPath,
-                        Runner = launcher.Runner,
-                        CompatibilityTool = launcher.CompatibilityTool,
-                        CompatibilityLayerType = launcher.CompatibilityLayerType,
-                        WineBinaryPath = launcher.WineBinaryPath,
-                        WineServerPath = launcher.WineServerPath,
-                        LaunchCommand = launcher.LaunchCommand,
-                        ParentLauncherName = launcher.Name
-                    });
+                    found.Add(LauncherPrefixGame(fallback, Path.GetFileName(entry.Directory), entry.Directory, exe));
                 }
             }
             catch (OperationCanceledException) { throw; }
@@ -177,6 +181,41 @@ public sealed partial class LutrisGameDetector : IGameDetector
             }
         }
         return found;
+    }
+
+    private static DetectedGame LauncherPrefixGame(DetectedGame launcher, string name, string folder, string exe) => new()
+    {
+        Name = name,
+        InstallPath = folder,
+        Source = "Lutris",
+        ExecutablePath = exe,
+        // The launcher is what Launch starts; the game exe stays the patch target.
+        LaunchExecutablePath = launcher.LaunchExecutablePath,
+        PrefixPath = launcher.PrefixPath,
+        Runner = launcher.Runner,
+        CompatibilityTool = launcher.CompatibilityTool,
+        CompatibilityLayerType = launcher.CompatibilityLayerType,
+        WineBinaryPath = launcher.WineBinaryPath,
+        WineServerPath = launcher.WineServerPath,
+        LaunchCommand = launcher.LaunchCommand,
+        ParentLauncherName = launcher.Name
+    };
+
+    /// <summary>
+    /// The Lutris entry for one store's own client in a prefix (its executable is that store's launcher, and its folder is
+    /// no game folder of the prefix), so a prefix holding two store clients starts each game through its own store.
+    /// </summary>
+    private static DetectedGame? StoreClientConfig(IEnumerable<(DetectedGame Game, bool ExeResolves)> sharing, Launchers.StoreLauncher store,
+        IReadOnlyList<string> gameFolders)
+    {
+        var provider = Launchers.StoreLauncherRecords.ProviderName(store);
+        return sharing
+            .Where(c => !gameFolders.Any(folder => IsSameOrUnder(PathIdentity.Canonicalize(c.Game.InstallPath), folder)))
+            .Where(c => string.Equals(Settings.LinuxGameIdentityService.InferProviderFromExecutable(c.Game.LaunchExecutablePath), provider, StringComparison.Ordinal) ||
+                        string.Equals(Settings.LinuxGameIdentityService.InferProviderFromExecutable(c.Game.ExecutablePath), provider, StringComparison.Ordinal))
+            .OrderBy(c => c.ExeResolves ? 0 : 1)
+            .Select(c => c.Game)
+            .FirstOrDefault();
     }
 
     /// <summary>

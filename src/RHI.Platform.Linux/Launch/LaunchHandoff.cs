@@ -322,7 +322,15 @@ public static class LaunchHandoffClassifier
 
     private static LaunchHandoff ByUri(string uri) => StoreUri(uri) ?? LaunchHandoff.Other;
 
-    /// <summary>The store a <c>steam:</c>/<c>heroic:</c>/<c>lutris:</c> URL (or <c>--option=URL</c>) names, else null.</summary>
+    // The Windows store clients' own "start this game" arguments (Lutris' store services, Rockstar's launcher, Refs #90):
+    // the client inside the prefix starts the game, so the command is that client's hand-off.
+    private static readonly string[] StoreClientUriSchemes = ["uplay:", "origin2:", "origin:", "link2ea:", "battlenet:", "itch:"];
+
+    /// <summary>
+    /// The store a <c>steam:</c>/<c>heroic:</c>/<c>lutris:</c> URL (or <c>--option=URL</c>) names, else null. A Windows store
+    /// client's game-start argument (<c>uplay://launch/…</c>, Battle.net's <c>--exec="launch …"</c>, Rockstar's
+    /// <c>-launchTitleInFolder</c>) is an Other hand-off.
+    /// </summary>
     private static LaunchHandoff? StoreUri(string word)
     {
         var equals = word.IndexOf('=');
@@ -332,6 +340,11 @@ public static class LaunchHandoffClassifier
         if (value.StartsWith("lutris:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
         if (value.StartsWith("partingx:", StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
             return LaunchHandoff.Xbox;
+        if (StoreClientUriSchemes.Any(scheme => value.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)))
+            return LaunchHandoff.Other;
+        if (word.StartsWith("--exec=", StringComparison.OrdinalIgnoreCase) && value.TrimStart('"').StartsWith("launch ", StringComparison.OrdinalIgnoreCase))
+            return LaunchHandoff.Other;
+        if (word.Equals("-launchTitleInFolder", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Other;
         return null;
     }
 
