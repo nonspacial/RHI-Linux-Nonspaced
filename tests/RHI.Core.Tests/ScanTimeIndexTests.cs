@@ -183,4 +183,17 @@ public sealed class ScanTimeIndexTests
         Assert.Throws<OperationCanceledException>(() =>
             GameFileIndexer.BuildUntilFound(tree.Root, 3, 8, _ => false, cancellationToken: cts.Token));
     }
+    [Fact]
+    public void ALauncherNamedExeHigherUp_DoesNotEndTheWalk_BeforeTheRealExeDeeperDown()
+    {
+        // w3-scan review minor 7: the old full walk ranked a deep game exe over a root Launcher.exe; the bounded walk must
+        // not stop at the launcher and hand the exe pick only the launcher.
+        using var tree = new DetectionTestTree();
+        var root = tree.Dir("Game");
+        tree.Bytes(Pe, "Game", "Launcher.exe");
+        tree.Bytes(Pe, "Game", "bin", "UpdaterHelper.exe");
+        var deep = tree.Bytes([(byte)'M', (byte)'Z', .. new byte[256 * 1024]], "Game", "a", "b", "c", "d", "Game.exe");
+
+        Assert.Equal(deep, DetectionHelpers.FindLikelyExecutable(root));
+    }
 }

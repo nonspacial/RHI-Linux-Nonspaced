@@ -110,8 +110,15 @@ internal static partial class DetectionHelpers
             ScanExecutableDepth,
             RHI.Core.Services.GameFileIndexer.FullDepth,
             file => (excludedSubtree is null || !file.StartsWith(excludedSubtree + "/", StringComparison.Ordinal)) &&
-                    (IsWindowsExecutableCandidate(file) || (nativeTargets && LooksLikeNativeLaunchTarget(file))),
+                    ((IsWindowsExecutableCandidate(file) && !HasSoftPenaltyName(file)) || (nativeTargets && LooksLikeNativeLaunchTarget(file))),
             cancellationToken: cancellationToken);
+
+    // Names the exe pick ranks low (a launcher, updater, …): one of them does not end the scan walk, because the old full
+    // walk would have picked a real exe deeper down over it (w3-scan review minor 7).
+    private static readonly string[] SoftPenaltyNames = ["launcher", "bootstrap", "helper", "updater", "config", "diagnostic"];
+
+    private static bool HasSoftPenaltyName(string file)
+        => SoftPenaltyNames.Any(token => Path.GetFileName(file).Contains(token, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsWindowsExecutableCandidate(string file)
         => file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
@@ -128,7 +135,6 @@ internal static partial class DetectionHelpers
         PeArchitecture? preferredArchitecture = null)
     {
         if (!Directory.Exists(root)) return null;
-        var softPenalty = new[] { "launcher", "bootstrap", "helper", "updater", "config", "diagnostic" };
         var normalizedRoot = NormalizeToken(Path.GetFileName(root));
         indexedFiles ??= ScanIndex(root, cancellationToken);
 
@@ -152,7 +158,7 @@ internal static partial class DetectionHelpers
             if (normalizedRoot.Length >= 4 &&
                 (normalizedExe.Contains(normalizedRoot, StringComparison.OrdinalIgnoreCase) ||
                  normalizedRoot.Contains(normalizedExe, StringComparison.OrdinalIgnoreCase))) score += 100;
-            if (softPenalty.Any(x => name.Contains(x, StringComparison.OrdinalIgnoreCase))) score -= 110;
+            if (HasSoftPenaltyName(name)) score -= 110;
             score -= depth * 7;
             score += (int)Math.Min(80, Math.Log2(Math.Max(1, size / 1024 + 1)) * 5);
 
