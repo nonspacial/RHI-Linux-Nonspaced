@@ -151,6 +151,7 @@ public sealed class WaveOneMessageLocalizationTests
         // w3/sync rows
         // w3/journal rows
         yield return $"{LinuxDeploymentRecovery.RemovalUnmarkedPrefix}Access to the path '{P}' is denied.); nothing was changed.";
+        yield return WineOverrideReapplyCompensator.DeferredPrefix + "dxgi (/prefixo)";
         // w3/scan rows
         // w3/parity rows
         // w3/vmsplit rows

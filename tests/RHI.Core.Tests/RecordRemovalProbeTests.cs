@@ -161,6 +161,90 @@ public sealed class RecordRemovalProbeTests : IDisposable
         Assert.False(File.Exists(P("game", "dxgi.dll")));
     }
 
+    private string Prefix()
+    {
+        var prefix = P("pfx");
+        Directory.CreateDirectory(prefix);
+        File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n\n[Software\\\\Wine\\\\Other] 1\n\"x\"=\"y\"\n");
+        return prefix;
+    }
+
+    private static string? Override(string prefix) => WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(prefix, "user.reg")), "dxgi", "Game.exe");
+
+    [Fact]
+    public async Task RolledBackRemoval_PutsTheRestoredOverrideBack_AndCommittedOneLeavesItRestored()
+    {
+        foreach (var committed in new[] { false, true })
+        {
+            if (Directory.Exists(P("pfx"))) Directory.Delete(P("pfx"), recursive: true);
+            if (Directory.Exists(P("journal"))) Directory.Delete(P("journal"), recursive: true);
+            var prefix = Prefix();
+            var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+            var owned = overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+            var records = InstalledReShade();
+            var journal = LinuxDeploymentRecovery.CreateJournal(overrides, P("journal"), _ => false, records);
+            var (operation, _) = await LinuxDeploymentRecovery.BeginRecordRemovalAsync(
+                journal, records, "ReShade removal: Example", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+            Assert.Equal(WineOverrideRestoreOutcome.Restored, (await overrides.RestoreAsync(operation, prefix, owned)).Outcome);
+            Assert.Null(Override(prefix));
+            if (committed) records.Remove(Game, ManagedComponentKind.ReShade);
+            operation!.AbandonAsIfCrashed();
+
+            var report = await LinuxDeploymentRecovery.RecoverAsync(
+                LinuxDeploymentRecovery.CreateJournal(new WineDllOverrideService(new WineRegistryEditor(_ => false)), P("journal"), _ => false, records), records);
+
+            Assert.Equal(committed ? JournalRecoveryOutcome.AlreadyCommitted : JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+            Assert.Equal(committed ? null : "native,builtin", Override(prefix));
+        }
+    }
+
+    [Fact]
+    public async Task RolledBackRemoval_KeepsAValueSetAfterTheCrash_AndWaitsWhileWineRuns()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var owned = overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+        var records = InstalledReShade();
+        var (operation, _) = await LinuxDeploymentRecovery.BeginRecordRemovalAsync(
+            LinuxDeploymentRecovery.CreateJournal(overrides, P("journal"), _ => false, records), records,
+            "ReShade removal: Example", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+        await overrides.RestoreAsync(operation, prefix, owned);
+        operation!.AbandonAsIfCrashed();
+
+        var running = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(overrides, P("journal"), _ => true, records), records);
+        Assert.Equal(JournalRecoveryOutcome.Deferred, Assert.Single(running!.Entries).Outcome);
+        Assert.StartsWith(WineOverrideReapplyCompensator.DeferredPrefix, Assert.Single(running.Entries[0].Problems), StringComparison.Ordinal);
+        Assert.Null(Override(prefix));
+
+        var reg = Path.Combine(prefix, "user.reg");
+        File.WriteAllText(reg, WineDllOverrideService.SetOverride(File.ReadAllText(reg), "dxgi", "builtin", "Game.exe"));
+        var later = await LinuxDeploymentRecovery.RecoverAsync(
+            LinuxDeploymentRecovery.CreateJournal(overrides, P("journal"), _ => false, records), records);
+
+        Assert.Equal(JournalRecoveryOutcome.KeptLaterChanges, Assert.Single(later!.Entries).Outcome);
+        Assert.Equal("builtin", Override(prefix));
+    }
+
+    [Fact]
+    public async Task RestoreAsync_JournalsOnlyAnOverrideRhiStillHolds()
+    {
+        var prefix = Prefix();
+        var overrides = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        var owned = overrides.EnsureNativeBuiltin(prefix, "dxgi.dll", "Game.exe");
+        var reg = Path.Combine(prefix, "user.reg");
+        File.WriteAllText(reg, WineDllOverrideService.SetOverride(File.ReadAllText(reg), "dxgi", "native", "Game.exe"));
+        var records = InstalledReShade();
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, P("journal"), _ => false, records);
+        var (operation, _) = await LinuxDeploymentRecovery.BeginRecordRemovalAsync(
+            journal, records, "ReShade removal: Example", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+
+        Assert.Equal(WineOverrideRestoreOutcome.KeptLaterValue, (await overrides.RestoreAsync(operation, prefix, owned)).Outcome);
+        Assert.DoesNotContain(WineOverrideReapplyCompensator.KindName, File.ReadAllText(Path.Combine(P("journal"), operation!.Id + ".json")));
+        await operation.RollbackAsync();
+        Assert.Equal("native", Override(prefix));
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); }

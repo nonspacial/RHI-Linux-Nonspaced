@@ -141,6 +141,67 @@ public sealed class WineOverrideCompensator(
 }
 
 /// <summary>
+/// Journal step of a removal that restores a Wine DLL override (<see cref="WineDllOverrideService.RestoreAsync"/>): when
+/// the removal is rolled back after a crash (its record is still in the ledger and describes the restored files again),
+/// RHI's value is put back, but only while the override still holds the value the restore left; a value set after the
+/// crash is kept. Deferred while a wineserver runs for the prefix, like <see cref="WineOverrideCompensator"/>.
+/// </summary>
+public sealed class WineOverrideReapplyCompensator(WineDllOverrideService overrides, Func<string, bool>? isPrefixInUse = null) : IDeploymentCompensator
+{
+    public const string KindName = "wine-dll-override-reapply";
+    private readonly Func<string, bool> _isPrefixInUse = isPrefixInUse ?? overrides.Registry.IsPrefixInUse;
+
+    public string Kind => KindName;
+
+    public static string Describe(string prefixPath, WineOverrideRecord record)
+        => JsonSerializer.Serialize(new Payload { PrefixPath = prefixPath, Record = record });
+
+    public CompensationResult Compensate(string data)
+    {
+        var payload = JsonSerializer.Deserialize<Payload>(data) ?? throw new InvalidDataException("Empty Wine override journal step.");
+        if (payload.Record is not { } record || string.IsNullOrWhiteSpace(payload.PrefixPath))
+            throw new InvalidDataException("Incomplete Wine override journal step.");
+        var prefix = payload.PrefixPath;
+        if (!record.ChangedByRhi || !Directory.Exists(prefix) || !WineRegistryEditor.HasUserHive(prefix)) return CompensationResult.Done;
+        var current = WineDllOverrideService.CurrentValue(prefix, record);
+        // Never restored (the crash came first) or already put back: nothing to do, whether or not Wine runs now.
+        if (WineDllOverrideService.SameValue(current, WineDllOverrideService.WrittenBy(record))) return CompensationResult.Done;
+        if (!WineDllOverrideService.IsPreviousValue(current, record)) return KeptLaterValue(record, prefix, current?.Text);
+        if (_isPrefixInUse(prefix)) return DeferredWhileWineRuns(record, prefix);
+        WineOverrideRestoreResult result;
+        try
+        {
+            result = overrides.Reapply(prefix, record);
+        }
+        catch (WineRegistryEditRefusedException ex) when (ex.PrefixInUse)
+        {
+            return DeferredWhileWineRuns(record, prefix);
+        }
+        return result.Outcome == WineOverrideRestoreOutcome.KeptLaterValue
+            ? KeptLaterValue(record, prefix, result.CurrentValue)
+            : CompensationResult.Done;
+    }
+
+    private static CompensationResult KeptLaterValue(WineOverrideRecord record, string prefix, string? current)
+        => new(CompensationStatus.KeptLaterChange,
+            $"This Wine override was changed after the interruption and was left as it is: {record.DllName} ({prefix}) = '{current ?? "-"}'");
+
+    private static CompensationResult DeferredWhileWineRuns(WineOverrideRecord record, string prefix)
+        => new(CompensationStatus.Deferred,
+            $"{DeferredPrefix}{record.DllName} ({prefix})");
+
+    /// <summary>Fixed text of the note when the put-back waits for Wine to exit; "dll (prefix)" follows.</summary>
+    public const string DeferredPrefix =
+        "Wine is running in this prefix and would overwrite the change when it exits, so this Wine override is put back at the next start: ";
+
+    private sealed class Payload
+    {
+        public string PrefixPath { get; set; } = "";
+        public WineOverrideRecord? Record { get; set; }
+    }
+}
+
+/// <summary>
 /// Finds a running wineserver for a Wine prefix from <c>/proc</c>. A wineserver matches when its <c>WINEPREFIX</c>
 /// (default <c>~/.wine</c>) is the prefix's path, or when its working directory is the prefix's server directory:
 /// wineserver runs in <c>/tmp/.wine-&lt;uid&gt;/server-&lt;dev&gt;-&lt;inode&gt;</c> of the prefix folder, an identity
@@ -231,7 +292,8 @@ public static class LinuxDeploymentRecovery
     /// <param name="records">The app's ledger: lets a deferred override undo see a later install that now depends on it.</param>
     public static DeploymentJournal CreateJournal(
         WineDllOverrideService overrides, string? directory = null, Func<string, bool>? isPrefixInUse = null, LinuxDeploymentRecordStore? records = null)
-        => new(directory ?? JournalDirectory, [new WineOverrideCompensator(overrides, isPrefixInUse, records)]);
+        => new(directory ?? JournalDirectory,
+            [new WineOverrideCompensator(overrides, isPrefixInUse, records), new WineOverrideReapplyCompensator(overrides, isPrefixInUse)]);
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)
