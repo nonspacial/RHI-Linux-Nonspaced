@@ -54,7 +54,8 @@ public sealed class ShaderProfileTests : IDisposable
         Assert.Equal("HDR evening", saved);
         Assert.Equal([Custom], selected);
         Assert.Equal(["Shaders/Skip.fx"], _packs.GetExcludedFiles(Custom));
-        Assert.StartsWith("Profile \"HDR evening\" loaded: 1 packs ticked.", loaded, StringComparison.Ordinal);
+        // The file choices are saved at Load (as the file picker saves them), so the line says so; the game changes on Apply.
+        Assert.Equal("Profile \"HDR evening\" loaded: 1 packs ticked; each pack's file choices are saved now, as in the file picker. Use Apply to selected game to install them.", loaded);
     }
 
     [Fact]
