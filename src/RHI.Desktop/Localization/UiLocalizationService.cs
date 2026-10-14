@@ -982,6 +982,8 @@ public static class UiLocalizationService
         // A journaled removal could not mark its record before the first change (record-removed commit probe).
         (RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.RemovalUnmarkedPrefix,
          "O registro de implantações não pôde ser atualizado antes da remoção ("),
+        ("RE Framework removal failed and was rolled back: ", "A remoção do RE Framework falhou e foi desfeita: "),
+        ("RE Framework update rolled back: ", "A atualização do RE Framework foi desfeita: "),
         // Start-up recovery of a rolled-back removal puts a restored Wine override back after Wine exits.
         (RHI.Platform.Linux.Deployment.WineOverrideReapplyCompensator.DeferredPrefix,
          "O Wine está em execução neste prefixo e sobrescreveria a alteração ao sair; por isso este override do Wine será reaplicado na próxima inicialização: "),

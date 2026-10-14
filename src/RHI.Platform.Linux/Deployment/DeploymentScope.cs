@@ -1,0 +1,157 @@
+using RHI.Core.Deployment;
+using RHI.Core.Models;
+
+namespace RHI.Platform.Linux.Deployment;
+
+/// <summary>
+/// One deployment's owned files (#23, #31, #42): the journaled <see cref="DeploymentOperation"/> when the app has a
+/// journal, otherwise an in-memory <see cref="OwnedFileSet"/>, behind one API, so a service has a single path for
+/// tracking, declaring writes and rolling back. Every file is tracked (with a verified snapshot) before it changes and
+/// every placed content is declared; a failure is undone by <see cref="RollbackAsync"/> (content-addressed: each path
+/// goes back to its pre-operation bytes from whichever copy survived, and a failed restore keeps every copy and says
+/// where), and a crash before the commit point is undone by start-up recovery. Disposing a scope that was neither
+/// committed nor rolled back rolls it back.
+/// <para>Commit points: installs and updates stamp the operation id into the record they save (<see cref="Stamp"/>);
+/// removals stamp the record they take away when they begin (<see cref="BeginRemovalAsync"/>) and commit by removing it
+/// (or by saving a narrowed record through <see cref="LinuxDeploymentRecovery.EndRemoval"/>).</para>
+/// </summary>
+public sealed class DeploymentScope : IAsyncDisposable
+{
+    private readonly OwnedFileSet? _local;
+    private bool _completed;
+
+    private DeploymentScope(DeploymentOperation? operation)
+    {
+        Operation = operation;
+        _local = operation is null ? new OwnedFileSet() : null;
+    }
+
+    /// <summary>The journaled operation (null without a journal): pass it to <see cref="WineDllOverrideService"/>.</summary>
+    public DeploymentOperation? Operation { get; }
+
+    public OwnedFileSet Files => Operation?.Files ?? _local!;
+
+    /// <summary>
+    /// Opens an install or update whose commit point is saving <paramref name="component"/>'s record. A journal that
+    /// cannot be written refuses before anything changes.
+    /// </summary>
+    public static async Task<(DeploymentScope? Scope, string? Refusal)> BeginAsync(
+        DeploymentJournal? journal, string description, DetectedGame game, ManagedComponentKind component, CancellationToken cancellationToken)
+    {
+        var (operation, refusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(journal, description, game, component, cancellationToken).ConfigureAwait(false);
+        return refusal is not null ? (null, refusal) : (new DeploymentScope(operation), null);
+    }
+
+    /// <summary>
+    /// Opens a removal whose commit point is taking <paramref name="component"/>'s record out of the ledger
+    /// (<see cref="LinuxDeploymentRecovery.BeginRecordRemovalAsync"/>). Refuses before anything changes when the journal
+    /// or the ledger cannot be written.
+    /// </summary>
+    public static async Task<(DeploymentScope? Scope, string? Refusal)> BeginRemovalAsync(
+        DeploymentJournal? journal, LinuxDeploymentRecordStore records, string description, DetectedGame game,
+        ManagedComponentKind component, CancellationToken cancellationToken)
+    {
+        var (operation, refusal) = await LinuxDeploymentRecovery.BeginRecordRemovalAsync(journal, records, description, game, component, cancellationToken).ConfigureAwait(false);
+        return refusal is not null ? (null, refusal) : (new DeploymentScope(operation), null);
+    }
+
+    /// <summary>A scope with no journal (callers that run inside another service's operation, tests).</summary>
+    public static DeploymentScope Unjournaled() => new(null);
+
+    /// <summary>
+    /// Records <paramref name="path"/>'s pre-operation state with a verified copy (and of its <c>.original</c>) before it
+    /// changes. Ends the cancellable phase (<see cref="OperationCancellation.BeginWrites"/>).
+    /// </summary>
+    public Task TrackAsync(string path, CancellationToken cancellationToken = default)
+        => Operation is not null
+            ? Operation.TrackFileAsync(path, cancellationToken)
+            : Files.TrackWithSnapshotAsync(path, OperationCancellation.BeginWrites(cancellationToken));
+
+    /// <summary>Tracks every path in order (see <see cref="TrackAsync"/>).</summary>
+    public async Task TrackAllAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        foreach (var path in paths) await TrackAsync(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Declares content about to be placed at a tracked path (its SHA-256), before placing it.</summary>
+    public Task DeclareWriteAsync(string path, string sha256, CancellationToken cancellationToken = default)
+        => Operation is not null
+            ? Operation.RecordWriteAsync(path, sha256, cancellationToken)
+            : Files.RecordWriteAsync(path, sha256, OperationCancellation.BeginWrites(cancellationToken));
+
+    /// <summary>Declares the content now at a tracked path as this operation's (straight after an in-place edit).</summary>
+    public Task DeclareWrittenContentAsync(string path, CancellationToken cancellationToken = default)
+        => Operation is not null
+            ? Operation.RecordWrittenContentAsync(path, cancellationToken)
+            : Files.RecordWrittenContentAsync(path, OperationCancellation.BeginWrites(cancellationToken));
+
+    /// <summary>
+    /// Copies <paramref name="source"/> to the tracked-and-declared <paramref name="target"/> (verified, durable,
+    /// atomic), replacing what is there unless <paramref name="overwrite"/> is false (then a file that appeared meanwhile
+    /// makes it throw and stays as it is). Returns the placed content's SHA-256.
+    /// </summary>
+    public async Task<string> PlaceCopyAsync(
+        string source, string target, CancellationToken cancellationToken = default, string? sourceSha256 = null, bool overwrite = true)
+    {
+        await TrackAsync(target, cancellationToken).ConfigureAwait(false);
+        var sha = sourceSha256 ?? await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false);
+        await DeclareWriteAsync(target, sha, cancellationToken).ConfigureAwait(false);
+        return await AtomicFile.CopyAsync(source, target, sha, CancellationToken.None, overwrite).ConfigureAwait(false);
+    }
+
+    /// <summary>Writes <paramref name="bytes"/> to the tracked-and-declared <paramref name="target"/> (verified, durable, atomic).</summary>
+    public async Task<string> PlaceBytesAsync(string target, byte[] bytes, CancellationToken cancellationToken = default)
+    {
+        await TrackAsync(target, cancellationToken).ConfigureAwait(false);
+        var sha = FileHash.Sha256HexOf(bytes);
+        await DeclareWriteAsync(target, sha, cancellationToken).ConfigureAwait(false);
+        await AtomicFile.WriteAllBytesAsync(target, bytes, CancellationToken.None).ConfigureAwait(false);
+        return sha;
+    }
+
+    /// <summary>Deletes the tracked <paramref name="path"/> (tracked first, so a rollback puts it back).</summary>
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
+    {
+        await TrackAsync(path, cancellationToken).ConfigureAwait(false);
+        if (File.Exists(path)) AtomicFile.Delete(path);
+    }
+
+    /// <summary>Puts the operation id into <paramref name="record"/>'s metadata (its commit point); returns the record.</summary>
+    public LinuxDeploymentRecord Stamp(LinuxDeploymentRecord record) => LinuxDeploymentRecovery.StampOperation(Operation, record);
+
+    /// <summary>
+    /// After the commit point (record saved or removed): drops the snapshots and the journal entry. Never throws;
+    /// returns what could not be cleaned (swept later).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> CommitAsync()
+    {
+        if (_completed) return [];
+        _completed = true;
+        return Operation is not null ? await Operation.CommitAsync().ConfigureAwait(false) : Files.Release();
+    }
+
+    /// <summary>
+    /// Puts every tracked file back (and, journaled, undoes every journaled Wine step). Never cancelled. A failure keeps
+    /// every copy (and the journal entry, so the next start retries) and is returned.
+    /// </summary>
+    public async Task<OwnedFileSetRollback> RollbackAsync()
+    {
+        if (_completed) return new([]);
+        _completed = true;
+        return Operation is not null
+            ? await Operation.RollbackAsync().ConfigureAwait(false)
+            : await Files.RollbackAsync(RollbackMode.InProcess).ConfigureAwait(false);
+    }
+
+    /// <summary>The text a failure message appends for a rollback that could not finish (empty on success).</summary>
+    public static string RollbackNote(OwnedFileSetRollback rollback)
+        => rollback.Success ? "" : $"{RollbackIncompletePrefix}{string.Join("; ", rollback.Failures)}); every copy was kept.";
+
+    /// <summary>Fixed text before the failures of an incomplete rollback (PT-BR pair exists since w1).</summary>
+    public const string RollbackIncompletePrefix = " Rollback was incomplete (";
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_completed) await RollbackAsync().ConfigureAwait(false);
+    }
+}

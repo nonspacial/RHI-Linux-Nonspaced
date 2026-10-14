@@ -99,23 +99,21 @@ public sealed class REFrameworkDeploymentService
         var (cachedDll, download) = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
         var applicationName = Path.GetFileName(game.ExecutablePath ?? "");
         WineOverrideRecord? overrideRecord = null;
-        var deployed = false;
-        // The Wine override is journaled before it is written (#23): a crash before the record is saved
-        // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        // Journaled (#23): the override and the proxy are recorded before they are written, so a crash before the
+        // record is saved is rolled back at the next start instead of leaving a dinput8.dll and override nothing owns.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RE Framework install: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
         // Downloaded and validated: from the override on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
+            overrideRecord = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
             // Verified durable copy; never replaces a dinput8.dll that appeared since the check above.
-            var deployedHash = await AtomicFile.CopyAsync(cachedDll, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
-            deployed = true;
+            var deployedHash = await scope.PlaceCopyAsync(cachedDll, target, cancellationToken, overwrite: false).ConfigureAwait(false);
 
-            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -144,17 +142,18 @@ public sealed class REFrameworkDeploymentService
                     [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
             }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
         }
-        catch
+        catch (Exception ex)
         {
-            if (deployed && !FileCleanup.TryDelete(target, out var deleteError))
-                AppLog.Warn("reframework", $"Rollback could not remove {target}", deleteError);
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, overrideRecord);
-            throw;
+            if (rollback.Success) throw;
+            // The copies a failed rollback kept are named, never dropped (#31).
+            throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
         }
+        // The record carries the operation id: it is the commit point, so nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
     }
 
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -203,38 +202,32 @@ public sealed class REFrameworkDeploymentService
             return ComponentOperationResult.Fail($"RE Framework update preparation failed: {ex.Message}");
         }
 
-        var backup = owned.Path + $".rhi-update-backup-{Guid.NewGuid():N}";
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RE Framework update: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            AtomicFile.Copy(owned.Path, backup, currentHash);
-            owned.Sha256 = await AtomicFile.CopyAsync(cachedDll, owned.Path, cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Tracked with a verified copy first: a failure (or a crash before the record is saved) puts the previous
+            // dinput8.dll back from it, and a copy that cannot be put back is kept and named.
+            owned.Sha256 = await scope.PlaceCopyAsync(cachedDll, owned.Path, cancellationToken).ConfigureAwait(false);
             record.SourceUrl = release.AssetUrl;
             record.Version = NormalizeVersion(release.Version);
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata["REFramework.AssetName"] = release.AssetName;
             download.RecordIn(record.Metadata);
-            _records.Upsert(record);
-            FileCleanup.TryDelete(backup);
-            return ComponentOperationResult.Ok($"RE Framework updated to {record.Version}; existing Wine override ownership was preserved.", owned.Path);
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            if (!File.Exists(backup))
-                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
-            try
-            {
-                // The backup is the previous dinput8.dll; it is deleted only once it is back in place.
-                AtomicFile.Copy(backup, owned.Path, currentHash);
-                FileCleanup.TryDelete(backup);
-                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
-            }
-            catch (Exception restoreError)
-            {
-                AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}; the previous file is kept at {backup}", restoreError);
-                return ComponentOperationResult.Fail($"RE Framework update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{backup}");
-            }
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RE Framework updated to {record.Version}; existing Wine override ownership was preserved.", owned.Path);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -262,32 +255,32 @@ public sealed class REFrameworkDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        WineOverrideRestoreResult overrideRestore;
+        // Journaled (#23): the record is stamped with the removal's id; a crash before it is removed puts the dll and
+        // the override back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RE Framework removal: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        WineOverrideRestoreResult? overrideRestore = null;
         try
         {
-            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            await scope.DeleteAsync(owned.Path, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.REFramework);
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RE Framework removal stopped before deleting dinput8.dll because the Wine override could not be restored: {ex.Message}");
-        }
-
-        try
-        {
-            if (File.Exists(owned.Path)) File.Delete(owned.Path);
-        }
-        catch (Exception ex)
-        {
-            // Keep the game usable if filesystem teardown failed after registry restoration: put RHI's value back
-            // where this removal restored it (a value set since stays, #30).
-            if (overrideRestore.Outcome == WineOverrideRestoreOutcome.Restored)
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // Keep the game usable: put RHI's value back where this removal restored it (a value set since stays, #30).
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"RE Framework dinput8.dll could not be removed: {ex.Message}");
+            return ComponentOperationResult.Fail($"RE Framework removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point. Nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
 
-        _records.Remove(game, ManagedComponentKind.REFramework);
         return ComponentOperationResult.Ok("RE Framework removed and the previous per-game dinput8 Wine override restored."
             + WineDllOverrideService.KeptValueNotes(overrideRestore), owned.Path);
     }
