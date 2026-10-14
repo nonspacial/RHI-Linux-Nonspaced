@@ -53,6 +53,7 @@ public sealed class ShortFuseDeploymentService
     /// <summary>The per-game store "Repair after move" carries over (Refs #38).</summary>
     internal Settings.IGameStateStore GameState => _settings;
     private readonly string _cacheRoot;
+    private readonly DeploymentJournal? _journal;
 
     public ShortFuseDeploymentService(
         HttpClient http,
@@ -62,8 +63,10 @@ public sealed class ShortFuseDeploymentService
         UltimateAsiLoaderDeploymentService ual,
         DlssManagerService dlss,
         string? cacheRoot = null,
-        ShortFuseSettingsStore? settings = null)
+        ShortFuseSettingsStore? settings = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _files = files;
         _records = records;
@@ -308,7 +311,7 @@ public sealed class ShortFuseDeploymentService
                 updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
                 VerifiedDownload.Record(updated.Metadata, updated.Metadata[MetaAddonSha256], HasPublishedDigest(release));
                 _records.Upsert(updated);
-            }, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken, _journal, game).ConfigureAwait(false);
             return ComponentOperationResult.Ok(changed == 0
                 ? $"ShortFuse {release.Version} is already installed."
                 : $"ShortFuse add-on swapped in place to {release.Version}. ReShade, UAL and the DLSS stack were not changed.", addon.Path);
@@ -343,7 +346,7 @@ public sealed class ShortFuseDeploymentService
 
     /// <summary>Swaps the ShortFuse-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
     public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
-        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.ShortFuse, "ShortFuse", version, cancellationToken);
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.ShortFuse, "ShortFuse", version, cancellationToken, _journal);
 
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, string? releaseTag, CancellationToken cancellationToken = default)
     {

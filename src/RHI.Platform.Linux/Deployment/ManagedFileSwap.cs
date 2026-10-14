@@ -1,4 +1,5 @@
 using RHI.Core.Deployment;
+using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -7,14 +8,14 @@ namespace RHI.Platform.Linux.Deployment;
 /// "swap while installed"). Only the named files change; every other file of the record is left
 /// alone. Each target must still match its recorded hash, so a file edited outside RHI is never
 /// overwritten. The caller's record is never mutated: the new hashes go into a copy, which the
-/// persist callback updates and saves. When copying or persisting fails, the previous bytes are
-/// put back; a file that cannot be put back keeps its backup and is reported, never hidden.
+/// persist callback updates and saves. Every target is tracked with a verified copy before it changes and the new
+/// content is placed through a verified, durable rename (#31); with a journal the swap is an operation whose commit
+/// point is the persisted record (#23), so a crash before it is saved puts the previous files back at the next start.
+/// When copying or persisting fails, the previous bytes are put back; a file that cannot be put back keeps its copy and
+/// is reported, never hidden.
 /// </summary>
 public static class ManagedFileSwap
 {
-    public const string BackupSuffix = ".rhi-swap-old";
-    private const string StagingSuffix = ".rhi-swap-new";
-
     /// <summary>Returns the record file matching <paramref name="fileName"/> (case-insensitive leaf name).</summary>
     public static LinuxDeployedFile? FindFile(LinuxDeploymentRecord record, string fileName)
         => record.Files.FirstOrDefault(file =>
@@ -22,16 +23,19 @@ public static class ManagedFileSwap
 
     /// <summary>
     /// Replaces each recorded file (by its recorded path) with its source, then hands a copy of
-    /// <paramref name="record"/> carrying the new hashes to <paramref name="persist"/>, which must
-    /// apply any other changes to that copy and save it. Returns the number of files whose bytes
+    /// <paramref name="record"/> carrying the new hashes (and, journaled, the operation id) to <paramref name="persist"/>,
+    /// which must apply any other changes to that copy and save it. Returns the number of files whose bytes
     /// changed. <paramref name="record"/> itself is left as it was, whatever happens.
     /// </summary>
-    /// <exception cref="ManagedFileRestoreException">A previous file could not be put back; its backup was kept.</exception>
+    /// <param name="journal">The app's journal; with <paramref name="game"/>, the swap is journaled.</param>
+    /// <exception cref="ManagedFileRestoreException">A previous file could not be put back; its copy was kept.</exception>
     public static async Task<int> ReplaceAsync(
         LinuxDeploymentRecord record,
         IReadOnlyList<(string RecordedPath, string SourcePath)> items,
         Action<LinuxDeploymentRecord> persist,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DeploymentJournal? journal = null,
+        DetectedGame? game = null)
     {
         var updated = LinuxDeploymentRecordStore.Clone(record);
 
@@ -52,54 +56,49 @@ public static class ManagedFileSwap
             plan.Add((file, source, await FileHash.Sha256HexAsync(source, cancellationToken).ConfigureAwait(false), file.Sha256));
         }
 
-        // Verified: from the first swap on, Cancel is refused and the swap runs to completion or full rollback.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
-        var swapped = new List<LinuxDeployedFile>();
-        var keptBackups = new List<string>();
-        try
+        DeploymentScope scope;
+        if (journal is not null && game is not null)
         {
-            foreach (var (file, source, newHash, oldHash) in plan)
-            {
-                if (string.Equals(newHash, oldHash, StringComparison.OrdinalIgnoreCase)) continue;
-                var staging = file.Path + StagingSuffix;
-                File.Copy(file.Path, file.Path + BackupSuffix, overwrite: true);
-                File.Copy(source, staging, overwrite: true);
-                File.Move(staging, file.Path, overwrite: true);
-                swapped.Add(file);
-                file.Sha256 = newHash;
-            }
-            persist(updated);
+            var (opened, refusal) = await DeploymentScope.BeginAsync(
+                journal, $"{record.Component} swap: {game.Name}", game, record.Component, cancellationToken).ConfigureAwait(false);
+            if (refusal is not null) throw new IOException(refusal);
+            scope = opened!;
         }
-        catch (Exception failure)
+        else scope = DeploymentScope.Unjournaled();
+
+        await using (scope.ConfigureAwait(false))
         {
-            // Compensation never honours cancellation: a half-swapped component must be restored.
-            foreach (var file in swapped.AsEnumerable().Reverse())
+            // Verified: from the first swap on, Cancel is refused and the swap runs to completion or full rollback.
+            _ = OperationCancellation.BeginWrites(cancellationToken);
+            var swapped = 0;
+            try
             {
-                var backup = file.Path + BackupSuffix;
-                // A rename is atomic and consumes the backup only once it has taken the file's place.
-                try { File.Move(backup, file.Path, overwrite: true); }
-                catch { keptBackups.Add(backup); }
+                foreach (var (file, source, newHash, oldHash) in plan)
+                {
+                    if (string.Equals(newHash, oldHash, StringComparison.OrdinalIgnoreCase)) continue;
+                    file.Sha256 = await scope.PlaceCopyAsync(source, file.Path, CancellationToken.None, newHash).ConfigureAwait(false);
+                    swapped++;
+                }
+                persist(scope.Stamp(updated));
             }
-            if (keptBackups.Count > 0)
-                throw new ManagedFileRestoreException(keptBackups, failure);
-            throw;
-        }
-        finally
-        {
-            foreach (var (file, _, _, _) in plan)
+            catch (Exception failure)
             {
-                FileCleanup.TryDelete(file.Path + StagingSuffix);
-                if (!keptBackups.Contains(file.Path + BackupSuffix))
-                    FileCleanup.TryDelete(file.Path + BackupSuffix);
+                // Compensation never honours cancellation: a half-swapped component must be restored.
+                var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+                if (!rollback.Success)
+                    throw new ManagedFileRestoreException(
+                        plan.Select(item => scope.Files.SnapshotPathOf(item.File.Path)).Where(File.Exists).ToArray(), failure);
+                throw;
             }
+            await scope.CommitAsync().ConfigureAwait(false);
+            return swapped;
         }
-        return swapped.Count;
     }
 
 }
 
 /// <summary>
-/// A swap failed and at least one previous file could not be put back. Its backup is kept beside
+/// A swap failed and at least one previous file could not be put back. Its verified copy is kept beside
 /// it; the deployment record still describes the previous file.
 /// </summary>
 public sealed class ManagedFileRestoreException(IReadOnlyList<string> backupPaths, Exception cause)

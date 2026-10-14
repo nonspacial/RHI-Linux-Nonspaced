@@ -155,7 +155,7 @@ internal sealed class AppComposition
         var optiPackages = new OptiScalerPackageProvider(http, optiExtractor);
         var optiscaler = new OptiScalerDeploymentService(deployment, records, wineOverrides, optiPackages, dlss, dlssEnablerStandalone, journal);
         var ultimateAsiLoader = new UltimateAsiLoaderDeploymentService(http, records, wineOverrides, journal: journal);
-        var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ultimateAsiLoader, dlss);
+        var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ultimateAsiLoader, dlss, journal: journal);
         var dofFix = new DofFixDeploymentService(http, records, upstreamManifest);
         var reFramework = new REFrameworkDeploymentService(http, records, wineOverrides, journal: journal);
         var lumaCatalog = new LumaCatalogService(http, upstreamManifest);

@@ -169,7 +169,7 @@ public sealed class Dlss5FeederFullDeploymentService
 
     /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
     public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
-        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken);
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken, _journal);
 
     public Task<IReadOnlyList<GitHubReleaseVersion>> ListVersionsAsync(CancellationToken cancellationToken = default)
         => _releaseResolver.ListVersionsAsync(FeederReleaseApi, cancellationToken);
@@ -256,7 +256,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
                     download.RecordIn(updated.Metadata);
                     _records.Upsert(updated);
-                }, cancellationToken).ConfigureAwait(false);
+                }, cancellationToken, _journal, game).ConfigureAwait(false);
                 return ComponentOperationResult.Ok(changed == 0
                     ? $"DLSS5 Feeder {release.Version} is already installed."
                     : $"DLSS5 Feeder swapped in place to {release.Version}. Consumer, DLSS DLLs, shaders and configs were not changed.",

@@ -21,7 +21,8 @@ internal static class NeuralRenderingDllSwap
         ManagedComponentKind owner,
         string displayName,
         string? version,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RHI.Core.Deployment.DeploymentJournal? journal = null)
     {
         var record = records.Find(game, owner);
         if (record is null)
@@ -53,7 +54,7 @@ internal static class NeuralRenderingDllSwap
             {
                 updated.Metadata[MetaDllVersion] = source.Version;
                 records.Upsert(updated);
-            }, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken, journal, game).ConfigureAwait(false);
             return ComponentOperationResult.Ok(fallback + (changed == 0
                 ? $"{displayName}: {DllName} already matches {source.Version}."
                 : $"{displayName}: {DllName} swapped in place to {source.Version}. Nothing else was changed."), file.Path);
