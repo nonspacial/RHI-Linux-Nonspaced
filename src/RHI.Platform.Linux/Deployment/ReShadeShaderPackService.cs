@@ -740,7 +740,8 @@ public sealed class ReShadeShaderPackService
 
             var destination = Path.Combine(outputRoot, category, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
+            // Verified, durable copy (#31): the normalised tree becomes the cached pack every install copies from.
+            AtomicFile.Copy(file, destination);
             count++;
         }
         return count;

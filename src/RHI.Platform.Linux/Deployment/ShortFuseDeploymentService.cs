@@ -111,8 +111,9 @@ public sealed class ShortFuseDeploymentService
             : GetZzzLoadOrderEnabled(game);
     }
 
-    // Seam for the rename so tests can make the rollback rename fail; production always uses rename(2).
-    internal Action<string, string> MoveAddonFile { get; set; } = static (from, to) => File.Move(from, to, overwrite: true);
+    // Seam for the rename so tests can make the rollback rename fail; production is the toolkit's durable rename (#31):
+    // rename(2), then the folder is fsynced so the new name survives a crash.
+    internal Action<string, string> MoveAddonFile { get; set; } = static (from, to) => AtomicFile.Rename(from, to, overwrite: true);
 
     /// <summary>
     /// Persists the per-game ZZZ load-order preference. When ShortFuse is managed, the owned add-on is
