@@ -129,4 +129,36 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.True(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
         Assert.Equal("native,builtin", Override(fixture, "winmm"));
     }
+
+    // Review w3-journal #6: ShortFuse's record goes and ReShade's renamed-back record is saved in ONE ledger write. Split
+    // into two writes, a crash between them left ReShade's record naming ReShade64.asi while the file was back at its
+    // original name. The process dies at the first ledger write after the commit write here; whatever the next start
+    // finds, every record must describe the files on disk.
+    [Fact]
+    public async Task Remove_CrashRightAfterTheCommitWrite_LeavesEveryRecordDescribingTheFilesOnDisk()
+    {
+        using var fixture = CreateGame("crash-after-commit");
+        var (ctx, journal, journalDir, ledger, editor) = JournaledContext(fixture);
+        using var _ = ctx;
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+        var addon = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin), ShortFuseDeploymentService.AddonFileName);
+        using var death = new SimulatedDeath(journal);
+        // The first registry edit of the removal is ReShade's override re-enable; the save after it is the commit write,
+        // the one after that dies.
+        var saves = 0;
+        editor.InsideLockForTesting = _ => ctx.Records.SaveFaultForTesting ??= () => ++saves == 2 ? death.Die() : null;
+
+        var (died, _) = await death.RunUntilDeathAsync(() => ctx.ShortFuse.RemoveAsync(fixture.Game));
+        Assert.True(died);
+        await SimulatedDeath.RecoverAsync(journalDir, ledger);
+
+        var after = new LinuxDeploymentRecordStore(ledger);
+        var reshade = after.Find(fixture.Game, ManagedComponentKind.ReShade)!;
+        Assert.True(File.Exists(reshade.Files.Single().Path), $"ReShade's record names {reshade.Files.Single().Path}, which is not on disk");
+        Assert.Equal(after.Find(fixture.Game, ManagedComponentKind.ShortFuse) is not null, File.Exists(addon));
+        // Here the commit write went through: ShortFuse is gone and ReShade is back at its own name.
+        Assert.Null(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Equal(Path.Combine(fixture.Bin, "dxgi.dll"), reshade.Files.Single().Path);
+    }
 }
