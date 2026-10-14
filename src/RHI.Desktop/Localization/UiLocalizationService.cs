@@ -983,6 +983,12 @@ public static class UiLocalizationService
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        // #124 Control UE: an earlier copy kept beside a DLL the user changed; a user change an update leaves alone.
+        ("an earlier copy RHI kept from a previous Control UE install is in the way; move it aside and reinstall RenoDX to update this DLL: ",
+            "uma cópia anterior que o RHI guardou de uma instalação anterior do Control UE está no caminho; mova-a para outro lugar e reinstale o RenoDX para atualizar esta DLL: "),
+        (" The copy RHI kept from before its install stays at ", " A cópia que o RHI guardou de antes da instalação continua em "),
+        (": changed outside RHI since the install; kept, not applied again.", ": alterado fora do RHI desde a instalação; mantido, não aplicado de novo."),
+        ("RenoDX installed: ", "RenoDX instalado: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

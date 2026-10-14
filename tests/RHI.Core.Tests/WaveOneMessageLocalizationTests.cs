@@ -154,6 +154,9 @@ public sealed class WaveOneMessageLocalizationTests
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        yield return $"Control UE restore incomplete; RenoDX was kept: nvngx_dlss.dll not changed: {ControlUePostInstallService.SnapshotInTheWayPrefix}{P}.rhi-control-previous";
+        yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll was changed outside RHI and was left as it is.{ControlUePostInstallService.SnapshotKeptPrefix}{P}.rhi-control-previous";
+        yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll{ControlUePostInstallService.UserChangeKeptNote} renderer.ini{ControlUePostInstallService.UserChangeKeptNote}";
     }
 
     [Theory]

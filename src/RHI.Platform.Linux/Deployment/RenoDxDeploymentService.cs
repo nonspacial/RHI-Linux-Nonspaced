@@ -384,18 +384,22 @@ public sealed class RenoDxDeploymentService
 
             // Put the previous Control UE changes back first, then apply afresh, so the first
             // pre-RHI state stays the restore point. A partial restore keeps what is left owned.
+            // A file the user changed since (DLSS version, HDR preset) is left as they set it and
+            // not applied again (#124).
             var controlNotes = new List<string>();
             var controlState = previousControlState;
             ControlUePostInstallState? controlApplied = null;
+            IReadOnlySet<string>? controlKeptUserChanges = null;
             if (previousControlState is not null)
             {
                 var restored = await _controlUe.RestoreAsync(previousControlState).ConfigureAwait(false);
                 controlState = restored.Remaining;
+                controlKeptUserChanges = restored.KeptUserChanges;
                 if (restored.Remaining is not null) controlNotes.AddRange(restored.Notes);
             }
             if (controlSources is not null && controlState is null)
             {
-                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources).ConfigureAwait(false);
+                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources, controlKeptUserChanges).ConfigureAwait(false);
                 controlState = controlApplied = applied.State;
                 controlNotes.AddRange(applied.Notes);
             }
