@@ -142,6 +142,14 @@ public sealed class SelectionStoreReadTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public void TheReadCounter_IsATestSeam_NotPublicApi()
+    {
+        // Review w3 nit 7: the counter lives in the production assembly for the tests above only.
+        Assert.False(typeof(JsonStoreReads).IsVisible);
+        Assert.DoesNotContain(typeof(JsonStoreReads).Assembly.GetExportedTypes(), type => type.Name == nameof(JsonStoreReads));
+    }
+
     private static void WithStore(Action<string, GraphicsApiOverrideStore, DetectedGame> test)
     {
         var root = Directory.CreateTempSubdirectory("rhi-store-reads-").FullName;

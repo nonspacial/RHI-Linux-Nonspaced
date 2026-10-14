@@ -453,8 +453,11 @@ internal readonly record struct JsonFileVersion(FileIdentity Identity, DateTime 
     }
 }
 
-/// <summary>Counts store-file reads per path (tests measure per-selection reads with it; Refs #63).</summary>
-public static class JsonStoreReads
+/// <summary>
+/// Counts store-file reads per path (tests measure per-selection reads with it; Refs #63). Internal: a test seam, not
+/// part of the assembly's API (the test project sees it through InternalsVisibleTo).
+/// </summary>
+internal static class JsonStoreReads
 {
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, int> Reads = new(StringComparer.Ordinal);
 
