@@ -119,6 +119,29 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDX));
     }
 
+    // w3 review nit 7: the No Addons build has its own cache folder, so both builds of one version stay cached and a later
+    // add-on install reuses its copy instead of downloading again.
+    [Fact]
+    public async Task NoAddonsAndAddonBuild_OfOneVersion_AreCachedApart()
+    {
+        var handler = new Handler { AddonVersion = "6.8.0", NoAddonsVersion = "6.8.0" };
+        var (first, firstStore) = CreateGame("cache-addon");
+        Assert.True((await NewService(firstStore, handler).InstallAsync(first, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var (second, secondStore) = CreateGame("cache-noaddons");
+        Assert.True((await NewService(secondStore, handler).InstallAsync(second, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false })).Success);
+
+        var cache = Path.Combine(_root, "cache");
+        Assert.Contains("NO-ADDON-BUILD", File.ReadAllText(Path.Combine(cache, "noaddons", "6.8.0", "ReShade64.dll"), Encoding.Latin1));
+        var addonBuild = File.ReadAllText(Path.Combine(cache, "stable", "6.8.0", "ReShade64.dll"), Encoding.Latin1);
+        Assert.Contains("ADDON-BUILD", addonBuild);
+        Assert.DoesNotContain("NO-ADDON-BUILD", addonBuild);
+
+        var (third, thirdStore) = CreateGame("cache-addon-again");
+        Assert.True((await NewService(thirdStore, handler).InstallAsync(third, new ReShadeInstallOptions { ManageIni = false })).Success);
+        Assert.Single(handler.Requests, u => u.EndsWith("/downloads/ReShade_Setup_6.8.0_Addon.exe", StringComparison.Ordinal));
+        Assert.Single(handler.Requests, u => u.EndsWith("/downloads/ReShade_Setup_6.8.0.exe", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task AddonInstall_OverNoAddonsReShade_IsRefusedAndNotOffered()
     {
