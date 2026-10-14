@@ -115,7 +115,7 @@ public static class UiLocalizationService
         ["Ui.RepairMoveTip"] = "O jogo mudou de pasta e os registros ou configurações do RHI ainda apontam para a antiga. Confere a nova pasta e atualiza registros e configurações; nada muda se algo não bater.",
 
         ["Ui.DlssNote"] = "O gerenciador local substitui apenas DLLs de DLSS/Streamline que o próprio jogo já fornece. Jogos sem DLSS usam o DLSS5 Feeder Full; trocas diretas ficam bloqueadas enquanto o Feeder Full controla sua pilha privada de SR/NR. Aplicar padrões usa as versões salvas; um padrão vazio significa não alterar o componente. O selo ✓ RHI aplicado indica que existe backup .original do RHI e a restauração está disponível.",
-        ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
+        ["Ui.ReShadeProfileNote"] = "Canais Stable, Nightly, Legacy fixado, Sem add-ons e DLL personalizada local. O INI e os pacotes de shaders do RHI são atualizados sem assumir controle de instalações externas.",
         ["Ui.ManagedProfileControls"] = "Controles do perfil gerenciado pelo RHI",
         ["Ui.Channel"] = "Canal",
         ["Ui.LegacyVersion"] = "Versão legada",
@@ -342,7 +342,7 @@ public static class UiLocalizationService
         ["Ui.RepairMoveTip"] = "The game moved and RHI's records or settings still point to its old folder. Checks the new folder and updates the records and settings; nothing changes if anything does not match.",
 
         ["Ui.DlssNote"] = "The local manager only replaces DLSS/Streamline DLLs that the game already ships. Games without DLSS use DLSS5 Feeder Full; direct swaps stay blocked while Feeder Full controls its private SR/NR stack. Apply defaults uses the saved versions; an empty default means do not change that component. The ✓ RHI applied badge means an RHI .original backup exists and restore is available.",
-        ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
+        ["Ui.ReShadeProfileNote"] = "Stable, Nightly, pinned Legacy and No Addons channels and a local custom DLL. RHI updates the INI and shader packages without taking ownership of external installations.",
         ["Ui.ManagedProfileControls"] = "RHI-managed profile controls",
         ["Ui.Channel"] = "Channel",
         ["Ui.LegacyVersion"] = "Legacy version",
