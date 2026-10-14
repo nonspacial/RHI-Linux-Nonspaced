@@ -1451,7 +1451,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
 
     [RelayCommand]
-    private Task RefreshAsync() => RefreshAsync(null);
+    private Task RefreshAsync()
+    {
+        if (!IsBusy) return RefreshAsync(null);
+        // Clicked while another operation (Update All, the background pass, an install) holds the gate: the refresh is
+        // queued, not dropped, and the status line says so; further clicks join the queued one (Refs #68).
+        StatusText = T("Vm.RefreshQueued");
+        return _queuedRefresh ??= RunQueuedRefreshAsync();
+    }
+
+    private Task? _queuedRefresh;
+
+    private async Task RunQueuedRefreshAsync()
+    {
+        try
+        {
+            // Checked again after every wake-up: another operation may take the gate before this continuation runs.
+            while (IsBusy) await _operations.WhenIdleAsync();
+            await RefreshAsync(null);
+        }
+        finally { _queuedRefresh = null; }
+    }
 
     /// <summary>
     /// Refresh that waits for the current busy operation (Update All, an install…) instead of
