@@ -98,7 +98,10 @@ public sealed class SelectionStoreReadTests
         });
     }
 
-    [Fact]
+    // The cache tells same-length, same-mtime rewrites apart by ctime alone: on a kernel/filesystem whose ctime is coarse
+    // (before Linux 6.13's multigrain timestamps, or a coarse filesystem) back-to-back writes share one ctime, so the test
+    // is skipped with that reason instead of failing (vmsplit re-review nit 9).
+    [FineGrainedCtimeFact]
     public void InPlaceSameLengthRewrites_WithTheMtimePutBack_AreEachReadAgain()
     {
         WithStore((path, store, game) =>
@@ -186,4 +189,39 @@ public sealed class SelectionStoreReadTests
             await Task.Delay(25);
         await Task.Delay(100); // the background latest-version refresh and the Repair-after-move check settle
     }
+}
+
+/// <summary>A <see cref="FactAttribute"/> skipped (with the reason) where back-to-back writes can share one ctime.</summary>
+public sealed class FineGrainedCtimeFactAttribute : FactAttribute
+{
+    public FineGrainedCtimeFactAttribute()
+    {
+        if (!FineGrainedCtime.Available)
+            Skip = "This kernel/filesystem gives back-to-back writes the same ctime (coarse timestamps), so same-length rewrites with the mtime put back cannot be told apart here.";
+    }
+}
+
+internal static class FineGrainedCtime
+{
+    private static readonly Lazy<bool> Probe = new(() =>
+    {
+        var dir = Directory.CreateTempSubdirectory("rhi-ctime-probe-").FullName;
+        try
+        {
+            var file = Path.Combine(dir, "probe");
+            File.WriteAllBytes(file, [0]);
+            var previous = RHI.Core.Deployment.FileChangeTime.TryGetUtc(file);
+            for (var i = 0; i < 50; i++)
+            {
+                using (var stream = new FileStream(file, FileMode.Open, FileAccess.Write)) stream.WriteByte((byte)i);
+                var current = RHI.Core.Deployment.FileChangeTime.TryGetUtc(file);
+                if (current is null || current == previous) return false;
+                previous = current;
+            }
+            return true;
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    });
+
+    public static bool Available => Probe.Value;
 }
