@@ -20,10 +20,6 @@ public sealed partial class ReShadeDeploymentService
     /// <summary>The setup of the build without add-on support (#91, upstream <c>NormalReShadeUpdateService</c>); same rule as <see cref="StableSetupUrl"/>.</summary>
     internal static string NoAddonsSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}.exe";
 
-    /// <summary>Fixed text before the add-on names when No Addons is refused over installed add-ons (PT-BR presentation pair).</summary>
-    public const string NoAddonsWithAddonsPrefix =
-        "ReShade without add-on support (No Addons) cannot load the add-ons RHI installed for this game; remove them first, or keep an add-on channel: ";
-
     /// <summary>Fixed text before the component name when an add-on is refused over No Addons ReShade (PT-BR presentation pair).</summary>
     public const string NoAddonsBlocksAddonPrefix =
         "ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ";
@@ -203,15 +199,8 @@ public sealed partial class ReShadeDeploymentService
         }
         var directProxy = resolution.Name;
 
-        if (options.Channel == ReShadeChannel.NoAddons)
-        {
-            // Upstream leaves installed add-ons in place when a game switches to No Addons, where they silently stop
-            // loading; RHI refuses instead, before anything changes (#91).
-            var addons = _records.FindAll(game).Where(r => LinuxComponentDependencyPolicy.IsReShadeAddon(r.Component))
-                .Select(r => r.Component.ToString()).Order(StringComparer.Ordinal).ToArray();
-            if (addons.Length > 0)
-                return ComponentOperationResult.Fail(NoAddonsWithAddonsPrefix + string.Join(", ", addons));
-        }
+        // Switching to No Addons with add-ons installed is allowed, as upstream: they stay in place and simply stop
+        // loading (owner decision #91; a warning is #170).
 
         var existingRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);

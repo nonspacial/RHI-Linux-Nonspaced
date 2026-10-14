@@ -150,7 +150,7 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 - Ported (upstream `NormalReShadeUpdateService`, per-game channel "No Addons"): the ReShade profile's channel list has **No Addons**, the newest reshade.me build without add-on support (`/downloads/ReShade_Setup_<v>.exe`, the link without `_Addon`). It is staged, stamped and cached apart from the add-on build (`reshade/noaddons/<v>`), so an outage fallback or a cache reuse never mixes the two; Check Update and Update All compare it with the No Addons link on reshade.me. The setup is extracted like the add-on setup and accepted on the same reshade.me host policy (reshade.me publishes no digest; RHI records the SHA-256).
 - As upstream, ReShade add-ons are not offered for a No Addons game: RenoDX, ReLimiter, Display Commander, DOF Fix, Luma, ShortFuse, the DLSS5/MFG add-ons and the Addon Manager selection are refused with a plain reason and their install buttons are disabled with that note (upstream greys them out).
-- Linux deviation: upstream lets a game switch to No Addons with add-ons still installed (they stop loading); RHI refuses the switch before any download or change and names the RHI-installed add-ons to remove first. The channel can also be the Settings default, like the other channels.
+- As upstream, a game can switch to No Addons with add-ons still installed: they stay in place and simply stop loading (owner decision; an on-screen warning is tracked as #170). The channel can also be the Settings default, like the other channels (`LinuxAppSettings.Normalize` keeps it).
 
 ### #120 — Per-game proxy DLL name for ReShade (upstream DLL-name dropdowns, 2.7.6)
 

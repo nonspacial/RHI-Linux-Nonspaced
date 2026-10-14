@@ -157,7 +157,6 @@ public sealed class WaveOneMessageLocalizationTests
         yield return $"Control UE restore incomplete; RenoDX was kept: nvngx_dlss.dll not changed: {ControlUePostInstallService.SnapshotInTheWayPrefix}{P}.rhi-control-previous";
         yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll was changed outside RHI and was left as it is.{ControlUePostInstallService.SnapshotKeptPrefix}{P}.rhi-control-previous";
         yield return $"RenoDX installed: Control → {P} · Control UE: nvngx_dlss.dll{ControlUePostInstallService.UserChangeKeptNote} renderer.ini{ControlUePostInstallService.UserChangeKeptNote}";
-        yield return ReShadeDeploymentService.NoAddonsWithAddonsPrefix + "RenoDX, ReLimiter";
         yield return ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + "RenoDX HDR";
         yield return ReShadeDeploymentService.NoAddonsUpdateAvailablePrefix + "6.7.3 → 6.8.0.";
         yield return ReShadeDeploymentService.NoAddonsCurrentPrefix + "6.8.0.";

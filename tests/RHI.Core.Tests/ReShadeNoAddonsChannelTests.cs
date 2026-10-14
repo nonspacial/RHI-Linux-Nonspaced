@@ -93,25 +93,30 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
     }
 
+    // Owner decision (#91): as upstream, a game switches to No Addons with add-ons still installed; they stay in place and
+    // simply stop loading (a warning is tracked as #170).
     [Fact]
-    public async Task NoAddons_WithRhiAddonsInstalled_IsRefusedBeforeAnyDownloadOrChange()
+    public async Task NoAddons_WithRhiAddonsInstalled_SwitchesLikeUpstream_AndLeavesTheAddonsInPlace()
     {
-        var (game, store) = CreateGame("refused");
+        var (game, store) = CreateGame("switch");
+        var handler = new Handler { AddonVersion = "6.8.0", NoAddonsVersion = "6.8.0" };
+        var service = NewService(store, handler);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var addon = Path.Combine(game.BinaryDirectory!, "renodx-game.addon64");
+        File.WriteAllText(addon, "MZ RenoDX");
         store.Upsert(new LinuxDeploymentRecord
         {
             GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.RenoDX,
-            BinaryDirectory = game.BinaryDirectory!, Version = "mod", Files = [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, "renodx-game.addon64") }]
+            BinaryDirectory = game.BinaryDirectory!, Version = "mod", Files = [new LinuxDeployedFile { Path = addon }]
         });
-        var handler = new Handler();
-        var service = NewService(store, handler);
 
         var result = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
 
-        Assert.False(result.Success);
-        Assert.Equal(ReShadeDeploymentService.NoAddonsWithAddonsPrefix + "RenoDX", result.Message);
-        Assert.Empty(handler.Requests);
-        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
-        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+        Assert.True(result.Success, result.Message);
+        Assert.Contains("NO-ADDON-BUILD", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "dxgi.dll"), Encoding.Latin1));
+        Assert.Equal(ReShadeChannel.NoAddons, service.GetInstalledOptions(game).Channel);
+        Assert.Equal("MZ RenoDX", File.ReadAllText(addon));
+        Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDX));
     }
 
     [Fact]
