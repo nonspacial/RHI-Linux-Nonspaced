@@ -1512,7 +1512,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         string? d3dCompiler47Path,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        var guard = InstallGuard(game); // merge review nit 4: the same bitness/encrypted-exe answer as every installer (#167)
         if (guard is not null) return guard;
         if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.Dlss5Feeder) is { } layered) return ComponentOperationResult.Fail(layered); // w3/parity (#96)
 

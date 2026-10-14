@@ -704,7 +704,8 @@ public sealed class XboxGameDetectorTests : IDisposable
             await service.InstallShortFuseAsync(game),
             await service.InstallD3DCompilerWithWinetricksAsync(game),
             await service.InstallD3DCompilerWithProtontricksAsync(game),
-            await service.InstallLocalLumaPackageAsync(game, _tree.Path_("luma.zip"))
+            await service.InstallLocalLumaPackageAsync(game, _tree.Path_("luma.zip")),
+            await service.InstallDlss5FeederAsync(game, Dlss5FeederConsumer.RenoDxDlss5, null, null)
         };
 
         Assert.All(results, result => Assert.Equal((false, XboxWriteGate.EncryptedExecutableMessage), (result.Success, result.Message)));
