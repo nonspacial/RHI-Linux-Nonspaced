@@ -1314,6 +1314,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.Dlssg2030Unlock => "RTX 20 FG Unlock",
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
         ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
+        ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         _ => kind.ToString()
     };
 

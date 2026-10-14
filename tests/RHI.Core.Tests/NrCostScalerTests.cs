@@ -251,6 +251,23 @@ public sealed class NrCostScalerTests : IDisposable
         Assert.Equal("MZ proxy", File.ReadAllText(Runtime));
     }
 
+    [Fact]
+    public async Task InstallThroughTheManagedService_IsLoggedInTheUpdateHistoryUnderItsName()
+    {
+        InstallOwner();
+        var (service, _) = Build();
+        var log = new ComponentUpdateLogStore(Path.Combine(_root, "data", "update-log.json"));
+        var managed = new LinuxManagedComponentService(_records, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!,
+            null!, null!, null!, null!, null!, null!, null!, updateLog: log, nrCostScaler: service);
+
+        var result = await managed.InstallNrCostScalerAsync(_game);
+
+        Assert.True(result.Success, result.Message);
+        var entry = Assert.Single(log.GetAll());
+        Assert.Equal("NR Cost Scaler", entry.ComponentName);
+        Assert.Equal("v1.0.6", entry.ToVersion);
+    }
+
     private sealed class Fake(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public List<Uri> Requests { get; } = [];
