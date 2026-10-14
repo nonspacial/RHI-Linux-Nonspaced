@@ -53,6 +53,8 @@ public sealed class App : Application
             if (recovery.NeedsNotice)
                 Dispatcher.UIThread.Post(() => vm.ReportDeploymentRecovery(recovery));
             desktop.Exit += (_, _) => vm.Dispose();
+            if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), notice only
+                UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
             desktop.MainWindow = new MainWindow
             {
                 DataContext = vm,

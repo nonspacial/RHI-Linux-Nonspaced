@@ -9,4 +9,5 @@ namespace RHI.Desktop.ViewModels;
 public sealed class ParityFeatures
 {
     public required GitHubTokenPresenter GitHubToken { get; init; }
+    public required AppUpdatePresenter AppUpdate { get; init; }
 }

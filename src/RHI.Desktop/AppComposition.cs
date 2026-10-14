@@ -177,8 +177,10 @@ internal sealed class AppComposition
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
+        var accounts = new AccountsPreferenceStore();
         var parity = new ParityFeatures
         {
+            AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
                 new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, new SecretFileStore(GitHubTokenSettingsService.DefaultTokenPath, "github-token"))),
         };

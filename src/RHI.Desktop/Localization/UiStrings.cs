@@ -655,6 +655,21 @@ internal static class UiStrings
         ("Parity.GitHubTokenSaveFailed", "O GitHub aceitou o token, mas o arquivo não pôde ser gravado (detalhes no rhi.log); nada foi alterado.", "GitHub accepted the token but the file could not be written (details in rhi.log); nothing was changed."),
         ("Parity.GitHubTokenCleared", "Token apagado; o RHI usa acesso anônimo.", "Token cleared; RHI uses anonymous access."),
         ("Parity.GitHubTokenNotCleared", "O token não pôde ser apagado: {0}", "The token could not be cleared: {0}"),
+        ("Parity.AccountsNotSaved", "A escolha não pôde ser salva: {0}", "The choice could not be saved: {0}"),
+        ("Parity.LinkNotOpened", "O link não pôde ser aberto: {0}", "The link could not be opened: {0}"),
+        ("Parity.AppUpdateHeading", "Atualizações do RHI-Linux", "RHI-Linux updates"),
+        ("Parity.AppUpdateNote", "O RHI procura uma versão mais nova nas versões publicadas deste fork e só avisa: nada é baixado nem instalado. Você instala a nova versão quando quiser.", "RHI looks for a newer version among this fork's published releases and only tells you: nothing is downloaded or installed. You install the new version when you choose."),
+        ("Parity.AppUpdateAtStartup", "Procurar uma versão mais nova ao iniciar", "Look for a newer version at start-up"),
+        ("Parity.AppUpdateCheckNow", "Procurar agora", "Check now"),
+        ("Parity.AppUpdateOpenPage", "Abrir a página da versão", "Open the release page"),
+        ("Parity.AppUpdateOpenPageTip", "Abre a página da versão no GitHub no navegador; o RHI não baixa nada.", "Opens the release page on GitHub in your browser; RHI downloads nothing."),
+        ("Parity.AppUpdateThisVersion", "Esta é a versão {0}.", "This is version {0}."),
+        ("Parity.AppUpdateChecking", "Procurando uma versão mais nova…", "Looking for a newer version…"),
+        ("Parity.AppUpdateAvailable", "A versão {0} está disponível (esta é a {1}).", "Version {0} is available (this is {1})."),
+        ("Parity.AppUpdateUpToDate", "Você tem a versão mais nova ({0}).", "You have the newest version ({0})."),
+        ("Parity.AppUpdateNoReleases", "Nenhuma versão publicada para comparar; esta é a {0}.", "No published release to compare with; this is {0}."),
+        ("Parity.AppUpdateCouldNotCheck", "Não foi possível procurar agora (sem conexão ou limite do GitHub); esta é a {0}.", "Could not check just now (offline or GitHub's limit); this is {0}."),
+        ("Parity.AppUpdateNotice", "RHI-Linux {0} está disponível (esta é a {1}) — veja Configurações → Contas e atualizações.", "RHI-Linux {0} is available (this is {1}) — see Settings → Accounts & updates."),
         // w3/vmsplit rows
         // w3/dllnames rows
     ];

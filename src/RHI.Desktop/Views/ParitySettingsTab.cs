@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
+using System.ComponentModel;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
@@ -9,7 +11,7 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// Settings → "Accounts &amp; updates" (w3/parity): GitHub token (#163). Built in code like the other Settings tabs, from
+/// Settings → "Accounts &amp; updates" (w3/parity): RHI-Linux updates (#100), GitHub token (#163). Built in code like the other Settings tabs, from
 /// the parity presenters only; the Settings dialog adds it with one line. Hidden when the app was built without the
 /// parity features (tests that build the window over a bare view model).
 /// </summary>
@@ -23,9 +25,31 @@ internal static class ParitySettingsTab
         if (parity is null) return tab;
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
         panel.Children.Add(new TextBlock { Text = T("Parity.AccountsTab"), FontSize = 20, FontWeight = FontWeight.SemiBold });
+        panel.Children.Add(AppUpdateSection(parity.AppUpdate));
         panel.Children.Add(GitHubTokenSection(parity.GitHubToken));
         tab.Content = new ScrollViewer { Content = panel };
         return tab;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="sync"/> now and whenever <paramref name="source"/> changes while <paramref name="owner"/> is
+    /// shown; the presenter outlives the dialog, so the handler is removed when the dialog closes (no leak per opening).
+    /// </summary>
+    internal static void Bind(Control owner, INotifyPropertyChanged source, Action sync)
+    {
+        PropertyChangedEventHandler handler = (_, _) =>
+        {
+            if (Dispatcher.UIThread.CheckAccess()) sync();
+            else Dispatcher.UIThread.Post(sync);
+        };
+        owner.AttachedToVisualTree += (_, _) =>
+        {
+            source.PropertyChanged -= handler;
+            source.PropertyChanged += handler;
+            sync();
+        };
+        owner.DetachedFromVisualTree += (_, _) => source.PropertyChanged -= handler;
+        sync();
     }
 
     internal static TextBlock Heading(string text) => new() { Text = text, FontWeight = FontWeight.SemiBold, FontSize = 15 };
@@ -50,6 +74,38 @@ internal static class ParitySettingsTab
         var row = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         foreach (var button in buttons) row.Children.Add(button);
         return row;
+    }
+
+    private static Control AppUpdateSection(AppUpdatePresenter presenter)
+    {
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(Heading(T("Parity.AppUpdateHeading")));
+        section.Children.Add(Note(T("Parity.AppUpdateNote")));
+        var atStartup = new CheckBox { Content = T("Parity.AppUpdateAtStartup") };
+        var checkNow = Button(T("Parity.AppUpdateCheckNow"));
+        var openPage = Button(T("Parity.AppUpdateOpenPage"), T("Parity.AppUpdateOpenPageTip"));
+        var status = Status();
+
+        void Sync()
+        {
+            status.Text = presenter.StatusText;
+            atStartup.IsChecked = presenter.CheckAtStartup;
+            openPage.IsVisible = presenter.ReleasePageUrl is not null;
+            checkNow.IsEnabled = !presenter.IsBusy;
+        }
+        Bind(section, presenter, Sync);
+
+        atStartup.IsCheckedChanged += (_, _) =>
+        {
+            if (atStartup.IsChecked is bool value && value != presenter.CheckAtStartup) presenter.SetCheckAtStartup(value);
+        };
+        checkNow.Click += (_, _) => UiExceptionGuard.Forget(presenter.CheckAsync(), "AppUpdateCheckNow");
+        openPage.Click += (_, _) => presenter.OpenReleasePage();
+
+        section.Children.Add(atStartup);
+        section.Children.Add(Buttons(checkNow, openPage));
+        section.Children.Add(status);
+        return section;
     }
 
     private static Control GitHubTokenSection(GitHubTokenPresenter presenter)
@@ -81,8 +137,7 @@ internal static class ParitySettingsTab
             check.IsVisible = clear.IsVisible = presenter.HasSavedToken;
             save.IsEnabled = check.IsEnabled = clear.IsEnabled = box.IsEnabled = !presenter.IsBusy;
         }
-        presenter.PropertyChanged += (_, _) => Sync();
-        Sync();
+        Bind(section, presenter, Sync);
 
         save.Click += (_, _) => UiExceptionGuard.Forget(SaveAsync(), "GitHubTokenSave");
         check.Click += (_, _) => UiExceptionGuard.Forget(presenter.CheckAsync(), "GitHubTokenCheck");

@@ -1021,6 +1021,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyDlss();
     }
 
+    /// <summary>A w3/parity notice (a newer RHI-Linux release, a hand-off result), appended once like the token notice. Integrator hook.</summary>
+    public void ReportParityNotice(string notice) => StatusText = _statusNotice.Raise(notice, StatusText);
+
     /// <summary>
     /// GitHub answered 401 to the saved API token (Refs #133): say so once, appended to the
     /// current status line (an operation's result stays visible); the token handler already
