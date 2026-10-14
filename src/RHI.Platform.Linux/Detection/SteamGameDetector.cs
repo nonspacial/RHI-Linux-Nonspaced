@@ -64,8 +64,10 @@ public sealed partial class SteamGameDetector : IGameDetector
                         // the app ships one, else the global default tool. Unknown falls back to the prefix test.
                         var platform = classifier.Platform(appId);
                         if (platform == SteamAppClassifier.LaunchPlatform.Native) prefix = null;
-                        var index = GameFileIndexer.Build(gameRoot, 8, cancellationToken);
-                        var nativeExecutable = platform != SteamAppClassifier.LaunchPlatform.Windows && prefix is null
+                        var lookForNative = platform != SteamAppClassifier.LaunchPlatform.Windows && prefix is null;
+                        // Bounded scan-time list; the full index is built for the selected game only (Refs #48).
+                        var index = DetectionHelpers.ScanIndex(gameRoot, cancellationToken, nativeTargets: lookForNative);
+                        var nativeExecutable = lookForNative
                             ? DetectionHelpers.FindLikelyNativeExecutable(gameRoot, index, cancellationToken)
                             : null;
                         var windowsExecutable = DetectionHelpers.FindLikelyExecutable(gameRoot, index, cancellationToken);

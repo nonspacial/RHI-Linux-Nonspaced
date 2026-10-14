@@ -51,12 +51,12 @@ internal static class PrefixGameFolders
     }
 
     /// <summary>
-    /// Likely game executable of an entry. Indexes only that folder (never the prefix root) and skips the
-    /// library subtree of a launcher entry.
+    /// Likely game executable of an entry. Reads only that folder (never the prefix root), through the bounded
+    /// scan-time list (Refs #48), and skips the library subtree of a launcher entry.
     /// </summary>
     internal static string? FindExecutable(Entry entry, CancellationToken ct)
     {
-        var index = GameFileIndexer.Build(entry.Directory, 8, ct);
+        var index = DetectionHelpers.ScanIndex(entry.Directory, ct, excludedSubtree: entry.Excluded);
         if (entry.Excluded is not null)
             index = index.Where(file => !file.StartsWith(entry.Excluded + "/", StringComparison.Ordinal)).ToArray();
         return DetectionHelpers.FindLikelyExecutable(entry.Directory, index, ct);

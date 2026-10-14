@@ -88,6 +88,39 @@ internal static partial class DetectionHelpers
                normalized.Contains("/steamapps/compatdata/", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Folder levels a library scan always reads below a game root when it picks the executable (Refs #48):
+    /// <c>&lt;root&gt;/&lt;Project&gt;/Binaries/Win64</c> is level 3.
+    /// </summary>
+    internal const int ScanExecutableDepth = 3;
+
+    /// <summary>
+    /// The scan-time file list of a game root: every file down to <see cref="ScanExecutableDepth"/> levels, deeper
+    /// one level at a time only while no Windows executable candidate (or, with <paramref name="nativeTargets"/>,
+    /// native launch target) has turned up, never below the full index depth. Library scans use this instead of
+    /// the full index, which only the selected game gets.
+    /// </summary>
+    internal static IReadOnlyList<string> ScanIndex(
+        string root,
+        CancellationToken cancellationToken,
+        bool nativeTargets = false,
+        string? excludedSubtree = null)
+        => RHI.Core.Services.GameFileIndexer.BuildUntilFound(
+            root,
+            ScanExecutableDepth,
+            RHI.Core.Services.GameFileIndexer.FullDepth,
+            file => (excludedSubtree is null || !file.StartsWith(excludedSubtree + "/", StringComparison.Ordinal)) &&
+                    (IsWindowsExecutableCandidate(file) || (nativeTargets && LooksLikeNativeLaunchTarget(file))),
+            cancellationToken: cancellationToken);
+
+    private static bool IsWindowsExecutableCandidate(string file)
+        => file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+           !IsSupportExecutableName(Path.GetFileNameWithoutExtension(file));
+
+    /// <summary>
+    /// Most likely game executable under <paramref name="root"/>, from <paramref name="indexedFiles"/> (the selected
+    /// game's full index) or, without one, from the bounded scan-time list (<see cref="ScanIndex"/>).
+    /// </summary>
     public static string? FindLikelyExecutable(
         string root,
         IReadOnlyList<string>? indexedFiles = null,
@@ -97,16 +130,15 @@ internal static partial class DetectionHelpers
         if (!Directory.Exists(root)) return null;
         var softPenalty = new[] { "launcher", "bootstrap", "helper", "updater", "config", "diagnostic" };
         var normalizedRoot = NormalizeToken(Path.GetFileName(root));
-        indexedFiles ??= RHI.Core.Services.GameFileIndexer.Build(root, 8, cancellationToken);
+        indexedFiles ??= ScanIndex(root, cancellationToken);
 
         var baseDepth = Depth(root);
         var candidates = new List<(string path, long size, int depth, int score, PeArchitecture architecture)>();
         foreach (var file in indexedFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!file.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!IsWindowsExecutableCandidate(file)) continue;
             var name = Path.GetFileName(file);
-            if (IsSupportExecutableName(Path.GetFileNameWithoutExtension(file))) continue;
 
             long size = 0;
             try { size = new FileInfo(file).Length; } catch { }
@@ -159,7 +191,7 @@ internal static partial class DetectionHelpers
         CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(root)) return null;
-        indexedFiles ??= RHI.Core.Services.GameFileIndexer.Build(root, 8, cancellationToken);
+        indexedFiles ??= ScanIndex(root, cancellationToken, nativeTargets: true);
 
         var normalizedRoot = NormalizeToken(Path.GetFileName(root));
         var baseDepth = Depth(root);

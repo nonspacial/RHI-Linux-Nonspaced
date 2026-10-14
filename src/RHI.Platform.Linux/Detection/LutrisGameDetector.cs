@@ -65,7 +65,7 @@ public sealed partial class LutrisGameDetector : IGameDetector
                         : null;
                     var wineBinary = hasWineRuntime ? ResolveLutrisWineBinary(wineVersion) : null;
                     var exeExists = exe is not null && File.Exists(exe);
-                    var detectedExecutable = exeExists && IsWithin(install, exe!) ? exe : DetectionHelpers.FindLikelyExecutable(install);
+                    var detectedExecutable = exeExists && IsWithin(install, exe!) ? exe : DetectionHelpers.FindLikelyExecutable(install, cancellationToken: ct);
 
                     var game = new DetectedGame
                     {
