@@ -145,6 +145,9 @@ public sealed class DeploymentRelocation
 
         var key = LinuxDeploymentRecordStore.GameKey(game);
         var current = _records.FindAll(game);
+        // w3/parity (#96): a file another record shares with an NR Cost Scaler record holds the scaler's proxy; the
+        // record's own content is beside it under the scaler's _real name (NrCostScalerService.ContentPath).
+        var gameRecords = candidates.Select(c => c.Record).Concat(current).ToArray();
         var rebased = new List<LinuxDeploymentRecord>();
         foreach (var candidate in candidates)
         {
@@ -159,7 +162,7 @@ public sealed class DeploymentRelocation
             // file would block its own update and removal later.
             foreach (var file in record.Files.Where(IsOwnedHashedFile))
             {
-                var mapped = Map(file.Path, candidate);
+                var mapped = Map(NrCostScalerService.ContentPath(record, file, gameRecords), candidate);
                 if (!File.Exists(mapped))
                     return new(false, 0, $"{RepairMissingPrefix}{mapped}");
                 if (!string.Equals(FileHash.Sha256Hex(mapped), file.Sha256, StringComparison.OrdinalIgnoreCase))

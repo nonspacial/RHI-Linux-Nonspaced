@@ -93,6 +93,22 @@ public sealed class NrCostScalerService
 
     public static bool IsInstalledIn(string directory) => File.Exists(Path.Combine(directory, RealDllName));
 
+    /// <summary>
+    /// Where the content <paramref name="record"/> lists for <paramref name="file"/> really is on disk. While an NR Cost
+    /// Scaler record of the same game lists the same path (its proxy now carries the owner's name), the owner's runtime
+    /// sits beside it as <c>nvngx_dlssnr_real.dll</c>, so that is the file to check against the owner's hash; every other
+    /// file is where its record says. For any check that verifies every record's files on disk (Repair after move).
+    /// </summary>
+    /// <param name="gameRecords">All of the game's records (the scaler's among them when it is installed).</param>
+    public static string ContentPath(LinuxDeploymentRecord record, LinuxDeployedFile file, IEnumerable<LinuxDeploymentRecord> gameRecords)
+    {
+        if (record.Component == ManagedComponentKind.NrCostScaler
+            || !Path.GetFileName(file.Path).Equals(ProxyDllName, StringComparison.OrdinalIgnoreCase)) return file.Path;
+        var wrapped = gameRecords.Any(other => other.Component == ManagedComponentKind.NrCostScaler
+                                               && other.Files.Any(f => string.Equals(f.Path, file.Path, StringComparison.Ordinal)));
+        return wrapped ? Path.Combine(Path.GetDirectoryName(file.Path)!, RealDllName) : file.Path;
+    }
+
     public async Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         if (GetRecord(game) is not null) return ComponentOperationResult.Fail(AlreadyInstalledMessage);

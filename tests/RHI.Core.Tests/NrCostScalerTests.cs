@@ -41,14 +41,67 @@ public sealed class NrCostScalerTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch (IOException) { }
     }
 
-    private void InstallOwner(ManagedComponentKind kind = ManagedComponentKind.ShortFuse)
+    private void InstallOwner(ManagedComponentKind kind = ManagedComponentKind.ShortFuse, DetectedGame? game = null, bool optiScalerDlssNr = false)
     {
-        File.WriteAllBytes(Runtime, OwnerRuntime);
-        _records.Upsert(new LinuxDeploymentRecord
+        game ??= _game;
+        var runtime = Path.Combine(game.BinaryDirectory!, "nvngx_dlssnr.dll");
+        File.WriteAllBytes(runtime, OwnerRuntime);
+        var record = new LinuxDeploymentRecord
         {
-            GameKey = LinuxDeploymentRecordStore.GameKey(_game), GameName = _game.Name, Component = kind, BinaryDirectory = Bin, Version = "1.0",
-            Files = [new LinuxDeployedFile { Path = Runtime, Sha256 = Convert.ToHexString(SHA256.HashData(OwnerRuntime)) }]
-        });
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind, BinaryDirectory = game.BinaryDirectory!, Version = "1.0",
+            Files = [new LinuxDeployedFile { Path = runtime, Sha256 = Convert.ToHexString(SHA256.HashData(OwnerRuntime)) }]
+        };
+        if (optiScalerDlssNr) record.Metadata[OptiScalerDeploymentService.VariantMetadataKey] = OptiScalerVariant.DlssNr.ToString();
+        _records.Upsert(record);
+    }
+
+    private static DetectedGame SteamGame(string library)
+    {
+        var install = Path.Combine(library, "steamapps", "common", "Scaled");
+        return new DetectedGame
+        {
+            Name = "Scaled", Source = "Steam", SteamAppId = 4242, InstallPath = install, BinaryDirectory = Path.Combine(install, "bin"),
+            ExecutablePath = Path.Combine(install, "bin", "Game.exe"), PrefixPath = Path.Combine(library, "steamapps", "compatdata", "4242", "pfx"), Runner = "Proton"
+        };
+    }
+
+    [Theory]
+    [InlineData(ManagedComponentKind.ShortFuse)]
+    [InlineData(ManagedComponentKind.Dlss5Feeder)]
+    [InlineData(ManagedComponentKind.OptiScaler)]
+    public async Task LibraryMove_RepairAfterMoveCarriesScalerAndOwner_ThenTheScalerComesOffAndTheOwnerIsFreeAgain(ManagedComponentKind owner)
+    {
+        var before = SteamGame(Path.Combine(_root, "libA"));
+        Directory.CreateDirectory(before.BinaryDirectory!);
+        File.WriteAllBytes(before.ExecutablePath!, [0x4D, 0x5A]);
+        InstallOwner(owner, before, optiScalerDlssNr: owner == ManagedComponentKind.OptiScaler);
+        var (service, _) = Build();
+        var installed = await service.InstallAsync(before);
+        Assert.True(installed.Success, installed.Message);
+
+        Directory.Move(Path.Combine(_root, "libA"), Path.Combine(_root, "libB"));
+        var moved = SteamGame(Path.Combine(_root, "libB"));
+        var relocation = new DeploymentRelocation(_records);
+        Assert.NotNull(relocation.Guard(moved)); // records still at the old folder: everything refused until repaired
+
+        var repair = relocation.Repair(moved, [], out _);
+
+        Assert.True(repair.Success, repair.Message);
+        Assert.Equal(2, repair.Repaired);
+        Assert.Null(relocation.Guard(moved));
+        var runtime = Path.Combine(moved.BinaryDirectory!, "nvngx_dlssnr.dll");
+        Assert.Equal(Path.Combine(moved.BinaryDirectory!, "nvngx_dlssnr_real.dll"), service.GetRecord(moved)!.Files[0].Path);
+
+        var removed = await service.RemoveAsync(moved);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.Equal(OwnerRuntime, File.ReadAllBytes(runtime));
+        Assert.Equal(["Game.exe", "nvngx_dlssnr.dll"], Directory.EnumerateFiles(moved.BinaryDirectory!).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+        var ownerFile = Assert.Single(_records.Find(moved, owner)!.Files);
+        Assert.Equal(runtime, ownerFile.Path);
+        Assert.True(FileHash.HexEquals(FileHash.Sha256Hex(runtime), ownerFile.Sha256!)); // what the owner's own removal checks
+        Assert.Null(NrCostScalerService.OwnerChangeRefusal(_records, moved, owner));
+        Assert.Null(relocation.Guard(moved));
     }
 
     private static byte[] Package(bool withIni = true)
