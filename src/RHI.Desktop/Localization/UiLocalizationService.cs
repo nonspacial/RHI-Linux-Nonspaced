@@ -1071,6 +1071,16 @@ public static class UiLocalizationService
         (" The copy RHI kept from before its install stays at ", " A cópia que o RHI guardou de antes da instalação continua em "),
         (": changed outside RHI since the install; kept, not applied again.", ": alterado fora do RHI desde a instalação; mantido, não aplicado de novo."),
         ("RenoDX installed: ", "RenoDX instalado: "),
+        // #170: add-ons turned off/on with ReShade's No Addons channel.
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.TurnedOffPrefix,
+            " Add-ons do ReShade desligados porque o Sem add-ons não consegue carregá-los (ficam na pasta do jogo; voltam a ligar quando o ReShade voltar para Estável ou Desenvolvimento): "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.TurnedOnPrefix, " Add-ons do ReShade religados: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.NameTakenPrefix,
+            "O ReShade não foi alterado: um add-on não pode ser desligado nem religado porque já existe um arquivo com o nome que ele receberia. Tire esse arquivo do lugar primeiro: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.HeldPrefix,
+            "Este add-on está desligado pela versão Sem add-ons do ReShade; instale antes neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento): "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.OffNote,
+            "Desligado pela versão Sem add-ons do ReShade: o add-on fica na pasta do jogo e volta a ligar quando o RHI instalar neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento)."),
         // #91 ReShade No Addons channel.
         ("ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ",
             "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no perfil do ReShade e aplique antes: "),
@@ -1186,8 +1196,12 @@ public static class UiLocalizationService
             result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
         if (result.UncheckedCount > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
-        if (result.HeldCount > 0) // w3/parity (#96)
-            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount);
+        // w3/parity (#96): held by NR Cost Scaler; #170: add-ons turned off for ReShade No Addons, counted apart.
+        var heldOff = result.Items.Count(item => item.HeldBy == RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ReShadeNoAddonsName);
+        if (result.HeldCount - heldOff > 0)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount - heldOff);
+        if (heldOff > 0)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeldNoAddons"), heldOff);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

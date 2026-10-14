@@ -65,6 +65,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
+        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.OwnedAddonFiles; // #170: No Addons turns these off too
         _renodx = renodx;
         _renodxUpgrade = renodxUpgrade;
         _optiscaler = optiscaler;
@@ -815,6 +816,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 component.ActionAllowed = false;
                 component.Note = ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + component.DisplayName;
             }
+        // #170: an installed add-on RHI turned off for No Addons says so (its Remove stays available).
+        foreach (var component in components.Where(c => ReShadeAddonSwitch.IsOff(Find(c.Kind))))
+            component.Note = ReShadeAddonSwitch.OffNote;
 
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
     }
@@ -882,6 +886,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w3/parity (#96): an nvngx_dlssnr.dll owner is not reinstalled, updated, swapped or removed under the NR Cost Scaler.
     private ComponentOperationResult? LayerGuard(DetectedGame game, ManagedComponentKind component)
         => NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered ? ComponentOperationResult.Fail(layered) : null;
+
+    /// <summary>
+    /// #170: an add-on RHI turned off for ReShade's No Addons build is not installed over or updated (that would put a
+    /// loadable copy back while ReShade cannot load it); removing it stays possible.
+    /// </summary>
+    private ComponentOperationResult? AddonOffGuard(DetectedGame game, ManagedComponentKind component)
+        => ReShadeAddonSwitch.IsOff(_records.Find(game, component))
+            ? ComponentOperationResult.Fail(ReShadeAddonSwitch.HeldPrefix + DisplayDependencyName(component))
+            : null;
 
     // w3/parity (#96): the NR Cost Scaler's own install and removal, through the same guard and history as every component.
     public Task<ComponentOperationResult> InstallNrCostScalerAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -1411,6 +1424,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The store of per-game proxy DLL names chosen before install.</summary>
     public DllNamePreferenceStore ReShadeDllNames => _reshade.DllNames;
 
+
     /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
     public ProxyNameResolution? ResolveReShadeProxyName(DetectedGame game) => _reshade.ResolveProxyName(game);
 
@@ -1697,7 +1711,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public Task<ComponentOperationResult> RemoveShortFuseAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.ShortFuse); // w3/parity (#96)
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.ShortFuse) ?? AddonOffGuard(game, ManagedComponentKind.ShortFuse); // w3/parity (#96), #170
         return guard is null
             ? Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Remove, () => _shortFuse.RemoveAsync(game, cancellationToken))
             : Task.FromResult(guard);
@@ -1874,7 +1888,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private ManagedUpdateCheck HeldByLayer(DetectedGame game, ManagedComponentKind component, ManagedUpdateCheck check)
         => check.UpdateAvailable && NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered
             ? check with { UpdateAvailable = false, Message = layered, HeldBy = NrCostScalerService.DisplayName }
-            : check;
+            // #170: an add-on turned off for No Addons is held by ReShade's channel, not updated.
+            : check.UpdateAvailable && AddonOffGuard(game, component) is { } off
+                ? check with { UpdateAvailable = false, Message = off.Message, HeldBy = ReShadeNoAddonsName }
+                : check;
+
+    /// <summary>What holds an add-on turned off for No Addons in Update All's summary (#170).</summary>
+    public const string ReShadeNoAddonsName = "ReShade No Addons";
 
     private async Task<ManagedUpdateCheck> CheckReShadeManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken)
     {
@@ -1889,7 +1909,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component); // w3/parity (#96), #170
         if (guard is not null) return Task.FromResult(guard);
 
         return Track(game, component, ComponentUpdateAction.Update, () => component switch
@@ -1982,7 +2002,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
+        var guard = InstallGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component); // w3/parity (#96), #170
         if (guard is not null) return guard;
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(

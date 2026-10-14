@@ -821,6 +821,7 @@ internal static class UiStrings
         ("Parity.NrScalerInstalling", "{0}: instalando o NR Cost Scaler…", "{0}: installing NR Cost Scaler…"),
         ("Parity.NrScalerRemoving", "{0}: removendo o NR Cost Scaler…", "{0}: removing NR Cost Scaler…"),
         ("Parity.NrScalerCancelled", "NR Cost Scaler cancelado antes de qualquer mudança.", "NR Cost Scaler cancelled before any change."),
+        ("Parity.UpdateAllHeldNoAddons", " · {0} add-on(s) desligado(s) pelo ReShade Sem add-ons (instale o ReShade Estável ou Desenvolvimento para atualizá-los)", " · {0} add-on(s) turned off for ReShade No Addons (install ReShade Stable or Nightly to update them)"),
         ("Parity.UpdateAllHeld", " · {0} retido(s) pelo NR Cost Scaler (remova-o para atualizar o método)", " · {0} held by NR Cost Scaler (remove it to update the method)"),
         // w3/vmsplit rows
         ("Vm.EditSavedTargetKeptPlayUsesYourCommand", "{0}: alterações salvas; o alvo de modificações salvo foi mantido. Jogar executa o comando de execução que você informou.", "{0}: changes saved; the saved modification target was kept. Play runs the launch command you entered."),

@@ -184,6 +184,13 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         return new(catalog.Select(ToCatalogItem).ToArray(), selected, _customRoot);
     }
 
+    /// <summary>The add-on files this manager installed on <paramref name="game"/> (under their own names), for #170.</summary>
+    public IReadOnlyList<string> OwnedAddonFiles(DetectedGame game)
+    {
+        var state = LoadState();
+        return GameRecordIdentity.TryGet(state.Games, game, out var gs) ? gs.Files.Select(file => file.Path).ToArray() : [];
+    }
+
     public async Task<IReadOnlyList<ReShadeAddonCatalogItem>> RefreshCatalogItemsAsync(
         CancellationToken cancellationToken = default)
         => (await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false))
@@ -233,12 +240,13 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             var state = LoadState();
             var old = GameRecordIdentity.TryGet(state.Games, game, out var existing) ? existing : new GameState();
 
-            foreach (var file in old.Files)
+            // #170: an add-on turned off for ReShade's No Addons build sits under its name + ReShadeAddonSwitch.OffSuffix.
+            foreach (var path in old.Files.SelectMany(file => new[] { (file, file.Path), (file, file.Path + ReShadeAddonSwitch.OffSuffix) }))
             {
-                if (!File.Exists(file.Path)) continue;
-                var current = FileHash.Sha256Hex(file.Path);
-                if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    return ComponentOperationResult.Fail($"Managed addon was modified outside RHI and the selection cannot be changed safely: {file.Path}");
+                if (!File.Exists(path.Item2)) continue;
+                var current = FileHash.Sha256Hex(path.Item2);
+                if (!string.Equals(current, path.file.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return ComponentOperationResult.Fail($"Managed addon was modified outside RHI and the selection cannot be changed safely: {path.Item2}");
             }
 
             // Prepare all payloads before touching the game.
@@ -280,7 +288,11 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             try
             {
                 foreach (var file in old.Files)
+                {
                     await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                    if (File.Exists(file.Path + ReShadeAddonSwitch.OffSuffix)) // #170: its turned-off copy goes too
+                        await scope.DeleteAsync(file.Path + ReShadeAddonSwitch.OffSuffix, cancellationToken).ConfigureAwait(false);
+                }
 
                 foreach (var item in prepared)
                 {
