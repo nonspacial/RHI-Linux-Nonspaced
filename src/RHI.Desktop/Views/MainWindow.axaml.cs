@@ -1101,418 +1101,39 @@ public sealed partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasDlssg2030Settings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
-
-        var preferences = vm.GetDlssg2030Preferences();
-        var record = vm.GetDlssg2030Record();
-        var installed = record is not null;
-        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Dlssg2030Title"),
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Dlssg2030Intro"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.76
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Dlssg2030RouteNote"),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.Parse("#D7B65A"))
-        });
-
-        var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
-        var gpuCombo = new ComboBox
-        {
-            ItemsSource = Dlssg2030UnlockDeploymentService.GpuGenerations,
-            SelectedItem = preferences.GpuGeneration,
-            MinWidth = 260,
-            IsEnabled = !installed
-        };
-        var proxyCombo = new ComboBox
-        {
-            ItemsSource = Dlssg2030UnlockDeploymentService.ProxyNames,
-            SelectedItem = preferences.ProxyName,
-            MinWidth = 220,
-            IsEnabled = !installed
-        };
-
-        static Grid SettingsRow(string labelText, Control control)
-        {
-            var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), ColumnSpacing = 12 };
-            grid.Children.Add(new TextBlock
-            {
-                Text = labelText,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap
-            });
-            Grid.SetColumn(control, 1);
-            grid.Children.Add(control);
-            return grid;
-        }
-
-        panel.Children.Add(SettingsRow(UiLocalizationService.Text("Ui.Dlssg2030Gpu"), gpuCombo));
-        panel.Children.Add(SettingsRow(UiLocalizationService.Text("Ui.Dlssg2030Proxy"), proxyCombo));
-
-        if (installed)
-        {
-            var installedGpu = record!.Metadata.GetValueOrDefault("FG2030.GpuGeneration") ?? preferences.GpuGeneration;
-            var installedProxy = record.Metadata.GetValueOrDefault("FG2030.ProxyName") ?? preferences.ProxyName;
-            panel.Children.Add(new TextBlock
-            {
-                Text = TF("Win.InstalledChangeGenerationProxyRemoveReinstall", installedGpu, installedProxy),
-                TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.74
-            });
-        }
-
-        var reverting = false;
-        void SavePreferences()
-        {
-            if (installed || reverting) return;
-            var gpu = gpuCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.GpuGenRtx20;
-            var proxy = proxyCombo.SelectedItem?.ToString() ?? Dlssg2030UnlockDeploymentService.DefaultProxyName;
-            var result = vm.SetDlssg2030Preferences(gpu, proxy);
-            message.Text = UiLocalizationService.Present(result.Message);
-            if (result.Success) return;
-            // Not saved: the dropdowns go back to what is stored.
-            var stored = vm.GetDlssg2030Preferences();
-            reverting = true;
-            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
-            finally { reverting = false; }
-        }
-        gpuCombo.SelectionChanged += (_, _) => SavePreferences();
-        proxyCombo.SelectionChanged += (_, _) => SavePreferences();
-
-        if (installed)
-        {
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Check") };
-            var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Dlssg2030Update"), IsEnabled = false };
-            check.Click += (_, _) => RunUiSafe(async () =>
-            {
-                check.IsEnabled = false;
-                try
-                {
-                    var status = await vm.CheckDlssg2030UpdateAsync();
-                    message.Text = UiLocalizationService.Present(status.Message);
-                    update.IsEnabled = status.Success && status.HasUpdate;
-                }
-                finally { check.IsEnabled = true; }
-            });
-            update.Click += (_, _) => RunUiSafe(async () =>
-            {
-                update.IsEnabled = false;
-                var result = await vm.UpdateDlssg2030Async();
-                message.Text = UiLocalizationService.Present(result.Message);
-            });
-            buttons.Children.Add(check);
-            buttons.Children.Add(update);
-            panel.Children.Add(buttons);
-        }
-
-        panel.Children.Add(message);
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Dlssg2030CompatibilityNote"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11,
-            Opacity = 0.65
-        });
-
-        var dialog = new Window
-        {
-            Title = $"{UiLocalizationService.Text("Ui.Dlssg2030Title")} — {vm.SelectedGame.Name}",
-            Width = 690,
-            Height = 560,
-            MinWidth = 560,
-            MinHeight = 420,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = panel }
-        };
-        await ShowFittedDialogAsync(dialog);
+        await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.Dlssg2030));
     });
 
     private void StandaloneDlssEnablerSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasStandaloneDlssEnablerSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
-
-        var preferences = vm.GetStandaloneDlssEnablerPreferences();
-        var record = vm.GetStandaloneDlssEnablerRecord();
-        var installed = record is not null;
-        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.DlssEnablerStandaloneTitle"),
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.DlssEnablerStandaloneIntro"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.76
-        });
-
-        var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
-        var proxyCombo = new ComboBox
-        {
-            ItemsSource = StandaloneDlssEnablerDeploymentService.ProxyNames,
-            SelectedItem = preferences.ProxyName,
-            MinWidth = 240,
-            IsEnabled = !installed
-        };
-
-        var settingsRow = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), ColumnSpacing = 12 };
-        settingsRow.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.DlssEnablerStandaloneProxy"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
-        });
-        Grid.SetColumn(proxyCombo, 1);
-        settingsRow.Children.Add(proxyCombo);
-        panel.Children.Add(settingsRow);
-
-        if (installed)
-        {
-            var installedProxy = record!.Metadata.GetValueOrDefault("DLSSEnabler.ProxyName") ?? preferences.ProxyName;
-            var installedVersion = record.Version ?? "?";
-            panel.Children.Add(new TextBlock
-            {
-                Text = TF("Win.InstalledChangeProxyRemoveReinstallRHI", installedVersion, installedProxy),
-                TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.74
-            });
-        }
-
-        var reverting = false;
-        proxyCombo.SelectionChanged += (_, _) =>
-        {
-            if (installed || reverting) return;
-            var proxy = proxyCombo.SelectedItem?.ToString() ?? StandaloneDlssEnablerDeploymentService.DefaultProxyName;
-            var result = vm.SetStandaloneDlssEnablerPreferences(proxy);
-            message.Text = UiLocalizationService.Present(result.Message);
-            if (result.Success) return;
-            // Not saved: the dropdown goes back to what is stored.
-            reverting = true;
-            try { proxyCombo.SelectedItem = vm.GetStandaloneDlssEnablerPreferences().ProxyName; }
-            finally { reverting = false; }
-        };
-
-        if (installed)
-        {
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneCheck") };
-            var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.DlssEnablerStandaloneUpdate"), IsEnabled = false };
-
-            check.Click += (_, _) => RunUiSafe(async () =>
-            {
-                check.IsEnabled = false;
-                try
-                {
-                    var status = await vm.CheckStandaloneDlssEnablerUpdateAsync();
-                    message.Text = UiLocalizationService.Present(status.Message);
-                    update.IsEnabled = status.Success && status.HasUpdate;
-                }
-                finally { check.IsEnabled = true; }
-            });
-
-            update.Click += (_, _) => RunUiSafe(async () =>
-            {
-                update.IsEnabled = false;
-                var result = await vm.UpdateStandaloneDlssEnablerAsync();
-                message.Text = UiLocalizationService.Present(result.Message);
-            });
-
-            buttons.Children.Add(check);
-            buttons.Children.Add(update);
-            panel.Children.Add(buttons);
-        }
-
-        panel.Children.Add(message);
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.DlssEnablerStandaloneCompatibilityNote"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
-            Opacity = 0.78
-        });
-
-        var dialog = new Window
-        {
-            Title = $"{UiLocalizationService.Text("Ui.DlssEnablerStandaloneTitle")} — {vm.SelectedGame.Name}",
-            Width = 660,
-            Height = 470,
-            MinWidth = 540,
-            MinHeight = 380,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = panel }
-        };
-        await ShowFittedDialogAsync(dialog);
+        await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.DlssEnabler));
     });
 
     private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtx40MfgSettings) return;
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
+        await ShowComponentDialogAsync(new ProxyComponentDialogViewModel(vm, ProxyComponentDialogKind.UniversalMfg));
+    });
 
-        var preferences = vm.GetRtx40MfgPreferences();
-        var record = vm.GetRtx40MfgRecord();
-        var installed = record is not null;
-        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgTitle"),
-            FontSize = 18,
-            FontWeight = FontWeight.SemiBold
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgIntro"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.76
-        });
-
-        var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
-        var gpuCombo = new ComboBox
-        {
-            ItemsSource = Rtx40MfgStandaloneDeploymentService.GpuGenerations,
-            SelectedItem = preferences.GpuGeneration,
-            MinWidth = 240,
-            IsEnabled = !installed
-        };
-        var proxyCombo = new ComboBox
-        {
-            ItemsSource = Rtx40MfgStandaloneDeploymentService.SelectableProxyNames,
-            SelectedItem = preferences.ProxyName,
-            MinWidth = 240,
-            IsEnabled = !installed
-        };
-
-        var gpuRow = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), ColumnSpacing = 12 };
-        gpuRow.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgGpuGeneration"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
-        });
-        Grid.SetColumn(gpuCombo, 1);
-        gpuRow.Children.Add(gpuCombo);
-        panel.Children.Add(gpuRow);
-
-        var settingsRow = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*"), ColumnSpacing = 12 };
-        settingsRow.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgProxy"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
-        });
-        Grid.SetColumn(proxyCombo, 1);
-        settingsRow.Children.Add(proxyCombo);
-        panel.Children.Add(settingsRow);
-
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgCompatibility"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.74
-        });
-
-        if (installed)
-        {
-            var installedGpu = record!.Metadata.GetValueOrDefault("UniversalMFG.GpuGeneration") ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40;
-            var installedProxy = record.Metadata.GetValueOrDefault("UniversalMFG.ProxyName")
-                                 ?? record.Metadata.GetValueOrDefault("RTX40MFG.ProxyName")
-                                 ?? preferences.ProxyName;
-            var installedVersion = record.Version ?? "?";
-            panel.Children.Add(new TextBlock
-            {
-                Text = TF("Win.InstalledChangeGPUProxyRemoveReinstall", installedVersion, installedGpu, installedProxy),
-                TextWrapping = TextWrapping.Wrap,
-                Opacity = 0.74
-            });
-        }
-
-        var reverting = false;
-        void SaveUniversalMfgPreferences()
-        {
-            if (installed || reverting) return;
-            var gpu = gpuCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.GpuGenRtx40;
-            var proxy = proxyCombo.SelectedItem?.ToString() ?? Rtx40MfgStandaloneDeploymentService.DefaultProxyName;
-            var result = vm.SetRtx40MfgPreferences(gpu, proxy);
-            message.Text = UiLocalizationService.Present(result.Message);
-            if (result.Success) return;
-            // Not saved: the dropdowns go back to what is stored.
-            var stored = vm.GetRtx40MfgPreferences();
-            reverting = true;
-            try { gpuCombo.SelectedItem = stored.GpuGeneration; proxyCombo.SelectedItem = stored.ProxyName; }
-            finally { reverting = false; }
-        }
-
-        gpuCombo.SelectionChanged += (_, _) => SaveUniversalMfgPreferences();
-        proxyCombo.SelectionChanged += (_, _) => SaveUniversalMfgPreferences();
-
-        if (installed)
-        {
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            var check = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgCheck") };
-            var update = new Button { Classes = { "rhi" }, Content = UiLocalizationService.Text("Ui.Rtx40MfgUpdate"), IsEnabled = false };
-
-            check.Click += (_, _) => RunUiSafe(async () =>
-            {
-                check.IsEnabled = false;
-                try
-                {
-                    var status = await vm.CheckRtx40MfgUpdateAsync();
-                    message.Text = UiLocalizationService.Present(status.Message);
-                    update.IsEnabled = status.Success && status.HasUpdate;
-                }
-                finally { check.IsEnabled = true; }
-            });
-
-            update.Click += (_, _) => RunUiSafe(async () =>
-            {
-                update.IsEnabled = false;
-                var result = await vm.UpdateRtx40MfgAsync();
-                message.Text = UiLocalizationService.Present(result.Message);
-            });
-
-            buttons.Children.Add(check);
-            buttons.Children.Add(update);
-            panel.Children.Add(buttons);
-        }
-
-        panel.Children.Add(message);
-        panel.Children.Add(new TextBlock
-        {
-            Text = UiLocalizationService.Text("Ui.Rtx40MfgCompatibilityNote"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11,
-            Foreground = new SolidColorBrush(Color.Parse("#D7B65A")),
-            Opacity = 0.78
-        });
-
+    /// <summary>A component dialog: the window's content is its view model, laid out by its data template (App.axaml).</summary>
+    private async Task ShowComponentDialogAsync(ProxyComponentDialogViewModel model)
+    {
         var dialog = new Window
         {
-            Title = $"{UiLocalizationService.Text("Ui.Rtx40MfgTitle")} — {vm.SelectedGame.Name}",
-            Width = 700,
-            Height = 520,
-            MinWidth = 560,
-            MinHeight = 400,
+            Title = model.WindowTitle,
+            Width = model.Width,
+            Height = model.Height,
+            MinWidth = model.MinWidth,
+            MinHeight = model.MinHeight,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = panel }
+            Content = new ScrollViewer { Content = model }
         };
+        dialog.Closed += (_, _) => model.Dispose();
         await ShowFittedDialogAsync(dialog);
-    });
+    }
 
     private void RenoDxSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
@@ -1708,6 +1329,20 @@ public sealed partial class MainWindow : Window
         });
 
         var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        // The main window's overlay Cancel is behind this modal dialog: a setting change that is still downloading
+        // or waiting can be stopped here; hidden otherwise, and once it starts changing files (Refs #89 unit 7).
+        var cancel = new Button
+        {
+            Classes = { "rhi" }, Content = T("Ui.CancelOperation"), Command = vm.Operations.CancelCommand,
+            HorizontalAlignment = HorizontalAlignment.Left, IsVisible = false
+        };
+        var applying = false;
+        void SyncCancel() => cancel.IsVisible = applying && vm.Operations.CanCancel;
+        void OnOperationsChanged(object? s, System.ComponentModel.PropertyChangedEventArgs args)
+        {
+            if (args.PropertyName == nameof(OperationCoordinator.CanCancel)) SyncCancel();
+        }
+        vm.Operations.PropertyChanged += OnOperationsChanged;
         if (!string.IsNullOrWhiteSpace(snapshot.Warning))
         {
             panel.Children.Add(new TextBlock
@@ -1769,6 +1404,8 @@ public sealed partial class MainWindow : Window
                     combo.IsEnabled = false;
                     ComponentOperationResult result;
                     string shown;
+                    applying = true;
+                    SyncCancel();
                     try
                     {
                         result = await vm.SetOptiScalerAdvancedSettingAsync(setting.Id, selected.Value);
@@ -1784,6 +1421,8 @@ public sealed partial class MainWindow : Window
                     finally
                     {
                         combo.IsEnabled = true;
+                        applying = false;
+                        SyncCancel();
                     }
                     message.Text = shown;
                     if (result.Success)
@@ -1802,6 +1441,7 @@ public sealed partial class MainWindow : Window
                 settingRow.Children.Add(combo);
                 panel.Children.Add(settingRow);
             }
+            panel.Children.Add(cancel);
             panel.Children.Add(message);
         }
 
@@ -1826,6 +1466,7 @@ public sealed partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer { Content = panel }
         };
+        dialog.Closed += (_, _) => vm.Operations.PropertyChanged -= OnOperationsChanged;
         await ShowFittedDialogAsync(dialog);
     });
 

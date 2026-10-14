@@ -1319,17 +1319,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     }
 
     public async Task<ComponentOperationResult> UpdateDlssg2030Async(CancellationToken cancellationToken = default)
-    {
-        if (SelectedGame is null)
-            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var game = SelectedGame;
-        using var op = BeginOperation("component-update", linkedToken: cancellationToken);
-        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
-        var result = await _managedComponents.UpdateDlssg2030Async(game, op.Token).ConfigureAwait(true);
-        StatusText = OutcomeText(op, result.Success, result.Message);
-        if (result.Success) await ReprobeGameAsync(game);
-        return result;
-    }
+        => (await RunComponentUpdateAsync((game, token) => _managedComponents.UpdateDlssg2030Async(game, token), cancellationToken)).Result;
 
     public StandaloneDlssEnablerPreferences GetStandaloneDlssEnablerPreferences()
         => SelectedGame is null ? new StandaloneDlssEnablerPreferences() : _managedComponents.GetStandaloneDlssEnablerPreferences(SelectedGame);
@@ -1356,17 +1346,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     }
 
     public async Task<ComponentOperationResult> UpdateStandaloneDlssEnablerAsync(CancellationToken cancellationToken = default)
-    {
-        if (SelectedGame is null)
-            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var game = SelectedGame;
-        using var op = BeginOperation("component-update", linkedToken: cancellationToken);
-        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
-        var result = await _managedComponents.UpdateStandaloneDlssEnablerAsync(game, op.Token).ConfigureAwait(true);
-        StatusText = OutcomeText(op, result.Success, result.Message);
-        if (result.Success) await ReprobeGameAsync(game);
-        return result;
-    }
+        => (await RunComponentUpdateAsync((game, token) => _managedComponents.UpdateStandaloneDlssEnablerAsync(game, token), cancellationToken)).Result;
 
     public Rtx40MfgPreferences GetRtx40MfgPreferences()
         => SelectedGame is null ? new Rtx40MfgPreferences() : _managedComponents.GetRtx40MfgPreferences(SelectedGame);
@@ -1402,17 +1382,35 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     }
 
     public async Task<ComponentOperationResult> UpdateRtx40MfgAsync(CancellationToken cancellationToken = default)
+        => (await RunComponentUpdateAsync((game, token) => _managedComponents.UpdateRtx40MfgAsync(game, token), cancellationToken)).Result;
+
+    /// <summary>
+    /// A component dialog's Update (FG 20/30 unlock, DLSS Enabler, Universal MFG) under the busy gate: the result and the
+    /// line shown for it — "Operation cancelled." when the dialog's Cancel stopped it, otherwise the presented message.
+    /// </summary>
+    internal async Task<(ComponentOperationResult Result, string Shown)> RunComponentUpdateAsync(
+        Func<DetectedGame, CancellationToken, Task<ComponentOperationResult>> update, CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null)
-            return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+            return (ComponentOperationResult.Fail(T("Vm.SelectGameFirst")), T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         using var op = BeginOperation("component-update", linkedToken: cancellationToken);
-        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
-        var result = await _managedComponents.UpdateRtx40MfgAsync(game, op.Token).ConfigureAwait(true);
-        StatusText = OutcomeText(op, result.Success, result.Message);
+        if (op is null) return (ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning")), T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await update(game, op.Token).ConfigureAwait(true);
+        var shown = OutcomeText(op, result.Success, result.Message);
+        StatusText = shown;
         if (result.Success) await ReprobeGameAsync(game);
-        return result;
+        return (result, shown);
     }
+
+    /// <summary>The update a component dialog of <paramref name="kind"/> runs; the shown line (see <see cref="RunComponentUpdateAsync"/>).</summary>
+    internal async Task<string> UpdateProxyComponentAsync(ProxyComponentDialogKind kind)
+        => (await RunComponentUpdateAsync(kind switch
+        {
+            ProxyComponentDialogKind.Dlssg2030 => (game, token) => _managedComponents.UpdateDlssg2030Async(game, token),
+            ProxyComponentDialogKind.DlssEnabler => (game, token) => _managedComponents.UpdateStandaloneDlssEnablerAsync(game, token),
+            _ => (game, token) => _managedComponents.UpdateRtx40MfgAsync(game, token)
+        })).Shown;
 
     /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
     public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
