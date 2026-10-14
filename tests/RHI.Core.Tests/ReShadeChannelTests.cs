@@ -781,7 +781,7 @@ public sealed partial class ReShadeChannelTests : IDisposable
     {
         var (game, store) = CreateGame("coexist-update");
         var dxgi = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
-        WriteSignedTextFile(dxgi, "OptiScaler proxy");
+        WriteSignedTextFile(dxgi, "optiscaler/OptiScaler proxy");
         var optiIni = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
         File.WriteAllText(optiIni, "[Plugins]\nLoadReshade=auto\n");
         store.Upsert(new LinuxDeploymentRecord

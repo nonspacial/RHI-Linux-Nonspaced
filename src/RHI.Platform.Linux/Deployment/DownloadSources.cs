@@ -91,6 +91,12 @@ public static class DownloadSources
         "Engine.ini template", "GitHub", ["raw.githubusercontent.com"], maxBytes: 256L * 1024);
 
     // w3/sync rows
+    /// <summary>
+    /// OptiScaler F5 DLSSNR (#157): janblade's fork, GitHub releases only (checked 2026-10-14: github.com redirects the
+    /// asset to release-assets.githubusercontent.com).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy OptiScalerF5 = new(
+        "OptiScaler F5 DLSSNR", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
@@ -104,6 +110,7 @@ public static class DownloadSources
         RhiRepository, UniversalMfg, Dlssg2030, DgVoodoo, Dlss5Feeder, ShaderPacks, EngineIniTemplates,
         TrustedDownloadPolicy.GitHubReleases, TrustedDownloadPolicy.GitHub, TrustedDownloadPolicy.RenoDxAddons, TrustedDownloadPolicy.ReShadeAddons,
         // w3/sync rows
+        OptiScalerF5,
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows

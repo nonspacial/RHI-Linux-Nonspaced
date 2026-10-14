@@ -139,4 +139,54 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 
 ## Parity notes (upstream 2.8.6–2.8.7)
 
+### #153 — GitHub release lookups honour /releases/latest (2.8.6)
+
+- Untagged release lookups now ask exactly the endpoint they are given, as upstream `2bfb083`: `/releases/latest` is GitHub's "Latest" release. The fork used to rewrite it to `/releases?per_page=1` (newest by creation date), which hands back an older build when a repo marks an earlier-created release as Latest (live 2026-10-14: discord-fix Latest v1.03, list head v1.0.2). This covers every resolver consumer: ReLimiter, MFG Ada Unlock, DLSS5 Bridge/Feeder, RE Framework, Luma, dgVoodoo (Feeder staging).
+- Prerelease-only repos opt in to the list endpoint explicitly, as upstream's manifest does (`e9eef5d`): the offline fallbacks for MFG Ada Unlock, DLSS5 DX11 Bridge and the DLSS5 Feeder (add-on and full stack) now say `/releases?per_page=1`.
+- The pinned fallback manifest moved from the 2.7.5 commit `a94a574` to the `RHI-2.8.7` tag commit `4bb5e5c`, so a broken live manifest URL falls back to the same `?per_page=1` URLs instead of the old `/latest` ones.
+
+### #154 — OptiScaler identified by its version resource (2.8.6/2.8.7)
+
+- A DLL counts as OptiScaler when its PE version resource says `FileDescription = OptiScaler` and `CompanyName = nitec` (both fields, as upstream `7920ae6`); a file whose resource names any other tool is not OptiScaler, whatever strings it carries (`5031d97`). RTX Encore's proxies (SilyNoMeta, they mention "OptiScaler") no longer show the OptiScaler badge, and installing over one gives the foreign-DLL refusal instead of "OptiScaler occupies dxgi.dll". Checked on real builds: OptiScaler 0.9.4 and F5 DLSSNR 0.1.30 = OptiScaler, RTX Encore 1.0.0-rc.2 = not.
+- Only a file without a version resource is read for strings, and only for OptiScaler's own (`optiscaler/OptiScaler`, `OptiScaler_DontLoad`), never the bare name. Upstream also matches `optiscaler.dll` case-sensitively; the fork's string search ignores ASCII case, which would turn it into the common `OptiScaler.dll`, so it is left out.
+- A file with OptiScaler's version resource is never read as ReShade: OptiScaler's own DLL contains "ReShade", which used to send an external OptiScaler down the "ReShade is already present" refusal and blocked ReShade (`ReShade64.dll`) beside an RHI-managed OptiScaler with a real OptiScaler build.
+- Protection is unchanged: a DLL that is neither is still refused as foreign by every install path.
+
+### #155 — Manifest DLSS/Streamline folder overrides (2.8.6)
+
+- Manifest `dlssPathOverrides` and `streamlinePathOverrides` (game → folder relative to the game root) are read, as upstream `881a98c`/`cac10d7`. Example: The Sinking City 2 keeps DLSS and Streamline 9 folders down under `Engine/Plugins/…/Win64`, past the 8-level walk, so its DLSS section was empty.
+- When the DLSS folder exists, only that folder is read: no walk, as upstream's exact-path detection. Streamline is read from the Streamline folder, or from the DLSS folder when no Streamline override is given; `nvngx_dlssg.dll` is also looked for in the Streamline folder (`7d500b0`). File names match ignoring case. A missing folder falls back to the normal walk, and `dlssSkipGames` still wins.
+- The paths are kept relative on the game and resolved at detection time. A path that is absolute or leaves the game root (`..`, or a symlink pointing out, checked with symlinks resolved) is ignored. Files other components own are dropped as usual, so swap/restore ownership rules are unchanged.
+- Every DLSS flow (panel, Quick Apply, Batch Deploy, Restore All) goes through these targets, and so does ShortFuse's "no stacking over direct swaps" check, which now also sees `.original` files in the manifest folder. Other file-index consumers (component badges) are unchanged, as upstream.
+
+### #156 — OptiScaler Nightly: pin a game to a nightly build (2.8.6)
+
+- The OptiScaler ⚙ dialog has a **Nightly build** row, shown only for the Nightly channel: "Latest (auto-update)" plus the 30 newest builds, shown as dates (`2026-10-04`), as upstream `2975485`. A pinned game installs exactly that build; Latest keeps following the newest build.
+- The choice is saved per game, in the same file as the Neural Rendering version pins, so it follows the game through "Repair after move". The build is downloaded when OptiScaler is installed (asked by its tag `nightly-YYYYMMDD`, so builds older than the listed 30 still install), cached per tag behind its cache stamp, and recorded in the deployment record (`OptiScaler.NightlyBuild`).
+- While OptiScaler is installed the row is locked and shows the installed build, like the channel selector above it: remove OptiScaler to change the build (upstream: "Uninstall OptiScaler first"). If the list cannot be loaded, the row offers Latest and the saved build and says so.
+- A pinned game stays on its build: the update check reports "pinned and current" without asking GitHub (never "could not check", never an update); Update All (manual and background) counts it current; a direct update leaves it unchanged.
+- Service API for Control UE (#136): `OptiScalerDeploymentService.InstallPinnedNightlyAsync(game, "20261004")`, or `LinuxManagedComponentService.InstallOptiScalerAsync(game, OptiScalerVariant.Nightly, "20261004")`.
+- Not ported: upstream's pre-staging when a build is picked (Linux downloads at install, so browsing the list downloads nothing).
+
+### #157 — OptiScaler F5 DLSSNR variant (2.8.7)
+
+- New channel **F5 DLSSNR** in the OptiScaler ⚙ dialog, beside Stable, Nightly and DLSS NR (upstream `d4aac04`). It installs janblade's multi-pass NR fork from `janblade/OptiScaler-F5-DLSSNR-Multipass` `/releases/latest`, using only the `OptiScaler-DLSSNR-F5-*.zip` asset; the release's "Optional-Vendor-Neutral-DLSS5-Forwarder.zip" companion is never taken (`8dcf55c`, `4f28876`). Downloads go through their own GitHub-only host policy.
+- F5 is treated exactly like DLSS NR. It deploys its bundled forwarder `nvngx.dll_dlssnr.dll` plus the manifest's `nvngx_dlssnr.dll` (the update check also compares that NR version), gets the Nightly-style frame-generation rows and the Streamline stack, and owns `nvngx_dlssnr.dll` under the one-owner rule below. Like every OptiScaler channel it auto-updates and is logged in the update history.
+- The F5 zip is made on Windows and names entries with backslashes (`OptiScaler\libxess.dll`); 7-Zip and bsdtar on Linux extract those as flat file names. RHI moves them to the folders the names mean, as Windows extracts them. A name with `..`, an empty part, or one that collides with another entry refuses the archive (checked on the real 0.1.30 zip: 70 entries).
+- Package files copied into the game now follow upstream's install step: top-level `.bat .sh .ps1 .txt .md .exe .pdb`, `LICENSE`, `!!…`, and the `docs/` and `redist/` folders stay out of the game folder; DLLs, INIs, `OptiScaler/` and `D3D12_Optiscaler/` are copied. This applies to every channel (Stable used to copy its `!! README … .txt`; F5 would otherwise copy its docs).
+- Not ported: upstream's three `OptiScaler_f5.*.ini` templates (Linux deploys the package's own `OptiScaler.ini`) and the info/version links to the fork (PAR-D97).
+
+**`nvngx_dlssnr.dll` sharing rule** (`NeuralRenderingRuntimeOwnership`; the NR Cost Scaler #96 and RTX Encore #158 adopt it):
+1. One owner per game: ShortFuse, DLSS5 Feeder (any record), OptiScaler DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable/Nightly are no owners.
+2. Installing an owner while another is recorded is refused before any download or change, naming the owner ("nvngx_dlssnr.dll already belongs to another RHI component for this game; remove it first: DLSS5 Feeder"). There is no co-ownership.
+3. Only the owner's record (path + hash) governs updating, NR-version swaps and removal of the file.
+4. Layers are not owners. A wrapper such as the Cost Scaler needs an owner; it refuses when the owner's file no longer matches the owner's hash, keeps the moved original (`nvngx_dlssnr_real.dll`) under its own record, and must be removed before the owner updates, swaps or removes the runtime. Removing the layer restores the owner's file byte for byte.
+
 ## Parity notes (feature-parity backlog)
+
+### #126 — Available HDR mods: RHI Unity database games (2.7.9 parity)
+
+- The Available HDR mods list now also lists the games in the RHI Unity database (`RenoDXdb-unity.json`, the same file the RenoDX installer reads, #15) in the RenoDX column, as upstream's `GetAllHdrMods` adds `_dbUnityEntries`. They show ✓, or 🔨 when their `Status` is `WIP`. A named RenoDX mod for the same game (joined by the normalised name, e.g. `Hades™ II` = `Hades II`) keeps its own row, status and link; Luma merges into a Unity row like any other.
+- Unity rows have no RenoDX link, as upstream (`RenoDXUrl: null`; the generic Unity add-on is installed by RHI, not downloaded from this list); their Download button offers the Luma link when there is one. The ticket text says "linked to the Unity add-on snapshot, as upstream does", but upstream gives no link, so upstream's behaviour was kept.
+- A database that cannot be loaded leaves those rows out (reason in the log); the list's sources are now each logged when they fail instead of being skipped silently. Still absent (#11 deviation): upstream's UE-Extended database rows and Nexus/Discord-only RenoDX mods.
+

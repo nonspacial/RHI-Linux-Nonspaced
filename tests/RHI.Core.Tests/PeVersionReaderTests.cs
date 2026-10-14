@@ -26,6 +26,21 @@ public sealed class PeVersionReaderTests : IDisposable
         Assert.Equal("26.0325.2215", RenoDxDeploymentService.ReadAddonVersion(path));
     }
 
+    /// <summary>#154: the identity strings OptiScaler detection reads; a resource with only them still counts as one.</summary>
+    [Fact]
+    public void Read_FileDescriptionAndCompanyName_AreReturned_EvenWithoutVersions()
+    {
+        var path = Path.Combine(_root, "OptiScaler.dll");
+        File.WriteAllBytes(path, BuildVersionedPe(fileVersion: null, productVersion: null,
+            extraStrings: [("CompanyName", "nitec"), ("FileDescription", "OptiScaler")]));
+
+        var info = PeVersionReader.Read(path);
+
+        Assert.NotNull(info);
+        Assert.Equal(("OptiScaler", "nitec"), (info.FileDescription, info.CompanyName));
+        Assert.Null(info.FileVersion);
+    }
+
     [Fact]
     public void ReadAddonVersion_PrefersProductVersionAndKeepsNonRenoDxShapes()
     {
@@ -122,10 +137,16 @@ public sealed class PeVersionReaderTests : IDisposable
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 
-    /// <summary>Minimal PE32+ with one .rsrc section holding RT_VERSION/1/0x409.</summary>
-    internal static byte[] BuildVersionedPe(string? fileVersion, string? productVersion, int size = 4096, ushort rootType = 0)
+    /// <summary>
+    /// Minimal PE32+ with one .rsrc section holding RT_VERSION/1/0x409. <paramref name="extraStrings"/> adds
+    /// StringFileInfo entries (e.g. <c>FileDescription</c>, <c>CompanyName</c>); <paramref name="bodyText"/> is written as
+    /// ASCII after the resource section, where a real binary keeps its strings.
+    /// </summary>
+    internal static byte[] BuildVersionedPe(string? fileVersion, string? productVersion, int size = 4096, ushort rootType = 0,
+        IReadOnlyList<(string Key, string Value)>? extraStrings = null, string? bodyText = null)
     {
         var strings = new List<byte[]>();
+        foreach (var (key, value) in extraStrings ?? []) strings.Add(StringBlock(key, value));
         if (fileVersion is not null) strings.Add(StringBlock("FileVersion", fileVersion));
         if (productVersion is not null) strings.Add(StringBlock("ProductVersion", productVersion));
         var table = Block("040904b0", [], 1, 0, strings);
@@ -153,7 +174,10 @@ public sealed class PeVersionReaderTests : IDisposable
         BitConverter.GetBytes((uint)versionInfo.Length).CopyTo(rsrc, 0x4C);
         versionInfo.CopyTo(rsrc, blobAt);
 
-        var pe = new byte[Math.Max(size, rsrcFile + rsrc.Length)];
+        var body = bodyText is null ? [] : Encoding.ASCII.GetBytes(bodyText);
+        var bodyAt = rsrcFile + rsrc.Length + 64;
+        var pe = new byte[Math.Max(size, bodyAt + body.Length)];
+        body.CopyTo(pe, bodyAt);
         pe[0] = (byte)'M'; pe[1] = (byte)'Z';
         BitConverter.GetBytes(0x80).CopyTo(pe, 0x3C);
         "PE\0\0"u8.ToArray().CopyTo(pe, 0x80);

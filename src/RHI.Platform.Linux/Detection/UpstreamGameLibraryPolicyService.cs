@@ -128,6 +128,11 @@ public sealed class UpstreamGameLibraryPolicyService(
             game.EngineIniFileOverride = engineIniFile;
         if (TryGet(policy.OptiScalerDllOverrides, canonical, out var optiDll))
             game.OptiScalerDllNameOverride = optiDll;
+        // #155: kept relative (the game may move); DLSS detection resolves them inside the game root.
+        if (TryGet(policy.DlssPathOverrides, canonical, out var dlssPath))
+            game.DlssPathOverride = dlssPath;
+        if (TryGet(policy.StreamlinePathOverrides, canonical, out var streamlinePath))
+            game.StreamlinePathOverride = streamlinePath;
         if (TryGet(policy.PdUpscalerGames, canonical, out var pdArtifact))
             game.PdUpscalerArtifact = pdArtifact;
         if (TryGet(policy.WikiStatusOverrides, canonical, out var wikiStatus))

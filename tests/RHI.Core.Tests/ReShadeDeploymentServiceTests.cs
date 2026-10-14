@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class ReShadeDeploymentServiceTests : IDisposable
+public sealed partial class ReShadeDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-reshade-deploy-tests-" + Guid.NewGuid().ToString("N"));
     public ReShadeDeploymentServiceTests() => Directory.CreateDirectory(_root);
@@ -121,7 +121,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(bin);
         var exe = Path.Combine(bin, "Game.exe");
         PeArchitectureDetectorTests.WritePe(exe, 0x8664);
-        File.WriteAllText(Path.Combine(bin, "dxgi.dll"), "MZ OptiScaler proxy");
+        File.WriteAllText(Path.Combine(bin, "dxgi.dll"), "MZ optiscaler/OptiScaler proxy");
         File.WriteAllText(Path.Combine(bin, "ReShade64.dll"), "MZ ReShade crosire external");
         var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
         var service = NewService(new LinuxDeploymentRecordStore(Path.Combine(_root, "external-rs-records.json")), Path.Combine(_root, "external-rs-cache"));
@@ -140,7 +140,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         var exe = Path.Combine(bin, "Game.exe");
         PeArchitectureDetectorTests.WritePe(exe, 0x8664);
         var dxgi = Path.Combine(bin, "dxgi.dll");
-        File.WriteAllText(dxgi, "MZ OptiScaler proxy");
+        File.WriteAllText(dxgi, "MZ optiscaler/OptiScaler proxy");
         var ini = Path.Combine(bin, "OptiScaler.ini");
         File.WriteAllText(ini, "[Plugins]\nLoadReshade=auto\n");
         var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
@@ -159,7 +159,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         var result = await service.InstallAsync(game);
         Assert.True(result.Success, result.Message);
         Assert.True(File.Exists(Path.Combine(bin, "ReShade64.dll")));
-        Assert.Equal("MZ OptiScaler proxy", File.ReadAllText(dxgi));
+        Assert.Equal("MZ optiscaler/OptiScaler proxy", File.ReadAllText(dxgi));
         Assert.Contains("LoadReshade=true", File.ReadAllText(ini), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -206,7 +206,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         var exe = Path.Combine(bin, "Game.exe");
         PeArchitectureDetectorTests.WritePe(exe, 0x8664);
         var dxgi = Path.Combine(bin, "dxgi.dll");
-        File.WriteAllText(dxgi, "MZ OptiScaler proxy");
+        File.WriteAllText(dxgi, "MZ optiscaler/OptiScaler proxy");
         var ini = Path.Combine(bin, "OptiScaler.ini");
         File.WriteAllText(ini, "[Plugins]\nLoadReshade=auto\n");
         var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
@@ -231,7 +231,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         var exe = Path.Combine(bin, "Game.exe");
         PeArchitectureDetectorTests.WritePe(exe, 0x8664);
         var dxgi = Path.Combine(bin, "dxgi.dll");
-        File.WriteAllText(dxgi, "MZ OptiScaler original proxy");
+        File.WriteAllText(dxgi, "MZ optiscaler/OptiScaler original proxy");
         var ini = Path.Combine(bin, "OptiScaler.ini");
         File.WriteAllText(ini, "[Plugins]\nLoadReshade=auto\n");
         var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
@@ -263,7 +263,7 @@ public sealed class ReShadeDeploymentServiceTests : IDisposable
         Directory.CreateDirectory(bin);
         var exe = Path.Combine(bin, "Game.exe");
         PeArchitectureDetectorTests.WritePe(exe, 0x8664);
-        File.WriteAllText(Path.Combine(bin, "dxgi.dll"), "MZ OptiScaler proxy");
+        File.WriteAllText(Path.Combine(bin, "dxgi.dll"), "MZ optiscaler/OptiScaler proxy");
         File.WriteAllText(Path.Combine(bin, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n");
         var game = new DetectedGame { Name = "Game", InstallPath = bin, BinaryDirectory = bin, ExecutablePath = exe, Runner = "Wine", GraphicsApi = GraphicsApi.DirectX12 };
         var service = NewService(new LinuxDeploymentRecordStore(Path.Combine(_root, "os-external-records.json")), Path.Combine(_root, "os-external-cache"));

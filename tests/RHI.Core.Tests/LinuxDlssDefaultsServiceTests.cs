@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
-public sealed class LinuxDlssDefaultsServiceTests : IDisposable
+public sealed partial class LinuxDlssDefaultsServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dlss-defaults-" + Guid.NewGuid().ToString("N"));
 

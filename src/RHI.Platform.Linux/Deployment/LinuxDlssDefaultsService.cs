@@ -123,7 +123,7 @@ public sealed class LinuxDlssDefaultsService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(game);
-        return _dlss.Detect(game.InstallPath, game.ExecutablePath, indexedFiles, RhiOwnedFiles(game), cancellationToken);
+        return _dlss.Detect(game, indexedFiles, RhiOwnedFiles(game), cancellationToken);
     }
 
     /// <summary>Re-applies the ownership exclusion to a cached detection right before a swap/restore.</summary>

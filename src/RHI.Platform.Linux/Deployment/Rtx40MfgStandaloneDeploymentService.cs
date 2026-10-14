@@ -182,7 +182,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         if (ResolveBinaryDirectory(game) is null)
             return "O diretório do executável alvo não pôde ser resolvido.";
         if (!HasStreamlineFrameGeneration(game, managedOptiScaler))
-            return "Universal MFG exige Streamline DLSS Frame Generation funcional: integração nativa do jogo (Streamline + nvngx_dlssg.dll) ou a pilha OptiScaler Nightly/DLSS NR gerenciada pelo RHI com Streamline + DLSS Enabler e FG Output=DLSSG / FGNvngxReplacement=Arturs.";
+            return "Universal MFG exige Streamline DLSS Frame Generation funcional: integração nativa do jogo (Streamline + nvngx_dlssg.dll) ou a pilha OptiScaler Nightly/DLSS NR/F5 DLSSNR gerenciada pelo RHI com Streamline + DLSS Enabler e FG Output=DLSSG / FGNvngxReplacement=Arturs.";
         return $"Compatível com o caminho experimental Universal MFG: {gpu} + Streamline DLSS Frame Generation + prefixo Wine/Proton inicializado.";
     }
 

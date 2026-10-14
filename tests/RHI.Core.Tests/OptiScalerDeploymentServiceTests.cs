@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class OptiScalerDeploymentServiceTests : IDisposable
+public sealed partial class OptiScalerDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-optiscaler-deploy-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -429,7 +429,7 @@ public sealed class OptiScalerDeploymentServiceTests : IDisposable
     {
         var root = Path.Combine(_root, name);
         Directory.CreateDirectory(root);
-        WriteSignedTextFile(Path.Combine(root, "OptiScaler.dll"), "OptiScaler official fake package");
+        WriteSignedTextFile(Path.Combine(root, "OptiScaler.dll"), "optiscaler/OptiScaler official fake package");
         File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n");
         File.WriteAllText(Path.Combine(root, "setup_linux.sh"), "ignored setup");
         File.WriteAllText(Path.Combine(root, "setup_windows.bat"), "ignored setup");

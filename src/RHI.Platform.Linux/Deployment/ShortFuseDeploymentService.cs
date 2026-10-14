@@ -423,7 +423,7 @@ public sealed class ShortFuseDeploymentService
                 return ComponentOperationResult.Fail($"{Path.GetFileName(existingAddon)} already exists without an RHI ShortFuse deployment record. It may be an external or stale ShortFuse install; RHI will not overwrite it implicitly.");
 
         // Refuse to stack over direct RHI DLL swaps. Their .original files represent a separate ownership cycle.
-        var detection = _dlss.Detect(game.InstallPath, game.ExecutablePath, cancellationToken: cancellationToken);
+        var detection = _dlss.Detect(game, indexedFiles: null, protectedFiles: null, cancellationToken); // manifest DLSS folder too (#155)
         var existingTargets = detection.DlssPaths.Concat(detection.DlssdPaths).Concat(detection.DlssgPaths)
             .Concat(detection.DlssnrPaths)
             .Concat(detection.StreamlineFolders.SelectMany(folder => DlssManagerService.KnownStreamlineDlls.Select(name => Path.Combine(folder, name))))

@@ -58,16 +58,34 @@ public sealed class DlssManagerService
     /// </summary>
     public TimeSpan ManifestFetchTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
-    public async Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
+    public Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
+        => FetchManifestAsync(conditional: true, cancellationToken);
+
+    private async Task<DlssManifestData> FetchManifestAsync(bool conditional, CancellationToken cancellationToken)
     {
         var cachePath = Path.Combine(_cacheRoot, "dlss_manifest.json");
+        var etagPath = cachePath + ".etag";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ManifestFetchTimeout);
         try
         {
+            // Conditional GET (#35 residual): the cached copy's ETag, so an unchanged manifest costs a 304 and no body.
+            var cachedEtag = conditional && File.Exists(cachePath) ? ReadManifestEtag(etagPath) : null;
             using var request = new HttpRequestMessage(HttpMethod.Get, ManifestUrl);
             request.Headers.UserAgent.Add(new ProductInfoHeaderValue("RHI-Linux", RhiProductInfo.Version));
+            if (cachedEtag is not null) request.Headers.IfNoneMatch.Add(cachedEtag);
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotModified && cachedEtag is not null)
+            {
+                if (await TryReadCachedManifestAsync(cachePath, cancellationToken).ConfigureAwait(false) is { } unchanged)
+                {
+                    _manifest = unchanged;
+                    return unchanged;
+                }
+                // The cache no longer reads: forget its ETag and ask for the whole manifest again.
+                FileCleanup.TryDelete(etagPath);
+                return await FetchManifestAsync(conditional: false, cancellationToken).ConfigureAwait(false);
+            }
             response.EnsureSuccessStatusCode();
             var json = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
             var parsed = JsonSerializer.Deserialize<DlssManifestData>(json, JsonOptions())
@@ -80,11 +98,16 @@ public sealed class DlssManagerService
             // must not turn into the outer fallback that returns the older cached copy instead.
             try
             {
+                // The ETag never outlives the copy it describes: dropped first, written only after this copy is in place.
+                FileCleanup.TryDelete(etagPath);
                 await AtomicFile.WriteAllTextAsync(cachePath, json, CancellationToken.None).ConfigureAwait(false);
                 ManifestCacheWriteError = null;
+                if (response.Headers.ETag is { } etag)
+                    await AtomicFile.WriteAllTextAsync(etagPath, etag.ToString(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
+                FileCleanup.TryDelete(etagPath);
                 ManifestCacheWriteError = ex.Message;
                 AppLog.Warn("dlss-manifest", $"The downloaded DLSS manifest is in use but could not be cached at {cachePath}; the next offline start uses the older copy", ex);
             }
@@ -107,6 +130,35 @@ public sealed class DlssManagerService
         }
     }
 
+    private static EntityTagHeaderValue? ReadManifestEtag(string etagPath)
+    {
+        try
+        {
+            return File.Exists(etagPath) && EntityTagHeaderValue.TryParse(File.ReadAllText(etagPath).Trim(), out var etag) ? etag : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss-manifest", $"The DLSS manifest ETag could not be read ({etagPath}); asking for the whole manifest", ex);
+            return null;
+        }
+    }
+
+    private static async Task<DlssManifestData?> TryReadCachedManifestAsync(string cachePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<DlssManifestData>(await File.ReadAllTextAsync(cachePath, cancellationToken).ConfigureAwait(false), JsonOptions());
+            if (parsed is null) return null;
+            ValidateManifest(parsed);
+            return parsed;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            AppLog.Warn("dlss-manifest", $"The cached DLSS manifest no longer reads ({cachePath}); asking for the whole manifest", ex);
+            return null;
+        }
+    }
+
     /// <summary>Folder name of the OptiScaler stack; nothing below it is ever a direct DLSS swap/restore target.</summary>
     public const string OptiScalerFolderName = "OptiScaler";
 
@@ -116,6 +168,82 @@ public sealed class DlssManagerService
         IReadOnlyList<string>? indexedFiles = null,
         CancellationToken cancellationToken = default)
         => Detect(gameRoot, executablePath, indexedFiles, protectedFiles: null, cancellationToken);
+
+    /// <summary>
+    /// The game's DLSS/Streamline targets with the manifest folder overrides applied (#155, upstream 2.8.6
+    /// <c>dlssPathOverrides</c>/<c>streamlinePathOverrides</c>): when <see cref="DetectedGame.DlssPathOverride"/> names an
+    /// existing folder inside the game root, only that folder (and the Streamline override folder, else the same folder)
+    /// is read, without the depth-limited walk, as upstream's exact-path detection; <c>nvngx_dlssg.dll</c> is also looked
+    /// for in the Streamline folder. An override that is missing or leaves the game root falls back to the normal walk.
+    /// Protected files are dropped in both cases.
+    /// </summary>
+    public DlssDetectionResult Detect(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles,
+        IEnumerable<string>? protectedFiles,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        var dlssFolder = ResolveManifestFolder(game.InstallPath, game.DlssPathOverride);
+        if (dlssFolder is null)
+            return Detect(game.InstallPath, game.ExecutablePath, indexedFiles, protectedFiles, cancellationToken);
+        var streamlineFolder = ResolveManifestFolder(game.InstallPath, game.StreamlinePathOverride) ?? dlssFolder;
+        return ExcludeProtected(DetectInFolders(game.InstallPath, dlssFolder, streamlineFolder), protectedFiles);
+    }
+
+    /// <summary>
+    /// A manifest sub-path (<c>Engine\\Plugins\\…\\Win64</c>) below <paramref name="root"/>, or null when it is blank,
+    /// absolute, missing, or leaves the root (<c>..</c> or a symlink pointing out, checked with symlinks resolved).
+    /// </summary>
+    public static string? ResolveManifestFolder(string? root, string? relative)
+    {
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(relative) || !Directory.Exists(root)) return null;
+        var normalized = relative.Trim().Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalized)) return null;
+        string full;
+        try { full = Path.GetFullPath(Path.Combine(root, normalized)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // malformed manifest path: the normal walk runs
+        }
+        return Directory.Exists(full) && PathIdentity.IsSameOrInside(full, root) ? full : null;
+    }
+
+    private static DlssDetectionResult DetectInFolders(string gameRoot, string dlssFolder, string streamlineFolder)
+    {
+        Dictionary<string, string> Files(string folder)
+        {
+            var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (DlssManagerService.IsUnderOptiScalerFolder(gameRoot, Path.Combine(folder, "x"))) return byName;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(folder))
+                    byName.TryAdd(Path.GetFileName(file), file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("dlss", $"DLSS manifest folder could not be read: {folder}", ex);
+            }
+            return byName;
+        }
+        IReadOnlyList<string> One(Dictionary<string, string> files, string name)
+            => files.TryGetValue(name, out var path) ? [path] : [];
+
+        var dlss = Files(dlssFolder);
+        var streamline = string.Equals(streamlineFolder, dlssFolder, StringComparison.Ordinal) ? dlss : Files(streamlineFolder);
+        var dlssg = One(dlss, "nvngx_dlssg.dll");
+        if (dlssg.Count == 0) dlssg = One(streamline, "nvngx_dlssg.dll");
+        return new DlssDetectionResult
+        {
+            DlssPaths = One(dlss, "nvngx_dlss.dll"),
+            DlssdPaths = One(dlss, "nvngx_dlssd.dll"),
+            DlssgPaths = dlssg,
+            DlssnrPaths = One(dlss, "nvngx_dlssnr.dll"),
+            StreamlineFolders = streamline.ContainsKey("sl.interposer.dll") || streamline.ContainsKey("sl.common.dll")
+                ? [streamlineFolder]
+                : []
+        };
+    }
 
     /// <summary>
     /// Finds the game's own DLSS/Streamline DLLs, i.e. the direct swap/restore targets.

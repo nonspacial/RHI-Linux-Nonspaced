@@ -491,7 +491,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 {
                     if (component.Availability == ComponentAvailability.Available && !reShadePresent &&
                         !(component.Kind == ManagedComponentKind.MfgAdaUnlock && (managedDlssg2030 is not null || managedRtx40Mfg is not null)) &&
-                        !(component.Kind == ManagedComponentKind.Dlss5Feeder && managedOptiScaler is not null && OptiScalerDeploymentService.GetInstalledVariant(managedOptiScaler) == OptiScalerVariant.DlssNr))
+                        !(component.Kind == ManagedComponentKind.Dlss5Feeder && NeuralRenderingRuntimeOwnership.OptiScalerOwner(managedOptiScaler) is not null))
                     {
                         component.Note = $"{component.DisplayName} é um add-on do ReShade; o RHI instalará ReShade automaticamente antes deste componente.";
                     }
@@ -570,10 +570,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                             component.ActionAllowed = false;
                             component.Note = "This game already has native DLSS. Feeder Full is the no-DLSS path; use the native DLSS/Neural Rendering workflow instead.";
                         }
-                        else if (managedOptiScaler is not null && OptiScalerDeploymentService.GetInstalledVariant(managedOptiScaler) == OptiScalerVariant.DlssNr)
+                        else if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(managedOptiScaler) is { } nrOwner)
                         {
                             component.ActionAllowed = false;
-                            component.Note = "Remove OptiScaler DLSS NR first. Feeder and that OptiScaler variant would both own nvngx_dlssnr.dll; safe shared-file management is not yet enabled in the Linux port.";
+                            component.Note = NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner);
                         }
                         else
                         {
@@ -765,12 +765,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     }
                     else
                     {
-                        var nrOwnershipNote = managedDlss5Feeder is not null
-                            ? " DLSS NR is temporarily blocked while Feeder is managed because both would own nvngx_dlssnr.dll; Stable/Nightly remain available."
-                            : "";
+                        var nrOwnershipNote = managedDlss5Feeder is not null ? OptiScalerDeploymentService.FeederBlocksNrVariantsNote : "";
                         component.Note = (reShadePresent
-                            ? "OptiScaler Stable/Nightly/DLSS NR. Choose the channel in ⚙ before installing; RHI will migrate its managed ReShade to ReShade64.dll for deterministic coexistence. Offline/single-player only."
-                            : "OptiScaler Stable/Nightly/DLSS NR from the upstream GitHub channels. Choose the channel in ⚙ before installing; requires a supported temporal upscaler input. Offline/single-player only.") + nrOwnershipNote;
+                            ? "OptiScaler Stable/Nightly/DLSS NR/F5 DLSSNR. Choose the channel in ⚙ before installing; RHI will migrate its managed ReShade to ReShade64.dll for deterministic coexistence. Offline/single-player only."
+                            : "OptiScaler Stable/Nightly/DLSS NR/F5 DLSSNR from the upstream GitHub channels. Choose the channel in ⚙ before installing; requires a supported temporal upscaler input. Offline/single-player only.") + nrOwnershipNote;
                     }
                 }
 
@@ -1266,9 +1264,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         }
 
         if (target == ManagedComponentKind.Dlss5Feeder &&
-            _records.Find(game, ManagedComponentKind.OptiScaler) is { } opti &&
-            OptiScalerDeploymentService.GetInstalledVariant(opti) == OptiScalerVariant.DlssNr)
-            return ComponentOperationResult.Fail("OptiScaler DLSS NR já está ativo. Feeder e essa variante compartilham nvngx_dlssnr.dll sem ledger de ownership compartilhado.");
+            NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } nrOwner)
+            return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
 
         return null;
     }
@@ -1841,16 +1838,51 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return record is null ? null : OptiScalerDeploymentService.GetInstalledVariant(record);
     }
 
+    /// <summary>Nightly installs take the game's saved nightly build pin (#156); null pin = Latest.</summary>
     public Task<ComponentOperationResult> InstallOptiScalerAsync(
         DetectedGame game,
         OptiScalerVariant variant,
+        CancellationToken cancellationToken = default)
+        => InstallOptiScalerAsync(game, variant,
+            variant == OptiScalerVariant.Nightly ? _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler) : null,
+            cancellationToken);
+
+    /// <summary>Installs OptiScaler with an explicit nightly build pin (Nightly only; null = Latest). For #136's Control UE FG.</summary>
+    public Task<ComponentOperationResult> InstallOptiScalerAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
         CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
         return guard is not null
             ? Task.FromResult(guard)
-            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, cancellationToken));
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, nightlyBuild, cancellationToken));
     }
+
+    /// <summary>
+    /// The nightly build shown for the game (#156): the installed record's pin while OptiScaler Nightly is installed (its
+    /// choice is fixed until removal, as upstream), otherwise the saved preference. Null = Latest.
+    /// </summary>
+    public string? GetOptiScalerNightlyBuild(DetectedGame game)
+    {
+        var record = _optiscaler.GetRecord(game);
+        if (record is not null)
+            return OptiScalerDeploymentService.GetPinnedNightlyBuild(record);
+        var saved = _neuralVersionPins.Get(game, ManagedComponentKind.OptiScaler);
+        return OptiScalerPackageProvider.IsNightlyBuild(saved) ? saved : null;
+    }
+
+    /// <summary>Saves the nightly build used at the next Nightly install (null = Latest). Throws when the file cannot be written.</summary>
+    public void SetOptiScalerNightlyBuild(DetectedGame game, string? build)
+    {
+        if (build is not null && !OptiScalerPackageProvider.IsNightlyBuild(build))
+            throw new ArgumentException(OptiScalerDeploymentService.NightlyBuildInvalidPrefix + build, nameof(build));
+        _neuralVersionPins.Set(game, ManagedComponentKind.OptiScaler, build);
+    }
+
+    public Task<IReadOnlyList<string>> ListOptiScalerNightlyBuildsAsync(CancellationToken cancellationToken = default)
+        => _optiscaler.ListNightlyBuildsAsync(cancellationToken);
 
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,

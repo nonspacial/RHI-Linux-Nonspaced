@@ -48,8 +48,11 @@ public sealed class GitHubReleaseAssetResolver
         if (string.IsNullOrWhiteSpace(query.ExactAssetName) && string.IsNullOrWhiteSpace(query.AssetNamePattern))
             throw new ArgumentException("An exact asset name or asset-name pattern is required.", nameof(query));
 
+        // An untagged lookup asks exactly the endpoint it was given (upstream 2.8.6, #153): /releases/latest is
+        // GitHub's "Latest" release, and a repo that wants prereleases says so with /releases?per_page=1. The old
+        // rewrite of /latest to the list sorted by creation date and could hand back an older build.
         var requestUrl = string.IsNullOrWhiteSpace(releaseTag)
-            ? NormalizeReleaseApiUrl(query.ReleaseApiUrl)
+            ? query.ReleaseApiUrl
             : BuildReleaseTagApiUrl(query.ReleaseApiUrl, releaseTag);
         using var doc = await GetJsonAsync(requestUrl, cancellationToken).ConfigureAwait(false);
 
@@ -137,24 +140,6 @@ public sealed class GitHubReleaseAssetResolver
         {
             Path = path[..(releasesIndex + "/releases".Length)],
             Query = "per_page=100"
-        };
-        return builder.Uri.AbsoluteUri;
-    }
-
-    /// <summary>
-    /// GitHub's /releases/latest endpoint excludes prereleases. Upstream RHI
-    /// deliberately switched dynamic add-on lookups to the releases list so a published
-    /// prerelease can be consumed when it is the newest release. Preserve explicit list URLs.
-    /// </summary>
-    internal static string NormalizeReleaseApiUrl(string releaseApiUrl)
-    {
-        if (!Uri.TryCreate(releaseApiUrl, UriKind.Absolute, out var uri)) return releaseApiUrl;
-        if (!uri.AbsolutePath.EndsWith("/releases/latest", StringComparison.OrdinalIgnoreCase)) return releaseApiUrl;
-
-        var builder = new UriBuilder(uri)
-        {
-            Path = uri.AbsolutePath[..^"/latest".Length],
-            Query = "per_page=1"
         };
         return builder.Uri.AbsoluteUri;
     }

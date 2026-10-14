@@ -9,7 +9,9 @@ public enum OptiScalerVariant
 {
     Stable,
     Nightly,
-    DlssNr
+    DlssNr,
+    /// <summary>janblade's F5 DLSSNR multi-pass fork with its bundled NR forwarder (#157, upstream 2.8.7).</summary>
+    F5
 }
 
 /// <param name="Download">The verified release archive the package was extracted from (record metadata, #26); null when not downloaded through the provider.</param>
@@ -31,6 +33,14 @@ public interface IOptiScalerPackageProvider
             ? GetLatestAsync(cancellationToken)
             : Task.FromException<OptiScalerPackage>(
                 new NotSupportedException($"OptiScaler package provider does not support the {variant} channel."));
+
+    /// <summary>One nightly build by its date (<c>20261004</c>), downloaded on demand and cached per tag (#156).</summary>
+    Task<OptiScalerPackage> GetNightlyBuildAsync(string build, CancellationToken cancellationToken = default)
+        => Task.FromException<OptiScalerPackage>(new NotSupportedException("OptiScaler package provider does not offer pinned nightly builds."));
+
+    /// <summary>The newest nightly builds (dates, newest first, at most <see cref="OptiScalerPackageProvider.NightlyBuildListSize"/>).</summary>
+    Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
+        => Task.FromException<IReadOnlyList<string>>(new NotSupportedException("OptiScaler package provider does not list nightly builds."));
 }
 
 public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
@@ -38,6 +48,23 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
     public const string LatestReleaseApi = "https://api.github.com/repos/optiscaler/OptiScaler/releases/latest";
     public const string NightlyReleasesApi = "https://api.github.com/repos/optiscaler/OptiScaler-nightly/releases";
     public const string DlssNrReleasesApi = "https://api.github.com/repos/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass/releases";
+    /// <summary>F5 DLSSNR (#157): GitHub's "Latest" release, as upstream; its asset is <see cref="F5AssetPrefix"/>*.zip.</summary>
+    public const string F5ReleasesApi = "https://api.github.com/repos/janblade/OptiScaler-F5-DLSSNR-Multipass/releases/latest";
+    /// <summary>The F5 release also carries an "Optional-Vendor-Neutral-DLSS5-Forwarder.zip" companion; only this prefix is the package (upstream 8dcf55c, 4f28876).</summary>
+    public const string F5AssetPrefix = "OptiScaler-DLSSNR-F5-";
+    public const string ArchivePathRefusedPrefix = "The OptiScaler archive holds a path RHI will not extract: ";
+    /// <summary>Nightly tags are <c>nightly-YYYYMMDD</c>; the build a game is pinned to is the date (#156).</summary>
+    public const string NightlyTagPrefix = "nightly-";
+    /// <summary>Upstream offers the last 30 nightly builds (GitHub's default page of the release list).</summary>
+    public const int NightlyBuildListSize = 30;
+    public const string NightlyBuildMismatchPrefix = "GitHub returned another OptiScaler nightly build than the one pinned: ";
+
+    /// <summary>A nightly build as RHI pins it: the 8-digit date of its tag.</summary>
+    public static bool IsNightlyBuild(string? value)
+        => value is { Length: 8 } && value.All(char.IsAsciiDigit);
+
+    public static string NightlyTagApiUrl(string build)
+        => $"https://api.github.com/repos/optiscaler/OptiScaler-nightly/releases/tags/{NightlyTagPrefix}{build}";
 
     private readonly HttpClient _http;
     private readonly IOptiScalerArchiveExtractor _extractor;
@@ -53,18 +80,59 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
     public Task<OptiScalerPackage> GetLatestAsync(CancellationToken cancellationToken = default)
         => GetLatestAsync(OptiScalerVariant.Stable, cancellationToken);
 
-    public async Task<OptiScalerPackage> GetLatestAsync(
+    public Task<OptiScalerPackage> GetLatestAsync(
         OptiScalerVariant variant,
         CancellationToken cancellationToken = default)
     {
-        var (apiUrl, requiredExtension, responseIsList) = variant switch
+        var (apiUrl, responseIsList) = variant switch
         {
-            OptiScalerVariant.Stable => (LatestReleaseApi, ".7z", false),
-            OptiScalerVariant.Nightly => (NightlyReleasesApi, ".7z", true),
-            OptiScalerVariant.DlssNr => (DlssNrReleasesApi, ".zip", true),
+            OptiScalerVariant.Stable => (LatestReleaseApi, false),
+            OptiScalerVariant.Nightly => (NightlyReleasesApi, true),
+            OptiScalerVariant.DlssNr => (DlssNrReleasesApi, true),
+            OptiScalerVariant.F5 => (F5ReleasesApi, false),
             _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null)
         };
+        return FetchAsync(apiUrl, responseIsList, variant, expectedVersion: null, cancellationToken);
+    }
 
+    /// <summary>
+    /// A pinned nightly build (#156, upstream 2.8.6): asked by its tag, so builds older than the listed 30 still install;
+    /// the archive and extracted tree are cached per tag behind their <see cref="CacheStamp"/>, like every release.
+    /// </summary>
+    public Task<OptiScalerPackage> GetNightlyBuildAsync(string build, CancellationToken cancellationToken = default)
+    {
+        if (!IsNightlyBuild(build))
+            throw new ArgumentException(OptiScalerDeploymentService.NightlyBuildInvalidPrefix + build, nameof(build));
+        return FetchAsync(NightlyTagApiUrl(build), responseIsList: false, OptiScalerVariant.Nightly, expectedVersion: build, cancellationToken);
+    }
+
+    /// <summary>The newest nightly builds by date, newest first (the release list upstream's dropdown shows).</summary>
+    public async Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await TrustedDownload.GetStringAsync(_http, NightlyReleasesApi, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("GitHub release-list response was not an array.");
+        var builds = new List<string>();
+        foreach (var release in doc.RootElement.EnumerateArray())
+        {
+            if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
+            var tag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(tag)) continue;
+            var build = NormalizeVersion(tag, OptiScalerVariant.Nightly);
+            if (IsNightlyBuild(build) && !builds.Contains(build)) builds.Add(build);
+        }
+        return builds.OrderByDescending(build => build, StringComparer.Ordinal).Take(NightlyBuildListSize).ToArray();
+    }
+
+    private async Task<OptiScalerPackage> FetchAsync(
+        string apiUrl,
+        bool responseIsList,
+        OptiScalerVariant variant,
+        string? expectedVersion,
+        CancellationToken cancellationToken)
+    {
+        var requiredExtension = variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5 ? ".zip" : ".7z";
         var json = await TrustedDownload.GetStringAsync(_http, apiUrl, DownloadSources.GitHubApi, "application/vnd.github+json", cancellationToken).ConfigureAwait(false);
         using var doc = JsonDocument.Parse(json);
 
@@ -73,6 +141,8 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         if (string.IsNullOrWhiteSpace(rawTag))
             throw new InvalidOperationException($"GitHub release response did not contain an OptiScaler {variant} tag.");
         var version = NormalizeVersion(rawTag, variant);
+        if (expectedVersion is not null && !string.Equals(version, expectedVersion, StringComparison.Ordinal))
+            throw new InvalidOperationException(NightlyBuildMismatchPrefix + rawTag);
 
         var candidates = new List<JsonElement>();
         if (release.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
@@ -83,6 +153,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
                 if (string.IsNullOrWhiteSpace(name) || !name.EndsWith(requiredExtension, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!name.Contains("optiscaler", StringComparison.OrdinalIgnoreCase)) continue;
                 if (IsNonRuntimeAssetName(name)) continue;
+                if (variant == OptiScalerVariant.F5 && !name.StartsWith(F5AssetPrefix, StringComparison.OrdinalIgnoreCase)) continue;
                 candidates.Add(asset);
             }
         }
@@ -121,7 +192,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         // A digest GitHub publishes is verified (a mismatch is refused); without one the archive is accepted on
         // HTTPS + the OptiScaler host policy and its SHA-256 is recorded in the stamp (#26, upstream verifies none).
         var download = await TrustedDownload.EnsureVerifiedAsync(
-            _http, sourceUrl, archive, DownloadSources.OptiScaler, rawTag, digest,
+            _http, sourceUrl, archive, variant == OptiScalerVariant.F5 ? DownloadSources.OptiScalerF5 : DownloadSources.OptiScaler, rawTag, digest,
             validate: (temp, _) => HasPlausibleArchiveSize(temp, expectedSize)
                 ? Task.CompletedTask
                 : throw new InvalidOperationException("Downloaded OptiScaler archive failed size/SHA-256 validation."),
@@ -140,6 +211,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
             if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true);
             Directory.CreateDirectory(extractDir);
             await _extractor.ExtractAllAsync(archive, extractDir, cancellationToken).ConfigureAwait(false);
+            NormalizeBackslashEntries(extractDir);
             packageRoot = FindPackageRoot(extractDir);
             freshlyExtracted = true;
         }
@@ -149,8 +221,8 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         var dll = Path.Combine(packageRoot, "OptiScaler.dll");
         if (!BinarySignatureInspector.HasPeSignature(dll, 250_000) || !BinarySignatureInspector.LooksLikeOptiScaler(dll))
             throw new InvalidOperationException("The extracted OptiScaler.dll failed the local PE/signature-string sanity check.");
-        if (variant == OptiScalerVariant.DlssNr && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
-            throw new InvalidOperationException("The OptiScaler DLSS NR archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
+        if (NeuralRenderingRuntimeOwnership.OptiScalerVariantOwnsRuntime(variant) && !File.Exists(Path.Combine(packageRoot, "nvngx.dll_dlssnr.dll")))
+            throw new InvalidOperationException($"The OptiScaler {OptiScalerDeploymentService.VariantLabel(variant)} archive is missing its required nvngx.dll_dlssnr.dll forwarder.");
 
         if (freshlyExtracted) CacheStamp.WriteBoundTo(extractDir, sourceUrl, rawTag, archiveSha256);
         return new OptiScalerPackage(version, sourceUrl, packageRoot, variant, download);
@@ -189,6 +261,28 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
         if (!File.Exists(path)) return false;
         var length = new FileInfo(path).Length;
         return length >= 1_000_000 && (expectedSize <= 0 || length == expectedSize);
+    }
+
+    /// <summary>
+    /// Windows-made zips may name entries with backslashes (<c>OptiScaler\libxess.dll</c>; F5 DLSSNR does), which 7-Zip
+    /// and bsdtar on Linux extract as one flat file name. Such files are moved to the folders the names mean, as Windows
+    /// tools extract them (upstream reads them on Windows). A name with an empty, <c>.</c> or <c>..</c> part, one that would
+    /// leave the extraction folder, or one that collides with another entry refuses the whole archive.
+    /// </summary>
+    internal static void NormalizeBackslashEntries(string extractDirectory)
+    {
+        foreach (var file in SafeFileEnumeration.Files(extractDirectory).Where(path => Path.GetFileName(path).Contains('\\')).ToList())
+        {
+            var name = Path.GetFileName(file);
+            var parts = name.Split('\\');
+            if (parts.Any(part => part.Length == 0 || part is "." or ".."))
+                throw new InvalidOperationException(ArchivePathRefusedPrefix + name);
+            var target = Path.GetFullPath(Path.Combine([Path.GetDirectoryName(file)!, .. parts]));
+            if (!PathIdentity.IsSameOrInside(target, extractDirectory) || File.Exists(target) || Directory.Exists(target))
+                throw new InvalidOperationException(ArchivePathRefusedPrefix + name);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Move(file, target); // inside RHI's own extraction folder: a rename on one file system
+        }
     }
 
     internal static string? FindPackageRoot(string extractDirectory)

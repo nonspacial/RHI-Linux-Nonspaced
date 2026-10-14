@@ -230,9 +230,9 @@ public sealed partial class UpstreamRhiManifestService
 {
     public const string LiveManifestUrl =
         "https://raw.githubusercontent.com/RankFTW/RHI/main/manifest.json";
-    public const string PinnedManifestCommit = "a94a574515da3a0864f76a6d120dc4957f61e91f";
+    public const string PinnedManifestCommit = "4bb5e5c52f219d2112c93e4e33a666bd66baeafe";
     public const string PinnedManifestUrl =
-        "https://raw.githubusercontent.com/RankFTW/RHI/a94a574515da3a0864f76a6d120dc4957f61e91f/manifest.json";
+        "https://raw.githubusercontent.com/RankFTW/RHI/4bb5e5c52f219d2112c93e4e33a666bd66baeafe/manifest.json";
 
     private readonly HttpClient _http;
     private readonly string _manifestUrl;

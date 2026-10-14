@@ -316,7 +316,7 @@ public sealed class CacheForeignFileRejectionTests : IDisposable
             var root = Path.Combine(outputDirectory, "package");
             Directory.CreateDirectory(root);
             var dll = Pe(0x8664, 300_000, 0x0F);
-            Encoding.ASCII.GetBytes("OptiScaler official package").CopyTo(dll, 512);
+            Encoding.ASCII.GetBytes("optiscaler/OptiScaler official package").CopyTo(dll, 512);
             File.WriteAllBytes(Path.Combine(root, "OptiScaler.dll"), dll);
             File.WriteAllText(Path.Combine(root, "OptiScaler.ini"), "[Plugins]\nLoadReshade=auto\n");
             return Task.CompletedTask;

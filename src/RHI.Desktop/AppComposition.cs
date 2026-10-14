@@ -36,6 +36,8 @@ internal sealed class AppComposition
     public required LumaCatalogService LumaCatalog { get; init; }
     public required UpstreamRhiManifestService UpstreamManifest { get; init; }
     // w3/sync rows
+    /// <summary>RHI Unity database for the Available HDR mods list (#126); the RenoDX installer keeps its own instance (same disk cache, ETag revalidated).</summary>
+    public RenoDxUnityDatabaseService? RenoDxUnityDatabase { get; init; }
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
@@ -117,7 +119,7 @@ internal sealed class AppComposition
             ManagedComponentKind.MfgAdaUnlock,
             "mfgunlock",
             "MFG Ada Unlock",
-            "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases/latest",
+            "https://api.github.com/repos/mavismmg/MFGAdaUnlock-RenoDx/releases?per_page=1",
             128 * 1024,
             ExactAssetName64: "renodx-mfgunlock.addon64",
             DeployFileName64: "renodx-mfgunlock.addon64",
@@ -132,7 +134,7 @@ internal sealed class AppComposition
             ManagedComponentKind.Dlss5Dx11Bridge,
             "dlss5-dx11-bridge",
             "DLSS5 DX11 Bridge",
-            "https://api.github.com/repos/NIGos/dlss5-bridge/releases/latest",
+            "https://api.github.com/repos/NIGos/dlss5-bridge/releases?per_page=1",
             128 * 1024,
             ExactAssetName64: "dlss5-bridge.addon64",
             DeployFileName64: "dlss5-bridge.addon64",
@@ -141,7 +143,7 @@ internal sealed class AppComposition
             ManagedComponentKind.Dlss5Feeder,
             "dlss5-feed",
             "DLSS5 Feeder",
-            "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest",
+            "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1",
             64 * 1024,
             AssetNamePattern64: @"^DLSS5-Feeder-.*\.zip$",
             AssetNamePattern32: @"^DLSS5-Feeder-.*\.zip$",
@@ -172,6 +174,7 @@ internal sealed class AppComposition
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog);
         // w3/sync rows
+        var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
@@ -196,6 +199,7 @@ internal sealed class AppComposition
             LumaCatalog = lumaCatalog,
             UpstreamManifest = upstreamManifest,
             // w3/sync rows
+            RenoDxUnityDatabase = renodxUnityDatabase,
             // w3/journal rows
             // w3/scan rows
             // w3/parity rows

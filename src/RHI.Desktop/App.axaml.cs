@@ -56,7 +56,7 @@ public sealed class App : Application
             {
                 DataContext = vm,
                 UpdateLogStore = services.UpdateLog,
-                HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog),
+                HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog, services.RenoDxUnityDatabase), // w3/sync #126 hook
                 UpstreamManifest = services.UpstreamManifest
             };
         }

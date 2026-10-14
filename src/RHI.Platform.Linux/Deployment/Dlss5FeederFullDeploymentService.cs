@@ -25,7 +25,7 @@ public enum Dlss5FeederConsumer
 public sealed class Dlss5FeederFullDeploymentService
 {
     public const Dlss5FeederConsumer DefaultConsumer = Dlss5FeederConsumer.RenoDxDlss5;
-    private const string FeederReleaseApi = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases/latest";
+    private const string FeederReleaseApi = "https://api.github.com/repos/jlrouzies-fr/DLSS5-Feeder/releases?per_page=1";
     private const string FeederArchiveAssetPattern = @"^DLSS5-Feeder-.*\.zip$";
     private const string RhiRepoReleasesApi = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     private const string RenoDx5AssetPattern = @"^renodx-dlss5_.*\.zip$";
@@ -296,9 +296,8 @@ public sealed class Dlss5FeederFullDeploymentService
         // already owns nvngx_dlssnr.dll, surface that blocker before asking the user to install
         // ReShade or resolve a compiler. This also guarantees the conflict is detected before
         // any package/network work.
-        var optiRecord = _records.Find(game, ManagedComponentKind.OptiScaler);
-        if (optiRecord is not null && OptiScalerDeploymentService.GetInstalledVariant(optiRecord) == OptiScalerVariant.DlssNr)
-            return ComponentOperationResult.Fail("Remove the OptiScaler DLSS NR variant before installing DLSS5 Feeder. Both components would own nvngx_dlssnr.dll and RHI Linux does not yet have a shared-file ownership ledger for that runtime.");
+        if (NeuralRenderingRuntimeOwnership.OptiScalerOwner(_records, game) is { } nrOwner) // OptiScaler DLSS NR or F5 DLSSNR (#157)
+            return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
 
         var preflight = ValidateTarget(game, consumer);
         if (preflight is not null) return preflight;

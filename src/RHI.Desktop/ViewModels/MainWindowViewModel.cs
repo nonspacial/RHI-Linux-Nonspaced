@@ -3435,6 +3435,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
     internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
+    public OptiScalerNightlyBuildPresenter OptiScalerNightlyBuild => OptiScalerNightlyBuildPresenter.For(this, _managedComponents, TryPersist); // w3/sync #156 hook
 
     /// <summary>
     /// Explicit repair after a move: checks every file RHI owns at the game's new folder and only

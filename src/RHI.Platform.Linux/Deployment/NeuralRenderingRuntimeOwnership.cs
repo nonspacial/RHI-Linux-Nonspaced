@@ -1,0 +1,57 @@
+using RHI.Core.Models;
+
+namespace RHI.Platform.Linux.Deployment;
+
+/// <summary>
+/// The <c>nvngx_dlssnr.dll</c> sharing rule (#157): one place for every component that puts the DLSS Neural Rendering
+/// runtime into a game folder. Parity's NR Cost Scaler (#96) and later RTX Encore (#158) adopt it.
+/// <list type="number">
+/// <item><b>One owner.</b> Per game, at most one RHI component owns <c>nvngx_dlssnr.dll</c>: ShortFuse, DLSS5 Feeder
+/// (any Feeder record: Full deploys the runtime, and an add-on-only record is treated the same, as before), OptiScaler
+/// DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable and Nightly never deploy it and are no owners.</item>
+/// <item><b>Refused, not shared.</b> Installing an owner while another owner is recorded is refused before any download,
+/// file or registry change, and the refusal names the current owner (<see cref="RefusalFor"/>). There is no
+/// co-ownership ledger: the user removes one owner first.</item>
+/// <item><b>The owner's record decides.</b> Only the owner's own record (path and hash) governs updating, swapping the NR
+/// version of, or removing the file; a file that no longer matches that hash is protected as modified.</item>
+/// <item><b>Layers are not owners.</b> A component that wraps the owner's runtime (the NR Cost Scaler: it moves
+/// <c>nvngx_dlssnr.dll</c> to <c>nvngx_dlssnr_real.dll</c> and puts its proxy in its place) needs an owner, refuses
+/// when the owner's file no longer matches the owner's recorded hash, keeps the moved file under its own record, and
+/// must be removed before the owner updates, swaps or removes the runtime (the owner refuses while a layer is
+/// recorded). Removing the layer restores the owner's file byte for byte, so the owner's hash check passes again.</item>
+/// </list>
+/// </summary>
+public static class NeuralRenderingRuntimeOwnership
+{
+    public const string DllName = "nvngx_dlssnr.dll";
+
+    /// <summary>Refusal and row note when another component owns the runtime; the owner's name follows.</summary>
+    public const string OwnedByPrefix = "nvngx_dlssnr.dll already belongs to another RHI component for this game; remove it first: ";
+
+    /// <summary>OptiScaler variants that deploy <c>nvngx_dlssnr.dll</c> (and its forwarder): DLSS NR and F5 DLSSNR.</summary>
+    public static bool OptiScalerVariantOwnsRuntime(OptiScalerVariant variant)
+        => variant is OptiScalerVariant.DlssNr or OptiScalerVariant.F5;
+
+    /// <summary>\"OptiScaler DLSS NR\" / \"OptiScaler F5 DLSSNR\" when <paramref name="optiScaler"/> owns the runtime, else null.</summary>
+    public static string? OptiScalerOwner(LinuxDeploymentRecord? optiScaler)
+        => optiScaler is not null && OptiScalerVariantOwnsRuntime(OptiScalerDeploymentService.GetInstalledVariant(optiScaler))
+            ? "OptiScaler " + OptiScalerDeploymentService.VariantLabel(OptiScalerDeploymentService.GetInstalledVariant(optiScaler))
+            : null;
+
+    public static string? OptiScalerOwner(LinuxDeploymentRecordStore records, DetectedGame game)
+        => OptiScalerOwner(records.Find(game, ManagedComponentKind.OptiScaler));
+
+    /// <summary>
+    /// The component (other than <paramref name="requester"/>) that owns <c>nvngx_dlssnr.dll</c> for the game, by display
+    /// name, or null when none does. A component that would deploy the runtime calls this before its first download.
+    /// </summary>
+    public static string? OwnerOtherThan(LinuxDeploymentRecordStore records, DetectedGame game, ManagedComponentKind requester)
+    {
+        if (requester != ManagedComponentKind.OptiScaler && OptiScalerOwner(records, game) is { } optiScaler) return optiScaler;
+        if (requester != ManagedComponentKind.Dlss5Feeder && records.Find(game, ManagedComponentKind.Dlss5Feeder) is not null) return "DLSS5 Feeder";
+        if (requester != ManagedComponentKind.ShortFuse && records.Find(game, ManagedComponentKind.ShortFuse) is not null) return "ShortFuse";
+        return null;
+    }
+
+    public static string RefusalFor(string owner) => OwnedByPrefix + owner;
+}

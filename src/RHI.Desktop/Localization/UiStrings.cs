@@ -119,7 +119,7 @@ internal static class UiStrings
         ("Vm.DLSSManifestUnavailable", "Manifesto de DLSS indisponível: {0}", "DLSS manifest unavailable: {0}"),
         ("Vm.GitHubRejectedTokenSavedGithubApi", "O GitHub rejeitou o token salvo em github_api.txt (revogado ou expirado); usando acesso anônimo (60 requisições/hora) até o arquivo ser substituído.", "GitHub rejected the token saved in github_api.txt (revoked or expired); using anonymous access (60 requests/hour) until the file is replaced."),
         ("Vm.DLSS5FeederRenoDXDLSS5SelectedAs", "DLSS5 Feeder: RenoDX DLSS5 selecionado como consumidor padrão. Deep Fried Chicken não será instalado.", "DLSS5 Feeder: RenoDX DLSS5 selected as the default consumer. Deep Fried Chicken will not be installed."),
-        ("Vm.RemoveCurrentOptiScalerBeforeSwitchingStable", "Remova o OptiScaler atual antes de trocar Estável/Desenvolvimento/DLSS NR.", "Remove the current OptiScaler before switching Stable/Nightly/DLSS NR."),
+        ("Vm.RemoveCurrentOptiScalerBeforeSwitchingStable", "Remova o OptiScaler atual antes de trocar Estável/Desenvolvimento/DLSS NR/F5 DLSSNR.", "Remove the current OptiScaler before switching Stable/Nightly/DLSS NR/F5 DLSSNR."),
         ("Vm.OptiScalerVariantSelected", "OptiScaler: variante {0} selecionada para {1}.", "OptiScaler: variant {0} selected for {1}."),
         ("Vm.ReadyCached", "Pronto — {0} (em cache)", "Ready — {0} (cached)"),
         ("Vm.AnalyzingBackground", "Analisando {0} em segundo plano…", "Analyzing {0} in the background…"),
@@ -540,9 +540,9 @@ internal static class UiStrings
         ("Win.RunGameOnceRenoDXInstalledGenerate", "Execute o jogo uma vez com o RenoDX instalado para gerar as configurações.", "Run the game once with RenoDX installed to generate the settings."),
         ("Win.RenodxSectionExistsButNoCompatibility", "A seção [renodx] existe, mas nenhuma configuração de compatibilidade está disponível no momento.", "The [renodx] section exists, but no compatibility setting is currently available."),
         ("Win.AdvancedOptiScalerSettings", "Configurações avançadas do OptiScaler", "Advanced OptiScaler settings"),
-        ("Win.ChooseChannelBeforeInstallingStableDefault", "Escolha o canal antes de instalar. Stable é o padrão; Nightly e DLSS NR usam caches de download separados. Depois da instalação, remova o OptiScaler antes de trocar de variante.", "Choose the channel before installing. Stable is the default; Nightly and DLSS NR use separate download caches. After installation, remove OptiScaler before changing variants."),
+        ("Win.ChooseChannelBeforeInstallingStableDefault", "Escolha o canal antes de instalar. Stable é o padrão; Nightly, DLSS NR e F5 DLSSNR usam caches de download separados. Depois da instalação, remova o OptiScaler antes de trocar de variante.", "Choose the channel before installing. Stable is the default; Nightly, DLSS NR and F5 DLSSNR use separate download caches. After installation, remove OptiScaler before changing variants."),
         ("Win.ChannelVariant", "Canal / variante", "Channel / variant"),
-        ("Win.StableUsesOfficialStableReleaseNightly", "Stable usa o release oficial estável; Nightly usa OptiScaler-nightly; DLSS NR usa o fork com Renderização Neural e o runtime NR gerenciado pelo RHI.", "Stable uses the official stable release; Nightly uses OptiScaler-nightly; DLSS NR uses the Neural Rendering fork and the RHI-managed NR runtime."),
+        ("Win.StableUsesOfficialStableReleaseNightly", "Stable usa o release oficial estável; Nightly usa OptiScaler-nightly; DLSS NR usa o fork com Renderização Neural e o runtime NR gerenciado pelo RHI; F5 DLSSNR usa o fork multi-pass F5 do janblade, com o forwarder NR incluído e o mesmo runtime NR.", "Stable uses the official stable release; Nightly uses OptiScaler-nightly; DLSS NR uses the Neural Rendering fork and the RHI-managed NR runtime; F5 DLSSNR uses janblade's F5 multi-pass fork with its bundled NR forwarder and the same NR runtime."),
         ("Win.InstalledVariantSelectorStaysLockedUntil", "Variante instalada: o seletor fica bloqueado até a remoção para evitar mistura de arquivos entre canais.", "Installed variant: the selector stays locked until removal to prevent mixing files between channels."),
         ("Win.SelectedVariantSavedPerGameWill", "A variante selecionada é salva por jogo e será usada no próximo Install.", "The selected variant is saved per game and will be used on the next install."),
         ("Win.ControlsBelowEditOnlyOptiScalerIni", "Os controles abaixo editam somente o OptiScaler.ini. As alterações são imediatas e atômicas; arquivos de proxy/encadeamento gerenciados pelo RHI não são alterados.", "The controls below edit only OptiScaler.ini. Changes are immediate and atomic; RHI-managed proxy/chaining files are not changed."),
@@ -629,6 +629,14 @@ internal static class UiStrings
         ("Vm.SavedManualEntryWasNotFound", "{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed."),
         ("Vm.RemovedFromManualLibraryButList", "{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh."),
         // w3/sync rows
+        ("Sync.OptiScalerNightlyBuild", "Build nightly", "Nightly build"),
+        ("Sync.OptiScalerNightlyBuildTip", "Fixa este jogo numa das 30 builds nightly mais recentes. Um jogo fixado fica na sua build: Atualizar tudo não a troca. Mais recente sempre segue a build mais nova.", "Pins this game to one of the 30 newest nightly builds. A pinned game stays on its build: Update All leaves it alone. Latest always follows the newest build."),
+        ("Sync.OptiScalerNightlyLatest", "Mais recente (atualização automática)", "Latest (auto-update)"),
+        ("Sync.OptiScalerNightlyNote", "A build escolhida é salva por jogo e baixada quando o OptiScaler é instalado.", "The chosen build is saved per game and downloaded when OptiScaler is installed."),
+        ("Sync.OptiScalerNightlyLocked", "Remova o OptiScaler para trocar a build.", "Remove OptiScaler to change the build."),
+        ("Sync.OptiScalerNightlyListFailed", "Não foi possível carregar a lista de builds nightly; só Mais recente e a build salva estão disponíveis.", "The nightly build list could not be loaded; only Latest and the saved build are offered."),
+        ("Sync.OptiScalerNightlyPinned", "{0}: OptiScaler Nightly fixado na build {1}.", "{0}: OptiScaler Nightly pinned to build {1}."),
+        ("Sync.OptiScalerNightlyUnpinned", "{0}: OptiScaler Nightly segue a build mais nova.", "{0}: OptiScaler Nightly follows the newest build."),
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows

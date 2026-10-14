@@ -44,7 +44,7 @@ public sealed class BinaryStringSearchTests : IDisposable
     {
         var path = Path.Combine(_root, $"split-{offset}.dll");
         var bytes = new byte[offset + 64];
-        Encoding.ASCII.GetBytes("OptiScaler").CopyTo(bytes, offset);
+        Encoding.ASCII.GetBytes("optiscaler/OptiScaler").CopyTo(bytes, offset); // no version resource: OptiScaler's own string (#154)
         File.WriteAllBytes(path, bytes);
 
         Assert.True(BinarySignatureInspector.LooksLikeOptiScaler(path));
