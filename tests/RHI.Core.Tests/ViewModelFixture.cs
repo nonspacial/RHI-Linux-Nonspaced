@@ -32,7 +32,8 @@ internal sealed class ViewModelFixture : IDisposable
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
         Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse,
-        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe
+        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe,
+        IReadOnlyList<IGameDetector>? detectors
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
@@ -49,7 +50,7 @@ internal sealed class ViewModelFixture : IDisposable
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
         Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, httpResponse, _hang,
-            launcher, hdrProfiles, probe
+            launcher, hdrProfiles, probe, detectors
             // w3/sync rows
             // w3/journal rows
             // w3/scan rows
@@ -67,11 +68,12 @@ internal sealed class ViewModelFixture : IDisposable
     /// <param name="launcher">The game launcher (default: the real <see cref="LinuxGameLauncher"/>).</param>
     /// <param name="hdrProfiles">The HDR profile service (default: one reading this host's session and PATH).</param>
     /// <param name="probe">The runtime probe (default: one that changes nothing).</param>
+    /// <param name="detectors">Extra detectors the scanner runs beside the fixture's own (e.g. one counting its scans).</param>
     public static async Task<ViewModelFixture> StartAsync(IReadOnlyList<DetectedGame> games, string uiLanguage = "en-US",
         Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
         Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse = null,
         IGameLauncher? launcher = null, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles = null,
-        IGameRuntimeProbe? probe = null
+        IGameRuntimeProbe? probe = null, IReadOnlyList<IGameDetector>? detectors = null
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
@@ -80,7 +82,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/dllnames rows
         )
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
             // w3/sync rows
             // w3/journal rows
             // w3/scan rows
@@ -114,7 +116,8 @@ internal sealed class ViewModelFixture : IDisposable
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
         Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse, HttpHang hang,
-        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe
+        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe,
+        IReadOnlyList<IGameDetector>? detectors
         // w3/sync rows
         // w3/journal rows
         // w3/scan rows
@@ -125,7 +128,7 @@ internal sealed class ViewModelFixture : IDisposable
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
         var upstreamManifest = new UpstreamRhiManifestService(http);
-        var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) });
+        var scanner = new GameLibraryScanner(new IGameDetector[] { new FixedDetector(games), new ManualGameDetector(libraryStore) }.Concat(detectors ?? []).ToArray());
         var deployment = new TransactionalFileDeploymentService();
         var wineOverrides = new WineDllOverrideService();
         var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, new ReShadeArchiveExtractor(), upstreamManifest: upstreamManifest,

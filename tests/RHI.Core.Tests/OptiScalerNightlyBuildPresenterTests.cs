@@ -33,6 +33,25 @@ public sealed class OptiScalerNightlyBuildPresenterTests
     private static void ChooseNightly(ViewModelFixture fx)
         => fx.Vm.Runtime.SelectedOptiScalerVariant = fx.Vm.Runtime.OptiScalerVariantOptions.For(OptiScalerVariant.Nightly);
 
+    // Merge review finding 1 (seam 5c5353c): the row follows the Runtime panel's variant choice by itself (it listens to
+    // vm.Runtime), with no explicit refresh.
+    [Fact]
+    public async Task Row_FollowsTheRuntimePanelsVariantChoice_WithoutAnExplicitRefresh()
+    {
+        var (fx, _) = await StartAsync(NightlyList);
+        using var _ = fx;
+        var row = fx.Vm.Runtime.OptiScalerNightlyBuild;
+        Assert.False(row.IsVisible);
+
+        ChooseNightly(fx);
+        for (var i = 0; i < 200 && !row.IsVisible; i++) await Task.Delay(10);
+        Assert.True(row.IsVisible);
+
+        fx.Vm.Runtime.SelectedOptiScalerVariant = fx.Vm.Runtime.OptiScalerVariantOptions.For(OptiScalerVariant.Stable);
+        for (var i = 0; i < 200 && row.IsVisible; i++) await Task.Delay(10);
+        Assert.False(row.IsVisible);
+    }
+
     [Fact]
     public async Task Row_ShowsForNightlyOnly_ListsTheBuilds_AndSavesThePinPerGame()
     {

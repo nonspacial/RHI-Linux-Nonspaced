@@ -1,3 +1,5 @@
+using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Detection.Xbox;
 
@@ -20,12 +22,19 @@ public sealed class SettingsHostedRowsTests : IDisposable
     [Fact]
     public async Task XboxFolders_IsHosted_SavesThroughTheStore_AndRescansTheDetectorsThatReadIt()
     {
-        using var fx = await ViewModelFixture.StartAsync([]);
+        // Merge review finding 1 (seam e10cd42): the save really re-runs the Xbox and Wine detectors, and only them.
+        var xbox = new CountingDetector(XboxGameDetector.SourceName);
+        var wine = new CountingDetector("Wine");
+        var other = new CountingDetector("Steam");
+        using var fx = await ViewModelFixture.StartAsync([], detectors: [xbox, wine, other]);
         var folders = Assert.IsType<XboxFoldersPresenter>(fx.Vm.Settings.XboxFolders);
         var partingX = Directory.CreateDirectory(Path.Combine(_root, "partingx-state")).FullName;
+        var (xboxScans, wineScans, otherScans) = (xbox.Scans, wine.Scans, other.Scans);
 
         Assert.Null(folders.Add(partingX));
 
+        for (var i = 0; i < 400 && (xbox.Scans == xboxScans || wine.Scans == wineScans || fx.Vm.IsBusy); i++) await Task.Delay(10);
+        Assert.Equal((xboxScans + 1, wineScans + 1, otherScans), (xbox.Scans, wine.Scans, other.Scans));
         Assert.Equal([partingX], folders.Folders);
         Assert.Equal([partingX], new XboxFolderStore(Path.Combine(fx.ConfigDir, "xbox-folders.json")).Folders());
         Assert.Equal(["Wine", XboxGameDetector.SourceName], SettingsViewModel.XboxFolderDetectors.Order(StringComparer.Ordinal));
@@ -50,6 +59,18 @@ public sealed class SettingsHostedRowsTests : IDisposable
         using var vm = services.CreateViewModel(); // the app's own graph hosts the Xbox folder list too
         await vm.Initialization.WaitAsync(TimeSpan.FromSeconds(60));
         Assert.NotNull(vm.Settings.XboxFolders);
+    }
+
+    private sealed class CountingDetector(string name) : IGameDetector
+    {
+        private int _scans;
+        public int Scans => Volatile.Read(ref _scans);
+        public string Name => name;
+        public Task<IReadOnlyList<DetectedGame>> DetectAsync(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _scans);
+            return Task.FromResult<IReadOnlyList<DetectedGame>>([]);
+        }
     }
 
     private sealed class Offline : HttpMessageHandler

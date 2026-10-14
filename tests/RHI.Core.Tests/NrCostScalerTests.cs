@@ -104,6 +104,41 @@ public sealed class NrCostScalerTests : IDisposable
         Assert.Null(relocation.Guard(moved));
     }
 
+    // Merge review finding 1 (seam 8bd506e): while wrapped, the owner's content is nvngx_dlssnr_real.dll, so "the old
+    // folder still holds the owner's files" reads that name. An old folder left with only the owner's runtime under its
+    // plain name is not RHI's wrapped layout, so the repair goes ahead (reading the plain name refused it).
+    [Fact]
+    public async Task RepairAfterMove_ReadsTheWrappedOwnersContentUnderItsRealName_InTheOldFolder()
+    {
+        var before = SteamGame(Path.Combine(_root, "libA"));
+        Directory.CreateDirectory(before.BinaryDirectory!);
+        File.WriteAllBytes(before.ExecutablePath!, [0x4D, 0x5A]);
+        InstallOwner(ManagedComponentKind.ShortFuse, before);
+        var (service, _) = Build();
+        Assert.True((await service.InstallAsync(before)).Success);
+        var moved = SteamGame(Path.Combine(_root, "libB"));
+        CopyTree(Path.Combine(_root, "libA"), Path.Combine(_root, "libB"));
+        // The old folder keeps only the owner's runtime under its plain name (no proxy, no _real, no add-on).
+        foreach (var file in Directory.EnumerateFiles(before.BinaryDirectory!)) File.Delete(file);
+        File.WriteAllBytes(Path.Combine(before.BinaryDirectory!, "nvngx_dlssnr.dll"), OwnerRuntime);
+        var relocation = new DeploymentRelocation(_records);
+
+        var repair = relocation.Repair(moved, [], out _);
+
+        Assert.True(repair.Success, repair.Message);
+        Assert.Equal(2, repair.Repaired);
+        Assert.Null(relocation.Guard(moved));
+    }
+
+    private static void CopyTree(string from, string to)
+    {
+        foreach (var dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
+            Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+        Directory.CreateDirectory(to);
+        foreach (var file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+            File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)));
+    }
+
     private static byte[] Package(bool withIni = true)
     {
         using var buffer = new MemoryStream();
@@ -292,6 +327,29 @@ public sealed class NrCostScalerTests : IDisposable
         Assert.StartsWith(NrCostScalerService.FailedRolledBackPrefix, result.Message, StringComparison.Ordinal);
         CancelAtWritePhase.AssertUnchanged(before, Bin);
         Assert.NotNull(service.GetRecord(_game));
+    }
+
+    // Merge review finding 1: the commit write takes the record out of the ledger and then reports failure. The rollback
+    // puts the files back, so the scaler's record must come back too (RollbackRemovalAsync); a plain rollback would
+    // leave the proxy and _real file in place with no record owning them.
+    [Fact]
+    public async Task Remove_CommitWriteLandsThenFails_PutsTheRecordBackWithTheFiles()
+    {
+        InstallOwner();
+        var (service, _) = Build();
+        Assert.True((await service.InstallAsync(_game)).Success);
+        var before = CancelAtWritePhase.Snapshot(Bin);
+        var saves = 0;
+        _records.SaveWrittenFaultForTesting = () => ++saves == 2 ? new IOException("ledger written, then the directory sync failed") : null;
+
+        var result = await service.RemoveAsync(_game);
+        _records.SaveWrittenFaultForTesting = null;
+
+        Assert.StartsWith(NrCostScalerService.FailedRolledBackPrefix, result.Message, StringComparison.Ordinal);
+        CancelAtWritePhase.AssertUnchanged(before, Bin);
+        var back = new LinuxDeploymentRecordStore(Path.Combine(_root, "data", "deployments.json")).Find(_game, ManagedComponentKind.NrCostScaler);
+        Assert.NotNull(back);
+        Assert.All(back!.Files.Where(f => !f.AllowUserChanges), f => Assert.True(FileHash.HexEquals(FileHash.Sha256Hex(f.Path), f.Sha256!)));
     }
 
     [Fact]
