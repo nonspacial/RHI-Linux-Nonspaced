@@ -40,7 +40,7 @@ public sealed class SelectionStoreReadTests
             Assert.True(reads <= 1, $"selecting {name} read {reads} store files");
         }
         // The cached copies still give each game its own saved preferences.
-        Assert.Equal(RHI.Desktop.ViewModels.OptionLists.GraphicsApiOverride.Display(GraphicsApi.DirectX11), fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Equal(RHI.Desktop.ViewModels.OptionLists.GraphicsApiOverride.Display(GraphicsApi.DirectX11), fx.Vm.Runtime.SelectedGraphicsApiOverride.Display);
     }
 
     [Fact]

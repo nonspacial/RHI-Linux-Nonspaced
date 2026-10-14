@@ -105,7 +105,7 @@ public sealed partial class MainWindow : Window
     private void CopyHdrLaunchOptions_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm) return;
-        var text = vm.GetSelectedHdrLaunchOptions();
+        var text = vm.Runtime.GetSelectedHdrLaunchOptions();
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null)
         {
@@ -113,7 +113,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         await clipboard.SetTextAsync(text);
-        vm.StatusText = HdrLaunchText.Copied(vm.SelectedHdrPlan, vm.SelectedGame);
+        vm.StatusText = HdrLaunchText.Copied(vm.Runtime.SelectedHdrPlan, vm.SelectedGame);
     });
 
 
@@ -1668,15 +1668,15 @@ public sealed partial class MainWindow : Window
         ToolTip.SetTip(variantLabel, T("Win.StableUsesOfficialStableReleaseNightly"));
         var variantCombo = new ComboBox
         {
-            ItemsSource = vm.OptiScalerVariantOptions,
-            SelectedItem = vm.SelectedOptiScalerVariant,
+            ItemsSource = vm.Runtime.OptiScalerVariantOptions,
+            SelectedItem = vm.Runtime.SelectedOptiScalerVariant,
             MinWidth = 260,
             IsEnabled = !snapshot.ManagedByRhi
         };
         variantCombo.SelectionChanged += (_, _) =>
         {
-            if (variantCombo.SelectedItem is string value)
-                vm.SelectedOptiScalerVariant = value;
+            if (variantCombo.SelectedItem is OptionItem<OptiScalerVariant> value)
+                vm.Runtime.SelectedOptiScalerVariant = value;
         };
         Grid.SetColumn(variantLabel, 0);
         Grid.SetColumn(variantCombo, 1);

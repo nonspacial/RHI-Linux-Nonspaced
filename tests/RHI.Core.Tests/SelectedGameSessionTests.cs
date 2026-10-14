@@ -33,7 +33,7 @@ public sealed class SelectedGameSessionTests
         await WaitForAnalysisAsync(fx);
         Assert.Equal(GraphicsApi.DirectX11, shared.GraphicsApi);
         Assert.Equal("probe evidence", shared.GraphicsApiEvidence);
-        Assert.StartsWith("DirectX 11", fx.Vm.SelectedApi);
+        Assert.StartsWith("DirectX 11", fx.Vm.Runtime.SelectedApi);
     }
 
     // UI-03: after the analysis, the panels read its snapshot; a file changing on disk shows only after a re-analysis.
@@ -351,10 +351,10 @@ public sealed class SelectedGameSessionTests
     [Fact]
     public void HdrHost_BeforeAnyProbe_IsTheNotProbedStandIn_NeverAProbe()
     {
-        Assert.Same(LinuxHdrHostSnapshotNotProbed, MainWindowViewModel.HdrHostFor(null, null));
-        Assert.False(MainWindowViewModel.HdrHostFor(null, null).Probed);
+        Assert.Same(LinuxHdrHostSnapshotNotProbed, RuntimePanelViewModel.HdrHostFor(null, null));
+        Assert.False(RuntimePanelViewModel.HdrHostFor(null, null).Probed);
         var startup = new RHI.Platform.Linux.Hdr.LinuxHdrHostSnapshot(true, "KDE", true, "595.1", false);
-        Assert.Same(startup, MainWindowViewModel.HdrHostFor(null, startup));
+        Assert.Same(startup, RuntimePanelViewModel.HdrHostFor(null, startup));
         Assert.True(startup.Probed);
     }
 

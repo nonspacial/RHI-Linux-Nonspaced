@@ -204,31 +204,43 @@
                   <views:MiddleEllipsisText Grid.Row="5" Grid.Column="1" FullText="{Binding SelectedBinaryDirectory}" Foreground="#A0AABB"/>
 
                   <TextBlock Grid.Row="6" Grid.Column="0" Text="{DynamicResource Ui.GraphicsApi}" Classes="muted"/>
-                  <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="6" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApi}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="7" Grid.Column="0" Text="{DynamicResource Ui.ForceApi}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4">
+                  <StackPanel Grid.Row="7" Grid.Column="1" Spacing="4" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <ComboBox Width="180" HorizontalAlignment="Left"
                               ItemsSource="{Binding GraphicsApiOverrideOptions}"
                               SelectedItem="{Binding SelectedGraphicsApiOverride, Mode=TwoWay}"
-                              IsEnabled="{Binding CanSelectGraphicsApiOverride}"/>
+                              IsEnabled="{Binding CanSelectGraphicsApiOverride}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock Text="{Binding GraphicsApiOverrideHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="8" Grid.Column="0" Text="{DynamicResource Ui.LumaMode}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="8" Grid.Column="1" Spacing="4">
+                  <StackPanel Grid.Row="8" Grid.Column="1" Spacing="4" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <ComboBox Width="180" HorizontalAlignment="Left"
                               ItemsSource="{Binding LumaModeOptions}"
                               SelectedItem="{Binding SelectedLumaModePreference, Mode=TwoWay}"
-                              IsEnabled="{Binding CanSelectLumaMode}"/>
+                              IsEnabled="{Binding CanSelectLumaMode}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                    </ComboBox>
                     <TextBlock Text="{Binding LumaPolicyText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding LumaCoexistenceText}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="9" Grid.Column="0" Text="{DynamicResource Ui.HdrExecution}" Classes="muted" VerticalAlignment="Top" Margin="0,6,0,0"/>
-                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5">
+                  <StackPanel Grid.Row="9" Grid.Column="1" Spacing="5" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel">
                     <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="6">
-                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"/>
+                      <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                              </ComboBox.ItemTemplate>
+                      </ComboBox>
                       <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
                                 ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
                       <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}"
@@ -239,13 +251,13 @@
                   </StackPanel>
 
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
-                  <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="10" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding NeuralRenderingRecommendation}" Foreground="#7AACDD" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="11" Grid.Column="0" Text="{DynamicResource Ui.EngineArchitecture}" Classes="muted"/>
-                  <TextBlock Grid.Row="11" Grid.Column="1" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="11" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedEngineHint}" Foreground="#A0AABB" TextWrapping="Wrap"/>
 
                   <TextBlock Grid.Row="12" Grid.Column="0" Text="{DynamicResource Ui.ApiEvidence}" Classes="muted"/>
-                  <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
+                  <TextBlock Grid.Row="12" Grid.Column="1" DataContext="{Binding Runtime}" x:DataType="vm:RuntimePanelViewModel" Text="{Binding SelectedApiEvidence}" Foreground="#6B7A8E" TextWrapping="Wrap"/>
                 </views:LabelValuePanel>
               </StackPanel>
             </Border>

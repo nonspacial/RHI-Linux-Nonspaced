@@ -60,21 +60,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     private CancellationTokenSource? _backgroundUpdateCts;
     private LinuxAppSettings _settings;
     private LinuxGameLibraryState _libraryState;
-    private bool _loadingGraphicsApiOverride;
     /// <summary>
     /// Raised while an option list bound as ItemsSource is being rebuilt. Avalonia writes null
     /// back to the TwoWay SelectedItem when the list is cleared; every persisting handler below
     /// must ignore that transient write or per-game preferences get deleted on a Settings save.
     /// </summary>
     private bool _rebuildingOptionLists;
-    private bool _loadingOptiScalerVariant;
-    private bool _loadingLumaModePreference;
-    private bool _loadingHdrProfile;
     private readonly SelectedGameSession _session;
     // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
     private bool _libraryHasManagedTargets;
     private bool _libraryHasDlssBatchCandidates;
-    private LinuxHdrHostSnapshot? _lastHdrHost;
     private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
     // GitHub token notice (Refs #133); the settle check runs after queued UI work.
     private readonly OneShotStatusNotice _statusNotice = new(action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
@@ -87,15 +82,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     /// <summary>The Extras section and the NR version pins (unit 5 of the split).</summary>
     public ExtrasViewModel Extras { get; }
 
+    /// <summary>API override, OptiScaler variant, Luma mode and HDR launch profile rows (unit 6 of the split).</summary>
+    public RuntimePanelViewModel Runtime { get; }
+
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     // Labels and values of every option list come from OptionLists (one mapping, shared with the dialogs; Refs #87).
     public ObservableCollection<string> ReShadeChannels { get; } = [.. OptionLists.ReShadeChannel.Items];
-    public ObservableCollection<string> GraphicsApiOverrideOptions { get; } = [.. OptionLists.GraphicsApiOverride.Items];
-    public ObservableCollection<string> OptiScalerVariantOptions { get; } = [.. OptionLists.OptiScalerVariant.Items];
-    public ObservableCollection<string> LumaModeOptions { get; } = [.. OptionLists.LumaMode.Items];
-    public ObservableCollection<string> HdrModeOptions { get; } = [.. OptionLists.HdrMode.Items];
     public ObservableCollection<string> Dlss5FeederConsumerOptions { get; } = ["RenoDX DLSS5", "Deep Fried Chicken"];
     public string ProductVersionText => $"RHI-Linux v{RhiProductInfo.Version} · {UiLocalizationService.Text("Ui.ProductRuntime")}";
 
@@ -128,11 +122,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     /// <summary>The selected game's disk facts, or null while the analysis runs; getters read only these.</summary>
     private SelectionFacts? Facts => CurrentAnalysis?.Facts;
     [ObservableProperty] private string selectedReShadeChannel = UiLocalizationService.Text("Ui.OptionStable");
-    [ObservableProperty] private string selectedGraphicsApiOverride = UiLocalizationService.Text("Ui.OptionAutomatic");
-    [ObservableProperty] private string selectedOptiScalerVariant = UiLocalizationService.Text("Ui.OptionStable");
-    [ObservableProperty] private string selectedLumaModePreference = UiLocalizationService.Text("Ui.OptionAutomatic");
-    [ObservableProperty] private string selectedHdrMode = UiLocalizationService.Text("Ui.HdrOff");
-    [ObservableProperty] private bool hdrLegacyWsi;
     [ObservableProperty] private string reShadeLegacyVersion = "6.4.1";
     [ObservableProperty] private string reShadeCustomDllPath = "";
     [ObservableProperty] private string reShadeD3DCompiler47Path = "";
@@ -268,153 +257,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         { HasConfirmedPatchTarget: false } => T("Vm.NotDefinedPatchesAddOnsBlocked"),
         _ => SelectedGame.BinaryDirectory ?? SelectedGame.InstallPath
     };
-    public string SelectedApi
-    {
-        get
-        {
-            if (SelectedGame is null) return T("Vm.Unknown");
-            if (SelectedGame.UserGraphicsApiOverride is GraphicsApi explicitApi && explicitApi != GraphicsApi.Unknown)
-            {
-                var detected = IsSelectionProbeBusy
-                    ? T("Vm.DetectorStillRunning")
-                    : SelectedGame.GraphicsApi != GraphicsApi.Unknown
-                        ? TF("Vm.Detected", FormatApi(SelectedGame.GraphicsApi))
-                        : T("Vm.DetectedAPIUnknown");
-                return TF("Vm.ExplicitOverride", FormatApi(explicitApi), detected);
-            }
-            if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown)
-            {
-                var detected = IsSelectionProbeBusy
-                    ? T("Vm.DetectorStillRunning")
-                    : SelectedGame.GraphicsApi != GraphicsApi.Unknown
-                        ? TF("Vm.Detected", FormatApi(SelectedGame.GraphicsApi))
-                        : T("Vm.DetectedAPIUnknown");
-                var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
-                    ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
-                    : FormatApi(manifestApi);
-                return TF("Vm.UpstreamRHICompatibilityData", manifestApis, detected);
-            }
-            if (IsSelectionProbeBusy) return T("Vm.Detecting");
-            if (SelectedGame.GraphicsApi != GraphicsApi.Unknown)
-                return $"{FormatApi(SelectedGame.GraphicsApi)} · {FormatGraphicsApiConfidence(SelectedGame.GraphicsApiConfidence)}";
-            return SelectedGame.GraphicsApis.Count > 0
-                ? $"{string.Join(" / ", SelectedGame.GraphicsApis.Select(FormatApi))} · {FormatGraphicsApiConfidence(SelectedGame.GraphicsApiConfidence)}"
-                : T("Vm.Unknown");
-        }
-    }
-    public string SelectedApiEvidence
-    {
-        get
-        {
-            if (SelectedGame is null) return T("Vm.NoReliableGraphicsAPISignatureWas");
-            var detected = IsSelectionProbeBusy
-                ? T("Vm.AnalyzingExecutableEngineConfigurationLocalRunti")
-                : PresentOr(SelectedGame.GraphicsApiEvidence, T("Vm.NoReliableGraphicsAPISignatureWas"));
-            if (SelectedGame.UserGraphicsApiOverride is GraphicsApi explicitApi && explicitApi != GraphicsApi.Unknown)
-                return TF("Vm.ExplicitPerGameAuthorityDetectorEvidence", FormatApi(explicitApi), detected);
-            if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown)
-            {
-                var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
-                    ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
-                    : FormatApi(manifestApi);
-                return TF("Vm.UpstreamRHICompatibilityLocalDetectionPreserved", manifestApis, detected);
-            }
-            return detected;
-        }
-    }
-    public bool CanSelectGraphicsApiOverride => SelectedGame is not null
-        && HasConfirmedPatchTarget
-        && !IsBusy
-        && !string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase);
-    public string GraphicsApiOverrideHint
-    {
-        get
-        {
-            if (SelectedGame is null) return T("Vm.SelectWindowsGame");
-            if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-                return T("Vm.NativeLinuxTargetsDoNotUse");
-            if (SelectedGame.UserGraphicsApiOverride == GraphicsApi.DirectX11 &&
-                SelectedGame.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true)
-                return SelectedGame.EngineHint.Contains("Unreal Engine 5", StringComparison.OrdinalIgnoreCase)
-                    ? T("Vm.ExplicitDX11AuthorityEnablesUpstreamGeneric")
-                    : T("Vm.ExplicitDX11AuthorityCanEnableGeneric");
-            if (SelectedGame.HasExplicitGraphicsApiOverride)
-                return T("Vm.ExplicitUserOverrideTakesPriorityComponent");
-            if (SelectedGame.ManifestGraphicsApiOverride is GraphicsApi manifestApi)
-            {
-                var manifestApis = SelectedGame.ManifestGraphicsApis.Count > 0
-                    ? string.Join(" / ", SelectedGame.ManifestGraphicsApis.Select(FormatApi))
-                    : FormatApi(manifestApi);
-                return TF("Vm.AutomaticUsesUpstreamRHICompatibilityData", manifestApis);
-            }
-            return T("Vm.AutomaticUsesRuntimeFileDetectionUpstream");
-        }
-    }
-    public bool CanSelectLumaMode => SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy
-        && !string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase);
-    public string LumaPolicyText
-    {
-        get
-        {
-            if (SelectedGame is null) return T("Vm.SelectWindowsGame");
-            return Facts is { } facts ? UiLocalizationService.Present(facts.LumaPolicy.Summary) : "";
-        }
-    }
-    public string LumaCoexistenceText
-    {
-        get
-        {
-            if (SelectedGame is null || Facts is not { } facts) return "";
-            return facts.LumaPolicy.RenoDxCompatible
-                ? T("Vm.UpstreamRHICompatibilityDataAllowsRenoDX")
-                : T("Vm.RenoDXLumaRemainMutuallyExclusiveUnless");
-        }
-    }
 
-    public bool CanEditHdrProfile => SelectedGame is not null && !IsBusy;
-    public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
-        ? LinuxHdrLaunchPlan.NoGame
-        : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }, HdrHost);
-
-    /// <summary>
-    /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
-    /// analysis has finished, the start-up probe (<see cref="_lastHdrHost"/>). Never probed from a getter (the probe
-    /// reads /proc and searches PATH): before the start-up probe lands the plan is built for
-    /// <see cref="LinuxHdrHostSnapshot.NotProbed"/> and rebuilt when it lands.
-    /// </summary>
-    private LinuxHdrHostSnapshot HdrHost => HdrHostFor(Facts, _lastHdrHost);
-
-    internal static LinuxHdrHostSnapshot HdrHostFor(SelectionFacts? facts, LinuxHdrHostSnapshot? startupProbe)
-        => facts?.HdrHost ?? startupProbe ?? LinuxHdrHostSnapshot.NotProbed;
-    public string HdrProfileHint => HdrLaunchText.Hint(SelectedHdrPlan, SelectedGame);
-    public string HdrLaunchOptions => SelectedHdrPlan.LaunchOptions;
-    public bool CanCopyHdrLaunchOptions => SelectedGame is not null && SelectedHdrPlan.Enabled && SelectedHdrPlan.CanApply;
-
-    /// <summary>
-    /// The launch-profile preview and its Copy button apply only with an HDR mode chosen: with HDR Off both are hidden
-    /// (owner rule: hide inapplicable options; Refs #152). A blocked mode still shows them, Copy disabled, with the reason.
-    /// </summary>
-    public bool ShowHdrLaunchProfile => SelectedGame is not null && SelectedHdrPlan.Enabled;
-
-    public string SelectedEngineHint
-    {
-        get
-        {
-            if (IsSelectionProbeBusy) return T("Vm.LoadingUpstreamRHICompatibilityData");
-            if (SelectedGame is null) return T("Vm.NoGameSelected");
-
-            var engine = string.IsNullOrWhiteSpace(SelectedGame.EngineHint)
-                ? T("Vm.NoUpstreamEngineOverride")
-                : SelectedGame.EngineHint;
-            var architecture = SelectedGame.ForcedArchitecture switch
-            {
-                PeArchitecture.X64 => T("Vm.ForcedX64"),
-                PeArchitecture.X86 => T("Vm.ForcedX86"),
-                _ => ""
-            };
-            return engine + architecture;
-        }
-    }
     public bool HasSelectedGame => SelectedGame is not null;
     public bool CanLaunch => SelectedGame is not null && _launcher.CanLaunch(SelectedGame);
     public string? LaunchToolTip => SelectedGame switch
@@ -462,30 +305,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     public bool IsReShadeLegacy => ReShadeChannelValue(SelectedReShadeChannel).Equals("Legacy", StringComparison.OrdinalIgnoreCase);
     public bool IsReShadeCustom => ReShadeChannelValue(SelectedReShadeChannel).Equals("Custom", StringComparison.OrdinalIgnoreCase);
 
-    public string NeuralRenderingRecommendation
-    {
-        get
-        {
-            if (SelectedGame is null) return T("Vm.NoGameSelected");
-            if (!SelectedGame.HasConfirmedPatchTarget) return T("Vm.WaitingTargetExecutableNoRecommendationWill");
-            if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-                return T("Vm.WindowsNeuralRenderingMethodsNotAvailable");
-
-            if (Facts is not { } facts) return T("Vm.AnalyzingGameFilesBackground");
-            var recommended = LinuxManagedComponentService.RecommendedNeuralRenderingMethod(SelectedGame, facts.HasNativeDlssForNeuralRendering);
-            if (facts.Architecture == PeArchitecture.X86 && recommended == ManagedComponentKind.Dlss5Feeder)
-                return T("Vm.DLSS5Feeder32BitSupportedVia");
-
-            return recommended switch
-            {
-                ManagedComponentKind.ShortFuse => T("Vm.DLSSToolShortFuseRecommended64Bit"),
-                ManagedComponentKind.Dlss5Dx11Bridge => T("Vm.DLSS5ToolDX11BridgeRecommendedDX11"),
-                ManagedComponentKind.Dlss5Feeder => T("Vm.DLSS5FeederRecommendedWhenGameHas"),
-                _ => T("Vm.NoNeuralRenderingRecommendation")
-            };
-        }
-    }
-
     public bool CanOpenDlssBatch => !IsBusy && _libraryHasDlssBatchCandidates;
 
     public MainWindowViewModel(
@@ -524,6 +343,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         _session = session ?? new SelectedGameSession(runtimeProbe, managedComponents, _dlssDefaults, _hdrProfiles);
         Dlss = new DlssPanelViewModel(this, _dlss, _dlssDefaults);
         Extras = new ExtrasViewModel(this, _managedComponents, Dlss);
+        Runtime = new RuntimePanelViewModel(this, _managedComponents, _apiOverrideStore, _optiScalerVariantStore, _hdrProfiles);
         _session.Changed += OnSessionChanged;
         _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
@@ -663,36 +483,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     private void RefreshLocalizedPresentationCore()
     {
         var channel = ReShadeChannelValue(SelectedReShadeChannel);
-        var apiOverride = ParseGraphicsApiOverride(SelectedGraphicsApiOverride);
-        var optiScalerVariant = ParseOptiScalerVariant(SelectedOptiScalerVariant);
-        var lumaPreference = ParseLumaModePreference(SelectedLumaModePreference);
-        var hdrMode = ParseHdrMode(SelectedHdrMode);
 
         OptionLists.ReShadeChannel.Fill(ReShadeChannels);
-        GraphicsApiOverrideOptions[0] = OptionLists.GraphicsApiOverride.Display(null); // only "Automatic" is translated
-        OptionLists.OptiScalerVariant.Fill(OptiScalerVariantOptions);
-        OptionLists.HdrMode.Fill(HdrModeOptions);
-        OptionLists.LumaMode.Fill(LumaModeOptions);
 
         SelectedReShadeChannel = ReShadeChannelDisplay(channel);
-        _loadingGraphicsApiOverride = true;
-        _loadingOptiScalerVariant = true;
-        _loadingLumaModePreference = true;
-        _loadingHdrProfile = true;
-        try
-        {
-            SelectedGraphicsApiOverride = FormatGraphicsApiOverride(apiOverride);
-            SelectedOptiScalerVariant = FormatOptiScalerVariant(optiScalerVariant);
-            SelectedLumaModePreference = FormatLumaModePreference(lumaPreference);
-            SelectedHdrMode = FormatHdrMode(hdrMode);
-        }
-        finally
-        {
-            _loadingGraphicsApiOverride = false;
-            _loadingOptiScalerVariant = false;
-            _loadingLumaModePreference = false;
-            _loadingHdrProfile = false;
-        }
+        Runtime.RefreshLocalized();
         Extras.RefreshLocalized();
 
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
@@ -734,8 +529,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         var neuralVersionCatalogTask = Extras.EnsureNeuralVersionCatalogAsync();
         // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
         var dlssManifestTask = LoadDlssManifestAsync();
-        _lastHdrHost ??= await hdrHost;
-        RaiseHdrPlanChanged();
+        Runtime.LastHdrHost ??= await hdrHost;
+        Runtime.RaiseHdrPlanChanged();
         await RefreshAsync();
         await dlssManifestTask;
         await neuralVersionCatalogTask;
@@ -795,9 +590,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         RemoveManualGameCommand.NotifyCanExecuteChanged();
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanEditSelectedGame));
-        NotifyHdrProfile();
-        OnPropertyChanged(nameof(CanSelectGraphicsApiOverride));
-        OnPropertyChanged(nameof(CanSelectLumaMode));
+        Runtime.NotifyBusy();
         Extras.NotifyUalAndShortFuse();
         NotifyDlssDefaults();
         NotifyDlss();
@@ -890,7 +683,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     partial void OnIsSelectionProbeBusyChanged(bool value)
     {
         _statusNotice.SetSelectionProbeBusy(value);
-        OnPropertyChanged(nameof(CanSelectLumaMode));
+        Runtime.NotifyProbeBusy();
         Extras.NotifyUalAndShortFuse();
         NotifyDlssDefaults();
         NotifyDlss();
@@ -979,87 +772,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(IsReShadeCustom));
     }
 
-    partial void OnSelectedGraphicsApiOverrideChanged(string value)
-    {
-        if (_rebuildingOptionLists || _loadingGraphicsApiOverride || SelectedGame is null) return;
-        var api = ParseGraphicsApiOverride(value);
-        var game = SelectedGame;
-        // The store is the authority (it is re-read on every refresh): a refused write reverts the dropdown to the
-        // saved value instead of claiming the choice holds for the session.
-        if (TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
-        {
-            LoadGraphicsApiOverride(game);
-            StatusText = failure;
-            return;
-        }
-        game.UserGraphicsApiOverride = api;
-        ReevaluateCurrentGameForApiOverride(game);
-    }
-
-    partial void OnSelectedOptiScalerVariantChanged(string value)
-    {
-        if (_rebuildingOptionLists || _loadingOptiScalerVariant || SelectedGame is null) return;
-        var installed = _managedComponents.GetInstalledOptiScalerVariant(SelectedGame);
-        if (installed is not null)
-        {
-            _loadingOptiScalerVariant = true;
-            try { SelectedOptiScalerVariant = FormatOptiScalerVariant(installed.Value); }
-            finally { _loadingOptiScalerVariant = false; }
-            StatusText = T("Vm.RemoveCurrentOptiScalerBeforeSwitchingStable");
-            return;
-        }
-        var game = SelectedGame;
-        if (TryPersist(() => _optiScalerVariantStore.Set(game, ParseOptiScalerVariant(value)), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
-        {
-            LoadOptiScalerVariant(game);
-            return;
-        }
-        StatusText = TF("Vm.OptiScalerVariantSelected", value, game.Name);
-    }
-
-    partial void OnSelectedLumaModePreferenceChanged(string value)
-    {
-        if (_rebuildingOptionLists || _loadingLumaModePreference || SelectedGame is null) return;
-        var preference = ParseLumaModePreference(value);
-        var game = SelectedGame;
-        LumaPolicySnapshot? policy = null;
-        if (TryPersist(() => policy = _managedComponents.SetLumaModePreference(game, preference), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)
-        {
-            LoadLumaModePreference(game);
-            StatusText = failure;
-            return;
-        }
-        _filterFacts.Remove(game); // the Luma filter follows the new preference
-        ReevaluateCurrentGameForLumaPolicy(game, policy!);
-    }
-
-    private void RaiseHdrPlanChanged()
-    {
-        OnPropertyChanged(nameof(SelectedHdrPlan));
-        OnPropertyChanged(nameof(HdrProfileHint));
-        OnPropertyChanged(nameof(HdrLaunchOptions));
-        OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
-    }
-
-    partial void OnSelectedHdrModeChanged(string value)
-    {
-        RaiseHdrPlanChanged();
-        if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
-        SaveHdrProfile(SelectedGame, HdrControl.Mode);
-    }
-
-    partial void OnHdrLegacyWsiChanged(bool value)
-    {
-        OnPropertyChanged(nameof(SelectedHdrPlan));
-        OnPropertyChanged(nameof(HdrProfileHint));
-        OnPropertyChanged(nameof(HdrLaunchOptions));
-        OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
-        if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
-        SaveHdrProfile(SelectedGame, HdrControl.LegacyWsi);
-    }
-
     /// <summary>
     /// Raised when the selection moves to a different game (not when a refresh puts the same game back): the detail
     /// pane scrolls to the top so the new game's title and actions are never left half under the toolbar (Refs #152).
@@ -1092,19 +804,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         if (value is null)
         {
             _session.Select(null);
-            ResetGraphicsApiOverride();
-            ResetOptiScalerVariant();
-            ResetHdrProfile();
+            Runtime.OnSelectionChanged(null);
             ResetReShadeProfile();
             Extras.OnSelectionChanged(null);
             NotifySelected();
             return;
         }
 
-        LoadGraphicsApiOverride(value);
-        LoadOptiScalerVariant(value);
-        LoadLumaModePreference(value);
-        LoadHdrProfile(value);
+        Runtime.OnSelectionChanged(value);
         LoadReShadeProfile(value);
         Extras.OnSelectionChanged(value);
 
@@ -1132,7 +839,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         Dlss.Detection = analysis?.Dlss ?? new();
         if (analysis is not null && published)
         {
-            _lastHdrHost = analysis.Facts.HdrHost;
+            Runtime.LastHdrHost = analysis.Facts.HdrHost;
             if (game is not null)
             {
                 Extras.OnAnalysisPublished(game);
@@ -1444,7 +1151,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     private async Task LaunchAsync()
     {
         if (SelectedGame is null) return;
-        var plan = SelectedHdrPlan;
+        var plan = Runtime.SelectedHdrPlan;
         if (HdrLaunchText.LaunchRefusal(plan, _launcher is IGameLaunchOptionsLauncher) is { } refusal)
         {
             StatusText = refusal;
@@ -1454,9 +1161,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
             var hdrGame = SelectedGame;
-            StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
+            StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
-                StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, SelectedHdrMode);
+                StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
             return;
         }
 
@@ -1805,7 +1512,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
                         ReShadeD3DCompiler47Path,
                         op.Token)
                     : kind == ManagedComponentKind.OptiScaler
-                        ? await _managedComponents.InstallOptiScalerAsync(game, ParseOptiScalerVariant(SelectedOptiScalerVariant), op.Token)
+                        ? await _managedComponents.InstallOptiScalerAsync(game, Runtime.SelectedOptiScalerVariant.Value, op.Token)
                         : await _managedComponents.InstallAsync(game, kind, probe.Files, op.Token);
             StatusText = OutcomeText(op, result.Success, result.Message);
             if (result.Success)
@@ -2370,7 +2077,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         var fresh = _libraryStore.Load(out var stillUnreadable);
         if (stillUnreadable) return false;
         AdoptLibraryState(fresh, keepFilter: true);
-        if (reloadHdrControls && SelectedGame is { } selected) LoadHdrProfile(selected);
+        if (reloadHdrControls && SelectedGame is { } selected) Runtime.LoadHdrProfile(selected);
         return true;
     }
 
@@ -2580,7 +2287,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
                 ? userCommand is null ? TF("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", name) : TF("Vm.EditSavedTargetKeptPlayUsesYourCommand", name)
             : userCommand is null ? TF("Vm.EditSavedPlayUsesDetectedCommand", name)
             : TF("Vm.EditSavedPlayUsesYourCommand", name);
-        StatusText = message;
+        // Raised as a notice: the refresh re-analyses the game and its "Ready" line would replace a plain status line
+        // within milliseconds; the notice rides on that line instead (as Repair after move does; Refs #151).
+        StatusText = _statusNotice.Raise(message);
         return (true, message);
     }
 
@@ -2834,168 +2543,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(ShowMotdOnStartup));
     }
 
-    private void LoadGraphicsApiOverride(DetectedGame game)
-    {
-        _loadingGraphicsApiOverride = true;
-        try
-        {
-            game.UserGraphicsApiOverride = _apiOverrideStore.Get(game);
-            SelectedGraphicsApiOverride = FormatGraphicsApiOverride(game.UserGraphicsApiOverride);
-        }
-        finally { _loadingGraphicsApiOverride = false; }
-    }
-
-    private void LoadOptiScalerVariant(DetectedGame game)
-    {
-        _loadingOptiScalerVariant = true;
-        try
-        {
-            var variant = _managedComponents.GetInstalledOptiScalerVariant(game) ?? _optiScalerVariantStore.Get(game);
-            SelectedOptiScalerVariant = FormatOptiScalerVariant(variant);
-        }
-        finally { _loadingOptiScalerVariant = false; }
-    }
-
-    private void ResetOptiScalerVariant()
-    {
-        _loadingOptiScalerVariant = true;
-        try { SelectedOptiScalerVariant = UiLocalizationService.Text("Ui.OptionStable"); }
-        finally { _loadingOptiScalerVariant = false; }
-    }
-
-    private static OptiScalerVariant ParseOptiScalerVariant(string? value) => OptionLists.OptiScalerVariant.Value(value);
-
-    private static string FormatOptiScalerVariant(OptiScalerVariant variant) => OptionLists.OptiScalerVariant.Display(variant);
-
-    private void LoadLumaModePreference(DetectedGame game)
-    {
-        _loadingLumaModePreference = true;
-        try
-        {
-            SelectedLumaModePreference = FormatLumaModePreference(_managedComponents.GetLumaPolicy(game).UserPreference);
-        }
-        finally { _loadingLumaModePreference = false; }
-    }
-
     private void ReevaluateCurrentGameComponents(DetectedGame game)
     {
         if (!_session.Recompose(game)) NotifySelected();
     }
-
-    private void ReevaluateCurrentGameForLumaPolicy(DetectedGame game, LumaPolicySnapshot policy)
-    {
-        if (!_session.Recompose(game, facts => facts with { LumaPolicy = policy })) NotifySelected();
-        OnPropertyChanged(nameof(LumaPolicyText));
-        OnPropertyChanged(nameof(LumaCoexistenceText));
-        StatusText = $"{game.Name}: {UiLocalizationService.Present(policy.Summary)}.";
-    }
-
-    private static string ParseHdrMode(string? value) => OptionLists.HdrMode.Value(value);
-
-    private static string FormatHdrMode(string? mode) => OptionLists.HdrMode.Display(mode ?? LinuxHdrModes.Off);
-
-    private void LoadHdrProfile(DetectedGame game)
-    {
-        _loadingHdrProfile = true;
-        try
-        {
-            var key = LinuxGameLibraryStore.GameKey(game);
-            var profile = _libraryState.HdrProfiles.TryGetValue(key, out var saved)
-                ? saved.Normalize()
-                : new LinuxHdrGameProfile();
-            SelectedHdrMode = FormatHdrMode(profile.Mode);
-            HdrLegacyWsi = profile.EnableLegacyWsi;
-        }
-        finally { _loadingHdrProfile = false; }
-        NotifyHdrProfile();
-    }
-
-    private void ResetHdrProfile()
-    {
-        _loadingHdrProfile = true;
-        try
-        {
-            SelectedHdrMode = FormatHdrMode(LinuxHdrModes.Off);
-            HdrLegacyWsi = false;
-        }
-        finally { _loadingHdrProfile = false; }
-        NotifyHdrProfile();
-    }
-
-    private void SaveHdrProfile(DetectedGame game, HdrControl touched)
-    {
-        if (LibraryWritesPaused())
-        {
-            LoadHdrProfile(game);
-            return;
-        }
-        var key = LinuxGameLibraryStore.GameKey(game);
-        var shown = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
-        var adopted = AdoptRestoredLibraryFile(reloadHdrControls: false);
-        var profile = shown;
-        if (adopted)
-        {
-            // The controls showed the stand-in, not the restored profile: change only the control the user touched in
-            // the restored profile, then show the result (Refs #149).
-            var restored = _libraryState.HdrProfiles.TryGetValue(key, out var saved) ? saved.Normalize() : new LinuxHdrGameProfile();
-            profile = touched == HdrControl.Mode
-                ? new LinuxHdrGameProfile { Mode = shown.Mode, EnableLegacyWsi = restored.EnableLegacyWsi }.Normalize()
-                : new LinuxHdrGameProfile { Mode = restored.Mode, EnableLegacyWsi = shown.EnableLegacyWsi }.Normalize();
-        }
-        if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) _libraryState.HdrProfiles.Remove(key);
-        else _libraryState.HdrProfiles[key] = profile;
-        TryPersist(() => _libraryStore.Save(_libraryState), "Ui.WhatHdrProfile");
-        if (adopted) LoadHdrProfile(game);
-        else NotifyHdrProfile();
-    }
-
-    /// <summary>The HDR control a save comes from (<see cref="SaveHdrProfile"/>).</summary>
-    private enum HdrControl { Mode, LegacyWsi }
-
-    private void NotifyHdrProfile()
-    {
-        OnPropertyChanged(nameof(CanEditHdrProfile));
-        OnPropertyChanged(nameof(SelectedHdrPlan));
-        OnPropertyChanged(nameof(HdrProfileHint));
-        OnPropertyChanged(nameof(HdrLaunchOptions));
-        OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
-    }
-
-    public string GetSelectedHdrLaunchOptions() => HdrLaunchOptions;
-
-    private void ResetGraphicsApiOverride()
-    {
-        _loadingGraphicsApiOverride = true;
-        try { SelectedGraphicsApiOverride = UiLocalizationService.Text("Ui.OptionAutomatic"); }
-        finally { _loadingGraphicsApiOverride = false; }
-    }
-
-    private void ReevaluateCurrentGameForApiOverride(DetectedGame game)
-    {
-        if (!_session.Recompose(game)) NotifySelected();
-        StatusText = game.UserGraphicsApiOverride is null
-            ? game.ManifestGraphicsApiOverride is GraphicsApi manifestApi && manifestApi != GraphicsApi.Unknown
-                ? TF("Vm.ExplicitGraphicsAPIOverrideRemovedUpstream", game.Name, FormatApi(manifestApi))
-                : TF("Vm.ExplicitGraphicsAPIOverrideRemovedLocal", game.Name)
-            : TF("Vm.ExplicitGraphicsAPIOverrideSet", game.Name, FormatApi(game.UserGraphicsApiOverride.Value));
-    }
-
-    private static GraphicsApi? ParseGraphicsApiOverride(string? value) => OptionLists.GraphicsApiOverride.Value(value);
-
-    private static string FormatGraphicsApiConfidence(GraphicsApiConfidence confidence) => confidence switch
-    {
-        GraphicsApiConfidence.High => T("Vm.HighConfidence"),
-        GraphicsApiConfidence.Medium => T("Vm.MediumConfidence"),
-        GraphicsApiConfidence.Low => T("Vm.LowConfidence"),
-        _ => T("Vm.UnknownConfidence")
-    };
-
-    private static string FormatGraphicsApiOverride(GraphicsApi? api) => OptionLists.GraphicsApiOverride.Display(api);
-
-    private static LumaModePreference ParseLumaModePreference(string? value) => OptionLists.LumaMode.Value(value);
-
-    private static string FormatLumaModePreference(LumaModePreference value) => OptionLists.LumaMode.Display(value);
 
     private static bool IsLatestSelection(string? value) => OptionLists.IsLatest(value);
 
@@ -3020,15 +2571,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(SelectedPrefix));
         OnPropertyChanged(nameof(SelectedExecutable));
         OnPropertyChanged(nameof(SelectedBinaryDirectory));
-        OnPropertyChanged(nameof(SelectedApi));
-        OnPropertyChanged(nameof(SelectedApiEvidence));
-        OnPropertyChanged(nameof(CanSelectGraphicsApiOverride));
-        OnPropertyChanged(nameof(GraphicsApiOverrideHint));
-        OnPropertyChanged(nameof(CanSelectLumaMode));
-        OnPropertyChanged(nameof(LumaPolicyText));
-        OnPropertyChanged(nameof(LumaCoexistenceText));
-        OnPropertyChanged(nameof(SelectedEngineHint));
-        NotifyHdrProfile();
+        Runtime.NotifySection();
         OnPropertyChanged(nameof(HasSelectedGame));
         OnPropertyChanged(nameof(SelectedGameHasNotes));
         OnPropertyChanged(nameof(CanLaunch));
@@ -3053,7 +2596,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
 
     private void NotifyDlss()
     {
-        OnPropertyChanged(nameof(NeuralRenderingRecommendation));
+        Runtime.NotifyNeuralRecommendation();
         Extras.NotifyPins();
         Dlss.NotifyPanel();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
@@ -3065,18 +2608,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         Dlss.NotifyDlssDefaults();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
     }
-
-    private static string FormatApi(GraphicsApi api) => api switch
-    {
-        GraphicsApi.DirectX12 => "DirectX 12",
-        GraphicsApi.DirectX11 => "DirectX 11",
-        GraphicsApi.DirectX10 => "DirectX 10",
-        GraphicsApi.DirectX9 => "DirectX 9",
-        GraphicsApi.DirectX8 => "DirectX 8",
-        GraphicsApi.Vulkan => "Vulkan",
-        GraphicsApi.OpenGL => "OpenGL",
-        _ => T("Vm.Unknown")
-    };
 
     private static bool PathEquals(string? left, string? right)
     {
@@ -3124,6 +2655,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     bool IPanelHost.AdoptRestoredLibraryFile(bool reloadHdrControls) => AdoptRestoredLibraryFile(reloadHdrControls);
     void IPanelHost.NotifySelected() => NotifySelected();
     void IPanelHost.NotifyDlss() => NotifyDlss();
+    string? IPanelHost.PersistLibraryState(string whatKey) => TryPersist(() => _libraryStore.Save(_libraryState), whatKey);
+    void IPanelHost.ForgetFilterFacts(DetectedGame game) => _filterFacts.Remove(game);
 }
 
 /// <summary>One component's manifest warning in the install-warning dialog; <see cref="Heading"/> names the component when several are shown.</summary>

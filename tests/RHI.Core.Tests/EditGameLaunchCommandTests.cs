@@ -156,7 +156,10 @@ public sealed class EditGameLaunchCommandTests
 
             Assert.True(saved, message);
             Assert.Equal(UiLocalizationService.Format("Vm.EditSavedTargetKeptPlayUsesYourCommand", "Kept Game"), message);
-            Assert.StartsWith(message, fx.Vm.StatusText, StringComparison.Ordinal);
+            // The re-analysis that follows the save writes its "Ready" line; the saved-target line stays on it.
+            await SelectAsync(fx, "Kept Game");
+            for (var i = 0; i < 200 && !fx.Vm.StatusText.StartsWith("Ready", StringComparison.Ordinal); i++) await Task.Delay(25);
+            Assert.Contains(message, fx.Vm.StatusText, StringComparison.Ordinal);
             var edit = Assert.Single(fx.Library.Load().GameEdits).Value;
             Assert.Equal((exe, install, bin, "my-wrapper wine Kept.exe"), (edit.PatchExecutablePath, edit.GameRootPath, edit.BinaryDirectory, edit.LaunchCommand));
 

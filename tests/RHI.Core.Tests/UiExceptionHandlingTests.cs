@@ -233,16 +233,16 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedGraphicsApiOverride;
+        var before = fx.Vm.Runtime.SelectedGraphicsApiOverride;
         LockPreferences(fx);
-        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
+        var other = fx.Vm.Runtime.GraphicsApiOverrideOptions.Last(option => option != before);
 
-        fx.Vm.SelectedGraphicsApiOverride = other;
+        fx.Vm.Runtime.SelectedGraphicsApiOverride = other;
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Same(before, fx.Vm.Runtime.SelectedGraphicsApiOverride);
         Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
     }
 
@@ -256,18 +256,18 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedGraphicsApiOverride;
+        var before = fx.Vm.Runtime.SelectedGraphicsApiOverride;
         var prefs = Path.Combine(fx.ConfigDir, "prefs");
         Directory.CreateDirectory(prefs);
         var file = Path.Combine(prefs, "api.json");
         File.WriteAllText(file, "{ not json");
-        var other = fx.Vm.GraphicsApiOverrideOptions.Last(option => option != before);
+        var other = fx.Vm.Runtime.GraphicsApiOverrideOptions.Last(option => option != before);
 
-        fx.Vm.SelectedGraphicsApiOverride = other;
+        fx.Vm.Runtime.SelectedGraphicsApiOverride = other;
 
         var copy = Assert.Single(Directory.GetFiles(prefs, "api.json.corrupt-*"));
         Assert.StartsWith($"Not saved: api.json could not be read (a copy is at {copy}).", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedGraphicsApiOverride);
+        Assert.Same(before, fx.Vm.Runtime.SelectedGraphicsApiOverride);
         Assert.Null(fx.Vm.SelectedGame!.UserGraphicsApiOverride);
         Assert.Equal("{ not json", File.ReadAllText(file));
     }
@@ -316,15 +316,15 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedLumaModePreference;
+        var before = fx.Vm.Runtime.SelectedLumaModePreference;
         LockPreferences(fx);
 
-        fx.Vm.SelectedLumaModePreference = fx.Vm.LumaModeOptions.Last(option => option != before);
+        fx.Vm.Runtime.SelectedLumaModePreference = fx.Vm.Runtime.LumaModeOptions.Last(option => option != before);
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedLumaModePreference);
+        Assert.Same(before, fx.Vm.Runtime.SelectedLumaModePreference);
     }
 
     [Fact]
@@ -332,15 +332,15 @@ public sealed class UiExceptionHandlingTests : IDisposable
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
-        var before = fx.Vm.SelectedOptiScalerVariant;
+        var before = fx.Vm.Runtime.SelectedOptiScalerVariant;
         LockPreferences(fx);
 
-        fx.Vm.SelectedOptiScalerVariant = fx.Vm.OptiScalerVariantOptions.Last(option => option != before);
+        fx.Vm.Runtime.SelectedOptiScalerVariant = fx.Vm.Runtime.OptiScalerVariantOptions.Last(option => option != before);
 
         Assert.StartsWith("Could not save this game's preferences:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
         Assert.Contains("Nothing was changed.", fx.Vm.StatusText);
-        Assert.Equal(before, fx.Vm.SelectedOptiScalerVariant);
+        Assert.Same(before, fx.Vm.Runtime.SelectedOptiScalerVariant);
     }
 
     /// <summary>Review m2: a refused edit must not linger in memory and ride along with the next successful save.</summary>

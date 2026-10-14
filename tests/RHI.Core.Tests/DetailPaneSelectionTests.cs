@@ -39,19 +39,19 @@ public sealed class DetailPaneSelectionTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([Game("Alpha Quest")]);
         await SelectAsync(fx, "Alpha Quest");
         var raised = new List<string?>();
-        fx.Vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        fx.Vm.Runtime.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
-        Assert.Equal(UiLocalizationService.Text("Ui.HdrOff"), fx.Vm.SelectedHdrMode);
-        Assert.False(fx.Vm.ShowHdrLaunchProfile);
+        Assert.Equal(UiLocalizationService.Text("Ui.HdrOff"), fx.Vm.Runtime.SelectedHdrMode.Display);
+        Assert.False(fx.Vm.Runtime.ShowHdrLaunchProfile);
 
-        fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrNativeWayland");
-        Assert.True(fx.Vm.ShowHdrLaunchProfile);
-        Assert.Contains(nameof(fx.Vm.ShowHdrLaunchProfile), raised);
+        fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(UiLocalizationService.Text("Ui.HdrNativeWayland"));
+        Assert.True(fx.Vm.Runtime.ShowHdrLaunchProfile);
+        Assert.Contains(nameof(fx.Vm.Runtime.ShowHdrLaunchProfile), raised);
 
         raised.Clear();
-        fx.Vm.SelectedHdrMode = UiLocalizationService.Text("Ui.HdrOff");
-        Assert.False(fx.Vm.ShowHdrLaunchProfile);
-        Assert.Contains(nameof(fx.Vm.ShowHdrLaunchProfile), raised);
+        fx.Vm.Runtime.SelectedHdrMode = fx.Vm.Runtime.HdrModeOptions.ForDisplay(UiLocalizationService.Text("Ui.HdrOff"));
+        Assert.False(fx.Vm.Runtime.ShowHdrLaunchProfile);
+        Assert.Contains(nameof(fx.Vm.Runtime.ShowHdrLaunchProfile), raised);
     }
 
     private static async Task SelectAsync(ViewModelFixture fx, string name)

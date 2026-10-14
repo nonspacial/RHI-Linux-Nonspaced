@@ -38,6 +38,10 @@ internal interface IPanelHost
     void NotifySelected();
     /// <summary>Raises the DLSS stack's notifications (DLSS section, pin dropdowns, NR recommendation).</summary>
     void NotifyDlss();
+    /// <summary>Saves the in-memory library state (HDR profiles); the localised refusal, or null when saved.</summary>
+    string? PersistLibraryState(string whatKey);
+    /// <summary>The library filter facts of <paramref name="game"/> changed (e.g. its Luma preference).</summary>
+    void ForgetFilterFacts(DetectedGame game);
 }
 
 /// <summary>
