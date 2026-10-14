@@ -707,6 +707,7 @@ internal static class UiStrings
         ("Parity.NexusHandlerRegistered", "Pronto: os links nxm:// abrem no RHI.", "Done: nxm:// links open in RHI."),
         ("Parity.NexusHandlerNotRegistered", "O RHI não conseguiu se tornar o programa dos links nxm:// (detalhes no rhi.log).", "RHI could not become the program for nxm:// links (details in rhi.log)."),
         ("Parity.NexusHandlerUnregistered", "O RHI não abre mais os links nxm://.", "RHI no longer opens nxm:// links."),
+        ("Parity.NexusHandlerForeignEntry", "Já existe um {0} que o RHI não escreveu na pasta de aplicativos; o RHI o deixou como está. Remova-o você mesmo se não for mais necessário.", "An {0} that RHI did not write is already in the applications folder; RHI left it as it is. Remove it yourself if it is no longer needed."),
         ("Parity.NexusKeyMalformed", "Isto não parece uma chave do Nexus (vazia, longa demais ou com espaços); nada foi enviado nem salvo.", "This does not look like a Nexus key (empty, too long or with spaces); nothing was sent or saved."),
         ("Parity.NexusChecking", "Verificando com o Nexus Mods…", "Checking with Nexus Mods…"),
         ("Parity.NexusKeyRejected", "O Nexus Mods não reconhece esta chave; nada foi salvo.", "Nexus Mods does not know this key; nothing was saved."),

@@ -356,6 +356,29 @@ public sealed class NexusHandlerAndDownloadTests : IDisposable
         Assert.True(File.Exists(other));
     }
 
+    [Fact]
+    public async Task AnEntryOfThatNameRhiDidNotWrite_IsNeverOverwrittenOrDeleted()
+    {
+        var (registration, commands) = Registration("");
+        Directory.CreateDirectory(Path.Combine(_root, "applications"));
+        const string theirs = "[Desktop Entry]\nType=Application\nName=Someone else's\nExec=other %u\nMimeType=x-scheme-handler/nxm;\n";
+        File.WriteAllText(registration.EntryPath, theirs);
+
+        Assert.True(registration.HasForeignEntry);
+        Assert.False(await registration.RegisterAsync());
+        Assert.Equal(theirs, File.ReadAllText(registration.EntryPath));
+        Assert.DoesNotContain(commands, c => c.StartsWith("xdg-mime default", StringComparison.Ordinal));
+        Assert.False(await registration.UnregisterAsync());
+        Assert.Equal(theirs, File.ReadAllText(registration.EntryPath));
+
+        File.Delete(registration.EntryPath);
+        Assert.True(await registration.RegisterAsync()); // RHI's own entry carries the marker: re-registered and removed
+        Assert.Contains(NxmHandlerRegistration.MarkerLine, File.ReadAllLines(registration.EntryPath));
+        Assert.False(registration.HasForeignEntry);
+        Assert.True(await registration.RegisterAsync());
+        Assert.True(await registration.UnregisterAsync());
+    }
+
     private string Zip(string name, params (string Entry, string Content)[] entries)
     {
         var path = Path.Combine(_root, name);
@@ -518,6 +541,21 @@ public sealed class NexusPresenterTests : IDisposable
         Assert.Equal("nexus-sso-key-456789", File.ReadAllText(KeyPath));
         Assert.Equal("nexus-sso-key-456789", http.Requests.Single().Headers.GetValues("apikey").Single());
         Assert.StartsWith("https://www.nexusmods.com/sso?id=", sso.AuthorisationUrl, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HandlerEntryRhiDidNotWrite_RegisterAndUnregister_LeaveIt_AndSaySo()
+    {
+        var (account, _, _) = Build();
+        var entry = Path.Combine(Directory.CreateDirectory(Path.Combine(_root, "apps")).FullName, NxmHandlerRegistration.EntryName);
+        File.WriteAllText(entry, "[Desktop Entry]\nName=theirs\n");
+        const string said = "An rhi-linux-nxm.desktop that RHI did not write is already in the applications folder; RHI left it as it is. Remove it yourself if it is no longer needed.";
+
+        await account.RegisterHandlerAsync();
+        Assert.Equal(said, account.StatusText);
+        await account.UnregisterHandlerAsync();
+        Assert.Equal(said, account.StatusText);
+        Assert.Equal("[Desktop Entry]\nName=theirs\n", File.ReadAllText(entry));
     }
 
     [Fact]

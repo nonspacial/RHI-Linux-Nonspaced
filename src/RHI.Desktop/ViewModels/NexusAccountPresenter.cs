@@ -175,7 +175,9 @@ public sealed partial class NexusAccountPresenter : ObservableObject
     {
         try
         {
-            StatusText = await _handler.RegisterAsync() ? T("Parity.NexusHandlerRegistered") : T("Parity.NexusHandlerNotRegistered");
+            StatusText = await _handler.RegisterAsync() ? T("Parity.NexusHandlerRegistered")
+                : _handler.HasForeignEntry ? TF("Parity.NexusHandlerForeignEntry", NxmHandlerRegistration.EntryName)
+                : T("Parity.NexusHandlerNotRegistered");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -190,7 +192,7 @@ public sealed partial class NexusAccountPresenter : ObservableObject
         try
         {
             await _handler.UnregisterAsync();
-            StatusText = T("Parity.NexusHandlerUnregistered");
+            StatusText = _handler.HasForeignEntry ? TF("Parity.NexusHandlerForeignEntry", NxmHandlerRegistration.EntryName) : T("Parity.NexusHandlerUnregistered");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

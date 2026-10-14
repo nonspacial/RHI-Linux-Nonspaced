@@ -30,12 +30,17 @@ public enum NxmHandlerState
 /// it is — AppImage, extracted tree, install-user.sh) made the default with <c>xdg-mime default</c>. Unregistering
 /// deletes that entry (the desktop then falls back to whatever else declares nxm). RHI's main menu entry also
 /// declares nxm (packaging), so a desktop with no other handler may already pick RHI; every link is confirmed in RHI.
+/// The entry carries a marker line (<see cref="MarkerLine"/>, the shortcut service's rule): a file of that name RHI did
+/// not write is never overwritten or deleted.
 /// </summary>
 public sealed class NxmHandlerRegistration
 {
     public const string EntryName = "rhi-linux-nxm.desktop";
     public const string MainEntryName = "rhi-linux.desktop";
     public const string MimeType = "x-scheme-handler/nxm";
+
+    /// <summary>The line that marks the entry as RHI's own.</summary>
+    public const string MarkerLine = "X-RHI-Linux-Nxm=true";
 
     private readonly string _applicationsFolder;
     private readonly Func<IReadOnlyList<string>?> _rhiCommand;
@@ -54,6 +59,12 @@ public sealed class NxmHandlerRegistration
 
     public string EntryPath => Path.Combine(_applicationsFolder, EntryName);
 
+    /// <summary>A file at <see cref="EntryPath"/> RHI did not write (no marker line): left as it is.</summary>
+    public bool HasForeignEntry => File.Exists(EntryPath) && !IsOurs(EntryPath);
+
+    private static bool IsOurs(string path)
+        => new FileInfo(path).Length <= 64 * 1024 && File.ReadLines(path).Any(line => line.Trim() == MarkerLine);
+
     /// <summary>The current default handler and its desktop entry name (null when none or unknown).</summary>
     public async Task<(NxmHandlerState State, string? Handler)> QueryAsync(CancellationToken cancellationToken = default)
     {
@@ -68,6 +79,11 @@ public sealed class NxmHandlerRegistration
     public async Task<bool> RegisterAsync(CancellationToken cancellationToken = default)
     {
         if (_rhiCommand() is not { Count: > 0 } command) return false;
+        if (HasForeignEntry)
+        {
+            AppLog.Warn("nxm", $"{EntryPath} was not written by RHI; it is left as it is and RHI is not registered");
+            return false;
+        }
         var entry = string.Join('\n',
             "[Desktop Entry]",
             "Type=Application",
@@ -78,6 +94,7 @@ public sealed class NxmHandlerRegistration
             "Terminal=false",
             "NoDisplay=true",
             $"MimeType={MimeType};",
+            MarkerLine,
             "");
         Directory.CreateDirectory(_applicationsFolder);
         AtomicFile.WriteStoreFile(EntryPath, Encoding.UTF8.GetBytes(entry),
@@ -92,10 +109,15 @@ public sealed class NxmHandlerRegistration
         return true;
     }
 
-    /// <summary>Removes RHI's nxm entry (only RHI's own file); true when one was removed.</summary>
+    /// <summary>Removes RHI's nxm entry (only RHI's own file, by its marker line); true when one was removed.</summary>
     public async Task<bool> UnregisterAsync(CancellationToken cancellationToken = default)
     {
         if (!File.Exists(EntryPath)) return false;
+        if (!IsOurs(EntryPath))
+        {
+            AppLog.Warn("nxm", $"{EntryPath} was not written by RHI; it is left as it is");
+            return false;
+        }
         File.Delete(EntryPath);
         await RefreshDatabaseAsync(cancellationToken).ConfigureAwait(false);
         return true;
