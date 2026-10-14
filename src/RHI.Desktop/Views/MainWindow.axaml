@@ -91,7 +91,7 @@
           </Grid>
           <ListBox x:Name="GameLibraryList" Grid.Row="3" ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGameRow}"
                    SelectionChanged="GameLibrary_SelectionChanged" Tapped="GameLibrary_Tapped" ClipToBounds="True"
-                   ContextRequested="GameLibrary_ContextRequested"
+                   ContextRequested="GameLibrary_ContextRequested" KeyUp="GameLibrary_KeyUp"
                    ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
                    Background="Transparent" BorderThickness="0" Margin="6,0,6,6">
             <ListBox.ItemTemplate>

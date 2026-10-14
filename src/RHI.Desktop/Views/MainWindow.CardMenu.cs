@@ -18,6 +18,20 @@ public partial class MainWindow
     /// <summary>The card menu currently open (null when closed); the harness reads it.</summary>
     internal MenuFlyout? OpenCardMenu { get; private set; }
 
+    /// <summary>
+    /// Shift+F10 on a focused card: Avalonia raises ContextRequested only for its platform's context-menu gestures, which
+    /// on Linux is the menu key alone, so the window opens the card menu itself for the other common gesture.
+    /// </summary>
+    private void GameLibrary_KeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Handled || DataContext is not MainWindowViewModel vm || e.Source is not Control source) return;
+        if (!CardMenuKeys.OpensMenuItself(e.Key, e.KeyModifiers, Application.Current?.PlatformSettings?.HotkeyConfiguration.OpenContextMenu)) return;
+        var item = source as ListBoxItem ?? source.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        if (item?.DataContext is not GameRowViewModel row) return;
+        e.Handled = true;
+        ShowCardMenu(vm, row, item, atPointer: false);
+    }
+
     private void GameLibrary_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
         if (DataContext is not MainWindowViewModel vm || e.Source is not Control source) return;
@@ -84,5 +98,22 @@ public partial class MainWindow
         };
         close.Click += (_, _) => dialog.Close();
         await ShowFittedDialogAsync(dialog);
+    }
+}
+
+/// <summary>The keys that open a library card's menu from the keyboard (Refs #161): the menu key and Shift+F10.</summary>
+internal static class CardMenuKeys
+{
+    /// <summary>The gestures the card menu answers to, whatever the platform's own context-menu list holds.</summary>
+    internal static readonly IReadOnlyList<KeyGesture> Gestures = [new(Key.Apps), new(Key.F10, KeyModifiers.Shift)];
+
+    /// <summary>
+    /// True when <paramref name="key"/> + <paramref name="modifiers"/> is a card-menu gesture the platform does not turn into
+    /// a ContextRequested itself (so the window opens the menu; never both, which would open it twice).
+    /// </summary>
+    internal static bool OpensMenuItself(Key key, KeyModifiers modifiers, IEnumerable<KeyGesture>? platformGestures)
+    {
+        static bool Is(KeyGesture gesture, Key key, KeyModifiers modifiers) => gesture.Key == key && gesture.KeyModifiers == modifiers;
+        return Gestures.Any(g => Is(g, key, modifiers)) && !(platformGestures ?? []).Any(g => Is(g, key, modifiers));
     }
 }

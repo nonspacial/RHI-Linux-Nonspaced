@@ -93,6 +93,24 @@ public sealed class CardMenuTests : IDisposable
         Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "open-folder"); // a confirmed folder keeps it
     }
 
+    /// <summary>
+    /// Review w3 nit 8: Avalonia turns only its platform's context-menu gestures into ContextRequested — on Linux the menu
+    /// key alone — so Shift+F10 on a focused card is opened by the window itself, and never twice where the platform
+    /// already handles it.
+    /// </summary>
+    [Theory]
+    [InlineData(Avalonia.Input.Key.F10, Avalonia.Input.KeyModifiers.Shift, false, true)]   // Linux: the window opens it
+    [InlineData(Avalonia.Input.Key.F10, Avalonia.Input.KeyModifiers.Shift, true, false)]   // a platform that maps it already
+    [InlineData(Avalonia.Input.Key.Apps, Avalonia.Input.KeyModifiers.None, false, false)]  // the platform raises ContextRequested
+    [InlineData(Avalonia.Input.Key.F10, Avalonia.Input.KeyModifiers.None, false, false)]
+    [InlineData(Avalonia.Input.Key.F10, Avalonia.Input.KeyModifiers.Shift | Avalonia.Input.KeyModifiers.Control, false, false)]
+    public void ShiftF10_OpensTheCardMenu_WhereThePlatformDoesNot(Avalonia.Input.Key key, Avalonia.Input.KeyModifiers modifiers, bool platformMapsShiftF10, bool expected)
+    {
+        var linux = new List<Avalonia.Input.KeyGesture> { new(Avalonia.Input.Key.Apps) };
+        if (platformMapsShiftF10) linux.Add(new(Avalonia.Input.Key.F10, Avalonia.Input.KeyModifiers.Shift));
+        Assert.Equal(expected, RHI.Desktop.Views.CardMenuKeys.OpensMenuItself(key, modifiers, linux));
+    }
+
     [Fact]
     public async Task TheMenuReadsInPortuguese()
     {
