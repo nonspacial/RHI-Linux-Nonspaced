@@ -629,6 +629,14 @@ internal static class UiStrings
         ("Vm.SavedManualEntryWasNotFound", "{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed."),
         ("Vm.RemovedFromManualLibraryButList", "{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh."),
         // w3/sync rows
+        ("Sync.OptiScalerNightlyBuild", "Build nightly", "Nightly build"),
+        ("Sync.OptiScalerNightlyBuildTip", "Fixa este jogo numa das 30 builds nightly mais recentes. Um jogo fixado fica na sua build: Atualizar tudo não a troca. Mais recente sempre segue a build mais nova.", "Pins this game to one of the 30 newest nightly builds. A pinned game stays on its build: Update All leaves it alone. Latest always follows the newest build."),
+        ("Sync.OptiScalerNightlyLatest", "Mais recente (atualização automática)", "Latest (auto-update)"),
+        ("Sync.OptiScalerNightlyNote", "A build escolhida é salva por jogo e baixada quando o OptiScaler é instalado.", "The chosen build is saved per game and downloaded when OptiScaler is installed."),
+        ("Sync.OptiScalerNightlyLocked", "Remova o OptiScaler para trocar a build.", "Remove OptiScaler to change the build."),
+        ("Sync.OptiScalerNightlyListFailed", "Não foi possível carregar a lista de builds nightly; só Mais recente e a build salva estão disponíveis.", "The nightly build list could not be loaded; only Latest and the saved build are offered."),
+        ("Sync.OptiScalerNightlyPinned", "{0}: OptiScaler Nightly fixado na build {1}.", "{0}: OptiScaler Nightly pinned to build {1}."),
+        ("Sync.OptiScalerNightlyUnpinned", "{0}: OptiScaler Nightly segue a build mais nova.", "{0}: OptiScaler Nightly follows the newest build."),
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows

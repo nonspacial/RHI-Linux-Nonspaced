@@ -1687,6 +1687,7 @@ public sealed partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.58
         });
+        panel.Children.Add(new OptiScalerNightlyBuildRow(vm.OptiScalerNightlyBuild)); // w3/sync #156 hook
 
         panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Margin = new Avalonia.Thickness(0, 4) });
         panel.Children.Add(new TextBlock

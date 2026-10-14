@@ -84,7 +84,8 @@ public sealed class NeuralAddonVersionPreferenceStore : IGameStateStore
 
     private static void EnsureSupported(ManagedComponentKind kind)
     {
-        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse))
+        // OptiScaler: the Nightly build pin (#156), stored under its own "|OptiScaler" suffix.
+        if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or ManagedComponentKind.OptiScaler))
             throw new ArgumentOutOfRangeException(nameof(kind), kind, "Version pins are supported only for Neural Rendering add-ons.");
     }
 

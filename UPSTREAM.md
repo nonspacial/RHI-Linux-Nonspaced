@@ -159,4 +159,13 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - The paths are kept relative on the game and resolved at detection time. A path that is absolute or leaves the game root (`..`, or a symlink pointing out, checked with symlinks resolved) is ignored. Files other components own are dropped as usual, so swap/restore ownership rules are unchanged.
 - Every DLSS flow (panel, Quick Apply, Batch Deploy, Restore All) goes through these targets, and so does ShortFuse's "no stacking over direct swaps" check, which now also sees `.original` files in the manifest folder. Other file-index consumers (component badges) are unchanged, as upstream.
 
+### #156 — OptiScaler Nightly: pin a game to a nightly build (2.8.6)
+
+- The OptiScaler ⚙ dialog has a **Nightly build** row, shown only for the Nightly channel: "Latest (auto-update)" plus the 30 newest builds, shown as dates (`2026-10-04`), as upstream `2975485`. A pinned game installs exactly that build; Latest keeps following the newest build.
+- The choice is saved per game, in the same file as the Neural Rendering version pins, so it follows the game through "Repair after move". The build is downloaded when OptiScaler is installed (asked by its tag `nightly-YYYYMMDD`, so builds older than the listed 30 still install), cached per tag behind its cache stamp, and recorded in the deployment record (`OptiScaler.NightlyBuild`).
+- While OptiScaler is installed the row is locked and shows the installed build, like the channel selector above it: remove OptiScaler to change the build (upstream: "Uninstall OptiScaler first"). If the list cannot be loaded, the row offers Latest and the saved build and says so.
+- A pinned game stays on its build: the update check reports "pinned and current" without asking GitHub (never "could not check", never an update); Update All (manual and background) counts it current; a direct update leaves it unchanged.
+- Service API for Control UE (#136): `OptiScalerDeploymentService.InstallPinnedNightlyAsync(game, "20261004")`, or `LinuxManagedComponentService.InstallOptiScalerAsync(game, OptiScalerVariant.Nightly, "20261004")`.
+- Not ported: upstream's pre-staging when a build is picked (Linux downloads at install, so browsing the list downloads nothing).
+
 ## Parity notes (feature-parity backlog)

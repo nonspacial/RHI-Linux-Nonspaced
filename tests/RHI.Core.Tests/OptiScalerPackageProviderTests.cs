@@ -6,7 +6,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class OptiScalerPackageProviderTests : IDisposable
+public sealed partial class OptiScalerPackageProviderTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-optiscaler-package-tests-" + Guid.NewGuid().ToString("N"));
 

@@ -8,6 +8,13 @@ public sealed partial class OptiScalerDeploymentService
 {
     internal const string VariantMetadataKey = "OptiScaler.Variant";
     internal const string DlssNrRuntimeVersionMetadataKey = "OptiScaler.DlssNrRuntimeVersion";
+    /// <summary>The nightly build (date) an install is pinned to (#156); absent = Latest, which auto-updates.</summary>
+    internal const string NightlyBuildMetadataKey = "OptiScaler.NightlyBuild";
+
+    public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
+    public const string NightlyPinnedNotUpdatedPrefix = "OptiScaler Nightly is pinned, so it was not updated: ";
+    public const string NightlyPinWrongChannelMessage = "A nightly build can be pinned only for the OptiScaler Nightly channel.";
+    public const string NightlyBuildInvalidPrefix = "Not an OptiScaler nightly build date: ";
 
     private static readonly string[] SetupJunkNames =
     [
@@ -47,6 +54,9 @@ public sealed partial class OptiScalerDeploymentService
     {
         var record = GetRecord(game);
         if (record is null) return new ManagedUpdateCheck(false, false, "OptiScaler is not managed by RHI Linux.");
+        // A pinned nightly stays on its build (upstream 2.8.6): current, never an update and never "could not check".
+        if (GetPinnedNightlyBuild(record) is { } pinned)
+            return new ManagedUpdateCheck(true, false, NightlyPinnedCurrentPrefix + pinned, record.Version, pinned);
         try
         {
             var variant = GetInstalledVariant(record);
@@ -76,6 +86,8 @@ public sealed partial class OptiScalerDeploymentService
     {
         var record = GetRecord(game);
         if (record is null) return ComponentOperationResult.Fail("OptiScaler is not managed by RHI Linux for this game.");
+        if (GetPinnedNightlyBuild(record) is { } pinned)
+            return ComponentOperationResult.Ok(NightlyPinnedNotUpdatedPrefix + pinned);
 
         try
         {
@@ -199,11 +211,34 @@ public sealed partial class OptiScalerDeploymentService
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
         => InstallAsync(game, OptiScalerVariant.Stable, cancellationToken);
 
-    public async Task<ComponentOperationResult> InstallAsync(
+    public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         OptiScalerVariant variant,
         CancellationToken cancellationToken = default)
+        => InstallAsync(game, variant, nightlyBuild: null, cancellationToken);
+
+    /// <summary>
+    /// Installs OptiScaler Nightly pinned to one build (#156; Control UE frame generation pins <c>20261004</c>, #136). The
+    /// build is recorded, so the game stays on it: Update All reports it current and never replaces it.
+    /// </summary>
+    public Task<ComponentOperationResult> InstallPinnedNightlyAsync(
+        DetectedGame game,
+        string build,
+        CancellationToken cancellationToken = default)
+        => InstallAsync(game, OptiScalerVariant.Nightly, build, cancellationToken);
+
+    /// <param name="nightlyBuild">Nightly only: the build date to pin (<c>20261004</c>); null = Latest, which auto-updates.</param>
+    public async Task<ComponentOperationResult> InstallAsync(
+        DetectedGame game,
+        OptiScalerVariant variant,
+        string? nightlyBuild,
+        CancellationToken cancellationToken = default)
     {
+        if (nightlyBuild is not null)
+        {
+            if (variant != OptiScalerVariant.Nightly) return ComponentOperationResult.Fail(NightlyPinWrongChannelMessage);
+            if (!OptiScalerPackageProvider.IsNightlyBuild(nightlyBuild)) return ComponentOperationResult.Fail(NightlyBuildInvalidPrefix + nightlyBuild);
+        }
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("OptiScaler is a Windows DLL middleware and is only deployed to Wine/Proton games.");
         if (game.EffectiveGraphicsApi is not (GraphicsApi.DirectX11 or GraphicsApi.DirectX12))
@@ -230,7 +265,9 @@ public sealed partial class OptiScalerDeploymentService
         string? nrRuntimeVersion = null;
         try
         {
-            package = await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false);
+            package = nightlyBuild is null
+                ? await _packages.GetLatestAsync(variant, cancellationToken).ConfigureAwait(false)
+                : await _packages.GetNightlyBuildAsync(nightlyBuild, cancellationToken).ConfigureAwait(false);
             (nrRuntime, nrRuntimeVersion) = await PrepareDlssNrRuntimeAsync(variant, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not obtain the official OptiScaler {VariantLabel(variant)} package: {ex.Message}"); }
@@ -308,6 +345,7 @@ public sealed partial class OptiScalerDeploymentService
                     [DlssNrRuntimeVersionMetadataKey] = nrRuntimeVersion ?? ""
                 }
             };
+            if (nightlyBuild is not null) record.Metadata[NightlyBuildMetadataKey] = nightlyBuild;
             package.Download?.RecordIn(record.Metadata);
             if (operation is not null) record.Metadata[LinuxDeploymentRecovery.OperationIdMetadataKey] = operation.Id;
 
@@ -347,6 +385,18 @@ public sealed partial class OptiScalerDeploymentService
         => record.Metadata.TryGetValue(VariantMetadataKey, out var raw) && Enum.TryParse<OptiScalerVariant>(raw, true, out var parsed)
             ? parsed
             : OptiScalerVariant.Stable;
+
+    /// <summary>The nightly build an installed Nightly is pinned to, or null (Latest, another channel, no valid pin).</summary>
+    public static string? GetPinnedNightlyBuild(LinuxDeploymentRecord record)
+        => GetInstalledVariant(record) == OptiScalerVariant.Nightly
+           && record.Metadata.TryGetValue(NightlyBuildMetadataKey, out var build)
+           && OptiScalerPackageProvider.IsNightlyBuild(build)
+            ? build
+            : null;
+
+    /// <summary>The newest nightly builds a game can be pinned to (dates, newest first).</summary>
+    public Task<IReadOnlyList<string>> ListNightlyBuildsAsync(CancellationToken cancellationToken = default)
+        => _packages.ListNightlyBuildsAsync(cancellationToken);
 
     internal static string VariantLabel(OptiScalerVariant variant) => variant switch
     {

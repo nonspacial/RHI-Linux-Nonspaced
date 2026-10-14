@@ -978,6 +978,11 @@ public static class UiLocalizationService
         ("CRC-32 does not match the archive (corrupt download)", "o CRC-32 não confere com o arquivo (download corrompido)"),
         ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto."),
         // w3/sync rows
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyPinnedCurrentPrefix, "O OptiScaler Nightly está fixado e atualizado: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyPinnedNotUpdatedPrefix, "O OptiScaler Nightly está fixado, então não foi atualizado: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyPinWrongChannelMessage, "Uma build nightly só pode ser fixada no canal Nightly do OptiScaler."),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.NightlyBuildInvalidPrefix, "Não é uma data de build nightly do OptiScaler: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerPackageProvider.NightlyBuildMismatchPrefix, "O GitHub devolveu outra build nightly do OptiScaler que não a fixada: "),
         // w3/journal rows
         // w3/scan rows
         // w3/parity rows
