@@ -69,13 +69,13 @@ public sealed class OptionList<T>
 
     internal IReadOnlyList<OptionEntry<T>> Entries => _entries;
 
-    /// <summary>Replaces <paramref name="target"/>'s items with the labels in the current UI language.</summary>
     /// <summary>
     /// The options as <c>{Value, Display}</c> items for a dropdown bound to values (UI-12/20, Refs #89 unit 6): the
     /// selection is the item, never its label, and a language change relabels the same items in place.
     /// </summary>
     public OptionItems<T> Options() => new(_entries.Select(entry => new OptionItem<T>(this, entry.Value)).ToArray(), _comparer, this);
 
+    /// <summary>Replaces <paramref name="target"/>'s items with the labels in the current UI language.</summary>
     public void Fill(ObservableCollection<string> target)
     {
         target.Clear();
@@ -88,10 +88,6 @@ public sealed class OptionList<T>
         => entry.TextKey is { } key ? UiLocalizationService.Text(key) : entry.FixedLabel ?? entry.Value?.ToString() ?? "";
 }
 
-/// <summary>
-/// Every option list the main window and its dialogs show, each with its one display↔value mapping (UI-20, Refs #87).
-/// The view model and the Settings / Edit game dialogs read labels and values only through these.
-/// </summary>
 /// <summary>A dropdown option as the view sees it: its label in the current UI language (item templates bind this).</summary>
 public abstract class OptionItem : CommunityToolkit.Mvvm.ComponentModel.ObservableObject
 {
@@ -138,12 +134,17 @@ public sealed class OptionItems<T> : System.Collections.ObjectModel.ReadOnlyColl
     /// <summary>The item a label (either language, stored value or an old alias) stands for.</summary>
     public OptionItem<T> ForDisplay(string? display) => For(_list.Value(display));
 
+    /// <summary>The UI language changed: every item's label follows (the same items stay selected).</summary>
     public void Relabel()
     {
         foreach (var item in this) item.Relabel();
     }
 }
 
+/// <summary>
+/// Every option list the main window and its dialogs show, each with its one display↔value mapping (UI-20, Refs #87).
+/// The view model and the Settings / Edit game dialogs read labels and values only through these.
+/// </summary>
 public static class OptionLists
 {
     /// <summary>The UI languages a label is read back in.</summary>
