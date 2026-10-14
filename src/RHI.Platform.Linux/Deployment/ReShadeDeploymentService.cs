@@ -17,6 +17,20 @@ public sealed partial class ReShadeDeploymentService
     // The one setup URL for a stable/legacy version: what EnsureSetupStagedAsync stamps and what the
     // outage fallback looks the stamp up with must be byte-identical (#142).
     internal static string StableSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}_Addon.exe";
+    /// <summary>The setup of the build without add-on support (#91, upstream <c>NormalReShadeUpdateService</c>); same rule as <see cref="StableSetupUrl"/>.</summary>
+    internal static string NoAddonsSetupUrl(string version) => $"{HomeUrl}/downloads/ReShade_Setup_{version}.exe";
+
+    /// <summary>Fixed text before the add-on names when No Addons is refused over installed add-ons (PT-BR presentation pair).</summary>
+    public const string NoAddonsWithAddonsPrefix =
+        "ReShade without add-on support (No Addons) cannot load the add-ons RHI installed for this game; remove them first, or keep an add-on channel: ";
+
+    /// <summary>Fixed text before the component name when an add-on is refused over No Addons ReShade (PT-BR presentation pair).</summary>
+    public const string NoAddonsBlocksAddonPrefix =
+        "ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ";
+
+    /// <summary>True when RHI's ReShade on this game is the No Addons build (#91): ReShade add-ons cannot load.</summary>
+    public static bool LacksAddonSupport(LinuxDeploymentRecord? reShadeRecord)
+        => reShadeRecord is not null && ParseChannel(reShadeRecord.Metadata.GetValueOrDefault(MetaChannel)) == ReShadeChannel.NoAddons;
     // Upstream 2.8.5's nightly links (ReShadeNightlyService): the newest successful build.yml run on main, served by
     // nightly.link because GitHub's own artifact download needs a login. Used as is only when the GitHub API lookup
     // below is unavailable (#27).
@@ -162,6 +176,16 @@ public sealed partial class ReShadeDeploymentService
         var directProxy = SelectProxyName(game.EffectiveGraphicsApi);
         if (directProxy is null)
             return ComponentOperationResult.Fail("This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
+
+        if (options.Channel == ReShadeChannel.NoAddons)
+        {
+            // Upstream leaves installed add-ons in place when a game switches to No Addons, where they silently stop
+            // loading; RHI refuses instead, before anything changes (#91).
+            var addons = _records.FindAll(game).Where(r => LinuxComponentDependencyPolicy.IsReShadeAddon(r.Component))
+                .Select(r => r.Component.ToString()).Order(StringComparer.Ordinal).ToArray();
+            if (addons.Length > 0)
+                return ComponentOperationResult.Fail(NoAddonsWithAddonsPrefix + string.Join(", ", addons));
+        }
 
         var existingRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
@@ -682,6 +706,14 @@ public sealed partial class ReShadeDeploymentService
                     var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase);
                     return new(true, update, update ? $"Stable update available: {record.Version} → {latest.Version}." : $"Stable {record.Version} is current.", record.Version, latest.Version, channel);
                 }
+                case ReShadeChannel.NoAddons:
+                {
+                    var latest = await GetLatestStableAsync(cancellationToken, addonBuild: false).ConfigureAwait(false);
+                    var update = !string.Equals(record.Version, latest.Version, StringComparison.OrdinalIgnoreCase);
+                    return new(true, update, update
+                        ? $"{NoAddonsUpdateAvailablePrefix}{record.Version} → {latest.Version}."
+                        : $"{NoAddonsCurrentPrefix}{record.Version}.", record.Version, latest.Version, channel);
+                }
                 case ReShadeChannel.Nightly:
                 {
                     var architecture = game.ExecutablePath is null ? PeArchitecture.Unknown : PeArchitectureDetector.Detect(game.ExecutablePath);
@@ -716,6 +748,11 @@ public sealed partial class ReShadeDeploymentService
             return new(true, false, $"ReShade update check failed: {ex.Message}", record.Version, null, channel, CouldNotCheck: true);
         }
     }
+
+    /// <summary>Fixed texts of the No Addons update check (PT-BR presentation pairs).</summary>
+    public const string NoAddonsUpdateAvailablePrefix = "ReShade No Addons update available: ";
+    public const string NoAddonsCurrentPrefix = "ReShade No Addons is current: ";
+    public const string NoAddonsLinkMissingMessage = "Could not find the current ReShade download without add-on support on reshade.me.";
 
     private D3DCompilerPlan BuildD3DCompilerPlan(
         DetectedGame game,
@@ -888,36 +925,45 @@ public sealed partial class ReShadeDeploymentService
         => options.Channel switch
         {
             ReShadeChannel.Stable => await EnsureLatestStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
+            ReShadeChannel.NoAddons => await EnsureLatestStagedAsync(architecture, cancellationToken, addonBuild: false).ConfigureAwait(false),
             ReShadeChannel.Nightly => await EnsureNightlyStagedAsync(architecture, cancellationToken).ConfigureAwait(false),
             ReShadeChannel.Legacy => await EnsureLegacyStagedAsync(options.LegacyVersion, architecture, cancellationToken).ConfigureAwait(false),
             ReShadeChannel.Custom => await EnsureCustomStagedAsync(options.CustomDllPath, architecture, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException("Unknown ReShade channel.")
         };
 
-    internal async Task<ReShadeStagedDll> EnsureLatestStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default)
+    /// <param name="addonBuild">False for the build without add-on support (No Addons, #91): its own setup link on
+    /// reshade.me, its own cache folder and outage fallback, never mixed with the add-on build.</param>
+    internal async Task<ReShadeStagedDll> EnsureLatestStagedAsync(PeArchitecture architecture, CancellationToken cancellationToken = default, bool addonBuild = true)
     {
+        var channel = addonBuild ? ReShadeChannel.Stable : ReShadeChannel.NoAddons;
         (string Version, string Url) latest;
         try
         {
-            latest = await GetLatestStableAsync(cancellationToken).ConfigureAwait(false);
+            latest = await GetLatestStableAsync(cancellationToken, addonBuild).ConfigureAwait(false);
         }
         catch (ReShadeSiteUnavailableException ex)
         {
             // Outage, not a bad page: fall back to the newest stable copy already staged in the cache.
-            return FindCachedStable(architecture, ex.Message)
+            return FindCachedStable(architecture, ex.Message, channel)
                    ?? throw new ReShadeSiteUnavailableException($"{ex.Message} No cached ReShade copy is available yet; try again later.", ex);
         }
         try
         {
-            return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine("stable", latest.Version), ReShadeChannel.Stable, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
+            return await EnsureSetupStagedAsync(latest.Version, latest.Url, architecture, Path.Combine(CacheFolder(channel), latest.Version), channel, $"version:{latest.Version}", cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (SetupDownloadOutage(ex, cancellationToken) is { } reason)
         {
             // The page answered but the setup download hit an outage (5xx, unreachable, timed out): same as a page outage.
-            return FindCachedStable(architecture, reason)
+            return FindCachedStable(architecture, reason, channel)
                    ?? throw new ReShadeSiteUnavailableException($"{reason} No cached ReShade copy is available yet; try again later.", ex);
         }
     }
+
+    private static string CacheFolder(ReShadeChannel channel) => channel == ReShadeChannel.NoAddons ? "noaddons" : "stable";
+
+    private static string SetupUrl(ReShadeChannel channel, string version)
+        => channel == ReShadeChannel.NoAddons ? NoAddonsSetupUrl(version) : StableSetupUrl(version);
 
     // A server-side or network failure of the setup download, not a bad file or a 4xx: null when it is not an outage.
     private static string? SetupDownloadOutage(Exception ex, CancellationToken cancellationToken) => ex switch
@@ -931,9 +977,9 @@ public sealed partial class ReShadeDeploymentService
         _ => null
     };
 
-    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason)
+    private ReShadeStagedDll? FindCachedStable(PeArchitecture architecture, string reason, ReShadeChannel channel)
     {
-        var root = Path.Combine(_cacheDir, "stable");
+        var root = Path.Combine(_cacheDir, CacheFolder(channel));
         if (!Directory.Exists(root)) return null;
         var dllName = architecture == PeArchitecture.X86 ? "ReShade32.dll" : "ReShade64.dll";
         var best = Directory.EnumerateDirectories(root)
@@ -943,16 +989,16 @@ public sealed partial class ReShadeDeploymentService
             // filtered before ordering, so an unstamped newer folder never hides a stamped older one.
             .Where(entry => entry.Parsed is not null
                             && IsValidReShadeDll(Path.Combine(entry.Dir, dllName))
-                            && CacheStamp.IsValid(Path.Combine(entry.Dir, dllName), StableSetupUrl(entry.Name), entry.Name))
+                            && CacheStamp.IsValid(Path.Combine(entry.Dir, dllName), SetupUrl(channel, entry.Name), entry.Name))
             .OrderByDescending(entry => entry.Parsed)
             .FirstOrDefault();
         if (best.Dir is null) return null;
         return new(
             Path.Combine(best.Dir, dllName),
             best.Name,
-            StableSetupUrl(best.Name),
+            SetupUrl(channel, best.Name),
             $"version:{best.Name}",
-            ReShadeChannel.Stable,
+            channel,
             FromCache: true,
             FallbackReason: reason);
     }
@@ -1138,7 +1184,8 @@ public sealed partial class ReShadeDeploymentService
         // (#142); anything else in the cache is replaced, never deployed.
         if (CacheStamp.IsValid(staged, url, version) && IsValidReShadeDll(staged)) return new(staged, version, url, identity, channel);
 
-        var setup = Path.Combine(versionDir, $"ReShade_Setup_{version}_Addon.exe");
+        // The setup's own file name (the add-on and the No Addons builds differ only in it).
+        var setup = Path.Combine(versionDir, Path.GetFileName(new Uri(url).AbsolutePath));
         // reshade.me publishes no digest and upstream pins none: the setup is accepted on HTTPS + the reshade.me host
         // policy (redirects included) and a PE check, its SHA-256 recorded in the stamp and rhi.log (#27). A stamped
         // copy is reused only while it still hashes to the recorded value.
@@ -1178,7 +1225,7 @@ public sealed partial class ReShadeDeploymentService
     // reshade.me intermittently answers HTTP 5xx while still rendering the full page (upstream 2.8.3).
     // A 5xx body is trusted only when it carries the add-on download link; the setup exe it points to is
     // still downloaded with a success check and PE-validated. 4xx and other statuses stay failures.
-    private async Task<(string Version, string Url)> GetLatestStableAsync(CancellationToken cancellationToken)
+    private async Task<(string Version, string Url)> GetLatestStableAsync(CancellationToken cancellationToken, bool addonBuild = true)
     {
         string html;
         HttpStatusCode status;
@@ -1201,12 +1248,14 @@ public sealed partial class ReShadeDeploymentService
             throw new ReShadeSiteUnavailableException("reshade.me did not answer in time.", ex);
         }
 
-        var match = AddonDownloadRegex().Match(html);
+        var match = (addonBuild ? AddonDownloadRegex() : NoAddonsDownloadRegex()).Match(html);
         if (!match.Success)
         {
             if ((int)status >= 500)
                 throw new ReShadeSiteUnavailableException($"reshade.me is temporarily unavailable (HTTP {(int)status}) and its page has no ReShade download link.");
-            throw new InvalidOperationException("Could not find the current full add-on ReShade download on reshade.me.");
+            throw new InvalidOperationException(addonBuild
+                ? "Could not find the current full add-on ReShade download on reshade.me."
+                : NoAddonsLinkMissingMessage);
         }
         var version = match.Groups[1].Value;
         // The captured version names cache folders and the setup file: only a plain dotted number is accepted ("..", "9..9" are not).
@@ -1218,7 +1267,7 @@ public sealed partial class ReShadeDeploymentService
         }
         // Built from the captured version, not match.Value: the regex ignores case and has no host, so the
         // page's casing would stamp a URL the outage fallback could never match (#142).
-        return (version, StableSetupUrl(version));
+        return (version, addonBuild ? StableSetupUrl(version) : NoAddonsSetupUrl(version));
     }
 
     private void CleanupManagedIni(LinuxDeploymentRecord record)
@@ -1339,6 +1388,10 @@ public sealed partial class ReShadeDeploymentService
 
     [GeneratedRegex(@"/downloads/ReShade_Setup_([\d.]+)_Addon\.exe", RegexOptions.IgnoreCase)]
     private static partial Regex AddonDownloadRegex();
+
+    // Upstream NormalReShadeUpdateService's pattern: the setup without the _Addon suffix.
+    [GeneratedRegex(@"/downloads/ReShade_Setup_([\d.]+)\.exe", RegexOptions.IgnoreCase)]
+    private static partial Regex NoAddonsDownloadRegex();
 
     [GeneratedRegex(@"^\d+(?:\.\d+){1,3}$", RegexOptions.CultureInvariant)]
     private static partial Regex LegacyVersionRegex();

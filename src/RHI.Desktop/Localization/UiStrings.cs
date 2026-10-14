@@ -633,6 +633,7 @@ internal static class UiStrings
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        ("Names.OptionNoAddons", "Sem add-ons", "No Addons"),
         ("Names.ControlUeNotHdrMod", "⚠ Este NÃO é um mod HDR.", "⚠ This is NOT an HDR mod."),
         ("Names.ControlUeStrategies", "Ele corrige o ruído do RT com Ray Reconstruction. Duas estratégias (escolha uma; são mutuamente exclusivas):\n• Desative o denoiser de RT do jogo e use o preset M ou L do DLSS Super Resolution\n• Use Ray Reconstruction com entradas extras derivadas dos shaders do jogo (o denoiser do jogo também fica desativado — o RR exige isso)\n\nDLSS, Ray Tracing e SSAO precisam estar ativados no jogo para o Ray Reconstruction funcionar corretamente.", "It fixes RT noise using Ray Reconstruction. Two strategies (pick one; they are mutually exclusive):\n• Turn off the in-game RT denoiser and use DLSS Super Resolution preset M or L\n• Use Ray Reconstruction with extra inputs derived from the game's shaders (the game denoiser is turned off here too — RR needs that)\n\nDLSS, Ray Tracing and SSAO must all be enabled in-game for Ray Reconstruction to work correctly."),
         ("Names.ControlUeRequiredSettingsHeading", "Configurações necessárias no jogo:", "Required in-game settings:"),

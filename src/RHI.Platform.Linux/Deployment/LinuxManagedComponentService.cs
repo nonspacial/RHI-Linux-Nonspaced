@@ -805,6 +805,14 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             }
         }
 
+        // w3/dllnames (#91): add-ons are not offered over the No Addons build; the note says why (last, so it wins).
+        if (ReShadeDeploymentService.LacksAddonSupport(Find(ManagedComponentKind.ReShade)))
+            foreach (var component in components.Where(c => LinuxComponentDependencyPolicy.IsReShadeAddon(c.Kind) && c.Availability == ComponentAvailability.Available))
+            {
+                component.ActionAllowed = false;
+                component.Note = ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + component.DisplayName;
+            }
+
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
     }
 
@@ -1231,6 +1239,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     private ComponentOperationResult? DependencyConflictGuard(DetectedGame game, ManagedComponentKind target)
     {
+        // w3/dllnames (#91): a ReShade add-on cannot load in the No Addons build.
+        if (LinuxComponentDependencyPolicy.IsReShadeAddon(target) && ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade)))
+            return ComponentOperationResult.Fail(ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + DisplayDependencyName(target));
+
         if (target == ManagedComponentKind.ReLimiter && _records.Find(game, ManagedComponentKind.DisplayCommander) is not null)
             return ComponentOperationResult.Fail("Display Commander já está ativo. ReLimiter e Display Commander são mutuamente exclusivos.");
         if (target == ManagedComponentKind.DisplayCommander && _records.Find(game, ManagedComponentKind.ReLimiter) is not null)
@@ -1346,6 +1358,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken = default)
     {
         var guard = PatchTargetGuard(game);
+        // w3/dllnames (#91): no add-on selection for the No Addons build (clearing the selection stays possible).
+        if (guard is null && selectedIds.Count > 0 && ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade)))
+            guard = ComponentOperationResult.Fail(ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + "ReShade Addon Manager");
         return guard is null
             ? _addonManager.ApplySelectionAsync(game, selectedIds, cancellationToken)
             : Task.FromResult(guard);

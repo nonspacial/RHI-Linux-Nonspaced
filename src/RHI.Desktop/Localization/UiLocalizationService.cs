@@ -989,6 +989,14 @@ public static class UiLocalizationService
         (" The copy RHI kept from before its install stays at ", " A cópia que o RHI guardou de antes da instalação continua em "),
         (": changed outside RHI since the install; kept, not applied again.", ": alterado fora do RHI desde a instalação; mantido, não aplicado de novo."),
         ("RenoDX installed: ", "RenoDX instalado: "),
+        // #91 ReShade No Addons channel.
+        ("ReShade without add-on support (No Addons) cannot load the add-ons RHI installed for this game; remove them first, or keep an add-on channel: ",
+            "O ReShade sem suporte a add-ons (Sem add-ons) não carrega os add-ons que o RHI instalou neste jogo; remova-os antes ou mantenha um canal com add-ons: "),
+        ("ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ",
+            "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no perfil do ReShade e aplique antes: "),
+        ("ReShade No Addons update available: ", "Atualização do ReShade Sem add-ons disponível: "),
+        ("ReShade No Addons is current: ", "O ReShade Sem add-ons está atualizado: "),
+        ("Could not find the current ReShade download without add-on support on reshade.me.", "Não foi possível encontrar no reshade.me o download atual do ReShade sem suporte a add-ons."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

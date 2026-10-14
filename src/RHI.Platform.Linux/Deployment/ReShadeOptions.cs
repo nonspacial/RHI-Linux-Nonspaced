@@ -6,7 +6,13 @@ public enum ReShadeChannel
     Stable,
     Nightly,
     Legacy,
-    Custom
+    Custom,
+    /// <summary>
+    /// Upstream's "No Addons" channel (#91): the newest reshade.me build without add-on support
+    /// (<c>ReShade_Setup_&lt;v&gt;.exe</c>), for games whose anti-cheat rejects the add-on build. It cannot load
+    /// RenoDX or any other ReShade add-on.
+    /// </summary>
+    NoAddons
 }
 
 public sealed class ReShadeInstallOptions
