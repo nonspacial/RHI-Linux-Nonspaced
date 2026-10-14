@@ -22,7 +22,7 @@ public sealed class RuntimeOptionItemsTests
         {
             using var fx = await ViewModelFixture.StartAsync([]);
             var game = fx.Game("Alpha Quest");
-            var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
             {
                 Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
             });

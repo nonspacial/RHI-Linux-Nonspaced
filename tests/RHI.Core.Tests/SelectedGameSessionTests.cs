@@ -376,7 +376,7 @@ public sealed class SelectedGameSessionTests
 
     private static async Task<(bool Added, string Message)> AddAsync(ViewModelFixture fx, DetectedGame game)
     {
-        var result = await fx.Vm.TryAddManualGameAsync(new()
+        var result = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

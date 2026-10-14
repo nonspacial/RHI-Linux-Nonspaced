@@ -56,7 +56,7 @@ public sealed class GameRootDialogGuardTests
         var before = Snapshot(fixture.Library.LibraryPath);
         var saved = false;
 
-        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+        var (added, message) = await fixture.Vm.ManualGames.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Guarded", InstallPath = root, ExecutablePath = exe }, () => saved = true);
 
         Assert.False(added);
@@ -73,12 +73,12 @@ public sealed class GameRootDialogGuardTests
         // The scan merges cards by PathIdentity; the Add check must agree (integration w1 detect review 7).
         using var fixture = await ViewModelFixture.StartAsync([]);
         var tunic = fixture.Game("Tunic");
-        var (first, firstMessage) = await fixture.Vm.TryAddManualGameAsync(new LinuxManualGameEntry { Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath });
+        var (first, firstMessage) = await fixture.Vm.ManualGames.TryAddManualGameAsync(new LinuxManualGameEntry { Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath });
         Assert.True(first, firstMessage);
         var link = Path.Combine(fixture.Root, "games-link");
         Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
 
-        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+        var (added, message) = await fixture.Vm.ManualGames.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Tunic again", InstallPath = Path.Combine(link, "Tunic") + "/" });
 
         Assert.False(added);
@@ -101,7 +101,7 @@ public sealed class GameRootDialogGuardTests
         var link = Path.Combine(fixture.Root, "games-link");
         Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
 
-        var (added, message) = await fixture.Vm.TryAddManualGameAsync(
+        var (added, message) = await fixture.Vm.ManualGames.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Hades again", InstallPath = Path.Combine(link, "Hades") });
 
         Assert.False(added);
@@ -117,7 +117,7 @@ public sealed class GameRootDialogGuardTests
         var link = Path.Combine(fixture.Root, "games-link");
         Directory.CreateSymbolicLink(link, Path.Combine(fixture.Root, "games"));
 
-        var (added, message) = await fixture.Vm.TryAddManualGameAsync(new LinuxManualGameEntry
+        var (added, message) = await fixture.Vm.ManualGames.TryAddManualGameAsync(new LinuxManualGameEntry
         {
             Name = "Celeste", InstallPath = Path.Combine(link, "Celeste"), ExecutablePath = Path.Combine(link, "Celeste", "Celeste.exe")
         });
@@ -140,7 +140,7 @@ public sealed class GameRootDialogGuardTests
         // The exe and binaries folder sit inside the refused root, so only the root guard can refuse.
         var (root, exe) = Refused(kind, fixture);
 
-        var (savedEdit, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null, null);
+        var (savedEdit, message) = await fixture.Vm.ManualGames.SaveSelectedGameEditAsync(exe, root, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.False(savedEdit);
         Assert.False(string.IsNullOrWhiteSpace(message));
@@ -174,8 +174,8 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = home;
         Assert.Contains("Whole Home", fixture.Vm.PatchTargetStatusText);
         Assert.Contains(LinuxPaths.Home, fixture.Vm.SelectedInstallPath);
-        Assert.True(fixture.Vm.CanRemoveManualGame);
-        await fixture.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+        Assert.True(fixture.Vm.ManualGames.CanRemoveManualGame);
+        await fixture.Vm.ManualGames.RemoveManualGameCommand.ExecuteAsync(null);
 
         Assert.Equal(["Whole Prefix"], fixture.Library.Load().ManualGames.Select(e => e.Name));
         Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Whole Home");
@@ -221,8 +221,8 @@ public sealed class GameRootDialogGuardTests
         Assert.Equal(GraphicsApi.Unknown, game.GraphicsApi);
         Assert.Null(game.BinaryDirectory);
 
-        Assert.True(fixture.Vm.CanRemoveManualGame);
-        await fixture.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+        Assert.True(fixture.Vm.ManualGames.CanRemoveManualGame);
+        await fixture.Vm.ManualGames.RemoveManualGameCommand.ExecuteAsync(null);
         Assert.Empty(fixture.Library.Load().ManualGames);
         Assert.DoesNotContain(fixture.Vm.Games, g => g.Name == "Gone Game");
     }
@@ -234,7 +234,7 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
         var exe = Exe(Path.Combine(fixture.Root, "New Drive", "Gone Game"), "Gone.exe");
 
-        var (saved, message) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
+        var (saved, message) = await fixture.Vm.ManualGames.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.True(saved, message);
         var repointed = Assert.Single(fixture.Vm.Games, g => g.Name == "Gone Game").Game;
@@ -255,7 +255,7 @@ public sealed class GameRootDialogGuardTests
         fixture.Vm.SelectedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
         var exe = HomeGameExe();
 
-        var (saved, _) = await fixture.Vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
+        var (saved, _) = await fixture.Vm.ManualGames.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null);
 
         Assert.True(saved);
         var fixedGame = Assert.Single(fixture.Vm.Games, g => g.Name == "Whole Home").Game;
@@ -273,7 +273,7 @@ public sealed class GameRootDialogGuardTests
 
         var running = vm.Operations.TryBegin("test")!; // e.g. Update All running
         var addSaved = false;
-        var add = vm.TryAddManualGameAsync(
+        var add = vm.ManualGames.TryAddManualGameAsync(
             new LinuxManualGameEntry { Name = "Busy Add", InstallPath = Path.GetDirectoryName(exe)!, ExecutablePath = exe }, () => addSaved = true);
 
         Assert.True(addSaved);
@@ -287,7 +287,7 @@ public sealed class GameRootDialogGuardTests
         vm.SelectedGame = Assert.Single(vm.Games, g => g.Name == "Busy Add").Game;
         running = vm.Operations.TryBegin("test")!;
         var editSaved = false;
-        var edit = vm.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null, () => editSaved = true);
+        var edit = vm.ManualGames.SaveSelectedGameEditAsync(exe, Path.GetDirectoryName(exe)!, Path.GetDirectoryName(exe)!, null, null, () => editSaved = true);
 
         Assert.True(editSaved);
         Assert.False(edit.IsCompleted);

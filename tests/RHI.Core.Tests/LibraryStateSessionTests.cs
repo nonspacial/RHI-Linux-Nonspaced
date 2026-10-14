@@ -60,7 +60,7 @@ public sealed class LibraryStateSessionTests
             FavouriteGames = new(StringComparer.OrdinalIgnoreCase) { "restored-key" }
         });
 
-        var (added, _) = await fx.Vm.TryAddManualGameAsync(new() { Name = "Hades", InstallPath = hades.InstallPath, Runner = "Manual Windows" });
+        var (added, _) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = "Hades", InstallPath = hades.InstallPath, Runner = "Manual Windows" });
         Assert.False(added);
         await AddAndSelectAsync(fx, fx.Game("Celeste"));
 
@@ -163,7 +163,7 @@ public sealed class LibraryStateSessionTests
         fx.Vm.LibraryRepairRunning = true;
         try
         {
-            var (added, message) = await fx.Vm.TryAddManualGameAsync(new() { Name = "Celeste", InstallPath = celeste.InstallPath, Runner = "Manual Windows" });
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new() { Name = "Celeste", InstallPath = celeste.InstallPath, Runner = "Manual Windows" });
             Assert.False(added);
             Assert.StartsWith("Wait for Repair after move to finish", message);
         }
@@ -262,7 +262,7 @@ public sealed class LibraryStateSessionTests
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, RHI.Core.Models.DetectedGame game)
     {
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

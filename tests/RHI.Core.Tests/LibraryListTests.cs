@@ -127,7 +127,7 @@ public sealed class LibraryListTests
         foreach (var name in names)
         {
             var game = fx.Game(name);
-            var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+            var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
             {
                 Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
             });

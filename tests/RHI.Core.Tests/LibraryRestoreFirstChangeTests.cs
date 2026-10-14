@@ -85,7 +85,7 @@ public sealed class LibraryRestoreFirstChangeTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var celeste = fx.Game("Celeste");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Celeste", InstallPath = celeste.InstallPath, ExecutablePath = celeste.ExecutablePath, Runner = "Manual Windows"
         });

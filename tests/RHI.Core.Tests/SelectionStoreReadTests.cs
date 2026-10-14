@@ -83,7 +83,7 @@ public sealed class SelectionStoreReadTests
     private static async Task<DetectedGame> AddAsync(ViewModelFixture fx, string name)
     {
         var game = fx.Game(name);
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

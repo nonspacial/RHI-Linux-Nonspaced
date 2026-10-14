@@ -33,7 +33,7 @@ public sealed record LinuxSettingsUiSnapshot(
     string CacheRoot,
     string DataRoot);
 
-public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanelHost
+public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibraryEditHost
 {
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
@@ -84,6 +84,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
 
     /// <summary>Update All and the background update pass (unit 7 of the split).</summary>
     public UpdatesViewModel Updates { get; }
+
+    /// <summary>Add game, Edit game and Remove manual entry (unit 7 of the split).</summary>
+    public ManualGamesViewModel ManualGames { get; }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
@@ -152,7 +155,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     public string HideActionText => SelectedGame?.IsHidden == true
         ? UiLocalizationService.Text("Ui.Show")
         : UiLocalizationService.Text("Ui.Hide");
-    public bool CanRemoveManualGame => SelectedGame?.IsManuallyAdded == true && !IsBusy;
 
     /// <summary>
     /// The selected game was moved and RHI's records still point to its old folder (Refs #38).
@@ -344,6 +346,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         Extras = new ExtrasViewModel(this, _managedComponents, Dlss);
         Runtime = new RuntimePanelViewModel(this, _managedComponents, _apiOverrideStore, _optiScalerVariantStore, _hdrProfiles);
         Updates = new UpdatesViewModel(this, _updateAll);
+        ManualGames = new ManualGamesViewModel(this);
         _session.Changed += OnSessionChanged;
         _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
@@ -582,8 +585,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         }
         _statusNotice.SetBusy(value);
         Updates.NotifyCanUpdateAll();
-        OnPropertyChanged(nameof(CanRemoveManualGame));
-        RemoveManualGameCommand.NotifyCanExecuteChanged();
+        ManualGames.NotifyRemove();
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanEditSelectedGame));
         Runtime.NotifyBusy();
@@ -900,8 +902,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     private static string OutcomeText(OperationScope op, bool success, string? message)
         => !success && op.CancelRequested ? OperationCancelledText() : UiLocalizationService.Present(message);
 
-    private static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
-    private static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
+    internal static readonly IReadOnlySet<string> ManualOnly = new HashSet<string>(StringComparer.Ordinal) { "Manual" };
+    internal static readonly IReadOnlySet<string> NoDetectors = new HashSet<string>(StringComparer.Ordinal);
 
     [RelayCommand]
     private Task RefreshAsync()
@@ -2065,143 +2067,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
             : UiLocalizationService.Format(sessionOnly ? "Ui.SaveFailedSessionOnly" : "Ui.SaveFailedNothingChanged",
                 UiLocalizationService.Text(whatKey), UiLocalizationService.Present(ex.Message));
 
-    /// <summary>
-    /// Saves the Edit game target and launch command; <c>Saved</c> is the structural success flag (the message is
-    /// localised). <paramref name="saved"/> runs as soon as the edit is on disk, before the library refresh waits for a
-    /// running operation, so the dialog can close instead of sitting disabled with no message.
-    /// </summary>
-    /// <param name="launchCommand">
-    /// The Edit game launch command box (Add game's rule: trimmed, blank = none). None, or the detected command itself,
-    /// saves no command: the card uses the detected (launcher or Add game) command again.
-    /// </param>
-    public async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
-        string patchExecutablePath,
-        string gameRootPath,
-        string binaryDirectory,
-        string? launchProvider,
-        string? launchCommand,
-        Action? saved = null)
-    {
-        if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
-
-        var detectedCommand = SelectedGame.DetectedLaunch is { } detected ? detected.Command
-            : SelectedGame.UserLaunchCommand is null ? SelectedGame.LaunchCommand : null;
-        var userCommand = LinuxGameEditOverride.NormalizeLaunchCommand(launchCommand);
-        if (userCommand is not null && string.Equals(userCommand, LinuxGameEditOverride.NormalizeLaunchCommand(detectedCommand), StringComparison.Ordinal))
-            userCommand = null;
-        var commandChanged = !string.Equals(userCommand, SelectedGame.UserLaunchCommand, StringComparison.Ordinal);
-
-        // All three target fields left blank with a new launch command: only the launch fields are saved, and a saved
-        // patch target stays as it is (a launcher card has none to show; a stale one waits for Repair after move).
-        if (commandChanged && string.IsNullOrWhiteSpace(patchExecutablePath) && string.IsNullOrWhiteSpace(gameRootPath)
-            && string.IsNullOrWhiteSpace(binaryDirectory))
-            return await SaveSelectedGameEditAsync(null, launchProvider, userCommand, saved);
-
-        if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
-            return (false, T("Vm.SelectRealGameExecutableShouldReceive"));
-        if (string.IsNullOrWhiteSpace(gameRootPath) || !Directory.Exists(gameRootPath))
-            return (false, T("Vm.SelectedGameRootDoesNotExist"));
-        if (GameRootRefusal(gameRootPath) is { } rootRefusal) return (false, rootRefusal);
-        if (string.IsNullOrWhiteSpace(binaryDirectory) || !Directory.Exists(binaryDirectory))
-            return (false, T("Vm.SelectedBinariesPatchesDirectoryDoesNot"));
-
-        var executable = Path.GetFullPath(patchExecutablePath);
-        var root = Path.GetFullPath(gameRootPath);
-        var binaries = Path.GetFullPath(binaryDirectory);
-
-        var executableDirectory = Path.GetDirectoryName(executable);
-        if (string.IsNullOrWhiteSpace(executableDirectory))
-            return (false, T("Vm.CouldNotDetermineTargetExecutableDirectory"));
-        if (!IsPathWithin(root, executable))
-            return (false, T("Vm.TargetExecutableMustInsideSelectedGame"));
-        if (!IsPathWithin(root, binaries))
-            return (false, T("Vm.BinariesPatchesDirectoryMustInsideSelected"));
-
-        var managedRecords = _deploymentRecords.FindAll(SelectedGame);
-        if (managedRecords.Count > 0)
-        {
-            var targetChanged = !PathEquals(SelectedGame.ExecutablePath, executable)
-                                || !PathEquals(SelectedGame.InstallPath, root)
-                                || !PathEquals(SelectedGame.BinaryDirectory, binaries);
-            if (targetChanged)
-                return (false, T("Vm.RemoveRHIManagedComponentsBeforeChanging"));
-        }
-
-        return await SaveSelectedGameEditAsync(new LinuxGameEditOverride
-        {
-            PatchExecutablePath = executable,
-            GameRootPath = root,
-            BinaryDirectory = binaries
-        }, launchProvider, userCommand, saved);
-    }
-
-    /// <param name="target">The patch target to save; null keeps the one already saved for the game (if any).</param>
-    private async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
-        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, Action? saved)
-    {
-        var targetFieldsBlank = target is null;
-        var game = SelectedGame!;
-        var commandChanged = !string.Equals(userCommand, game.UserLaunchCommand, StringComparison.Ordinal);
-        // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
-        // _libraryState, or the next unrelated library save would persist it.
-        var state = WorkingLibraryCopy();
-        var key = LinuxGameLibraryStore.GameKey(game);
-        if (target is null) state.GameEdits.TryGetValue(key, out target);
-        // Blank target fields with a new command keep the saved target; the status line says so (Refs #151).
-        var targetKept = target is { HasPatchTarget: true } && targetFieldsBlank;
-        var edit = new LinuxGameEditOverride
-        {
-            LaunchProvider = launchProvider,
-            PatchExecutablePath = target?.PatchExecutablePath,
-            GameRootPath = target?.GameRootPath,
-            BinaryDirectory = target?.BinaryDirectory,
-            LaunchCommand = userCommand
-        }.Normalize();
-        if (edit.IsEmpty()) state.GameEdits.Remove(key);
-        else state.GameEdits[key] = edit;
-        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
-        _libraryState = state;
-        saved?.Invoke();
-
-        var name = game.Name;
-        _session.Invalidate(game);
-        var refreshed = await RefreshWhenIdleAsync(NoDetectors);
-        var message = !refreshed ? TF("Vm.ModificationTargetSavedButLibraryWas", name)
-            : !commandChanged ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
-            : targetKept
-                ? userCommand is null ? TF("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", name) : TF("Vm.EditSavedTargetKeptPlayUsesYourCommand", name)
-            : userCommand is null ? TF("Vm.EditSavedPlayUsesDetectedCommand", name)
-            : TF("Vm.EditSavedPlayUsesYourCommand", name);
-        // Raised as a notice: the refresh re-analyses the game and its "Ready" line would replace a plain status line
-        // within milliseconds; the notice rides on that line instead (as Repair after move does; Refs #151).
-        StatusText = _statusNotice.Raise(message);
-        return (true, message);
-    }
-
-    /// <summary>Drops the selected game's manual overrides; <c>Reset</c> is false only when the reset was refused.</summary>
-    /// <param name="saved">Runs once the change is on disk, before the refresh waits for a running operation.</param>
-    public async Task<(bool Reset, string Message)> ResetSelectedGameEditAsync(Action? saved = null)
-    {
-        if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
-        if (_deploymentRecords.FindAll(SelectedGame).Count > 0)
-            return (false, T("Vm.RemoveRHIManagedComponentsBeforeRestoring"));
-        var state = WorkingLibraryCopy();
-        var key = LinuxGameLibraryStore.GameKey(SelectedGame);
-        var removed = state.GameEdits.Remove(key);
-        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
-        _libraryState = state;
-        saved?.Invoke();
-        var name = SelectedGame.Name;
-        _session.Invalidate(SelectedGame);
-        var message = !await RefreshWhenIdleAsync(NoDetectors)
-            ? TF("Vm.ChangesSavedButLibraryWasNot", name)
-            : removed
-                ? TF("Vm.ManualOverridesRemovedAutomaticDetectionWas", name)
-                : TF("Vm.NoManualOverridesWereSaved", name);
-        StatusText = message;
-        return (true, message);
-    }
-
     /// <summary>Why a folder cannot be a game root (shared rule with every detector), or null when it can.</summary>
     public static string? GameRootRefusal(string path, string? home = null) => GameRootGuard.Check(path, home) switch
     {
@@ -2224,61 +2089,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     /// <summary>Plain state of a saved manual entry whose folder no longer exists (listed, never probed; Refs #145).</summary>
     private static string FolderMissingText(DetectedGame game)
         => TF("Vm.FolderMissingRemoveOrEdit", game.Name, game.LibraryIdentityPath ?? game.InstallPath);
-
-    public async Task<string> AddManualGameAsync(LinuxManualGameEntry entry)
-        => (await TryAddManualGameAsync(entry)).Message;
-
-    /// <summary>
-    /// Adds a manual game; <c>Added</c> is the structural success flag (the message is localised).
-    /// <paramref name="saved"/> runs as soon as the entry is on disk, before the library refresh waits for
-    /// a running operation (Update All…), so the dialog can close instead of sitting disabled with no message;
-    /// the outcome then goes to the main status line.
-    /// </summary>
-    public async Task<(bool Added, string Message)> TryAddManualGameAsync(LinuxManualGameEntry entry, Action? saved = null)
-    {
-        // The Add game button and drag-and-drop are not busy-gated: a save between the repair's commit and its
-        // reload would write the pre-repair library over the repaired file.
-        if (LibraryRepairRunning) return (false, T("Vm.WaitForRepairAfterMove"));
-        if (string.IsNullOrWhiteSpace(entry.Name)) return (false, T("Vm.EnterNameGame"));
-        if (string.IsNullOrWhiteSpace(entry.InstallPath) || !Directory.Exists(entry.InstallPath))
-            return (false, T("Vm.GameDirectoryDoesNotExist"));
-        if (GameRootRefusal(entry.InstallPath) is { } rootRefusal) return (false, rootRefusal);
-        if (!string.IsNullOrWhiteSpace(entry.ExecutablePath) && !File.Exists(entry.ExecutablePath))
-            return (false, T("Vm.SelectedExecutableDoesNotExist"));
-        if (!string.IsNullOrWhiteSpace(entry.PrefixPath) && !Directory.Exists(entry.PrefixPath))
-            return (false, T("Vm.SelectedWineProtonPrefixDoesNot"));
-
-        // Duplicates are judged by the library's own identity (PathIdentity: symlinks resolved, ordinal), so a
-        // symlink spelling of a listed folder is refused here instead of being saved and merged away by the scan.
-        var identity = PathIdentity.Canonicalize(entry.InstallPath);
-        bool SameFolder(string? path) => !string.IsNullOrWhiteSpace(path) && PathIdentity.Canonicalize(path).Equals(identity, StringComparison.Ordinal);
-        if (_library.AllGames.Any(game => SameFolder(game.InstallPath) || SameFolder(game.LibraryIdentityPath)))
-            return (false, T("Vm.GameDirectoryAlreadyLibrary"));
-
-        // Mutate a copy; the live state changes only once the save succeeded.
-        var state = WorkingLibraryCopy();
-        if (state.ManualGames.Any(existing => SameFolder(existing.InstallPath)))
-            return (false, T("Vm.ManualGameAlreadySaved"));
-
-        state.ManualGames.Add(entry);
-        state.FilterMode = "All Games";
-        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is { } notSaved) return (false, notSaved);
-        _libraryState = state;
-        LibraryFilterMode = "All Games";
-        saved?.Invoke();
-        string message;
-        if (!await RefreshWhenIdleAsync(ManualOnly))
-            message = TF("Vm.WasSavedManualLibraryButLibrary", entry.Name);
-        else if (_library.AllGames.FirstOrDefault(game => game.IsManuallyAdded && SameFolder(game.LibraryIdentityPath ?? game.InstallPath)) is { } added)
-        {
-            SelectedGame = added;
-            message = TF("Vm.AddedManualLibrary", entry.Name);
-        }
-        else
-            message = TF("Vm.WasSavedManualLibraryButDid", entry.Name);
-        StatusText = message;
-        return (true, message);
-    }
 
     /// <summary>The per-game stores the UI owns, handed to "Repair after move" with the service's own.</summary>
     internal IReadOnlyList<IGameStateStore> RepairUiStores => [_libraryStore, _apiOverrideStore, _optiScalerVariantStore];
@@ -2350,25 +2160,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
             OnSelectedGameChanged(game);
         }
         CheckRepairAfterMove(force: true);
-    }
-
-    [RelayCommand(CanExecute = nameof(CanRemoveManualGame))]
-    private async Task RemoveManualGameAsync()
-    {
-        if (SelectedGame is not { IsManuallyAdded: true } selected) return;
-        // Mutate a copy; the live state changes only once the save succeeded. Matched by every folder the
-        // entry may have been saved with (an edit or the manifest may have moved InstallPath).
-        var state = WorkingLibraryCopy();
-        if (state.RemoveManualEntriesFor(selected) == 0)
-        {
-            StatusText = TF("Vm.SavedManualEntryWasNotFound", selected.Name);
-            return;
-        }
-        if (TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false) is not null) return;
-        _libraryState = state;
-        StatusText = await RefreshWhenIdleAsync(ManualOnly)
-            ? TF("Vm.RemovedFromManualLibraryGameFiles", selected.Name)
-            : TF("Vm.RemovedFromManualLibraryButList", selected.Name);
     }
 
     public async Task<ComponentOperationResult> InstallLocalLumaPackageAsync(
@@ -2464,8 +2255,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(CanEditSelectedGame));
         OnPropertyChanged(nameof(FavouriteActionText));
         OnPropertyChanged(nameof(HideActionText));
-        OnPropertyChanged(nameof(CanRemoveManualGame));
-        RemoveManualGameCommand.NotifyCanExecuteChanged();
+        ManualGames.NotifyRemove();
         OnPropertyChanged(nameof(ShowRepairAfterMove));
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanInstallD3DCompilerWithProtontricks));
@@ -2493,33 +2283,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(CanOpenDlssBatch));
     }
 
-    private static bool PathEquals(string? left, string? right)
-    {
-        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
-            return string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
-        try
-        {
-            return Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar)
-                .Equals(Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return left.Trim().Equals(right.Trim(), StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    private static bool IsPathWithin(string root, string candidate)
-    {
-        try
-        {
-            var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
-            var normalizedCandidate = Path.GetFullPath(candidate);
-            if (normalizedCandidate.Equals(normalizedRoot, StringComparison.OrdinalIgnoreCase)) return true;
-            return normalizedCandidate.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-        }
-        catch { return false; }
-    }
-
     // In-session caches (probe, selection) are per card and folder; saved library state uses GameKey (Refs #147).
     private static string Key(DetectedGame g) => LinuxGameLibraryStore.SessionKey(g);
 
@@ -2539,6 +2302,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     bool IPanelHost.AdoptRestoredLibraryFile(bool reloadHdrControls) => AdoptRestoredLibraryFile(reloadHdrControls);
     void IPanelHost.NotifySelected() => NotifySelected();
     void IPanelHost.NotifyDlss() => NotifyDlss();
+    LinuxGameLibraryState ILibraryEditHost.WorkingLibraryCopy() => WorkingLibraryCopy();
+    string? ILibraryEditHost.SaveLibraryCopy(LinuxGameLibraryState state) => TryPersist(() => _libraryStore.Save(state), "Ui.WhatGameLibrary", sessionOnly: false);
+    void ILibraryEditHost.AdoptLibraryCopy(LinuxGameLibraryState state) => _libraryState = state;
+    Task<bool> ILibraryEditHost.RefreshWhenIdleAsync(IReadOnlySet<string>? onlyDetectors) => RefreshWhenIdleAsync(onlyDetectors);
+    LinuxDeploymentRecordStore ILibraryEditHost.DeploymentRecords => _deploymentRecords;
+    bool ILibraryEditHost.LibraryRepairRunning => LibraryRepairRunning;
+    void ILibraryEditHost.RaiseNotice(string message) => StatusText = _statusNotice.Raise(message);
+    void ILibraryEditHost.ShowAllGames() => LibraryFilterMode = "All Games";
+    void ILibraryEditHost.Select(DetectedGame game) => SelectedGame = game;
     string? IPanelHost.PersistLibraryState(string whatKey) => TryPersist(() => _libraryStore.Save(_libraryState), whatKey);
     void IPanelHost.ForgetFilterFacts(DetectedGame game) => _filterFacts.Remove(game);
 }

@@ -219,7 +219,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         await AddAndSelectAsync(fx, fx.Game("Tunic"));
         File.SetUnixFileMode(fx.DataDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
 
-        await fx.Vm.RemoveManualGameCommand.ExecuteAsync(null);
+        await fx.Vm.ManualGames.RemoveManualGameCommand.ExecuteAsync(null);
 
         Assert.StartsWith("Could not save the game library:", fx.Vm.StatusText);
         // A pending one-shot notice (the offline fixture's DLSS manifest failure) may ride on the line.
@@ -352,7 +352,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         await AddAndSelectAsync(fx, game);
         LockLibrary(fx);
 
-        var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+        var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
 
         Assert.False(saved);
         Assert.StartsWith("Could not save the game library:", message);
@@ -369,11 +369,11 @@ public sealed class UiExceptionHandlingTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([]);
         var game = fx.Game("Tunic");
         await AddAndSelectAsync(fx, game);
-        var (saved, saveMessage) = await fx.Vm.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
+        var (saved, saveMessage) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(game.ExecutablePath!, game.InstallPath, game.BinaryDirectory!, null, null);
         Assert.True(saved, saveMessage);
         LockLibrary(fx);
 
-        var (reset, message) = await fx.Vm.ResetSelectedGameEditAsync();
+        var (reset, message) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
 
         Assert.False(reset);
         Assert.EndsWith("Nothing was changed.", message);
@@ -390,7 +390,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
         var other = fx.Game("Hades");
         LockLibrary(fx);
 
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = other.Name, InstallPath = other.InstallPath, ExecutablePath = other.ExecutablePath, Runner = "Manual Windows"
         });
@@ -449,7 +449,7 @@ public sealed class UiExceptionHandlingTests : IDisposable
 
     private static async Task AddAndSelectAsync(ViewModelFixture fx, DetectedGame game)
     {
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

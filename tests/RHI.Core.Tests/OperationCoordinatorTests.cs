@@ -100,7 +100,7 @@ public sealed class OperationCoordinatorTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
         });
@@ -144,7 +144,7 @@ public sealed class OperationCoordinatorTests
     {
         using var fx = await ViewModelFixture.StartAsync([]);
         var tunic = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Tunic", InstallPath = tunic.InstallPath, ExecutablePath = tunic.ExecutablePath, Runner = "Manual Windows"
         });
@@ -199,7 +199,7 @@ public sealed class OperationCoordinatorTests
                 Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(addon)))
             }]
         });
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = "Moved Game", InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });

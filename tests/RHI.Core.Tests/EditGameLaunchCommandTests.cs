@@ -33,7 +33,7 @@ public sealed class EditGameLaunchCommandTests
             Assert.Equal(UiLocalizationService.Text("Vm.NoLaunchCommandSetOneInEdit"), fx.Vm.LaunchToolTip);
 
             var card = fx.Vm.SelectedGame!;
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(card.ExecutablePath!, card.InstallPath, card.BinaryDirectory!, null, typed);
+            var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(card.ExecutablePath!, card.InstallPath, card.BinaryDirectory!, null, typed);
 
             Assert.True(saved, message);
             Assert.Equal("Tunic: changes saved. Play runs the launch command you entered.", message);
@@ -91,7 +91,7 @@ public sealed class EditGameLaunchCommandTests
             async Task<string> SaveAsync(string? command)
             {
                 var card = fx.Vm.SelectedGame!;
-                var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(card.ExecutablePath!, card.InstallPath, card.BinaryDirectory!, null, command);
+                var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(card.ExecutablePath!, card.InstallPath, card.BinaryDirectory!, null, command);
                 Assert.True(saved, message);
                 await SelectAsync(fx, "Tunic");
                 return message;
@@ -116,7 +116,7 @@ public sealed class EditGameLaunchCommandTests
             // Reset drops the command with the rest of the edit.
             await SaveAsync("wine Tunic.exe");
             Assert.Equal("wine Tunic.exe", fx.Vm.SelectedGame!.LaunchCommand);
-            var (reset, resetMessage) = await fx.Vm.ResetSelectedGameEditAsync();
+            var (reset, resetMessage) = await fx.Vm.ManualGames.ResetSelectedGameEditAsync();
             Assert.True(reset, resetMessage);
             await SelectAsync(fx, "Tunic");
             Assert.Empty(fx.Library.Load().GameEdits);
@@ -152,7 +152,7 @@ public sealed class EditGameLaunchCommandTests
             });
             await SelectAsync(fx, "Kept Game");
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync("", " ", "", null, "my-wrapper wine Kept.exe");
+            var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync("", " ", "", null, "my-wrapper wine Kept.exe");
 
             Assert.True(saved, message);
             Assert.Equal(UiLocalizationService.Format("Vm.EditSavedTargetKeptPlayUsesYourCommand", "Kept Game"), message);
@@ -164,7 +164,7 @@ public sealed class EditGameLaunchCommandTests
             Assert.Equal((exe, install, bin, "my-wrapper wine Kept.exe"), (edit.PatchExecutablePath, edit.GameRootPath, edit.BinaryDirectory, edit.LaunchCommand));
 
             await SelectAsync(fx, "Kept Game");
-            var (back, again) = await fx.Vm.SaveSelectedGameEditAsync("", "", "", null, "");
+            var (back, again) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync("", "", "", null, "");
             Assert.True(back, again);
             Assert.Equal(UiLocalizationService.Format("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", "Kept Game"), again);
         }
@@ -191,11 +191,11 @@ public sealed class EditGameLaunchCommandTests
             await SelectAsync(fx, "Launcher Game");
             Assert.False(fx.Vm.CanLaunch);
 
-            var (refused, why) = await fx.Vm.SaveSelectedGameEditAsync("", "", "", null, null);
+            var (refused, why) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync("", "", "", null, null);
             Assert.False(refused);
             Assert.Equal(UiLocalizationService.Text("Vm.SelectRealGameExecutableShouldReceive"), why);
 
-            var (saved, message) = await fx.Vm.SaveSelectedGameEditAsync(" ", "", "", null, "lutris lutris:rungame/launcher-game");
+            var (saved, message) = await fx.Vm.ManualGames.SaveSelectedGameEditAsync(" ", "", "", null, "lutris lutris:rungame/launcher-game");
             Assert.True(saved, message);
             Assert.Equal(UiLocalizationService.Format("Vm.EditSavedPlayUsesYourCommand", "Launcher Game"), message);
             await SelectAsync(fx, "Launcher Game");

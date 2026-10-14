@@ -213,7 +213,7 @@ public sealed class NeuralVersionRefreshViewModelTests
         Assert.Equal(new[] { Bridge, Feeder, ShortFuse }.Order(StringComparer.Ordinal), fetches.Keys.Order(StringComparer.Ordinal));
 
         var game = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
@@ -248,7 +248,7 @@ public sealed class NeuralVersionRefreshViewModelTests
         var afterStart = new Dictionary<string, int>(fetches);
 
         var game = fx.Game("Tunic");
-        var (added, message) = await fx.Vm.TryAddManualGameAsync(new()
+        var (added, message) = await fx.Vm.ManualGames.TryAddManualGameAsync(new()
         {
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
