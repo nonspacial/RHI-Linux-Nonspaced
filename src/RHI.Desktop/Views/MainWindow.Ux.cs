@@ -63,6 +63,7 @@ public sealed partial class MainWindow
             if (DataContext is MainWindowViewModel confirmVm)
             {
                 confirmVm.ConfirmAsync = (title, message, accept) => ShowConfirmationAsync(title, message, accept, height: 520);
+                confirmVm.ConfirmControlUeAsync = ShowControlUeConfirmationAsync; // w3/dllnames hook (#136)
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
             }

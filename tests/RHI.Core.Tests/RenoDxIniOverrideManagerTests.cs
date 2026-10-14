@@ -31,6 +31,31 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
         Assert.Contains("EffectSearchPaths=.\\reshade-shaders\\Shaders\\**", final);
     }
 
+    // #136: Control UE's FgSlHdr10 lives in [renodx-preset1]; the state remembers the section, [renodx] is untouched,
+    // and a record naming any other section is never followed.
+    [Fact]
+    public void ApplyAndCleanup_InAnotherRenoDxSection_OwnsOnlyThatSection()
+    {
+        var ini = Path.Combine(_root, "reshade.ini");
+        const string original = "[renodx]\nFgSlHdr10=7\n\n[renodx-preset1]\nToneMapType=1\n";
+        File.WriteAllText(ini, original);
+
+        var result = RenoDxIniOverrideManager.Apply(_root, new Dictionary<string, string> { ["FgSlHdr10"] = "1" }, section: "renodx-preset1");
+
+        Assert.Equal("renodx-preset1", result.State!.Section);
+        Assert.Equal("[renodx]\nFgSlHdr10=7\n\n[renodx-preset1]\nToneMapType=1\nFgSlHdr10=1\n", File.ReadAllText(ini));
+        var roundTrip = RenoDxIniOverrideManager.Deserialize(RenoDxIniOverrideManager.Serialize(result.State));
+        RenoDxIniOverrideManager.Cleanup(roundTrip);
+        Assert.Equal(original, File.ReadAllText(ini));
+
+        Assert.Throws<ArgumentException>(() => RenoDxIniOverrideManager.Apply(_root, new Dictionary<string, string> { ["X"] = "1" }, section: "GENERAL"));
+        var tampered = result.State with { Section = "GENERAL" };
+        File.WriteAllText(ini, "[GENERAL]\nFgSlHdr10=1\n");
+        RenoDxIniOverrideManager.Cleanup(tampered);
+        Assert.Equal("[GENERAL]\nFgSlHdr10=1\n", File.ReadAllText(ini));
+        Assert.Null(RenoDxIniOverrideManager.Deserialize("{\"IniPath\":\"x\",\"SectionCreatedByRhi\":false,\"Entries\":[]}")!.Section);
+    }
+
     [Fact]
     public void ApplyAndCleanup_PreexistingValue_RestoresExactPriorValue()
     {

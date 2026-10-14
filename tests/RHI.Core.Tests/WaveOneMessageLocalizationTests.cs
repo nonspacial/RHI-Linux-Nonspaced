@@ -232,6 +232,15 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
         yield return ReShadeDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
         yield return OptiScalerDeploymentService.ProxyNameNotOfferedPrefix + "d3d9.dll";
+        yield return "RenoDX installed: Control → " + P + " · " + ControlUeFrameGenerationService.SetUpPrefix + "20261004."
+            + ControlUeFrameGenerationService.StackFailedPrefix + P
+            + ControlUeFrameGenerationService.SettingsFailedPrefix + P
+            + ControlUeFrameGenerationService.ReShadeNameNote + "d3d12.dll"
+            + ControlUeFrameGenerationService.HdrSetPrefix + "1";
+        yield return ControlUeFrameGenerationService.NotSetUpPrefix + ControlUeFrameGenerationService.OptiScalerElsewherePrefix + "Stable 0.9.4 / dxgi.dll"
+            + ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage;
+        yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoRenoDxMessage;
+        yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrUserValueKeptMessage;
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
     }
 

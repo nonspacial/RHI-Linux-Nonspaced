@@ -435,6 +435,31 @@ public sealed class ControlUePostInstallTests : IDisposable
         AssertNotGenericInPortuguese(install.Message);
     }
 
+    // #136: FgSlHdr10 (Control UE frame generation's "Using HDR?") is owned on the RenoDX record: a RenoDX update keeps
+    // owning it, and RenoDX removal puts reshade.ini back.
+    [Fact]
+    public async Task FrameGenerationHdrKey_StaysOwnedThroughARenoDxUpdate_AndRemovalPutsItBack()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        const string original = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(ini, original);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        // SetHdrKey reads only the RenoDX record and reshade.ini (no OptiScaler needed).
+        var frameGeneration = new ControlUeFrameGenerationService(null!, store);
+        Assert.Equal(ControlUeFrameGenerationService.HdrSetPrefix + "1", frameGeneration.SetHdrKey(game, useHdr: true));
+        Assert.Contains("[renodx-preset1]\nFgSlHdr10=1\n", File.ReadAllText(ini));
+
+        _srVersion = "310.9.9"; // the update has something to do
+        var updated = await service.UpdateAsync(game, [game.ExecutablePath!]);
+        Assert.True(updated.Success, updated.Message);
+        Assert.True(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
+
+        var removed = await service.RemoveAsync(game);
+        Assert.True(removed.Success, removed.Message);
+        Assert.Equal(original, File.ReadAllText(ini));
+    }
+
     private (DetectedGame Game, RenoDxDeploymentService Service, LinuxDeploymentRecordStore Store) Arrange(string name)
     {
         var bin = Path.Combine(_root, "steamapps", "common", "Control");

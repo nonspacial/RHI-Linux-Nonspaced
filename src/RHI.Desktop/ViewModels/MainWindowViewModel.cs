@@ -1234,6 +1234,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>Set by the window: shows a confirmation (title, message, accept text) and returns true to proceed.</summary>
     public Func<string, string, string, Task<bool>>? ConfirmAsync { get; set; }
 
+    /// <summary>w3/dllnames (#136): the Control UE RenoDX confirmation with its FG/HDR choices; null = plain confirmation, FG No.</summary>
+    public Func<ControlUeInstallDialogModel, Task<bool>>? ConfirmControlUeAsync { get; set; }
+
     /// <summary>
     /// Set by the window: shows the manifest install warnings (title, one section per component with its links, accept
     /// text) in one dialog; true to proceed.
@@ -1306,13 +1309,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
             if (!removing && !await AcceptManifestInstallWarningsAsync(game, kind, component.DisplayName, installsTarget: true, probe.Files)) return;
 
-            // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first.
-            if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game) &&
-                ConfirmAsync is { } confirm && new ControlUeInstallDialogModel() is var controlUe &&
-                !await confirm(controlUe.Title, controlUe.Message, controlUe.AcceptText))
+            // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first. Since 2.8.1
+            // the confirmation also offers OptiScaler FG and "Using HDR?" (w3/dllnames #136; a plain confirmation = FG No).
+            ControlUeInstallDialogModel? controlUe = null;
+            if (!removing && kind == ManagedComponentKind.RenoDX && ControlUePostInstallService.IsControlUltimateEdition(game))
             {
-                StatusText = T("Vm.RenoDXInstallationCancelled");
-                return;
+                controlUe = new ControlUeInstallDialogModel();
+                var accepted = ConfirmControlUeAsync is { } ask ? await ask(controlUe)
+                    : ConfirmAsync is not { } confirm || await confirm(controlUe.Title, controlUe.Message, controlUe.AcceptText);
+                if (!accepted)
+                {
+                    StatusText = T("Vm.RenoDXInstallationCancelled");
+                    return;
+                }
             }
 
             StatusText = removing
@@ -1330,7 +1339,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                     : kind == ManagedComponentKind.OptiScaler
                         ? await _managedComponents.InstallOptiScalerAsync(game, Runtime.SelectedOptiScalerVariant.Value, op.Token)
                         : await _managedComponents.InstallAsync(game, kind, probe.Files, op.Token);
-            StatusText = OutcomeText(op, result.Success, result.Message);
+            // #136: the FG step runs only after RenoDX installed; its own failure never turns the RenoDX result into one.
+            var message = result.Message;
+            if (result.Success && controlUe is { InstallOptiScalerFg: true })
+            {
+                var frameGeneration = await _managedComponents.InstallControlUeFrameGenerationAsync(game, controlUe.UseHdr, op.Token);
+                message += " · " + frameGeneration.Message;
+            }
+            StatusText = OutcomeText(op, result.Success, message);
             if (result.Success)
                 await ReprobeGameAsync(game);
         }

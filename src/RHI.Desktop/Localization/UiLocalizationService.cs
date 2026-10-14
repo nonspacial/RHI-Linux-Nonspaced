@@ -1094,6 +1094,22 @@ public static class UiLocalizationService
             "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
         ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
+        // #136 Control UE OptiScaler frame generation step.
+        ("Control UE frame generation set up: OptiScaler Nightly pinned as winmm.dll with Streamline, DLSS Enabler and the frame generation settings. Build: ",
+            "Geração de quadros do Control UE configurada: OptiScaler Nightly fixado como winmm.dll com Streamline, DLSS Enabler e as configurações de geração de quadros. Build: "),
+        ("Control UE frame generation was not set up; the RenoDX install is kept: ",
+            "A geração de quadros do Control UE não foi configurada; a instalação do RenoDX foi mantida: "),
+        ("OptiScaler is already installed on this game under another build or DLL name, so it was left as it is. Remove OptiScaler, then install RenoDX again with frame generation. Installed: ",
+            "O OptiScaler já está instalado neste jogo com outro build ou nome de DLL, então foi deixado como está. Remova o OptiScaler e instale o RenoDX de novo com a geração de quadros. Instalado: "),
+        (" Streamline/DLSS Enabler could not be deployed: ", " Não foi possível implantar Streamline/DLSS Enabler: "),
+        (" The frame generation settings could not be written to OptiScaler.ini: ", " Não foi possível gravar as configurações de geração de quadros no OptiScaler.ini: "),
+        (" ReShade keeps its own DLL name (upstream moves it to dxgi.dll; RHI does not rename an installed ReShade): ",
+            " O ReShade mantém o próprio nome de DLL (o upstream o move para dxgi.dll; o RHI não renomeia um ReShade instalado): "),
+        (" FgSlHdr10 set in reshade.ini: ", " FgSlHdr10 definido no reshade.ini: "),
+        (" FgSlHdr10 was not set in reshade.ini: ", " FgSlHdr10 não foi definido no reshade.ini: "),
+        ("reshade.ini was not found in the game folder.", "o reshade.ini não foi encontrado na pasta do jogo."),
+        ("RenoDX is not installed by RHI on this game.", "o RenoDX não foi instalado pelo RHI neste jogo."),
+        ("the value was changed outside RHI and was kept.", "o valor foi alterado fora do RHI e foi mantido."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

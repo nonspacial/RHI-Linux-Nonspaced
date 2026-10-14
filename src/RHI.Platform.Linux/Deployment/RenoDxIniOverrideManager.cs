@@ -15,7 +15,11 @@ internal sealed record RenoDxIniOverrideEntry(
 internal sealed record RenoDxIniOverrideState(
     string IniPath,
     bool SectionCreatedByRhi,
-    IReadOnlyList<RenoDxIniOverrideEntry> Entries);
+    IReadOnlyList<RenoDxIniOverrideEntry> Entries)
+{
+    /// <summary>The section the keys live in; null = <c>[renodx]</c> (every state written before #136).</summary>
+    public string? Section { get; init; }
+}
 
 internal sealed record RenoDxIniOverrideApplyResult(
     RenoDxIniOverrideState? State,
@@ -82,13 +86,19 @@ internal static class RenoDxIniOverrideManager
         return new UserFileLinkPolicy("reshade.ini", roots, LinkRefusalPrefix);
     }
 
+    /// <param name="section">The section to own keys in (a plain INI name); null = <c>[renodx]</c>. Control UE's
+    /// <c>FgSlHdr10</c> lives in <c>[renodx-preset1]</c> (#136).</param>
     public static RenoDxIniOverrideApplyResult Apply(
         string binaryDirectory,
         IReadOnlyDictionary<string, string> requested,
         RenoDxIniOverrideState? previousState = null,
         Func<Stream, Stream>? wrapOutput = null,
-        string? gameRoot = null)
+        string? gameRoot = null,
+        string? section = null)
     {
+        var sectionName = section ?? previousState?.Section ?? SectionName;
+        if (!IsSafeSectionName(sectionName))
+            throw new ArgumentException($"RenoDX setting refused: not a plain INI section name: {sectionName}");
         if (requested.Count == 0)
             return new(previousState, 0, 0);
 
@@ -116,7 +126,7 @@ internal static class RenoDxIniOverrideManager
             if (!RenoDxIniGrammar.IsSafePair(key, requestedValue)) continue;
 
             // Re-evaluate the section boundary because prior insertions may have shifted it.
-            var (sectionStart, sectionEnd) = FindSection(lines, SectionName);
+            var (sectionStart, sectionEnd) = FindSection(lines, sectionName);
             var keyIndex = sectionStart >= 0 ? FindKey(lines, sectionStart + 1, sectionEnd, key) : -1;
             var currentValue = keyIndex >= 0 ? GetValue(lines[keyIndex]) : null;
 
@@ -144,7 +154,7 @@ internal static class RenoDxIniOverrideManager
             if (sectionStart < 0)
             {
                 if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
-                lines.Add($"[{SectionName}]");
+                lines.Add($"[{sectionName}]");
                 sectionStart = lines.Count - 1;
                 sectionEnd = lines.Count;
                 sectionCreated = true;
@@ -180,7 +190,10 @@ internal static class RenoDxIniOverrideManager
         var state = new RenoDxIniOverrideState(
             iniPath,
             sectionCreated,
-            nextEntries.Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray());
+            nextEntries.Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray())
+        {
+            Section = sectionName.Equals(SectionName, StringComparison.OrdinalIgnoreCase) ? null : sectionName
+        };
         return new(state, applied, preservedUserEdits);
     }
 
@@ -188,12 +201,14 @@ internal static class RenoDxIniOverrideManager
     {
         if (state is null || !File.Exists(state.IniPath)) return;
 
+        var sectionName = state.Section ?? SectionName;
+        if (!IsSafeSectionName(sectionName)) return; // a hand-edited record never steers the edit into another section
         var lines = File.ReadAllLines(state.IniPath).ToList();
         var changed = false;
 
         foreach (var entry in state.Entries)
         {
-            var (start, end) = FindSection(lines, SectionName);
+            var (start, end) = FindSection(lines, sectionName);
             if (start < 0) break;
             var keyIndex = FindKey(lines, start + 1, end, entry.Key);
             if (keyIndex < 0) continue;
@@ -211,7 +226,7 @@ internal static class RenoDxIniOverrideManager
 
         if (state.SectionCreatedByRhi)
         {
-            var (start, end) = FindSection(lines, SectionName);
+            var (start, end) = FindSection(lines, sectionName);
             if (start >= 0 && SectionBodyIsEmpty(lines, start + 1, end))
             {
                 // Remove one adjacent blank line as well to avoid leaving RHI-only whitespace.
@@ -287,6 +302,12 @@ internal static class RenoDxIniOverrideManager
         foreach (var line in lines) text.Append(line).Append('\n');
         AtomicFile.ReplaceUserFile(path, new UTF8Encoding(false).GetBytes(text.ToString()), linkPolicy, wrapOutput);
     }
+
+    /// <summary>A section RHI may own keys in: <c>renodx</c> or <c>renodx-…</c> of plain INI characters.</summary>
+    internal static bool IsSafeSectionName(string? section)
+        => section is { Length: > 0 and <= RenoDxIniGrammar.MaxKeyLength }
+           && section.StartsWith(SectionName, StringComparison.OrdinalIgnoreCase)
+           && section.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
 
     public static string Serialize(RenoDxIniOverrideState state)
         => JsonSerializer.Serialize(state);
