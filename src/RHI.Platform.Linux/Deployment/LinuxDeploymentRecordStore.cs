@@ -170,6 +170,60 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
+    /// <summary>
+    /// Puts <paramref name="operationId"/> under <see cref="LinuxDeploymentRecovery.RemovalOperationIdMetadataKey"/> on
+    /// every record <see cref="Remove"/> would remove for this game and component (the removal's commit probe: the
+    /// removal is committed once no record carries it). Leaves <see cref="LinuxDeploymentRecord.SavedAtUtc"/> as it is:
+    /// nothing was installed, so the Wine recovery's "later record" check must not see one. Returns how many records
+    /// were stamped (0 = nothing to remove; the ledger is not written). Throws while the ledger is unreadable.
+    /// </summary>
+    public int StampRemoval(DetectedGame game, ManagedComponentKind component, string operationId)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(operationId);
+        lock (_gate)
+        {
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            var stamped = 0;
+            for (var i = 0; i < records.Count; i++)
+            {
+                if (!GameRecordIdentity.Matches(records[i].GameKey, game) || records[i].Component != component) continue;
+                var copy = Clone(records[i]);
+                copy.Metadata[LinuxDeploymentRecovery.RemovalOperationIdMetadataKey] = operationId;
+                records[i] = copy;
+                stamped++;
+            }
+            if (stamped > 0) SaveUnsafe(records);
+            return stamped;
+        }
+    }
+
+    /// <summary>
+    /// Saves several record changes in one ledger write (all or nothing): each of <paramref name="upserts"/> replaces the
+    /// record with its key and component (stamped like <see cref="Upsert"/>), each of <paramref name="removals"/> goes as
+    /// <see cref="Remove"/> would take it. For operations that change two components' records at their commit point
+    /// (ShortFuse renames ReShade's payload), so a crash can never leave one saved and the other not.
+    /// </summary>
+    public void Commit(IEnumerable<LinuxDeploymentRecord> upserts, IEnumerable<(DetectedGame Game, ManagedComponentKind Component)>? removals = null)
+    {
+        lock (_gate)
+        {
+            var records = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            foreach (var (game, component) in removals ?? [])
+                records.RemoveAll(r => GameRecordIdentity.Matches(r.GameKey, game) && r.Component == component);
+            var now = DateTime.UtcNow;
+            foreach (var record in upserts)
+            {
+                var copy = Clone(record);
+                copy.SavedAtUtc = now;
+                var index = records.FindIndex(r => r.GameKey == record.GameKey && r.Component == record.Component);
+                if (index >= 0) records[index] = copy; else records.Add(copy);
+            }
+            SaveUnsafe(records);
+        }
+    }
+
     public void Remove(DetectedGame game, ManagedComponentKind component)
     {
         lock (_gate)
@@ -262,12 +316,15 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
-    /// <summary>Test seam: when set, every save fails with this exception before anything is written.</summary>
-    internal Func<Exception>? SaveFaultForTesting { get; set; }
+    /// <summary>
+    /// Test seam: when set, every save asks it first and fails with the exception it returns, before anything is written
+    /// (null = this save goes through, so a test can fail the n-th save).
+    /// </summary>
+    internal Func<Exception?>? SaveFaultForTesting { get; set; }
 
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
-        if (SaveFaultForTesting is { } fault) throw fault();
+        if (SaveFaultForTesting?.Invoke() is { } fault) throw fault;
         // The store-file writer (#31, #57): unique temp, fsync, full verify, rename, directory fsync; a symlinked
         // deployments.json stays a link (its target is replaced) and keeps its mode, as every other store does.
         AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));

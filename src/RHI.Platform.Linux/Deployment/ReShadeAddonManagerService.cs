@@ -147,20 +147,15 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             return ComponentOperationResult.Fail($"A different Custom Addon already exists with the name {fileName}; RHI will not overwrite it.");
         }
 
-        var temp = target + $".tmp-{Guid.NewGuid():N}";
         try
         {
-            File.Copy(sourcePath, temp, overwrite: false);
-            File.Move(temp, target, overwrite: false);
+            // Verified, durable copy (#31); never replaces a file that appeared under the name meanwhile.
+            AtomicFile.Copy(sourcePath, target, overwrite: false);
             return ComponentOperationResult.Ok($"Imported {fileName} into Custom Addons. Select it in Shaders/Addons for the games that should use it.", target);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             return ComponentOperationResult.Fail($"Could not import {fileName}: {ex.Message}");
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
         }
     }
 
@@ -274,65 +269,25 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                     return ComponentOperationResult.Fail($"External addon already exists at {target}. RHI will not overwrite or adopt it.");
             }
 
-            // Back up every previously owned payload before touching the game so a failed
-            // selection change can restore the exact pre-transaction state.
-            var rollbackDir = Path.Combine(_cacheDir, "rollback-" + Guid.NewGuid().ToString("N"));
-            var rollbackFiles = new List<(string Original, string Backup)>();
-            Directory.CreateDirectory(rollbackDir);
+            // DEP-09 (#28): every previously owned add-on and every target is tracked with a verified copy before anything
+            // changes, new add-ons are placed through verified, durable copies, and a failure (a payload, or the state
+            // save) puts every file back from those copies. A copy that cannot be put back is kept beside its file and
+            // named in the result; nothing is deleted before the restore it may be needed for has succeeded (it used to
+            // stop at the first failed copy and then delete the rollback folder with the only copies).
+            await using var scope = DeploymentScope.Unjournaled();
+            var newState = new GameState { SelectedIds = normalized.ToList() };
+            var changed = new List<string>();
             try
             {
                 foreach (var file in old.Files)
-                {
-                    if (!File.Exists(file.Path)) continue;
-                    var backup = Path.Combine(rollbackDir, rollbackFiles.Count.ToString("D4") + "-" + Path.GetFileName(file.Path));
-                    File.Copy(file.Path, backup, overwrite: true);
-                    rollbackFiles.Add((file.Path, backup));
-                }
+                    await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
 
-                foreach (var file in old.Files)
+                foreach (var item in prepared)
                 {
-                    if (File.Exists(file.Path))
-                        File.Delete(file.Path);
-                }
-
-                var newState = new GameState { SelectedIds = normalized.ToList() };
-                var changed = new List<string>();
-                try
-                {
-                    foreach (var item in prepared)
-                    {
-                        var target = Path.Combine(deployDir, item.DeployName);
-                        var temp = target + $".rhi-tmp-{Guid.NewGuid():N}";
-                        try
-                        {
-                            File.Copy(item.Source, temp, overwrite: true);
-                            File.Move(temp, target, overwrite: true);
-                        }
-                        finally
-                        {
-                            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-                        }
-                        changed.Add(target);
-                        newState.Files.Add(new StateFile
-                        {
-                            AddonId = item.Definition.Id,
-                            Path = target,
-                            Sha256 = FileHash.Sha256Hex(target)
-                        });
-                    }
-                }
-                catch
-                {
-                    foreach (var path in changed)
-                    {
-                        try { if (File.Exists(path)) File.Delete(path); } catch { }
-                    }
-                    foreach (var (original, backup) in rollbackFiles)
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(original)!);
-                        File.Copy(backup, original, overwrite: true);
-                    }
-                    throw;
+                    var target = Path.Combine(deployDir, item.DeployName);
+                    var hash = await scope.PlaceCopyAsync(item.Source, target, cancellationToken).ConfigureAwait(false);
+                    changed.Add(target);
+                    newState.Files.Add(new StateFile { AddonId = item.Definition.Id, Path = target, Sha256 = hash });
                 }
 
                 if (normalized.Length == 0)
@@ -340,17 +295,21 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                 else
                     GameRecordIdentity.Set(state.Games, game, newState);
                 SaveState(state);
-
-                return ComponentOperationResult.Ok(
-                    normalized.Length == 0
-                        ? "RHI-managed generic ReShade addons removed."
-                        : $"Applied {normalized.Length} ReShade addon selection(s).",
-                    changed.ToArray());
             }
-            finally
+            catch (Exception ex)
             {
-                try { if (Directory.Exists(rollbackDir)) Directory.Delete(rollbackDir, recursive: true); } catch { }
+                var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+                if (!rollback.Success)
+                    AppLog.Warn("addon-manager", $"Selection rollback did not complete: {string.Join("; ", rollback.Failures)}");
+                return ComponentOperationResult.Fail($"ReShade Addon Manager failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
             }
+            await scope.CommitAsync().ConfigureAwait(false);
+
+            return ComponentOperationResult.Ok(
+                normalized.Length == 0
+                    ? "RHI-managed generic ReShade addons removed."
+                    : $"Applied {normalized.Length} ReShade addon selection(s).",
+                changed.ToArray());
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -653,7 +612,8 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             }
             finally
             {
-                try { if (File.Exists(zipPath)) File.Delete(zipPath); } catch { }
+                if (!FileCleanup.TryDelete(zipPath, out var cleanupError))
+                    AppLog.Warn("addon-manager", $"Could not remove the downloaded archive {zipPath}", cleanupError);
             }
         }
         else

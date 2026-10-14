@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class DofFixDeploymentServiceTests : IDisposable
+public sealed partial class DofFixDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dof-fix-tests-" + Guid.NewGuid().ToString("N"));
 

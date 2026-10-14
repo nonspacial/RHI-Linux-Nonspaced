@@ -638,6 +638,14 @@ internal static class UiStrings
         ("Sync.OptiScalerNightlyPinned", "{0}: OptiScaler Nightly fixado na build {1}.", "{0}: OptiScaler Nightly pinned to build {1}."),
         ("Sync.OptiScalerNightlyUnpinned", "{0}: OptiScaler Nightly segue a build mais nova.", "{0}: OptiScaler Nightly follows the newest build."),
         // w3/journal rows
+        ("Journal.RefSettingsTip", "RE Framework — apagar a pasta de cache _storage_", "RE Framework — delete the _storage_ cache folder"),
+        ("Journal.RefSettingsTitle", "Configurações do RE Framework", "RE Framework settings"),
+        ("Journal.RefStorageIntro", "O RE Framework guarda um cache na pasta _storage_ do jogo e o refaz a cada abertura, então apagá-la é seguro (add-ons que guardam configurações ali, como o ReLimiter, voltam aos padrões). Feche o jogo antes.", "RE Framework keeps a cache in the game's _storage_ folder and rebuilds it at every launch, so deleting it is safe (add-ons that keep settings there, such as ReLimiter, start from defaults). Close the game first."),
+        ("Journal.RefStorageDelete", "Apagar a pasta _storage_", "Delete _storage_ folder"),
+        ("Journal.RefStorageDeleting", "Apagando…", "Deleting…"),
+        ("Journal.RefStorageFound", "Pasta _storage_ encontrada:", "_storage_ folder found:"),
+        ("Journal.RefStorageNotFound", "Nenhuma pasta _storage_ na pasta do jogo.", "No _storage_ folder in the game folder."),
+        ("Journal.RefStorageNoGame", "Selecione um jogo primeiro.", "Select a game first."),
         // w3/scan rows
         // w3/parity rows
         // w3/vmsplit rows

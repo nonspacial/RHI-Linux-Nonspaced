@@ -2138,6 +2138,14 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return summary;
     }
 
+    // w3/journal (#159): RE Framework ⚙ "Delete _storage_ folder", behind the patch-target guard.
+    public Task<ComponentOperationResult> DeleteReFrameworkStorageFolderAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var guard = PatchTargetGuard(game);
+        return guard is null
+            ? _reFramework.DeleteStorageFolderAsync(game, cancellationToken)
+            : Task.FromResult(guard);
+    }
 
 }
 

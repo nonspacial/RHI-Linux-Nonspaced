@@ -243,6 +243,7 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
 
         var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
         Assert.True(remove.Success, remove.Message);
+        Assert.StartsWith(ShortFuseDeploymentService.RemovedMessage, remove.Message, StringComparison.Ordinal); // UAL removed too
         Assert.True(File.Exists(reshadePath));
         Assert.Equal(reshadeBytes, File.ReadAllBytes(reshadePath));
         Assert.False(File.Exists(asi));
@@ -788,20 +789,21 @@ public sealed partial class ShortFuseDeploymentServiceTests : IDisposable
     }
 
     private Context CreateContext(GameFixture fixture, bool fullNetwork = false, WineDllOverrideService? wineOverrides = null,
-        Func<HttpMessageHandler, HttpMessageHandler>? wrapHandler = null)
+        Func<HttpMessageHandler, HttpMessageHandler>? wrapHandler = null, RHI.Core.Deployment.DeploymentJournal? journal = null,
+        LinuxDeploymentRecordStore? records = null)
     {
-        var records = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
-        var deployment = new TransactionalFileDeploymentService();
+        records ??= new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
+        var deployment = new TransactionalFileDeploymentService(journal);
         var overrides = wineOverrides ?? new WineDllOverrideService();
         HttpMessageHandler handler = fullNetwork ? CreateFullHandler() : new MapHandler(new Dictionary<string, ResponseTemplate>());
         if (wrapHandler is not null) handler = wrapHandler(handler);
         var http = new HttpClient(handler);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(fixture.Root, "cache-dlss"));
-        var ual = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache-ual"));
+        var ual = new UltimateAsiLoaderDeploymentService(http, records, overrides, Path.Combine(fixture.Root, "cache-ual"), journal);
         // Own directory, so tests can make the ledger's directory read-only without blocking settings writes.
         var settingsDir = Directory.CreateDirectory(Path.Combine(fixture.Root, "settings")).FullName;
         var settings = new ShortFuseSettingsStore(Path.Combine(settingsDir, "sf-settings.json"));
-        var sf = new ShortFuseDeploymentService(http, deployment, records, overrides, ual, dlss, Path.Combine(fixture.Root, "cache-sf"), settings);
+        var sf = new ShortFuseDeploymentService(http, deployment, records, overrides, ual, dlss, Path.Combine(fixture.Root, "cache-sf"), settings, journal);
         return new(records, ual, sf, http);
     }
 

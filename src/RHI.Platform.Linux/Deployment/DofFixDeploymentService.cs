@@ -29,13 +29,16 @@ public sealed class DofFixDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly UpstreamRhiManifestService _manifest;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
     public DofFixDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         UpstreamRhiManifestService manifest,
-        string? cacheDir = null)
+        string? cacheDir = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _manifest = manifest;
@@ -143,43 +146,61 @@ public sealed class DofFixDeploymentService
         var release = await ResolveLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         var cached = await DownloadAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
 
+        // Journaled (#23): the add-on is tracked before it changes; the record carrying the operation id is the commit
+        // point. A failure after the copy no longer leaves the add-on without a record (#31).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "DOF Fix install: " + game.Name, game, ManagedComponentKind.DofFix, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the add-on with no record).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
-        var deployedHash = await AtomicFile.CopyAsync(cached.Path, target, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        _records.Upsert(new LinuxDeploymentRecord
+        try
         {
-            GameKey = LinuxDeploymentRecordStore.GameKey(game),
-            GameName = game.Name,
-            Component = ManagedComponentKind.DofFix,
-            BinaryDirectory = deployDir,
-            SourceUrl = release.AssetUrl,
-            Version = release.Version,
-            InstalledAtUtc = DateTime.UtcNow,
-            Files =
-            [
-                new LinuxDeployedFile
-                {
-                    Path = target,
-                    ExistedBeforeInstall = false,
-                    Sha256 = deployedHash,
-                    AllowUserChanges = false
-                }
-            ],
-            Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["DofFix.TagPrefix"] = TagPrefix,
-                ["DofFix.AssetName"] = release.AssetName,
-                ["DofFix.ManifestForced"] = game.DofFixForcedByManifest ? "1" : "0",
-                ["DofFix.EngineHint"] = game.EngineHint ?? "",
-                [VerifiedDownload.MetadataSha256Key] = cached.Sha256,
-                [VerifiedDownload.MetadataIntegrityKey] = cached.Integrity
-            }
-        });
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("DOF Fix target directory is invalid."));
+            var deployedHash = await scope.PlaceCopyAsync(cached.Path, target, cancellationToken).ConfigureAwait(false);
 
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game),
+                GameName = game.Name,
+                Component = ManagedComponentKind.DofFix,
+                BinaryDirectory = deployDir,
+                SourceUrl = release.AssetUrl,
+                Version = release.Version,
+                InstalledAtUtc = DateTime.UtcNow,
+                Files =
+                [
+                    new LinuxDeployedFile
+                    {
+                        Path = target,
+                        ExistedBeforeInstall = false,
+                        Sha256 = deployedHash,
+                        AllowUserChanges = false
+                    }
+                ],
+                Metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["DofFix.TagPrefix"] = TagPrefix,
+                    ["DofFix.AssetName"] = release.AssetName,
+                    ["DofFix.ManifestForced"] = game.DofFixForcedByManifest ? "1" : "0",
+                    ["DofFix.EngineHint"] = game.EngineHint ?? "",
+                    [VerifiedDownload.MetadataSha256Key] = cached.Sha256,
+                    [VerifiedDownload.MetadataIntegrityKey] = cached.Integrity
+                }
+            }));
+        }
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Success) throw;
+            throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok($"Universal UE DOF Fix {release.Version} installed.", target);
     }
+
+    /// <summary>Fixed text of a failed, rolled-back removal (PT-BR row under the journal anchor); the reason follows.</summary>
+    public const string RemovalRolledBackPrefix = "DOF Fix removal failed and was rolled back: ";
 
     public async Task<ComponentOperationResult> RemoveAsync(
         DetectedGame game,
@@ -203,19 +224,30 @@ public sealed class DofFixDeploymentService
                 return ComponentOperationResult.Fail("RHI-managed DOF Fix was modified after installation. Remove is blocked to preserve the changed file.");
         }
 
+        // Journaled (#23): a crash before the record is gone puts the add-on back as the record still describes it.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "DOF Fix removal: " + game.Name, game, ManagedComponentKind.DofFix, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Cancel is honoured only up to here: the removal never stops half-way.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var changed = new List<string>();
-        foreach (var file in paths)
+        try
         {
-            if (File.Exists(file.Path))
+            foreach (var file in paths)
             {
-                File.Delete(file.Path);
+                if (!File.Exists(file.Path)) continue;
+                await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 changed.Add(file.Path);
             }
+            _records.Remove(game, ManagedComponentKind.DofFix);
         }
-
-        _records.Remove(game, ManagedComponentKind.DofFix);
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dof-fix").ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"{RemovalRolledBackPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok("Universal UE DOF Fix removed. User/external files were left untouched.", changed.ToArray());
     }
 

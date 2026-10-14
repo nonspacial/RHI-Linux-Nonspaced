@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-public sealed class Dlssg2030UnlockDeploymentServiceTests : IDisposable
+public sealed partial class Dlssg2030UnlockDeploymentServiceTests : IDisposable
 {
     private const string Commit = "0123456789abcdef0123456789abcdef01234567";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dlssg2030-tests-" + Guid.NewGuid().ToString("N"));

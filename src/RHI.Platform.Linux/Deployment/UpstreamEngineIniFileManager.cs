@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using RHI.Core.Deployment;
+using RHI.Core.Services;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Paths;
 
@@ -257,7 +258,11 @@ internal sealed class UpstreamEngineIniFileManager
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<UpstreamEngineIniFileState>(json); }
-        catch { return null; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("engine-ini", "Stored deployment state could not be read; it is treated as absent", ex);
+            return null;
+        }
     }
 
     internal async Task<(string Text, string Sha256, string SourceUrl)> FetchTemplateAsync(
@@ -355,19 +360,9 @@ internal sealed class UpstreamEngineIniFileManager
         catch (DecoderFallbackException ex) { throw new InvalidDataException("Engine.ini template is not valid UTF-8.", ex); }
     }
 
-    private static async Task PersistCacheAsync(string path, byte[] bytes, CancellationToken cancellationToken)
-    {
-        var temp = path + $".tmp-{Guid.NewGuid():N}";
-        try
-        {
-            await File.WriteAllBytesAsync(temp, bytes, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, path, overwrite: true);
-        }
-        finally
-        {
-            try { if (File.Exists(temp)) File.Delete(temp); } catch { }
-        }
-    }
+    // Unique temp, fsync, full verify, rename, directory fsync (#31); the temp is removed on failure.
+    private static Task PersistCacheAsync(string path, byte[] bytes, CancellationToken cancellationToken)
+        => AtomicFile.WriteAllBytesAsync(path, bytes, cancellationToken);
 
     internal static string? ResolveTargetPath(DetectedGame game)
     {
@@ -387,7 +382,11 @@ internal sealed class UpstreamEngineIniFileManager
                        .FirstOrDefault(candidate => Path.GetFileName(candidate).Equals(name, StringComparison.OrdinalIgnoreCase))
                    ?? path;
         }
-        catch { return path; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("engine-ini", $"Could not list {directory}; using the path as written", ex);
+            return path;
+        }
     }
 
     private static bool PathsEqual(string left, string right)

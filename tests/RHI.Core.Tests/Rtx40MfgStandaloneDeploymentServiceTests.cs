@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Paths;
 
 namespace RHI.Core.Tests;
 
-public sealed class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
+public sealed partial class Rtx40MfgStandaloneDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-rtx40-mfg-tests-" + Guid.NewGuid().ToString("N"));
 

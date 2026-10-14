@@ -29,14 +29,17 @@ public sealed class UpstreamRhiAddonDeploymentService
     private readonly UpstreamRhiManifestService _manifest;
     private readonly UpstreamRhiAddonDeploymentOptions _options;
     private readonly string? _cacheDir;
+    private readonly RHI.Core.Deployment.DeploymentJournal? _journal;
 
     public UpstreamRhiAddonDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         UpstreamRhiManifestService manifest,
         UpstreamRhiAddonDeploymentOptions options,
-        string? cacheDir = null)
+        string? cacheDir = null,
+        RHI.Core.Deployment.DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _manifest = manifest;
@@ -184,5 +187,6 @@ public sealed class UpstreamRhiAddonDeploymentService
                 AssetNamePattern32: _options.AssetNamePattern32,
                 DeployFileName64: _options.DeployFileName64,
                 DeployFileName32: _options.DeployFileName32),
-            _cacheDir);
+            _cacheDir,
+            _journal);
 }

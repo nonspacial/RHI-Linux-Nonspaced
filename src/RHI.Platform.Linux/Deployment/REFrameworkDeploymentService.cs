@@ -99,23 +99,21 @@ public sealed class REFrameworkDeploymentService
         var (cachedDll, download) = await DownloadExtractAndValidateAsync(release, cancellationToken).ConfigureAwait(false);
         var applicationName = Path.GetFileName(game.ExecutablePath ?? "");
         WineOverrideRecord? overrideRecord = null;
-        var deployed = false;
-        // The Wine override is journaled before it is written (#23): a crash before the record is saved
-        // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        // Journaled (#23): the override and the proxy are recorded before they are written, so a crash before the
+        // record is saved is rolled back at the next start instead of leaving a dinput8.dll and override nothing owns.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RE Framework install: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
         // Downloaded and validated: from the override on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            overrideRecord = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
+            overrideRecord = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, DllFileName, applicationName, cancellationToken).ConfigureAwait(false);
             // Verified durable copy; never replaces a dinput8.dll that appeared since the check above.
-            var deployedHash = await AtomicFile.CopyAsync(cachedDll, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
-            deployed = true;
+            var deployedHash = await scope.PlaceCopyAsync(cachedDll, target, cancellationToken, overwrite: false).ConfigureAwait(false);
 
-            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -144,17 +142,18 @@ public sealed class REFrameworkDeploymentService
                     [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
             }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
         }
-        catch
+        catch (Exception ex)
         {
-            if (deployed && !FileCleanup.TryDelete(target, out var deleteError))
-                AppLog.Warn("reframework", $"Rollback could not remove {target}", deleteError);
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, overrideRecord);
-            throw;
+            if (rollback.Success) throw;
+            // The copies a failed rollback kept are named, never dropped (#31).
+            throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
         }
+        // The record carries the operation id: it is the commit point, so nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RE Framework {NormalizeVersion(release.Version)} installed with per-game dinput8 Wine override.", target);
     }
 
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -203,38 +202,32 @@ public sealed class REFrameworkDeploymentService
             return ComponentOperationResult.Fail($"RE Framework update preparation failed: {ex.Message}");
         }
 
-        var backup = owned.Path + $".rhi-update-backup-{Guid.NewGuid():N}";
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RE Framework update: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            AtomicFile.Copy(owned.Path, backup, currentHash);
-            owned.Sha256 = await AtomicFile.CopyAsync(cachedDll, owned.Path, cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Tracked with a verified copy first: a failure (or a crash before the record is saved) puts the previous
+            // dinput8.dll back from it, and a copy that cannot be put back is kept and named.
+            owned.Sha256 = await scope.PlaceCopyAsync(cachedDll, owned.Path, cancellationToken).ConfigureAwait(false);
             record.SourceUrl = release.AssetUrl;
             record.Version = NormalizeVersion(release.Version);
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata["REFramework.AssetName"] = release.AssetName;
             download.RecordIn(record.Metadata);
-            _records.Upsert(record);
-            FileCleanup.TryDelete(backup);
-            return ComponentOperationResult.Ok($"RE Framework updated to {record.Version}; existing Wine override ownership was preserved.", owned.Path);
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            if (!File.Exists(backup))
-                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
-            try
-            {
-                // The backup is the previous dinput8.dll; it is deleted only once it is back in place.
-                AtomicFile.Copy(backup, owned.Path, currentHash);
-                FileCleanup.TryDelete(backup);
-                return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}");
-            }
-            catch (Exception restoreError)
-            {
-                AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}; the previous file is kept at {backup}", restoreError);
-                return ComponentOperationResult.Fail($"RE Framework update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{backup}");
-            }
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RE Framework updated to {record.Version}; existing Wine override ownership was preserved.", owned.Path);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -262,38 +255,121 @@ public sealed class REFrameworkDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        WineOverrideRestoreResult overrideRestore;
+        // Journaled (#23): the record is stamped with the removal's id; a crash before it is removed puts the dll and
+        // the override back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RE Framework removal: " + game.Name, game, ManagedComponentKind.REFramework, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        WineOverrideRestoreResult? overrideRestore = null;
         try
         {
-            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
+            await scope.DeleteAsync(owned.Path, cancellationToken).ConfigureAwait(false);
+            _records.Remove(game, ManagedComponentKind.REFramework);
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RE Framework removal stopped before deleting dinput8.dll because the Wine override could not be restored: {ex.Message}");
-        }
-
-        try
-        {
-            if (File.Exists(owned.Path)) File.Delete(owned.Path);
-        }
-        catch (Exception ex)
-        {
-            // Keep the game usable if filesystem teardown failed after registry restoration: put RHI's value back
-            // where this removal restored it (a value set since stays, #30).
-            if (overrideRestore.Outcome == WineOverrideRestoreOutcome.Restored)
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reframework").ConfigureAwait(false);
+            // Keep the game usable: put RHI's value back where this removal restored it (a value set since stays, #30).
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-            return ComponentOperationResult.Fail($"RE Framework dinput8.dll could not be removed: {ex.Message}");
+            return ComponentOperationResult.Fail($"RE Framework removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point. Nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
 
-        _records.Remove(game, ManagedComponentKind.REFramework);
         return ComponentOperationResult.Ok("RE Framework removed and the previous per-game dinput8 Wine override restored."
             + WineDllOverrideService.KeptValueNotes(overrideRestore), owned.Path);
     }
 
     internal static string ResolveDeployDirectory(DetectedGame game)
         => !string.IsNullOrWhiteSpace(game.BinaryDirectory) ? game.BinaryDirectory! : game.InstallPath;
+
+    /// <summary>The cache folder RE Engine games keep beside the executable (upstream 2.8.6 REF ⚙, PAR-D72).</summary>
+    public const string StorageFolderName = "_storage_";
+
+    /// <summary>
+    /// Where the game's <c>_storage_</c> folder is: beside the executable (where REF's dinput8.dll lives), else in the
+    /// game root (where upstream looks). Returns the first one that exists as a folder or a link, or null when neither
+    /// does. Read only.
+    /// </summary>
+    public static string? FindStorageFolder(DetectedGame game)
+    {
+        foreach (var directory in new[] { ResolveDeployDirectory(game), game.InstallPath }.Where(d => !string.IsNullOrWhiteSpace(d)).Distinct(StringComparer.Ordinal))
+        {
+            var candidate = Path.Combine(directory, StorageFolderName);
+            if (Directory.Exists(candidate) || new FileInfo(candidate).LinkTarget is not null) return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>Fixed refusal texts of <see cref="DeleteStorageFolderAsync"/> (PT-BR rows under the journal anchor); a path follows.</summary>
+    public const string StorageNotFoundPrefix = "No _storage_ folder was found in the game folder: ";
+    public const string StorageLinkRefusedPrefix = "The _storage_ folder is a link to another place, so RHI did not delete it: ";
+    public const string StorageOutsideGameRefusedPrefix = "The _storage_ folder is not inside the game folder, so RHI did not delete it: ";
+    public const string StorageWineRunningPrefix = "The game is running in its Wine prefix; close it before deleting the _storage_ folder: ";
+    public const string StorageDeletedPrefix = "Deleted the _storage_ folder (RE Framework rebuilds it at the next launch): ";
+    public const string StoragePartlyDeletedPrefix = "The _storage_ folder could not be deleted completely; what is left is listed in rhi.log: ";
+    public const string StorageUnreadablePrefix = "The _storage_ folder could not be read, so RHI deleted nothing (the reason is in rhi.log): ";
+
+    /// <summary>
+    /// Deletes the game's <c>_storage_</c> folder, RE Framework's cache that the game rebuilds at the next launch
+    /// (upstream 2.8.6 REF ⚙ "Delete _storage_ folder"; a user action on a folder RHI does not own). Refuses, changing
+    /// nothing, when the folder is missing, is a link (or its path leads outside the game root through one), or while
+    /// the game's Wine prefix runs. Walks the folder without following links (a link inside is removed as a link, its
+    /// target untouched) and deletes children before parents; once it has started it runs to the end (a cache folder half
+    /// deleted is still a cache, and the user asked for all of it). The caller applies the patch-target guard.
+    /// </summary>
+    public Task<ComponentOperationResult> DeleteStorageFolderAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => Task.Run(() => DeleteStorageFolder(game, cancellationToken), cancellationToken);
+
+    private ComponentOperationResult DeleteStorageFolder(DetectedGame game, CancellationToken cancellationToken)
+    {
+        var folder = FindStorageFolder(game);
+        if (folder is null)
+            return ComponentOperationResult.Fail(StorageNotFoundPrefix + Path.Combine(ResolveDeployDirectory(game), StorageFolderName));
+        if (new DirectoryInfo(folder).LinkTarget is not null)
+            return ComponentOperationResult.Fail(StorageLinkRefusedPrefix + folder);
+        // The parent may itself be reached through a link: the folder's real place must stay inside the game root.
+        if (string.IsNullOrWhiteSpace(game.InstallPath) || !PathIdentity.IsSameOrInside(folder, game.InstallPath))
+            return ComponentOperationResult.Fail(StorageOutsideGameRefusedPrefix + folder);
+        if (!string.IsNullOrWhiteSpace(game.PrefixPath) && _overrides.Registry.IsPrefixInUse(game.PrefixPath))
+            return ComponentOperationResult.Fail(StorageWineRunningPrefix + game.PrefixPath);
+
+        // The walk below is never cancelled part-way: Cancel counts only up to here.
+        _ = OperationCancellation.BeginWrites(cancellationToken);
+        var failures = new List<string>();
+        // Links (to files or folders) are entries of their own: removed as links, never followed. The whole folder is
+        // read before anything is deleted: a sub-folder that cannot be read refuses the delete, changing nothing, with a
+        // line the dialog shows (review w3-journal #5; it used to throw past the dialog, which then showed nothing).
+        List<FileSystemInfo> entries;
+        try { entries = SafeFileEnumeration.Entries(folder).ToList(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("reframework", $"_storage_ folder could not be read ({folder}); nothing was deleted", ex);
+            return ComponentOperationResult.Fail(StorageUnreadablePrefix + folder);
+        }
+        foreach (var entry in entries.Where(entry => entry is FileInfo || entry.LinkTarget is not null))
+        {
+            try { File.Delete(entry.FullName); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failures.Add($"{entry.FullName} ({ex.Message})"); }
+        }
+        foreach (var directory in entries.OfType<DirectoryInfo>().Where(d => d.LinkTarget is null)
+                     .Select(d => d.FullName).Append(folder).OrderByDescending(path => path.Length))
+        {
+            try { Directory.Delete(directory, recursive: false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failures.Add($"{directory} ({ex.Message})"); }
+        }
+        if (failures.Count > 0)
+        {
+            AppLog.Warn("reframework", $"_storage_ folder only partly deleted ({folder}): {string.Join("; ", failures)}");
+            return ComponentOperationResult.Fail(StoragePartlyDeletedPrefix + folder);
+        }
+        return ComponentOperationResult.Ok(StorageDeletedPrefix + folder, folder);
+    }
 
     internal static string? FindCaseInsensitiveFile(string directory, string fileName)
     {

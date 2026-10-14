@@ -157,6 +157,36 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.NightlyBuildInvalidPrefix + "2026-10-04";
         yield return OptiScalerPackageProvider.NightlyBuildMismatchPrefix + "nightly-20261013";
         // w3/journal rows
+        yield return $"{LinuxDeploymentRecovery.RemovalUnmarkedPrefix}Access to the path '{P}' is denied.); nothing was changed.";
+        yield return WineOverrideReapplyCompensator.DeferredPrefix + "dxgi (/prefixo)";
+        yield return REFrameworkDeploymentService.StorageNotFoundPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageLinkRefusedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageOutsideGameRefusedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageWineRunningPrefix + P;
+        yield return REFrameworkDeploymentService.StorageDeletedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StoragePartlyDeletedPrefix + P + "/_storage_";
+        yield return REFrameworkDeploymentService.StorageUnreadablePrefix + P + "/_storage_";
+        yield return ShortFuseDeploymentService.UalKeptPrefix + E;
+        yield return $"RE Framework removal failed and was rolled back: {E}";
+        // Review w3-journal #4/#8: removal failures and the ShortFuse success lines this lane added or reworded.
+        yield return $"{DofFixDeploymentService.RemovalRolledBackPrefix}{E}";
+        yield return $"{RenoDxUpgradeDeploymentService.RemovalRolledBackPrefix}{E}";
+        yield return $"{ShortFuseDeploymentService.RemovalFailedPrefix}{E}";
+        yield return ShortFuseDeploymentService.RemovedMessage;
+        yield return $"{ShortFuseDeploymentService.RemovedUalKeptMessage} {ShortFuseDeploymentService.UalKeptPrefix}{E}";
+        yield return $"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {E}";
+        yield return $"Universal MFG removal failed and was rolled back as far as possible: {E}";
+        yield return $"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {E}";
+        yield return $"Ultimate ASI Loader removal failed and was rolled back as far as possible: {E}";
+        yield return $"ShortFuse install failed and was rolled back as far as possible: {E}";
+        yield return $"ReLimiter removal failed: {E}";
+        yield return $"Protected modified file: {P} no longer matches the RHI-managed hash, so it was not deleted.";
+        yield return $"DLSS Enabler Standalone install rolled back: {E}";
+        yield return $"Universal MFG update failed and was rolled back as far as possible: {E}";
+        yield return $"Ultimate ASI Loader update failed: {E}";
+        yield return $"ReShade Addon Manager failed: {E}";
+        yield return $"Display Commander install failed: {E}";
+        yield return $"RE Framework update rolled back: {E}{DeploymentScope.RollbackIncompletePrefix}{P}: rollback failed ({E}); every copy was kept.); every copy was kept.";
         // w3/scan rows
         // w3/parity rows
         // w3/vmsplit rows

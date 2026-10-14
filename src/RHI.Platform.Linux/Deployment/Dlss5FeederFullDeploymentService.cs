@@ -169,7 +169,7 @@ public sealed class Dlss5FeederFullDeploymentService
 
     /// <summary>Swaps the Feeder-owned nvngx_dlssnr.dll to a manifest version in place (upstream 2.7.6).</summary>
     public Task<ComponentOperationResult> SwapNeuralRenderingDllAsync(DetectedGame game, string? version, CancellationToken cancellationToken = default)
-        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken);
+        => NeuralRenderingDllSwap.SwapAsync(_records, _dlss, game, ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder", version, cancellationToken, _journal);
 
     public Task<IReadOnlyList<GitHubReleaseVersion>> ListVersionsAsync(CancellationToken cancellationToken = default)
         => _releaseResolver.ListVersionsAsync(FeederReleaseApi, cancellationToken);
@@ -256,7 +256,7 @@ public sealed class Dlss5FeederFullDeploymentService
                     updated.Metadata["GitHub.ReleaseTagPin"] = releaseTag ?? "";
                     download.RecordIn(updated.Metadata);
                     _records.Upsert(updated);
-                }, cancellationToken).ConfigureAwait(false);
+                }, cancellationToken, _journal, game).ConfigureAwait(false);
                 return ComponentOperationResult.Ok(changed == 0
                     ? $"DLSS5 Feeder {release.Version} is already installed."
                     : $"DLSS5 Feeder swapped in place to {release.Version}. Consumer, DLSS DLLs, shaders and configs were not changed.",
@@ -635,7 +635,7 @@ public sealed class Dlss5FeederFullDeploymentService
             }
 
             var presetText = BuildPresetText();
-            File.WriteAllText(presetTarget, presetText, new UTF8Encoding(false));
+            AtomicFile.WriteAllText(presetTarget, presetText, new UTF8Encoding(false));
             copied.Add(presetTarget);
 
             var effectPath = @".\reshade-shaders\RHI\DLSS5FeederFull\Shaders\**";
@@ -915,7 +915,11 @@ public sealed class Dlss5FeederFullDeploymentService
     {
         if (record is null || !record.Metadata.TryGetValue(key, out var json) || string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<ReShadeDx9MigrationState>(json); }
-        catch { return null; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("dlss5-feeder", "Stored deployment state could not be read; it is treated as absent", ex);
+            return null;
+        }
     }
 
     private static string ReadDgVoodooVersion(LinuxDeploymentRecord? record)
@@ -1093,7 +1097,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
             lines.Add("[GENERAL]");
             lines.Add($"PresetPath={value}");
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
             return new(false, null, value);
         }
 
@@ -1101,14 +1105,14 @@ public sealed class Dlss5FeederFullDeploymentService
         if (keyIndex < 0)
         {
             lines.Insert(sectionEnd, $"PresetPath={value}");
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
             return new(false, null, value);
         }
 
         var eq = lines[keyIndex].IndexOf('=');
         var previous = eq >= 0 ? lines[keyIndex][(eq + 1)..].Trim() : "";
         lines[keyIndex] = $"PresetPath={value}";
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+        AtomicFile.ReplaceUserFileLines(iniPath, lines);
         return new(true, previous, value);
     }
 
@@ -1129,7 +1133,7 @@ public sealed class Dlss5FeederFullDeploymentService
             lines[keyIndex] = $"PresetPath={mutation.PreviousValue ?? ""}";
         else
             lines.RemoveAt(keyIndex);
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+        AtomicFile.ReplaceUserFileLines(iniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
     }
 
     /// <summary>
@@ -1524,7 +1528,7 @@ public sealed class Dlss5FeederFullDeploymentService
             if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
             lines.Add("[ADDON]");
             lines.Add($"LoadFromDllMain={token}");
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
             return new(true, token);
         }
 
@@ -1532,7 +1536,7 @@ public sealed class Dlss5FeederFullDeploymentService
         if (keyIndex < 0)
         {
             lines.Insert(sectionEnd, $"LoadFromDllMain={token}");
-            File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+            AtomicFile.ReplaceUserFileLines(iniPath, lines);
             return new(true, token);
         }
 
@@ -1542,7 +1546,7 @@ public sealed class Dlss5FeederFullDeploymentService
             return new(false, token);
         values.Add(token);
         lines[keyIndex] = $"LoadFromDllMain={string.Join(',', values)}";
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+        AtomicFile.ReplaceUserFileLines(iniPath, lines);
         return new(true, token);
     }
 
@@ -1562,7 +1566,7 @@ public sealed class Dlss5FeederFullDeploymentService
             lines.RemoveAt(keyIndex);
         else
             lines[keyIndex] = $"LoadFromDllMain={string.Join(',', values)}";
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
+        AtomicFile.ReplaceUserFileLines(iniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
     }
 
     private static List<string> SplitIniList(string raw)
@@ -1661,7 +1665,11 @@ public sealed class Dlss5FeederFullDeploymentService
     {
         if (string.IsNullOrWhiteSpace(json)) return [];
         try { return JsonSerializer.Deserialize<string[]>(json) ?? []; }
-        catch { return []; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("dlss5-feeder", "Stored deployment state could not be read; it is treated as absent", ex);
+            return [];
+        }
     }
 
     private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string section)

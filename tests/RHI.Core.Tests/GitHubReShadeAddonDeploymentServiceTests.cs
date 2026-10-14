@@ -9,7 +9,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
+public sealed partial class GitHubReShadeAddonDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-addon-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -793,16 +793,15 @@ public sealed class GitHubReShadeAddonDeploymentServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "reshade-addons", "relimiter.addon64")));
     }
 
-    private GitHubReShadeAddonDeploymentService NewReLimiter(HttpClient http, LinuxDeploymentRecordStore store)
-        => new(http, store, new GitHubReShadeAddonDefinition(
+    private GitHubReShadeAddonDeploymentService NewReLimiter(HttpClient http, LinuxDeploymentRecordStore store, RHI.Core.Deployment.DeploymentJournal? journal = null)
+        => new(http, store, journal: journal, cacheDir: Path.Combine(CacheDir, "relimiter"), definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
             "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
             "relimiter.addon64",
             "relimiter.addon32",
             100 * 1024,
-            ManagedComponentKind.DisplayCommander),
-            Path.Combine(CacheDir, "relimiter"));
+            ManagedComponentKind.DisplayCommander));
 
     private GitHubReShadeAddonDeploymentService NewDynamicReLimiter(
         HttpClient http,

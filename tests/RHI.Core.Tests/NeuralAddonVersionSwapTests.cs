@@ -124,8 +124,9 @@ public sealed class NeuralAddonVersionSwapTests : IDisposable
             throw new IOException("disk full");
         }));
 
-        var backup = target + ManagedFileSwap.BackupSuffix;
-        Assert.Equal([backup], ex.BackupPaths);
+        // The verified copy the swap took before changing the file is kept (#31: never a raw, unverified copy).
+        var backup = Assert.Single(ex.BackupPaths);
+        Assert.StartsWith(target + RHI.Core.Deployment.OwnedFileSet.SnapshotMarker, backup, StringComparison.Ordinal);
         Assert.Equal([1, 2, 3], File.ReadAllBytes(backup));
         Assert.Contains("could not be restored", ex.Message);
         Assert.Contains(backup, ex.Message);

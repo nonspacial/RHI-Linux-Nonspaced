@@ -1,0 +1,93 @@
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using RHI.Desktop.Diagnostics;
+using RHI.Desktop.Localization;
+using RHI.Desktop.ViewModels;
+
+namespace RHI.Desktop.Views;
+
+/// <summary>
+/// RE Framework ⚙ dialog (#159, upstream 2.8.6): one "Delete _storage_ folder" button and a line saying where the
+/// folder is or that there is none. The button is hidden when there is nothing to delete (the owner's rule: buttons
+/// that do not apply are hidden, not disabled; the "No _storage_ folder" line says why); after a delete the line is
+/// read again. Paths are one line with a middle ellipsis and the full path in a 2 s tooltip.
+/// </summary>
+public static class ReFrameworkSettingsDialog
+{
+    // Button content strings treat "_" as an access-key marker: doubled, "_storage_" is drawn with both underscores and
+    // keeps the button's own (remove) text style.
+    private static string Label(string key) => UiLocalizationService.Text(key).Replace("_", "__", StringComparison.Ordinal);
+
+    public static Window Create(ReFrameworkStoragePresenter presenter, string gameName)
+    {
+        var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = UiLocalizationService.Text("Journal.RefSettingsTitle"),
+            FontSize = 18,
+            FontWeight = FontWeight.SemiBold,
+            TextWrapping = TextWrapping.Wrap
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = UiLocalizationService.Text("Journal.RefStorageIntro"),
+            TextWrapping = TextWrapping.Wrap,
+            Opacity = 0.76
+        });
+
+        var found = new TextBlock { TextWrapping = TextWrapping.Wrap, FontSize = 12 };
+        var folder = new MiddleEllipsisText { Classes = { "muted" }, FontSize = 12, WrapNonPath = false, MiddleNonPath = true };
+        var result = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82, IsVisible = false };
+        var delete = new Button
+        {
+            Classes = { "rhi", "remove" },
+            Content = Label("Journal.RefStorageDelete"),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        void Refresh()
+        {
+            var path = presenter.FolderPath;
+            found.Text = presenter.StatusLine;
+            folder.FullText = path;
+            folder.IsVisible = path is not null;
+            delete.IsVisible = path is not null;
+            delete.IsEnabled = true;
+        }
+
+        delete.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            delete.IsEnabled = false;
+            delete.Content = Label("Journal.RefStorageDeleting");
+            try
+            {
+                var outcome = await presenter.DeleteAsync();
+                result.Text = outcome.Message;
+                result.IsVisible = true;
+            }
+            finally
+            {
+                delete.Content = Label("Journal.RefStorageDelete");
+                Refresh();
+            }
+        }, nameof(ReFrameworkSettingsDialog));
+
+        Refresh();
+        panel.Children.Add(delete);
+        panel.Children.Add(found);
+        panel.Children.Add(folder);
+        panel.Children.Add(result);
+
+        return new Window
+        {
+            Title = $"{UiLocalizationService.Text("Journal.RefSettingsTitle")} — {gameName}",
+            Width = 600,
+            Height = 300,
+            MinWidth = 420,
+            MinHeight = 240,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new ScrollViewer { Content = panel }
+        };
+    }
+}

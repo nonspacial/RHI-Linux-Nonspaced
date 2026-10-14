@@ -4,7 +4,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class Dx9TranslationReShadeCoordinatorTests : IDisposable
+public sealed partial class Dx9TranslationReShadeCoordinatorTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-dx9-rs-migration-" + Guid.NewGuid().ToString("N"));
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
+using RHI.Core.Services;
 using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -198,7 +199,11 @@ internal static class LumaEngineIniOverrideManager
     {
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<LumaEngineIniOverrideState>(json); }
-        catch { return null; }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            AppLog.Warn("luma-engine-ini", "Stored deployment state could not be read; it is treated as absent", ex);
+            return null;
+        }
     }
 
     private static IEnumerable<string> ResolveLocalAppDataRoots(string? prefixPath)
@@ -209,7 +214,11 @@ internal static class LumaEngineIniOverrideManager
 
         IEnumerable<string> userDirs;
         try { userDirs = Directory.EnumerateDirectories(users); }
-        catch { yield break; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("luma-engine-ini", $"Could not list the prefix users in {users}", ex);
+            yield break;
+        }
 
         foreach (var user in userDirs
                      .OrderByDescending(path => Path.GetFileName(path).Equals("steamuser", StringComparison.OrdinalIgnoreCase))

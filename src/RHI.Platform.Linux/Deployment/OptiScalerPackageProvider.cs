@@ -281,7 +281,7 @@ public sealed class OptiScalerPackageProvider : IOptiScalerPackageProvider
             if (!PathIdentity.IsSameOrInside(target, extractDirectory) || File.Exists(target) || Directory.Exists(target))
                 throw new InvalidOperationException(ArchivePathRefusedPrefix + name);
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Move(file, target); // inside RHI's own extraction folder: a rename on one file system
+            AtomicFile.Rename(file, target); // inside RHI's own extraction folder: a rename on one file system (toolkit, #31 ratchet)
         }
     }
 

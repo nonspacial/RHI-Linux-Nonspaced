@@ -232,16 +232,14 @@ public sealed class Dlssg2030UnlockDeploymentService
         string? proxyTemp = null;
         string? iniTemp = null;
         WineOverrideRecord? wineOverride = null;
-        var proxyMoved = false;
-        var iniMoved = false;
-        var recordWritten = false;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RTX 20 FG Unlock install: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
+        var operation = scope.Operation;
         // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
@@ -251,22 +249,22 @@ public sealed class Dlssg2030UnlockDeploymentService
             // Verified, fsynced copies beside the targets (full re-read hash), placed without replacing anything.
             var stagedProxy = await AtomicFile.StageCopyAsync(payload.DllPath, proxyPath, null, null, cancellationToken).ConfigureAwait(false);
             proxyTemp = stagedProxy.Path;
+            StagedFile stagedIni;
             using (var iniContent = new MemoryStream(new UTF8Encoding(false).GetBytes(adjustedIni)))
             {
-                var stagedIni = await AtomicFile.StageStreamAsync(iniContent, iniPath, null, null, long.MaxValue, cancellationToken).ConfigureAwait(false);
+                stagedIni = await AtomicFile.StageStreamAsync(iniContent, iniPath, null, null, long.MaxValue, cancellationToken).ConfigureAwait(false);
                 iniTemp = stagedIni.Path;
             }
 
             ValidateCachedDll(proxyTemp);
             ValidateIniText(adjustedIni);
 
-            AtomicFile.MoveIntoPlace(proxyTemp, proxyPath, overwrite: false);
-            proxyMoved = true;
-            AtomicFile.MoveIntoPlace(iniTemp, iniPath, overwrite: false);
-            iniMoved = true;
+            // Tracked and declared first (#23): a crash before the record is saved removes both at the next start.
+            await scope.PlaceStagedAsync(stagedProxy, proxyPath, cancellationToken, overwrite: false).ConfigureAwait(false);
+            await scope.PlaceStagedAsync(stagedIni, iniPath, cancellationToken, overwrite: false).ConfigureAwait(false);
 
             var proxyHash = stagedProxy.Sha256;
-            var iniHash = await FileHash.Sha256HexAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            var iniHash = stagedIni.Sha256;
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 [MetaProxyName] = selectedProxy,
@@ -279,6 +277,9 @@ public sealed class Dlssg2030UnlockDeploymentService
             };
             RecordDownloads(metadata, payload);
 
+            // The preference is saved before the commit point (review w3-journal #3): a failure here still rolls back
+            // before the record exists, and nothing after the record can throw into the rollback.
+            _preferences.Set(game, new Dlssg2030Preferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
             _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -296,28 +297,20 @@ public sealed class Dlssg2030UnlockDeploymentService
                 ],
                 Metadata = metadata
             }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-            recordWritten = true;
-
-            _preferences.Set(game, new Dlssg2030Preferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
-            return ComponentOperationResult.Ok(
-                $"RTX 20 FG Unlock legado {payload.Version} instalado como {selectedProxy} · {selectedGpu} / {router}. O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real.",
-                proxyPath, iniPath);
         }
         catch (Exception ex)
         {
-            var leftovers = FileCleanup.TryDeleteAll(new[]
-            {
-                proxyMoved ? proxyPath : null, iniMoved ? iniPath : null, proxyTemp, iniTemp
-            }.OfType<string>());
-            foreach (var leftover in leftovers)
+            foreach (var leftover in FileCleanup.TryDeleteAll(new[] { proxyTemp, iniTemp }.OfType<string>()))
                 AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, wineOverride);
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock); }
-            catch (Exception recordError) { AppLog.Warn("fg2030", "Install rollback could not drop the deployment record", recordError); }
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}");
+            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: it is the commit point. Nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(
+            $"RTX 20 FG Unlock legado {payload.Version} instalado como {selectedProxy} · {selectedGpu} / {router}. O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real.",
+            proxyPath, iniPath);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -356,55 +349,39 @@ public sealed class Dlssg2030UnlockDeploymentService
             preserveIni = !string.Equals(currentIniHash, iniRecord.Sha256, StringComparison.OrdinalIgnoreCase);
         }
 
-        var proxyTemp = proxyPath + $".rhi-remove-{Guid.NewGuid():N}";
-        var iniTemp = iniPath + $".rhi-remove-{Guid.NewGuid():N}";
-        var proxyMoved = false;
-        var iniMoved = false;
+        // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the
+        // files and the override back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RTX 20 FG Unlock removal: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
 
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            if (File.Exists(proxyPath))
-            {
-                File.Move(proxyPath, proxyTemp);
-                proxyMoved = true;
-            }
-            if (!preserveIni && File.Exists(iniPath))
-            {
-                File.Move(iniPath, iniTemp);
-                iniMoved = true;
-            }
-
-            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
+            await scope.DeleteAsync(proxyPath, cancellationToken).ConfigureAwait(false);
+            if (!preserveIni) await scope.DeleteAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
-
-            if (proxyMoved && File.Exists(proxyTemp)) File.Delete(proxyTemp);
-            if (iniMoved && File.Exists(iniTemp)) File.Delete(iniTemp);
-
-            return ComponentOperationResult.Ok((preserveIni
-                ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
-                : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
-                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
-            try
-            {
-                if (proxyMoved && File.Exists(proxyTemp) && !File.Exists(proxyPath)) File.Move(proxyTemp, proxyPath);
-                if (iniMoved && File.Exists(iniTemp) && !File.Exists(iniPath)) File.Move(iniTemp, iniPath);
-                // Put RHI's value back only where this removal restored it; a later value stays (#30).
-                if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
-                    _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-                _records.Upsert(record);
-            }
-            catch (Exception rollbackError)
-            {
-                AppLog.Warn("fg2030", $"Removal rollback did not complete; the managed files may be at {proxyTemp} / {iniTemp}", rollbackError);
-            }
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}");
+            // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
+            // value stays, #30); the record kept so the restored files stay owned.
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "fg2030").ConfigureAwait(false);
+            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+                _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        return ComponentOperationResult.Ok((preserveIni
+            ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
+            : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
+            + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 
     public async Task<Dlssg2030UpdateStatus> CheckLatestAsync(
@@ -467,8 +444,11 @@ public sealed class Dlssg2030UnlockDeploymentService
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update download/validation failed: {ex.Message}");
         }
 
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RTX 20 FG Unlock update: " + game.Name, game, ManagedComponentKind.Dlssg2030Unlock, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         string? staged = null;
-        var previous = proxyPath + $".rhi-update-old-{Guid.NewGuid():N}";
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
@@ -476,8 +456,9 @@ public sealed class Dlssg2030UnlockDeploymentService
             staged = stagedCopy.Path;
             ValidateCachedDll(staged);
             var newHash = stagedCopy.Sha256;
-            AtomicFile.Rename(proxyPath, previous);
-            AtomicFile.MoveIntoPlace(staged, proxyPath, overwrite: false);
+            // Tracked with a verified copy of the previous DLL first: a failure (or a crash before the record is saved)
+            // puts it back.
+            await scope.PlaceStagedAsync(stagedCopy, proxyPath, cancellationToken).ConfigureAwait(false);
 
             proxyRecord.Sha256 = newHash;
             record.Version = payload.Version;
@@ -487,29 +468,17 @@ public sealed class Dlssg2030UnlockDeploymentService
             record.Metadata[MetaSourceDllSha] = payload.SourceDllSha256;
             record.Metadata[MetaSourceIniSha] = payload.SourceIniSha256;
             RecordDownloads(record.Metadata, payload);
-            _records.Upsert(record);
-
-            FileCleanup.TryDelete(previous);
-            return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
             if (staged is not null) FileCleanup.TryDelete(staged);
-            if (File.Exists(previous))
-            {
-                try
-                {
-                    // The previous DLL is moved back over whatever the failed update left, never deleted first.
-                    AtomicFile.Rename(previous, proxyPath, overwrite: true);
-                }
-                catch (Exception restoreError)
-                {
-                    AppLog.Warn("fg2030", $"Update rollback could not put the previous proxy back; it is kept at {previous}", restoreError);
-                    return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed: {ex.Message}{DeploymentMessages.PreviousFileKeptFragment}{previous}");
-                }
-            }
-            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}");
+            // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
     }
 
     internal async Task<Dlssg2030SnapshotInfo> ResolveLatestSnapshotAsync(CancellationToken cancellationToken)

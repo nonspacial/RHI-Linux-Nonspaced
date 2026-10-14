@@ -123,6 +123,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     /// holds it, so <see cref="IsBusy"/> stays true until the last owner lets go.
     /// </summary>
     public OperationCoordinator Operations => _operations;
+    public ReFrameworkStoragePresenter ReFrameworkStorage => new(this, _managedComponents); // w3/journal hook (#159)
 
     /// <summary>True while an operation holds <see cref="Operations"/>; drives the busy overlay.</summary>
     public bool IsBusy => _operations.IsBusy;
