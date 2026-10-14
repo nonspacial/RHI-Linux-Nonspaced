@@ -1962,6 +1962,20 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public Task<IReadOnlyList<string>> ListOptiScalerNightlyBuildsAsync(CancellationToken cancellationToken = default)
         => _optiscaler.ListNightlyBuildsAsync(cancellationToken);
 
+    /// <summary>
+    /// w3/dllnames (#136): Control UE's optional frame-generation step after its RenoDX install — OptiScaler Nightly pinned
+    /// to <see cref="ControlUeFrameGenerationService.RequiredNightlyBuild"/> as winmm.dll with its FG stack and settings,
+    /// and FgSlHdr10 in reshade.ini. Guarded like an OptiScaler install; recorded in the OptiScaler update history.
+    /// </summary>
+    public Task<ComponentOperationResult> InstallControlUeFrameGenerationAsync(DetectedGame game, bool useHdr, CancellationToken cancellationToken = default)
+    {
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler);
+        return guard is not null
+            ? Task.FromResult(guard)
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
+                () => new ControlUeFrameGenerationService(_optiscaler, _records).InstallAsync(game, useHdr, cancellationToken));
+    }
+
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         ManagedComponentKind component,

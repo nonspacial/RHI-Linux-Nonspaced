@@ -1,0 +1,18 @@
+{
+  "tag_name": "rolling",
+  "name": "Rolling Release",
+  "draft": false,
+  "prerelease": false,
+  "published_at": "2026-05-14T18:26:56Z",
+  "body": "## Rolling Release\r\n\r\n**Base version:** v0.41  \r\n**Build commit:** c3f758abcd2491a950f384efbed579152145bdca  \r\n**Build date:** 2026-10-14 14:21\r\n\r\n### Changes since last release\r\n\r\n- Added Gears of War: E-Day support (c3f758a)\r\n- Added Valor Mortis support (4662cb0)\r\n- Added Guns of Eschaton Demo support (1a31f0d)\r\n- Merge branch 'main' of https://github.com/optiscaler/OptiPatcher (8e5fa04)\r\n- Added Clive Barker's Hellraiser: Revival support (176a4fd)\r\n- Full Sackboy support (702ea18)\r\n- Added RuneScape: Dragonwilds support (788f5ab)\r\n- Updated Titan Quest II support (34a639c)\r\n- Updated SH Townfall patch for Reflex support (51513ec)\r\n- Added SILENT HILL: Townfall support (75b76bc)\r\n- Updated Mortal Shell 2 patch (c679ee7)\r\n- Updated The Blood of Dawnwalker WinGDK support (91bdafe)\r\n- Added Crimson Moon support (57e8248)\r\n- Added The Blood of Dawnwalker support (ae65ab7)\r\n- Added Breathedge 2 support (6029427)\r\n- Support edits (f73ec62)\r\n- No Man's Sky support (310407c)\r\n- Added Aliens: Fireteam Elite 2 support (5ed2af5)\r\n- Added 1666: Amsterdam support (e8da75c)\r\n- Added Resonance: A Plague Tale Legacy support (6e0eae8)\r\n- Updated Stalker 2 patches (819efbd)\r\n- Updated Beast of Reincarnation support (1a41e96)\r\n- Updated pattern for one of the patches in InZOI (79e2c09)\r\n- Updated The Sinking City 2 support (72e716b)\r\n- Added A Plague Tale: Requiem support (e560764)\r\n- Updated Mortal Shell II support (a62cc26)\r\n- Added The Sinking City 2 support (bd65134)\r\n- Merge branch 'main' of https://github.com/optiscaler/OptiPatcher (846916b)\r\n- Updated Beast of Reincarnation support (11e9692)\r\n- Partial Sackboy support (8cddbfb)\r\n",
+  "assets": [
+    {
+      "name": "OptiPatcher.asi",
+      "size": 107008,
+      "digest": "sha256:226e8db4cc7a30d4988ae200ac6cbc98afeff1e2e69bd07c6fbe2282fb545648",
+      "updated_at": "2026-10-14T14:21:46Z",
+      "browser_download_url": "https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi",
+      "content_type": "raw"
+    }
+  ]
+}

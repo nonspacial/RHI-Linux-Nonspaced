@@ -432,6 +432,9 @@ public sealed class RenoDxDeploymentService
                 record.Metadata[UpstreamEngineIniFileManager.MetadataKey] = UpstreamEngineIniFileManager.Serialize(engineIniApply.State);
             if (controlState is not null)
                 record.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.Serialize(controlState);
+            // Control UE frame generation's FgSlHdr10 (#136) stays owned across updates, so removal can still put it back.
+            if (existingRecord?.Metadata.GetValueOrDefault(ControlUeFrameGenerationService.HdrMetadataKey) is { Length: > 0 } fgHdrState)
+                record.Metadata[ControlUeFrameGenerationService.HdrMetadataKey] = fgHdrState;
             try
             {
                 _records.Upsert(record);
@@ -710,9 +713,17 @@ public sealed class RenoDxDeploymentService
             var iniState = record.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var iniJson)
                 ? RenoDxIniOverrideManager.Deserialize(iniJson)
                 : null;
-            var iniSnapshotPath = iniState?.IniPath;
+            // Control UE frame generation's FgSlHdr10 in [renodx-preset1] (#136): owned the same way, put back the same way.
+            var fgHdrState = record.Metadata.TryGetValue(ControlUeFrameGenerationService.HdrMetadataKey, out var fgHdrJson)
+                ? RenoDxIniOverrideManager.Deserialize(fgHdrJson)
+                : null;
+            var iniSnapshotPath = iniState?.IniPath ?? fgHdrState?.IniPath;
             var iniSnapshot = iniSnapshotPath is not null && File.Exists(iniSnapshotPath)
                 ? await File.ReadAllBytesAsync(iniSnapshotPath, cancellationToken).ConfigureAwait(false)
+                : null;
+            var fgHdrSnapshotPath = fgHdrState?.IniPath is { } hdrPath && !string.Equals(hdrPath, iniSnapshotPath, StringComparison.Ordinal) ? hdrPath : null;
+            var fgHdrSnapshot = fgHdrSnapshotPath is not null && File.Exists(fgHdrSnapshotPath)
+                ? await File.ReadAllBytesAsync(fgHdrSnapshotPath, cancellationToken).ConfigureAwait(false)
                 : null;
             var engineIniState = record.Metadata.TryGetValue(UpstreamEngineIniFileManager.MetadataKey, out var engineIniJson)
                 ? UpstreamEngineIniFileManager.Deserialize(engineIniJson)
@@ -725,6 +736,7 @@ public sealed class RenoDxDeploymentService
             try
             {
                 RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
+                RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
                 UpstreamEngineIniFileManager.Cleanup(engineIniState);
                 foreach (var file in record.Files)
                     if (File.Exists(file.Path)) File.Delete(file.Path);
@@ -736,6 +748,9 @@ public sealed class RenoDxDeploymentService
                 if (iniSnapshotPath is not null && iniSnapshot is not null)
                     snapshots.Add(new(iniSnapshotPath, iniSnapshot,
                         RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(iniSnapshotPath) ?? iniSnapshotPath, game.InstallPath)));
+                if (fgHdrSnapshotPath is not null && fgHdrSnapshot is not null)
+                    snapshots.Add(new(fgHdrSnapshotPath, fgHdrSnapshot,
+                        RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(fgHdrSnapshotPath) ?? fgHdrSnapshotPath, game.InstallPath)));
                 if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(FileSnapshot.EngineIni(engineIniSnapshotPath, engineIniSnapshot));
                 var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
                 if (notes.Count > 0)

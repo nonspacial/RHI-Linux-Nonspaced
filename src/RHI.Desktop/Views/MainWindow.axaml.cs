@@ -535,6 +535,9 @@ public sealed partial class MainWindow : Window
         dlssTab.Children.Add(Labeled(T("Win.FrameGenerationNvngxDlssgDll"), defaultDlssg));
         dlssTab.Children.Add(Labeled(T("Win.NeuralRenderingNvngxDlssnrDll"), defaultDlssnr));
         dlssTab.Children.Add(Labeled("Streamline", defaultStreamline));
+        var optiScalerTemplates = new OptiScalerTemplateSettingsRows(settings, Path.Combine(snapshot.ConfigRoot, "inis"), // w3/dllnames hook (#97)
+            folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), line => status.Text = line);
+        dlssTab.Children.Add(optiScalerTemplates.Control); // w3/dllnames hook (#97)
 
         var pathGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto"), ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 14, RowSpacing = 8 };
         void AddPathRow(int row, string label, string value)
@@ -593,6 +596,7 @@ public sealed partial class MainWindow : Window
             defaultDlssg.SelectedItem = OptionLists.DoNotChangeDisplay();
             defaultDlssnr.SelectedItem = OptionLists.DoNotChangeDisplay();
             defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
+            optiScalerTemplates.Reset(defaults); // w3/dllnames hook (#97)
             status.Text = vm.Settings.ResetLinuxSettings();
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -662,7 +666,9 @@ public sealed partial class MainWindow : Window
             DefaultDlssdVersion = ReadDlssDefault(defaultDlssd),
             DefaultDlssgVersion = ReadDlssDefault(defaultDlssg),
             DefaultDlssnrVersion = ReadDlssDefault(defaultDlssnr),
-            DefaultStreamlineVersion = ReadDlssDefault(defaultStreamline)
+            DefaultStreamlineVersion = ReadDlssDefault(defaultStreamline),
+            OptiScalerGpuType = optiScalerTemplates.GpuType, // w3/dllnames hook (#97)
+            OptiScalerDlssInputs = optiScalerTemplates.DlssInputs // w3/dllnames hook (#97)
         };
 
         static string ReadDlssDefault(ComboBox combo)

@@ -35,6 +35,11 @@ public sealed class LinuxAppSettings
     public string DefaultDlssnrVersion { get; set; } = "";
     public string DefaultStreamlineVersion { get; set; } = "";
 
+    // w3/dllnames (#97): which OptiScaler INI template a new OptiScaler install starts from (upstream 2.8.7 "GPU Type" and
+    // "DLSS Inputs"; defaults NVIDIA / on, as upstream). Set by the Settings dialog's controls.
+    public string OptiScalerGpuType { get; set; } = "NVIDIA";
+    public bool OptiScalerDlssInputs { get; set; } = true;
+
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
     /// same list as the ReShade profile, <c>OptionLists.ReShadeChannel</c>); a channel added there needs its row here, or
@@ -63,6 +68,12 @@ public sealed class LinuxAppSettings
         DefaultDlssnrVersion = DefaultDlssnrVersion?.Trim() ?? "";
         DefaultStreamlineVersion = DefaultStreamlineVersion?.Trim() ?? "";
         if (UpdateCheckIntervalHours is < 1 or > 24) UpdateCheckIntervalHours = 4;
+        OptiScalerGpuType = OptiScalerGpuType?.Trim().ToUpperInvariant() switch // w3/dllnames (#97)
+        {
+            "AMD" => "AMD",
+            "INTEL" => "Intel",
+            _ => "NVIDIA"
+        };
         return this;
     }
 

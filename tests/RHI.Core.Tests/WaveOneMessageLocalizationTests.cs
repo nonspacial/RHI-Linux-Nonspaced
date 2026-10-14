@@ -230,6 +230,26 @@ public sealed class WaveOneMessageLocalizationTests
         yield return Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
         yield return ReShadeDeploymentService.NameHeldByRhiComponentPrefix + "dinput8.dll (RE Framework)";
         yield return "Luma Framework installation rolled back: " + Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll";
+        yield return OptiScalerDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
+        yield return ReShadeDeploymentService.RemovalFailedPrefix + $"Could not restore {P}/dxgi.dll";
+        yield return OptiScalerDeploymentService.ProxyNameNotOfferedPrefix + "d3d9.dll";
+        yield return "RenoDX installed: Control → " + P + " · " + ControlUeFrameGenerationService.SetUpPrefix + "20261004."
+            + ControlUeFrameGenerationService.StackFailedPrefix + P
+            + ControlUeFrameGenerationService.SettingsFailedPrefix + P
+            + ControlUeFrameGenerationService.ReShadeNameNote + "d3d12.dll"
+            + ControlUeFrameGenerationService.HdrSetPrefix + "1";
+        yield return ControlUeFrameGenerationService.NotSetUpPrefix + ControlUeFrameGenerationService.OptiScalerElsewherePrefix + "Stable 0.9.4 / dxgi.dll"
+            + ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage;
+        yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoRenoDxMessage;
+        yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrUserValueKeptMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherDeployedPrefix + "c3f758abcd2491a950f384efbed579152145bdca";
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiScalerDeploymentService.OptiPatcherForeignMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.ReleaseIncompleteMessage;
+        yield return P + OptiScalerDeploymentService.OptiPatcherSkippedPrefix + OptiPatcherProvider.NotWindowsDllMessage;
+        yield return OptiScalerDeploymentService.OptiPatcherUpdatePrefix + "c3f758a → 4662cb0";
+        yield return P + OptiScalerIniTemplates.NotePrefix + "/home/u/.config/rhi-linux/inis/OptiScaler.amd-dlss.ini";
+        yield return P + OptiScalerIniTemplates.UnavailablePrefix + P;
+        yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
     }
 
     [Theory]

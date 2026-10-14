@@ -118,6 +118,9 @@ public static class DownloadSources
 
     // w3/vmsplit rows
     // w3/dllnames rows
+    /// <summary>OptiPatcher (#98): the optiscaler/OptiPatcher rolling release's single .asi (GitHub's digest is checked).</summary>
+    public static readonly TrustedDownloadPolicy OptiPatcher = new(
+        "OptiPatcher", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
 
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
@@ -133,5 +136,6 @@ public static class DownloadSources
         NexusApi, NexusFiles, NrCostScaler,
         // w3/vmsplit rows
         // w3/dllnames rows
+        OptiPatcher,
     ];
 }

@@ -15,7 +15,7 @@ on the final link after redirects; it also caps the size. Cached payloads are re
   (`VerifiedDownload.Record`): `Download.Sha256` and `Download.Integrity` (`published-digest` / `recorded-only`) for the
   main payload, `Download.<part>.Sha256` / `Download.<part>.Integrity` for each further one (Luma and the Feeder:
   `dgVoodoo`; the Feeder: `Consumer` (RenoDX DLSS5), `Lumenite`, `ReShadeHeaders`, `FeederShader` (raw fallback);
-  RTX 20 FG Unlock: `Ini`; OptiScaler's FG stack: `DlssEnabler`). The SHA-256 is that of the verified cache entry the
+  RTX 20 FG Unlock: `Ini`; OptiScaler's FG stack: `DlssEnabler`; OptiScaler's OptiPatcher: `OptiPatcher`). The SHA-256 is that of the verified cache entry the
   deployment came from: the downloaded file, or, where RHI keeps only the file it extracted from the download
   (UAL, ShortFuse, DLSS Enabler, Universal MFG), that file. An update rewrites the keys; a local package (Luma, Deep
   Fried Chicken) is not a download and has none. Streamline and `nvngx_*` DLLs from the DLSS manifest are outside
@@ -30,6 +30,7 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | GitHub API metadata | `GitHubApi` | api.github.com | n/a (16 MiB cap; ETag revalidation, #35) | n/a |
 | ReLimiter, Display Commander, other GitHub add-ons | `GitHubAddonRelease` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | OptiScaler (stable, nightly, DLSS-NR) | `OptiScaler` | GitHub release hosts | GitHub asset `digest` | fail-open |
+| OptiPatcher (rolling release, #98) | `OptiPatcher` | GitHub release hosts, 256 MiB | GitHub asset `digest`; cached per build commit, must be a 64-bit PE | fail-open |
 | Luma Framework | `Luma` | GitHub release hosts (Filoppi namespace checked separately) | GitHub asset `digest` | fail-open; catalogue links without a version are fetched every time |
 | REFramework | `REFramework` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | Ultimate ASI Loader | `UltimateAsiLoader` | GitHub release hosts | GitHub asset `digest` | fail-open |

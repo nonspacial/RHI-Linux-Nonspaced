@@ -187,20 +187,15 @@ public sealed partial class OptiScalerDeploymentService
 
         var previousOwned = ReadFgStackRelativePaths(record);
         var fileByPath = record.Files.ToDictionary(file => Path.GetFullPath(file.Path), StringComparer.Ordinal);
-        var backupRoot = Path.Combine(Path.GetTempPath(), $"rhi-optiscaler-fg-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(backupRoot);
-        var backups = new Dictionary<string, string>(StringComparer.Ordinal);
-        var newFiles = new List<string>();
         var createdDirectories = new List<string>();
         // Foreign files found at a stack target: kept as <name>.original and restored on disable/remove.
         var foreign = new HashSet<string>(StringComparer.Ordinal);
         var preserved = new List<string>();
         var leftUnowned = new HashSet<string>(StringComparer.Ordinal);
 
+        var legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
         try
         {
-            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
-
             // Preflight all destinations before touching any file.
             foreach (var (sourceRaw, targetRaw) in requested)
             {
@@ -231,22 +226,40 @@ public sealed partial class OptiScalerDeploymentService
                     throw new InvalidOperationException($"OptiScaler FG stack ownership record is missing for {target}; nothing was changed.");
                 if (ownedFile.AllowUserChanges)
                     throw new InvalidOperationException($"OptiScaler FG stack target is unexpectedly user-editable and will not be overwritten: {target}");
-                if (!string.IsNullOrWhiteSpace(ownedFile.Sha256))
+                if (!string.IsNullOrWhiteSpace(ownedFile.Sha256) && !legacySwaps.Contains(ownedFile.Path))
                 {
                     var currentHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(currentHash, ownedFile.Sha256, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidOperationException($"Managed OptiScaler FG stack file was modified outside RHI: {target}");
                 }
             }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ComponentOperationResult.Fail($"OptiScaler Streamline/DLSS Enabler deployment rolled back: {ex.Message}");
+        }
 
+        // Journaled (#23, #31): every stack file is tracked with a verified copy (a foreign one with its .original) and
+        // every placed content declared before it changes; the record (stamped) is the commit point. A failure, or a
+        // crash before the record is saved, puts every file back.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, $"OptiScaler FG stack: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        string message;
+        try
+        {
             // Preflighted: from the first file on, the deployment runs to completion or full rollback.
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            await GiveBackLegacyDlssSwapsAsync(legacySwaps, scope, cancellationToken).ConfigureAwait(false);
             foreach (var (source, targetRaw) in requested)
             {
                 var target = Path.GetFullPath(targetRaw);
                 if (leftUnowned.Contains(target)) continue;
                 if (foreign.Contains(target))
                 {
+                    await scope.TrackAsync(target, cancellationToken).ConfigureAwait(false);
+                    await scope.DeclareWriteAsync(target, await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var replaced = await _files.ReplaceAsync(source, target, cancellationToken).ConfigureAwait(false);
                     if (!replaced.Success)
                         throw new IOException(replaced.Error ?? $"Could not replace {target} while keeping its original.");
@@ -257,18 +270,7 @@ public sealed partial class OptiScalerDeploymentService
                 }
 
                 EnsureTargetDirectory(binaryDirectory, target, createdDirectories);
-                if (File.Exists(target))
-                {
-                    var backup = Path.Combine(backupRoot, $"{backups.Count:D3}-{Path.GetFileName(target)}");
-                    File.Copy(target, backup, overwrite: false);
-                    backups[target] = backup;
-                }
-                else
-                {
-                    newFiles.Add(target);
-                }
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await scope.PlaceCopyAsync(source, target, cancellationToken, overwrite: File.Exists(target)).ConfigureAwait(false);
             }
 
             var ownedRelative = new HashSet<string>(previousOwned, StringComparer.Ordinal);
@@ -278,7 +280,7 @@ public sealed partial class OptiScalerDeploymentService
                 if (leftUnowned.Contains(target)) continue;
                 var relative = RelativeToBinary(binaryDirectory, target);
                 ownedRelative.Add(relative);
-                var hash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
+                var hash = await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false);
                 if (fileByPath.TryGetValue(target, out var file))
                 {
                     file.Sha256 = hash;
@@ -303,54 +305,36 @@ public sealed partial class OptiScalerDeploymentService
             record.Metadata[FgStackDlssEnablerVersionMetadataKey] = enablerRelease.Version;
             // The DLSS Enabler payload is a download of this record too (#26); Streamline and nvngx_dlssg come from the
             // DLSS manager's own cache (its manifest sources, not a deployment download policy).
-            VerifiedDownload.Record(record.Metadata, await FileHash.Sha256HexAsync(enablerPayload, cancellationToken).ConfigureAwait(false),
+            VerifiedDownload.Record(record.Metadata, await FileHash.Sha256HexAsync(enablerPayload, CancellationToken.None).ConfigureAwait(false),
                 !string.IsNullOrWhiteSpace(enablerRelease.AssetSha256), FgStackDlssEnablerDownloadPart);
             if (dlssg.Version is not null && !leftUnowned.Contains(Path.GetFullPath(Path.Combine(streamlineDirectory, DlssgFileName))))
                 record.Metadata[FgStackDlssgVersionMetadataKey] = dlssg.Version;
             record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(ownedRelative.OrderBy(path => path, StringComparer.Ordinal).ToArray());
             foreach (var directory in createdDirectories)
                 if (!record.DirectoriesCreatedByRhi.Contains(directory, StringComparer.Ordinal)) record.DirectoriesCreatedByRhi.Add(directory);
-            _records.Upsert(record);
+            _records.Upsert(scope.Stamp(record));
 
-            var message = dlssg.Version is not null
+            message = dlssg.Version is not null
                 ? $"OptiScaler Streamline {streamlineVersion} + DLSS Enabler {enablerRelease.Version} + {DlssgFileName} {dlssg.Version} deployed to OptiScaler/."
                 : $"OptiScaler Streamline {streamlineVersion} + DLSS Enabler {enablerRelease.Version} deployed to OptiScaler/; {DlssgFileName} was not deployed: {dlssg.Problem}";
             if (preserved.Count > 0)
                 message += $" Existing files kept as {TransactionalFileDeploymentService.BackupExtension} and restored on removal: {string.Join(", ", preserved.Select(Path.GetFileName))}.";
-            return ComponentOperationResult.Ok(message, requested
-                .Select(item => item.Target)
-                .Where(target => !leftUnowned.Contains(Path.GetFullPath(target)))
-                .ToArray());
         }
         catch (Exception ex)
         {
-            // Compensation must run even when the failure is a cancellation.
-            var problems = new List<string>();
-            foreach (var pair in backups)
-            {
-                try { if (File.Exists(pair.Value)) File.Copy(pair.Value, pair.Key, overwrite: true); }
-                catch (Exception restoreError) { problems.Add($"{pair.Key}: {restoreError.Message}"); }
-            }
-            foreach (var target in newFiles.AsEnumerable().Reverse())
-            {
-                try { if (File.Exists(target)) File.Delete(target); }
-                catch (Exception deleteError) { problems.Add($"{target}: {deleteError.Message}"); }
-            }
-            foreach (var target in preserved.AsEnumerable().Reverse())
-            {
-                var restored = await _files.RestoreAsync(target, CancellationToken.None).ConfigureAwait(false);
-                if (!restored.Success)
-                    problems.Add($"{target}: {restored.Error ?? "restore failed"}; its {TransactionalFileDeploymentService.BackupExtension} copy was kept");
-            }
+            // Compensation must run even when the failure is a cancellation; never cancelled itself.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             CleanupDirectories(createdDirectories);
-            return ComponentOperationResult.Fail(problems.Count == 0
+            return ComponentOperationResult.Fail(rollback.Success
                 ? $"OptiScaler Streamline/DLSS Enabler deployment rolled back: {ex.Message}"
-                : $"OptiScaler Streamline/DLSS Enabler deployment failed ({ex.Message}) and the rollback is incomplete: {string.Join("; ", problems)}");
+                : $"OptiScaler Streamline/DLSS Enabler deployment failed ({ex.Message}) and the rollback is incomplete: {string.Join("; ", rollback.Failures)}");
         }
-        finally
-        {
-            try { Directory.Delete(backupRoot, recursive: true); } catch { }
-        }
+        // The record carries the operation id: it is the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(message, requested
+            .Select(item => item.Target)
+            .Where(target => !leftUnowned.Contains(Path.GetFullPath(target)))
+            .ToArray());
     }
 
     /// <summary>
@@ -403,54 +387,48 @@ public sealed partial class OptiScalerDeploymentService
             ownedFiles.Add((relative, owned));
         }
 
-        var remaining = new HashSet<string>(ownedRelative, StringComparer.Ordinal);
-        var changed = false;
-        ComponentOperationResult FailKeepingProgress(string message)
+        var legacySwaps = await FindLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
+        foreach (var (_, file) in ownedFiles)
         {
-            // Files already removed/restored must leave the ownership record, or the next attempt is blocked.
-            if (changed)
-            {
-                record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(remaining.OrderBy(path => path, StringComparer.Ordinal).ToArray());
-                _records.Upsert(record);
-            }
-            return ComponentOperationResult.Fail(message);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
+                return ComponentOperationResult.Fail($"Cannot safely remove the OptiScaler FG stack: preserved original is missing for {file.Path}.");
+            if (!File.Exists(file.Path) || legacySwaps.Contains(file.Path)) continue;
+            if (string.IsNullOrWhiteSpace(file.Sha256))
+                return ComponentOperationResult.Fail($"OptiScaler FG stack ownership hash is missing for {file.Path}; removal is blocked.");
+            var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
+            if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail($"OptiScaler FG stack file was modified outside RHI and will not be removed: {file.Path}");
         }
 
+        // Journaled (#23, #31): the narrowed record (stamped) is the commit point; every file the teardown touches is
+        // tracked with a verified copy first, so a failure or a crash before the save puts the whole stack back (the
+        // disable never stops half-way).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, $"OptiScaler FG stack removal: {game.Name}", game, ManagedComponentKind.OptiScaler, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        // Cancel is honoured only up to here.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            await RestoreLegacyDlssSwapsAsync(record, cancellationToken).ConfigureAwait(false);
-
-            foreach (var (_, file) in ownedFiles)
+            await GiveBackLegacyDlssSwapsAsync(legacySwaps, scope, cancellationToken).ConfigureAwait(false);
+            foreach (var (_, file) in ownedFiles.OrderByDescending(item => item.File.Path.Length))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (file.ExistedBeforeInstall && !File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
-                    return ComponentOperationResult.Fail($"Cannot safely remove the OptiScaler FG stack: preserved original is missing for {file.Path}.");
-                if (!File.Exists(file.Path)) continue;
-                if (string.IsNullOrWhiteSpace(file.Sha256))
-                    return ComponentOperationResult.Fail($"OptiScaler FG stack ownership hash is missing for {file.Path}; removal is blocked.");
-                var current = await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false);
-                if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    return ComponentOperationResult.Fail($"OptiScaler FG stack file was modified outside RHI and will not be removed: {file.Path}");
-            }
-
-            // Cancel is honoured only up to here: the teardown never stops half-way.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            foreach (var (relative, file) in ownedFiles.OrderByDescending(item => item.File.Path.Length))
-            {
+                await scope.TrackAsync(file.Path, cancellationToken).ConfigureAwait(false);
                 if (file.ExistedBeforeInstall)
                 {
+                    await scope.DeclareWriteAsync(file.Path, scope.Files.Find(file.Path)!.BackupPreSha256
+                        ?? await FileHash.Sha256HexAsync(file.Path + TransactionalFileDeploymentService.BackupExtension, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
                     if (!restored.Success)
-                        return FailKeepingProgress($"Could not restore the original {file.Path}: {restored.Error}");
+                        throw new IOException($"Could not restore the original {file.Path}: {restored.Error}");
                 }
-                else
+                else if (File.Exists(file.Path))
                 {
-                    try { if (File.Exists(file.Path)) File.Delete(file.Path); }
-                    catch (Exception ex) { return FailKeepingProgress($"Could not remove {file.Path}: {ex.Message}"); }
+                    AtomicFile.Delete(file.Path);
                 }
                 record.Files.Remove(file);
-                remaining.Remove(relative);
-                changed = true;
             }
 
             record.Metadata[FgStackEnabledMetadataKey] = "0";
@@ -458,16 +436,26 @@ public sealed partial class OptiScalerDeploymentService
             VerifiedDownload.Forget(record.Metadata, FgStackDlssEnablerDownloadPart);
             record.Metadata.Remove(FgStackDlssgVersionMetadataKey);
             record.Metadata.Remove(FgStackFilesMetadataKey);
-            var streamlineDirectory = Path.Combine(binaryDirectory, "OptiScaler", "Streamline");
-            try { if (Directory.Exists(streamlineDirectory) && !Directory.EnumerateFileSystemEntries(streamlineDirectory).Any()) Directory.Delete(streamlineDirectory); } catch { }
-            record.DirectoriesCreatedByRhi.RemoveAll(path => !Directory.Exists(path));
-            _records.Upsert(record);
-            return ComponentOperationResult.Ok("OptiScaler Streamline/DLSS Enabler deployment removed. The selected Streamline version preference was preserved.");
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            return FailKeepingProgress($"Could not remove OptiScaler Streamline/DLSS Enabler deployment: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"Could not remove OptiScaler Streamline/DLSS Enabler deployment: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The narrowed record carries the operation id: it is the commit point. The emptied folder goes after it.
+        await scope.CommitAsync().ConfigureAwait(false);
+        var streamlineDirectory = Path.Combine(binaryDirectory, "OptiScaler", "Streamline");
+        CleanupDirectories([streamlineDirectory]);
+        if (record.DirectoriesCreatedByRhi.RemoveAll(path => !Directory.Exists(path)) > 0)
+        {
+            try { _records.Upsert(record); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+                AppLog.Warn("optiscaler", "Could not drop removed folders from the OptiScaler record", ex);
+            }
+        }
+        return ComponentOperationResult.Ok("OptiScaler Streamline/DLSS Enabler deployment removed. The selected Streamline version preference was preserved.");
     }
 
     internal static bool HasManagedOptiScalerStreamlineFgFiles(LinuxDeploymentRecord record)
@@ -481,23 +469,6 @@ public sealed partial class OptiScalerDeploymentService
                             || File.Exists(Path.Combine(streamlineDirectory, "sl.dlss_g.dll"));
         var hasEnabler = File.Exists(Path.Combine(binaryDirectory, "OptiScaler", DlssEnablerHeadlessFileName));
         return hasStreamline && hasEnabler;
-    }
-
-    /// <summary>Drops FG-stack ownership entries whose file record is gone (removed in a partly failed removal).</summary>
-    private static void PruneFgStackOwnership(LinuxDeploymentRecord record)
-    {
-        if (!record.Metadata.ContainsKey(FgStackFilesMetadataKey)) return;
-        var binaryDirectory = Path.GetFullPath(record.BinaryDirectory);
-        var recorded = record.Files.Select(file => Path.GetFullPath(file.Path)).ToHashSet(StringComparer.Ordinal);
-        var kept = ReadFgStackRelativePaths(record)
-            .Where(relative =>
-            {
-                try { return recorded.Contains(ResolveManagedRelativePath(binaryDirectory, relative)); }
-                catch { return true; } // unsafe entries stay so the disable path keeps refusing them
-            })
-            .OrderBy(path => path, StringComparer.Ordinal)
-            .ToArray();
-        record.Metadata[FgStackFilesMetadataKey] = JsonSerializer.Serialize(kept);
     }
 
     private static HashSet<string> ReadFgStackRelativePaths(LinuxDeploymentRecord record)

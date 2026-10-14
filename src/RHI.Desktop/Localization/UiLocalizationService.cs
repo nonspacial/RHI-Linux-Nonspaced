@@ -1086,6 +1086,45 @@ public static class UiLocalizationService
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o ReShade não pode ser instalado com ele; escolha outro nome de DLL para o ReShade. Nome e componente: "),
         (RHI.Platform.Linux.Deployment.Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix,
             "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como d3d9.dll, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
+        // Phase B (#23/#31 journaling): a failed removal is rolled back whole and says so.
+        ("OptiScaler removal failed and was rolled back; OptiScaler stays installed: ",
+            "A remoção do OptiScaler falhou e foi desfeita; o OptiScaler continua instalado: "),
+        ("ReShade removal failed and was rolled back; ReShade stays installed: ",
+            "A remoção do ReShade falhou e foi desfeita; o ReShade continua instalado: "),
+        // Phase B (#136): OptiScaler under another DLL name.
+        ("OptiScaler cannot be installed under this DLL name; choose one of dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll or winhttp.dll: ",
+            "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
+        ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
+            "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
+        // #136 Control UE OptiScaler frame generation step.
+        ("Control UE frame generation set up: OptiScaler Nightly pinned as winmm.dll with Streamline, DLSS Enabler and the frame generation settings. Build: ",
+            "Geração de quadros do Control UE configurada: OptiScaler Nightly fixado como winmm.dll com Streamline, DLSS Enabler e as configurações de geração de quadros. Build: "),
+        ("Control UE frame generation was not set up; the RenoDX install is kept: ",
+            "A geração de quadros do Control UE não foi configurada; a instalação do RenoDX foi mantida: "),
+        ("OptiScaler is already installed on this game under another build or DLL name, so it was left as it is. Remove OptiScaler, then install RenoDX again with frame generation. Installed: ",
+            "O OptiScaler já está instalado neste jogo com outro build ou nome de DLL, então foi deixado como está. Remova o OptiScaler e instale o RenoDX de novo com a geração de quadros. Instalado: "),
+        (" Streamline/DLSS Enabler could not be deployed: ", " Não foi possível implantar Streamline/DLSS Enabler: "),
+        (" The frame generation settings could not be written to OptiScaler.ini: ", " Não foi possível gravar as configurações de geração de quadros no OptiScaler.ini: "),
+        (" ReShade keeps its own DLL name (upstream moves it to dxgi.dll; RHI does not rename an installed ReShade): ",
+            " O ReShade mantém o próprio nome de DLL (o upstream o move para dxgi.dll; o RHI não renomeia um ReShade instalado): "),
+        (" FgSlHdr10 set in reshade.ini: ", " FgSlHdr10 definido no reshade.ini: "),
+        (" FgSlHdr10 was not set in reshade.ini: ", " FgSlHdr10 não foi definido no reshade.ini: "),
+        ("reshade.ini was not found in the game folder.", "o reshade.ini não foi encontrado na pasta do jogo."),
+        ("RenoDX is not installed by RHI on this game.", "o RenoDX não foi instalado pelo RHI neste jogo."),
+        ("the value was changed outside RHI and was kept.", "o valor foi alterado fora do RHI e foi mantido."),
+        // #98 OptiPatcher.
+        (RHI.Platform.Linux.Deployment.DownloadSources.OptiPatcher.RefusalPrefix,
+            "Download recusado: links do OptiPatcher devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        (" OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado em plugins/ (LoadAsiPlugins do OptiScaler ativado). Build: "),
+        (" OptiPatcher was not deployed; OptiScaler works without it: ", " O OptiPatcher não foi implantado; o OptiScaler funciona sem ele: "),
+        ("OptiPatcher update available: ", "Atualização do OptiPatcher disponível: "),
+        ("a plugins/OptiPatcher.asi RHI does not own is already there; it was left as it is.", "já existe um plugins/OptiPatcher.asi que não pertence ao RHI; ele foi deixado como está."),
+        ("The OptiPatcher rolling release lists no OptiPatcher.asi download.", "A versão contínua do OptiPatcher não lista o download OptiPatcher.asi."),
+        ("The downloaded OptiPatcher.asi is not a 64-bit Windows DLL.", "O OptiPatcher.asi baixado não é uma DLL Windows de 64 bits."),
+        // #97 OptiScaler per-GPU INI templates.
+        (" OptiScaler.ini comes from your INI template: ", " O OptiScaler.ini vem do seu modelo de INI: "),
+        (" The OptiScaler INI template could not be prepared, so the package's OptiScaler.ini was used: ",
+            " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";
