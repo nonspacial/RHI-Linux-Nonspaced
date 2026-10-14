@@ -1268,6 +1268,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private static string AppendRollbackMessage(string message, string? rollback)
         => string.IsNullOrWhiteSpace(rollback) ? message : $"{message} {rollback}";
 
+    /// <summary>
+    /// Fixed text before "component: file" when Luma/ShortFuse would install their ReShade beside a ReShade RHI did not
+    /// install (PT-BR presentation pair).
+    /// </summary>
+    public const string ExternalReShadeBlocksDependencyPrefix =
+        "This component needs ReShade installed by RHI, but a ReShade RHI Linux did not install is already in this game folder; it was left alone and nothing was installed. Remove that ReShade first, or keep using it without this component. Component and file: ";
+
     private ComponentOperationResult? DependencyConflictGuard(DetectedGame game, ManagedComponentKind target)
     {
         // w3/dllnames (#91): a ReShade add-on cannot load in the No Addons build.
@@ -1304,8 +1311,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             Directory.Exists(game.BinaryDirectory) &&
             GitHubReShadeAddonDeploymentService.HasReShade(game.BinaryDirectory))
         {
-            return ComponentOperationResult.Fail(
-                $"{DisplayDependencyName(target)} exige ReShade gerenciado pelo RHI. Um ReShade externo foi detectado e será preservado; nenhuma dependência foi alterada.");
+            // dllnames re-review nit 4: the same plain next step as the direct install's refusal, with the file.
+            return ComponentOperationResult.Fail(ExternalReShadeBlocksDependencyPrefix +
+                $"{DisplayDependencyName(target)}: {ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory) ?? game.BinaryDirectory}");
         }
 
         if (target == ManagedComponentKind.Dlss5Feeder &&

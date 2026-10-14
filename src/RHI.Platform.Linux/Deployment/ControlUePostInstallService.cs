@@ -434,6 +434,27 @@ public sealed class ControlUePostInstallService
 
     internal static string Serialize(ControlUePostInstallState state) => JsonSerializer.Serialize(state);
 
+    /// <summary>
+    /// The saved state (<see cref="MetadataKey"/>'s JSON) with every path it names passed through <paramref name="map"/>:
+    /// the DLLs, their earlier copies, renderer.ini and the user-kept list (Repair after move, dllnames re-review minor 3).
+    /// </summary>
+    internal static string RebasePaths(string json, Func<string, string> map)
+    {
+        var state = JsonSerializer.Deserialize<ControlUePostInstallState>(json)
+                    ?? throw new InvalidDataException("Control UE post-install state is unreadable.");
+        var rebased = state with
+        {
+            Dlls = state.Dlls.Select(dll => dll with
+            {
+                Path = map(dll.Path),
+                PreviousSnapshotPath = dll.PreviousSnapshotPath is null ? null : map(dll.PreviousSnapshotPath)
+            }).ToList(),
+            RendererIni = state.RendererIni is null ? null : state.RendererIni with { Path = map(state.RendererIni.Path) },
+            UserKept = state.UserKept?.Select(map).ToList()
+        };
+        return Serialize(rebased);
+    }
+
     internal static ControlUePostInstallState? Deserialize(LinuxDeploymentRecord? record)
     {
         if (record is null || !record.Metadata.TryGetValue(MetadataKey, out var json) || string.IsNullOrWhiteSpace(json))

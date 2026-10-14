@@ -26,7 +26,7 @@ public sealed class Dx9TranslationReShadeCoordinator
     /// chose, e.g. dxgi.dll): what to do, in plain words (PT-BR presentation pair).
     /// </summary>
     public const string NeedsReShadeAsD3d9Prefix =
-        "The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ";
+        "The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to d3d9.dll, install ReShade again, then try again. ReShade is installed now as: ";
 
     public Dx9TranslationReShadeCoordinator(LinuxDeploymentRecordStore records, WineDllOverrideService overrides, DeploymentJournal? journal = null)
     {

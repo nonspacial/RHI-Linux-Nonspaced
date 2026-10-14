@@ -285,6 +285,83 @@ public sealed class ControlUePostInstallTests : IDisposable
         Assert.Null(store.Find(game, ManagedComponentKind.RenoDX));
     }
 
+    // dllnames re-review minor 3: Repair after move rebases the state's paths, the kept list included, so the first
+    // update in the new folder still leaves the user's DLL and preset alone and restores from the moved copies.
+    [Fact]
+    public async Task MoveThenUpdate_KeepsTheUsersChoices_AndTheStateNamesTheNewFolder()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var bin = game.BinaryDirectory!;
+        File.WriteAllText(Path.Combine(bin, "renderer.ini"), RendererIni);
+        File.WriteAllText(Path.Combine(bin, "nvngx_dlss.dll"), "OLD-SR");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        File.WriteAllText(Path.Combine(bin, "nvngx_dlss.dll"), "USER-SR");
+        var userIni = RendererIni.Replace("\"m_eHDRPreset\": 0", "\"m_eHDRPreset\": 1");
+        File.WriteAllText(Path.Combine(bin, "renderer.ini"), userIni);
+        File.WriteAllText(Path.Combine(_sources, "nvngx_dlss.dll"), "NEWER-SR");
+        File.WriteAllText(Path.Combine(_sources, "nvngx_dlssd.dll"), "NEWER-RR");
+        Assert.True((await service.UpdateAsync(game, [game.ExecutablePath!])).Success); // the kept list is saved now
+
+        var movedBin = Path.Combine(_root, "other-library", "steamapps", "common", "Control");
+        Directory.CreateDirectory(Path.GetDirectoryName(movedBin)!);
+        Directory.Move(bin, movedBin);
+        var moved = new DetectedGame
+        {
+            Name = game.Name, InstallPath = movedBin, BinaryDirectory = movedBin, ExecutablePath = Path.Combine(movedBin, "Control_DX12.exe"),
+            PrefixPath = game.PrefixPath, Runner = game.Runner, SteamAppId = game.SteamAppId
+        };
+        var repair = new DeploymentRelocation(store).Repair(moved, [], out _);
+        Assert.True(repair.Success, repair.Message);
+
+        var state = ControlUePostInstallService.Deserialize(store.Find(moved, ManagedComponentKind.RenoDX))!;
+        var named = state.Dlls.Select(d => d.Path).Concat(state.Dlls.Select(d => d.PreviousSnapshotPath).OfType<string>())
+            .Concat(state.RendererIni is null ? [] : [state.RendererIni.Path]).Concat(state.UserKept ?? []).ToArray();
+        Assert.NotEmpty(state.UserKept!);
+        Assert.All(named, path => Assert.StartsWith(movedBin + "/", path));
+
+        File.WriteAllText(Path.Combine(_sources, "nvngx_dlss.dll"), "NEWEST-SR");
+        File.WriteAllText(Path.Combine(_sources, "nvngx_dlssd.dll"), "NEWEST-RR");
+        _srVersion = "310.9.0";
+        var update = await service.UpdateAsync(moved, [moved.ExecutablePath!]);
+
+        Assert.True(update.Success, update.Message);
+        Assert.Equal("USER-SR", File.ReadAllText(Path.Combine(movedBin, "nvngx_dlss.dll")));
+        Assert.Equal(userIni, File.ReadAllText(Path.Combine(movedBin, "renderer.ini")));
+        Assert.Equal("NEWEST-RR", File.ReadAllText(Path.Combine(movedBin, "nvngx_dlssd.dll")));
+    }
+
+    // The other paths the state names (renderer.ini's edit, the earlier swapped DLL's copy) follow the move too: removal
+    // in the new folder puts both back.
+    [Fact]
+    public async Task MoveThenRemove_RestoresTheIniAndTheEarlierSwappedDll_InTheNewFolder()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var bin = game.BinaryDirectory!;
+        File.WriteAllText(Path.Combine(bin, "renderer.ini"), RendererIni);
+        File.WriteAllText(Path.Combine(bin, "nvngx_dlss.dll"), "SWAPPED-SR");
+        File.WriteAllText(Path.Combine(bin, "nvngx_dlss.dll.original"), "TRUE-ORIGINAL");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+
+        var movedBin = Path.Combine(_root, "other-library", "steamapps", "common", "Control");
+        Directory.CreateDirectory(Path.GetDirectoryName(movedBin)!);
+        Directory.Move(bin, movedBin);
+        var moved = new DetectedGame
+        {
+            Name = game.Name, InstallPath = movedBin, BinaryDirectory = movedBin, ExecutablePath = Path.Combine(movedBin, "Control_DX12.exe"),
+            PrefixPath = game.PrefixPath, Runner = game.Runner, SteamAppId = game.SteamAppId
+        };
+        var repair = new DeploymentRelocation(store).Repair(moved, [], out _);
+        Assert.True(repair.Success, repair.Message);
+
+        var remove = await service.RemoveAsync(moved);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.Equal(RendererIni, File.ReadAllText(Path.Combine(movedBin, "renderer.ini")));
+        Assert.Equal("SWAPPED-SR", File.ReadAllText(Path.Combine(movedBin, "nvngx_dlss.dll")));
+        Assert.Equal("TRUE-ORIGINAL", File.ReadAllText(Path.Combine(movedBin, "nvngx_dlss.dll.original")));
+        Assert.Empty(Directory.EnumerateFiles(movedBin, "*" + ControlUePostInstallService.PreviousSnapshotSuffix));
+    }
+
     // When the user changed every file the step touches, nothing stays owned but the list still rides on the record:
     // later updates leave all three alone.
     [Fact]

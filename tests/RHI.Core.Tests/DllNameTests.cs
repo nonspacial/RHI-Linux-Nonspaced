@@ -313,7 +313,10 @@ public sealed class DllNameTests : IDisposable
 
         Assert.False(result.Success);
         Assert.False(targetRan);
-        Assert.Contains("Um ReShade externo foi detectado", result.Message);
+        Assert.Equal(LinuxManagedComponentService.ExternalReShadeBlocksDependencyPrefix +
+            $"{LinuxManagedComponentService.DisplayDependencyName(target)}: {dxgi}", result.Message);
+        var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", result.Message);
+        Assert.Contains("Remova esse ReShade antes ou continue usando-o sem este componente", portuguese);
         Assert.False(File.Exists(Path.Combine(fx.Bin, "dinput8.dll")));
         Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
     }
@@ -413,10 +416,10 @@ public sealed class DllNameTests : IDisposable
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.MigrateAsync(fx.Game));
 
         Assert.Equal(Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix + "dxgi.dll", error.Message);
-        Assert.Contains("set its DLL name to Automatic", error.Message);
+        Assert.Contains("set its DLL name to d3d9.dll", error.Message);
         var luma = "Luma Framework installation rolled back: " + error.Message;
         var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", luma);
-        Assert.Contains("defina o nome da DLL como Automático", portuguese);
+        Assert.Contains("defina o nome da DLL como d3d9.dll", portuguese);
         Assert.DoesNotContain(RHI.Desktop.Localization.UiLocalizationService.EnglishMarkersIn(portuguese), m => !m.Equals("no", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(before, File.ReadAllBytes(Path.Combine(fx.Bin, "dxgi.dll")));
         Assert.False(File.Exists(Path.Combine(fx.Bin, "d3d9.dll")));

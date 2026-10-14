@@ -1080,10 +1080,12 @@ public static class UiLocalizationService
             "O nome de DLL do ReShade escolhido é para a outra arquitetura de jogo Windows; escolha outro nome: "),
         ("ReShade is already in this game folder, but RHI Linux did not install it; a second ReShade would load twice, so nothing was installed. Remove that ReShade first, or keep using it: ",
             "O ReShade já está na pasta deste jogo, mas não foi instalado pelo RHI Linux; um segundo ReShade carregaria duas vezes, então nada foi instalado. Remova esse ReShade antes ou continue usando-o: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ExternalReShadeBlocksDependencyPrefix,
+            "Este componente precisa do ReShade instalado pelo RHI, mas um ReShade que o RHI Linux não instalou já está na pasta deste jogo; ele foi mantido e nada foi instalado. Remova esse ReShade antes ou continue usando-o sem este componente. Componente e arquivo: "),
         ("Another component RHI installed on this game already uses this DLL name, so ReShade cannot be installed under it; choose another DLL name for ReShade. Name and component: ",
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o ReShade não pode ser instalado com ele; escolha outro nome de DLL para o ReShade. Nome e componente: "),
-        ("The DirectX 9 translation (dgVoodoo2) needs RHI's ReShade installed as d3d9.dll; nothing was changed. Remove ReShade, set its DLL name to Automatic, install ReShade again, then try again. ReShade is installed now as: ",
-            "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como Automático, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
+        (RHI.Platform.Linux.Deployment.Dx9TranslationReShadeCoordinator.NeedsReShadeAsD3d9Prefix,
+            "A tradução de DirectX 9 (dgVoodoo2) precisa do ReShade do RHI instalado como d3d9.dll; nada foi alterado. Remova o ReShade, defina o nome da DLL como d3d9.dll, instale o ReShade de novo e tente outra vez. O ReShade está instalado agora como: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

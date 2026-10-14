@@ -1,3 +1,4 @@
+using System.Text.Json;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
@@ -183,6 +184,16 @@ public sealed class DeploymentRelocation
             copy.DirectoriesCreatedByRhi = copy.DirectoriesCreatedByRhi.Select(d => Map(d, candidate)).ToList();
             foreach (var name in copy.Metadata.Keys.ToArray())
                 copy.Metadata[name] = Map(copy.Metadata[name], candidate);
+            // The Control UE step's state is a JSON blob of paths (DLLs, renderer.ini, the user-kept list): rebase inside it,
+            // or the next update applies the step again over the user's own DLL/preset in the new folder.
+            if (copy.Metadata.TryGetValue(ControlUePostInstallService.MetadataKey, out var controlUe) && !string.IsNullOrWhiteSpace(controlUe))
+            {
+                try { copy.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.RebasePaths(controlUe, path => Map(path, candidate)); }
+                catch (Exception ex) when (ex is JsonException or InvalidDataException)
+                {
+                    return new(false, 0, $"{RepairNotSavedPrefix}{ex.Message}");
+                }
+            }
             rebased.Add(copy);
         }
 
