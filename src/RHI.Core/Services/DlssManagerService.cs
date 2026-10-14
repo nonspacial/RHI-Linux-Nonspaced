@@ -118,6 +118,82 @@ public sealed class DlssManagerService
         => Detect(gameRoot, executablePath, indexedFiles, protectedFiles: null, cancellationToken);
 
     /// <summary>
+    /// The game's DLSS/Streamline targets with the manifest folder overrides applied (#155, upstream 2.8.6
+    /// <c>dlssPathOverrides</c>/<c>streamlinePathOverrides</c>): when <see cref="DetectedGame.DlssPathOverride"/> names an
+    /// existing folder inside the game root, only that folder (and the Streamline override folder, else the same folder)
+    /// is read, without the depth-limited walk, as upstream's exact-path detection; <c>nvngx_dlssg.dll</c> is also looked
+    /// for in the Streamline folder. An override that is missing or leaves the game root falls back to the normal walk.
+    /// Protected files are dropped in both cases.
+    /// </summary>
+    public DlssDetectionResult Detect(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles,
+        IEnumerable<string>? protectedFiles,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        var dlssFolder = ResolveManifestFolder(game.InstallPath, game.DlssPathOverride);
+        if (dlssFolder is null)
+            return Detect(game.InstallPath, game.ExecutablePath, indexedFiles, protectedFiles, cancellationToken);
+        var streamlineFolder = ResolveManifestFolder(game.InstallPath, game.StreamlinePathOverride) ?? dlssFolder;
+        return ExcludeProtected(DetectInFolders(game.InstallPath, dlssFolder, streamlineFolder), protectedFiles);
+    }
+
+    /// <summary>
+    /// A manifest sub-path (<c>Engine\\Plugins\\…\\Win64</c>) below <paramref name="root"/>, or null when it is blank,
+    /// absolute, missing, or leaves the root (<c>..</c> or a symlink pointing out, checked with symlinks resolved).
+    /// </summary>
+    public static string? ResolveManifestFolder(string? root, string? relative)
+    {
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(relative) || !Directory.Exists(root)) return null;
+        var normalized = relative.Trim().Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+        if (Path.IsPathRooted(normalized)) return null;
+        string full;
+        try { full = Path.GetFullPath(Path.Combine(root, normalized)); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null; // malformed manifest path: the normal walk runs
+        }
+        return Directory.Exists(full) && PathIdentity.IsSameOrInside(full, root) ? full : null;
+    }
+
+    private static DlssDetectionResult DetectInFolders(string gameRoot, string dlssFolder, string streamlineFolder)
+    {
+        Dictionary<string, string> Files(string folder)
+        {
+            var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (DlssManagerService.IsUnderOptiScalerFolder(gameRoot, Path.Combine(folder, "x"))) return byName;
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(folder))
+                    byName.TryAdd(Path.GetFileName(file), file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AppLog.Warn("dlss", $"DLSS manifest folder could not be read: {folder}", ex);
+            }
+            return byName;
+        }
+        IReadOnlyList<string> One(Dictionary<string, string> files, string name)
+            => files.TryGetValue(name, out var path) ? [path] : [];
+
+        var dlss = Files(dlssFolder);
+        var streamline = string.Equals(streamlineFolder, dlssFolder, StringComparison.Ordinal) ? dlss : Files(streamlineFolder);
+        var dlssg = One(dlss, "nvngx_dlssg.dll");
+        if (dlssg.Count == 0) dlssg = One(streamline, "nvngx_dlssg.dll");
+        return new DlssDetectionResult
+        {
+            DlssPaths = One(dlss, "nvngx_dlss.dll"),
+            DlssdPaths = One(dlss, "nvngx_dlssd.dll"),
+            DlssgPaths = dlssg,
+            DlssnrPaths = One(dlss, "nvngx_dlssnr.dll"),
+            StreamlineFolders = streamline.ContainsKey("sl.interposer.dll") || streamline.ContainsKey("sl.common.dll")
+                ? [streamlineFolder]
+                : []
+        };
+    }
+
+    /// <summary>
     /// Finds the game's own DLSS/Streamline DLLs, i.e. the direct swap/restore targets.
     /// Files under an <c>OptiScaler/</c> folder are never targets, and <paramref name="protectedFiles"/>
     /// are dropped through <see cref="ExcludeProtected"/>: a swap or restore there would break the

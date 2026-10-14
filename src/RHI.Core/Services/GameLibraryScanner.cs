@@ -274,6 +274,8 @@ public sealed class GameLibraryScanner
             if (first.GraphicsApiConfidence == GraphicsApiConfidence.Unknown) first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
             first.GraphicsApis = Union(first.GraphicsApis, candidate.GraphicsApis);
             // w3/sync rows
+            first.DlssPathOverride ??= candidate.DlssPathOverride;
+            first.StreamlinePathOverride ??= candidate.StreamlinePathOverride;
             // w3/journal rows
             // w3/scan rows
             // w3/parity rows

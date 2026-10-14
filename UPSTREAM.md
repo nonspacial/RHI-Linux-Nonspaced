@@ -152,4 +152,11 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - A file with OptiScaler's version resource is never read as ReShade: OptiScaler's own DLL contains "ReShade", which used to send an external OptiScaler down the "ReShade is already present" refusal and blocked ReShade (`ReShade64.dll`) beside an RHI-managed OptiScaler with a real OptiScaler build.
 - Protection is unchanged: a DLL that is neither is still refused as foreign by every install path.
 
+### #155 — Manifest DLSS/Streamline folder overrides (2.8.6)
+
+- Manifest `dlssPathOverrides` and `streamlinePathOverrides` (game → folder relative to the game root) are read, as upstream `881a98c`/`cac10d7`. Example: The Sinking City 2 keeps DLSS and Streamline 9 folders down under `Engine/Plugins/…/Win64`, past the 8-level walk, so its DLSS section was empty.
+- When the DLSS folder exists, only that folder is read: no walk, as upstream's exact-path detection. Streamline is read from the Streamline folder, or from the DLSS folder when no Streamline override is given; `nvngx_dlssg.dll` is also looked for in the Streamline folder (`7d500b0`). File names match ignoring case. A missing folder falls back to the normal walk, and `dlssSkipGames` still wins.
+- The paths are kept relative on the game and resolved at detection time. A path that is absolute or leaves the game root (`..`, or a symlink pointing out, checked with symlinks resolved) is ignored. Files other components own are dropped as usual, so swap/restore ownership rules are unchanged.
+- Every DLSS flow (panel, Quick Apply, Batch Deploy, Restore All) goes through these targets, and so does ShortFuse's "no stacking over direct swaps" check, which now also sees `.original` files in the manifest folder. Other file-index consumers (component badges) are unchanged, as upstream.
+
 ## Parity notes (feature-parity backlog)

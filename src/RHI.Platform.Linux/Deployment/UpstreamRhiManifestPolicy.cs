@@ -40,6 +40,10 @@ public sealed class UpstreamLibraryPolicySnapshot
     public IReadOnlyDictionary<string, UpstreamDllNamesDefinition> DllNameOverrides { get; init; }
         = new Dictionary<string, UpstreamDllNamesDefinition>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyDictionary<string, string> OptiScalerDllOverrides { get; init; } = EmptyStrings();
+    /// <summary>#155: game → DLSS folder relative to the game root (manifest <c>dlssPathOverrides</c>).</summary>
+    public IReadOnlyDictionary<string, string> DlssPathOverrides { get; init; } = EmptyStrings();
+    /// <summary>#155: game → Streamline folder relative to the game root (manifest <c>streamlinePathOverrides</c>).</summary>
+    public IReadOnlyDictionary<string, string> StreamlinePathOverrides { get; init; } = EmptyStrings();
     public IReadOnlyDictionary<string, string> LaunchExeOverrides { get; init; } = EmptyStrings();
     public IReadOnlyDictionary<string, string> PdUpscalerGames { get; init; } = EmptyStrings();
     public IReadOnlyDictionary<string, string> WikiStatusOverrides { get; init; } = EmptyStrings();
@@ -105,6 +109,12 @@ internal sealed partial class UpstreamManifestDocument
 
     [JsonPropertyName("optiScalerDllOverrides")]
     public Dictionary<string, string>? OptiScalerDllOverrides { get; set; }
+
+    [JsonPropertyName("dlssPathOverrides")]
+    public Dictionary<string, string>? DlssPathOverrides { get; set; }
+
+    [JsonPropertyName("streamlinePathOverrides")]
+    public Dictionary<string, string>? StreamlinePathOverrides { get; set; }
 
     [JsonPropertyName("launchExeOverrides")]
     public Dictionary<string, string>? LaunchExeOverrides { get; set; }
@@ -212,6 +222,8 @@ public sealed partial class UpstreamRhiManifestService
             ForceExternalOnly = NormalizeExternal(manifest.ForceExternalOnly),
             DllNameOverrides = NormalizeDllNames(manifest.DllNameOverrides),
             OptiScalerDllOverrides = NormalizeStringDictionary(manifest.OptiScalerDllOverrides),
+            DlssPathOverrides = NormalizeStringDictionary(manifest.DlssPathOverrides),
+            StreamlinePathOverrides = NormalizeStringDictionary(manifest.StreamlinePathOverrides),
             LaunchExeOverrides = NormalizeStringDictionary(manifest.LaunchExeOverrides),
             PdUpscalerGames = NormalizeStringDictionary(manifest.PdUpscalerGames),
             WikiStatusOverrides = NormalizeStringDictionary(manifest.WikiStatusOverrides),
@@ -254,6 +266,8 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.ForceExternalOnly?.Keys);
         Add(result, manifest.DllNameOverrides?.Keys);
         Add(result, manifest.OptiScalerDllOverrides?.Keys);
+        Add(result, manifest.DlssPathOverrides?.Keys);
+        Add(result, manifest.StreamlinePathOverrides?.Keys);
         Add(result, manifest.LaunchExeOverrides?.Keys);
         Add(result, manifest.PdUpscalerGames?.Keys);
         Add(result, manifest.WikiStatusOverrides?.Keys);

@@ -195,6 +195,7 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.ManifestGameNoteUrl), nameof(DetectedGame.ManifestGameNoteUrlLabel), nameof(DetectedGame.ManifestInstallWarnings),
             nameof(DetectedGame.EngineIniFileOverride),
             // w3/sync rows
+            nameof(DetectedGame.DlssPathOverride), nameof(DetectedGame.StreamlinePathOverride),
             // w3/journal rows
             // w3/scan rows
             // w3/parity rows

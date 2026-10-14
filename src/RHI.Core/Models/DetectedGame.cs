@@ -183,6 +183,14 @@ public sealed class DetectedGame
     public bool DofFixSkippedByManifest { get; set; }
     public string? BinaryDirectory { get; set; }
     // w3/sync rows
+    /// <summary>
+    /// Manifest <c>dlssPathOverrides</c> (#155, upstream 2.8.6): the folder holding the game's DLSS DLLs, relative to
+    /// <see cref="InstallPath"/> as the manifest spells it (e.g. The Sinking City 2, 9 folders deep). Resolved at detection
+    /// time and only inside the game root (<see cref="RHI.Core.Services.DlssManagerService.ResolveManifestFolder"/>).
+    /// </summary>
+    public string? DlssPathOverride { get; set; }
+    /// <summary>Manifest <c>streamlinePathOverrides</c> (#155): the Streamline folder, relative to <see cref="InstallPath"/>.</summary>
+    public string? StreamlinePathOverride { get; set; }
     // w3/journal rows
     // w3/scan rows
     // w3/parity rows
