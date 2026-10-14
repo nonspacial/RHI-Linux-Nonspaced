@@ -206,31 +206,31 @@ public sealed class UltimateAsiLoaderDeploymentService
         }
 
         WineOverrideRecord? wineOverride = null;
-        var movedOriginal = false;
-        var copiedProxy = false;
 
-        // The Wine override is journaled before it is written (#23): a crash before the record is saved
-        // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        // Journaled (#23): the override, the chained original's move and the proxy are recorded before they happen, so a
+        // crash before the record is saved is rolled back at the next start (original back at its name, no proxy).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "Ultimate ASI Loader install: " + game.Name, game, ManagedComponentKind.UltimateAsiLoader, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
 
         // Downloaded and validated: from the first change on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        string targetHash;
         try
         {
-            wineOverride = await _overrides.EnsureNativeBuiltinAsync(operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+            wineOverride = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, game.PrefixPath!, proxyName, Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
 
+            await scope.TrackAsync(targetPath, cancellationToken).ConfigureAwait(false);
             if (hadOriginal)
             {
-                File.Move(targetPath, hookedPath);
-                movedOriginal = true;
+                await scope.TrackAsync(hookedPath, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(hookedPath, scope.Files.Find(targetPath)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(targetPath, hookedPath);
             }
 
             // Verified durable copy; never replaces a file that appeared at the proxy name meanwhile.
-            var targetHash = await AtomicFile.CopyAsync(stagedDll, targetPath, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
-            copiedProxy = true;
+            targetHash = await scope.PlaceCopyAsync(stagedDll, targetPath, cancellationToken, overwrite: false).ConfigureAwait(false);
 
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -244,7 +244,7 @@ public sealed class UltimateAsiLoaderDeploymentService
             if (hadOriginal)
                 metadata[MetaHookedPath] = hookedPath;
 
-            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -266,33 +266,26 @@ public sealed class UltimateAsiLoaderDeploymentService
                 ],
                 Metadata = metadata
             }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-
-            var chainText = hadOriginal
-                ? $" Existing {proxyName} was preserved as {Path.GetFileName(hookedPath)} and will be restored on Remove."
-                : "";
-            return ComponentOperationResult.Ok(
-                $"Ultimate ASI Loader {release.Version} installed as {proxyName}; Wine override {Path.GetFileName(game.ExecutablePath)}:{Path.GetFileNameWithoutExtension(proxyName)}=native,builtin applied.{chainText}");
         }
         catch (Exception ex)
         {
-            try
-            {
-                if (copiedProxy && File.Exists(targetPath))
-                    File.Delete(targetPath);
-                if (movedOriginal && File.Exists(hookedPath) && !File.Exists(targetPath))
-                    File.Move(hookedPath, targetPath);
-            }
-            catch (Exception rollbackError)
-            {
-                AppLog.Warn("ual", $"Install rollback could not put {proxyName} back (the original stays at {hookedPath})", rollbackError);
-            }
-
+            // Every file back to its pre-install bytes from the scope's copies (a copy that cannot be put back is kept
+            // and named), then the override.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("ual", $"Install rollback could not put {proxyName} back: {string.Join("; ", rollback.Failures)}");
             _overrides.TryRestore(game.PrefixPath, wineOverride);
 
-            return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}");
+            return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: it is the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        var chainText = hadOriginal
+            ? $" Existing {proxyName} was preserved as {Path.GetFileName(hookedPath)} and will be restored on Remove."
+            : "";
+        return ComponentOperationResult.Ok(
+            $"Ultimate ASI Loader {release.Version} installed as {proxyName}; Wine override {Path.GetFileName(game.ExecutablePath)}:{Path.GetFileNameWithoutExtension(proxyName)}=native,builtin applied.{chainText}");
     }
 
     public async Task<ComponentOperationResult> UpdateAsync(
@@ -337,23 +330,30 @@ public sealed class UltimateAsiLoaderDeploymentService
         if (string.Equals(record.Version, release.Version, StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Ok($"Ultimate ASI Loader {record.Version} is already current.");
 
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "Ultimate ASI Loader update: " + game.Name, game, ManagedComponentKind.UltimateAsiLoader, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            // Verified durable replace (temp + fsync + full re-read hash + rename).
-            fileRecord.Sha256 = await AtomicFile.CopyAsync(stagedDll, targetPath, cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Verified durable replace, tracked first: a failure or a crash before the record is saved puts the
+            // previous proxy back.
+            fileRecord.Sha256 = await scope.PlaceCopyAsync(stagedDll, targetPath, cancellationToken).ConfigureAwait(false);
             record.Version = release.Version;
             record.SourceUrl = release.AssetUrl;
             record.InstalledAtUtc = DateTime.UtcNow;
             record.Metadata[MetaAssetSha256] = release.AssetSha256 ?? "";
             VerifiedDownload.Record(record.Metadata, fileRecord.Sha256, HasPublishedDigest(release));
-            _records.Upsert(record);
-            return ComponentOperationResult.Ok($"Ultimate ASI Loader updated to {release.Version} as {proxyName}.");
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"Ultimate ASI Loader update failed: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"Ultimate ASI Loader update failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"Ultimate ASI Loader updated to {release.Version} as {proxyName}.");
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -388,59 +388,52 @@ public sealed class UltimateAsiLoaderDeploymentService
                     $"Managed ASI Loader proxy was modified outside RHI: {targetPath}. Remove is blocked before teardown.");
         }
 
-        var tempManaged = targetPath + $".rhi-remove-{Guid.NewGuid():N}";
-        var movedManagedAside = false;
-        var restoredOriginal = false;
+        // Journaled (#23): the record is stamped with the removal's id first; a crash before it is removed puts the
+        // proxy, the chained original and the override back as the record still describes them.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "Ultimate ASI Loader removal: " + game.Name, game, ManagedComponentKind.UltimateAsiLoader, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         WineOverrideRestoreResult? overrideRestore = null;
 
         // Cancel is honoured only before the first change; from here the removal runs to the end or rolls back.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            if (File.Exists(targetPath))
-            {
-                File.Move(targetPath, tempManaged);
-                movedManagedAside = true;
-            }
-
+            await scope.TrackAsync(targetPath, cancellationToken).ConfigureAwait(false);
             if (hadOriginal)
             {
-                File.Move(hookedPath!, targetPath);
-                restoredOriginal = true;
+                // The original goes back over the proxy in one rename.
+                await scope.TrackAsync(hookedPath!, cancellationToken).ConfigureAwait(false);
+                await scope.DeclareWriteAsync(targetPath, scope.Files.Find(hookedPath!)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                AtomicFile.Rename(hookedPath!, targetPath, overwrite: true);
+            }
+            else if (File.Exists(targetPath))
+            {
+                AtomicFile.Delete(targetPath);
             }
 
-            overrideRestore = _overrides.Restore(game.PrefixPath!, record.WineOverride);
-
-            if (movedManagedAside && File.Exists(tempManaged))
-                File.Delete(tempManaged);
-
+            overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.UltimateAsiLoader);
-            return ComponentOperationResult.Ok(
-                (hadOriginal
-                    ? $"Ultimate ASI Loader removed; original {proxyName} restored and Wine override rolled back."
-                    : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.")
-                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
-            // Best-effort rollback to the managed-installed state so a retry remains possible.
-            try
-            {
-                if (restoredOriginal && File.Exists(targetPath) && !File.Exists(hookedPath!))
-                    File.Move(targetPath, hookedPath!);
-                if (movedManagedAside && File.Exists(tempManaged) && !File.Exists(targetPath))
-                    File.Move(tempManaged, targetPath);
-            }
-            catch (Exception rollbackError)
-            {
-                AppLog.Warn("ual", $"Removal rollback did not complete; the managed proxy may be at {tempManaged}", rollbackError);
-            }
-            // The record stays, so the override it owns goes back too (only where this removal restored it, #30).
+            // Back to the managed-installed state so a retry remains possible: files from the scope's copies, and the
+            // override this removal restored (only where it did, #30) since the record stays.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
-
-            return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}");
+            if (!rollback.Success)
+                AppLog.Warn("ual", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
+            return ComponentOperationResult.Fail($"Ultimate ASI Loader removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(
+            (hadOriginal
+                ? $"Ultimate ASI Loader removed; original {proxyName} restored and Wine override rolled back."
+                : $"Ultimate ASI Loader removed; Wine override for {proxyName} rolled back.")
+            + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 
     internal static PeArchitecture ResolveArchitecture(DetectedGame game)
