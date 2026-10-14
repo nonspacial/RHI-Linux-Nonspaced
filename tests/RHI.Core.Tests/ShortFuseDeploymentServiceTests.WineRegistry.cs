@@ -27,21 +27,16 @@ public sealed partial class ShortFuseDeploymentServiceTests
         var edits = 0;
         editor.InsideLockForTesting = _ =>
         {
-            switch (++edits)
+            if (++edits != 1) return;
+            // Mid-removal, something else records its own setting in the hive (a launcher, a hand edit) while ReShade's
+            // override is being put back; the very next ledger write (the commit: ShortFuse's record goes) fails. The
+            // ASI Loader ShortFuse installed is removed only after that commit (w3/journal), so it is never touched here.
+            File.AppendAllText(hive, "\n[Software\\\\Vendor\\\\Game] 1\n\"Volume\"=\"7\"\n");
+            ctx.Records.SaveFaultForTesting = () =>
             {
-                case 1:
-                    // Mid-removal, something else records its own setting in the hive (a launcher, a hand edit).
-                    File.AppendAllText(hive, "\n[Software\\\\Vendor\\\\Game] 1\n\"Volume\"=\"7\"\n");
-                    break;
-                case 2:
-                    // ReShade's override is being put back; the very next ledger write (ShortFuse's record) fails.
-                    ctx.Records.SaveFaultForTesting = () =>
-                    {
-                        ctx.Records.SaveFaultForTesting = null;
-                        return new IOException("Simulated ledger failure at the end of the removal");
-                    };
-                    break;
-            }
+                ctx.Records.SaveFaultForTesting = null;
+                return new IOException("Simulated ledger failure at the end of the removal");
+            };
         };
 
         var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);

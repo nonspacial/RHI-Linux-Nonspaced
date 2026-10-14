@@ -110,6 +110,26 @@ public sealed class WineDllOverrideService
     }
 
     /// <summary>
+    /// <see cref="Reapply"/> for a journaled operation: while the override is at the value a restore left (so the reapply
+    /// will act), journals how to undo it (<see cref="WineOverrideCompensator"/>, as for a fresh set) before writing, so
+    /// a crash before the operation's commit point takes RHI's value out again. Refused before journaling while Wine
+    /// runs in the prefix. Without an operation it is <see cref="Reapply"/>.
+    /// </summary>
+    public async Task<WineOverrideRestoreResult> ReapplyAsync(
+        DeploymentOperation? operation, string prefixPath, WineOverrideRecord? record, CancellationToken cancellationToken = default)
+    {
+        if (record is null || !record.ChangedByRhi) return WineOverrideRestoreResult.NotOwned(record?.DllName ?? "");
+        if (operation is not null && WineRegistryEditor.HasUserHive(prefixPath) && IsPreviousValue(CurrentValue(prefixPath, record), record))
+        {
+            if (EditRefusal(prefixPath) is { } refusal)
+                throw new WineRegistryEditRefusedException(refusal, inUse: true);
+            await operation.AddCompensationAsync(WineOverrideCompensator.KindName,
+                WineOverrideCompensator.Describe(prefixPath, record), cancellationToken).ConfigureAwait(false);
+        }
+        return Reapply(prefixPath, record);
+    }
+
+    /// <summary>
     /// Puts back the value the override had before RHI set it, but only while it still holds the value RHI wrote
     /// (#30): a value the user or another tool set since is kept (<see cref="WineOverrideRestoreOutcome.KeptLaterValue"/>,
     /// logged). Idempotent: an override already back at its earlier value is left alone.

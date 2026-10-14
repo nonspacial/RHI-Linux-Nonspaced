@@ -158,6 +158,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return REFrameworkDeploymentService.StorageWineRunningPrefix + P;
         yield return REFrameworkDeploymentService.StorageDeletedPrefix + P + "/_storage_";
         yield return REFrameworkDeploymentService.StoragePartlyDeletedPrefix + P + "/_storage_";
+        yield return ShortFuseDeploymentService.UalKeptPrefix + E;
         yield return $"RE Framework removal failed and was rolled back: {E}";
         yield return $"RE Framework update rolled back: {E}{DeploymentScope.RollbackIncompletePrefix}{P}: rollback failed ({E}); every copy was kept.); every copy was kept.";
         // w3/scan rows

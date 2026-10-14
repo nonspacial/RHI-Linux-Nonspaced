@@ -466,10 +466,18 @@ public sealed class ShortFuseDeploymentService
         var ualInstalledByUs = false;
         string? ualProxy = _ual.InstalledProxyName(game);
         var overrideSuspended = false;
-        var reshadeMoved = false;
         IniSnapshot? iniSnapshot = null;
         var deployed = new List<LinuxDeployedFile>();
         var changedFiles = new List<string>();
+
+        // Journaled (#23): every game file this install changes is tracked (with a verified copy) and every write declared
+        // before it happens, the ReShade override's suspension journals its put-back, and the ShortFuse record (with the
+        // renamed ReShade record, in the same ledger write) is the commit point. A crash before it is saved is rolled back
+        // at the next start; an in-process failure rolls back from the copies (#31).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "ShortFuse install: " + game.Name, game, ManagedComponentKind.ShortFuse, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
 
         // Downloads and staging are done: from the first game file on, the install runs to completion or full rollback.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
@@ -499,37 +507,40 @@ public sealed class ShortFuseDeploymentService
                 {
                     // Suspended only when RHI's value was really taken out: a value the user set is theirs (#30),
                     // and Remove must not put RHI's value back over it.
-                    var suspension = _overrides.Restore(game.PrefixPath, reshadeRecord.WineOverride);
+                    var suspension = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath, reshadeRecord.WineOverride, cancellationToken).ConfigureAwait(false);
                     overrideSuspended = suspension.Outcome == WineOverrideRestoreOutcome.Restored;
                 }
 
                 if (!Path.GetFullPath(originalReShadePath).Equals(Path.GetFullPath(asiPath), StringComparison.Ordinal))
                 {
-                    File.Move(originalReShadePath, asiPath);
-                    reshadeMoved = true;
+                    await scope.TrackAsync(originalReShadePath, cancellationToken).ConfigureAwait(false);
+                    await scope.TrackAsync(asiPath, cancellationToken).ConfigureAwait(false);
+                    await scope.DeclareWriteAsync(asiPath, scope.Files.Find(originalReShadePath)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                    AtomicFile.Rename(originalReShadePath, asiPath);
                 }
 
+                // Saved with the ShortFuse record below (one ledger write).
                 reshadePayload.Path = asiPath;
                 reshadeRecord.Metadata[MetaReShadeOriginalPath] = originalReShadePath;
                 reshadeRecord.Metadata[MetaReShadeOverrideSuspended] = overrideSuspended ? "1" : "0";
-                _records.Upsert(reshadeRecord);
                 changedFiles.Add(asiPath);
 
                 var iniPath = FindReShadeIni(game.BinaryDirectory);
                 if (iniPath is not null)
                 {
+                    await scope.TrackAsync(iniPath, cancellationToken).ConfigureAwait(false);
                     iniSnapshot = CaptureAndApplyIni(iniPath);
+                    await scope.DeclareWrittenContentAsync(iniPath, cancellationToken).ConfigureAwait(false);
                     changedFiles.Add(iniPath);
                 }
             }
 
             Directory.CreateDirectory(addonDir);
-            File.Copy(stagedAddon, addonTarget, overwrite: false);
-            var addonHash = await FileHash.Sha256HexAsync(addonTarget, cancellationToken).ConfigureAwait(false);
+            var addonHash = await scope.PlaceCopyAsync(stagedAddon, addonTarget, cancellationToken, overwrite: false).ConfigureAwait(false);
             deployed.Add(new LinuxDeployedFile { Path = addonTarget, ExistedBeforeInstall = false, Sha256 = addonHash });
             changedFiles.Add(addonTarget);
 
-            await DeployDlssStackAsync(game, detection, cachedDlss, cachedStreamline, deployed, changedFiles, cancellationToken).ConfigureAwait(false);
+            await DeployDlssStackAsync(game, detection, cachedDlss, cachedStreamline, deployed, changedFiles, scope, cancellationToken).ConfigureAwait(false);
 
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -545,7 +556,7 @@ public sealed class ShortFuseDeploymentService
             // The cached add-on (verified cache entry) is what was copied: its hash is the deployed file's (#26).
             VerifiedDownload.Record(metadata, addonHash, HasPublishedDigest(release));
 
-            _records.Upsert(new LinuxDeploymentRecord
+            var shortFuseRecord = scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -557,6 +568,9 @@ public sealed class ShortFuseDeploymentService
                 Files = deployed,
                 Metadata = metadata
             });
+            // The commit point: the ShortFuse record and, with auto-config, ReShade's renamed record in one write.
+            _records.Commit(autoConfigEnabled ? [shortFuseRecord, reshadeRecord] : [shortFuseRecord]);
+            await scope.CommitAsync().ConfigureAwait(false);
 
             return ComponentOperationResult.Ok(
                 $"ShortFuse {release.Version} installed. ReShade {(autoConfigEnabled ? "is loaded as ReShade64.asi" : "auto-config is OFF")}; " +
@@ -565,23 +579,12 @@ public sealed class ShortFuseDeploymentService
         }
         catch (Exception ex)
         {
-            await RollbackDeployedFilesAsync(deployed).ConfigureAwait(false);
-            if (!FileCleanup.TryDelete(addonTarget, out var addonError))
-                AppLog.Warn("shortfuse", $"Install rollback could not remove {addonTarget}", addonError);
-            if (iniSnapshot is not null)
-            {
-                try { RestoreIni(iniSnapshot); }
-                catch (Exception iniError) { AppLog.Warn("shortfuse", $"Install rollback could not restore {iniSnapshot.Path}", iniError); }
-            }
-            try
-            {
-                if (reshadeMoved && File.Exists(asiPath) && !File.Exists(originalReShadePath)) File.Move(asiPath, originalReShadePath);
-                reshadePayload.Path = originalReShadePath;
-                reshadeRecord.Metadata.Remove(MetaReShadeOriginalPath);
-                reshadeRecord.Metadata.Remove(MetaReShadeOverrideSuspended);
-                _records.Upsert(reshadeRecord);
-            }
-            catch (Exception reshadeError) { AppLog.Warn("shortfuse", "Install rollback could not put ReShade back as it was", reshadeError); }
+            // Every tracked file (add-on, DLSS/Streamline DLLs and their .original, ReShade's name, ReShade.ini) back to its
+            // pre-install bytes from the scope's verified copies; ReShade's record was never saved. A copy that cannot be
+            // put back is kept and named.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("shortfuse", $"Install rollback did not complete: {string.Join("; ", rollback.Failures)}");
             if (overrideSuspended)
                 _overrides.TryReapply(game.PrefixPath, reshadeRecord.WineOverride);
             if (ualInstalledByUs)
@@ -589,7 +592,7 @@ public sealed class ShortFuseDeploymentService
                 try { await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false); }
                 catch (Exception ualError) { AppLog.Warn("shortfuse", "Install rollback could not remove the ASI Loader it installed", ualError); }
             }
-            return ComponentOperationResult.Fail($"ShortFuse install failed and was rolled back as far as possible: {ex.Message}");
+            return ComponentOperationResult.Fail($"ShortFuse install failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
     }
 
@@ -673,177 +676,106 @@ public sealed class ShortFuseDeploymentService
             }
         }
 
-        var rollbackSnapshots = new List<(string Path, byte[]? Bytes, byte[]? BackupBytes)>();
-
-        // Snapshot the cross-component file state as well as ShortFuse-owned files. Remove may touch
-        // ReShade naming/metadata, reshade.ini and UAL after restoring the DLL stack; keeping byte-exact
-        // snapshots lets a late failure return to the installed ShortFuse state. The Wine registry is
-        // never snapshotted and written back whole (#24): a failure undoes only the overrides this removal
-        // changed, key by key through the registry editor, so nothing else in user.reg is reverted.
-        var iniRollbackPath = record.Metadata.GetValueOrDefault(MetaIniPath);
-        var iniRollbackBytes = !string.IsNullOrWhiteSpace(iniRollbackPath) && File.Exists(iniRollbackPath)
-            ? await File.ReadAllBytesAsync(iniRollbackPath, cancellationToken).ConfigureAwait(false)
-            : null;
-        var reshadeRecordJson = reshadeRecord is null ? null : JsonSerializer.Serialize(reshadeRecord);
-        var reshadePayloadBefore = reshadeRecord?.Files.FirstOrDefault(f => IsReShadePayload(f.Path));
-        var reshadePayloadPathBefore = reshadePayloadBefore?.Path;
-        var reshadePayloadBytesBefore = reshadePayloadPathBefore is not null && File.Exists(reshadePayloadPathBefore)
-            ? await File.ReadAllBytesAsync(reshadePayloadPathBefore, cancellationToken).ConfigureAwait(false)
-            : null;
-        var reshadeOriginalPathBefore = record.Metadata.GetValueOrDefault(MetaReShadeOriginalPath);
-        var reshadeOriginalBytesBefore = !string.IsNullOrWhiteSpace(reshadeOriginalPathBefore) && File.Exists(reshadeOriginalPathBefore)
-            ? await File.ReadAllBytesAsync(reshadeOriginalPathBefore, cancellationToken).ConfigureAwait(false)
-            : null;
-
-        var ualRecordBefore = ualByUs ? _ual.GetRecord(game) : null;
-        var ualRecordJson = ualRecordBefore is null ? null : JsonSerializer.Serialize(ualRecordBefore);
-        var ualTargetPath = ualRecordBefore?.Files.FirstOrDefault()?.Path;
-        var ualTargetBytes = ualTargetPath is not null && File.Exists(ualTargetPath)
-            ? await File.ReadAllBytesAsync(ualTargetPath, cancellationToken).ConfigureAwait(false)
-            : null;
-        var ualHookedPath = ualTargetPath is null ? null : Path.Combine(
-            Path.GetDirectoryName(ualTargetPath)!, UltimateAsiLoaderDeploymentService.HookedName(Path.GetFileName(ualTargetPath)));
-        var ualHookedBytes = ualHookedPath is not null && File.Exists(ualHookedPath)
-            ? await File.ReadAllBytesAsync(ualHookedPath, cancellationToken).ConfigureAwait(false)
-            : null;
-        // UAL's removal restores its override only while it holds RHI's value; remember whether it did,
-        // so a rollback puts RHI's value back exactly there.
-        var ualOverrideHeldRhiValue = ualRecordBefore?.WineOverride is { } ualOverride
-                                      && WineDllOverrideService.HoldsWrittenValue(game.PrefixPath, ualOverride);
-        var ualRemoved = false;
+        // Journaled (#23): the ShortFuse record is stamped with the removal's id first; every file the teardown touches is
+        // tracked with a verified copy (and every placed content declared) before it changes, and ReShade's override
+        // re-enable journals its undo. The commit point is one ledger write that removes the ShortFuse record and saves
+        // ReShade's renamed-back record. A crash before it is rolled back at the next start; an in-process failure rolls
+        // back from the copies (#31: no raw byte rewrites, no swallowed restore errors). The registry is never
+        // snapshotted and written back whole (#24): only the overrides this removal changed are undone, key by key.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "ShortFuse removal: " + game.Name, game, ManagedComponentKind.ShortFuse, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         WineOverrideRestoreResult? reshadeOverrideBack = null;
+        LinuxDeploymentRecord? reshadeAfter = null;
 
         // Cancel is honoured only up to here: a teardown that stopped half-way would be refused on retry by the hash
-        // guard (restored originals no longer match RHI's hash), and its failure path rewrites the snapshots, so from
-        // here on it always runs to the end.
+        // guard (restored originals no longer match RHI's hash), so from here on it always runs to the end or rolls back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
-            // Snapshot every owned target and backup so a late teardown failure can reconstruct state.
-            foreach (var file in record.Files)
-            {
-                rollbackSnapshots.Add((file.Path,
-                    File.Exists(file.Path) ? await File.ReadAllBytesAsync(file.Path, cancellationToken).ConfigureAwait(false) : null,
-                    File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension)
-                        ? await File.ReadAllBytesAsync(file.Path + TransactionalFileDeploymentService.BackupExtension, cancellationToken).ConfigureAwait(false)
-                        : null));
-            }
-
             foreach (var file in record.Files.AsEnumerable().Reverse())
             {
-                if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
+                await scope.TrackAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                var original = file.Path + TransactionalFileDeploymentService.BackupExtension;
+                if (file.ExistedBeforeInstall && File.Exists(original))
                 {
+                    await scope.DeclareWriteAsync(file.Path, scope.Files.Find(file.Path)!.BackupPreSha256
+                        ?? await FileHash.Sha256HexAsync(original, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                     var restored = await _files.RestoreAsync(file.Path, cancellationToken).ConfigureAwait(false);
                     if (!restored.Success) throw new IOException(restored.Error ?? $"Could not restore {file.Path}");
                 }
                 else if (File.Exists(file.Path))
                 {
-                    File.Delete(file.Path);
+                    AtomicFile.Delete(file.Path);
                 }
             }
 
             if (record.Metadata.ContainsKey(MetaIniPath))
-                RestoreIni(ReadIniSnapshot(record.Metadata));
+            {
+                var ini = ReadIniSnapshot(record.Metadata);
+                if (!string.IsNullOrWhiteSpace(ini.Path))
+                {
+                    await scope.TrackAsync(ini.Path, cancellationToken).ConfigureAwait(false);
+                    RestoreIni(ini);
+                    await scope.DeclareWrittenContentAsync(ini.Path, cancellationToken).ConfigureAwait(false);
+                }
+            }
 
             if (reshadeRecord is not null && record.Metadata.TryGetValue(MetaReShadeOriginalPath, out var originalPath) && !string.IsNullOrWhiteSpace(originalPath))
             {
-                var payload = reshadeRecord.Files.FirstOrDefault(f => IsReShadePayload(f.Path));
+                reshadeAfter = LinuxDeploymentRecordStore.Clone(reshadeRecord);
+                var payload = reshadeAfter.Files.FirstOrDefault(f => IsReShadePayload(f.Path));
                 var asiPath = payload?.Path ?? Path.Combine(game.BinaryDirectory!, ReShadeAsiName);
                 if (File.Exists(originalPath))
                     throw new IOException($"Cannot restore ReShade name because the original path is occupied: {originalPath}");
-                if (File.Exists(asiPath)) File.Move(asiPath, originalPath);
+                if (File.Exists(asiPath))
+                {
+                    await scope.TrackAsync(asiPath, cancellationToken).ConfigureAwait(false);
+                    await scope.TrackAsync(originalPath, cancellationToken).ConfigureAwait(false);
+                    await scope.DeclareWriteAsync(originalPath, scope.Files.Find(asiPath)!.PreSha256!, cancellationToken).ConfigureAwait(false);
+                    AtomicFile.Rename(asiPath, originalPath);
+                }
                 if (payload is not null) payload.Path = originalPath;
-                reshadeRecord.Metadata.Remove(MetaReShadeOriginalPath);
-                reshadeRecord.Metadata.Remove(MetaReShadeOverrideSuspended);
-                _records.Upsert(reshadeRecord);
-            }
-
-            if (ualByUs && _ual.GetRecord(game) is not null)
-            {
-                var ualResult = await _ual.RemoveAsync(game, cancellationToken).ConfigureAwait(false);
-                if (!ualResult.Success) throw new IOException(ualResult.Message);
-                ualRemoved = true;
+                reshadeAfter.Metadata.Remove(MetaReShadeOriginalPath);
+                reshadeAfter.Metadata.Remove(MetaReShadeOverrideSuspended);
             }
 
             // Re-enable ReShade's proxy override only where it is still at the value the install's suspension left.
             if (reshadeRecord?.WineOverride is not null && record.Metadata.GetValueOrDefault(MetaReShadeOverrideSuspended) == "1")
-                reshadeOverrideBack = _overrides.Reapply(game.PrefixPath!, reshadeRecord.WineOverride);
+                reshadeOverrideBack = await _overrides.ReapplyAsync(scope.Operation, game.PrefixPath!, reshadeRecord.WineOverride, cancellationToken).ConfigureAwait(false);
 
-            _records.Remove(game, ManagedComponentKind.ShortFuse);
-            return ComponentOperationResult.Ok("ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership."
-                + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack));
+            // The commit point: ShortFuse's record goes and ReShade's (renamed back) is saved in the same write.
+            _records.Commit(reshadeAfter is null ? [] : [reshadeAfter], [(game, ManagedComponentKind.ShortFuse)]);
         }
         catch (Exception ex)
         {
-            // Restore the installed ShortFuse state byte-for-byte where possible so a retry remains safe.
-            foreach (var snapshot in rollbackSnapshots)
-            {
-                try
-                {
-                    if (snapshot.Bytes is null) { if (File.Exists(snapshot.Path)) File.Delete(snapshot.Path); }
-                    else { Directory.CreateDirectory(Path.GetDirectoryName(snapshot.Path)!); File.WriteAllBytes(snapshot.Path, snapshot.Bytes); }
-                    var backup = snapshot.Path + TransactionalFileDeploymentService.BackupExtension;
-                    if (snapshot.BackupBytes is null) { if (File.Exists(backup)) File.Delete(backup); }
-                    else File.WriteAllBytes(backup, snapshot.BackupBytes);
-                }
-                catch { }
-            }
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(iniRollbackPath))
-                {
-                    if (iniRollbackBytes is null) { if (File.Exists(iniRollbackPath)) File.Delete(iniRollbackPath); }
-                    else File.WriteAllBytes(iniRollbackPath, iniRollbackBytes);
-                }
-            }
-            catch { }
-
-            try
-            {
-                if (!string.IsNullOrWhiteSpace(reshadePayloadPathBefore))
-                {
-                    if (reshadePayloadBytesBefore is null) { if (File.Exists(reshadePayloadPathBefore)) File.Delete(reshadePayloadPathBefore); }
-                    else { Directory.CreateDirectory(Path.GetDirectoryName(reshadePayloadPathBefore)!); File.WriteAllBytes(reshadePayloadPathBefore, reshadePayloadBytesBefore); }
-                }
-                if (!string.IsNullOrWhiteSpace(reshadeOriginalPathBefore) &&
-                    !Path.GetFullPath(reshadeOriginalPathBefore).Equals(Path.GetFullPath(reshadePayloadPathBefore ?? reshadeOriginalPathBefore), StringComparison.Ordinal))
-                {
-                    if (reshadeOriginalBytesBefore is null) { if (File.Exists(reshadeOriginalPathBefore)) File.Delete(reshadeOriginalPathBefore); }
-                    else { Directory.CreateDirectory(Path.GetDirectoryName(reshadeOriginalPathBefore)!); File.WriteAllBytes(reshadeOriginalPathBefore, reshadeOriginalBytesBefore); }
-                }
-                if (reshadeRecordJson is not null && JsonSerializer.Deserialize<LinuxDeploymentRecord>(reshadeRecordJson) is { } restoredReShade)
-                    _records.Upsert(restoredReShade);
-            }
-            catch { }
-
-            try
-            {
-                if (ualTargetPath is not null)
-                {
-                    if (ualTargetBytes is null) { if (File.Exists(ualTargetPath)) File.Delete(ualTargetPath); }
-                    else { Directory.CreateDirectory(Path.GetDirectoryName(ualTargetPath)!); File.WriteAllBytes(ualTargetPath, ualTargetBytes); }
-                }
-                if (ualHookedPath is not null)
-                {
-                    if (ualHookedBytes is null) { if (File.Exists(ualHookedPath)) File.Delete(ualHookedPath); }
-                    else { Directory.CreateDirectory(Path.GetDirectoryName(ualHookedPath)!); File.WriteAllBytes(ualHookedPath, ualHookedBytes); }
-                }
-                if (ualRecordJson is not null && JsonSerializer.Deserialize<LinuxDeploymentRecord>(ualRecordJson) is { } restoredUal)
-                    _records.Upsert(restoredUal);
-            }
-            catch { }
-
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (!rollback.Success)
+                AppLog.Warn("shortfuse", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             // Registry: undo exactly what this removal changed, per key (atomic, locked, refused while Wine runs).
             if (reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryRestore(game.PrefixPath, reshadeRecord!.WineOverride);
-            if (ualRemoved && ualOverrideHeldRhiValue)
-                _overrides.TryReapply(game.PrefixPath, ualRecordBefore!.WineOverride);
-
-            try { _records.Upsert(record); } catch { }
-            return ComponentOperationResult.Fail($"ShortFuse removal failed; the installed ShortFuse/ReShade/UAL/INI/registry state was restored from transaction snapshots where possible: {ex.Message}");
+            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "shortfuse");
+            return ComponentOperationResult.Fail(
+                $"ShortFuse removal failed; the installed ShortFuse/ReShade/INI/registry state was restored from transaction snapshots where possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        // The ASI Loader ShortFuse installed is removed last, as its own operation: if that fails, ShortFuse is gone and
+        // the loader stays installed with its own record (removable on its own), never half-removed.
+        var ualNote = "";
+        if (ualByUs && _ual.GetRecord(game) is not null)
+        {
+            var ualResult = await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false);
+            if (!ualResult.Success) ualNote = $" {UalKeptPrefix}{ualResult.Message}";
+        }
+        return ComponentOperationResult.Ok("ShortFuse removed. RHI restored the previous DLSS/Streamline files, ReShade filename, reshade.ini values, UAL state and ReShade Wine override ownership."
+            + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack) + ualNote);
     }
+
+    /// <summary>Appended when ShortFuse was removed but the ASI Loader it installed could not be; the loader's reason follows.</summary>
+    public const string UalKeptPrefix = "The Ultimate ASI Loader ShortFuse installed stays installed (remove it on its own): ";
 
     private async Task DeployDlssStackAsync(
         DetectedGame game,
@@ -852,6 +784,7 @@ public sealed class ShortFuseDeploymentService
         string? cachedStreamline,
         List<LinuxDeployedFile> deployed,
         List<string> changedFiles,
+        DeploymentScope scope,
         CancellationToken cancellationToken)
     {
         var binaryDir = game.BinaryDirectory!;
@@ -867,7 +800,7 @@ public sealed class ShortFuseDeploymentService
         {
             if (!cached.TryGetValue(kind, out var source) || string.IsNullOrWhiteSpace(source) || !File.Exists(source)) continue;
             var target = detected ?? Path.Combine(binaryDir, name);
-            await DeployOneAsync(source, target, deployed, changedFiles, cancellationToken).ConfigureAwait(false);
+            await DeployOneAsync(source, target, deployed, changedFiles, scope, cancellationToken).ConfigureAwait(false);
         }
 
         if (!string.IsNullOrWhiteSpace(cachedStreamline) && Directory.Exists(cachedStreamline))
@@ -878,14 +811,18 @@ public sealed class ShortFuseDeploymentService
                 var source = Path.Combine(cachedStreamline, name);
                 if (!File.Exists(source)) continue;
                 var target = Path.Combine(targetFolder, name);
-                await DeployOneAsync(source, target, deployed, changedFiles, cancellationToken).ConfigureAwait(false);
+                await DeployOneAsync(source, target, deployed, changedFiles, scope, cancellationToken).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task DeployOneAsync(string source, string target, List<LinuxDeployedFile> deployed, List<string> changedFiles, CancellationToken ct)
+    private async Task DeployOneAsync(string source, string target, List<LinuxDeployedFile> deployed, List<string> changedFiles, DeploymentScope scope, CancellationToken ct)
     {
         var existed = File.Exists(target);
+        // Tracked (with its .original) and the new bytes declared before the file service places them: the install's
+        // own rollback, and the next start after a crash, put the game's DLL and its .original back.
+        await scope.TrackAsync(target, ct).ConfigureAwait(false);
+        await scope.DeclareWriteAsync(target, await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false), ct).ConfigureAwait(false);
         var result = await _files.ReplaceAsync(source, target, ct).ConfigureAwait(false);
         if (!result.Success) throw new IOException(result.Error ?? $"Could not deploy {target}");
         if (!result.Changed) return;
@@ -893,33 +830,10 @@ public sealed class ShortFuseDeploymentService
         {
             Path = target,
             ExistedBeforeInstall = existed,
-            Sha256 = await FileHash.Sha256HexAsync(target, ct).ConfigureAwait(false),
+            Sha256 = result.Sha256 ?? await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false),
             AllowUserChanges = false
         });
         changedFiles.Add(target);
-    }
-
-    // Compensation: never cancellable (a cancelled restore puts nothing back and leaves RHI's DLLs with their
-    // .original beside them and no record). A file that could not be put back keeps its .original and is logged.
-    private async Task RollbackDeployedFilesAsync(IEnumerable<LinuxDeployedFile> files)
-    {
-        foreach (var file in files.Reverse())
-        {
-            try
-            {
-                if (file.ExistedBeforeInstall && File.Exists(file.Path + TransactionalFileDeploymentService.BackupExtension))
-                {
-                    var restored = await _files.RestoreAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
-                    if (!restored.Success)
-                        AppLog.Warn("shortfuse-rollback", $"Could not restore {file.Path}; its .original is kept: {restored.Error}");
-                }
-                else if (File.Exists(file.Path)) File.Delete(file.Path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                AppLog.Warn("shortfuse-rollback", $"Could not roll back {file.Path}", ex);
-            }
-        }
     }
 
     internal Task<ShortFuseReleaseInfo> FetchLatestReleaseAsync(CancellationToken cancellationToken = default)

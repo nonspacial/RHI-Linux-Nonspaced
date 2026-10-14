@@ -991,6 +991,8 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.REFrameworkDeploymentService.StoragePartlyDeletedPrefix, "A pasta _storage_ não pôde ser apagada por completo; o que restou está listado no rhi.log: "),
         ("RE Framework removal failed and was rolled back: ", "A remoção do RE Framework falhou e foi desfeita: "),
         ("RE Framework update rolled back: ", "A atualização do RE Framework foi desfeita: "),
+        // ShortFuse removed; the ASI Loader it installed could not be (it is removed last, as its own operation).
+        (RHI.Platform.Linux.Deployment.ShortFuseDeploymentService.UalKeptPrefix, "O Ultimate ASI Loader instalado pelo ShortFuse continua instalado (remova-o separadamente): "),
         // Start-up recovery of a rolled-back removal puts a restored Wine override back after Wine exits.
         (RHI.Platform.Linux.Deployment.WineOverrideReapplyCompensator.DeferredPrefix,
          "O Wine está em execução neste prefixo e sobrescreveria a alteração ao sair; por isso este override do Wine será reaplicado na próxima inicialização: "),

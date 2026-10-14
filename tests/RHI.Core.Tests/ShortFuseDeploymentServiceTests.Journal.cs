@@ -1,0 +1,129 @@
+using RHI.Core.Deployment;
+using RHI.Core.Models;
+using RHI.Platform.Linux.Deployment;
+
+namespace RHI.Core.Tests;
+
+// w3/journal: ShortFuse install and removal are journaled operations (#23): every game file they touch (add-on, DLSS /
+// Streamline DLLs and their .original, ReShade's name, ReShade.ini) is tracked before it changes and the ShortFuse record
+// (with ReShade's renamed record, in one ledger write) is the commit point. Rollbacks restore from verified copies (#31).
+public sealed partial class ShortFuseDeploymentServiceTests
+{
+    private static string? Override(GameFixture fixture, string dll)
+        => WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), dll, "Game.exe");
+
+    private (Context Ctx, DeploymentJournal Journal, string JournalDir, string Ledger, WineRegistryEditor Editor) JournaledContext(GameFixture fixture)
+    {
+        var ledger = Path.Combine(fixture.Root, "deployments.json");
+        var records = new LinuxDeploymentRecordStore(ledger);
+        var journalDir = Path.Combine(fixture.Root, "journal");
+        var editor = new WineRegistryEditor(_ => false);
+        var overrides = new WineDllOverrideService(editor);
+        var journal = LinuxDeploymentRecovery.CreateJournal(overrides, journalDir, _ => false, records);
+        return (CreateContext(fixture, fullNetwork: true, wineOverrides: overrides, journal: journal, records: records), journal, journalDir, ledger, editor);
+    }
+
+    [Fact]
+    public async Task Install_CrashWhileSavingTheRecords_NextStartPutsReShadeIniAndDlssBack()
+    {
+        using var fixture = CreateGame("crash-install");
+        var (ctx, journal, journalDir, ledger, editor) = JournaledContext(fixture);
+        using var _ = ctx;
+        var reshadePath = AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        var reshadeBytes = File.ReadAllBytes(reshadePath);
+        var ini = Path.Combine(fixture.Bin, "ReShade.ini");
+        File.WriteAllText(ini, "[INSTALL]\nHookStreamline=0\nOtherSetting=KeepMe\n");
+        var iniBytes = File.ReadAllBytes(ini);
+        using var death = new SimulatedDeath(journal);
+        // Registry edits: 1 = the ASI Loader's override (its own operation, committed), 2 = ReShade's suspension. The
+        // next ledger write is ShortFuse's commit: the process dies there.
+        var edits = 0;
+        editor.InsideLockForTesting = _ => { if (++edits == 2) ctx.Records.SaveFaultForTesting = death.Die; };
+
+        var (died, _) = await death.RunUntilDeathAsync(() => ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true));
+        Assert.True(died);
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName)));
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, ledger);
+
+        Assert.Contains(report!.Entries, entry => entry.Outcome == JournalRecoveryOutcome.RolledBack);
+        Assert.Equal(0, report.Failed);
+        Assert.Equal(reshadeBytes, File.ReadAllBytes(reshadePath));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName)));
+        Assert.Equal(iniBytes, File.ReadAllBytes(ini));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
+        Assert.False(File.Exists(Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(fixture.Bin), ShortFuseDeploymentService.AddonFileName)));
+        Assert.Equal("native,builtin", Override(fixture, "dxgi")); // the suspension is undone
+        var after = new LinuxDeploymentRecordStore(ledger);
+        Assert.Null(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Equal(reshadePath, after.Find(fixture.Game, ManagedComponentKind.ReShade)!.Files.Single().Path);
+        // The ASI Loader's own install had committed: it stays installed, owned and removable on its own.
+        Assert.NotNull(after.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
+        Assert.Empty(Directory.GetFiles(journalDir, "*.json"));
+    }
+
+    [Fact]
+    public async Task Remove_CrashBeforeTheRecordIsGone_NextStartPutsTheShortFuseStateBack()
+    {
+        using var fixture = CreateGame("crash-remove");
+        var (ctx, journal, journalDir, ledger, editor) = JournaledContext(fixture);
+        using var _ = ctx;
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        var ini = Path.Combine(fixture.Bin, "ReShade.ini");
+        File.WriteAllText(ini, "[INSTALL]\nHookStreamline=0\n");
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+        var asi = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName);
+        var installedIni = File.ReadAllBytes(ini);
+        var dlssg = File.ReadAllBytes(Path.Combine(fixture.Bin, "nvngx_dlssg.dll"));
+        using var death = new SimulatedDeath(journal);
+        // The first registry edit of the removal is ReShade's override re-enable; the next save (the commit) dies.
+        editor.InsideLockForTesting = _ => ctx.Records.SaveFaultForTesting ??= death.Die;
+
+        var (died, _) = await death.RunUntilDeathAsync(() => ctx.ShortFuse.RemoveAsync(fixture.Game));
+        Assert.True(died);
+        Assert.False(File.Exists(asi));
+        Assert.Equal("native,builtin", Override(fixture, "dxgi"));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, ledger);
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        Assert.True(File.Exists(asi));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "dxgi.dll")));
+        Assert.Equal(installedIni, File.ReadAllBytes(ini));
+        Assert.Equal(dlssg, File.ReadAllBytes(Path.Combine(fixture.Bin, "nvngx_dlssg.dll")));
+        Assert.Null(Override(fixture, "dxgi")); // suspended again, as the ShortFuse record says
+        var after = new LinuxDeploymentRecordStore(ledger);
+        Assert.NotNull(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Equal(asi, after.Find(fixture.Game, ManagedComponentKind.ReShade)!.Files.Single().Path);
+        Assert.Equal("native,builtin", Override(fixture, "winmm")); // the ASI Loader was never touched
+    }
+
+    [Fact]
+    public async Task Remove_TheAsiLoaderFailingAfterTheCommit_LeavesItInstalledAndSaysSo()
+    {
+        using var fixture = CreateGame("ual-after");
+        var (ctx, _, _, _, editor) = JournaledContext(fixture);
+        using var __ = ctx;
+        AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
+        Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
+        // Edits: 1 = ReShade's re-enable, 2 = the ASI Loader's override restore; its record save then fails.
+        var edits = 0;
+        editor.InsideLockForTesting = _ =>
+        {
+            if (++edits == 2) ctx.Records.SaveFaultForTesting = () => { ctx.Records.SaveFaultForTesting = null; return new IOException("disk full"); };
+        };
+
+        var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
+
+        Assert.True(remove.Success, remove.Message);
+        Assert.Contains(ShortFuseDeploymentService.UalKeptPrefix, remove.Message, StringComparison.Ordinal);
+        Assert.Null(ctx.Records.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        // ReShade's record follows its file back to its name in the same ledger write as the ShortFuse record's removal.
+        Assert.Equal(Path.Combine(fixture.Bin, "dxgi.dll"), ctx.Records.Find(fixture.Game, ManagedComponentKind.ReShade)!.Files.Single().Path);
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, "dxgi.dll")));
+        Assert.NotNull(ctx.Records.Find(fixture.Game, ManagedComponentKind.UltimateAsiLoader));
+        Assert.True(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.Equal("native,builtin", Override(fixture, "winmm"));
+    }
+}
