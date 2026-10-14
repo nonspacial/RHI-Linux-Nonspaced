@@ -239,7 +239,6 @@ public sealed class Rtx40MfgStandaloneDeploymentService
 
         string? tempPath = null;
         WineOverrideRecord? wineOverride = null;
-        var recordWritten = false;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
@@ -275,6 +274,9 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             };
             // Fail-closed source: every payload matched GitHub's digest or the publisher's SHA256SUMS.txt (#26).
             VerifiedDownload.Record(metadata, payloadHash, digestVerified: true);
+            // The preference is saved before the commit point (review w3-journal #3): a failure here still rolls back
+            // before the record exists, and nothing after the record can throw into the rollback.
+            _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
             _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -297,24 +299,19 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                 ],
                 Metadata = metadata
             }));
-            recordWritten = true;
-            _preferences.Set(game, new Rtx40MfgPreferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
-
-            // The record carries the operation id: it is the commit point.
-            await scope.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok(
-                $"Universal MFG {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo.",
-                targetPath);
         }
         catch (Exception ex)
         {
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, wineOverride);
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone); }
-            catch (Exception recordError) { AppLog.Warn("universal-mfg", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"Universal MFG install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: it is the commit point. Nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(
+            $"Universal MFG {release.Version} instalado para {selectedGpu} como {selectedProxy}. Pressione Backspace no jogo para abrir o menu upstream; a compatibilidade sob Wine/Proton deve ser confirmada no jogo.",
+            targetPath);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -357,10 +354,6 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             await scope.DeleteAsync(targetPath, cancellationToken).ConfigureAwait(false);
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Rtx40MfgStandalone);
-            // The record is gone: the commit point.
-            await scope.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
-                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
@@ -371,6 +364,10 @@ public sealed class Rtx40MfgStandaloneDeploymentService
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok("Universal MFG removido e o override Wine anterior foi restaurado."
+            + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 
     public async Task<Rtx40MfgUpdateStatus> CheckLatestAsync(
@@ -458,8 +455,6 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             record.Metadata[MetaPayloadSha256] = newHash;
             VerifiedDownload.Record(record.Metadata, newHash, digestVerified: true);
             _records.Upsert(scope.Stamp(record));
-            await scope.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok($"Universal MFG atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
         }
         catch (Exception ex)
         {
@@ -468,6 +463,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             return ComponentOperationResult.Fail($"Universal MFG update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"Universal MFG atualizado para {latest.Version}; proxy {proxyName} preservado.", targetPath);
     }
 
     public async Task<ManagedUpdateCheck> CheckManagedUpdateAsync(

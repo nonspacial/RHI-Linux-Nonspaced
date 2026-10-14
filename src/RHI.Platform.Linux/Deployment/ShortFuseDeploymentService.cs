@@ -570,12 +570,6 @@ public sealed class ShortFuseDeploymentService
             });
             // The commit point: the ShortFuse record and, with auto-config, ReShade's renamed record in one write.
             _records.Commit(autoConfigEnabled ? [shortFuseRecord, reshadeRecord] : [shortFuseRecord]);
-            await scope.CommitAsync().ConfigureAwait(false);
-
-            return ComponentOperationResult.Ok(
-                $"ShortFuse {release.Version} installed. ReShade {(autoConfigEnabled ? "is loaded as ReShade64.asi" : "auto-config is OFF")}; " +
-                $"UAL {(ualWasPresent ? "pre-existing/preserved" : ualInstalledByUs ? $"installed as {ualProxy}" : "not changed")}; HookStreamline/HookDirectX {(iniSnapshot is null ? "not changed (no ReShade.ini found)" : "enabled")}. " +
-                "DLSS/Streamline ownership is transactional and direct swaps are locked until ShortFuse is removed.", changedFiles.ToArray());
         }
         catch (Exception ex)
         {
@@ -594,6 +588,12 @@ public sealed class ShortFuseDeploymentService
             }
             return ComponentOperationResult.Fail($"ShortFuse install failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        return ComponentOperationResult.Ok(
+            $"ShortFuse {release.Version} installed. ReShade {(autoConfigEnabled ? "is loaded as ReShade64.asi" : "auto-config is OFF")}; " +
+            $"UAL {(ualWasPresent ? "pre-existing/preserved" : ualInstalledByUs ? $"installed as {ualProxy}" : "not changed")}; HookStreamline/HookDirectX {(iniSnapshot is null ? "not changed (no ReShade.ini found)" : "enabled")}. " +
+            "DLSS/Streamline ownership is transactional and direct swaps are locked until ShortFuse is removed.", changedFiles.ToArray());
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)

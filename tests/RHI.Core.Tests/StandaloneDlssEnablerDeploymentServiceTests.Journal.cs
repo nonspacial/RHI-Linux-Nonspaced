@@ -122,4 +122,31 @@ public sealed partial class StandaloneDlssEnablerDeploymentServiceTests
         Assert.Equal("native,builtin", ProxyOverride(fixture, "winmm"));
         Assert.NotNull(new LinuxDeploymentRecordStore(ledger).Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
     }
+
+    // Review w3-journal #3: the preference is saved before the commit point. When that save fails the install rolls back
+    // before any record exists; it used to save the stamped record first and then roll back past it, so a crash in that
+    // rollback left a committed record whose proxy was gone.
+    [Fact]
+    public async Task Install_PreferenceSaveFails_RollsBackBeforeTheRecordIsEverSaved()
+    {
+        using var fixture = CreateGame("prefs-fail", 0x8664, GraphicsApi.DirectX12);
+        using var handler = DlssEnablerHandler.WithVersions(("4.10.0", CreateZip(("version.dll", CreatePe(0x8664, 256 * 1024, 0x67)))));
+        using var http = new HttpClient(handler);
+        var (service, records, journal, journalDir, ledger, overrides) = JournaledService(fixture, http);
+        using var death = new SimulatedDeath(journal);
+        // The override is written after the up-front preference check: the preference file turns unreadable there.
+        overrides.Registry.InsideLockForTesting = _ => File.WriteAllText(Path.Combine(fixture.Root, "prefs.json"), "{ not json");
+        var saves = 0;
+        records.SaveFaultForTesting = () => ++saves == 2 ? death.Die() : null;
+
+        var (died, run) = await death.RunUntilDeathAsync(() => service.InstallAsync(fixture.Game, "winmm.dll"));
+
+        Assert.False(died);
+        Assert.False((await run).Success);
+        Assert.Equal(0, saves);
+        Assert.Null(new LinuxDeploymentRecordStore(ledger).Find(fixture.Game, ManagedComponentKind.DlssEnablerStandalone));
+        Assert.False(File.Exists(Path.Combine(fixture.Bin, "winmm.dll")));
+        Assert.Null(WineDllOverrideService.TryReadOverride(File.ReadAllText(Path.Combine(fixture.Prefix, "user.reg")), "winmm", "Game.exe"));
+        Assert.Empty(Directory.GetFiles(journalDir));
+    }
 }

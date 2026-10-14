@@ -232,7 +232,6 @@ public sealed class Dlssg2030UnlockDeploymentService
         string? proxyTemp = null;
         string? iniTemp = null;
         WineOverrideRecord? wineOverride = null;
-        var recordWritten = false;
 
         // The Wine override is journaled before it is written (#23): a crash before the record is saved
         // leaves an entry start-up recovery rolls back, never an override nothing owns.
@@ -278,6 +277,9 @@ public sealed class Dlssg2030UnlockDeploymentService
             };
             RecordDownloads(metadata, payload);
 
+            // The preference is saved before the commit point (review w3-journal #3): a failure here still rolls back
+            // before the record exists, and nothing after the record can throw into the rollback.
+            _preferences.Set(game, new Dlssg2030Preferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
             _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
@@ -295,14 +297,6 @@ public sealed class Dlssg2030UnlockDeploymentService
                 ],
                 Metadata = metadata
             }));
-            recordWritten = true;
-
-            _preferences.Set(game, new Dlssg2030Preferences { GpuGeneration = selectedGpu, ProxyName = selectedProxy });
-            // The record carries the operation id: it is the commit point.
-            await scope.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok(
-                $"RTX 20 FG Unlock legado {payload.Version} instalado como {selectedProxy} · {selectedGpu} / {router}. O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real.",
-                proxyPath, iniPath);
         }
         catch (Exception ex)
         {
@@ -310,10 +304,13 @@ public sealed class Dlssg2030UnlockDeploymentService
                 AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             _overrides.TryRestore(game.PrefixPath, wineOverride);
-            try { if (recordWritten) _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock); }
-            catch (Exception recordError) { AppLog.Warn("fg2030", "Install rollback could not drop the deployment record", recordError); }
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record carries the operation id: it is the commit point. Nothing after it rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(
+            $"RTX 20 FG Unlock legado {payload.Version} instalado como {selectedProxy} · {selectedGpu} / {router}. O suporte sob VKD3D-Proton permanece experimental e deve ser confirmado em jogo real.",
+            proxyPath, iniPath);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -368,13 +365,6 @@ public sealed class Dlssg2030UnlockDeploymentService
             if (!preserveIni) await scope.DeleteAsync(iniPath, cancellationToken).ConfigureAwait(false);
             overrideRestore = await _overrides.RestoreAsync(scope.Operation, game.PrefixPath!, record.WineOverride, cancellationToken).ConfigureAwait(false);
             _records.Remove(game, ManagedComponentKind.Dlssg2030Unlock);
-            // The record is gone: the commit point.
-            await scope.CommitAsync().ConfigureAwait(false);
-
-            return ComponentOperationResult.Ok((preserveIni
-                ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
-                : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
-                + WineDllOverrideService.KeptValueNotes(overrideRestore));
         }
         catch (Exception ex)
         {
@@ -385,6 +375,13 @@ public sealed class Dlssg2030UnlockDeploymentService
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        // The record is gone: the commit point.
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        return ComponentOperationResult.Ok((preserveIni
+            ? $"RTX 20 FG Unlock legado removido e override Wine restaurado. {IniFileName} foi preservado porque foi alterado pelo usuário/outro mod."
+            : "RTX 20 FG Unlock legado removido; DLL, INI gerenciado e override Wine foram limpos.")
+            + WineDllOverrideService.KeptValueNotes(overrideRestore));
     }
 
     public async Task<Dlssg2030UpdateStatus> CheckLatestAsync(
@@ -472,8 +469,6 @@ public sealed class Dlssg2030UnlockDeploymentService
             record.Metadata[MetaSourceIniSha] = payload.SourceIniSha256;
             RecordDownloads(record.Metadata, payload);
             _records.Upsert(scope.Stamp(record));
-            await scope.CommitAsync().ConfigureAwait(false);
-            return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
         }
         catch (Exception ex)
         {
@@ -482,6 +477,8 @@ public sealed class Dlssg2030UnlockDeploymentService
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RTX 20 FG Unlock legado atualizado para {payload.Version} ({ShortSha(snapshot.CommitSha)}); {IniFileName} do usuário foi preservado.");
     }
 
     internal async Task<Dlssg2030SnapshotInfo> ResolveLatestSnapshotAsync(CancellationToken cancellationToken)
