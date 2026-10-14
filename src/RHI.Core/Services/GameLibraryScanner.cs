@@ -273,6 +273,12 @@ public sealed class GameLibraryScanner
             first.GraphicsApiEvidence ??= candidate.GraphicsApiEvidence;
             if (first.GraphicsApiConfidence == GraphicsApiConfidence.Unknown) first.GraphicsApiConfidence = candidate.GraphicsApiConfidence;
             first.GraphicsApis = Union(first.GraphicsApis, candidate.GraphicsApis);
+            // w3/sync rows
+            // w3/journal rows
+            // w3/scan rows
+            // w3/parity rows
+            // w3/vmsplit rows
+            // w3/dllnames rows
         }
         return first;
     }

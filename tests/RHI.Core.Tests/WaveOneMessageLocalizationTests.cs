@@ -148,6 +148,12 @@ public sealed class WaveOneMessageLocalizationTests
                      $"{AtomicFile.SizeLimitPrefix}4{AtomicFile.SizeLimitMiddle}Exemplo.addon64"
                  })
             yield return ReShadeArchiveExtractor.ArchiveRefusedPrefix + reason;
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
     }
 
     [Theory]

@@ -182,6 +182,12 @@ public sealed class DetectedGame
     /// <summary>True when the upstream RHI manifest suppresses Universal UE DOF Fix for this title.</summary>
     public bool DofFixSkippedByManifest { get; set; }
     public string? BinaryDirectory { get; set; }
+    // w3/sync rows
+    // w3/journal rows
+    // w3/scan rows
+    // w3/parity rows
+    // w3/vmsplit rows
+    // w3/dllnames rows
 
     /// <summary>
     /// Game-local patch target is ready when no explicit split is required or when a real game executable has been

@@ -226,6 +226,12 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         if (t == typeof(IReadOnlyDictionary<string, string>)) return new Dictionary<string, string> { ["k"] = "v" };
         if (t == typeof(IReadOnlyList<LibraryEntryAlias>)) return new[] { new LibraryEntryAlias("Manual", "/x", null) };
         if (t == typeof(DetectedLaunch)) return new DetectedLaunch("x", "y");
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
         throw new InvalidOperationException($"Add a sample for {type}");
     }
 }

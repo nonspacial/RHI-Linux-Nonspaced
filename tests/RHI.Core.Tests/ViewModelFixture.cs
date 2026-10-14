@@ -32,7 +32,14 @@ internal sealed class ViewModelFixture : IDisposable
 
     private ViewModelFixture(IReadOnlyList<DetectedGame> games, string uiLanguage, Action<LinuxGameLibraryStore>? seed,
         Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse,
-        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe)
+        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
+        )
     {
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
@@ -42,7 +49,14 @@ internal sealed class ViewModelFixture : IDisposable
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
         Vm = Build(games, Settings, Library, Records, Path.Combine(Root, "cache"), managed => Managed = managed, httpFailure, httpResponse, _hang,
-            launcher, hdrProfiles, probe);
+            launcher, hdrProfiles, probe
+            // w3/sync rows
+            // w3/journal rows
+            // w3/scan rows
+            // w3/parity rows
+            // w3/vmsplit rows
+            // w3/dllnames rows
+            );
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -55,9 +69,23 @@ internal sealed class ViewModelFixture : IDisposable
         Action<LinuxGameLibraryStore>? seed = null, Func<HttpRequestMessage, Exception>? httpFailure = null,
         Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse = null,
         IGameLauncher? launcher = null, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles = null,
-        IGameRuntimeProbe? probe = null)
+        IGameRuntimeProbe? probe = null
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
+        )
     {
-        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe);
+        var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe
+            // w3/sync rows
+            // w3/journal rows
+            // w3/scan rows
+            // w3/parity rows
+            // w3/vmsplit rows
+            // w3/dllnames rows
+            );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
     }
@@ -84,7 +112,14 @@ internal sealed class ViewModelFixture : IDisposable
     private static MainWindowViewModel Build(IReadOnlyList<DetectedGame> games, LinuxSettingsStore settingsStore,
         LinuxGameLibraryStore libraryStore, LinuxDeploymentRecordStore records, string cacheDir, Action<LinuxManagedComponentService> built,
         Func<HttpRequestMessage, Exception>? httpFailure, Func<HttpRequestMessage, HttpResponseMessage?>? httpResponse, HttpHang hang,
-        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe)
+        IGameLauncher? launcher, RHI.Platform.Linux.Hdr.LinuxHdrLaunchProfileService? hdrProfiles, IGameRuntimeProbe? probe
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
+        )
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
         var upstreamManifest = new UpstreamRhiManifestService(http);

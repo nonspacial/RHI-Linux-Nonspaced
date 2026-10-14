@@ -90,11 +90,24 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy EngineIniTemplates = new(
         "Engine.ini template", "GitHub", ["raw.githubusercontent.com"], maxBytes: 256L * 1024);
 
+    // w3/sync rows
+    // w3/journal rows
+    // w3/scan rows
+    // w3/parity rows
+    // w3/vmsplit rows
+    // w3/dllnames rows
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
         GitHubApi, ReShadeSetup, ReShadeNightly, GitHubAddonRelease, OptiScaler, Luma, REFramework, UltimateAsiLoader,
         RhiRepository, UniversalMfg, Dlssg2030, DgVoodoo, Dlss5Feeder, ShaderPacks, EngineIniTemplates,
-        TrustedDownloadPolicy.GitHubReleases, TrustedDownloadPolicy.GitHub, TrustedDownloadPolicy.RenoDxAddons, TrustedDownloadPolicy.ReShadeAddons
+        TrustedDownloadPolicy.GitHubReleases, TrustedDownloadPolicy.GitHub, TrustedDownloadPolicy.RenoDxAddons, TrustedDownloadPolicy.ReShadeAddons,
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
     ];
 }

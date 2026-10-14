@@ -627,6 +627,12 @@ internal static class UiStrings
         ("Vm.GameSettingsNowPointNewFolder", "{0}: as configurações do RHI agora apontam para a nova pasta.", "{0}: RHI's settings now point to the new folder."),
         ("Vm.RHISRecordsSettingsNowPoint", "{0}: registros e configurações do RHI atualizados para a nova pasta ({1}).", "{0}: RHI's records and settings now point to the new folder ({1})."),
         ("Vm.SavedManualEntryWasNotFound", "{0}: a entrada manual salva não foi encontrada; nada foi removido.", "{0}: the saved manual entry was not found; nothing was removed."),
-        ("Vm.RemovedFromManualLibraryButList", "{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh.")
+        ("Vm.RemovedFromManualLibraryButList", "{0} removido da biblioteca manual, mas a lista não foi atualizada. Use Atualizar.", "{0} removed from the manual library, but the list was not updated. Use Refresh."),
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
     ];
 }

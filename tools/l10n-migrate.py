@@ -218,6 +218,26 @@ def migrate():
             changed_files[f] = (''.join(out), n)
     return table, changed_files, skipped
 
+ENTRY_KEY = re.compile(r'^[ \t]+\("([^"]+)",')
+FULL_LINE_COMMENT = re.compile(r'^[ \t]+//')
+
+def table_layout():
+    """The table's rows (by key) and full-line comments (the wave's per-lane anchors, `// w3/<lane> rows`) in file
+    order, so a rewrite keeps every anchor where it was. New keys go after the last item."""
+    if not os.path.exists(TABLE):
+        return []
+    lines = open(TABLE, encoding='utf-8').read().split('\n')
+    start = next((i for i, l in enumerate(lines) if 'Entries =' in l), len(lines))
+    layout = []
+    for line in lines[start + 1:]:
+        if line.strip() == '];':
+            break
+        if FULL_LINE_COMMENT.match(line):
+            layout.append(('comment', line.strip()))
+        elif m := ENTRY_KEY.match(line):
+            layout.append(('row', m.group(1)))
+    return layout
+
 def write_table(table):
     lines = ['// Seeded by tools/l10n-migrate.py; edit rows by hand freely, as plain or verbatim string literals (the script',
              '// keeps existing keys and stops, changing nothing, at a row it cannot read).',
@@ -225,8 +245,15 @@ def write_table(table):
              'namespace RHI.Desktop.Localization;', '',
              'internal static class UiStrings', '{',
              '    internal static readonly (string Key, string PtBr, string EnUs)[] Entries =', '    [']
-    rows = [f'        ("{k}", {cs_literal(pt)}, {cs_literal(en)})' for k, (pt, en) in table.items()]
-    lines.append(',\n'.join(rows)); lines += ['    ];', '}', '']
+    row = lambda k: f'        ("{k}", {cs_literal(table[k][0])}, {cs_literal(table[k][1])}),'
+    written = set()
+    for kind, value in table_layout():
+        if kind == 'comment':
+            lines.append('        ' + value)
+        elif value in table and value not in written:
+            lines.append(row(value)); written.add(value)
+    lines += [row(k) for k in table if k not in written]
+    lines += ['    ];', '}', '']
     open(TABLE, 'w', encoding='utf-8').write('\n'.join(lines))
 
 if __name__ == '__main__':

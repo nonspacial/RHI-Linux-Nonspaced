@@ -35,6 +35,12 @@ internal sealed class AppComposition
     public required RenoDxCatalogService RenoDxCatalog { get; init; }
     public required LumaCatalogService LumaCatalog { get; init; }
     public required UpstreamRhiManifestService UpstreamManifest { get; init; }
+    // w3/sync rows
+    // w3/journal rows
+    // w3/scan rows
+    // w3/parity rows
+    // w3/vmsplit rows
+    // w3/dllnames rows
 
     public MainWindowViewModel CreateViewModel()
         => new(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
@@ -70,7 +76,8 @@ internal sealed class AppComposition
             new HeroicGameDetector(),
             new LutrisGameDetector(),
             new WinePrefixDetector(),
-            new ManualGameDetector(libraryStore)
+            new ManualGameDetector(libraryStore),
+            // w3/scan rows (new store detectors)
         };
         var upstreamManifest = new UpstreamRhiManifestService(http);
         var pcgwData = new PcgwCentralDataService(http);
@@ -164,6 +171,12 @@ internal sealed class AppComposition
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog);
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -181,7 +194,13 @@ internal sealed class AppComposition
             UpdateLog = updateLog,
             RenoDxCatalog = renodxCatalog,
             LumaCatalog = lumaCatalog,
-            UpstreamManifest = upstreamManifest
+            UpstreamManifest = upstreamManifest,
+            // w3/sync rows
+            // w3/journal rows
+            // w3/scan rows
+            // w3/parity rows
+            // w3/vmsplit rows
+            // w3/dllnames rows
         };
     }
 }

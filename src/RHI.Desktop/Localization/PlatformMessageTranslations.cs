@@ -173,6 +173,12 @@ internal static class PlatformMessageTranslations
         ("Falha ao verificar Universal MFG: {0}", "Could not check Universal MFG: {0}"),
         ("Falha ao verificar DLSS Enabler Standalone: {0}", "Could not check DLSS Enabler Standalone: {0}"),
         ("Atualização disponível: desconhecida → {0}.", "Update available: unknown → {0}."),
-        ("Atualização disponível: {0} → {1}.", "Update available: {0} → {1}.")
+        ("Atualização disponível: {0} → {1}.", "Update available: {0} → {1}."),
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
     ];
 }

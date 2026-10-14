@@ -976,7 +976,13 @@ public static class UiLocalizationService
         ("holds more bytes than it declares (", "contém mais bytes do que declara ("),
         ("holds a different size than it declares (", "tem tamanho diferente do que declara ("),
         ("CRC-32 does not match the archive (corrupt download)", "o CRC-32 não confere com o arquivo (download corrompido)"),
-        ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto.")
+        ("No specific RenoDX profile was found in the upstream catalog and this game does not match the safe generic Unreal/Unity fallbacks. Automatic installation was disabled to avoid applying an incorrect add-on.", "Nenhum perfil RenoDX específico foi encontrado no catálogo upstream e este jogo não corresponde aos fallbacks genéricos seguros de Unreal/Unity. A instalação automática foi desativada para evitar aplicar um add-on incorreto."),
+        // w3/sync rows
+        // w3/journal rows
+        // w3/scan rows
+        // w3/parity rows
+        // w3/vmsplit rows
+        // w3/dllnames rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

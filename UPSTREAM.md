@@ -136,3 +136,7 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 ### #140 — Available HDR Mods header and ✗ legibility (2.8.5)
 
 - Ported: column headers and ✗ marks use the theme's secondary text colour (`RhiSecondaryTextBrush`, #A0AABB) instead of 70 % opacity text and the muted grey. Measured on the #121518 dialog in the headless render: ✗ 4.19:1 → 7.82:1; headers 8.03:1 → 7.82:1 (already legible on Linux; now on the theme colour like the rest of the app).
+
+## Parity notes (upstream 2.8.6–2.8.7)
+
+## Parity notes (feature-parity backlog)

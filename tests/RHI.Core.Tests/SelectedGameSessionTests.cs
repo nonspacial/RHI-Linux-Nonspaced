@@ -193,7 +193,13 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.PcgwUrlOverride), nameof(DetectedGame.UwFixUrlOverride), nameof(DetectedGame.UltraPlusUrlOverride),
             nameof(DetectedGame.WikiStatusOverride), nameof(DetectedGame.AuthorOverride), nameof(DetectedGame.ManifestGameNote),
             nameof(DetectedGame.ManifestGameNoteUrl), nameof(DetectedGame.ManifestGameNoteUrlLabel), nameof(DetectedGame.ManifestInstallWarnings),
-            nameof(DetectedGame.EngineIniFileOverride)
+            nameof(DetectedGame.EngineIniFileOverride),
+            // w3/sync rows
+            // w3/journal rows
+            // w3/scan rows
+            // w3/parity rows
+            // w3/vmsplit rows
+            // w3/dllnames rows
         ];
         var writable = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite).Select(p => p.Name).ToHashSet();
         Assert.Empty(writable.Except(GameRuntimeFacts.OwnedProperties).Except(notProbeOwned));
