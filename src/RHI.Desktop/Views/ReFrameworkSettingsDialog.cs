@@ -14,6 +14,8 @@ namespace RHI.Desktop.Views;
 /// </summary>
 public static class ReFrameworkSettingsDialog
 {
+    private static TextBlock Label(string key) => new() { Text = UiLocalizationService.Text(key) };
+
     public static Window Create(ReFrameworkStoragePresenter presenter, string gameName)
     {
         var panel = new StackPanel { Spacing = 12, Margin = new Avalonia.Thickness(18) };
@@ -37,7 +39,9 @@ public static class ReFrameworkSettingsDialog
         var delete = new Button
         {
             Classes = { "rhi", "remove" },
-            Content = UiLocalizationService.Text("Journal.RefStorageDelete"),
+            // A TextBlock, not a string: Button content strings treat "_" as an access-key marker and "_storage_" lost
+            // its first underscore.
+            Content = Label("Journal.RefStorageDelete"),
             HorizontalAlignment = HorizontalAlignment.Left
         };
 
@@ -53,7 +57,7 @@ public static class ReFrameworkSettingsDialog
         delete.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
         {
             delete.IsEnabled = false;
-            delete.Content = UiLocalizationService.Text("Journal.RefStorageDeleting");
+            delete.Content = Label("Journal.RefStorageDeleting");
             try
             {
                 var outcome = await presenter.DeleteAsync();
@@ -62,7 +66,7 @@ public static class ReFrameworkSettingsDialog
             }
             finally
             {
-                delete.Content = UiLocalizationService.Text("Journal.RefStorageDelete");
+                delete.Content = Label("Journal.RefStorageDelete");
                 Refresh();
             }
         }, nameof(ReFrameworkSettingsDialog));
