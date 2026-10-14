@@ -23,13 +23,16 @@ public sealed class RenoDxUpgradeDeploymentService
     private readonly LinuxDeploymentRecordStore _records;
     private readonly UpstreamRhiManifestService _manifest;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
     public RenoDxUpgradeDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
         UpstreamRhiManifestService manifest,
-        string? cacheDir = null)
+        string? cacheDir = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _manifest = manifest;
@@ -98,19 +101,35 @@ public sealed class RenoDxUpgradeDeploymentService
                 return ComponentOperationResult.Fail($"Managed RenoDX Upgrade file was modified outside RHI and will not be replaced: {owned.Path}");
         }
 
+        string cached;
         try
         {
-            var cached = await DownloadAndValidateAsync(sourceUrl, architecture, cancellationToken).ConfigureAwait(false);
+            cached = await DownloadAndValidateAsync(sourceUrl, architecture, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return ComponentOperationResult.Fail($"RenoDX Upgrade install failed: {ex.Message}");
+        }
+
+        // Journaled (#23): the add-on (and a previous build under the other bitness' name) is tracked before it changes;
+        // the record carrying the operation id is the commit point. A failure after the copy no longer leaves the add-on
+        // without a record (#31).
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RenoDX Upgrade install: " + game.Name, game, ManagedComponentKind.RenoDXUpgrade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        try
+        {
             // Downloaded: from the copy on, Cancel is refused (a late cancel used to leave the add-on with no record).
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX Upgrade target directory is invalid."));
             // The verified copy returns the hash of what it placed: no second read of the target.
-            var targetHash = await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var targetHash = await scope.PlaceCopyAsync(cached, target, cancellationToken).ConfigureAwait(false);
 
             if (owned is not null && !PathsEqual(owned.Path, target) && File.Exists(owned.Path))
-                File.Delete(owned.Path);
+                await scope.DeleteAsync(owned.Path, cancellationToken).ConfigureAwait(false);
 
-            _records.Upsert(new LinuxDeploymentRecord
+            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -135,14 +154,15 @@ public sealed class RenoDxUpgradeDeploymentService
                     ["RenoDxUpgrade.Architecture"] = ArchitectureLabel(architecture),
                     ["RenoDxUpgrade.Source"] = sourceUrl
                 }
-            });
-
-            return ComponentOperationResult.Ok($"RenoDX Upgrade snapshot installed → {target}", target);
+            }));
         }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RenoDX Upgrade install failed: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail($"RenoDX Upgrade install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok($"RenoDX Upgrade snapshot installed → {target}", target);
     }
 
     public async Task<ComponentOperationResult> RemoveAsync(
@@ -164,17 +184,31 @@ public sealed class RenoDxUpgradeDeploymentService
                 return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
         }
 
+        // Journaled (#23): a crash before the record is gone puts the add-on back as the record still describes it.
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RenoDX Upgrade removal: " + game.Name, game, ManagedComponentKind.RenoDXUpgrade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         // Cancel is honoured only up to here: the removal never stops half-way.
-        _ = OperationCancellation.BeginWrites(cancellationToken);
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var changed = new List<string>();
-        foreach (var file in record.Files)
+        try
         {
-            if (!File.Exists(file.Path)) continue;
-            File.Delete(file.Path);
-            changed.Add(file.Path);
+            foreach (var file in record.Files)
+            {
+                if (!File.Exists(file.Path)) continue;
+                await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
+                changed.Add(file.Path);
+            }
+            _records.Remove(game, ManagedComponentKind.RenoDXUpgrade);
         }
-
-        _records.Remove(game, ManagedComponentKind.RenoDXUpgrade);
+        catch (Exception ex)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            DeploymentScope.KeepRecordAfterFailedRemoval(_records, game, record, "renodx-upgrade");
+            return ComponentOperationResult.Fail($"RenoDX Upgrade removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok("RHI-managed RenoDX Upgrade removed. User/external files were left untouched.", changed.ToArray());
     }
 

@@ -6,7 +6,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class RenoDxUpgradeDeploymentServiceTests : IDisposable
+public sealed partial class RenoDxUpgradeDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-renodx-upgrade-tests-" + Guid.NewGuid().ToString("N"));
 

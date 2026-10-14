@@ -95,7 +95,7 @@ internal sealed class AppComposition
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
             unityDatabase: new RenoDxUnityDatabaseService(http),
             controlUe: new ControlUePostInstallService(deployment, dlss));
-        var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest);
+        var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest, journal: journal);
         var relimiter = new GitHubReShadeAddonDeploymentService(http, records, journal: journal, definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
             "ReLimiter",
@@ -156,7 +156,7 @@ internal sealed class AppComposition
         var optiscaler = new OptiScalerDeploymentService(deployment, records, wineOverrides, optiPackages, dlss, dlssEnablerStandalone, journal);
         var ultimateAsiLoader = new UltimateAsiLoaderDeploymentService(http, records, wineOverrides, journal: journal);
         var shortFuse = new ShortFuseDeploymentService(http, deployment, records, wineOverrides, ultimateAsiLoader, dlss, journal: journal);
-        var dofFix = new DofFixDeploymentService(http, records, upstreamManifest);
+        var dofFix = new DofFixDeploymentService(http, records, upstreamManifest, journal: journal);
         var reFramework = new REFrameworkDeploymentService(http, records, wineOverrides, journal: journal);
         var lumaCatalog = new LumaCatalogService(http, upstreamManifest);
         var apiOverrideStore = new GraphicsApiOverrideStore();
