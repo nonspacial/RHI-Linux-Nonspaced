@@ -517,7 +517,7 @@ public sealed class LumaFrameworkDeploymentService
                     if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
                     var full = Path.GetFullPath(old.Path);
                     var backup = Path.Combine(backupRoot, $"old-{allOldBackups.Count:D4}.bak");
-                    File.Copy(old.Path, backup, overwrite: false);
+                    AtomicFile.Copy(old.Path, backup, overwrite: false); // verified, durable (#31)
                     allOldBackups[full] = backup;
                 }
             }
@@ -578,7 +578,7 @@ public sealed class LumaFrameworkDeploymentService
                         else
                         {
                             var backup = Path.Combine(backupRoot, $"target-{overwrittenBackups.Count:D4}.bak");
-                            File.Copy(existingPath, backup, overwrite: false);
+                            AtomicFile.Copy(existingPath, backup, overwrite: false); // verified, durable (#31)
                             overwrittenBackups[fullExisting] = backup;
                         }
                     }
@@ -708,7 +708,7 @@ public sealed class LumaFrameworkDeploymentService
                     foreach (var target in installedTargets.AsEnumerable().Reverse())
                     {
                         if (overwrittenBackups.TryGetValue(target, out var backup))
-                            File.Copy(backup, target, overwrite: true);
+                            AtomicFile.Copy(backup, target); // atomic, verified restore (#31)
                         else if (File.Exists(target))
                             File.Delete(target);
                     }
@@ -720,11 +720,12 @@ public sealed class LumaFrameworkDeploymentService
                         if (!File.Exists(pair.Key))
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(pair.Key)!);
-                            File.Copy(pair.Value, pair.Key, overwrite: false);
+                            AtomicFile.Copy(pair.Value, pair.Key, overwrite: false); // atomic, verified restore (#31)
                         }
                     }
                 });
-                Step("restore ReShade.ini", () => File.WriteAllBytes(iniPath, iniBefore));
+                // The user's ReShade.ini: one atomic, verified write; a lock never blocks the rollback (#31).
+                Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, readOnly: ReadOnlyUserFile.WriteKeepingLock));
                 if (engineIniSnapshotPath is not null)
                 {
                     Step("restore Engine.ini", () =>
@@ -732,7 +733,7 @@ public sealed class LumaFrameworkDeploymentService
                         if (engineIniBeforeExisted && engineIniBefore is not null)
                         {
                             Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                            File.WriteAllBytes(engineIniSnapshotPath, engineIniBefore);
+                            AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
                         }
                         else if (File.Exists(engineIniSnapshotPath))
                         {
@@ -906,7 +907,7 @@ public sealed class LumaFrameworkDeploymentService
 
         var staging = Path.Combine(stagingRoot, "payload", $"0000-{SanitizeFileName(safeName)}");
         Directory.CreateDirectory(Path.GetDirectoryName(staging)!);
-        File.Copy(packagePath, staging, overwrite: true);
+        AtomicFile.Copy(packagePath, staging);
         return [new LumaPlanItem(staging, Path.Combine(addonDirectory, safeName), safeName)];
     }
 

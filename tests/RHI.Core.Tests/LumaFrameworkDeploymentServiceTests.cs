@@ -739,6 +739,31 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         Directory.Delete(kept, recursive: true);
     }
 
+    // w3/journal (#31): the rollback restores ReShade.ini through the one user-file writer: a ReShade.ini the user locked
+    // meanwhile is written back and stays locked (File.WriteAllBytes used to fail there and leave RHI's edit behind).
+    [Fact]
+    public async Task Install_Rollback_RestoresALockedReShadeIni_AndKeepsItLocked()
+    {
+        var fx = CreateLumaCancelFixture("rollback-locked-ini");
+        using var http = fx.Http;
+        var ini = Directory.GetFiles(fx.Game.BinaryDirectory!, "*.ini").Single(path => Path.GetFileName(path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
+        var before = File.ReadAllBytes(ini);
+        fx.Records.SaveFaultForTesting = () =>
+        {
+            File.SetUnixFileMode(ini, UnixFileMode.UserRead | UnixFileMode.GroupRead); // locked after RHI's edit
+            return new IOException("Simulated ledger failure");
+        };
+
+        var result = await fx.Service.InstallAsync(fx.Game);
+        fx.Records.SaveFaultForTesting = null;
+
+        Assert.False(result.Success);
+        Assert.False(result.Message.StartsWith(LumaFrameworkDeploymentService.RollbackIncompletePrefix, StringComparison.Ordinal), result.Message);
+        Assert.Equal(before, File.ReadAllBytes(ini));
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(ini) & UnixFileMode.UserWrite);
+        File.SetUnixFileMode(ini, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
     [Fact]
     public async Task Remove_CancelAfterTheFirstWrite_NeverStopsHalfWay()
     {
