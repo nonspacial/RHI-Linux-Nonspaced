@@ -159,6 +159,18 @@ Upstream validates its stored OAuth token against `/user` at start-up and, on 40
 - The paths are kept relative on the game and resolved at detection time. A path that is absolute or leaves the game root (`..`, or a symlink pointing out, checked with symlinks resolved) is ignored. Files other components own are dropped as usual, so swap/restore ownership rules are unchanged.
 - Every DLSS flow (panel, Quick Apply, Batch Deploy, Restore All) goes through these targets, and so does ShortFuse's "no stacking over direct swaps" check, which now also sees `.original` files in the manifest folder. Other file-index consumers (component badges) are unchanged, as upstream.
 
+### Rolling back to a build older than wave 3 (F5 DLSSNR, nightly pins)
+
+**Before going back to an older RHI Linux build, remove OptiScaler F5 DLSSNR from every game that has it and set every
+pinned OptiScaler Nightly game back to "Latest (auto-update)".** An older build does not know either:
+
+- it reads an F5 DLSSNR install as OptiScaler **Stable** (unknown channel names fall back to Stable), so its update check
+  and Update All would replace the F5 build with Stable, and it does not count F5 as the `nvngx_dlssnr.dll` owner;
+- it ignores the per-game nightly pin, so the next update moves a pinned game to the newest nightly.
+
+Removing F5 and unpinning first leaves nothing the older build would misread; reinstall them after coming back to this
+build.
+
 ### #156 — OptiScaler Nightly: pin a game to a nightly build (2.8.6)
 
 - The OptiScaler ⚙ dialog has a **Nightly build** row, shown only for the Nightly channel: "Latest (auto-update)" plus the 30 newest builds, shown as dates (`2026-10-04`), as upstream `2975485`. A pinned game installs exactly that build; Latest keeps following the newest build.
