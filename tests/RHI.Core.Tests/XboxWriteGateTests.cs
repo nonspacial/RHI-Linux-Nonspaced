@@ -364,6 +364,40 @@ public sealed class XboxWriteGateTests : IDisposable
         Assert.True(File.Exists(source));
     }
 
+    /// <summary>
+    /// Contract: every public AtomicFile member is either one of the primitives checked above or classified here as one
+    /// that writes no game file (or only delegates to a checked one). A new public writer fails until it is placed.
+    /// </summary>
+    [Fact]
+    public void EveryPublicAtomicFileMember_IsAClassifiedPrimitive()
+    {
+        string[] checkedAbove = ["WriteAllBytes", "WriteAllBytesAsync", "WriteAllText", "ReplaceUserFile", "Copy", "CopyAsync", "StageCopyAsync",
+            "StageStreamAsync", "MoveIntoPlace", "Rename", "MoveDurable", "Delete"];
+        string[] notGameWriters =
+        [
+            "TempPathFor", "ResolveUserFileTarget", "FsyncDirectoryOf", "FsyncDirectory", "CreateDirectoryDurable",
+            "WriteStoreFile", "WriteNew", // RHI's own store files and quarantine copies
+            "WriteAllTextAsync", "ReplaceUserFileLines" // delegate to WriteAllBytesAsync / ReplaceUserFile
+        ];
+        var members = typeof(AtomicFile).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Select(method => method.Name).Distinct().Order(StringComparer.Ordinal).ToArray();
+
+        Assert.Equal(checkedAbove.Concat(notGameWriters).Order(StringComparer.Ordinal), members);
+        Assert.All(checkedAbove.Where(name => name != "Rename" && name != "MoveDurable"), name => Assert.Contains(name, ((IEnumerable<object[]>)Primitives).Select(row => (string)row[0])));
+    }
+
+    [Fact]
+    public async Task TheDelegatingWriters_AreRefusedToo()
+    {
+        var (dir, exe, config) = XodusPackage();
+        var before = Snapshot(dir);
+
+        await Assert.ThrowsAsync<ProtectedPackageFileException>(() => AtomicFile.WriteAllTextAsync(exe, "x"));
+        Assert.Throws<ProtectedPackageFileException>(() => AtomicFile.ReplaceUserFileLines(config, ["<Game />"]));
+
+        Assert.Equal(before, Snapshot(dir));
+    }
+
     [Fact]
     public void Cleanup_NeverDeletesAProtectedFile()
     {
