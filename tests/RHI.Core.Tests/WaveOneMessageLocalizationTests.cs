@@ -250,6 +250,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return P + OptiScalerIniTemplates.NotePrefix + "/home/u/.config/rhi-linux/inis/OptiScaler.amd-dlss.ini";
         yield return P + OptiScalerIniTemplates.UnavailablePrefix + P;
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
+        yield return OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "DXGI.dll";
+        yield return ControlUeFrameGenerationService.NotSetUpPrefix + OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "dxgi.dll"
+            + ControlUeFrameGenerationService.HdrSetPrefix + "0";
     }
 
     [Theory]

@@ -148,6 +148,58 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
     }
 
+    // Review minor 1: an OptiScaler RHI did not install under ANY supported name (the user's own, usually dxgi.dll)
+    // refuses every install, whichever name it would take — two OptiScaler proxies would both load. Refused before the
+    // package is requested, naming the file, with nothing changed.
+    [Theory]
+    [InlineData("dxgi.dll", "winmm.dll")]
+    [InlineData("DXGI.dll", "winmm.dll")]
+    [InlineData("winmm.dll", "dxgi.dll")]
+    [InlineData("d3d11.dll", "dxgi.dll")]
+    [InlineData("d3d12.dll", "winmm.dll")]
+    [InlineData("dbghelp.dll", "dxgi.dll")]
+    [InlineData("version.dll", "dxgi.dll")]
+    [InlineData("wininet.dll", "dxgi.dll")]
+    [InlineData("winhttp.dll", "dxgi.dll")]
+    public async Task Install_WithAnOptiScalerRhiDidNotInstallUnderAnySupportedName_IsRefusedNamingIt_BeforeTheDownload(string existing, string chosen)
+    {
+        var (game, store) = CreateGame("proxy-existing-" + Guid.NewGuid().ToString("N"), GraphicsApi.DirectX12);
+        var users = Path.Combine(game.BinaryDirectory!, existing);
+        WriteSignedTextFile(users, "optiscaler/OptiScaler the user's own copy");
+        var usersBytes = File.ReadAllBytes(users);
+        var userReg = File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg"));
+        var provider = new FakePackageProvider(CreatePackage("proxy-existing-package-" + Guid.NewGuid().ToString("N")));
+        var service = NewService(store, provider);
+
+        var result = await service.InstallAsync(game, OptiScalerVariant.Nightly, null, chosen);
+
+        Assert.False(result.Success);
+        Assert.Equal(OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + existing, result.Message);
+        Assert.Equal(0, provider.CallCount);
+        Assert.Equal(usersBytes, File.ReadAllBytes(users));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, chosen)));
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "OptiScaler.ini")));
+        Assert.Equal(userReg, File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")));
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+    }
+
+    [Fact]
+    public async Task Install_BesideAnotherProxyThatIsNotOptiScaler_StillInstalls()
+    {
+        var (game, store) = CreateGame("proxy-existing-other", GraphicsApi.DirectX12);
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "version.dll"), "MZ some other proxy");
+        var service = NewService(store, CreatePackage("proxy-existing-other-package"));
+
+        var installed = await service.InstallAsync(game, OptiScalerVariant.Stable, null, "winmm.dll");
+
+        Assert.True(installed.Success, installed.Message);
+    }
+
+    [Fact]
+    public void ComponentProbe_RecognisesOptiScalerUnderEveryNameTheServiceInstallsUnder()
+        => Assert.Equal(OptiScalerDeploymentService.ProxyNames.Order(StringComparer.Ordinal),
+            ComponentProbe.OptiScalerProxyNames.Order(StringComparer.Ordinal));
+
     [Fact]
     public void GetProxyName_RecordsBeforeTheNameExisted_AreDxgi()
     {

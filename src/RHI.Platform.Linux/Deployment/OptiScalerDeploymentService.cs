@@ -25,6 +25,13 @@ public sealed partial class OptiScalerDeploymentService
     public const string NameHeldByRhiComponentPrefix =
         "Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ";
 
+    /// <summary>
+    /// An OptiScaler RHI does not manage already sits beside the game under one of <see cref="ProxyNames"/>; the file
+    /// name follows. Two OptiScaler proxies would both load, so the install is refused before anything is downloaded.
+    /// </summary>
+    public const string OptiScalerAlreadyPresentPrefix =
+        "An OptiScaler that RHI did not install is already in this game's folder, so RHI will not install a second one (both would load); nothing was changed. Remove that OptiScaler first, then try again. File: ";
+
     public const string ProxyNameNotOfferedPrefix = "OptiScaler cannot be installed under this DLL name; choose one of dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll or winhttp.dll: ";
 
     public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
@@ -310,6 +317,10 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(nrOwner));
         if (_records.Find(game, ManagedComponentKind.OptiScaler) is not null)
             return ComponentOperationResult.Fail("OptiScaler is already managed by RHI Linux for this game. Remove it before reinstalling/updating.");
+        // Never a second OptiScaler (review minor 1): one already under ANY supported name (the user's own, usually
+        // dxgi.dll) refuses every install, whichever name this one would take.
+        if (ExistingOptiScalerProxy(game.BinaryDirectory) is { } existingProxy)
+            return ComponentOperationResult.Fail(OptiScalerAlreadyPresentPrefix + existingProxy);
         if (_overrides.EditRefusal(prefix) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
@@ -520,6 +531,22 @@ public sealed partial class OptiScalerDeploymentService
            && ProxyNames.FirstOrDefault(known => known.Equals(name, StringComparison.OrdinalIgnoreCase)) is { } valid
             ? valid
             : DefaultProxyName;
+
+    /// <summary>
+    /// The file name of an OptiScaler (by its identity, <see cref="BinarySignatureInspector.LooksLikeOptiScaler"/>)
+    /// sitting in <paramref name="binaryDirectory"/> under any of <see cref="ProxyNames"/>, in any spelling; else null.
+    /// </summary>
+    internal static string? ExistingOptiScalerProxy(string binaryDirectory)
+    {
+        foreach (var path in Directory.EnumerateFiles(binaryDirectory).Order(StringComparer.Ordinal))
+        {
+            var name = Path.GetFileName(path);
+            if (ProxyNames.Any(proxy => proxy.Equals(name, StringComparison.OrdinalIgnoreCase))
+                && BinarySignatureInspector.LooksLikeOptiScaler(path))
+                return name;
+        }
+        return null;
+    }
 
     private static string OptiPatcherTarget(string binaryDirectory)
         => Path.GetFullPath(Path.Combine(binaryDirectory, "plugins", OptiPatcherProvider.FileName));

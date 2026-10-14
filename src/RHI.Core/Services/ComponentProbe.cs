@@ -176,6 +176,13 @@ public static class ComponentProbe
         });
     }
 
+    /// <summary>
+    /// Names an OptiScaler proxy is recognised under: upstream's <c>SupportedDllNames</c>, the same list the Linux
+    /// OptiScaler service installs under (a contract test keeps the two equal).
+    /// </summary>
+    internal static readonly string[] OptiScalerProxyNames =
+        ["dxgi.dll", "winmm.dll", "d3d11.dll", "d3d12.dll", "dbghelp.dll", "version.dll", "wininet.dll", "winhttp.dll"];
+
     private static bool IsOptiScalerInstalled(IReadOnlyList<string> indexedFiles, string? binaryDirectory)
     {
         if (binaryDirectory is null) return false;
@@ -187,7 +194,7 @@ public static class ComponentProbe
             var name = Path.GetFileName(path);
             if (name.Equals("OptiScaler.dll", StringComparison.OrdinalIgnoreCase) && BinarySignatureInspector.LooksLikeOptiScaler(path))
                 return true;
-            if (name is not null && new[] { "dxgi.dll", "winmm.dll", "version.dll", "dbghelp.dll", "d3d12.dll", "wininet.dll", "winhttp.dll" }
+            if (name is not null && OptiScalerProxyNames
                 .Any(proxy => name.Equals(proxy, StringComparison.OrdinalIgnoreCase)) && BinarySignatureInspector.LooksLikeOptiScaler(path))
                 return true;
         }

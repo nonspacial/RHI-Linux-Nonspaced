@@ -84,6 +84,7 @@ public sealed class OptiScalerIdentityTests : IDisposable
     [InlineData("winmm.dll")]
     [InlineData("dxgi.dll")]
     [InlineData("version.dll")]
+    [InlineData("d3d11.dll")]
     public void Probe_RtxEncoreProxy_IsNoOptiScalerBadge_ButRealOptiScalerIs(string proxy)
     {
         var encoreBin = Path.Combine(_root, "encore-" + proxy);

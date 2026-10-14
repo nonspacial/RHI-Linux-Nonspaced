@@ -1096,6 +1096,8 @@ public static class UiLocalizationService
             "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
         ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix,
+            "Já existe na pasta deste jogo um OptiScaler que o RHI não instalou, então o RHI não instala um segundo (os dois seriam carregados); nada foi alterado. Remova esse OptiScaler primeiro e tente de novo. Arquivo: "),
         // #136 Control UE OptiScaler frame generation step.
         ("Control UE frame generation set up: OptiScaler Nightly pinned as winmm.dll with Streamline, DLSS Enabler and the frame generation settings. Build: ",
             "Geração de quadros do Control UE configurada: OptiScaler Nightly fixado como winmm.dll com Streamline, DLSS Enabler e as configurações de geração de quadros. Build: "),
