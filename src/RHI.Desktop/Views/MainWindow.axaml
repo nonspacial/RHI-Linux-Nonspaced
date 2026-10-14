@@ -40,7 +40,7 @@
         <Button Classes="rhi" Content="{DynamicResource Ui.AddGame}" Click="AddGame_Click" ToolTip.Tip="{DynamicResource Ui.AddGameTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.ShadersAddons}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
-        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding UpdateAllCommand}" IsEnabled="{Binding CanUpdateAll}"/>
+        <Button Classes="rhi" Content="{DynamicResource Ui.UpdateAll}" Command="{Binding Updates.UpdateAllCommand}" IsEnabled="{Binding Updates.CanUpdateAll}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.BatchDlss}" Click="BatchDlss_Click" IsEnabled="{Binding CanOpenDlssBatch}"
                 ToolTip.Tip="{DynamicResource Ui.BatchDlssTip}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>

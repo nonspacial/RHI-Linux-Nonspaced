@@ -49,7 +49,7 @@ public sealed class SelectionStoreReadTests
         using var fx = await ViewModelFixture.StartAsync([]);
         await AddAsync(fx, "Alpha Quest");
         var before = JsonStoreReads.Under(fx.Root);
-        for (var i = 0; i < 50; i++) _ = fx.Vm.CanUpdateAll && fx.Vm.CanOpenDlssBatch;
+        for (var i = 0; i < 50; i++) _ = fx.Vm.Updates.CanUpdateAll && fx.Vm.CanOpenDlssBatch;
         Assert.Equal(before, JsonStoreReads.Under(fx.Root));
     }
 

@@ -22,6 +22,7 @@ internal interface IPanelHost
     /// <summary>Every game in the library (filtered or not).</summary>
     IReadOnlyList<DetectedGame> AllGames { get; }
     SelectedGameSession Session { get; }
+    OperationCoordinator Operations { get; }
     OperationScope? BeginOperation(string kind, bool cancellable = true, CancellationToken linkedToken = default);
     string? TryPersist(Action save, string whatKey, bool sessionOnly = true, bool reportStatus = true);
     Task ReprobeGameAsync(DetectedGame game);

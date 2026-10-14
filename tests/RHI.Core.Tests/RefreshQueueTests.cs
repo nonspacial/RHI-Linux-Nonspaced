@@ -63,13 +63,13 @@ public sealed class RefreshQueueTests
             Name = game.Name, InstallPath = game.InstallPath, ExecutablePath = game.ExecutablePath, Runner = "Manual Windows"
         });
         Assert.True(added, message);
-        await WaitUntil(() => fx.Vm.CanUpdateAll && !fx.Vm.IsSelectionProbeBusy);
+        await WaitUntil(() => fx.Vm.Updates.CanUpdateAll && !fx.Vm.IsSelectionProbeBusy);
         var hung = 0;
         var stall = 1;
         // Update All's check stalls; once Cancel is pressed nothing stalls (the re-analysis after it must not).
         fx.HangWhen = _ => Volatile.Read(ref stall) == 1 && fx.Vm.Operations.CurrentKind == "update-all" && Interlocked.Increment(ref hung) > 0;
 
-        var update = fx.Vm.UpdateAllCommand.ExecuteAsync(null);
+        var update = fx.Vm.Updates.UpdateAllCommand.ExecuteAsync(null);
         await WaitUntil(() => Volatile.Read(ref hung) > 0);
         Assert.Equal("update-all", fx.Vm.Operations.CurrentKind);
         Assert.True(fx.Vm.Operations.CanCancel);

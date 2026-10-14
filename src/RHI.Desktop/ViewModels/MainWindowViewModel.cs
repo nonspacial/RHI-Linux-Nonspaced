@@ -57,7 +57,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     private readonly LinuxGameLibraryStore _libraryStore;
     private readonly LinuxDeploymentRecordStore _deploymentRecords;
     private readonly LinuxHdrLaunchProfileService _hdrProfiles;
-    private CancellationTokenSource? _backgroundUpdateCts;
     private LinuxAppSettings _settings;
     private LinuxGameLibraryState _libraryState;
     /// <summary>
@@ -67,8 +66,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     /// </summary>
     private bool _rebuildingOptionLists;
     private readonly SelectedGameSession _session;
-    // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
-    private bool _libraryHasManagedTargets;
     private bool _libraryHasDlssBatchCandidates;
     private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
     // GitHub token notice (Refs #133); the settle check runs after queued UI work.
@@ -84,6 +81,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
 
     /// <summary>API override, OptiScaler variant, Luma mode and HDR launch profile rows (unit 6 of the split).</summary>
     public RuntimePanelViewModel Runtime { get; }
+
+    /// <summary>Update All and the background update pass (unit 7 of the split).</summary>
+    public UpdatesViewModel Updates { get; }
 
     /// <summary>The library cards shown (unit 3 of the split; filtered in place, Refs #75, #85).</summary>
     public ObservableCollection<GameRowViewModel> Games => _library.Games;
@@ -195,7 +195,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
     }
 
     private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
-    public bool CanUpdateAll => !IsBusy && _libraryHasManagedTargets;
     public string SelectedTitle => SelectedGame?.Name ?? UiLocalizationService.Text("Ui.SelectGame");
     public string SelectedSource => SelectedGame is null ? "" : $"{SelectedGame.Source}  •  {SelectedGame.Runner ?? UiLocalizationService.Text("Ui.UnknownRunner")}";
 
@@ -344,6 +343,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         Dlss = new DlssPanelViewModel(this, _dlss, _dlssDefaults);
         Extras = new ExtrasViewModel(this, _managedComponents, Dlss);
         Runtime = new RuntimePanelViewModel(this, _managedComponents, _apiOverrideStore, _optiScalerVariantStore, _hdrProfiles);
+        Updates = new UpdatesViewModel(this, _updateAll);
         _session.Changed += OnSessionChanged;
         _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
@@ -374,10 +374,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         _session.Completed -= OnAnalysisCompleted;
         _runtimeProbe.LateMetadataAvailable -= OnLateProbeMetadata;
         _session.Cancel();
-        try { _backgroundUpdateCts?.Cancel(); }
-        catch (ObjectDisposedException) { /* already stopped */ }
-        _backgroundUpdateCts?.Dispose();
-        _backgroundUpdateCts = null;
+        Updates.StopBackgroundLoop();
         GC.SuppressFinalize(this);
     }
 
@@ -426,7 +423,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         RefreshLocalizedPresentation();
         NotifyUxSettings();
         if (previousAutoUpdate != _settings.AutoUpdateComponents || previousInterval != _settings.UpdateCheckIntervalHours)
-            RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
+            Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
         NotifyDlssDefaults();
         return UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
     }
@@ -441,7 +438,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         ReShadeManageIni = _settings.ReShadeManageIni;
         RefreshLocalizedPresentation();
         NotifyUxSettings();
-        RestartBackgroundUpdateLoop(runImmediate: false);
+        Updates.RestartBackgroundUpdateLoop(runImmediate: false);
         NotifyDlssDefaults();
         return UiLocalizationService.Text("Vm.SettingsRestoredLinuxDefaults");
     }
@@ -534,7 +531,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         await RefreshAsync();
         await dlssManifestTask;
         await neuralVersionCatalogTask;
-        RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
+        Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
 
     /// <summary>
@@ -584,8 +581,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
             UiExceptionGuard.Forget(RefreshLibraryFactsAsync(), "RefreshLibraryFactsAsync");
         }
         _statusNotice.SetBusy(value);
-        OnPropertyChanged(nameof(CanUpdateAll));
-        UpdateAllCommand.NotifyCanExecuteChanged();
+        Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanRemoveManualGame));
         RemoveManualGameCommand.NotifyCanExecuteChanged();
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
@@ -1035,115 +1031,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         {
             _holdSelectionSwitch = false;
             RaiseSelectionSwitchIfNew(SelectedGame);
-            OnPropertyChanged(nameof(CanUpdateAll));
-            UpdateAllCommand.NotifyCanExecuteChanged();
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUpdateAll))]
-    private async Task UpdateAllAsync()
-    {
-        if (!CanUpdateAll) return;
-        var games = _library.AllGames.ToArray();
-        using var op = BeginOperation("update-all");
-        if (op is null) return;
-        try
-        {
-            StatusText = T("Vm.UpdateAllPreparingRHIManagedGames");
-            var indexes = await PrepareUpdateIndexesAsync(games, op.Token);
-            var result = await _updateAll.RunAsync(
-                games,
-                game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
-                LinuxUpdateRunMode.Manual,
-                op.Token);
-            // Always re-analyse the selected game: dropping its cached analysis without one wedged every component
-            // action on "wait for analysis" (Refs #72).
-            await InvalidateAllAndReprobeSelectedAsync();
-            StatusText = UiLocalizationService.UpdateAllSummary(result);
-        }
-        catch (Exception ex) when (op.WasCancelled(ex))
-        {
-            await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were updated
-            StatusText = OperationCancelledText();
-        }
-        catch (Exception ex)
-        {
-            await InvalidateAllAndReprobeSelectedAsync();
-            StatusText = TF("Vm.UpdateAllFailed", UiLocalizationService.Present(ex.Message));
-        }
-        finally
-        {
-            OnPropertyChanged(nameof(CanUpdateAll));
-            UpdateAllCommand.NotifyCanExecuteChanged();
-        }
-    }
-
-    private async Task<Dictionary<string, IReadOnlyList<string>>> PrepareUpdateIndexesAsync(
-        IReadOnlyList<DetectedGame> games,
-        CancellationToken cancellationToken)
-    {
-        var indexes = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-        foreach (var game in games)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!game.HasConfirmedPatchTarget || !_updateAll.HasManagedTargets([game])) continue;
-            var key = Key(game);
-            if (_session.CachedFiles(game) is { } cached)
-            {
-                indexes[key] = cached;
-                continue;
-            }
-            if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath))
-            {
-                indexes[key] = Array.Empty<string>();
-                continue;
-            }
-            indexes[key] = await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, cancellationToken), cancellationToken);
-        }
-        return indexes;
-    }
-
-    private void RestartBackgroundUpdateLoop(bool runImmediate)
-    {
-        try { _backgroundUpdateCts?.Cancel(); } catch { }
-        _backgroundUpdateCts?.Dispose();
-        _backgroundUpdateCts = null;
-        if (!_settings.AutoUpdateComponents) return;
-        _backgroundUpdateCts = new CancellationTokenSource();
-        UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
-    }
-
-    // A failed pass is logged, reported and retried with back-off; the loop ends only when cancelled (#81).
-    private Task BackgroundUpdateLoopAsync(CancellationToken cancellationToken, bool runImmediate)
-        => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, TimeSpan.FromHours(_settings.UpdateCheckIntervalHours), runImmediate,
-            (ex, retry) => StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry), cancellationToken);
-
-    private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
-    {
-        if (!_settings.AutoUpdateComponents || IsBusy) return;
-        var games = _library.AllGames.ToArray();
-        if (!await Task.Run(() => _updateAll.HasManagedTargets(games), cancellationToken)) return;
-        using var op = _operations.TryBegin("background-update", linkedToken: cancellationToken);
-        if (op is null) return;
-        try
-        {
-            var indexes = await PrepareUpdateIndexesAsync(games, op.Token);
-            var result = await _updateAll.RunAsync(
-                games,
-                game => indexes.TryGetValue(Key(game), out var files) ? files : Array.Empty<string>(),
-                LinuxUpdateRunMode.Background,
-                op.Token);
-            if (result.ChangedCount > 0)
-            {
-                await InvalidateAllAndReprobeSelectedAsync();
-                StatusText = UiLocalizationService.UpdateAllSummary(result) + T("Vm.Background");
-            }
-        }
-        catch (OperationCanceledException) when (op.CancelRequested)
-        {
-            // The user cancelled this pass; the loop runs the next one on schedule.
-            await InvalidateAllAndReprobeSelectedAsync();
-            StatusText = OperationCancelledText() + T("Vm.Background");
+            Updates.NotifyCanUpdateAll();
         }
     }
 
@@ -1577,10 +1465,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
             AppLog.Warn("library-facts", "Could not work out Update All / DLSS batch availability", ex);
             return;
         }
-        _libraryHasManagedTargets = managed;
+        Updates.SetLibraryHasManagedTargets(managed);
         _libraryHasDlssBatchCandidates = batch;
-        OnPropertyChanged(nameof(CanUpdateAll));
-        UpdateAllCommand.NotifyCanExecuteChanged();
+        Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
     }
 
@@ -2586,8 +2473,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, IPanel
         OnPropertyChanged(nameof(D3DCompilerWinetricksButtonText));
         OnPropertyChanged(nameof(D3DCompilerToolHint));
         LaunchCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(CanUpdateAll));
-        UpdateAllCommand.NotifyCanExecuteChanged();
+        Updates.NotifyCanUpdateAll();
         NotifyDlss();
         Extras.NotifySection();
     }
