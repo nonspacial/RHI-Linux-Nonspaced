@@ -56,6 +56,8 @@ public sealed partial class MainWindow
         _addonWatcher.CandidateDetected += candidate =>
             Dispatcher.UIThread.Post(() => RunUiSafe(() => HandleWatchedCandidateAsync(candidate)));
 
+        DataContextChanged += (_, _) => AttachDetailScrollReset(DataContext as MainWindowViewModel);
+
         DataContextChanged += (_, _) => Dispatcher.UIThread.Post(() =>
         {
             if (DataContext is MainWindowViewModel confirmVm)
@@ -91,6 +93,23 @@ public sealed partial class MainWindow
             _addonWatcher.Dispose();
             RemoveTrayIcon();
         };
+    }
+
+    private MainWindowViewModel? _scrollResetVm;
+
+    /// <summary>A different game selected: the detail pane goes back to its top (Refs #152).</summary>
+    private void AttachDetailScrollReset(MainWindowViewModel? vm)
+    {
+        if (ReferenceEquals(vm, _scrollResetVm)) return;
+        if (_scrollResetVm is not null) _scrollResetVm.SelectedGameSwitched -= ScrollDetailToTop;
+        _scrollResetVm = vm;
+        if (vm is not null) vm.SelectedGameSwitched += ScrollDetailToTop;
+    }
+
+    private void ScrollDetailToTop()
+    {
+        if (this.FindControl<ScrollViewer>("DetailScroller") is { } scroller && scroller.Offset.Y != 0)
+            scroller.Offset = new Vector(scroller.Offset.X, 0);
     }
 
     private void GameLibrary_SelectionChanged(object? sender, SelectionChangedEventArgs e)

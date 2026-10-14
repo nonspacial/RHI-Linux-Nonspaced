@@ -413,6 +413,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string HdrLaunchOptions => SelectedHdrPlan.LaunchOptions;
     public bool CanCopyHdrLaunchOptions => SelectedGame is not null && SelectedHdrPlan.Enabled && SelectedHdrPlan.CanApply;
 
+    /// <summary>
+    /// The launch-profile preview and its Copy button apply only with an HDR mode chosen: with HDR Off both are hidden
+    /// (owner rule: hide inapplicable options; Refs #152). A blocked mode still shows them, Copy disabled, with the reason.
+    /// </summary>
+    public bool ShowHdrLaunchProfile => SelectedGame is not null && SelectedHdrPlan.Enabled;
+
     public string SelectedEngineHint
     {
         get
@@ -1269,6 +1275,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
+        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
     }
 
     partial void OnSelectedHdrModeChanged(string value)
@@ -1284,13 +1291,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
+        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
         if (_rebuildingOptionLists || _loadingHdrProfile || SelectedGame is null) return;
         SaveHdrProfile(SelectedGame, HdrControl.LegacyWsi);
+    }
+
+    /// <summary>
+    /// Raised when the selection moves to a different game (not when a refresh puts the same game back): the detail
+    /// pane scrolls to the top so the new game's title and actions are never left half under the toolbar (Refs #152).
+    /// </summary>
+    public event Action? SelectedGameSwitched;
+
+    private string? _lastSelectedKey;
+
+    /// <summary>True while a refresh clears and restores the selection: the game it settles on decides.</summary>
+    private bool _holdSelectionSwitch;
+
+    private void RaiseSelectionSwitchIfNew(DetectedGame? value)
+    {
+        if (_holdSelectionSwitch || value is null || string.Equals(Key(value), _lastSelectedKey, StringComparison.Ordinal)) return;
+        _lastSelectedKey = Key(value);
+        SelectedGameSwitched?.Invoke();
     }
 
     partial void OnSelectedGameChanged(DetectedGame? value)
     {
         SyncSelectedRow(value);
+        RaiseSelectionSwitchIfNew(value);
         _session.Cancel();
         Components.Clear();
         _shownAnalysis = null;
@@ -1443,6 +1470,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             ? T("Vm.ScanningSteamHeroicLutrisWinePrefixes")
             : T("Vm.UpdatingLibrary");
         var currentKey = SelectedGame is null ? null : Key(SelectedGame);
+        _holdSelectionSwitch = true;
         try
         {
             _session.Cancel();
@@ -1520,6 +1548,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
         finally
         {
+            _holdSelectionSwitch = false;
+            RaiseSelectionSwitchIfNew(SelectedGame);
             OnPropertyChanged(nameof(CanUpdateAll));
             UpdateAllCommand.NotifyCanExecuteChanged();
         }
@@ -4101,6 +4131,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HdrProfileHint));
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
+        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
     }
 
     public string GetSelectedHdrLaunchOptions() => HdrLaunchOptions;

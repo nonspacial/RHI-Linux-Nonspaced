@@ -230,10 +230,11 @@
                       <ComboBox Width="180" ItemsSource="{Binding HdrModeOptions}" SelectedItem="{Binding SelectedHdrMode, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"/>
                       <CheckBox Content="{DynamicResource Ui.LegacyWsi}" IsChecked="{Binding HdrLegacyWsi, Mode=TwoWay}" IsEnabled="{Binding CanEditHdrProfile}"
                                 ToolTip.Tip="{DynamicResource Ui.LegacyWsiTip}"/>
-                      <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}" Padding="10,5"/>
+                      <Button Classes="rhi" Content="{DynamicResource Ui.CopyLaunchProfile}" Click="CopyHdrLaunchOptions_Click" IsEnabled="{Binding CanCopyHdrLaunchOptions}"
+                              IsVisible="{Binding ShowHdrLaunchProfile}" Padding="10,5"/>
                     </WrapPanel>
                     <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
-                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap" IsVisible="{Binding ShowHdrLaunchProfile}"/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
