@@ -59,12 +59,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     private readonly LinuxHdrLaunchProfileService _hdrProfiles;
     private LinuxAppSettings _settings;
     private LinuxGameLibraryState _libraryState;
-    /// <summary>
-    /// Raised while an option list bound as ItemsSource is being rebuilt. Avalonia writes null
-    /// back to the TwoWay SelectedItem when the list is cleared; every persisting handler below
-    /// must ignore that transient write or per-game preferences get deleted on a Settings save.
-    /// </summary>
-    private bool _rebuildingOptionLists;
     private readonly SelectedGameSession _session;
     private bool _libraryHasDlssBatchCandidates;
     private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
@@ -401,12 +395,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
     internal Task Initialization { get; }
 
-    private void RefreshLocalizedPresentation()
-    {
-        _rebuildingOptionLists = true;
-        try { RefreshLocalizedPresentationCore(); }
-        finally { _rebuildingOptionLists = false; }
-    }
+    // The panels guard their own list rebuilds (Extras' version pins) or relabel in place (Runtime's option items).
+    private void RefreshLocalizedPresentation() => RefreshLocalizedPresentationCore();
 
     private void RefreshLocalizedPresentationCore()
     {
