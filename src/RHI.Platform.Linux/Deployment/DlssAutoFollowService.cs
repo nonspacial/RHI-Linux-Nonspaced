@@ -253,10 +253,10 @@ public sealed class DlssAutoFollowService
             return DlssFollowCheck.Done(new(DlssFollowOutcome.Off, []));
         }
 
-        DlssManifestData manifest;
+        DlssManifestFetch fetch;
         try
         {
-            manifest = await _dlss.FetchManifestAsync(cancellationToken).ConfigureAwait(false);
+            fetch = await _dlss.FetchManifestWithStatusAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
@@ -264,7 +264,8 @@ public sealed class DlssAutoFollowService
             if (changed) _store.Save(tracks);
             return DlssFollowCheck.Done(new(DlssFollowOutcome.CouldNotCheck, [], Problem: ex.Message));
         }
-        if (!_dlss.LastManifestFetchAnswered)
+        var manifest = fetch.Manifest;
+        if (!fetch.Answered)
         {
             // Only the cached copy answered: it may be days old, so it can say nothing about what is newest now.
             if (changed) _store.Save(tracks);

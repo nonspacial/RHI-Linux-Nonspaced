@@ -9,6 +9,12 @@ using RHI.Core.Models;
 namespace RHI.Core.Services;
 
 /// <summary>
+/// One manifest fetch (#177): the manifest, and whether the network answered this fetch (a download or a 304), as
+/// opposed to the cached copy standing in after a failure.
+/// </summary>
+public sealed record DlssManifestFetch(DlssManifestData Manifest, bool Answered);
+
+/// <summary>
 /// Cross-platform DLSS/Streamline manager using the same public upstream manifest as RHI.
 /// It does not use NvAPI; it only manages game-local DLLs and therefore works with Wine/Proton.
 /// </summary>
@@ -58,19 +64,20 @@ public sealed class DlssManagerService
     /// </summary>
     public TimeSpan ManifestFetchTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
-    public Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
-        => FetchManifestAsync(conditional: true, cancellationToken);
+    public async Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
+        => (await FetchManifestAsync(conditional: true, cancellationToken).ConfigureAwait(false)).Manifest;
 
     /// <summary>
-    /// True when the last <see cref="FetchManifestAsync(CancellationToken)"/> got its answer from the network (a fresh
-    /// download, or a 304 confirming the cached copy); false when it fell back to the cached copy after a failure or
-    /// threw. #177: following the newest DLSS moves its baseline only after an answered fetch.
+    /// <see cref="FetchManifestAsync(CancellationToken)"/> plus whether THIS fetch got its answer from the network (a
+    /// fresh download, or a 304 confirming the cached copy); false when it fell back to the cached copy after a failure.
+    /// Returned with the manifest, never kept on the shared service, so a concurrent fetch by another caller cannot
+    /// change it. #177: following the newest DLSS moves its baseline only after an answered fetch.
     /// </summary>
-    public bool LastManifestFetchAnswered { get; private set; }
+    public Task<DlssManifestFetch> FetchManifestWithStatusAsync(CancellationToken cancellationToken = default)
+        => FetchManifestAsync(conditional: true, cancellationToken);
 
-    private async Task<DlssManifestData> FetchManifestAsync(bool conditional, CancellationToken cancellationToken)
+    private async Task<DlssManifestFetch> FetchManifestAsync(bool conditional, CancellationToken cancellationToken)
     {
-        LastManifestFetchAnswered = false;
         var cachePath = Path.Combine(_cacheRoot, "dlss_manifest.json");
         var etagPath = cachePath + ".etag";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -88,8 +95,7 @@ public sealed class DlssManagerService
                 if (await TryReadCachedManifestAsync(cachePath, cancellationToken).ConfigureAwait(false) is { } unchanged)
                 {
                     _manifest = unchanged;
-                    LastManifestFetchAnswered = true;
-                    return unchanged;
+                    return new(unchanged, Answered: true);
                 }
                 // The cache no longer reads: forget its ETag and ask for the whole manifest again.
                 FileCleanup.TryDelete(etagPath);
@@ -101,7 +107,6 @@ public sealed class DlssManagerService
                          ?? throw new InvalidDataException("DLSS manifest was empty or invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
-            LastManifestFetchAnswered = true;
             // Durable and atomic (#39): a crash never leaves a truncated fallback manifest, and a
             // cache that cannot be written does not discard the manifest just downloaded.
             // CancellationToken.None: the manifest is already parsed and in use; a cancellation here
@@ -121,7 +126,7 @@ public sealed class DlssManagerService
                 ManifestCacheWriteError = ex.Message;
                 AppLog.Warn("dlss-manifest", $"The downloaded DLSS manifest is in use but could not be cached at {cachePath}; the next offline start uses the older copy", ex);
             }
-            return parsed;
+            return new(parsed, Answered: true);
         }
         catch (Exception ex) when (File.Exists(cachePath))
         {
@@ -132,7 +137,7 @@ public sealed class DlssManagerService
                          ?? throw new InvalidDataException("Cached DLSS manifest is invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
-            return parsed;
+            return new(parsed, Answered: false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
