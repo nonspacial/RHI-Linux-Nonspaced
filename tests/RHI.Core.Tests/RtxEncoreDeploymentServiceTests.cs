@@ -221,6 +221,41 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         Assert.False(RtxEncoreDeploymentService.HasGameDlss(_game));
     }
 
+    // Review nit 6: a game whose executable folder is unknown is told that, not to start the game for its prefix.
+    [Fact]
+    public async Task UnknownExecutableFolder_IsRefusedWithThatReason_BeforeAnyDownload()
+    {
+        var game = new DetectedGame
+        {
+            Name = _game.Name, InstallPath = _game.InstallPath, Source = "Test", Runner = "Wine", PrefixPath = _prefix,
+            ExecutablePath = Path.Combine(_root, "game", "gone", "Game.exe"), BinaryDirectory = Path.Combine(_root, "game", "gone"),
+            GraphicsApi = GraphicsApi.DirectX12, ForcedArchitecture = PeArchitecture.X64
+        };
+        var handler = new EncoreHandler();
+
+        var result = await Service(handler).InstallAsync(game);
+
+        Assert.Equal(RtxEncoreDeploymentService.BinaryFolderMessage, result.Message);
+        Assert.Equal(0, handler.Requests);
+    }
+
+    // Review nit 6: an nvngx_dlss.dll only inside an OptiScaler/ folder is not the game's DLSS, for the install as for the row.
+    [Fact]
+    public async Task DlssOnlyInsideAnOptiScalerFolder_IsNoDlss()
+    {
+        File.Delete(Path.Combine(_bin, "nvngx_dlss.dll"));
+        Directory.CreateDirectory(Path.Combine(_bin, "OptiScaler"));
+        File.WriteAllBytes(Path.Combine(_bin, "OptiScaler", "nvngx_dlss.dll"), [1, 2, 3]);
+        var handler = new EncoreHandler();
+
+        var result = await Service(handler).InstallAsync(_game);
+
+        Assert.Equal(RtxEncoreDeploymentService.NeedsDlssMessage, result.Message);
+        Assert.False(RtxEncoreDeploymentService.HasGameDlss(_game));
+        Assert.False(ComponentProbe.Probe(_game).Single(c => c.Kind == ManagedComponentKind.RtxEncore).GameShipsDlss);
+        Assert.Equal(0, handler.Requests);
+    }
+
     [Fact]
     public async Task GameWithoutDlss_IsRefusedBeforeAnyDownload()
     {

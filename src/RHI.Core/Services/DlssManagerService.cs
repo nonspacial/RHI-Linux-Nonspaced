@@ -334,6 +334,15 @@ public sealed class DlssManagerService
     }
 
     /// <summary>
+    /// Whether the game ships its own DLSS: an <c>nvngx_dlss.dll</c> among <paramref name="indexedFiles"/> outside any
+    /// <c>OptiScaler/</c> folder under <paramref name="root"/> (RHI's OptiScaler brings its own). One rule for RTX Encore's
+    /// row and its install (#158).
+    /// </summary>
+    public static bool ShipsOwnDlss(string? root, IEnumerable<string> indexedFiles)
+        => indexedFiles.Any(path => Path.GetFileName(path).Equals("nvngx_dlss.dll", StringComparison.OrdinalIgnoreCase)
+                                    && (string.IsNullOrWhiteSpace(root) || !IsUnderOptiScalerFolder(root, path)));
+
+    /// <summary>
     /// True when <paramref name="path"/> lies below a directory named <c>OptiScaler</c> inside
     /// <paramref name="root"/> (segments relative to the root, so a library path that happens to
     /// contain that name does not count).

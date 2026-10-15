@@ -45,6 +45,7 @@ public sealed class RtxEncoreDeploymentService
     public const string ApiMessage = "RTX Encore works with DirectX 11, DirectX 12 and Vulkan games only.";
     public const string NeedsDlssMessage = "RTX Encore works through the game's own DLSS; this game has no DLSS.";
     public const string PrefixMessage = "Start the game once so its Wine/Proton prefix exists before installing RTX Encore.";
+    public const string BinaryFolderMessage = "The game's executable folder is not known yet; confirm the game's executable in Edit game before installing RTX Encore.";
     public const string AlreadyInstalledMessage = "RTX Encore is already installed by RHI for this game.";
     public const string NotInstalledMessage = "RTX Encore is not installed by RHI for this game.";
     public const string NameLockedMessage = "RTX Encore is installed: remove it to choose another name.";
@@ -125,6 +126,7 @@ public sealed class RtxEncoreDeploymentService
 
     /// <summary>Test seam: runs on the cached payload's path right before it is staged into the game folder.</summary>
     internal Action<string>? BeforeStagingForTesting { get; init; }
+
     public LinuxDeploymentRecord? GetRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RtxEncore);
 
     /// <summary>The installed name, else the saved choice, else <see cref="DefaultName"/>.</summary>
@@ -162,14 +164,11 @@ public sealed class RtxEncoreDeploymentService
         return null;
     }
 
-    /// <summary>Whether the game ships DLSS (<c>nvngx_dlss.dll</c> anywhere under it, RHI's OptiScaler folder excluded).</summary>
+    /// <summary>Whether the game ships DLSS (<see cref="DlssManagerService.ShipsOwnDlss"/>, the rule the row uses too).</summary>
     public static bool HasGameDlss(DetectedGame game)
     {
         var root = !string.IsNullOrWhiteSpace(game.InstallPath) && Directory.Exists(game.InstallPath) ? game.InstallPath : ResolveBinaryDirectory(game);
-        if (root is null) return false;
-        return GameFileIndexer.Build(root, 8)
-            .Where(path => !DlssManagerService.IsUnderOptiScalerFolder(root, path))
-            .Any(path => Path.GetFileName(path).Equals("nvngx_dlss.dll", StringComparison.OrdinalIgnoreCase));
+        return root is not null && DlssManagerService.ShipsOwnDlss(root, GameFileIndexer.Build(root, 8));
     }
 
     public ComponentOperationResult SetName(DetectedGame game, string name)
@@ -190,7 +189,7 @@ public sealed class RtxEncoreDeploymentService
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return ComponentOperationResult.Fail(PrefixMessage);
         var binaryDir = ResolveBinaryDirectory(game);
-        if (binaryDir is null) return ComponentOperationResult.Fail(PrefixMessage);
+        if (binaryDir is null) return ComponentOperationResult.Fail(BinaryFolderMessage);
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning) return ComponentOperationResult.Fail(wineRunning);
 
         var name = ChosenName(game);

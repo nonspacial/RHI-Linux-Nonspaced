@@ -101,6 +101,10 @@ public static class ComponentProbe
                 component.DetectedAddonFiles = files.Where(IsLumaFrameworkAddonFileName).ToArray();
         }
 
+        // RTX Encore works through the game's own DLSS (#158): the same rule its install applies.
+        result.Single(component => component.Kind == ManagedComponentKind.RtxEncore).GameShipsDlss =
+            DlssManagerService.ShipsOwnDlss(stackRoot, indexedFiles);
+
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
             foreach (var component in result)

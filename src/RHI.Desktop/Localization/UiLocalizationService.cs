@@ -1127,6 +1127,7 @@ public static class UiLocalizationService
         (RtxEncoreText.ApiMessage, "O RTX Encore funciona apenas com jogos DirectX 11, DirectX 12 e Vulkan."),
         (RtxEncoreText.NeedsDlssMessage, "O RTX Encore funciona pelo DLSS do próprio jogo; este jogo não tem DLSS."),
         (RtxEncoreText.PrefixMessage, "Inicie o jogo uma vez para criar o prefixo Wine/Proton antes de instalar o RTX Encore."),
+        (RtxEncoreText.BinaryFolderMessage, "A pasta do executável do jogo ainda não é conhecida; confirme o executável em Editar jogo antes de instalar o RTX Encore."),
         (RtxEncoreText.AlreadyInstalledMessage, "O RTX Encore já está instalado pelo RHI neste jogo."),
         (RtxEncoreText.NotInstalledMessage, "O RTX Encore não está instalado pelo RHI neste jogo."),
         (RtxEncoreText.NameLockedMessage, "O RTX Encore está instalado: remova-o para escolher outro nome."),

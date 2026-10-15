@@ -73,6 +73,52 @@ public sealed class RtxEncoreAppTests
         Assert.False(ComponentRowViewModel.IsShown(row));
     }
 
+    // Review nit 6: the row uses the install's own-DLSS rule, so it never offers an install that then says "no DLSS".
+    [Fact]
+    public async Task DlssOnlyInRhisOptiScalerFolder_HidesTheRow_LikeTheInstallRefusesIt()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = EligibleGame(fx, "OptiScaler DLSS only", dlss: false);
+        Directory.CreateDirectory(Path.Combine(game.BinaryDirectory!, "OptiScaler"));
+        File.WriteAllBytes(Path.Combine(game.BinaryDirectory!, "OptiScaler", "nvngx_dlss.dll"), [1, 2, 3]);
+        var components = Decorated(fx, game);
+        var row = Row(components, ManagedComponentKind.RtxEncore);
+
+        Assert.Equal(ComponentAvailability.Installed, Row(components, ManagedComponentKind.Dlss).Availability); // the DLSS row still sees it
+        Assert.Equal(ComponentAvailability.Unsupported, row.Availability);
+        Assert.Equal(RtxEncoreDeploymentService.NeedsDlssMessage, row.Note);
+        Assert.False(ComponentRowViewModel.IsShown(row));
+        Assert.Equal(RtxEncoreDeploymentService.NeedsDlssMessage, (await fx.Managed.RtxEncore!.InstallAsync(game)).Message);
+    }
+
+    // Review nit 6: the row says why when the executable folder is unknown (not "start the game for its prefix").
+    [Fact]
+    public async Task UnknownExecutableFolder_RowSaysSo()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = EligibleGame(fx, "Folder gone");
+        File.Move(Path.Combine(game.BinaryDirectory!, "nvngx_dlss.dll"), Path.Combine(game.InstallPath, "nvngx_dlss.dll"));
+        Directory.Delete(game.BinaryDirectory!, recursive: true);
+        game.ForcedArchitecture = PeArchitecture.X64;
+        Assert.True(game.HasConfirmedPatchTarget);
+
+        var row = Row(Decorated(fx, game), ManagedComponentKind.RtxEncore);
+
+        Assert.True(ComponentRowViewModel.IsShown(row));
+        Assert.False(row.ActionAllowed);
+        Assert.Equal(RtxEncoreDeploymentService.BinaryFolderMessage, row.Note);
+    }
+
+    // Review nit 5: the dialog never offers Smooth Motion (it needs the Windows driver; the footer says so).
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public void DialogIntro_DoesNotAdvertiseSmoothMotion(string language)
+    {
+        Assert.DoesNotContain("Smooth Motion", UiLocalizationService.TextFor(language, "Ui.RtxEncoreIntro"));
+        Assert.Contains("Smooth Motion", UiLocalizationService.TextFor(language, "Ui.RtxEncoreFooter"));
+    }
+
     [Fact]
     public async Task RhisOwnInstall_StaysListedAndRemovable_EvenWhereItCouldNotBeInstalledNow()
     {

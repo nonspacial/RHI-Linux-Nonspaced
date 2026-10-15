@@ -56,4 +56,9 @@ public sealed class ManagedComponent
     public IReadOnlyList<string> InstalledAddonFiles { get; set; } = [];
     /// <summary>Display-ready mod author(s) (e.g. "Musa, ShortFuse"), or null when unknown.</summary>
     public string? Author { get; set; }
+    /// <summary>
+    /// The game ships its own <c>nvngx_dlss.dll</c> (<see cref="Services.DlssManagerService.ShipsOwnDlss"/>: an
+    /// <c>OptiScaler/</c> folder does not count). Set by the probe on the RTX Encore row, which needs the game's DLSS.
+    /// </summary>
+    public bool GameShipsDlss { get; set; }
 }

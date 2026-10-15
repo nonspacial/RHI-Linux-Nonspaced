@@ -222,6 +222,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.ApiMessage;
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NeedsDlssMessage;
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.PrefixMessage;
+        yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.BinaryFolderMessage;
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.AlreadyInstalledMessage;
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NotInstalledMessage;
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NameLockedMessage;

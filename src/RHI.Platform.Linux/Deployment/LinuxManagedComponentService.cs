@@ -848,8 +848,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // DX11/DX12/Vulkan game, or a game without its own DLSS (everything RTX Encore can do under Proton works through it).
     private bool HideRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
     {
-        var gameHasDlss = components.Any(c => c.Kind == ManagedComponentKind.Dlss && c.Availability == ComponentAvailability.Installed);
-        var ineligible = _rtxEncore is null ? RtxEncoreDeploymentService.NotInstalledMessage : RtxEncoreDeploymentService.IneligibleReason(game, gameHasDlss);
+        // The probe's own-DLSS answer (an OptiScaler/ folder does not count), the rule the install applies.
+        var ineligible = _rtxEncore is null ? RtxEncoreDeploymentService.NotInstalledMessage : RtxEncoreDeploymentService.IneligibleReason(game, component.GameShipsDlss);
         if (ineligible is null) return false;
         component.Availability = ComponentAvailability.Unsupported;
         component.ActionAllowed = false;
@@ -865,6 +865,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         {
             component.ActionAllowed = false;
             component.Note = RtxEncoreDeploymentService.PrefixMessage;
+        }
+        else if (RtxEncoreDeploymentService.ResolveBinaryDirectory(game) is null)
+        {
+            component.ActionAllowed = false;
+            component.Note = RtxEncoreDeploymentService.BinaryFolderMessage;
         }
         else if (!_rtxEncore.OfferedNames(game).Contains(name, StringComparer.OrdinalIgnoreCase))
         {
