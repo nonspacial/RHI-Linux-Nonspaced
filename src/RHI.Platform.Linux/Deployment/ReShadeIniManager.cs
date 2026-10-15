@@ -221,10 +221,12 @@ internal static class ReShadeIniManager
     }
 
     /// <summary>
-    /// The one symlink rule for ReShade.ini and its numbered siblings (review finding 8), used by every path that writes
-    /// one (install, removal, Deploy, presets, Apply to all games, Luma's HDR setting, RenoDX's keys): a link is followed
-    /// only to a file of the same name (any case) inside the game's binary folder, its install folder, or the user's
-    /// ReShade config folder (<c>~/.config/ReShade</c>), where a shared ReShade.ini is kept.
+    /// The symlink rule for ReShade.ini and its numbered siblings (review finding 8) on the paths that write it through this
+    /// class or for these settings: RHI's ReShade install (DLL or Vulkan layer), update rollback and removal, Deploy,
+    /// presets, Apply to all games, Luma's ⚙ HDR setting and RenoDX's keys. A link is followed only to a file of the same
+    /// name (any case) inside the game's binary folder, its install folder, or the user's ReShade config folder
+    /// (<c>~/.config/ReShade</c>), where a shared ReShade.ini is kept. Luma's own install/removal, ShortFuse and the DLSS5
+    /// Feeder still write ReShade.ini under <see cref="AtomicFile"/>'s default (no link followed), which is stricter.
     /// </summary>
     internal static UserFileLinkPolicy LinkPolicy(string iniPath, string binaryDirectory, string? gameRoot)
     {

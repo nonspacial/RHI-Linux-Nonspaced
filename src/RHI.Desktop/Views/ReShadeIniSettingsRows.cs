@@ -111,10 +111,20 @@ internal sealed class ReShadeIniSettingsRows
         {
             var file = IniPresetsPresenter.IniFileName(kind);
             var button = Button("IniDeployAll" + kind, file, UiLocalizationService.Text(kind == ManagedComponentKind.ReShade ? "Ini.DeployReShadeTip" : "Ini.DeployAddonTip"));
-            button.Click += (_, _) =>
+            // The question reads and hashes every managed game's add-on INI: off the UI thread, an IO error on the status bar.
+            button.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
             {
-                var count = presenter.DeployCandidates(kind);
-                if (count == 0)
+                button.IsEnabled = false;
+                IniPresetsPresenter.DeployQuestion question;
+                try { question = await presenter.DeployQuestionAsync(kind); }
+                finally { button.IsEnabled = true; }
+                if (question.Error is { } error)
+                {
+                    confirm.IsVisible = false;
+                    showStatus(error);
+                    return;
+                }
+                if (question.Count == 0)
                 {
                     confirm.IsVisible = false;
                     showStatus(UiLocalizationService.Format("Ini.BatchNone", file));
@@ -122,11 +132,10 @@ internal sealed class ReShadeIniSettingsRows
                 }
                 pending = kind;
                 pendingPreset = null;
-                var changed = kind == ManagedComponentKind.ReShade ? 0 : presenter.DeployChangedCount(kind);
-                confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, count)
-                                   + (changed > 0 ? " " + UiLocalizationService.Format("Ini.DeployAllChangedNote", changed, file) : "");
+                confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, question.Count)
+                                   + (question.Changed > 0 ? " " + UiLocalizationService.Format("Ini.DeployAllChangedNote", question.Changed, file) : "");
                 ShowConfirm(deployHost);
-            };
+            }, nameof(ReShadeIniSettingsRows));
             deployButtons.Children.Add(button);
         }
 

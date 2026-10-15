@@ -71,6 +71,37 @@ public sealed class IniPresetsPresenterTests
         Assert.False(fx.Vm.IsBusy);
     }
 
+    // ini-presets re-review nit 2: the mass deploy's question reads every game's add-on INI off the UI thread; a file it
+    // cannot read is a status line, never an exception for the global handler.
+    [Fact]
+    public async Task DeployQuestion_AnUnreadableAddonIni_IsAStatusLine()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-question-" + Guid.NewGuid().ToString("N"), "bin");
+        Directory.CreateDirectory(bin);
+        var ini = Path.Combine(bin, "relimiter.ini");
+        File.WriteAllText(ini, "[FrameLimiter]\nmine=1\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Question Card", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77005, Source = "Steam"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Records.Manage(fx.Vm.AllLibraryGames.Single(), ManagedComponentKind.ReLimiter);
+        File.SetUnixFileMode(ini, UnixFileMode.None);
+        try
+        {
+            var question = await fx.Vm.IniPresets.DeployQuestionAsync(ManagedComponentKind.ReLimiter);
+
+            Assert.Equal(0, question.Count);
+            Assert.NotNull(question.Error);
+            Assert.StartsWith(UiLocalizationService.Format("Ini.DeployFailed", "relimiter.ini", ""), question.Error, StringComparison.Ordinal);
+            Assert.Contains(question.Error, fx.Vm.StatusText); // a pending one-shot notice may ride on the line
+        }
+        finally { File.SetUnixFileMode(ini, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
     // Review finding 2: the ⚙'s Deploy asks before replacing a relimiter.ini the user changed, keeps a backup, restores it.
     [Fact]
     public async Task DeployAddonIni_AsksForAChangedFile_KeepsABackup_AndRestoresIt()
@@ -95,6 +126,8 @@ public sealed class IniPresetsPresenterTests
         Assert.True(presenter.DeployNeedsConfirmation(ManagedComponentKind.ReLimiter));
         Assert.False(presenter.DeployNeedsConfirmation(ManagedComponentKind.ReShade));
         Assert.Equal(1, presenter.DeployChangedCount(ManagedComponentKind.ReLimiter));
+        Assert.Equal(new IniPresetsPresenter.DeployQuestion(1, 1, null), await presenter.DeployQuestionAsync(ManagedComponentKind.ReLimiter));
+        Assert.Equal(new IniPresetsPresenter.DeployQuestion(0, 0, null), await presenter.DeployQuestionAsync(ManagedComponentKind.DisplayCommander));
         Assert.Equal(UiLocalizationService.Present(UserIniService.ChangedPrefix + ini), await presenter.DeployForSelectedAsync(ManagedComponentKind.ReLimiter));
         Assert.Equal("[FrameLimiter]\nmine=1\n", File.ReadAllText(ini));
         Assert.Null(presenter.AddonIniBackup(ManagedComponentKind.ReLimiter));

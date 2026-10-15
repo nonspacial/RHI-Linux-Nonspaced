@@ -5,15 +5,15 @@ using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
 
+/// <summary>The three "Apply to all games" buttons (review finding 5).</summary>
+public enum IniApplyAll { ReShadeSettings, ReLimiterSettings, PeakNits }
+
 /// <summary>
 /// w5/ini-presets: the INI side of the shell (#181): "Deploy … .ini" in the ReShade / ReLimiter / Display Commander ⚙,
 /// the INI templates folder, the mass deploy and "Apply to all games" rows in Settings. Every action holds the busy gate
 /// (a batch is cancellable between games) and reports one line on the status bar; the logic lives in
 /// <see cref="UserIniService"/>.
 /// </summary>
-/// <summary>The three "Apply to all games" buttons (review finding 5).</summary>
-public enum IniApplyAll { ReShadeSettings, ReLimiterSettings, PeakNits }
-
 public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComponentService managed, LinuxDeploymentRecordStore records, string configRoot)
 {
     /// <summary>The INIs folder (shared with the OptiScaler templates).</summary>
@@ -66,6 +66,33 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     /// question names them: each is kept as a backup beside it; review finding 2).
     /// </summary>
     public int DeployChangedCount(ManagedComponentKind kind) => Service.ChangedAddonInis(vm.AllLibraryGames.ToList(), kind);
+
+    /// <summary>The mass deploy's question: games it writes, and how many of them hold an add-on INI that changed since RHI wrote it.</summary>
+    /// <param name="Error">Set (and on the status bar) when a game's file could not be read; nothing is asked then.</param>
+    public sealed record DeployQuestion(int Count, int Changed, string? Error);
+
+    /// <summary>
+    /// <see cref="DeployCandidates"/> and <see cref="DeployChangedCount"/> for the mass deploy's question, read and hashed
+    /// off the UI thread (every managed game's add-on INI is read). An IO error becomes a status line, never an
+    /// unhandled exception (ini-presets re-review nit 2).
+    /// </summary>
+    public async Task<DeployQuestion> DeployQuestionAsync(ManagedComponentKind kind)
+    {
+        var games = vm.AllLibraryGames.ToList();
+        var service = Service;
+        try
+        {
+            return await Task.Run(() =>
+            {
+                var targets = service.DeployTargets(games, kind);
+                return new DeployQuestion(targets.Count, targets.Count == 0 ? 0 : service.ChangedAddonInis(targets, kind), null);
+            }).ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new DeployQuestion(0, 0, Report(UiLocalizationService.Format("Ini.DeployFailed", IniFileName(kind), UiLocalizationService.Present(ex.Message))));
+        }
+    }
 
     /// <summary>
     /// Whether "Deploy X.ini" for the selected game must ask first: the game's relimiter.ini / DisplayCommander.ini changed
