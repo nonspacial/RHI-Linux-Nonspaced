@@ -2,13 +2,14 @@ using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Hdr;
 using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
 /// <summary>
 /// The OptiScaler ⚙, Add game, Edit game and Settings dialogs as view models (epic #89: were built in the window's
-/// code-behind), over the real offline shell.
+/// code-behind), over the real offline shell; and the start-up sequence moved out of the shell.
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 [System.Runtime.Versioning.SupportedOSPlatform("linux")]
@@ -258,5 +259,61 @@ public sealed class ShellDialogTests
         dialog.ApplyToGameCommand.Execute(null);
         Assert.Equal("/shots", fx.Settings.Load().ScreenshotPath);
         Assert.Equal(UiLocalizationService.Text("Vm.SelectGameFirst"), dialog.Status);
+    }
+
+    /// <summary>Records the start-up steps; each awaited step finishes only when the test says so.</summary>
+    private sealed class Steps : IStartupSteps
+    {
+        public readonly List<string> Log = [];
+        public readonly TaskCompletionSource Manifest = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Catalog = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Refresh = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource RefreshStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool AutoUpdateComponents { get; init; }
+        public LinuxHdrHostSnapshot ProbeHdrHost() { lock (Log) Log.Add("hdr-probe"); return new LinuxHdrHostSnapshot(false, null, false, null, false); }
+        public void HdrHostKnown(LinuxHdrHostSnapshot host) { lock (Log) Log.Add("hdr-known"); }
+        public Task LoadNeuralCatalogAsync() { lock (Log) Log.Add("catalog"); return Catalog.Task; }
+        public Task LoadDlssManifestAsync() { lock (Log) Log.Add("manifest"); return Manifest.Task; }
+        public Task RefreshLibraryAsync() { lock (Log) Log.Add("refresh"); RefreshStarted.TrySetResult(); return Refresh.Task; }
+        public void StartBackgroundUpdates(bool runImmediate) { lock (Log) Log.Add($"background {runImmediate}"); }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Startup_TheScanNeverWaitsForTheManifest_AndTheLoopStartsLast(bool autoUpdate)
+    {
+        var steps = new Steps { AutoUpdateComponents = autoUpdate };
+        var run = new StartupSequence(steps).RunAsync();
+
+        await steps.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(10)); // the manifest is still loading (Refs #43)
+        string[] log;
+        lock (steps.Log) log = [.. steps.Log];
+        Assert.True(Array.IndexOf(log, "catalog") < Array.IndexOf(log, "refresh") && Array.IndexOf(log, "catalog") >= 0);
+        Assert.True(Array.IndexOf(log, "manifest") < Array.IndexOf(log, "refresh") && Array.IndexOf(log, "manifest") >= 0);
+        Assert.True(Array.IndexOf(log, "hdr-known") < Array.IndexOf(log, "refresh"));
+        steps.Refresh.SetResult();
+        steps.Manifest.SetResult();
+        await Task.Delay(50);
+        Assert.DoesNotContain(steps.Log, line => line.StartsWith("background", StringComparison.Ordinal)); // the catalogue is still loading
+        Assert.False(run.IsCompleted);
+        steps.Catalog.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal($"background {autoUpdate}", steps.Log[^1]);
+    }
+
+    [Fact]
+    public async Task Startup_TheBackgroundLoopWaitsForTheScan()
+    {
+        var steps = new Steps();
+        steps.Manifest.SetResult();
+        steps.Catalog.SetResult();
+        var run = new StartupSequence(steps).RunAsync();
+        await steps.RefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(50);
+        Assert.DoesNotContain(steps.Log, line => line.StartsWith("background", StringComparison.Ordinal));
+        steps.Refresh.SetResult();
+        await run.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("background False", steps.Log[^1]);
     }
 }

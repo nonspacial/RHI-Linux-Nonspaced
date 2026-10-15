@@ -34,7 +34,7 @@ public sealed record LinuxSettingsUiSnapshot(
     string CacheRoot,
     string DataRoot);
 
-public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibraryEditHost
+public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibraryEditHost, IStartupSteps
 {
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
@@ -365,8 +365,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         LibraryFilterMode = _libraryState.FilterMode;
         ViewMode = _settings.ViewMode;
         ReShadeProfile.ShowGlobalDefault();
-        Initialization = InitializeAsync();
-        UiExceptionGuard.Forget(Initialization, "initialize");
+        Initialization = StartupSequence.Start(this);
     }
 
     private readonly IDisposable _quarantineSubscription;
@@ -387,7 +386,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
+    /// <summary>Start-up work (<see cref="StartupSequence"/>: manifest, first scan); tests await it instead of polling busy flags.</summary>
     internal Task Initialization { get; }
 
     // The panels guard their own list rebuilds (Extras' version pins) or relabel in place (Runtime's option items).
@@ -412,21 +411,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         NotifyDlss();
     }
 
-    private async Task InitializeAsync()
+    // Start-up (StartupSequence): the steps it runs, over the shell's panels and services.
+    LinuxHdrHostSnapshot IStartupSteps.ProbeHdrHost() => _hdrProfiles.ProbeHost();
+
+    void IStartupSteps.HdrHostKnown(LinuxHdrHostSnapshot host)
     {
-        // The HDR host (NVIDIA driver, gamescope on PATH) is read once off the UI thread; each analysis refreshes it.
-        var hdrHost = Task.Run(_hdrProfiles.ProbeHost);
-        var neuralVersionCatalogTask = Extras.EnsureNeuralVersionCatalogAsync();
-        // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
-        var dlssManifestTask = LoadDlssManifestAsync();
-        Runtime.LastHdrHost ??= await hdrHost;
+        Runtime.LastHdrHost ??= host;
         Resolution.HostProbed(Runtime.LastHdrHost); // #191 (w5/shell-launch): the display's own sizes, once its tool is known
         Runtime.RaiseHdrPlanChanged();
-        await RefreshAsync();
-        await dlssManifestTask;
-        await neuralVersionCatalogTask;
-        Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
+
+    Task IStartupSteps.LoadNeuralCatalogAsync() => Extras.EnsureNeuralVersionCatalogAsync();
+    Task IStartupSteps.LoadDlssManifestAsync() => LoadDlssManifestAsync();
+    Task IStartupSteps.RefreshLibraryAsync() => RefreshAsync();
+    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
+    bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
     /// <summary>
     /// A merged card took over a duplicate's favourite/hidden/edit state; persist the move through the one
