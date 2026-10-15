@@ -632,6 +632,31 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
+    public async Task ReShadeIni_LinkedToTheUsersReShadeFolder_AFailedDeploy_KeepsTheLinkAndPutsTheSharedFileBack()
+    {
+        // w6 review finding 1 (reviewer's probe): the Deploy is journaled on the file it writes, the link's target. Tracking
+        // the link made the rollback replace the link with a copy and leave RHI's template lines in the shared file.
+        var game = Game("Linked");
+        var shared = Path.Combine(RHI.Platform.Linux.Paths.LinuxPaths.ConfigHome, "ReShade", Guid.NewGuid().ToString("N"), "ReShade.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
+        const string original = "[OVERLAY]\nVariableListUseTabs=1\n";
+        File.WriteAllText(shared, original);
+        File.CreateSymbolicLink(Ini(game), shared);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(game, ManagedComponentKind.ReShade);
+        var record = records.Find(game, ManagedComponentKind.ReShade)!;
+        record.Files.Add(new LinuxDeployedFile { Path = Ini(game), Sha256 = FileHash.Sha256Hex(shared) });
+        records.Upsert(record);
+        var service = new UserIniService(Templates(), records, _ => null, new DeploymentJournal(Path.Combine(_root, "journal")));
+
+        using (LedgerWriteBlocker.Block(records, "records.json"))
+            await Assert.ThrowsAnyAsync<IOException>(() => service.DeployReShadeIniAsync(game, new LinuxAppSettings()));
+
+        Assert.Equal(shared, new FileInfo(Ini(game)).LinkTarget); // still the link
+        Assert.Equal(original, File.ReadAllText(shared));            // RHI's write taken back from the shared file
+        Directory.Delete(Path.GetDirectoryName(shared)!, true);
+    }
+
+    [Fact]
     public async Task ReadOnlyInis_AreWrittenAndStayLocked_ThroughApplyToAllAndDeploy()
     {
         // Review finding 7 (owner rule): a user's read-only lock never blocks RHI's INI writes and is kept.

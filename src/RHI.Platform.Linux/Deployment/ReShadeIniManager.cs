@@ -240,6 +240,14 @@ internal static class ReShadeIniManager
         return new UserFileLinkPolicy(Path.GetFileName(iniPath), roots, RenoDxIniOverrideManager.LinkRefusalPrefix);
     }
 
+    /// <summary>
+    /// The file a ReShade.ini write to <paramref name="iniPath"/> replaces under <see cref="LinkPolicy"/>: the link's allowed
+    /// target (a shared file in the user's ReShade folder) or the path itself; throws the write's refusal. A journal tracks
+    /// this file, never the link, so a rollback keeps the link and puts the shared file's content back.
+    /// </summary>
+    internal static string ResolveWriteTarget(string iniPath, string binaryDirectory, string? gameRoot)
+        => AtomicFile.ResolveUserFileTarget(iniPath, LinkPolicy(iniPath, binaryDirectory, gameRoot));
+
     /// <summary>A planned ReShade.ini write under <see cref="LinkPolicy"/> (for <see cref="IniLines.WriteAll"/>).</summary>
     internal static IniFileWrite PlannedWrite(string path, IReadOnlyList<string> lines, string binaryDirectory, string? gameRoot)
         => new(path, lines, LinkPolicy(path, binaryDirectory, gameRoot));

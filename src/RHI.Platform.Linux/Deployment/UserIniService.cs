@@ -59,16 +59,19 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         // w5 integration: a ReShade installed as the Vulkan layer (#92) gets the Vulkan template, as its install did.
         var defaults = ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates, vulkan: ReShadeVulkanLayer.IsLayerRecord(record));
         var iniPath = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!);
+        // The file the write replaces, as for DeployAddonIniAsync: a ReShade.ini linked to the user's ReShade folder is
+        // tracked at its target, so a rollback puts that file's content back and the link stays a link (w6 review 1).
+        var written = ReShadeIniManager.ResolveWriteTarget(iniPath, game.BinaryDirectory!, game.InstallPath);
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade.ini deploy: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         // A failure propagates as before (the batch counts it as failed); the undisposed scope rolls the file back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        await scope.TrackAsync(iniPath, cancellationToken).ConfigureAwait(false);
-        var hashBefore = File.Exists(iniPath) ? FileHash.Sha256Hex(iniPath) : null;
+        await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+        var hashBefore = File.Exists(written) ? FileHash.Sha256Hex(written) : null;
         var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], defaults, game.InstallPath);
-        await scope.DeclareWrittenContentAsync(iniPath, cancellationToken).ConfigureAwait(false);
+        await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
         if (ReShadeDeploymentService.RecordIniWrite(record, result, hashBefore))
             records.Upsert(scope.Stamp(record));
         await scope.CommitAsync().ConfigureAwait(false);
