@@ -112,6 +112,8 @@ public sealed partial class SteamGameDetector : IGameDetector
                     }
                 }
             }
+            // #176: the games Steam's users added as non-Steam shortcuts.
+            games.AddRange(ShortcutGames(steamRoot, libraries, classifier, hostSteam, cancellationToken));
         }
         return games;
     }

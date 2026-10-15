@@ -22,12 +22,15 @@ internal sealed class SteamAppClassifier
     private readonly IReadOnlyDictionary<int, SteamAppInfo.Entry> _appInfo;
     private readonly IReadOnlyDictionary<int, string> _compatTools;
     private readonly string? _defaultCompatTool;
+    private readonly IReadOnlyDictionary<uint, string> _shortcutTools;
 
-    private SteamAppClassifier(IReadOnlyDictionary<int, SteamAppInfo.Entry> appInfo, IReadOnlyDictionary<int, string> compatTools, string? defaultCompatTool)
+    private SteamAppClassifier(IReadOnlyDictionary<int, SteamAppInfo.Entry> appInfo, IReadOnlyDictionary<int, string> compatTools, string? defaultCompatTool,
+        IReadOnlyDictionary<uint, string> shortcutTools)
     {
         _appInfo = appInfo;
         _compatTools = compatTools;
         _defaultCompatTool = defaultCompatTool;
+        _shortcutTools = shortcutTools;
     }
 
     public static SteamAppClassifier Load(string steamRoot, IEnumerable<string> libraries)
@@ -50,8 +53,8 @@ internal sealed class SteamAppClassifier
         }
 
         var appInfo = SteamAppInfo.Read(Path.Combine(steamRoot, "appcache", "appinfo.vdf"), appIds);
-        var (tools, defaultTool) = ReadCompatToolMapping(Path.Combine(steamRoot, "config", "config.vdf"));
-        return new SteamAppClassifier(appInfo, tools, defaultTool);
+        var (tools, defaultTool, shortcutTools) = ReadMapping(Path.Combine(steamRoot, "config", "config.vdf"));
+        return new SteamAppClassifier(appInfo, tools, defaultTool, shortcutTools);
     }
 
     /// <summary>Bit 4 of <c>StateFlags</c> is "fully installed"; a missing value is not held against the app.</summary>
@@ -86,6 +89,13 @@ internal sealed class SteamAppClassifier
         return Platform(appId) == LaunchPlatform.Windows ? _defaultCompatTool : null;
     }
 
+    /// <summary>
+    /// #176: the tool the user forced for a non-Steam shortcut (keyed by the shortcut's unsigned id); null = none or a
+    /// Linux runtime. Steam's global default does not apply to shortcuts.
+    /// </summary>
+    public string? ShortcutCompatTool(uint shortcutId)
+        => _shortcutTools.TryGetValue(shortcutId, out var tool) && !IsLinuxRuntime(tool) ? tool : null;
+
     // Steam Linux Runtime mappings run a native build inside a container; they are not Proton.
     private static bool IsLinuxRuntime(string tool)
         => tool.StartsWith("steamlinuxruntime", StringComparison.OrdinalIgnoreCase);
@@ -97,27 +107,38 @@ internal sealed class SteamAppClassifier
     /// </summary>
     internal static (IReadOnlyDictionary<int, string> Tools, string? DefaultTool) ReadCompatToolMapping(string configVdf)
     {
+        var (tools, defaultTool, _) = ReadMapping(configVdf);
+        return (tools, defaultTool);
+    }
+
+    // Steam app ids fit an int; non-Steam shortcut ids have the top bit set (#176) and are kept apart, unsigned.
+    private static (Dictionary<int, string> Tools, string? DefaultTool, Dictionary<uint, string> ShortcutTools) ReadMapping(string configVdf)
+    {
         var tools = new Dictionary<int, string>();
+        var shortcutTools = new Dictionary<uint, string>();
         string? defaultTool = null;
-        if (!File.Exists(configVdf)) return (tools, null);
+        if (!File.Exists(configVdf)) return (tools, null, shortcutTools);
         SteamKeyValues root;
         try { root = SteamKeyValues.Parse(File.ReadAllText(configVdf)); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             DetectorDiagnostics.Warn($"Steam {configVdf} unreadable; compatibility tools come from appinfo alone", ex);
-            return (tools, null);
+            return (tools, null, shortcutTools);
         }
 
         var mapping = root.Child("InstallConfigStore", "Software", "Valve", "Steam", "CompatToolMapping");
-        if (mapping is null) return (tools, null);
+        if (mapping is null) return (tools, null, shortcutTools);
         foreach (var (key, entry) in mapping.Children)
         {
-            if (!int.TryParse(key, out var id)) continue;
             var name = entry.Value("name")?.Trim();
             if (string.IsNullOrEmpty(name) || name.Equals("None", StringComparison.OrdinalIgnoreCase)) continue;
-            if (id == 0) defaultTool = name;
-            else tools[id] = name;
+            if (int.TryParse(key, out var id))
+            {
+                if (id == 0) defaultTool = name;
+                else tools[id] = name;
+            }
+            else if (uint.TryParse(key, out var shortcutId)) shortcutTools[shortcutId] = name;
         }
-        return (tools, defaultTool);
+        return (tools, defaultTool, shortcutTools);
     }
 }
