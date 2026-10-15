@@ -14,7 +14,8 @@ namespace RHI.Platform.Linux.Deployment;
 /// <c>vulkan-1.dll</c> loads no Windows layers, so a game gets:
 /// <list type="bullet">
 /// <item>the Khronos loader (<c>vulkan-1.dll</c> from LunarG's Vulkan runtime) beside its executable, loaded instead of
-/// Wine's through a per-executable <c>vulkan-1=native,builtin</c> override (only this game sees the layer);</item>
+/// Wine's through a per-executable <c>vulkan-1=native,builtin</c> override (the registration is prefix-wide, but only a
+/// program loading a native Khronos loader sees it: this game, or rarely another game in a shared prefix that ships its own);</item>
 /// <item>the layer (<c>ReShade64.dll</c>/<c>ReShade32.dll</c> + its json manifest) in its own folder of the prefix's
 /// <c>C:\ProgramData\RHI-Linux\ReShadeVulkan\</c>, registered under
 /// <c>HKLM\Software[\Wow6432Node]\Khronos\Vulkan\ImplicitLayers</c> in <c>system.reg</c> (the loader never reads HKCU
