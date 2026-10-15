@@ -9,12 +9,71 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 
 ## In progress
 
-Not on `main` yet:
+Not on `main` yet (upstream features still to port):
 
-- RTX Encore as a managed component.
-- Games from other launchers inside Wine prefixes: EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io.
-- Turning installed add-ons off when a game switches to ReShade's No Addons channel.
-- A DLL-name choice for OptiScaler in its settings dialog.
+- ReShade for Vulkan games.
+- Following the newest DLSS and Streamline from the manifest automatically.
+- Update exclusions: keeping a component on a game, or everywhere, out of Update All.
+- ReShade presets and user INI templates applied on install.
+- Info dialogs for components and links on library cards.
+- Renaming a game in Edit game.
+
+## Wave 4 — 2026-10-15: store launchers, RTX Encore, No Addons add-ons, OptiScaler DLL name
+
+> [!NOTE]
+> A build older than this one does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No
+> Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering
+> choice, and the saved OptiScaler DLL name, for every game where that component is not installed. It cannot update or
+> remove RTX Encore: remove RTX Encore and switch No Addons games back to Stable or Nightly first if you want them
+> handled on the older build.
+
+Platforms & launchers
+
+- Games of the **EA app, Ubisoft Connect, Battle.net, the Rockstar Games Launcher and itch.io** installed inside a Wine,
+  Lutris or Heroic prefix get their own cards, found from the launcher's own install records (read only), wherever the
+  game is installed. Play starts the launcher with the game's own start argument.
+- Games of the **itch.io app for Linux** (native or Flatpak) are listed; Play opens the game in the itch app.
+- In Heroic, a game is handed only to its own store's sideloaded launcher; otherwise the card has no launch command
+  until you set one in Edit game.
+- HDR guidance for games started through a store launcher says the profile cannot be applied through it, instead of
+  asking for a wrapper setting the launcher does not have.
+- Xbox / Game Pass cards carry the name of the product that was installed, so **Control Ultimate Edition** is no longer
+  listed as "Control Standard Edition". A product whose name only adds "Standard Edition" keeps the game's plain
+  name.
+- The Settings tab is called **Xbox / Game Pass folders** and describes Xodus, a Linux Game Pass client still in
+  development, with a link to it. The card menu item is **Show in the app that installed it**.
+- On a system without Xodus or another Xbox installer app, nothing Xbox-related appears in the library, the scan
+  warnings, the log or the card menu.
+
+Features
+
+- **RTX Encore (Beta)** as a managed component: install, update and removal under a DLL name you choose (`version.dll`
+  by default), optionally with NVIDIA's Neural Rendering file (exact version 310.8.0, checked). The download is checked
+  against GitHub's digest and the release's SHA256SUMS. Its row appears only for 64-bit DirectX 11/12 or Vulkan games
+  that ship DLSS. Not yet confirmed on Linux: frame generation and Neural Rendering may work through Proton's DLSS;
+  Smooth Motion cannot. RTX Encore proxies are no longer mistaken for ReShade.
+- **ReShade No Addons** now turns the add-ons RHI installed **off** (renamed in place, nothing deleted) and back **on**
+  when the game goes back to Stable or Nightly. Add-ons that are off are not updated or swapped meanwhile, and Update
+  All counts them separately. Your own add-ons are never touched.
+- **OptiScaler DLL name:** choose the name OptiScaler is installed under in its ⚙ settings. Automatic picks `dxgi.dll`,
+  or the first free name while another RHI component uses it; names other RHI components hold are not offered, and the
+  install says so when it had to skip your saved choice.
+- **Nexus Mods page** in the library card menu for every game Nexus has a page for (no account needed), including
+  games whose store name Nexus spells differently, such as Skyrim Special Edition.
+
+Safety
+
+- The DLSS panel, Quick Apply, batch and Restore never replace a file owned by a Neural Rendering component (RTX
+  Encore, ShortFuse, DLSS5 Feeder, OptiScaler DLSS NR/F5) or the original it kept.
+- itch.io's database is read together with its write-ahead log, so it reads cleanly while itch is running.
+- A folder that holds many games, such as `~/Games`, is never taken as one game's folder, also when a record names
+  the place its symbolic link points to.
+
+Interface
+
+- OptiScaler's channel list is labelled "Channel: Stable, Nightly, DLSS NR or F5 DLSSNR", with a tooltip for each
+  channel and a line describing the one chosen.
+- The Xbox / Game Pass folders tab keeps `~/Games` on one line at small window sizes.
 
 ## Wave 3 — 2026-10-14: upstream RHI 2.8.6–2.8.7, Xbox / Game Pass, accounts
 

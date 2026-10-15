@@ -79,8 +79,10 @@ Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork
 * **never leaves a game half-modded.** Installs, updates and removals are journaled and roll back as a whole if anything fails, including after a crash or power cut.
 * **checks what it downloads.** Each download source has its own list of allowed hosts and a size limit, and published checksums are verified.
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
-* **follows upstream RHI to 2.8.7**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler and Control Ultimate Edition frame generation.
+* **follows upstream RHI to 2.8.7**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore and Control Ultimate Edition frame generation.
 * **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
+* **lists games from other store launchers inside Wine prefixes** (EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io) and from the itch.io app for Linux.
+* **adds RTX Encore** as a managed component (not yet confirmed on Linux).
 * **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts and a right-click menu on library cards.**
 * **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
 
@@ -122,7 +124,16 @@ RHI Linux supports Lutris configurations, including:
 * Wine prefix detection
 * active runner detection
 
-Games installed inside a launcher that runs through Lutris (Ubisoft Connect, Battle.net) get their own cards. They are modded in their real folder and started by opening their launcher through Lutris. Lutris entries with no real game folder (applications such as the launchers themselves) are not listed as games.
+Games installed inside a launcher that runs through Lutris (Ubisoft Connect, Battle.net, the EA app, Rockstar, itch.io) get their own cards. They are modded in their real folder and started through their own launcher. Lutris entries with no real game folder (applications such as the launchers themselves) are not listed as games.
+
+## Other store launchers
+
+Games installed by the **EA app, Ubisoft Connect, Battle.net, the Rockstar Games Launcher or itch.io** inside a Wine, Lutris or Heroic prefix are found from that launcher's own install records, so each gets its own card even when it is installed outside the launcher's default folder. RHI only reads those records; it never changes them.
+
+* **Play** starts the launcher with that game's own start argument, so the game starts the way that launcher normally starts it. HDR launch profiles cannot be applied through a launcher; RHI says so instead of pointing you at a wrapper setting the launcher does not have.
+* In Heroic, a game is handed only to its own store's launcher when that launcher is installed as a sideloaded app; otherwise the card has no launch command until you set one in **Edit game**.
+* Games installed by the **itch.io app for Linux** (native or Flatpak) are listed too; Play opens the game's page in the itch app, where you start it.
+* If a launcher's records cannot be read, the scan says so and the games RHI can find by their folders are still listed.
 
 ## Standalone Wine
 
@@ -132,11 +143,12 @@ The game executable and Wine prefix can be configured independently when necessa
 
 ## Xbox / Game Pass
 
-Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-format installs and from a configurable list of Xbox game folders in **Settings**, and lists them straight away; unfinished downloads stay hidden until they complete. RHI is ready to list games installed by [Xodus](https://github.com/xodus-gaming/xodus), a Linux Game Pass client that is still in development.
+Linux has no official Xbox app. RHI finds Xbox / Game Pass games from Xodus-format installs and from the folders listed under **Settings → Xbox / Game Pass folders**, and lists them straight away; unfinished downloads stay hidden until they complete. Each card carries the name of the product that was installed, so an edition shows as itself (**Control Ultimate Edition**, not the shared "Control Standard Edition" package). RHI is ready to list games installed by [Xodus](https://github.com/xodus-gaming/xodus), a Linux Game Pass client that is still in development.
 
-* **Play** hands the game to the app that installed it, so that app's normal launch path (licensing, saves and cloud sync) applies. RHI never starts the game's executable itself. If RHI cannot find that app, Play is disabled and says why. The card's right-click menu can also show the game in that app.
+* **Play** hands the game to the app that installed it, so that app's normal launch path (licensing, saves and cloud sync) applies. RHI never starts the game's executable itself. If RHI cannot find that app, Play is disabled and says why. The card's right-click menu has **Show in the app that installed it**.
 * Game Pass executables are encrypted on disk. RHI reads the game's bitness from its package instead, but it cannot always see which graphics API the game uses; if a component refuses to install for that reason, set **Force API** for the game.
 * RHI changes nothing in a game while the app that installed it is still downloading or updating it, and never touches the encrypted game files, the package files or the files that app manages in the game's prefix.
+* On a system without Xodus or another Xbox installer app, nothing Xbox-related appears (no cards, warnings or menu items) apart from the **Xbox / Game Pass folders** tab in Settings, which describes Xodus and links to it.
 
 ---
 
@@ -185,6 +197,9 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 
 > [!WARNING]
 > Before going back to a build from before 14 October 2026, **remove OptiScaler F5 DLSSNR from every game that has it and set every pinned OptiScaler Nightly game back to "Latest (auto-update)"**. An older build reads F5 as OptiScaler Stable and ignores nightly pins, so its next update would replace them. Reinstall them once you are back on the current build. Details: [`UPSTREAM.md`](UPSTREAM.md#rolling-back-to-a-build-older-than-wave-3-f5-dlssnr-nightly-pins).
+
+> [!NOTE]
+> A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. It also cannot update or remove RTX Encore, so remove RTX Encore and switch No Addons games back to ReShade Stable or Nightly first if you want them handled while on the older build.
 
 ## Runtime requirements
 
@@ -243,7 +258,8 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## Platforms & launchers
 
-* **Xbox / Game Pass** games, as described under [Xbox / Game Pass](#xbox--game-pass).
+* **Xbox / Game Pass** games, as described under [Xbox / Game Pass](#xbox--game-pass). Cards are named after the product that was installed (**Control Ultimate Edition**).
+* **Other store launchers:** games of the EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io inside Wine, Lutris and Heroic prefixes, and of the itch.io app for Linux, as described under [Other store launchers](#other-store-launchers).
 * **HDR launch guidance.** For games started by Steam, Heroic or Lutris, RHI does not wrap the store's launch. It tells you exactly where to paste the HDR settings in that launcher (Steam launch options, Heroic's Advanced settings, Lutris's command prefix). Games started directly with a Proton build's `wine` are told that Proton's HDR variables do not apply to them.
 * Wrapper commands (`gamemoderun`, `mangohud`, `gamescope … --` and similar) are seen through, so a launch is always recognised as the store's.
 * A game's error output goes to a capped log file under `~/.local/state/rhi-linux/logs/launch/`; if the game exits at once, the last line is shown.
@@ -255,15 +271,16 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## Features
 
-* **ReShade:** choose the DLL name ReShade is installed under; a **No Addons** channel (the ReShade build without add-on support); falls back to a cached copy when reshade.me is down.
-* **OptiScaler:** the **F5 DLSSNR** channel; pin a game to a **Nightly build**; **GPU type** INI templates (NVIDIA / AMD / Intel) you can edit once for every later install; **OptiPatcher** is installed and updated with OptiScaler; Force Reflex and game Reflex marker settings; the frame-generation `nvngx_dlssg.dll` joins the Streamline stack.
+* **ReShade:** choose the DLL name ReShade is installed under; a **No Addons** channel (the ReShade build without add-on support). Switching a game to No Addons turns the add-ons RHI installed off (they stay in the game folder and are not updated meanwhile); switching back to Stable or Nightly turns them on again. Falls back to a cached copy when reshade.me is down.
+* **OptiScaler:** choose the **DLL name** it is installed under (Automatic picks `dxgi.dll`, or the first free name when another RHI component already uses it); the **F5 DLSSNR** channel, with the channel list labelled "Channel: Stable, Nightly, DLSS NR or F5 DLSSNR" and a tooltip for each; pin a game to a **Nightly build**; **GPU type** INI templates (NVIDIA / AMD / Intel) you can edit once for every later install; **OptiPatcher** is installed and updated with OptiScaler; Force Reflex and game Reflex marker settings; the frame-generation `nvngx_dlssg.dll` joins the Streamline stack.
+* **RTX Encore (Beta):** installed, updated and removed like other components, under a DLL name you choose (`version.dll` by default), optionally with NVIDIA's Neural Rendering file. Its row appears only for 64-bit DirectX 11/12 or Vulkan games that ship DLSS. Not yet confirmed on Linux: frame generation and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot.
 * **NR Cost Scaler:** runs Neural Rendering at reduced scale on top of the Neural Rendering method you installed; removing it puts the original file back exactly.
 * **Control Ultimate Edition:** the RenoDX install can also set up OptiScaler frame generation (pinned to the nightly build upstream recommends) and the "Using HDR?" choice, and the dialog lists every required in-game setting.
 * **RE Framework:** a button to delete its `_storage_` cache folder.
 * **Shader profiles:** save, load, rename, export and import named shader-pack selections.
 * **Accounts:** **Settings → Accounts & updates** has **Connect Nexus account** (API key), handling of Nexus "Mod Manager Download" links (each one confirmed before anything is downloaded), and a GitHub token field that checks the token before saving it.
 * **Update notices:** at start-up RHI checks this fork's releases and tells you when a newer one exists. It never downloads or installs anything itself.
-* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), the game's Nexus Mods page where it is known and, for Xbox games, showing the game in the app that installed it.
+* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), **Nexus Mods page** for every game Nexus has a page for (no account needed) and, for Xbox games, **Show in the app that installed it**.
 * **Edit game** can change the launch command.
 * **Ported from upstream RHI 2.7.6–2.8.7:** update history, the Available HDR mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, and manifest DLSS/Streamline folder overrides.
 
@@ -276,12 +293,14 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## In progress
 
-Not on `main` yet; being worked on now:
+Not on `main` yet; being worked on now (upstream features still to port):
 
-* RTX Encore as a managed component.
-* Games from other launchers inside Wine prefixes: EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io.
-* Turning installed add-ons off when a game switches to ReShade's No Addons channel.
-* A DLL-name choice for OptiScaler in its settings dialog.
+* ReShade for **Vulkan** games.
+* Following the **newest DLSS** and Streamline from the manifest automatically.
+* **Update exclusions:** keep a component on a game, or everywhere, out of Update All.
+* ReShade **presets** and user **INI templates** applied on install.
+* **Info dialogs** for components and links on library cards.
+* **Renaming a game** in Edit game.
 
 ---
 

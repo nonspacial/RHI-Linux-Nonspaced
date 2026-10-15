@@ -15,13 +15,13 @@ on the final link after redirects; it also caps the size. Cached payloads are re
   (`VerifiedDownload.Record`): `Download.Sha256` and `Download.Integrity` (`published-digest` / `recorded-only`) for the
   main payload, `Download.<part>.Sha256` / `Download.<part>.Integrity` for each further one (Luma and the Feeder:
   `dgVoodoo`; the Feeder: `Consumer` (RenoDX DLSS5), `Lumenite`, `ReShadeHeaders`, `FeederShader` (raw fallback);
-  RTX 20 FG Unlock: `Ini`; OptiScaler's FG stack: `DlssEnabler`; OptiScaler's OptiPatcher: `OptiPatcher`). The SHA-256 is that of the verified cache entry the
+  RTX 20 FG Unlock: `Ini`; OptiScaler's FG stack: `DlssEnabler`; OptiScaler's OptiPatcher: `OptiPatcher`; RTX Encore: `NeuralRendering`). The SHA-256 is that of the verified cache entry the
   deployment came from: the downloaded file, or, where RHI keeps only the file it extracted from the download
   (UAL, ShortFuse, DLSS Enabler, Universal MFG), that file. An update rewrites the keys; a local package (Luma, Deep
   Fried Chicken) is not a download and has none. Streamline and `nvngx_*` DLLs from the DLSS manifest are outside
   these policies and are not named;
-- is **fail-closed** only where the fork already was and the publisher always ships an authority: Universal MFG
-  refuses a release with neither a GitHub digest nor `SHA256SUMS.txt`, and checks both when present.
+- is **fail-closed** only where the fork already was and the publisher always ships an authority: Universal MFG and
+  RTX Encore refuse a release with neither a GitHub digest nor a SHA256SUMS file, and check both when present.
 
 | Source | Policy (`DownloadSources.*`) | Hosts | Digest authority | Without one |
 |---|---|---|---|---|
@@ -36,6 +36,8 @@ on the final link after redirects; it also caps the size. Cached payloads are re
 | Ultimate ASI Loader | `UltimateAsiLoader` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | ShortFuse, DLSS Enabler, RenoDX DLSS5 consumer (RankFTW/rhi-repo) | `RhiRepository` | GitHub release hosts | GitHub asset `digest` | fail-open |
 | Universal MFG (RTX40MFG-Unlock) | `UniversalMfg` | GitHub release hosts | GitHub asset `digest` and/or `SHA256SUMS.txt` | **fail-closed** (release refused) |
+| RTX Encore (#158) | `RtxEncore` | GitHub release hosts, 512 MiB | GitHub asset `digest` and/or `SHA256SUMS`; the DLL must carry RTX Encore's version resource. Its optional `nvngx_dlssnr.dll` (record part `NeuralRendering`) comes from the DLSS manifest and must match a pinned SHA-256 (NVIDIA 310.8.0) | **fail-closed** (release refused) |
+| Nexus Mods game list (#174, card menu's Nexus page) | `NexusGameList` | data.nexusmods.com, 16 MiB | none (metadata, parsed before use; 24 h cache, last good copy kept) | n/a (nothing is installed from it) |
 | DLSSG 20/30 unlock | `Dlssg2030` | raw.githubusercontent.com | git blob id from the contents API at the resolved commit (#41) | refused if GitHub reports no blob id |
 | dgVoodoo2 | `DgVoodoo` | GitHub release hosts | GitHub asset `digest`; manifest links carry none | fail-open |
 | DLSS5 Feeder (release zip, tagged shader, branch archives) | `Dlss5Feeder` | GitHub release hosts, raw.githubusercontent.com, codeload.github.com | GitHub asset `digest` for the release zip; branch archives have none | fail-open; branch archives are fetched per install |
