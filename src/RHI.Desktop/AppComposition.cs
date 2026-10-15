@@ -202,6 +202,7 @@ internal sealed class AppComposition
         reshade.IniDefaults = game => ReShadeGlobalSettingsApplier.InstallDefaults(settingsStore.Load(), game, userIniTemplates);
         relimiter.IniTemplates = userIniTemplates;
         displayCommander.IniTemplates = userIniTemplates;
+        renodx.PeakNits = () => PeakNitsSettings.From(settingsStore.Load()); // #182: peak brightness into RenoDX presets at install
         // w5/shell-launch rows
         // w5/reshade-core rows
         var managedComponents = new LinuxManagedComponentService(
@@ -243,6 +244,7 @@ internal sealed class AppComposition
         // w5/ini-presets rows
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
         managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
+        managedComponents.RenoDxPeakNits = new RenoDxPeakNits(records, journal, managedComponents.IniWriteRefusal); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows
         return new AppComposition

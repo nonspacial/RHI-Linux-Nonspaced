@@ -552,6 +552,8 @@ public sealed partial class MainWindow : Window
         reshadeTab.Children.Add(iniRows.Control); // #181
         var relimiterRows = new ReLimiterSettingsRows(settings, vm.IniPresets, line => status.Text = line); // #188
         managerTab.Children.Add(relimiterRows.Control); // #188
+        var peakRows = new PeakBrightnessSettingsRows(settings, vm.IniPresets, line => status.Text = line); // #182
+        reshadeTab.Children.Add(peakRows.Control); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows
 
@@ -618,6 +620,7 @@ public sealed partial class MainWindow : Window
             // w5/ini-presets rows
             iniRows.Reset(defaults); // #181
             relimiterRows.Reset(defaults); // #188
+            peakRows.Reset(defaults); // #182
             // w5/shell-launch rows
             // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
@@ -700,6 +703,9 @@ public sealed partial class MainWindow : Window
             ReLimiterSharedPresets = relimiterRows.SharedPresets, // #188
             ReLimiterDlssHooks = relimiterRows.DlssHooks, // #188
             ReLimiterTargetFps = relimiterRows.TargetFps, // #188
+            PeakNits = peakRows.Nits, // #182
+            PeakNitsEnabled = peakRows.Enabled, // #182
+            PeakNitsPresets = peakRows.Presets, // #182
             // w5/shell-launch rows
             // w5/reshade-core rows
         };
@@ -1239,6 +1245,7 @@ public sealed partial class MainWindow : Window
         }
 
         var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        panel.Children.Add(RenoDxPeakPanel.Create(vm.IniPresets, line => message.Text = line)); // w5/ini-presets hook (#182)
 
         if (!snapshot.HasRenoDxSection)
         {

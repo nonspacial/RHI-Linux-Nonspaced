@@ -338,6 +338,9 @@ public sealed class WaveOneMessageLocalizationTests
         // #189
         yield return LumaSettingsService.NotManagedPrefix + "Celeste";
         yield return LumaSettingsService.NoEngineIniPrefix + "Celeste";
+        // #182
+        yield return RenoDxPeakNits.NotManagedPrefix + "Celeste";
+        yield return RenoDxPeakNits.NoReShadeIniPrefix + "Celeste";
         // w5/shell-launch rows
         // w5/reshade-core rows
     }

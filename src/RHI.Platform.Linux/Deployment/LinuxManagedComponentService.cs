@@ -2455,6 +2455,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w5/ini-presets hook (#189): the Luma ⚙ settings service (journaled; set by the app's composition).
     public LumaSettingsService? LumaSettings { get; set; }
 
+    // w5/ini-presets hook (#182): RenoDX peak brightness (journaled; set by the app's composition).
+    public RenoDxPeakNits? RenoDxPeakNits { get; set; }
+
 }
 
 /// <summary>Outcome of changing a Neural Rendering add-on pin (see <see cref="LinuxManagedComponentService.PlanNeuralPinChange"/>).</summary>

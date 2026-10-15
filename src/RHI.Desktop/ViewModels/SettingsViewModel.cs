@@ -83,6 +83,9 @@ public sealed class SettingsViewModel : PanelViewModel
             ReLimiterSharedPresets = Host.Settings.ReLimiterSharedPresets, // #188
             ReLimiterDlssHooks = Host.Settings.ReLimiterDlssHooks, // #188
             ReLimiterTargetFps = Host.Settings.ReLimiterTargetFps, // #188
+            PeakNits = Host.Settings.PeakNits, // #182
+            PeakNitsEnabled = Host.Settings.PeakNitsEnabled, // #182
+            PeakNitsPresets = [.. Host.Settings.PeakNitsPresets], // #182
             // w5/shell-launch rows
             // w5/reshade-core rows
         };

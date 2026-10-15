@@ -1228,6 +1228,9 @@ public static class UiLocalizationService
         // #189 Luma settings.
         (RHI.Platform.Linux.Deployment.LumaSettingsService.NotManagedPrefix, "As configurações do Luma precisam do Luma instalado pelo RHI: "),
         (RHI.Platform.Linux.Deployment.LumaSettingsService.NoEngineIniPrefix, "Nenhum local do Engine.ini foi encontrado para este jogo, então o TAA não foi alterado: "),
+        // #182 peak brightness.
+        (RHI.Platform.Linux.Deployment.RenoDxPeakNits.NotManagedPrefix, "O brilho máximo vai para as predefinições do RenoDX; instale o RenoDX com o RHI primeiro: "),
+        (RHI.Platform.Linux.Deployment.RenoDxPeakNits.NoReShadeIniPrefix, "Este jogo ainda não tem ReShade.ini; inicie-o uma vez com o RenoDX para que ele grave suas predefinições: "),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

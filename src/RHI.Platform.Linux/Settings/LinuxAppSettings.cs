@@ -49,6 +49,10 @@ public sealed class LinuxAppSettings
     public bool ReLimiterSharedPresets { get; set; }
     public bool ReLimiterDlssHooks { get; set; }
     public int ReLimiterTargetFps { get; set; }
+    // #182: peak brightness written into RenoDX presets (upstream "HDR & Peak Brightness"; 0 = not set; on; presets 1-3).
+    public int PeakNits { get; set; }
+    public bool PeakNitsEnabled { get; set; } = true;
+    public List<int> PeakNitsPresets { get; set; } = [1, 2, 3];
     // w5/shell-launch rows
     // w5/reshade-core rows
 
@@ -91,6 +95,8 @@ public sealed class LinuxAppSettings
         // w5/ini-presets rows
         ReLimiterOsdHotkey = RHI.Platform.Linux.Deployment.ReLimiterIniEditor.NormalizeHotkey(ReLimiterOsdHotkey); // #188
         ReLimiterTargetFps = RHI.Platform.Linux.Deployment.ReLimiterIniEditor.NormalizeTargetFps(ReLimiterTargetFps); // #188
+        if (PeakNits is < 1 or > RHI.Platform.Linux.Deployment.RenoDxPeakNits.MaxNits) PeakNits = 0; // #182
+        PeakNitsPresets = (PeakNitsPresets ?? [1, 2, 3]).Where(n => n is >= 1 and <= 3).Distinct().Order().ToList(); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows
         return this;

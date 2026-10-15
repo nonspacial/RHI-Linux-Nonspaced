@@ -340,6 +340,71 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         return Report(UiLocalizationService.Text(on ? "Ini.LumaTaaOn" : stillOn ? "Ini.LumaTaaOffKept" : "Ini.LumaTaaOff"));
     }
 
+    // ---- #182 peak brightness and the RenoDX ⚙ -------------------------------------------------------
+
+    internal RenoDxPeakNits PeakNits => managed.RenoDxPeakNits ?? new RenoDxPeakNits(records, null, managed.IniWriteRefusal);
+
+    /// <summary>Connected monitors with a known HDR peak (EDID, or the value set in KDE's display settings).</summary>
+    public IReadOnlyList<RHI.Platform.Linux.Hdr.DisplayPeak> DisplayPeaks() => RHI.Platform.Linux.Hdr.DisplayPeakBrightness.Read();
+
+    /// <summary>"Apply to all games": the global peak brightness into every game whose RenoDX RHI installed.</summary>
+    public Task<string> ApplyPeakNitsToAllAsync(LinuxAppSettings settings)
+    {
+        var peak = PeakNitsSettings.From(settings);
+        if (!peak.Applies) return Task.FromResult(Report(UiLocalizationService.Text("Ini.PeakNotSet")));
+        return RunBatchAsync("renodx-peak-nits-all", UiLocalizationService.Format("Ini.PeakWhat", peak.Nits),
+            (_, games, token) => PeakNits.ApplyToAllAsync(games, peak, token));
+    }
+
+    /// <summary>Whether the selected game has a ReShade.ini for RenoDX's presets (upstream shows "Set Maximum Nits" only then).</summary>
+    public bool GameHasReShadeIni()
+        => vm.SelectedGame?.BinaryDirectory is { } bin && RenoDxPeakNits.HasReShadeIni(bin);
+
+    /// <summary>The selected game's RenoDX peak brightness as its ReShade.ini holds it.</summary>
+    public int? GameNits() => vm.SelectedGame?.BinaryDirectory is { } bin ? RenoDxPeakNits.CurrentNits(bin) : null;
+
+    /// <summary>The RenoDX ⚙ "Set maximum nits" for the selected game.</summary>
+    public async Task<string> SetGameNitsAsync(int nits)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        if (nits is < 1 or > RenoDxPeakNits.MaxNits) return Report(UiLocalizationService.Text("Ini.PeakInvalid"));
+        using var op = vm.Operations.TryBegin("renodx-peak-nits", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await PeakNits.SetForGameAsync(game, nits, op.Token);
+        return Report(result.Success ? UiLocalizationService.Format("Ini.PeakGameSet", nits) : UiLocalizationService.Present(result.Message));
+    }
+
+    /// <summary>Whether the RenoDX ⚙ offers the UE-Extended switch for the selected game.</summary>
+    public bool OffersUeExtended() => vm.SelectedGame is { } game && RenoDxDeploymentService.OffersUeExtendedSwitch(game, records.Find(game, ManagedComponentKind.RenoDX));
+
+    /// <summary>Whether the selected game's RenoDX is the UE-Extended build.</summary>
+    public bool UeExtendedInstalled() => vm.SelectedGame is { } game && RenoDxDeploymentService.IsUeExtendedInstalled(records.Find(game, ManagedComponentKind.RenoDX));
+
+    /// <summary>
+    /// The UE-Extended switch (upstream <c>ToggleUeExtended</c>): the choice is kept on the RenoDX record and RenoDX is
+    /// reinstalled through the normal update path; a failed reinstall puts the earlier choice back.
+    /// </summary>
+    public async Task<string> SetUeExtendedAsync(bool on)
+    {
+        var (_, shown) = await vm.RunComponentUpdateAsync(async (game, token) =>
+        {
+            if (records.Find(game, ManagedComponentKind.RenoDX) is not { } record)
+                return ComponentOperationResult.Fail(RenoDxPeakNits.NotManagedPrefix + game.Name);
+            var previous = record.Metadata.GetValueOrDefault(RenoDxDeploymentService.UeExtendedMetadataKey);
+            record.Metadata[RenoDxDeploymentService.UeExtendedMetadataKey] = on ? "on" : "off";
+            records.Upsert(record);
+            var result = await managed.UpdateManagedAsync(game, ManagedComponentKind.RenoDX, vm.Session.CachedFiles(game) ?? [], token);
+            if (!result.Success && records.Find(game, ManagedComponentKind.RenoDX) is { } kept)
+            {
+                if (previous is null) kept.Metadata.Remove(RenoDxDeploymentService.UeExtendedMetadataKey);
+                else kept.Metadata[RenoDxDeploymentService.UeExtendedMetadataKey] = previous;
+                records.Upsert(kept);
+            }
+            return result;
+        });
+        return shown;
+    }
+
     /// <summary>The status line for a batch, from its counts.</summary>
     public static string BatchSummary(string what, IniBatchResult result)
         => result.Total == 0 ? UiLocalizationService.Format("Ini.BatchNone", what)
