@@ -85,10 +85,11 @@ public sealed class LibraryViewModel
     /// Shows the games matching <paramref name="mode"/> and <paramref name="search"/>, sorted by name, by removing and
     /// inserting cards in place (never clearing the list).
     /// </summary>
-    public void ApplyFilter(GameLibraryFilterMode mode, string? search, Func<DetectedGame, GameLibraryFilterFacts>? facts)
+    /// <param name="customQuery">The active saved custom filter's search (Refs #193); null = none.</param>
+    public void ApplyFilter(GameLibraryFilterMode mode, string? search, Func<DetectedGame, GameLibraryFilterFacts>? facts, string? customQuery = null)
     {
         var wanted = _all
-            .Where(game => GameLibraryFilter.Matches(game, mode, search, facts?.Invoke(game) ?? default))
+            .Where(game => GameLibraryFilter.Matches(game, mode, search, facts?.Invoke(game) ?? default, customQuery))
             .OrderBy(game => game.DisplayName(), StringComparer.CurrentCultureIgnoreCase)
             .Select(game => _rows[game])
             .ToList();

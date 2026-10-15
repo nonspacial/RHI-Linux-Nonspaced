@@ -894,6 +894,19 @@ internal static class UiStrings
         ("Shell.UserX64", " · x64 escolhido em Editar jogo", " · x64 set in Edit game"),
         ("Shell.UserX86", " · x86 escolhido em Editar jogo", " · x86 set in Edit game"),
         ("Shell.RemoveComponentsBeforeBitness", "Remova primeiro os componentes gerenciados pelo RHI antes de mudar a arquitetura: os arquivos deles foram escolhidos para a arquitetura atual.", "Remove RHI-managed components before changing the bitness: their files were picked for the current one."),
+        // #193 saved custom filters.
+        ("Shell.SaveAsFilter", "+ Salvar como filtro", "+ Save as filter"),
+        ("Shell.SaveAsFilterTip", "Salva a busca atual como um filtro com nome, que aparece aqui como um botão.", "Saves the current search as a named filter, shown here as a button."),
+        ("Shell.SaveFilterTitle", "Salvar filtro", "Save filter"),
+        ("Shell.SaveFilterPrompt", "Salvar a busca \"{0}\" como um filtro com o nome:", "Save the search \"{0}\" as a filter named:"),
+        ("Shell.CustomFilterName", "Nome do filtro", "Filter name"),
+        ("Shell.CustomFilterNameEmpty", "Digite um nome para o filtro.", "Enter a name for the filter."),
+        ("Shell.CustomFilterNoSearch", "Digite uma busca antes de salvá-la como filtro.", "Type a search before saving it as a filter."),
+        ("Shell.CustomFilterNameExists", "Já existe um filtro com o nome \"{0}\".", "A filter named \"{0}\" already exists."),
+        ("Shell.CustomFilterSaved", "Filtro \"{0}\" salvo e ativado.", "Filter \"{0}\" saved and turned on."),
+        ("Shell.CustomFilterDeleted", "Filtro \"{0}\" excluído.", "Filter \"{0}\" deleted."),
+        ("Shell.CustomFilterTip", "Busca: {0}. Clique para ligar ou desligar; clique com o botão direito para excluir.", "Search: {0}. Click to turn on or off; right-click to delete."),
+        ("Shell.DeleteFilter", "Excluir filtro", "Delete filter"),
         ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
     ];

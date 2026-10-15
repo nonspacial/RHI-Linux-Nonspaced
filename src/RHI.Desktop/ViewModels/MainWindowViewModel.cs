@@ -139,6 +139,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
+    public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
@@ -163,7 +164,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     private static string LibraryFilterDisplay(string value) => OptionLists.LibraryFilter.Display(value);
 
-    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}";
+    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}"
+                                   + (CustomFilters.ActiveName is { } custom ? $" · {custom}" : ""); // #193
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
     public string ViewToggleText => IsCompactView ? UiLocalizationService.Text("Ui.ViewDetail") : UiLocalizationService.Text("Ui.ViewCompact");
     public bool TrayIconEnabled => _settings.TrayIconEnabled;
@@ -1876,7 +1878,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var selected = SelectedGame;
         var mode = ParseLibraryFilterMode(LibraryFilterMode);
         var needsManagedFacts = mode is GameLibraryFilterMode.Installed or GameLibraryFilterMode.RenoDX or GameLibraryFilterMode.Luma;
-        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null);
+        CustomFilters.Sync(_libraryState); // #193: the saved filters' chips, and the active one's search
+        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null, CustomFilters.ActiveQuery);
         OnPropertyChanged(nameof(GameCountText));
         if (selected is not null && _library.IsShown(selected))
         {

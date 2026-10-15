@@ -105,6 +105,27 @@ public sealed class LinuxGameEditOverride
     }
 }
 
+/// <summary>A saved custom filter (Refs #193): a name and the search text it applies.</summary>
+public sealed class LinuxCustomFilter
+{
+    public string Name { get; set; } = "";
+    public string Query { get; set; } = "";
+
+    /// <summary>
+    /// Trimmed; entries without a name or a query dropped; a name already used (any case) keeps its first entry, as
+    /// upstream refuses duplicate names. Null when nothing is left.
+    /// </summary>
+    public static List<LinuxCustomFilter>? NormalizeList(IEnumerable<LinuxCustomFilter?>? filters)
+    {
+        var list = (filters ?? [])
+            .Where(filter => filter is not null && !string.IsNullOrWhiteSpace(filter.Name) && !string.IsNullOrWhiteSpace(filter.Query))
+            .Select(filter => new LinuxCustomFilter { Name = filter!.Name.Trim(), Query = filter.Query.Trim() })
+            .DistinctBy(filter => filter.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return list.Count == 0 ? null : list;
+    }
+}
+
 public sealed class LinuxGameLibraryState
 {
     public HashSet<string> FavouriteGames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -120,6 +141,13 @@ public sealed class LinuxGameLibraryState
     /// <summary>Per-game HDR launch orchestration. This stores only RHI launch preferences, never runner binaries/configuration.</summary>
     public Dictionary<string, LinuxHdrGameProfile> HdrProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string FilterMode { get; set; } = "All Games";
+
+    /// <summary>
+    /// Saved custom filters (Refs #193, upstream <c>CustomFilter</c>): a named search applied on top of the filter tab and
+    /// the search box. Null when there are none, so a library file without any keeps the shape older builds wrote.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LinuxCustomFilter>? CustomFilters { get; set; }
 
     public LinuxGameLibraryState Normalize()
     {
@@ -153,6 +181,7 @@ public sealed class LinuxGameLibraryState
             .Select(group => group.Last())
             .ToList();
         FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(FilterMode);
+        CustomFilters = LinuxCustomFilter.NormalizeList(CustomFilters);
         return this;
     }
 

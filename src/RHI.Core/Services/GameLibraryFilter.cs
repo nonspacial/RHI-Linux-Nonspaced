@@ -20,14 +20,20 @@ public readonly record struct GameLibraryFilterFacts(bool Installed, bool RenoDx
 /// <summary>Pure filtering/search contract shared by the Linux UI and regression tests.</summary>
 public static class GameLibraryFilter
 {
+    /// <param name="customQuery">
+    /// The active saved custom filter's search (Refs #193, upstream <c>CustomFilter</c>): a second search pass on top of
+    /// the search box and the filter tab, independent of both. Null or blank = none.
+    /// </param>
     public static bool Matches(
         DetectedGame game,
         GameLibraryFilterMode mode,
         string? search,
-        GameLibraryFilterFacts facts)
+        GameLibraryFilterFacts facts,
+        string? customQuery = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         if (!MatchesSearch(game, search)) return false;
+        if (!MatchesSearch(game, customQuery)) return false;
 
         if (mode == GameLibraryFilterMode.Hidden) return game.IsHidden;
         if (mode == GameLibraryFilterMode.Favourites) return game.IsFavourite; // upstream intentionally includes hidden favourites
