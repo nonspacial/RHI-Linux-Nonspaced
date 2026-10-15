@@ -10,8 +10,9 @@ namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
 /// The one writer of a Wine prefix's registry hive files (#24, DEP-05). Every edit RHI makes to
-/// <c>user.reg</c> goes through <see cref="EditUserHive{T}"/>; <c>system.reg</c> has no RHI writer, and one added
-/// later must come here too. An edit:
+/// <c>user.reg</c> (HKEY_CURRENT_USER) goes through <see cref="EditUserHive{T}"/>, every edit of <c>system.reg</c>
+/// (HKEY_LOCAL_MACHINE: the Vulkan implicit-layer value, #92) through <see cref="EditSystemHive{T}"/>; both follow the
+/// same rules, each hive with its own lock file and backups. An edit:
 /// <list type="number">
 /// <item>is refused while a wineserver runs for the prefix: wineserver holds the registry in memory and rewrites the
 /// hive when it flushes or exits, so an edit made meanwhile is lost (the record would then claim a value that is gone)
@@ -31,6 +32,8 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed class WineRegistryEditor
 {
     public const string UserHiveName = "user.reg";
+    /// <summary>HKEY_LOCAL_MACHINE of the prefix (#92: the Khronos loader reads implicit layers only from there under Wine).</summary>
+    public const string SystemHiveName = "system.reg";
     public const string LockSuffix = ".rhi-lock";
     public const string BackupMarker = ".rhi-backup-";
     public const int BackupsKept = 3;
@@ -42,6 +45,8 @@ public sealed class WineRegistryEditor
         "Another RHI task is changing this prefix's Wine registry, so RHI changed nothing. Try again in a moment. Prefix: ";
     public const string MissingHiveMessage =
         "Wine/Proton user.reg was not found. Start the game once so the prefix is initialized.";
+    public const string MissingSystemHiveMessage =
+        "Wine/Proton system.reg was not found. Start the game once so the prefix is initialized.";
 
     /// <summary>How long an edit waits for another RHI task or process to finish with the same prefix.</summary>
     public static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(15);
@@ -87,6 +92,11 @@ public sealed class WineRegistryEditor
     public static bool HasUserHive(string? prefixPath)
         => !string.IsNullOrWhiteSpace(prefixPath) && File.Exists(UserHivePath(prefixPath));
 
+    public static string SystemHivePath(string prefixPath) => Path.Combine(prefixPath, SystemHiveName);
+
+    public static bool HasSystemHive(string? prefixPath)
+        => !string.IsNullOrWhiteSpace(prefixPath) && File.Exists(SystemHivePath(prefixPath));
+
     public bool IsPrefixInUse(string prefixPath) => _isPrefixInUse(prefixPath);
 
     /// <summary>
@@ -117,6 +127,9 @@ public sealed class WineRegistryEditor
     /// <summary>The hive's text, byte-exact (no lock: a read never changes anything).</summary>
     public static string ReadUserHive(string prefixPath) => ByteExact.GetString(File.ReadAllBytes(UserHivePath(prefixPath)));
 
+    /// <summary><c>system.reg</c>'s text, byte-exact (no lock).</summary>
+    public static string ReadSystemHive(string prefixPath) => ByteExact.GetString(File.ReadAllBytes(SystemHivePath(prefixPath)));
+
     /// <summary>
     /// Read-modify-write of <c>user.reg</c> under the prefix's lock. <paramref name="edit"/> gets the current text and
     /// returns the new text (null or unchanged: nothing is written) and a result. Throws
@@ -124,9 +137,19 @@ public sealed class WineRegistryEditor
     /// <see cref="FileNotFoundException"/> when the prefix has no <c>user.reg</c>.
     /// </summary>
     public T EditUserHive<T>(string prefixPath, Func<string, (string? Text, T Result)> edit)
+        => EditHive(prefixPath, UserHivePath(prefixPath), MissingHiveMessage, edit);
+
+    /// <summary>
+    /// <see cref="EditUserHive{T}"/> for <c>system.reg</c> (HKEY_LOCAL_MACHINE), under the same rules: refused while Wine
+    /// runs in the prefix, the prefix's gate plus a flock on <c>system.reg.rhi-lock</c>, byte-exact, backed up to
+    /// <c>system.reg.rhi-backup-&lt;utc&gt;</c>, atomic replace. <see cref="FileNotFoundException"/> without a <c>system.reg</c>.
+    /// </summary>
+    public T EditSystemHive<T>(string prefixPath, Func<string, (string? Text, T Result)> edit)
+        => EditHive(prefixPath, SystemHivePath(prefixPath), MissingSystemHiveMessage, edit);
+
+    private T EditHive<T>(string prefixPath, string hive, string missingMessage, Func<string, (string? Text, T Result)> edit)
     {
-        var hive = UserHivePath(prefixPath);
-        if (!File.Exists(hive)) throw new FileNotFoundException(MissingHiveMessage, hive); // no lock file in an uninitialised prefix
+        if (!File.Exists(hive)) throw new FileNotFoundException(missingMessage, hive); // no lock file in an uninitialised prefix
         var gate = Gates.GetOrAdd(PathIdentity.Canonicalize(prefixPath), _ => new SemaphoreSlim(1, 1));
         var lockTimeout = LockTimeoutOnThisThread;
         var deadline = DateTime.UtcNow + lockTimeout;
@@ -138,7 +161,7 @@ public sealed class WineRegistryEditor
             if (_isPrefixInUse(prefixPath))
                 throw new WineRegistryEditRefusedException(PrefixInUseRefusalPrefix + prefixPath, inUse: true);
             InsideLockForTesting?.Invoke(prefixPath);
-            if (!File.Exists(hive)) throw new FileNotFoundException(MissingHiveMessage, hive);
+            if (!File.Exists(hive)) throw new FileNotFoundException(missingMessage, hive);
 
             var before = File.ReadAllBytes(hive);
             var text = ByteExact.GetString(before);
@@ -245,7 +268,7 @@ public sealed class WineRegistryEditor
     }
 
     /// <summary>
-    /// RHI's backups of <paramref name="hive"/>, oldest first: only names RHI writes (<c>user.reg.rhi-backup-</c>, a UTC
+    /// RHI's backups of <paramref name="hive"/>, oldest first: only names RHI writes (<c>&lt;hive&gt;.rhi-backup-</c>, a UTC
     /// stamp, an optional <c>-n</c> collision suffix compared as a number), so a file the user named alike is never
     /// counted or removed.
     /// </summary>
@@ -267,7 +290,16 @@ public sealed class WineRegistryEditor
     /// escape set): <c>\</c>, <c>[</c> and <c>]</c> get a backslash, UTF-16 units above 127 become <c>\x</c> hex
     /// (four digits when a hex digit follows), control characters C escapes or octal. Hive files stay ASCII.
     /// </summary>
-    public static string EscapeKeyName(string name)
+    public static string EscapeKeyName(string name) => EscapeName(name, "[]");
+
+    /// <summary>
+    /// A value name as wineserver writes it before <c>=</c> (<c>dump_strW</c> with the <c>"</c> escape set): as
+    /// <see cref="EscapeKeyName"/>, but <c>"</c> gets the backslash instead of <c>[</c> and <c>]</c>. A Windows path
+    /// such as <c>C:\ProgramData\x.json</c> is written with doubled backslashes.
+    /// </summary>
+    public static string EscapeValueName(string name) => EscapeName(name, "\"");
+
+    private static string EscapeName(string name, string specials)
     {
         const string escapes = ".......abtnvfr.............e....";
         var builder = new StringBuilder(name.Length);
@@ -289,7 +321,7 @@ public sealed class WineRegistryEditor
                 else builder.Append('\\').Append(Convert.ToString(c, 8));
                 continue;
             }
-            if (c is '\\' or '[' or ']') builder.Append('\\');
+            if (c == '\\' || specials.Contains(c)) builder.Append('\\');
             builder.Append(c);
         }
         return builder.ToString();

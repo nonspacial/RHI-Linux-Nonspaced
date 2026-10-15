@@ -1142,5 +1142,6 @@ internal static class UiStrings
         ("Shell.ResRecordStuck", "A tela não foi mudada: o registro do modo de tela a restaurar não pôde ser lido nem posto de lado. Corrija ou apague {0}.", "The display was not switched: the saved display mode to go back to could not be read or set aside. Fix or delete {0}."),
         ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
+        ("Rs.LegacyVersionTip", "Versões antigas do ReShade publicadas pelo RHI. Uma versão antiga pode não suportar add-ons recentes e fica fora das atualizações automáticas.", "Older ReShade versions listed by RHI. An older version may not support newer add-ons and is left out of automatic updates."),
     ];
 }

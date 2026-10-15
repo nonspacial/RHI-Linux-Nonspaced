@@ -81,6 +81,7 @@ public sealed partial class ReShadeDeploymentService
     private readonly string _cacheDir;
     private readonly DeploymentJournal? _journal;
     private readonly DllNamePreferenceStore _dllNames;
+    private readonly UpstreamRhiManifestService? _upstreamManifest;
 
     public ReShadeDeploymentService(
         HttpClient http,
@@ -95,6 +96,7 @@ public sealed partial class ReShadeDeploymentService
         DllNamePreferenceStore? dllNames = null)
     {
         _journal = journal;
+        _upstreamManifest = upstreamManifest;
         _dllNames = dllNames ?? new DllNamePreferenceStore();
         _http = http;
         _files = files;
@@ -161,12 +163,42 @@ public sealed partial class ReShadeDeploymentService
             CustomDllPath = record.Metadata.GetValueOrDefault(MetaCustomSource),
             ManageIni = record.Files.Any(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)),
             D3DCompiler47Path = record.Metadata.GetValueOrDefault(MetaD3DCompilerSource),
-            ShaderPackIds = ReadStringList(record.Metadata.GetValueOrDefault(MetaShaderPacks))
+            ShaderPackIds = ReadStringList(record.Metadata.GetValueOrDefault(MetaShaderPacks)),
+            VulkanLayer = ReShadeVulkanLayer.IsLayerRecord(record)
         };
     }
 
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
-        => InstallAsync(game, new ReShadeInstallOptions(), cancellationToken);
+        => InstallAsync(game, DefaultOptionsFor(game), cancellationToken);
+
+    /// <summary>
+    /// The options of an install nobody chose a profile for (the ReShade row, a component that needs ReShade): Stable,
+    /// or the RHI manifest's legacy version for the game (#186, upstream <c>legacyReShadeVersions</c>: Max Payne 3 → 6.4.1).
+    /// An installed ReShade keeps its own profile on update (<see cref="GetInstalledOptions"/>).
+    /// </summary>
+    public static ReShadeInstallOptions DefaultOptionsFor(DetectedGame game)
+        => UpstreamRhiManifestService.IsReShadeVersion(game.ManifestLegacyReShadeVersion)
+            ? new ReShadeInstallOptions { Channel = ReShadeChannel.Legacy, LegacyVersion = game.ManifestLegacyReShadeVersion!.Trim() }
+            : new ReShadeInstallOptions();
+
+    /// <summary>
+    /// The versions the Legacy channel offers (#186): the RHI manifest's <c>legacyReShadeAvailable</c>, else
+    /// <see cref="UpstreamRhiManifestService.DefaultLegacyReShadeVersion"/> alone (offline, or a manifest without the key).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> LegacyVersionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_upstreamManifest is null) return [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        try
+        {
+            var listed = await _upstreamManifest.FetchLegacyReShadeAvailableAsync(cancellationToken).ConfigureAwait(false);
+            return listed.Count > 0 ? listed : [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("reshade", "The legacy ReShade version list could not be read from the RHI manifest; offering the default", ex);
+            return [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        }
+    }
 
     public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
@@ -203,11 +235,18 @@ public sealed partial class ReShadeDeploymentService
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
+        // #92: the Vulkan layer on request, and an installed layer stays one (Update All never switches the path).
+        var installedRecord = _records.Find(game, ManagedComponentKind.ReShade);
+        if (options.VulkanLayer || ReShadeVulkanLayer.IsLayerRecord(installedRecord))
+            return await InstallVulkanLayerAsync(game, options, installedRecord, architecture, isUpdate, cancellationToken).ConfigureAwait(false);
+
         // The proxy name: the user's choice, else the RHI manifest's, else the API's (#120). An installed ReShade keeps
         // the name it was installed under (the record decides below); a new name needs a removal first.
         var resolution = ResolveProxyName(game);
         if (resolution is null)
-            return ComponentOperationResult.Fail("This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
+            return ComponentOperationResult.Fail(ReShadeVulkanLayer.IsVulkanTarget(game)
+                ? ReShadeVulkanLayer.NotOnRequestMessage
+                : "This graphics API does not yet have a safe game-local ReShade proxy mapping in RHI Linux.");
         if (!ProxyDllNames.OfferedFor(architecture == PeArchitecture.X86).Contains(resolution.Name, StringComparer.OrdinalIgnoreCase))
         {
             if (resolution.Source == ProxyNameSource.User)
@@ -704,7 +743,7 @@ public sealed partial class ReShadeDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
 
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
-        var coexist = managedOptiScaler is not null &&
+        var coexist = managedOptiScaler is not null && !ReShadeVulkanLayer.IsLayerRecord(record) &&
             record.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase));
 
         try
@@ -734,6 +773,7 @@ public sealed partial class ReShadeDeploymentService
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
         var overrideRestores = new List<(WineOverrideRecord Record, WineOverrideRestoreResult Result)>();
+        var valueRestores = new List<(WineRegistryValueRecord Record, WineOverrideRestoreResult Result)>();
         LinuxDeploymentRecord? optiScalerBefore = null;
         LinuxDeploymentRecord? optiScalerAfter = null;
 
@@ -783,6 +823,9 @@ public sealed partial class ReShadeDeploymentService
                     overrideRestores.Add((additionalOverride, await _overrides.RestoreAsync(scope.Operation, prefix, additionalOverride, cancellationToken).ConfigureAwait(false)));
                 if (record.WineOverride is { } main)
                     overrideRestores.Add((main, await _overrides.RestoreAsync(scope.Operation, prefix, main, cancellationToken).ConfigureAwait(false)));
+                // #92: the Vulkan layer's ImplicitLayers registration (system.reg), only while it still holds RHI's value.
+                foreach (var value in record.RegistryValues)
+                    valueRestores.Add((value, await RegistryValues.RestoreAsync(scope.Operation, prefix, value, cancellationToken).ConfigureAwait(false)));
             }
             // The commit point: ReShade's record goes and, in the chain, OptiScaler's (INI hash) is saved in the same write.
             _records.Commit(optiScalerAfter is null ? [] : [optiScalerAfter], [(game, ManagedComponentKind.ReShade)]);
@@ -797,12 +840,23 @@ public sealed partial class ReShadeDeploymentService
             foreach (var (overrideRecord, result) in overrideRestores.AsEnumerable().Reverse())
                 if (result.Outcome == WineOverrideRestoreOutcome.Restored)
                     _overrides.TryReapply(game.PrefixPath, overrideRecord);
+            foreach (var (valueRecord, result) in valueRestores.AsEnumerable().Reverse())
+                if (result.Outcome == WineOverrideRestoreOutcome.Restored)
+                    RegistryValues.TryReapply(game.PrefixPath, valueRecord);
             if (!rollback.Success)
                 AppLog.Warn("reshade", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             return ComponentOperationResult.Fail($"{RemovalFailedPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record is gone: the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
+        // #92: the layer's shared ProgramData\RHI-Linux\ReShadeVulkan folders go with the prefix's last layer (another
+        // game's layer folder, or anything else in them, keeps them).
+        RemoveEmptyDirectories(ReShadeVulkanLayer.IsLayerRecord(record) && !string.IsNullOrWhiteSpace(game.PrefixPath)
+            ? [.. record.DirectoriesCreatedByRhi, .. ReShadeVulkanLayer.SharedFolders(game.PrefixPath)]
+            : record.DirectoriesCreatedByRhi);
+        if (ReShadeVulkanLayer.IsLayerRecord(record))
+            return ComponentOperationResult.Ok(ReShadeVulkanLayer.RemovedMessage
+                + WineDllOverrideService.KeptValueNotes([.. overrideRestores.Select(item => item.Result), .. valueRestores.Select(item => item.Result)]));
         return ComponentOperationResult.Ok((coexist
             ? "RHI-managed ReShade removed; OptiScaler LoadReshade was disabled. RHI shader files were cleaned and user-edited ReShade.ini content was preserved."
             : "RHI-managed ReShade removed; preserved foreign DLL/Wine override restored. RHI shader files were cleaned and user-edited ReShade.ini content was preserved.")

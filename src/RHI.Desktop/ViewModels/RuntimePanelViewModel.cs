@@ -398,6 +398,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         if (value is null || _loadingGraphicsApiOverride || SelectedGame is null) return;
         var api = ParseGraphicsApiOverride(value);
         var game = SelectedGame;
+        if (_managedComponents.ReShadeApiSwitchRefusal(game, api) is { } reShadeFirst) { LoadGraphicsApiOverride(game); StatusText = UiLocalizationService.Present(reShadeFirst); return; } // w5/reshade-core (#92)
         // The store is the authority (it is re-read on every refresh): a refused write reverts the dropdown to the
         // saved value instead of claiming the choice holds for the session.
         if (TryPersist(() => _apiOverrideStore.Set(game, api), "Ui.WhatGamePreferences", sessionOnly: false) is { } failure)

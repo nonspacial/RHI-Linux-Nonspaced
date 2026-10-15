@@ -209,6 +209,8 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.UserDisplayName), nameof(DetectedGame.UserWikiName), nameof(DetectedGame.DetectedWikiName), // Edit game (#190)
             nameof(DetectedGame.UserArchitectureOverride),
             // w5/reshade-core rows
+            nameof(DetectedGame.ManifestLegacyReShadeVersion), nameof(DetectedGame.ManifestReShadeNote),
+            nameof(DetectedGame.ManifestReShadeNoteUrl), nameof(DetectedGame.ManifestReShadeNoteUrlLabel),
         ];
         var writable = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite).Select(p => p.Name).ToHashSet();
         Assert.Empty(writable.Except(GameRuntimeFacts.OwnedProperties).Except(notProbeOwned));

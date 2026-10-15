@@ -186,6 +186,14 @@ public sealed class UpstreamGameLibraryPolicyService(
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        if (TryGet(policy.LegacyReShadeVersions, canonical, out var legacyReShade))
+            game.ManifestLegacyReShadeVersion = legacyReShade;
+        if (TryGet(policy.ReShadeGameInfo, canonical, out var reShadeNote))
+        {
+            game.ManifestReShadeNote = reShadeNote.Notes;
+            game.ManifestReShadeNoteUrl = reShadeNote.Url;
+            game.ManifestReShadeNoteUrlLabel = reShadeNote.UrlLabel;
+        }
     }
 
     private static bool IsBlacklisted(string? name, UpstreamLibraryPolicySnapshot policy)

@@ -590,6 +590,30 @@ public static class UiLocalizationService
         // #187: OptiScaler menu keys keep the keyboard's own names in PT-BR.
         ("Delete", "Delete"), ("End", "End"), ("Page Up", "Page Up"), ("Page Down", "Page Down"),
         // w5/reshade-core rows
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ApiSwitchLayerInstalledMessage,
+            "O ReShade está instalado neste jogo como camada Vulkan. Remova o ReShade primeiro e depois mude a API gráfica."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ApiSwitchDllInstalledMessage,
+            "O ReShade está instalado neste jogo como DLL, que um jogo Vulkan não carrega. Remova o ReShade primeiro e depois defina a API gráfica como Vulkan."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NotVulkanTargetMessage,
+            "A camada Vulkan do ReShade só é oferecida para jogos Windows que usam Vulkan: apenas Vulkan encontrado no executável do jogo, ou a API gráfica definida como Vulkan nas configurações do jogo."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.PrefixNotStartedMessage,
+            "O prefixo Wine/Proton do jogo ainda não foi criado. Inicie o jogo uma vez e feche-o; depois instale o ReShade."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UnknownRunnerMessage,
+            "O RHI não consegue saber qual versão do Proton ou do Wine executa este jogo, e a camada Vulkan do ReShade precisa da versão 8 ou mais nova. Escolha uma versão do Proton para o jogo no launcher, inicie o jogo uma vez e tente de novo."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllReShadeInstalledMessage,
+            "O ReShade está instalado neste jogo como DLL. Cada jogo recebe um ReShade: remova-o primeiro e depois instale a camada Vulkan."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NotOnRequestMessage,
+            "Em um jogo Vulkan, o RHI só instala o ReShade quando você pede: instale primeiro o ReShade (camada Vulkan) pela linha dele."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RowNote,
+            "Jogo Vulkan: o ReShade é instalado como camada Vulkan só para este jogo (o carregador Vulkan da Khronos ao lado do executável). Apenas títulos single-player/offline; a injeção de add-ons pode acionar anti-cheat."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RemovedMessage,
+            "ReShade (camada Vulkan) removido: o carregador, a camada, o registro dela e a substituição do Wine foram retirados."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage,
+            "Em um jogo Vulkan, o ReShade só pode ser instalado como camada Vulkan, e este componente só funciona com o ReShade como DLL ao lado do jogo."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.Win32PrefixMessage,
+            "Este jogo de 32 bits roda em um prefixo Wine só de 32 bits (um prefixo antigo do Wine ou do Lutris), onde a camada Vulkan do ReShade não carrega, então ela não é oferecida. Prefixos do Proton e prefixos novos do Wine são de 64 bits."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.IncompleteRecordMessage,
+            "O registro do RHI da camada Vulkan do ReShade neste jogo está incompleto, então a atualização foi interrompida; remova o ReShade e instale-o de novo."),
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1262,6 +1286,29 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix, "O RHI não conseguiu registrar o modo de tela atual, então não o mudou: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer, "A ferramenta de tela indicou uma saída ou modo que o RHI não aceita, então a tela não foi mudada."),
         // w5/reshade-core rows
+        // #92 ReShade as a Vulkan layer.
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RunnerTooOldPrefix, "A camada Vulkan do ReShade precisa do Proton ou do Wine 8 ou mais novo. O prefixo deste jogo foi criado por: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.GameShipsLoaderPrefix,
+            "Este jogo tem o próprio vulkan-1.dll ao lado do executável; o RHI não o substitui pelo carregador Vulkan de que o ReShade precisa, então nada foi instalado. Arquivo: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LayerFolderTakenPrefix, "Algo que o RHI não instalou já está onde a camada Vulkan do ReShade fica, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.InstalledPrefix, "ReShade (camada Vulkan) instalado; ReShade.ini ao lado do jogo. Versão: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UpdatedPrefix, "ReShade (camada Vulkan) atualizado. Versão: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderUpdatedNote, " O carregador Vulkan também foi atualizado."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderCheckSkippedNote, " Não foi possível acessar a LunarG, então o carregador Vulkan foi mantido como estava."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderRestoredNote, " O carregador Vulkan ao lado do jogo estava faltando e foi reposto."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix,
+            "O carregador Vulkan ao lado do jogo está faltando e o RHI não conseguiu baixá-lo de novo, então nada foi alterado; tente de novo quando a LunarG estiver acessível: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.FailedRolledBackPrefix, "O ReShade (camada Vulkan) falhou e foi revertido; nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ModifiedFilePrefix, "Um arquivo da camada Vulkan do ReShade foi alterado fora do RHI, então foi mantido como está e nada foi alterado: "),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NeedsDllReShadePrefix,
+            "O ReShade está instalado neste jogo como camada Vulkan, e este componente só funciona com o ReShade como DLL ao lado do jogo, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.WineRegistryEditor.MissingSystemHiveMessage,
+            "O system.reg do Wine/Proton não foi encontrado. Inicie o jogo uma vez para que o prefixo seja inicializado."),
+        (RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage, "Não foi possível encontrar a versão atual do carregador Vulkan no site da LunarG."),
+        (RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderMissingPrefix, "O download do runtime Vulkan da LunarG não contém o carregador Vulkan para este jogo: "),
+        (RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderInvalidPrefix, "O carregador Vulkan baixado não é um carregador Vulkan válido para este jogo: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.LunarGVulkanRuntime.RefusalPrefix,
+            "Download recusado: links do runtime Vulkan devem ser HTTPS em um host confiável (LunarG). Link recusado: "),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

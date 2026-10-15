@@ -22,6 +22,11 @@ public sealed class LinuxDeploymentRecord
     public WineOverrideRecord? WineOverride { get; set; }
     /// <summary>Additional per-component Wine overrides (for example ReShade shader compiler compatibility). Old records deserialize as an empty list.</summary>
     public List<WineOverrideRecord> AdditionalWineOverrides { get; set; } = [];
+    /// <summary>
+    /// Other registry values the component set in the prefix (#92: the Vulkan implicit-layer registration in
+    /// <c>system.reg</c>), restored on removal while they still hold RHI's value. Old records deserialize as an empty list.
+    /// </summary>
+    public List<WineRegistryValueRecord> RegistryValues { get; set; } = [];
     /// <summary>Small component-specific state used for safe updates/rollback. Missing keys are treated conservatively for old records.</summary>
     public Dictionary<string, string> Metadata { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 

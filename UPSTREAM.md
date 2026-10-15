@@ -430,3 +430,52 @@ build.
 - Limit (differs from upstream): upstream follows the game process that survives when the started program exits (`MonitorProcess`). RHI-Linux puts the display back when the launch command ends, so a game whose launcher stub starts the real game and exits at once (or a wrapper that daemonises) gets its display back early; such games can use Gamescope in HDR, which carries the size without switching the desktop.
 
 <!-- w5/reshade-core notes -->
+
+### #92 — ReShade for Vulkan games (implicit layer)
+
+- Ported, adapted to Wine/Proton (spike: Wine's own `vulkan-1.dll` loads no Windows layers; the Khronos loader reads
+  implicit layers only from HKEY_LOCAL_MACHINE under Wine, never HKEY_CURRENT_USER; DXVK and vkd3d-proton load
+  `winevulkan.dll` directly, so DirectX games never see the layer). Upstream registers one global layer for the whole
+  PC; RHI Linux sets it up per game: the Khronos Vulkan loader (`vulkan-1.dll`, newest from LunarG's Vulkan runtime)
+  beside the executable with a per-executable `vulkan-1=native,builtin` Wine override, the layer (`ReShade64.dll`/
+  `ReShade32.dll` and upstream's `ReShade64.json` manifest) in the prefix's `C:\ProgramData\RHI-Linux\ReShadeVulkan\<game>\`,
+  registered under `HKLM\Software\Khronos\Vulkan\ImplicitLayers` (`Wow6432Node` for 32-bit games) in the prefix's
+  `system.reg`, and `ReShade.ini` beside the game. The registration is visible to the whole prefix, but only a program
+  that loads a native Khronos loader can see it: the game RHI set up, or (rare, in a shared Heroic/Lutris prefix) another
+  game there that ships its own `vulkan-1.dll` with a native override. Games using Wine's own loader, DXVK or
+  vkd3d-proton never load it.
+- Offered only for a Windows game whose graphics API is Vulkan (Vulkan alone found in the executable, or the user's own
+  API override set to Vulkan): the ReShade row then reads "ReShade · Vulkan" and its Install (or the ReShade profile's
+  Apply) is the explicit choice. A multi-renderer game stays DirectX first; a component that needs ReShade (RenoDX, Luma
+  …) never installs the layer by itself. Refused with a plain reason on Proton/Wine older than 8, an unknown runner, a
+  prefix never started, or a game with its own `vulkan-1.dll`. One ReShade per game: the layer is refused while a DLL
+  ReShade is installed; ShortFuse and OptiScaler (which move ReShade's DLL) are refused while the layer is installed.
+- Update swaps the ReShade DLL; the loader only when LunarG lists a newer version (offline: kept, and the line says so).
+  Update All never switches a game between the DLL and the layer. Removal takes away the loader, the layer files, the
+  registration (only while it still holds RHI's value) and the Wine override, all journaled; the shared
+  `ProgramData\RHI-Linux\ReShadeVulkan` folders and the `ImplicitLayers` key go with the prefix's last layer. As for
+  `user.reg`, editing `system.reg` leaves `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-<time>` copies in
+  the prefix after removal. An update also puts back a loader that was deleted. Repair after move keeps working because
+  the registration names a `C:\` path inside the prefix.
+- A 32-bit game in a 32-bit-only prefix (`#arch=win32`, older Wine/Lutris prefixes; never Proton) is refused with a
+  plain reason: a 32-bit game's loader reads the layer from `Wow6432Node`, which such a prefix does not have. On a Vulkan
+  game without ReShade the add-on rows say ReShade is installed only on request; ShortFuse is not offered there.
+- Changed from upstream (PAR-D07, `e8cdedf`): changing the graphics-API override to or from Vulkan while ReShade is
+  installed is refused until ReShade is removed (upstream uninstalls ReShade on the switch; RHI never removes a
+  component the user did not ask to remove). Changes within DirectX are not affected.
+- Not ported: upstream's global layer for every game and its footprint marker (`RDXC_VULKAN_FOOTPRINT`; the record owns
+  the files, and a layer whose record is gone is recognised by the game's own layer folder in the prefix next to the
+  loader and `ReShade.ini`). Native Linux Vulkan games are out of scope (vkBasalt is a different tool).
+
+### #186 — Legacy ReShade version list and manifest pins
+
+- Ported: the ReShade profile's Legacy version is a dropdown of the RHI manifest's `legacyReShadeAvailable` (newest
+  first, as upstream's "Legacy..." picker; 6.4.1 alone while the manifest is unread or lists none) instead of a free-text
+  box. A version the profile shows that the list lacks (an installed legacy ReShade, a pin) stays offered.
+- Ported: `legacyReShadeVersions` (Max Payne 3 → 6.4.1): a fresh ReShade install on that game, from its row, from a
+  component that needs ReShade (RenoDX) or from the profile, uses that version; the profile starts on Legacy at it and
+  the user may choose another channel. An installed ReShade is never changed by a pin (its own profile is re-applied).
+- Ported: `reshadeGameInfo`: the manifest's ReShade note for the game is shown in the ReShade profile, with its link
+  (https only) when the manifest gives one.
+- Changed from upstream: upstream stores the pin as a per-game channel override when it first sees the game; RHI Linux
+  has no per-game channel setting outside the installed profile, so the pin applies to each fresh install instead.

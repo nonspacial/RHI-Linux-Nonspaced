@@ -1,4 +1,3 @@
-using System.Globalization;
 using RHI.Core.Deployment;
 using RHI.Core.Services;
 
@@ -74,7 +73,7 @@ public sealed class WineDllOverrideService
 
     private static WineOverrideRecord Plan(string text, string dllName, string? applicationName)
     {
-        var sectionExistedBefore = FindSection(SplitLines(text), SectionFor(applicationName)).Start >= 0;
+        var sectionExistedBefore = WineHiveText.HasSection(text, SectionFor(applicationName));
         var read = ReadOverride(text, dllName, applicationName);
         var previous = read?.Text;
         var alreadyNative = read is { Raw: false } &&
@@ -268,160 +267,24 @@ public sealed class WineDllOverrideService
         => ReadOverride(text, dllName, applicationName)?.Text;
 
     internal static OverrideValue? ReadOverride(string text, string dllName, string? applicationName = null)
-    {
-        dllName = NormalizeDllName(dllName);
-        var sectionName = SectionFor(NormalizeApplicationName(applicationName));
-        var lines = SplitLines(text);
-        var (start, end) = FindSection(lines, sectionName);
-        if (start < 0) return null;
-        var prefix = $"\"{dllName}\"=";
-        for (var i = start + 1; i < end; i++)
-        {
-            var line = lines[i].Trim();
-            if (!line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-            var rhs = line[(line.IndexOf('=') + 1)..].Trim();
-            if (rhs.Length >= 2 && rhs[0] == '"' && rhs[^1] == '"') return new OverrideValue(rhs[1..^1], Raw: false);
-            // Not a string: keep it exactly, continuation lines included, so it can be written back as it was.
-            var continuation = lines.Skip(i + 1).Take(ContinuationLines(lines, i, end));
-            return new OverrideValue(string.Join('\n', continuation.Prepend(lines[i][(lines[i].IndexOf('=') + 1)..])), Raw: true);
-        }
-        return null;
-    }
+        => WineHiveText.Read(text, SectionFor(NormalizeApplicationName(applicationName)), Quoted(dllName));
 
     /// <param name="raw">Write <paramref name="value"/> as a raw right-hand side (<see cref="OverrideValue.Raw"/>), not as a string.</param>
     internal static string SetOverride(string text, string dllName, string value, string? applicationName = null, bool raw = false)
-    {
-        dllName = NormalizeDllName(dllName);
-        applicationName = NormalizeApplicationName(applicationName);
-        var sectionName = SectionFor(applicationName);
-        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = SplitLines(text).ToList();
-        var (start, end) = FindSection(lines, sectionName);
-        var entry = raw
-            ? $"\"{dllName}\"=" + value.Replace("\n", newline, StringComparison.Ordinal)
-            : $"\"{dllName}\"=\"{value}\"";
-        if (start < 0)
-        {
-            // A hive without a final newline (Wine always writes one) gets none after the new section either, so
-            // RemoveSectionIfEmpty can give back exactly the bytes it had.
-            var finalNewline = text.Length == 0 || text.EndsWith('\n') || text.EndsWith('\r');
-            if (lines.Count > 0 && lines[^1].Length != 0) lines.Add("");
-            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var fileTime = (DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 11644473600L) * 10_000_000L;
-            lines.Add($"{sectionName} {now}");
-            lines.Add($"#time={fileTime.ToString("x", CultureInfo.InvariantCulture)}");
-            lines.Add(entry);
-            return string.Join(newline, lines) + (finalNewline ? newline : "");
-        }
-
-        var prefix = $"\"{dllName}\"=";
-        for (var i = start + 1; i < end; i++)
-        {
-            var existing = lines[i].TrimStart();
-            if (!existing.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-            lines.RemoveRange(i + 1, ContinuationLines(lines, i, end));
-            // Wine compares value names without case; the name keeps the spelling the hive has ("DXGI"), so a restore
-            // gives back the user's line byte for byte (w2 final review, nit 4).
-            lines[i] = existing[..prefix.Length] + entry[prefix.Length..];
-            return string.Join(newline, lines);
-        }
-        // After the section's last value, not after the blank separator line (or the empty string that follows a
-        // final newline), so the hive keeps its layout and its final newline.
-        var at = end;
-        while (at > start + 1 && lines[at - 1].Length == 0) at--;
-        lines.Insert(at, entry);
-        return string.Join(newline, lines);
-    }
+        => WineHiveText.Set(text, SectionFor(NormalizeApplicationName(applicationName)), Quoted(dllName), raw ? value : $"\"{value}\"");
 
     internal static string RemoveOverride(string text, string dllName, string? applicationName = null)
-    {
-        dllName = NormalizeDllName(dllName);
-        var sectionName = SectionFor(NormalizeApplicationName(applicationName));
-        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = SplitLines(text).ToList();
-        var (start, end) = FindSection(lines, sectionName);
-        if (start < 0) return text;
-        var prefix = $"\"{dllName}\"=";
-        for (var i = start + 1; i < end; i++)
-        {
-            if (!lines[i].TrimStart().StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-            lines.RemoveRange(i, 1 + ContinuationLines(lines, i, end));
-            break;
-        }
-        return string.Join(newline, lines);
-    }
-
+        => WineHiveText.Remove(text, SectionFor(NormalizeApplicationName(applicationName)), Quoted(dllName));
 
     internal static string RemoveSectionIfEmpty(string text, string? applicationName = null)
-    {
-        applicationName = NormalizeApplicationName(applicationName);
-        var sectionName = SectionFor(applicationName);
-        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        var lines = SplitLines(text).ToList();
-        var (start, end) = FindSection(lines, sectionName);
-        if (start < 0) return text;
+        => WineHiveText.RemoveSectionIfEmpty(text, SectionFor(NormalizeApplicationName(applicationName)));
 
-        // Be deliberately conservative: comments (#time), blank lines and the section
-        // header itself are metadata. Any other content means somebody added data to
-        // the key while RHI was installed, so the section must survive uninstall.
-        for (var i = start + 1; i < end; i++)
-        {
-            var line = lines[i].Trim();
-            if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal)) continue;
-            return text;
-        }
-
-        var removeEnd = end;
-        // Consume the separator blank line after the section when present, but never
-        // touch the next registry section. This avoids leaving extra blank blocks.
-        while (removeEnd < lines.Count && lines[removeEnd].Length == 0) removeEnd++;
-        // The last section of a hive without a final newline (as SetOverride leaves one it created there): its
-        // separator blank line goes too, so the hive ends where it ended before the section was added.
-        var lastWithoutFinalNewline = removeEnd == lines.Count && lines[^1].Length != 0;
-        if (lastWithoutFinalNewline && start > 0 && lines[start - 1].Length == 0) start--;
-        lines.RemoveRange(start, removeEnd - start);
-
-        // Avoid creating a trailing stack of empty lines after section removal.
-        while (lines.Count > 1 && lines[^1].Length == 0 && lines[^2].Length == 0)
-            lines.RemoveAt(lines.Count - 1);
-
-        return string.Join(newline, lines);
-    }
-
-    /// <summary>
-    /// How many lines after <paramref name="valueLine"/> continue its value: Wine wraps long hex values with a trailing
-    /// backslash (a quoted string value always ends with its closing quote).
-    /// </summary>
-    private static int ContinuationLines(IReadOnlyList<string> lines, int valueLine, int sectionEnd)
-    {
-        var count = 0;
-        for (var i = valueLine; i + 1 < sectionEnd && lines[i].TrimEnd().EndsWith('\\'); i++) count++;
-        return count;
-    }
-
-    private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string sectionName)
-    {
-        var start = -1;
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var line = lines[i].Trim();
-            if (start < 0)
-            {
-                if (line.StartsWith(sectionName, StringComparison.OrdinalIgnoreCase)) start = i;
-                continue;
-            }
-            if (line.StartsWith("[", StringComparison.Ordinal)) return (start, i);
-        }
-        return start < 0 ? (-1, -1) : (start, lines.Count);
-    }
+    private static string Quoted(string dllName) => $"\"{NormalizeDllName(dllName)}\"";
 
     private static string SectionFor(string? applicationName)
         => string.IsNullOrWhiteSpace(applicationName)
             ? GlobalSectionName
             : $@"[Software\\Wine\\AppDefaults\\{WineRegistryEditor.EscapeKeyName(applicationName)}\\DllOverrides]";
-
-    private static string[] SplitLines(string text)
-        => text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
 
     private static string NormalizeDllName(string name) => Path.GetFileNameWithoutExtension(name.Trim()).ToLowerInvariant();
     private static string? NormalizeApplicationName(string? name)

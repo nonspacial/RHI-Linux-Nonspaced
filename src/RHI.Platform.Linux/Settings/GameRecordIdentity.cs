@@ -13,13 +13,8 @@ namespace RHI.Platform.Linux.Settings;
 /// </summary>
 public static class GameRecordIdentity
 {
-    public static string Key(DetectedGame game)
-    {
-        ArgumentNullException.ThrowIfNull(game);
-        if (game.SteamAppId is int steamId) return $"steam:{steamId}";
-        if (!string.IsNullOrWhiteSpace(game.HeroicAppName)) return "heroic:" + game.HeroicAppName.Trim();
-        return Path.GetFullPath(game.InstallPath);
-    }
+    // w5/reshade-core (#92): the rule moved to RHI.Core (GameRecordKey) so the component probe can name per-game folders.
+    public static string Key(DetectedGame game) => RHI.Core.Services.GameRecordKey.Of(game);
 
     /// <summary>Keys older builds wrote for this game that differ from <see cref="Key"/> (empty when unchanged).</summary>
     public static IReadOnlyList<string> LegacyKeys(DetectedGame game)

@@ -42,7 +42,7 @@ public enum ComponentAvailability
 public sealed class ManagedComponent
 {
     public required ManagedComponentKind Kind { get; init; }
-    public required string DisplayName { get; init; }
+    public required string DisplayName { get; set; }
     public ComponentAvailability Availability { get; set; }
     public string? InstalledVersion { get; set; }
     public string? LatestVersion { get; set; }

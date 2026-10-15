@@ -288,6 +288,10 @@ public sealed class GameLibraryScanner
             first.DetectedWikiName ??= candidate.DetectedWikiName;
             first.UserArchitectureOverride ??= candidate.UserArchitectureOverride;
             // w5/reshade-core rows
+            first.ManifestLegacyReShadeVersion ??= candidate.ManifestLegacyReShadeVersion;
+            first.ManifestReShadeNote ??= candidate.ManifestReShadeNote;
+            first.ManifestReShadeNoteUrl ??= candidate.ManifestReShadeNoteUrl;
+            first.ManifestReShadeNoteUrlLabel ??= candidate.ManifestReShadeNoteUrlLabel;
         }
         return first;
     }
