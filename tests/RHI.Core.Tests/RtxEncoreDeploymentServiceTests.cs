@@ -405,7 +405,7 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         var result = await Service(handler).InstallAsync(_game);
 
         Assert.StartsWith(RtxEncoreDeploymentService.DownloadFailedPrefix, result.Message);
-        Assert.Contains("version information", result.Message);
+        Assert.Equal(RtxEncoreDeploymentService.DownloadFailedPrefix + RtxEncoreDeploymentService.NoVersionResourceMessage, result.Message);
         Assert.False(File.Exists(Path.Combine(_bin, "version.dll")));
     }
 
@@ -423,7 +423,17 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         Assert.Equal("https://github.com/x/SHA256SUMS", release.ChecksumsUrl);
 
         var noDigest = """[{"tag_name":"v1.0.0","assets":[{"name":"RTX-Encore-v1.0.0.zip","browser_download_url":"https://github.com/x/c.zip"}]}]""";
-        Assert.Throws<InvalidDataException>(() => RtxEncoreDeploymentService.ParseReleases(noDigest));
+        Assert.Equal(RtxEncoreDeploymentService.NoPublishedDigestPrefix + "v1.0.0",
+            Assert.Throws<InvalidDataException>(() => RtxEncoreDeploymentService.ParseReleases(noDigest)).Message);
+        // Review minor 4: every refusal is one of the service's own (translated) messages, never a raw parser text.
+        foreach (var broken in new[] { "not json", "{\"message\":\"API rate limit exceeded\"}", "[{\"tag_name\":7,\"assets\":[]}]" })
+            Assert.Equal(RtxEncoreDeploymentService.ReleaseListShapeMessage,
+                Assert.Throws<InvalidDataException>(() => RtxEncoreDeploymentService.ParseReleases(broken)).Message);
+        Assert.Equal(RtxEncoreDeploymentService.NoReleaseMessage,
+            Assert.Throws<InvalidDataException>(() => RtxEncoreDeploymentService.ParseReleases("[]")).Message);
+        var badTag = """[{"tag_name":"nightly","assets":[{"name":"RTX-Encore-x.zip","browser_download_url":"https://github.com/x/c.zip","digest":"sha256:aa"}]}]""";
+        Assert.Equal(RtxEncoreDeploymentService.TagNotAVersionPrefix + "nightly",
+            Assert.Throws<InvalidDataException>(() => RtxEncoreDeploymentService.ParseReleases(badTag)).Message);
     }
 
     [Fact]

@@ -1118,7 +1118,6 @@ public static class UiLocalizationService
         ("reshade.ini was not found in the game folder.", "o reshade.ini não foi encontrado na pasta do jogo."),
         ("RenoDX is not installed by RHI on this game.", "o RenoDX não foi instalado pelo RHI neste jogo."),
         ("the value was changed outside RHI and was kept.", "o valor foi alterado fora do RHI e foi mantido."),
-        // #98 OptiPatcher.
         // w4/encore (#158): RTX Encore service messages.
         (RHI.Platform.Linux.Deployment.DownloadSources.RtxEncore.RefusalPrefix,
             "Download recusado: links do RTX Encore devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
@@ -1157,6 +1156,17 @@ public static class UiLocalizationService
         (RtxEncoreText.SavedWithoutNeuralRenderingMessage, "Salvo: o RTX Encore será instalado sem o arquivo de Neural Rendering."),
         (RtxEncoreText.SavedNamePrefix, "Salvo: o RTX Encore será instalado como "),
         (RHI.Platform.Linux.Deployment.NrCostScalerService.RtxEncoreOwnerMessage, "O NR Cost Scaler não pode envolver o arquivo de Neural Rendering do RTX Encore: o RTX Encore só aceita o arquivo 310.8.0 original da NVIDIA."),
+        (RtxEncoreText.ReleaseListShapeMessage, "Não foi possível ler a lista de versões do RTX Encore."),
+        (RtxEncoreText.NoReleaseMessage, "Nenhuma versão do RTX Encore com um RTX-Encore-*.zip foi encontrada."),
+        (RtxEncoreText.NoPublishedDigestPrefix, "A versão do RTX Encore não publica SHA-256 (digest do GitHub nem SHA256SUMS); recusada: "),
+        (RtxEncoreText.TagNotAVersionPrefix, "A tag da versão do RTX Encore não é um número de versão: "),
+        (RtxEncoreText.SumsNoEntryPrefix, "O SHA256SUMS do RTX Encore não tem linha para o zip: "),
+        (RtxEncoreText.SumsMismatchPrefix, "O zip do RTX Encore não corresponde ao seu SHA256SUMS: "),
+        (RtxEncoreText.PayloadNotAtRootMessage, "O rtx-encore.dll não está exatamente uma vez na raiz do zip do RTX Encore."),
+        (RtxEncoreText.TooSmallMessage, "A DLL do RTX Encore é pequena demais para ser plausível."),
+        (RtxEncoreText.NotX64Message, "O download do RTX Encore não é uma DLL Windows de 64 bits."),
+        (RtxEncoreText.NoVersionResourceMessage, "O download do RTX Encore não traz as informações de versão do RTX Encore."),
+        // #98 OptiPatcher.
         (RHI.Platform.Linux.Deployment.DownloadSources.OptiPatcher.RefusalPrefix,
             "Download recusado: links do OptiPatcher devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
         (" OptiPatcher deployed to plugins/ (OptiScaler LoadAsiPlugins on). Build: ", " OptiPatcher implantado em plugins/ (LoadAsiPlugins do OptiScaler ativado). Build: "),

@@ -252,6 +252,20 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SavedNamePrefix + "winmm.dll";
         yield return RHI.Platform.Linux.Deployment.NrCostScalerService.RtxEncoreOwnerMessage;
         yield return RHI.Platform.Linux.Deployment.NeuralRenderingRuntimeOwnership.RefusalFor("RTX Encore");
+        // w4/encore review minor 4: the reasons that follow the download/rollback prefixes.
+        foreach (var head in new[] { RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.DownloadFailedPrefix, RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.FailedRolledBackPrefix })
+        {
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.ReleaseListShapeMessage;
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NoReleaseMessage;
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NoPublishedDigestPrefix + "v1.0.0-rc.4";
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.TagNotAVersionPrefix + "nightly";
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SumsNoEntryPrefix + "RTX-Encore-v1.0.0-rc.4.zip";
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.SumsMismatchPrefix + "RTX-Encore-v1.0.0-rc.4.zip";
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.PayloadNotAtRootMessage;
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.TooSmallMessage;
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NotX64Message;
+            yield return head + RHI.Platform.Linux.Deployment.RtxEncoreDeploymentService.NoVersionResourceMessage;
+        }
         // w3/vmsplit rows
         // w3/dllnames rows
         yield return $"Control UE restore incomplete; RenoDX was kept: nvngx_dlss.dll not changed: {ControlUePostInstallService.SnapshotInTheWayPrefix}{P}.rhi-control-previous";

@@ -73,6 +73,17 @@ public sealed class RtxEncoreDeploymentService
     public const string SavedWithNeuralRenderingMessage = "Saved: RTX Encore will be installed with the Neural Rendering file 310.8.0.";
     public const string SavedWithoutNeuralRenderingMessage = "Saved: RTX Encore will be installed without the Neural Rendering file.";
     public const string SavedNamePrefix = "Saved: RTX Encore will be installed as ";
+    // Why a release or download is refused (they follow DownloadFailedPrefix / FailedRolledBackPrefix).
+    public const string ReleaseListShapeMessage = "The RTX Encore release list could not be read.";
+    public const string NoReleaseMessage = "No RTX Encore release with an RTX-Encore-*.zip was found.";
+    public const string NoPublishedDigestPrefix = "The RTX Encore release publishes no SHA-256 (GitHub digest or SHA256SUMS); refused: ";
+    public const string TagNotAVersionPrefix = "The RTX Encore release tag is not a version: ";
+    public const string SumsNoEntryPrefix = "RTX Encore's SHA256SUMS has no line for the zip: ";
+    public const string SumsMismatchPrefix = "The RTX Encore zip does not match its SHA256SUMS: ";
+    public const string PayloadNotAtRootMessage = "rtx-encore.dll is not at the root of the RTX Encore zip exactly once.";
+    public const string TooSmallMessage = "The RTX Encore DLL is implausibly small.";
+    public const string NotX64Message = "The RTX Encore download is not a 64-bit Windows DLL.";
+    public const string NoVersionResourceMessage = "The RTX Encore download does not carry RTX Encore's version information.";
 
     private const string MetaName = "RtxEncore.Name";
     private const string MetaTag = "RtxEncore.Tag";
@@ -111,7 +122,6 @@ public sealed class RtxEncoreDeploymentService
 
     /// <summary>The SHA-256 the Neural Rendering file must have (tests substitute their own runtime).</summary>
     internal string RequiredNeuralRenderingSha256 { get; init; } = NeuralRenderingSha256;
-
     public LinuxDeploymentRecord? GetRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RtxEncore);
 
     /// <summary>The installed name, else the saved choice, else <see cref="DefaultName"/>.</summary>
@@ -499,9 +509,18 @@ public sealed class RtxEncoreDeploymentService
 
     internal static RtxEncoreReleaseInfo ParseReleases(string json)
     {
+        try { return ParseReleasesCore(json); }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException) // malformed JSON, or a value of the wrong kind
+        {
+            throw new InvalidDataException(ReleaseListShapeMessage, ex);
+        }
+    }
+
+    private static RtxEncoreReleaseInfo ParseReleasesCore(string json)
+    {
         using var document = JsonDocument.Parse(json);
         if (document.RootElement.ValueKind != JsonValueKind.Array)
-            throw new InvalidDataException("The RTX Encore release list has an unexpected shape.");
+            throw new InvalidDataException(ReleaseListShapeMessage);
         foreach (var release in document.RootElement.EnumerateArray())
         {
             if (release.TryGetProperty("draft", out var draft) && draft.ValueKind == JsonValueKind.True) continue;
@@ -528,10 +547,10 @@ public sealed class RtxEncoreDeploymentService
             }
             if (assetName is null) continue;
             if (string.IsNullOrWhiteSpace(assetSha) && string.IsNullOrWhiteSpace(sumsUrl))
-                throw new InvalidDataException("The RTX Encore release publishes no SHA-256 (GitHub digest or SHA256SUMS); refused: " + tag);
+                throw new InvalidDataException(NoPublishedDigestPrefix + tag);
             return new RtxEncoreReleaseInfo(NormalizeVersion(tag), tag, assetName, assetUrl!, assetSha, sumsUrl);
         }
-        throw new InvalidDataException("No RTX Encore release with an RTX-Encore-*.zip was found.");
+        throw new InvalidDataException(NoReleaseMessage);
     }
 
     internal static string NormalizeVersion(string tag)
@@ -539,7 +558,7 @@ public sealed class RtxEncoreDeploymentService
         var value = tag.Trim();
         if (value.StartsWith('v') || value.StartsWith('V')) value = value[1..];
         if (!Regex.IsMatch(value, @"^[0-9]+(?:\.[0-9]+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]{0,40})?$", RegexOptions.CultureInvariant))
-            throw new InvalidDataException("The RTX Encore release tag is not a version: " + tag);
+            throw new InvalidDataException(TagNotAVersionPrefix + tag);
         return value;
     }
 
@@ -572,9 +591,9 @@ public sealed class RtxEncoreDeploymentService
         {
             var sums = await TrustedDownload.GetStringAsync(_http, release.ChecksumsUrl, DownloadSources.RtxEncore, cancellationToken: cancellationToken).ConfigureAwait(false);
             var expected = Rtx40MfgStandaloneDeploymentService.TryFindChecksum(sums, release.AssetName)
-                           ?? throw new InvalidDataException("SHA256SUMS has no entry for " + release.AssetName);
+                           ?? throw new InvalidDataException(SumsNoEntryPrefix + release.AssetName);
             if (!FileHash.HexEquals(download.Sha256, expected))
-                throw new InvalidDataException("The RTX Encore zip does not match its SHA256SUMS: " + release.AssetName);
+                throw new InvalidDataException(SumsMismatchPrefix + release.AssetName);
         }
 
         using (var zip = ZipFile.OpenRead(download.Path))
@@ -582,7 +601,7 @@ public sealed class RtxEncoreDeploymentService
             // The release's own rtx-encore.dll at the zip root; the pre-named copies under alternative-proxies/ are other builds.
             var entries = zip.Entries.Where(e => e.FullName.Equals(PayloadName, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (entries.Length != 1)
-                throw new InvalidDataException(PayloadName + " is not at the root of the RTX Encore zip exactly once.");
+                throw new InvalidDataException(PayloadNotAtRootMessage);
             await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entries[0], dllPath, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
         }
         try { ValidatePayload(dllPath); }
@@ -599,11 +618,11 @@ public sealed class RtxEncoreDeploymentService
     internal static void ValidatePayload(string path)
     {
         if (new FileInfo(path).Length < MinimumDllSize)
-            throw new InvalidDataException("The RTX Encore DLL is implausibly small.");
+            throw new InvalidDataException(TooSmallMessage);
         if (PeArchitectureDetector.Detect(path) != PeArchitecture.X64)
-            throw new InvalidDataException("The RTX Encore download is not a 64-bit Windows DLL.");
+            throw new InvalidDataException(NotX64Message);
         if (!BinarySignatureInspector.LooksLikeRtxEncore(path))
-            throw new InvalidDataException("The RTX Encore download does not carry RTX Encore's version information.");
+            throw new InvalidDataException(NoVersionResourceMessage);
     }
 
     /// <summary>
