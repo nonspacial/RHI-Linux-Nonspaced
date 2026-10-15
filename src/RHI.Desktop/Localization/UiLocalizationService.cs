@@ -1217,6 +1217,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DlssAutoFollowService.SwapFailedMessage, "A troca falhou; o arquivo do jogo foi mantido."),
         // #178
         (RHI.Platform.Linux.Deployment.LinuxUpdateAllService.LeftOutMessage, "Deixado de fora de Atualizar tudo pela inclusão em atualizações."),
+        (RHI.Platform.Linux.Deployment.LinuxUpdateAllService.LeftOutUnreadableMessage, "Deixado de fora de Atualizar tudo: não é possível ler o arquivo de inclusão em atualizações."),
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -1279,8 +1280,10 @@ public static class UiLocalizationService
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount - heldOff);
         if (heldOff > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeldNoAddons"), heldOff);
-        if (result.ExcludedCount > 0) // w5/update-policy (#178)
-            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcluded"), result.ExcludedCount);
+        if (result.ExcludedCount - result.ExcludedUnreadableCount > 0) // w5/update-policy (#178)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcluded"), result.ExcludedCount - result.ExcludedUnreadableCount);
+        if (result.ExcludedUnreadableCount > 0) // #178: the inclusion file cannot be read, so everything was left out
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcludedUnreadable"), result.ExcludedUnreadableCount);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

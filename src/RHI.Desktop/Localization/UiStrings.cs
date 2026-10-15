@@ -906,6 +906,10 @@ internal static class UiStrings
         ("Upd.RowLeftOutAllGames", "Fora de Atualizar tudo em todos os jogos (Configurações).", "Left out of Update All in every game (Settings)."),
         ("Upd.RowNotFollowed", "Não passa sozinho para a versão mais recente neste jogo.", "Not moved to the newest version automatically in this game."),
         ("Upd.UpdateAllExcluded", " · {0} deixado(s) de fora (inclusão em atualizações)", " · {0} left out (update inclusion)"),
+        ("Upd.UpdateAllExcludedUnreadable", " · {0} deixado(s) de fora: não é possível ler o arquivo de inclusão em atualizações", " · {0} left out: the update-inclusion file cannot be read"),
+        ("Upd.RowLeftOutUnreadable", "Fora de Atualizar tudo: não é possível ler o arquivo de inclusão em atualizações.", "Left out of Update All: the update-inclusion file cannot be read."),
+        ("Upd.RowNotFollowedUnreadable", "Não passa sozinho para a versão mais recente: não é possível ler o arquivo de inclusão em atualizações.", "Not moved to the newest version automatically: the update-inclusion file cannot be read."),
+        ("Upd.DialogUnreadable", "Não é possível ler o arquivo de inclusão em atualizações ({0}). Até que ele possa ser lido, Atualizar tudo e as atualizações em segundo plano deixam tudo de fora em todos os jogos. Corrija ou apague esse arquivo para escolher de novo.", "The update-inclusion file cannot be read ({0}). Until it can, Update All and the background updates leave everything out in every game. Fix or delete that file to choose again."),
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

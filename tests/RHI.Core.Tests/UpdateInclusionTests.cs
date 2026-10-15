@@ -73,9 +73,33 @@ public sealed class UpdateInclusionTests : IDisposable
         File.WriteAllText(path, "{ not json");
         var store = new UpdateInclusionStore(path);
 
-        Assert.Equal(UpdateExclusion.ThisGame, store.ExclusionFor(Game("Any"), ManagedComponentKind.ReShade));
+        Assert.True(store.IsUnreadable);
+        Assert.Equal(UpdateExclusion.Unreadable, store.ExclusionFor(Game("Any"), ManagedComponentKind.ReShade));
         Assert.Throws<RHI.Platform.Linux.Persistence.JsonStoreUnavailableException>(() =>
             store.SetExcluded(Game("Any"), [ManagedComponentKind.ReShade], []));
+
+        File.WriteAllText(path, "{}");
+        Assert.False(store.IsUnreadable);
+        Assert.Equal(UpdateExclusion.None, store.ExclusionFor(Game("Any"), ManagedComponentKind.ReShade));
+    }
+
+    // w5 review nit 9: per-row questions do not parse the file again while it is unchanged; a change is seen at once.
+    [Fact]
+    public void Store_ParsesAnUnchangedFileOnce()
+    {
+        var path = Path.Combine(_root, "parsed-once.json");
+        var store = new UpdateInclusionStore(path);
+        var game = Game("Parsed");
+        store.SetExcluded(game, [ManagedComponentKind.ReShade], [ManagedComponentKind.ReShade]);
+        var before = store.ParsesForTesting;
+
+        for (var i = 0; i < 50; i++) Assert.Equal(UpdateExclusion.ThisGame, store.ExclusionFor(game, ManagedComponentKind.ReShade));
+        Assert.Empty(store.ExcludedFor(Game("Other")));
+
+        Assert.Equal(before + 1, store.ParsesForTesting);
+        File.WriteAllText(path, "{}"); // changed behind the store's back
+        Assert.Equal(UpdateExclusion.None, store.ExclusionFor(game, ManagedComponentKind.ReShade));
+        Assert.Equal(before + 2, store.ParsesForTesting);
     }
 
     [Fact]
@@ -128,6 +152,35 @@ public sealed class UpdateInclusionTests : IDisposable
         Assert.Equal((1, 0), (result.ExcludedCount, result.DeferredCount));
     }
 
+    // w5 review finding 5: an unreadable inclusion file is named in the summary, not counted as the user's choice.
+    [Theory]
+    [InlineData("en-US", "Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 left out (update inclusion) · 2 left out: the update-inclusion file cannot be read.")]
+    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (inclusão em atualizações) · 2 deixado(s) de fora: não é possível ler o arquivo de inclusão em atualizações.")]
+    public void UpdateAllSummary_SaysWhenTheInclusionFileCannotBeRead(string language, string expected)
+    {
+        var result = new LinuxUpdateAllResult([
+            new LinuxUpdateItemResult("G", ManagedComponentKind.ReShade, true, false, false, LinuxUpdateAllService.LeftOutMessage, Excluded: true),
+            new LinuxUpdateItemResult("G", ManagedComponentKind.RenoDX, true, false, false, LinuxUpdateAllService.LeftOutUnreadableMessage, Excluded: true, ExclusionUnreadable: true),
+            new LinuxUpdateItemResult("H", ManagedComponentKind.RenoDX, true, false, false, LinuxUpdateAllService.LeftOutUnreadableMessage, Excluded: true, ExclusionUnreadable: true)
+        ]);
+        Assert.Equal(expected, UiLocalizationService.UpdateAllSummaryFor(language, result));
+    }
+
+    [Fact]
+    public async Task UpdateAll_WithAnUnreadableInclusionFile_SaysSoPerItem()
+    {
+        var game = Game("Unreadable");
+        var records = Records(game, ManagedComponentKind.ReShade);
+        var backend = new CountingBackend(_ => UpdateExclusion.Unreadable);
+
+        var result = await new LinuxUpdateAllService(records, backend, new Running(false)).RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal((true, true, LinuxUpdateAllService.LeftOutUnreadableMessage), (item.Excluded, item.ExclusionUnreadable, item.Message));
+        Assert.Equal((1, 1), (result.ExcludedCount, result.ExcludedUnreadableCount));
+        Assert.Empty(backend.Touched);
+    }
+
     [Theory]
     [InlineData("en-US", "Update All: 0 updated · 1 current · 0 deferred · 0 failed · 1 left out (update inclusion).")]
     [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 1 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (inclusão em atualizações).")]
@@ -146,6 +199,8 @@ public sealed class UpdateInclusionTests : IDisposable
     [InlineData(ManagedComponentKind.ReShade, UpdateExclusion.ThisGame, "Left out of Update All in this game.")]
     [InlineData(ManagedComponentKind.ReShade, UpdateExclusion.AllGames, "Left out of Update All in every game (Settings).")]
     [InlineData(ManagedComponentKind.Dlss, UpdateExclusion.ThisGame, "Not moved to the newest version automatically in this game.")]
+    [InlineData(ManagedComponentKind.ReShade, UpdateExclusion.Unreadable, "Left out of Update All: the update-inclusion file cannot be read.")]
+    [InlineData(ManagedComponentKind.Streamline, UpdateExclusion.Unreadable, "Not moved to the newest version automatically: the update-inclusion file cannot be read.")]
     public void ComponentRow_SaysWhyUpdateAllLeavesItAlone(ManagedComponentKind kind, UpdateExclusion exclusion, string note)
     {
         var row = new ComponentRowViewModel(new ManagedComponent
@@ -175,10 +230,62 @@ public sealed class UpdateInclusionTests : IDisposable
         };
 
         fx.Managed.Decorate(game, components);
-
         Assert.Equal(UpdateExclusion.ThisGame, components[0].UpdateExclusion);
         Assert.Equal(UpdateExclusion.None, components[1].UpdateExclusion); // left out, but not RHI's: Update All never touches it anyway
+        Assert.Equal(UpdateExclusion.None, components[2].UpdateExclusion); // w5 review nit 7: Follow newest DLSS is off
+
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        settings.FollowNewestDlss = true;
+        fx.Vm.Settings.SaveLinuxSettings(settings);
+        fx.Vm.Updates.StopBackgroundLoop();
+        fx.Managed.Decorate(game, components);
         Assert.Equal(UpdateExclusion.ThisGame, components[2].UpdateExclusion);
+    }
+
+    // w5 review finding 5: an unreadable inclusion file leaves everything out, and every place that shows the choice
+    // says so: the rows, and the dialog (boxes cleared and disabled, nothing to save) instead of every box ticked.
+    [Fact]
+    public async Task UnreadableInclusionFile_RowsAndDialogSaySo_AndNothingIsSaved()
+    {
+        var game = Game("Unreadable Quest");
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Records.Upsert(Record(game, ManagedComponentKind.ReShade));
+        var path = fx.Vm.UpdatePolicy!.Inclusion!.FilePath;
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{ not json");
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        settings.FollowNewestDlss = true;
+        fx.Vm.Settings.SaveLinuxSettings(settings);
+        fx.Vm.Updates.StopBackgroundLoop();
+        var components = new List<ManagedComponent>
+        {
+            new() { Kind = ManagedComponentKind.ReShade, DisplayName = "ReShade", Availability = ComponentAvailability.Installed, ManagedByRhi = true },
+            new() { Kind = ManagedComponentKind.Dlss, DisplayName = "DLSS", Availability = ComponentAvailability.Installed }
+        };
+        fx.Managed.Decorate(game, components);
+        Assert.Equal([UpdateExclusion.Unreadable, UpdateExclusion.Unreadable], components.Select(component => component.UpdateExclusion));
+
+        UpdateInclusionDialogModel? shown = null;
+        fx.Vm.UpdatePolicy.ShowInclusionAsync = model =>
+        {
+            shown = model;
+            return Task.FromResult<IReadOnlySet<ManagedComponentKind>?>(new HashSet<ManagedComponentKind>());
+        };
+        var entry = fx.Vm.CardMenuFor(Row(fx, "Unreadable Quest")).Single(item => item.Id == "update-inclusion");
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+        await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)entry.Command).ExecuteAsync(null);
+
+        Assert.DoesNotContain(lines, line => line.Contains("update inclusion", StringComparison.OrdinalIgnoreCase)); // no save tried, no refusal
+        var persisted = false;
+        Assert.Null(await fx.Vm.UpdatePolicy.EditInclusionAsync(game, shown!, _ => { persisted = true; return null; }));
+        Assert.False(persisted); // an unreadable file is never written over
+
+        Assert.NotNull(shown);
+        Assert.Equal($"The update-inclusion file cannot be read ({path}). Until it can, Update All and the background updates leave everything out in every game. Fix or delete that file to choose again.",
+            shown.UnreadableNote);
+        Assert.All(shown.Choices, choice => Assert.False(choice.Included));
+        Assert.Equal("{ not json", File.ReadAllText(path));
     }
 
     // ---- card menu and dialog ----
@@ -218,16 +325,81 @@ public sealed class UpdateInclusionTests : IDisposable
     }
 
     [Fact]
-    public async Task CardMenu_OffersTheDlssBox_OnlyWhileFollowNewestIsOn()
+    public async Task CardMenu_OffersTheDlssBox_OnlyWhileFollowNewestIsOn_AndOnlyForAGameWithSuchAFile()
     {
         using var fx = await ViewModelFixture.StartAsync([Game("Dlss Quest")]);
         fx.Vm.UpdatePolicy!.ShowInclusionAsync = _ => Task.FromResult<IReadOnlySet<ManagedComponentKind>?>(null);
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Dlss Quest")), item => item.Id == "update-inclusion");
+        var game = Row(fx, "Dlss Quest").Game;
+        var on = new LinuxAppSettings { FollowNewestDlss = true, FollowNewestStreamline = true };
 
-        var model = fx.Vm.UpdatePolicy.InclusionFor(Row(fx, "Dlss Quest").Game, [], new LinuxAppSettings { FollowNewestDlss = true });
+        var model = fx.Vm.UpdatePolicy.InclusionFor(game, [], on, followable: (true, false));
 
         Assert.Equal([ManagedComponentKind.Dlss], model!.Choices.Select(choice => choice.Kind));
         Assert.Equal("DLSS (follow newest)", model.Choices[0].Label);
+        Assert.Null(fx.Vm.UpdatePolicy.InclusionFor(game, [], new LinuxAppSettings(), followable: (true, true)));
+        // w5 review finding 6: no DLSS / Streamline file Follow newest could move (or not known yet): no box, no entry.
+        Assert.Null(fx.Vm.UpdatePolicy.InclusionFor(game, [], on, followable: (false, false)));
+        Assert.Null(fx.Vm.UpdatePolicy.InclusionFor(game, [], on, followable: null));
+    }
+
+    // w5 review finding 6 through the real view model: with Follow newest DLSS on, the entry appears for an analysed game
+    // that has a DLSS file Follow newest could move, never for one without (and no RHI component to offer).
+    [Fact]
+    public async Task CardMenu_OffersUpdateInclusion_ForFollowNewest_OnlyWhereTheGameHasADlssFile()
+    {
+        var withDlss = Game("Has Dlss Quest");
+        File.WriteAllBytes(Path.Combine(withDlss.InstallPath, "nvngx_dlss.dll"), DlssAutoFollowServiceTests.Pe("310.4.0"));
+        var withoutDlss = Game("No Dlss Quest");
+        using var fx = await ViewModelFixture.StartAsync([withDlss, withoutDlss]);
+        fx.Vm.UpdatePolicy!.ShowInclusionAsync = _ => Task.FromResult<IReadOnlySet<ManagedComponentKind>?>(null);
+        var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+        settings.FollowNewestDlss = true;
+        fx.Vm.Settings.SaveLinuxSettings(settings);
+        fx.Vm.Updates.StopBackgroundLoop();
+
+        await AnalysedAsync(fx, "Has Dlss Quest");
+        await AnalysedAsync(fx, "No Dlss Quest");
+
+        Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Has Dlss Quest")), item => item.Id == "update-inclusion");
+        Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "No Dlss Quest")), item => item.Id == "update-inclusion");
+        Assert.Equal((true, false), fx.Vm.UpdatePolicy.Follow.FollowableFamilies(Row(fx, "Has Dlss Quest").Game, fx.Vm.Session.CachedFiles(Row(fx, "Has Dlss Quest").Game)));
+    }
+
+    [Fact]
+    public async Task FollowableFamilies_LeaveOutFilesAnRhiComponentRecorded()
+    {
+        var game = Game("Recorded Dlss Quest");
+        var dll = Path.Combine(game.InstallPath, "nvngx_dlss.dll");
+        File.WriteAllBytes(dll, DlssAutoFollowServiceTests.Pe("310.4.0"));
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            // Any RHI record (not only OptiScaler's, which the DLSS panel leaves out too): Follow newest never moves it.
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.RenoDX,
+            BinaryDirectory = game.BinaryDirectory!, Version = "1.0", Files = [new LinuxDeployedFile { Path = dll, Sha256 = "00" }]
+        });
+
+        Assert.Equal((false, false), fx.Vm.UpdatePolicy!.Follow.FollowableFamilies(game, [dll, game.ExecutablePath!]));
+        Assert.Null(fx.Vm.UpdatePolicy.Follow.FollowableFamilies(game, null));
+    }
+
+    private static async Task AnalysedAsync(ViewModelFixture fx, string name)
+    {
+        var game = Row(fx, name).Game;
+        if (fx.Vm.Session.TryGetCached(game, out _)) return;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnCompleted(AnalysisOutcome outcome) { if (outcome.Game.Name == name) done.TrySetResult(); }
+        fx.Vm.Session.Completed += OnCompleted;
+        try
+        {
+            fx.Vm.SelectedGame = game;
+            if (!fx.Vm.Session.TryGetCached(game, out _)) await done.Task.WaitAsync(TimeSpan.FromMinutes(2));
+        }
+        finally
+        {
+            fx.Vm.Session.Completed -= OnCompleted;
+        }
     }
 
     [Fact]

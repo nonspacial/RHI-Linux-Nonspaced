@@ -951,8 +951,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component)
         => _updateInclusion?.ExclusionFor(game, component) ?? UpdateExclusion.None;
 
-    // #178: installed RHI-managed rows Update All takes part in say when the inclusion leaves them out; the DLSS and
-    // Streamline rows say so when Follow newest skips this game (only the game's own choice applies there).
+    // #178: installed RHI-managed rows Update All takes part in say when the inclusion leaves them out (or that its file
+    // cannot be read); the DLSS and Streamline rows say so only while Follow newest is on for that family and skips this
+    // game (only the game's own choice applies there).
     private void DecorateUpdateInclusion(DetectedGame game, IReadOnlyList<ManagedComponent> components)
     {
         if (_updateInclusion is null) return;
@@ -961,8 +962,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             var installed = component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
             if (!installed) continue;
             if (component.Kind is ManagedComponentKind.Dlss or ManagedComponentKind.Streamline)
-                component.UpdateExclusion = _updateInclusion.ExclusionFor(game, component.Kind) == UpdateExclusion.ThisGame
-                    ? UpdateExclusion.ThisGame
+                component.UpdateExclusion = _updateInclusion.FollowsNewest(component.Kind)
+                                            && _updateInclusion.ExclusionFor(game, component.Kind) is var exclusion
+                                            && exclusion is UpdateExclusion.ThisGame or UpdateExclusion.Unreadable
+                    ? exclusion
                     : UpdateExclusion.None;
             else if (component.ManagedByRhi && LinuxUpdateAllService.IsSupported(component.Kind))
                 component.UpdateExclusion = _updateInclusion.ExclusionFor(game, component.Kind);

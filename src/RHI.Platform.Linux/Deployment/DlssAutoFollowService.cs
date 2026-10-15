@@ -11,6 +11,13 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed record DlssFollowChoice(bool Dlss, bool Streamline)
 {
     public bool Any => Dlss || Streamline;
+
+    /// <summary>The two Settings toggles.</summary>
+    public static DlssFollowChoice From(RHI.Platform.Linux.Settings.LinuxAppSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return new(settings.FollowNewestDlss, settings.FollowNewestStreamline);
+    }
 }
 
 public enum DlssFollowOutcome
@@ -461,6 +468,21 @@ public sealed class DlssAutoFollowService
             if (items.Count > 0) work.Add(new Work(game, items));
         }
         return work;
+    }
+
+    /// <summary>
+    /// Which families this game has files a pass could follow (the same targets <see cref="ApplyAsync"/> swaps: no
+    /// RHI-recorded file, no OptiScaler folder, no orchestrated stack), from a file index already at hand; null without
+    /// one (not worked out yet). The update-inclusion dialog offers its DLSS / Streamline boxes only for these (#178).
+    /// </summary>
+    public (bool Dlss, bool Streamline)? FollowableFamilies(DetectedGame game, IReadOnlyList<string>? indexedFiles)
+    {
+        ArgumentNullException.ThrowIfNull(game);
+        if (indexedFiles is null) return null;
+        var candidate = _targets.InspectForFollow(game, indexedFiles);
+        if (!candidate.Eligible) return (false, false);
+        var detection = candidate.Detection;
+        return (DlssFamilies.Any(family => TargetsOf(detection, family).Count > 0), TargetsOf(detection, StreamlineFamily).Count > 0);
     }
 
     /// <summary>#178: a game whose update inclusion leaves DLSS (SR/RR/FG) or Streamline out is not followed.</summary>

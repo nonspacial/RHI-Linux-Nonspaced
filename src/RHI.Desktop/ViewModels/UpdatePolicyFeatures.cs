@@ -32,30 +32,35 @@ public sealed class UpdatePolicyFeatures
     /// #178: the update-inclusion dialog for <paramref name="game"/>, or null when it would offer nothing (the card menu
     /// then leaves the entry out). One box per installed RHI component Update All takes part in, except those Settings
     /// already leaves out for every game (named in a note instead); DLSS and Streamline boxes only while their Follow
-    /// newest toggle is on, for a Windows game with a confirmed target.
+    /// newest toggle is on AND the game has a file of that family Follow newest could move (<paramref name="followable"/>,
+    /// from the game's analysis; null = not known yet, no box). While the file cannot be read the dialog says so, with
+    /// every box cleared and nothing to save (everything is left out until it reads again).
     /// </summary>
-    public UpdateInclusionDialogModel? InclusionFor(DetectedGame game, IEnumerable<ManagedComponentKind> installed, LinuxAppSettings settings)
+    public UpdateInclusionDialogModel? InclusionFor(DetectedGame game, IEnumerable<ManagedComponentKind> installed, LinuxAppSettings settings,
+        (bool Dlss, bool Streamline)? followable = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         if (Inclusion is null || ShowInclusionAsync is null) return null;
+        var unreadable = Inclusion.IsUnreadable;
         var excluded = Inclusion.ExcludedFor(game);
+        bool Included(ManagedComponentKind kind) => !unreadable && !excluded.Contains(kind);
         var global = UpdateInclusionStore.GlobalSkipsFrom(settings);
         var components = LinuxUpdateAllService.SupportedComponents.Where(installed.Contains).ToArray();
         var choices = components.Where(kind => !global.Contains(kind))
-            .Select(kind => new UpdateInclusionChoice(kind, LinuxManagedComponentService.DisplayDependencyName(kind), !excluded.Contains(kind)))
+            .Select(kind => new UpdateInclusionChoice(kind, LinuxManagedComponentService.DisplayDependencyName(kind), Included(kind)))
             .ToList();
-        var windowsTarget = game.HasConfirmedPatchTarget && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase);
-        if (windowsTarget && settings.FollowNewestDlss)
-            choices.Add(new(ManagedComponentKind.Dlss, UiLocalizationService.Text("Upd.DialogDlss"), !excluded.Contains(ManagedComponentKind.Dlss)));
-        if (windowsTarget && settings.FollowNewestStreamline)
-            choices.Add(new(ManagedComponentKind.Streamline, UiLocalizationService.Text("Upd.DialogStreamline"), !excluded.Contains(ManagedComponentKind.Streamline)));
+        if (settings.FollowNewestDlss && followable is { Dlss: true })
+            choices.Add(new(ManagedComponentKind.Dlss, UiLocalizationService.Text("Upd.DialogDlss"), Included(ManagedComponentKind.Dlss)));
+        if (settings.FollowNewestStreamline && followable is { Streamline: true })
+            choices.Add(new(ManagedComponentKind.Streamline, UiLocalizationService.Text("Upd.DialogStreamline"), Included(ManagedComponentKind.Streamline)));
         if (choices.Count == 0) return null;
         var everyGame = components.Where(global.Contains).Select(LinuxManagedComponentService.DisplayDependencyName).ToArray();
         return new UpdateInclusionDialogModel(
             UiLocalizationService.Format("Upd.DialogTitle", game.Name),
             UiLocalizationService.Text("Upd.DialogIntro"),
             choices,
-            everyGame.Length == 0 ? null : UiLocalizationService.Format("Upd.DialogAllGamesNote", string.Join(", ", everyGame)));
+            everyGame.Length == 0 ? null : UiLocalizationService.Format("Upd.DialogAllGamesNote", string.Join(", ", everyGame)),
+            unreadable ? UiLocalizationService.Format("Upd.DialogUnreadable", Inclusion.FilePath) : null);
     }
 
     /// <summary>
@@ -67,14 +72,13 @@ public sealed class UpdatePolicyFeatures
         ArgumentNullException.ThrowIfNull(model);
         if (ShowInclusionAsync is not { } show || Inclusion is not { } store) return null;
         var excluded = await show(model);
-        if (excluded is null) return null;
+        if (excluded is null || model.UnreadableNote is not null) return null; // an unreadable file is never written over
         return persist(() => store.SetExcluded(game, model.Choices.Select(choice => choice.Kind), excluded))
                ?? UiLocalizationService.Format("Upd.InclusionSaved", game.Name);
     }
 
     /// <summary>The two Settings toggles.</summary>
-    public static DlssFollowChoice ChoiceFrom(LinuxAppSettings settings)
-        => new(settings.FollowNewestDlss, settings.FollowNewestStreamline);
+    public static DlssFollowChoice ChoiceFrom(LinuxAppSettings settings) => DlssFollowChoice.From(settings);
 
     /// <summary>
     /// The status line for a pass that changed (or failed to change, or newly put off) a game file; null when it did none
@@ -100,5 +104,9 @@ public sealed class UpdatePolicyFeatures
 /// <summary>One box of the update-inclusion dialog: ticked = Update All (or Follow newest) may change it in this game.</summary>
 public sealed record UpdateInclusionChoice(ManagedComponentKind Kind, string Label, bool Included);
 
-/// <summary>#178: what the update-inclusion dialog shows for one game.</summary>
-public sealed record UpdateInclusionDialogModel(string Title, string Intro, IReadOnlyList<UpdateInclusionChoice> Choices, string? AllGamesNote);
+/// <summary>
+/// #178: what the update-inclusion dialog shows for one game. <see cref="UnreadableNote"/>: the file cannot be read; the
+/// dialog shows it, every box cleared and disabled, and only a Close button.
+/// </summary>
+public sealed record UpdateInclusionDialogModel(string Title, string Intro, IReadOnlyList<UpdateInclusionChoice> Choices, string? AllGamesNote,
+    string? UnreadableNote = null);

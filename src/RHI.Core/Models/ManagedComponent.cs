@@ -76,5 +76,7 @@ public enum UpdateExclusion
     /// <summary>Left out for this game (the game's update inclusion).</summary>
     ThisGame,
     /// <summary>Left out for every game (Settings).</summary>
-    AllGames
+    AllGames,
+    /// <summary>The update-inclusion file cannot be read: everything is left out until it reads again.</summary>
+    Unreadable
 }

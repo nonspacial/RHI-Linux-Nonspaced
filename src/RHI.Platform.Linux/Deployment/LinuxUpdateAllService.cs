@@ -37,7 +37,9 @@ public sealed record LinuxUpdateItemResult(
     // w3/parity (#96): held by a layer (ManagedUpdateCheck.HeldBy); counted on its own.
     string? HeldBy = null,
     // #178: left out by the update inclusion (this game's, or Settings' for every game); never checked, never updated.
-    bool Excluded = false);
+    bool Excluded = false,
+    // #178: left out because the update-inclusion file cannot be read (Excluded is true too).
+    bool ExclusionUnreadable = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
@@ -48,6 +50,8 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     public int UncheckedCount => Items.Count(item => item.Unchecked);
     public int HeldCount => Items.Count(item => item.HeldBy is not null); // w3/parity (#96)
     public int ExcludedCount => Items.Count(item => item.Excluded); // #178
+    /// <summary>#178: of <see cref="ExcludedCount"/>, those left out only because the inclusion file cannot be read.</summary>
+    public int ExcludedUnreadableCount => Items.Count(item => item.Excluded && item.ExclusionUnreadable);
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
 
     public string Summary => Items.Count == 0
@@ -55,7 +59,8 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
         : $"Update All: {ChangedCount} updated · {CurrentCount} current · {DeferredCount} deferred · {FailedCount} failed"
           + (UncheckedCount > 0 ? $" · {UncheckedCount} could not be checked" : "")
           + (HeldCount > 0 ? $" · {HeldCount} held by " + string.Join(", ", Items.Select(item => item.HeldBy).OfType<string>().Distinct()) : "")
-          + (ExcludedCount > 0 ? $" · {ExcludedCount} left out" : "") + ".";
+          + (ExcludedCount > 0 ? $" · {ExcludedCount} left out" : "")
+          + (ExcludedUnreadableCount > 0 ? " (the update-inclusion file cannot be read)" : "") + ".";
 }
 
 public interface ILinuxManagedUpdateBackend
@@ -180,6 +185,9 @@ public sealed class LinuxUpdateAllService
     /// <summary>#178: the item message of a component the update inclusion leaves out.</summary>
     public const string LeftOutMessage = "Left out of Update All by its update inclusion.";
 
+    /// <summary>#178: the item message while the update-inclusion file cannot be read (everything is left out).</summary>
+    public const string LeftOutUnreadableMessage = "Left out of Update All: the update-inclusion file cannot be read.";
+
     public bool HasManagedTargets(IEnumerable<DetectedGame> games)
         => games.Any(game => _records.FindAll(game).Any(record => IsSupported(record.Component)));
 
@@ -210,9 +218,14 @@ public sealed class LinuxUpdateAllService
                 if (targets.Length == 0) continue;
 
                 // #178: what the update inclusion leaves out is neither checked nor updated, and never "could not check".
-                var excluded = targets.Where(component => _backend.UpdateExclusionFor(game, component) != UpdateExclusion.None).ToArray();
+                var exclusions = targets.ToDictionary(component => component, component => _backend.UpdateExclusionFor(game, component));
+                var excluded = targets.Where(component => exclusions[component] != UpdateExclusion.None).ToArray();
                 foreach (var component in excluded)
-                    results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, LeftOutMessage, Excluded: true));
+                {
+                    var unreadable = exclusions[component] == UpdateExclusion.Unreadable;
+                    results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, unreadable ? LeftOutUnreadableMessage : LeftOutMessage,
+                        Excluded: true, ExclusionUnreadable: unreadable));
+                }
                 targets = targets.Except(excluded).ToArray();
                 if (targets.Length == 0) continue;
 

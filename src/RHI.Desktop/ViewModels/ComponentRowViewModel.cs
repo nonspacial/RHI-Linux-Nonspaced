@@ -107,7 +107,10 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     {
         UpdateExclusion.ThisGame when component.Kind is ManagedComponentKind.Dlss or ManagedComponentKind.Streamline
             => UiLocalizationService.Text("Upd.RowNotFollowed"),
+        UpdateExclusion.Unreadable when component.Kind is ManagedComponentKind.Dlss or ManagedComponentKind.Streamline
+            => UiLocalizationService.Text("Upd.RowNotFollowedUnreadable"),
         UpdateExclusion.ThisGame => UiLocalizationService.Text("Upd.RowLeftOutThisGame"),
+        UpdateExclusion.Unreadable => UiLocalizationService.Text("Upd.RowLeftOutUnreadable"),
         UpdateExclusion.AllGames => UiLocalizationService.Text("Upd.RowLeftOutAllGames"),
         _ => null
     };

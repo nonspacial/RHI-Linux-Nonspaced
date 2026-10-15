@@ -206,7 +206,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
         var updateInclusion = new UpdateInclusionStore(Path.Combine(prefs, "update-inclusion.json"),
-            () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load())); // #178
+            () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load()), () => DlssFollowChoice.From(settingsStore.Load())); // #178
         var dlssFollowStore = new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json"));
         updatePolicy = new UpdatePolicyFeatures(new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records,
             dlssFollowStore, new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")), // #177: the components' history file
