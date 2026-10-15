@@ -207,8 +207,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/update-policy rows
         var updateInclusion = new UpdateInclusionStore(Path.Combine(prefs, "update-inclusion.json"),
             () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load())); // #178
+        var dlssFollowStore = new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json"));
         updatePolicy = new UpdatePolicyFeatures(new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records,
-            new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")), // #177: the components' history file
+            dlssFollowStore, new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")), // #177: the components' history file
             updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // w5/ini-presets rows
@@ -224,6 +225,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
             , updateInclusion: updateInclusion
+            , dlssFollow: dlssFollowStore
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

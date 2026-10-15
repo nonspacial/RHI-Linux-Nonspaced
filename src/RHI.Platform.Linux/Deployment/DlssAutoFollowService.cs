@@ -3,6 +3,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -31,10 +32,26 @@ public enum DlssFollowOutcome
 /// <summary>One file (or Streamline folder) a pass swapped, or failed to swap.</summary>
 public sealed record DlssFollowSwap(string GameName, string Label, string FromVersion, string ToVersion, bool Success, string? Error);
 
-public sealed record DlssFollowResult(DlssFollowOutcome Outcome, IReadOnlyList<DlssFollowSwap> Swaps, int DeferredGames = 0, string? Problem = null)
+/// <summary>
+/// One game (and family) a pass skipped and left for the next one. <see cref="Repeat"/>: the same skip, for the same
+/// newest version, was already reported by an earlier pass (the status line and history say it once).
+/// </summary>
+public sealed record DlssFollowSkip(string GameName, string GameKey, string Label, DlssFollowHoldReason Reason, bool Repeat);
+
+public sealed record DlssFollowResult(DlssFollowOutcome Outcome, IReadOnlyList<DlssFollowSwap> Swaps, IReadOnlyList<DlssFollowSkip>? Skipped = null, string? Problem = null)
 {
     public int UpdatedCount => Swaps.Count(swap => swap.Success);
     public int FailedCount => Swaps.Count(swap => !swap.Success);
+
+    /// <summary>The games this pass skipped (each is followed again by the next pass).</summary>
+    public IReadOnlyList<DlssFollowSkip> Skips => Skipped ?? [];
+
+    /// <summary>How many games this pass skipped, for any reason, reported before or not.</summary>
+    public int DeferredGames => Skips.Select(skip => skip.GameKey).Distinct(StringComparer.Ordinal).Count();
+
+    /// <summary>How many games were skipped for <paramref name="reason"/> and not reported for it before.</summary>
+    public int NewlySkipped(DlssFollowHoldReason reason)
+        => Skips.Where(skip => !skip.Repeat && skip.Reason == reason).Select(skip => skip.GameKey).Distinct(StringComparer.Ordinal).Count();
 }
 
 /// <summary>What <see cref="DlssAutoFollowService.CheckAsync"/> found: done (<see cref="Result"/>), or plans to apply.</summary>
@@ -64,8 +81,11 @@ public sealed class DlssFollowCheck
 /// newest (never 1.x) is swapped to the new newest; files on any other version (a version picked by hand, the game's
 /// own, DLSS 1.x) are left alone, so a game opts in by being on the latest. Targets are the Quick Apply set minus every
 /// RHI-recorded file (<see cref="LinuxDlssDefaultsService.InspectForFollow"/>); <c>nvngx_dlssnr.dll</c> is never followed
-/// (one owner per game). A running game is skipped and followed by the next pass; a swap that fails keeps the file and
-/// the baseline still advances (upstream). Every payload is downloaded before the first game file changes, Cancel stops
+/// (one owner per game). The newest only ever moves forward: a manifest whose newest is older than the baseline changes
+/// nothing. A game skipped by a pass (running, its installer app busy with it, the newest download failed) is held under
+/// its own key: the next pass follows THAT game's files from the versions they were on, never another game's file that
+/// merely sits on such a version; a skip that repeats is reported once. A swap that fails keeps the file and the
+/// baseline still advances (upstream). Every payload is downloaded before the first game file changes, Cancel stops
 /// the pass between games, and each swapped file gets one automatic update-history entry. A game whose update inclusion
 /// leaves DLSS or Streamline out (#178) is not followed for that family.
 /// </summary>
@@ -84,7 +104,7 @@ public sealed class DlssAutoFollowService
     /// <summary>A swap that failed without a reason of its own.</summary>
     public const string SwapFailedMessage = "The swap failed; the game's file was kept.";
 
-    /// <summary>At most this many older newest versions are kept while games stay running across passes.</summary>
+    /// <summary>At most this many older versions are held for one skipped game.</summary>
     internal const int MaxHeldVersions = 8;
 
     internal sealed record Family(string Key, DlssComponentKind? Kind, string Label, bool IsStreamline);
@@ -98,7 +118,23 @@ public sealed class DlssAutoFollowService
 
     private static readonly Family StreamlineFamily = new("streamline", null, "Streamline (sl.*.dll)", true);
 
-    internal sealed record Plan(Family Family, string Newest, IReadOnlyList<string> FollowFrom);
+    /// <summary>
+    /// One family to follow to <see cref="Newest"/>: every game's files on <see cref="Previous"/> (the baseline, when the
+    /// newest moved forward), plus, for each game an earlier pass skipped (<see cref="Held"/>, by game key), that game's
+    /// files on the versions held for it.
+    /// </summary>
+    internal sealed record Plan(Family Family, string Newest, string? Previous, IReadOnlyDictionary<string, DlssFollowHold> Held)
+    {
+        public IReadOnlyList<string> FollowFromFor(DetectedGame game)
+        {
+            var versions = new List<string>();
+            if (Previous is not null) versions.Add(Previous);
+            if (HeldFor(game) is { } hold) versions.AddRange(hold.From);
+            return versions.Where(version => IsOlder(version, Newest)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+
+        public DlssFollowHold? HeldFor(DetectedGame game) => GameRecordIdentity.TryGet(Held, game, out var hold) ? hold : null;
+    }
 
     private sealed record Work(DetectedGame Game, IReadOnlyList<(Plan Plan, IReadOnlyList<(string Target, string From)> Targets)> Items);
 
@@ -246,12 +282,20 @@ public sealed class DlssAutoFollowService
                 seeded = changed = true;
                 continue;
             }
-            var followFrom = track.HeldFrom.Append(track.Newest)
-                .Where(version => !string.IsNullOrWhiteSpace(version) && !SameVersion(version, newest))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            if (followFrom.Length == 0) continue;
-            plans.Add(new Plan(family, newest, followFrom));
+            // Forward only: a newest that went backwards (a release pulled, a reordered or stale list), or one that cannot
+            // be compared, moves nothing and keeps the baseline.
+            var order = Compare(newest, track.Newest);
+            if (order is not >= 0)
+            {
+                AppLog.Warn("dlss-follow", $"Follow newest: the manifest's newest {family.Label} ({newest}) is not newer than {track.Newest}; nothing is followed down");
+                continue;
+            }
+            var previous = order > 0 ? track.Newest.Trim() : null;
+            var held = track.Held
+                .Where(entry => entry.Value.From.Any(version => IsOlder(version, newest)))
+                .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal);
+            if (previous is null && held.Count == 0) continue;
+            plans.Add(new Plan(family, newest, previous, held));
         }
         if (changed) _store.Save(tracks);
         return plans.Count == 0
@@ -295,16 +339,18 @@ public sealed class DlssAutoFollowService
 
         // File half: one game is one unit; Cancel stops the pass between games (the baseline then stays put, so the
         // next pass picks up the games not reached; the ones swapped are no longer on the previous newest).
-        var deferredFamilies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var deferredGames = 0;
+        var holds = plans.ToDictionary(plan => plan.Family.Key, _ => new Dictionary<string, DlssFollowHold>(StringComparer.Ordinal), StringComparer.OrdinalIgnoreCase);
+        var skipped = new List<DlssFollowSkip>();
         foreach (var item in work)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var game = item.Game;
-            if (_running.IsRunning(game) || XboxWriteGate.Refusal(game) is not null)
+            DlssFollowHoldReason? notNow = _running.IsRunning(game) ? DlssFollowHoldReason.Running
+                : XboxWriteGate.Refusal(game) is not null ? DlssFollowHoldReason.InstallerBusy
+                : null;
+            if (notNow is { } reason)
             {
-                deferredGames++;
-                foreach (var (plan, _) in item.Items) deferredFamilies.Add(plan.Family.Key);
+                foreach (var (plan, targets) in item.Items) Hold(game, plan, targets, reason, failure: null);
                 continue;
             }
             if (Refusal(game) is { } refused)
@@ -320,7 +366,8 @@ public sealed class DlssAutoFollowService
             {
                 if (unavailable.TryGetValue(plan.Family, out var why))
                 {
-                    foreach (var (_, from) in targets) swaps.Add(Record(game, plan, from, false, DownloadFailedPrefix + why));
+                    // Not this game's failure: it waits for the next pass like a running game, from the same versions.
+                    Hold(game, plan, targets, DlssFollowHoldReason.DownloadFailed, failure: DownloadFailedPrefix + why);
                     continue;
                 }
                 FileDeploymentBatchResult result;
@@ -346,18 +393,37 @@ public sealed class DlssAutoFollowService
             }
         }
 
-        // Upstream advances the baseline even when a swap failed; families with a running game keep what they still
-        // follow from, so the next pass swaps that game too.
+        // Upstream advances the baseline even when a swap failed. Only the games skipped by this pass keep a hold (the
+        // versions their files were on); every earlier hold is spent: that game was swapped, failed, refused, or its
+        // files are no longer on a held version.
         var tracks = _store.Load() ?? throw new JsonStoreUnavailableException(_store.FilePath, null);
         foreach (var plan in plans)
             tracks[plan.Family.Key] = new DlssFollowTrack
             {
                 Newest = plan.Newest,
-                HeldFrom = deferredFamilies.Contains(plan.Family.Key) ? [.. plan.FollowFrom.Take(MaxHeldVersions)] : [],
+                Held = holds[plan.Family.Key],
                 Unknown = tracks.TryGetValue(plan.Family.Key, out var old) ? old.Unknown : null
             };
         _store.Save(tracks);
-        return new(DlssFollowOutcome.Followed, swaps, deferredGames);
+        return new(DlssFollowOutcome.Followed, swaps, skipped);
+
+        // A skipped game: held under its own key from the versions its files are on. A skip that repeats (same reason,
+        // same newest) is not reported again; a download failure writes one history entry when first reported.
+        void Hold(DetectedGame game, Plan plan, IReadOnlyList<(string Target, string From)> targets, DlssFollowHoldReason reason, string? failure)
+        {
+            var before = plan.HeldFor(game);
+            var repeat = before is not null && before.Reason == reason && SameVersion(before.To, plan.Newest);
+            holds[plan.Family.Key][GameRecordIdentity.Key(game)] = new DlssFollowHold
+            {
+                From = [.. targets.Select(target => target.From).Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxHeldVersions)],
+                Reason = reason,
+                To = plan.Newest,
+                Unknown = before?.Unknown
+            };
+            skipped.Add(new DlssFollowSkip(game.Name, GameRecordIdentity.Key(game), plan.Family.Label, reason, repeat));
+            if (!repeat && failure is not null)
+                foreach (var (_, from) in targets) Record(game, plan, from, false, failure);
+        }
     }
 
     // Which files of which games are on a version being followed from. Reads PE versions only (no writes, no network).
@@ -379,11 +445,13 @@ public sealed class DlssAutoFollowService
             var items = new List<(Plan, IReadOnlyList<(string, string)>)>();
             foreach (var plan in relevant)
             {
+                var followFrom = plan.FollowFromFor(game);
+                if (followFrom.Count == 0) continue;
                 // The history names the version as the manifest spells it (310.4.0, not the DLL's 310.4.0.0).
                 var targets = TargetsOf(candidate.Detection, plan.Family)
                     .Select(target => (Target: target, Installed: InstalledVersion(target, plan.Family)))
                     .Where(target => target.Installed is { } installed && !IsVersion1(installed))
-                    .Select(target => (target.Target, From: plan.FollowFrom.FirstOrDefault(version => SameVersion(version, target.Installed))))
+                    .Select(target => (target.Target, From: followFrom.FirstOrDefault(version => SameVersion(version, target.Installed))))
                     .Where(target => target.From is not null)
                     .Select(target => (target.Target, target.From!))
                     .ToArray();
@@ -468,6 +536,17 @@ public sealed class DlssAutoFollowService
         => Numbers(a) is { } x && Numbers(b) is { } y && x.SequenceEqual(y);
 
     private static bool IsVersion1(string version) => Numbers(version) is [1, ..];
+
+    /// <summary>The order of two versions (numbers part by part), or null when either cannot be read.</summary>
+    internal static int? Compare(string? a, string? b)
+    {
+        if (Numbers(a) is not { } x || Numbers(b) is not { } y) return null;
+        for (var i = 0; i < x.Length; i++)
+            if (x[i] != y[i]) return x[i].CompareTo(y[i]);
+        return 0;
+    }
+
+    private static bool IsOlder(string? version, string? than) => Compare(version, than) is < 0;
 
     // The leading dotted (or comma-separated) numbers of a version string, padded to four parts; null without any.
     private static int[]? Numbers(string? version)

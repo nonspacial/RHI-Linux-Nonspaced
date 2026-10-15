@@ -887,6 +887,8 @@ internal static class UiStrings
         ("Upd.FollowSummary", "Seguir o mais recente (DLSS/Streamline): {0} arquivo(s) atualizado(s)", "Follow newest DLSS/Streamline: {0} file(s) updated"),
         ("Upd.FollowFailedPart", " · {0} falharam e ficaram como estavam (detalhes em Atualizações)", " · {0} failed and were kept as they were (details in Updates)"),
         ("Upd.FollowDeferredPart", " · {0} jogo(s) em execução ficam para a próxima verificação", " · {0} running game(s) left for the next check"),
+        ("Upd.FollowBusyPart", " · {0} jogo(s) ocupado(s) no app que os instalou ficam para a próxima verificação", " · {0} game(s) busy in the app that installed them left for the next check"),
+        ("Upd.FollowDownloadPart", " · {0} jogo(s) ficam para a próxima verificação: não foi possível baixar a versão mais recente (detalhes em Atualizações)", " · {0} game(s) left for the next check: the newest version could not be downloaded (details in Updates)"),
         ("Upd.FollowFailed", "Falha ao seguir o DLSS/Streamline mais recente: {0}", "Follow newest DLSS/Streamline failed: {0}"),
         // #178 update inclusion (Settings → Maintenance, card menu, dialog, component rows, Update All summary).
         ("Upd.GlobalHeading", "Atualizar tudo inclui", "Update All includes"),

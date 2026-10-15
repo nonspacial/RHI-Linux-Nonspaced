@@ -60,8 +60,10 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ComponentUpdateLogStore? updateLog = null,
         NrCostScalerService? nrCostScaler = null, // w3/parity (#96)
         RtxEncoreDeploymentService? rtxEncore = null, // w4/encore (#158)
-        UpdateInclusionStore? updateInclusion = null) // w5/update-policy (#178)
+        UpdateInclusionStore? updateInclusion = null, // w5/update-policy (#178)
+        DlssAutoFollowStore? dlssFollow = null) // w5/update-policy (#177): its per-game holds join Repair after move
     {
+        _dlssFollow = dlssFollow;
         _nrCostScaler = nrCostScaler;
         _rtxEncore = rtxEncore;
         _updateInclusion = updateInclusion;
@@ -943,6 +945,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private readonly NrCostScalerService? _nrCostScaler; // w3/parity (#96)
     private readonly RtxEncoreDeploymentService? _rtxEncore; // w4/encore (#158)
     private readonly UpdateInclusionStore? _updateInclusion; // w5/update-policy (#178)
+    private readonly DlssAutoFollowStore? _dlssFollow; // w5/update-policy (#177)
 
     /// <summary>#178: what the game's update inclusion (and Settings, for every game) leaves out of Update All.</summary>
     public UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component)
@@ -1050,6 +1053,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             _reshade?.DllNames, // w3/dllnames (#120); RTX Encore's name and NR choice live in the same store (#158)
             // w5/update-policy rows
             _updateInclusion, // #178 per-game update inclusion
+            _dlssFollow, // #177 Follow newest: games a pass skipped, held per game
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

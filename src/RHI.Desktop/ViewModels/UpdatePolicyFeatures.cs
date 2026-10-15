@@ -77,15 +77,22 @@ public sealed class UpdatePolicyFeatures
         => new(settings.FollowNewestDlss, settings.FollowNewestStreamline);
 
     /// <summary>
-    /// The status line for a pass that changed (or failed to change, or put off) a game file; null when it did none of
-    /// those (seeded, current, offline): an automatic pass that did nothing stays quiet.
+    /// The status line for a pass that changed (or failed to change, or newly put off) a game file; null when it did none
+    /// of those (seeded, current, offline, or the same games skipped for the same reason as last time): an automatic pass
+    /// with nothing new to say stays quiet. Each skip says why: running, busy in the app that installed it, or the newest
+    /// version could not be downloaded.
     /// </summary>
     public static string? FollowSummary(DlssFollowResult result)
     {
-        if (result.UpdatedCount == 0 && result.FailedCount == 0 && result.DeferredGames == 0) return null;
+        var running = result.NewlySkipped(DlssFollowHoldReason.Running);
+        var busy = result.NewlySkipped(DlssFollowHoldReason.InstallerBusy);
+        var download = result.NewlySkipped(DlssFollowHoldReason.DownloadFailed);
+        if (result.UpdatedCount == 0 && result.FailedCount == 0 && running + busy + download == 0) return null;
         var text = UiLocalizationService.Format("Upd.FollowSummary", result.UpdatedCount);
         if (result.FailedCount > 0) text += UiLocalizationService.Format("Upd.FollowFailedPart", result.FailedCount);
-        if (result.DeferredGames > 0) text += UiLocalizationService.Format("Upd.FollowDeferredPart", result.DeferredGames);
+        if (running > 0) text += UiLocalizationService.Format("Upd.FollowDeferredPart", running);
+        if (busy > 0) text += UiLocalizationService.Format("Upd.FollowBusyPart", busy);
+        if (download > 0) text += UiLocalizationService.Format("Upd.FollowDownloadPart", download);
         return text + ".";
     }
 }

@@ -108,8 +108,32 @@ public sealed class DlssFollowViewModelTests : IDisposable
             new DlssFollowSwap("G", "DLSS SR (nvngx_dlss.dll)", "310.4.0", "310.5.2", true, null),
             new DlssFollowSwap("H", "DLSS SR (nvngx_dlss.dll)", "310.4.0", "310.5.2", false, "no")
         };
+        DlssFollowSkip Skip(string key, DlssFollowHoldReason reason, bool repeat = false) => new(key, key, "DLSS SR (nvngx_dlss.dll)", reason, repeat);
         Assert.Equal("Follow newest DLSS/Streamline: 1 file(s) updated · 1 failed and were kept as they were (details in Updates) · 2 running game(s) left for the next check.",
-            UpdatePolicyFeatures.FollowSummary(new DlssFollowResult(DlssFollowOutcome.Followed, swaps, DeferredGames: 2)));
+            UpdatePolicyFeatures.FollowSummary(new DlssFollowResult(DlssFollowOutcome.Followed, swaps,
+                [Skip("r1", DlssFollowHoldReason.Running), Skip("r2", DlssFollowHoldReason.Running), Skip("r3", DlssFollowHoldReason.Running, repeat: true)])));
+    }
+
+    // w5 review nit 8 and finding 1: each skip says why (running, busy in the app that installed it, download failed),
+    // and a skip already reported (same game, reason and newest) adds nothing: a pass with only repeats stays quiet.
+    [Theory]
+    [InlineData("en-US", "Follow newest DLSS/Streamline: 0 file(s) updated · 1 running game(s) left for the next check · 1 game(s) busy in the app that installed them left for the next check · 1 game(s) left for the next check: the newest version could not be downloaded (details in Updates).")]
+    [InlineData("pt-BR", "Seguir o mais recente (DLSS/Streamline): 0 arquivo(s) atualizado(s) · 1 jogo(s) em execução ficam para a próxima verificação · 1 jogo(s) ocupado(s) no app que os instalou ficam para a próxima verificação · 1 jogo(s) ficam para a próxima verificação: não foi possível baixar a versão mais recente (detalhes em Atualizações).")]
+    public void FollowSummary_NamesWhySkippedGamesWait_AndStaysQuietOnRepeats(string language, string expected)
+    {
+        DlssFollowSkip Skip(string key, DlssFollowHoldReason reason, bool repeat = false) => new(key, key, "DLSS SR (nvngx_dlss.dll)", reason, repeat);
+        RHI.Desktop.Localization.UiLocalizationService.Apply(language);
+        try
+        {
+            Assert.Equal(expected, UpdatePolicyFeatures.FollowSummary(new DlssFollowResult(DlssFollowOutcome.Followed, [],
+                [Skip("a", DlssFollowHoldReason.Running), Skip("b", DlssFollowHoldReason.InstallerBusy), Skip("c", DlssFollowHoldReason.DownloadFailed)])));
+            Assert.Null(UpdatePolicyFeatures.FollowSummary(new DlssFollowResult(DlssFollowOutcome.Followed, [],
+                [Skip("a", DlssFollowHoldReason.Running, true), Skip("b", DlssFollowHoldReason.InstallerBusy, true), Skip("c", DlssFollowHoldReason.DownloadFailed, true)])));
+        }
+        finally
+        {
+            RHI.Desktop.Localization.UiLocalizationService.Apply("en-US");
+        }
     }
 
     private DetectedGame Game(string name)

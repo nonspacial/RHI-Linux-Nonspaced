@@ -199,6 +199,7 @@ internal sealed class AppComposition
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
         var updateInclusion = new UpdateInclusionStore(globalSkips: () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load())); // #178
+        var dlssFollowStore = new DlssAutoFollowStore(); // #177: per-game holds move with the game
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -211,6 +212,7 @@ internal sealed class AppComposition
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
             , updateInclusion: updateInclusion
+            , dlssFollow: dlssFollowStore
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -240,7 +242,7 @@ internal sealed class AppComposition
         // w3/dllnames rows
         // w5/update-policy rows
         var updatePolicy = new UpdatePolicyFeatures( // #177: the same history store the components write; #178 the same inclusion store
-            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, new DlssAutoFollowStore(), updateLog,
+            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, dlssFollowStore, updateLog,
                 updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // w5/ini-presets rows

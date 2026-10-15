@@ -6,6 +6,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Core.Tests;
 
@@ -145,16 +146,168 @@ public sealed class DlssAutoFollowServiceTests : IDisposable
         var first = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
 
         Assert.Equal((1, 0), (first.DeferredGames, first.UpdatedCount));
+        Assert.Equal(1, first.NewlySkipped(DlssFollowHoldReason.Running));
         Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
         Assert.Equal(B, fx.Store.Load()!["dlss"].Newest);
-        Assert.Equal([A], fx.Store.Load()!["dlss"].HeldFrom);
+        var hold = Assert.Single(fx.Store.Load()!["dlss"].Held);
+        Assert.Equal(GameRecordIdentity.Key(game), hold.Key);
+        Assert.Equal([A], hold.Value.From);
+        Assert.Equal((DlssFollowHoldReason.Running, B), (hold.Value.Reason, hold.Value.To));
 
         running = false;
         var second = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
 
         Assert.Equal(1, second.UpdatedCount);
         Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
-        Assert.Empty(fx.Store.Load()!["dlss"].HeldFrom);
+        Assert.Empty(fx.Store.Load()!["dlss"].Held);
+    }
+
+    // w5 review finding 1 (the reviewer's repro): a hold belongs to the skipped game alone. A version the user picks
+    // again by hand in another game, or a game added later on that old version, is never moved by a later pass.
+    [Fact]
+    public async Task HeldVersion_DoesNotRevertAnotherGamesManualPick()
+    {
+        var runningGame = Game("held-running", sr: A);
+        var other = Game("held-other", sr: A);
+        var fx = Fixture(baseline: A, isRunning: g => g.Name == "held-running");
+        await fx.Service.RunAsync([runningGame, other], new DlssFollowChoice(true, false)); // other -> B, A held for held-running
+        Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(other)));
+        File.WriteAllBytes(Sr(other), Pe(A));                                               // the user picks A again
+
+        await fx.Service.RunAsync([runningGame, other], new DlssFollowChoice(true, false));
+
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(other)));
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(runningGame))); // still running: still held
+        Assert.Equal([GameRecordIdentity.Key(runningGame)], fx.Store.Load()!["dlss"].Held.Keys);
+    }
+
+    [Fact]
+    public async Task HeldVersion_DoesNotMoveAGameAddedLater_ButTheHeldGameIsFollowedOnceItStops()
+    {
+        var runningGame = Game("held-until-stopped", sr: A);
+        var running = true;
+        var fx = Fixture(baseline: A, isRunning: g => running && g.Name == "held-until-stopped");
+        await fx.Service.RunAsync([runningGame], new DlssFollowChoice(true, false));
+        var added = Game("added-later", sr: A);
+        running = false;
+
+        var result = await fx.Service.RunAsync([runningGame, added], new DlssFollowChoice(true, false));
+
+        Assert.Equal(1, result.UpdatedCount);
+        Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(runningGame)));
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(added)));
+        Assert.Empty(fx.Store.Load()!["dlss"].Held);
+    }
+
+    // A skip that repeats (same game, same reason, same newest) is reported once: the next passes add no history entry
+    // and nothing for the status line.
+    [Fact]
+    public async Task RepeatedSkip_IsReportedOnce()
+    {
+        var game = Game("still-running", sr: A);
+        var fx = Fixture(baseline: A, isRunning: _ => true);
+
+        var first = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+        var second = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+        var third = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal(1, first.NewlySkipped(DlssFollowHoldReason.Running));
+        Assert.Equal((1, 0), (second.DeferredGames, second.NewlySkipped(DlssFollowHoldReason.Running)));
+        Assert.True(Assert.Single(third.Skips).Repeat);
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
+        Assert.Single(fx.Store.Load()!["dlss"].Held);
+    }
+
+    // A skip for a new reason (running, then the download failed) is reported again.
+    [Fact]
+    public async Task SkipForANewReason_IsReportedAgain()
+    {
+        var game = Game("running-then-offline", sr: A);
+        var running = true;
+        var fx = Fixture(baseline: A, isRunning: _ => running);
+        fx.Http.FailPayloads = true;
+        var first = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+        Assert.Equal(1, first.NewlySkipped(DlssFollowHoldReason.Running));
+        running = false;
+
+        var second = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal(1, second.NewlySkipped(DlssFollowHoldReason.DownloadFailed));
+        Assert.Single(fx.Log.GetAll());
+        Assert.Equal(DlssFollowHoldReason.DownloadFailed, Assert.Single(fx.Store.Load()!["dlss"].Held).Value.Reason);
+    }
+
+    // w5 review finding 2: the newest DLL could not be downloaded (the manifest answered). The games on the previous
+    // newest count as skipped, not failed: they are followed by the next pass that can download it; the history says
+    // so once.
+    [Fact]
+    public async Task FailedDownload_CountsAsASkippedGame_FollowedByTheNextPass()
+    {
+        var game = Game("download-failed", sr: A);
+        var fx = Fixture(baseline: A);
+        fx.Http.FailPayloads = true;
+
+        var first = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+        var second = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal((0, 0), (first.UpdatedCount, first.FailedCount));
+        Assert.Equal(1, first.NewlySkipped(DlssFollowHoldReason.DownloadFailed));
+        Assert.Equal(0, second.NewlySkipped(DlssFollowHoldReason.DownloadFailed));
+        var entry = Assert.Single(fx.Log.GetAll());
+        Assert.False(entry.Success);
+        Assert.StartsWith(DlssAutoFollowService.DownloadFailedPrefix, entry.Message);
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
+
+        fx.Http.FailPayloads = false;
+        var third = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal(1, third.UpdatedCount);
+        Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
+        Assert.Empty(fx.Store.Load()!["dlss"].Held);
+    }
+
+    [Fact]
+    public async Task NewestUnchanged_WithNothingHeld_NeedsNoApplyPass()
+    {
+        var fx = Fixture(baseline: B);
+
+        var check = await fx.Service.CheckAsync(new DlssFollowChoice(true, false));
+
+        Assert.False(check.NeedsApply); // the busy gate is not taken for nothing
+        Assert.Equal(DlssFollowOutcome.Current, check.Result.Outcome);
+    }
+
+    // w5 review finding 4: following only moves forward. A manifest whose newest is older than the baseline (a release
+    // pulled, a reordered or stale list) swaps nothing down and keeps the baseline.
+    [Fact]
+    public async Task NewestGoingBackwards_IsNeverFollowedDown()
+    {
+        const string later = "310.6.0";
+        var game = Game("on-later", sr: later);
+        var fx = Fixture(baseline: later);
+
+        var result = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal(DlssFollowOutcome.Current, result.Outcome);
+        Assert.Equal(later + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
+        Assert.Equal(later, fx.Store.Load()!["dlss"].Newest);
+        Assert.Empty(fx.Log.GetAll());
+    }
+
+    [Fact]
+    public async Task Holds_FollowAMovedFolderKeyedGame()
+    {
+        var game = Game("held-mover", sr: A);
+        var fx = Fixture(baseline: A, isRunning: _ => true);
+        await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+        var moved = game.ShallowClone();
+        moved.InstallPath = Directory.CreateDirectory(Path.Combine(_root, "moved", "held-mover")).FullName;
+
+        var write = fx.Store.StageMove(new GameStateMove(moved, [(game.InstallPath, moved.InstallPath)], [GameRecordIdentity.Key(game)]));
+
+        Assert.NotNull(write);
+        RHI.Platform.Linux.Persistence.StagedFileCommit.Commit([write!]);
+        Assert.Equal([GameRecordIdentity.Key(moved)], fx.Store.Load()!["dlss"].Held.Keys);
     }
 
     [Fact]
@@ -170,8 +323,12 @@ public sealed class DlssAutoFollowServiceTests : IDisposable
         var result = await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
 
         Assert.Equal((1, 0), (result.DeferredGames, result.UpdatedCount));
+        Assert.Equal((1, 0), (result.NewlySkipped(DlssFollowHoldReason.InstallerBusy), result.NewlySkipped(DlssFollowHoldReason.Running)));
         Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
-        Assert.Equal([A], fx.Store.Load()!["dlss"].HeldFrom);
+        var hold = Assert.Single(fx.Store.Load()!["dlss"].Held).Value;
+        Assert.Equal([A], hold.From);
+        Assert.Equal(DlssFollowHoldReason.InstallerBusy, hold.Reason);
+        Assert.Empty(fx.Log.GetAll());
     }
 
     [Fact]
@@ -364,6 +521,8 @@ public sealed class DlssAutoFollowServiceTests : IDisposable
         private const string Base = "https://github.com/rhi-tests/dlss/releases/download/";
         private const string ManifestTag = "\"follow-test\"";
         public bool Offline { get; set; }
+        /// <summary>The manifest answers; every payload download fails.</summary>
+        public bool FailPayloads { get; set; }
         public int RequestCount { get; private set; }
 
         public static string Manifest => $$"""
@@ -380,6 +539,7 @@ public sealed class DlssAutoFollowServiceTests : IDisposable
         {
             RequestCount++;
             if (Offline) throw new HttpRequestException("offline test");
+            if (FailPayloads && request.RequestUri!.AbsoluteUri != DlssManagerService.ManifestUrl) throw new HttpRequestException("payload offline test");
             return Task.FromResult(Answer(request)!);
         }
 
