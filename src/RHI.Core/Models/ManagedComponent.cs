@@ -61,4 +61,8 @@ public sealed class ManagedComponent
     /// <c>OptiScaler/</c> folder does not count). Set by the probe on the RTX Encore row, which needs the game's DLSS.
     /// </summary>
     public bool GameShipsDlss { get; set; }
+
+    /// <summary>w5/ini-presets (#189): the game is an Unreal Engine game (manifest engine hint); set on the Luma row, whose
+    /// ⚙ (HDR on first boot, TAA in Engine.ini) applies to Unreal Engine games only, as upstream.</summary>
+    public bool UnrealEngine { get; set; }
 }

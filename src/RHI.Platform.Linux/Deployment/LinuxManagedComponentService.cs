@@ -332,6 +332,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
                 if (component.Kind == ManagedComponentKind.LumaFramework)
                 {
+                    component.UnrealEngine = game.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true; // w5/ini-presets hook (#189)
                     if (component.Availability == ComponentAvailability.Available)
                     {
                         var named = _lumaFramework.GetCachedNamedMatch(game);
@@ -2450,6 +2451,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     // w5/ini-presets hook (#180): the ReShade preset service (journaled; set by the app's composition).
     public ReShadePresetService? ReShadePresets { get; set; }
+
+    // w5/ini-presets hook (#189): the Luma ⚙ settings service (journaled; set by the app's composition).
+    public LumaSettingsService? LumaSettings { get; set; }
 
 }
 

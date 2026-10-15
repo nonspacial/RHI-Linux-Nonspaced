@@ -230,6 +230,11 @@ public static class OptionLists
     public static readonly OptionList<bool> ReShadeEffectListStyle = new(true, null,
         new(true, "Ini.EffectListTabs"),
         new(false, "Ini.EffectListTree"));
+    /// <summary>#189: Luma's HDR on first boot: Default (Luma decides), Off, On.</summary>
+    public static readonly OptionList<LumaHdrMode> LumaHdrMode = new(RHI.Platform.Linux.Deployment.LumaHdrMode.Default, null,
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.Default, "Ini.LumaHdrDefault"),
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.Off, "Ini.Off"),
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.On, "Ini.On"));
     /// <summary>#188: Off / On (ReLimiter's shared presets and DLSS info on the display).</summary>
     public static readonly OptionList<bool> OffOn = new(false, null,
         new(false, "Ini.Off"),

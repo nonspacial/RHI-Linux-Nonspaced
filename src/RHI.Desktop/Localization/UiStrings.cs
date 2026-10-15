@@ -938,6 +938,16 @@ internal static class UiStrings
         ("Ini.PresetDropTitle", "Instalar predefinição do ReShade", "Install ReShade preset"),
         ("Ini.PresetDropText", "{0} foi guardada na pasta de predefinições. Instalar em qual jogo?", "{0} was kept in the presets folder. Install it in which game?"),
         ("Ini.PresetStoredNoGames", "{0} foi guardada na pasta de predefinições; instale o ReShade com o RHI em um jogo para usá-la.", "{0} was kept in the presets folder; install ReShade with RHI in a game to use it."),
+        // #189 Luma settings.
+        ("Ini.LumaSection", "Configurações do Engine.ini do Luma", "Luma Engine.ini settings"),
+        ("Ini.LumaHdr", "HDR na primeira inicialização", "HDR on first boot"),
+        ("Ini.LumaHdrTip", "Controla EnableHDR e DisplayMode na seção [Luma] do ReShade.ini. Padrão: deixa as duas chaves para o Luma. Desligado: grava 0. Ligado: grava 1 (o que a instalação faz).", "Controls EnableHDR and DisplayMode in the [Luma] section of ReShade.ini. Default: leaves both keys to Luma. Off: writes 0. On: writes 1 (what the install does)."),
+        ("Ini.LumaHdrDefault", "Padrão", "Default"),
+        ("Ini.LumaTaaTip", "Ligado grava r.DefaultFeature.AntiAliasing=2 e r.PostProcessAAQuality=4 no Engine.ini (TAA em alta qualidade, para o HDR do Luma). Uma chave que já existe não é sobrescrita; desligar remove só o que o RHI gravou.", "On writes r.DefaultFeature.AntiAliasing=2 and r.PostProcessAAQuality=4 to Engine.ini (high-quality TAA, for Luma's HDR). A key that is already there is not overwritten; Off removes only what RHI wrote."),
+        ("Ini.LumaHdrSet", "HDR na primeira inicialização do Luma: {0}.", "Luma HDR on first boot: {0}."),
+        ("Ini.LumaTaaOn", "TAA do Luma gravado no Engine.ini.", "Luma TAA written to Engine.ini."),
+        ("Ini.LumaTaaOff", "TAA do Luma removido do Engine.ini.", "Luma TAA removed from Engine.ini."),
+        ("Ini.LumaTaaOffKept", "As chaves de TAA que o RHI gravou foram removidas; as que já estavam no Engine.ini antes ficam como estão.", "The TAA keys RHI wrote were removed; the ones already in Engine.ini before stay as they are."),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

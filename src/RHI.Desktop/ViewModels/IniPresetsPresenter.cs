@@ -20,8 +20,10 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
 
     /// <summary>The components whose row gets the INI ⚙ while they are installed.</summary>
     public static bool HasIniSettings(ManagedComponent component)
-        => component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
-           && component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
+        => component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable
+           && (component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
+               // #189: Luma's ⚙ (HDR on first boot, TAA) is upstream's, for Unreal Engine games whose Luma RHI installed.
+               || component.Kind == ManagedComponentKind.LumaFramework && component.ManagedByRhi && component.UnrealEngine);
 
     /// <summary>The file "Deploy" writes for a component.</summary>
     public static string IniFileName(ManagedComponentKind kind)
@@ -304,6 +306,38 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         {
             return ([], [], UiLocalizationService.Present(ex.Message));
         }
+    }
+
+    // ---- #189 Luma ⚙ -------------------------------------------------------------------------------
+
+    internal LumaSettingsService Luma => managed.LumaSettings ?? new LumaSettingsService(records, null, managed.IniWriteRefusal);
+
+    /// <summary>The selected game's Luma settings as its files hold them.</summary>
+    public LumaSettingsSnapshot? LumaSettings() => vm.SelectedGame is { } game ? Luma.Read(game) : null;
+
+    /// <summary>Sets HDR on first boot for the selected game (Default / Off / On).</summary>
+    public async Task<string> SetLumaHdrAsync(LumaHdrMode mode)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        using var op = vm.Operations.TryBegin("luma-settings", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await Luma.SetHdrAsync(game, mode, op.Token);
+        return Report(result.Success
+            ? UiLocalizationService.Format("Ini.LumaHdrSet", OptionLists.LumaHdrMode.Display(mode))
+            : UiLocalizationService.Present(result.Message));
+    }
+
+    /// <summary>Turns Luma's TAA keys on or off in the selected game's Engine.ini.</summary>
+    public async Task<string> SetLumaTaaAsync(bool on)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        using var op = vm.Operations.TryBegin("luma-settings", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var result = await Luma.SetTaaAsync(game, on, op.Token);
+        if (!result.Success) return Report(UiLocalizationService.Present(result.Message));
+        // Keys the user had before RHI are never removed: say so when TAA still reads as on.
+        var stillOn = !on && Luma.Read(game).TaaOn;
+        return Report(UiLocalizationService.Text(on ? "Ini.LumaTaaOn" : stillOn ? "Ini.LumaTaaOffKept" : "Ini.LumaTaaOff"));
     }
 
     /// <summary>The status line for a batch, from its counts.</summary>

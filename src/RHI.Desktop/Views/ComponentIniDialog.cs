@@ -5,6 +5,7 @@ using RHI.Core.Models;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
+using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Desktop.Views;
 
@@ -70,9 +71,18 @@ public static class ComponentIniDialog
         open.Margin = new Avalonia.Thickness(0, 0, 8, 8);
         buttons.Children.Add(deploy);
         buttons.Children.Add(open);
-        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
-        panel.Children.Add(buttons);
-        panel.Children.Add(result);
+        if (kind == ManagedComponentKind.LumaFramework)
+        {
+            // #189: Luma has no INI template; its ⚙ is upstream's HDR-on-first-boot and TAA rows.
+            panel.Children.Add(LumaSection(presenter, Show));
+            panel.Children.Add(result);
+        }
+        else
+        {
+            panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(buttons);
+            panel.Children.Add(result);
+        }
         if (kind == ManagedComponentKind.ReShade && presenter.PresetsApply()) panel.Children.Add(PresetSection(presenter, openFolder, Show)); // #180: RHI's ReShade only
 
         return new Window
@@ -168,6 +178,61 @@ public static class ComponentIniDialog
         section.Children.Add(buttons);
         section.Children.Add(installed);
         Refresh();
+        return section;
+    }
+
+    /// <summary>
+    /// #189: HDR on first boot (Default / Off / On) and TAA (Off / On); each change is written at once and a refused one
+    /// goes back to what the files hold. TAA is hidden when no Engine.ini location can be found for the game.
+    /// </summary>
+    private static Control LumaSection(IniPresetsPresenter presenter, Action<string> show)
+    {
+        var snapshot = presenter.LumaSettings();
+        var section = new StackPanel { Spacing = 8 };
+        section.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.LumaSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+        var hdr = new ComboBox { Name = "LumaHdr", ItemsSource = OptionLists.LumaHdrMode.Items, MinWidth = 160, SelectedItem = OptionLists.LumaHdrMode.Display(snapshot?.Hdr ?? LumaHdrMode.Default) };
+        ToolTip.SetTip(hdr, UiLocalizationService.Text("Ini.LumaHdrTip"));
+        ToolTip.SetShowDelay(hdr, 2000);
+        var taa = new ComboBox { Name = "LumaTaa", ItemsSource = OptionLists.OffOn.Items, MinWidth = 160, SelectedItem = OptionLists.OffOn.Display(snapshot?.TaaOn == true) };
+        ToolTip.SetTip(taa, UiLocalizationService.Text("Ini.LumaTaaTip"));
+        ToolTip.SetShowDelay(taa, 2000);
+        var reverting = false;
+
+        void Sync()
+        {
+            var now = presenter.LumaSettings();
+            reverting = true;
+            hdr.SelectedItem = OptionLists.LumaHdrMode.Display(now?.Hdr ?? LumaHdrMode.Default);
+            taa.SelectedItem = OptionLists.OffOn.Display(now?.TaaOn == true);
+            reverting = false;
+        }
+
+        hdr.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (reverting || hdr.SelectedItem is not string chosen) return;
+            show(await presenter.SetLumaHdrAsync(OptionLists.LumaHdrMode.Value(chosen)));
+            Sync();
+        }, nameof(ComponentIniDialog));
+        taa.SelectionChanged += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (reverting || taa.SelectedItem is not string chosen) return;
+            show(await presenter.SetLumaTaaAsync(OptionLists.OffOn.Value(chosen)));
+            Sync();
+        }, nameof(ComponentIniDialog));
+
+        var rows = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (var (label, control, visible) in new (string, Control, bool)[]
+                 {
+                     (UiLocalizationService.Text("Ini.LumaHdr"), hdr, true),
+                     ("TAA", taa, snapshot?.EngineIniPath is not null)
+                 })
+        {
+            var item = new StackPanel { Spacing = 5, Margin = new Avalonia.Thickness(0, 0, 16, 8), IsVisible = visible };
+            item.Children.Add(new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap });
+            item.Children.Add(control);
+            rows.Children.Add(item);
+        }
+        section.Children.Add(rows);
         return section;
     }
 }

@@ -1225,6 +1225,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadePresetService.RemovedPrefix, "Predefinição removida: "),
         (RHI.Platform.Linux.Deployment.ReShadePresetService.KeptChangedPrefix, "Predefinição tirada da lista do RHI; o arquivo ficou porque mudou desde que o RHI o colocou ali: "),
         (RHI.Platform.Linux.Deployment.ReShadePresetService.NotInstalledPrefix, "O RHI não instalou esta predefinição: "),
+        // #189 Luma settings.
+        (RHI.Platform.Linux.Deployment.LumaSettingsService.NotManagedPrefix, "As configurações do Luma precisam do Luma instalado pelo RHI: "),
+        (RHI.Platform.Linux.Deployment.LumaSettingsService.NoEngineIniPrefix, "Nenhum local do Engine.ini foi encontrado para este jogo, então o TAA não foi alterado: "),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

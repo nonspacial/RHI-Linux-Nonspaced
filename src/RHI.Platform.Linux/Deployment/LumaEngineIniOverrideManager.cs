@@ -7,7 +7,11 @@ using RHI.Core.Models;
 
 namespace RHI.Platform.Linux.Deployment;
 
-internal sealed record LumaEngineIniOwnedEntry(string Section, string Key, string AppliedValue);
+internal sealed record LumaEngineIniOwnedEntry(string Section, string Key, string AppliedValue)
+{
+    /// <summary>#189: written by the Luma ⚙ "TAA" setting, not by the wiki keys an install reconciles (kept by installs).</summary>
+    public bool Taa { get; init; }
+}
 
 internal sealed record LumaEngineIniOverrideState(
     string IniPath,
@@ -30,8 +34,11 @@ internal static class LumaEngineIniOverrideManager
     {
         if (requested.Count == 0)
         {
-            if (previousState is not null) Cleanup(previousState);
-            return null;
+            if (previousState is null) return null;
+            // #189: the ⚙'s TAA keys are the user's setting; only the install's own keys go.
+            var taa = previousState.Entries.Where(entry => entry.Taa).ToArray();
+            Cleanup(previousState with { Entries = previousState.Entries.Where(entry => !entry.Taa).ToArray() });
+            return taa.Length == 0 ? null : previousState with { Entries = taa };
         }
 
         var iniPath = ResolveEngineIniPath(game);
@@ -76,6 +83,7 @@ internal static class LumaEngineIniOverrideManager
                 continue;
             }
 
+            if (old.Taa) continue; // #189: the ⚙'s TAA keys are the user's setting, not the install's request
             if (!requestedByIdentity.TryGetValue(identity, out var next))
             {
                 lines.RemoveAt(index);
@@ -149,6 +157,62 @@ internal static class LumaEngineIniOverrideManager
             return;
         }
         WriteIni(state.IniPath, lines);
+    }
+
+    /// <summary>#189: upstream's Luma ⚙ "TAA" keys (forces TAA at high quality for Luma's HDR).</summary>
+    internal static readonly IReadOnlyList<LumaEngineIniEntry> TaaKeys =
+    [
+        new("SystemSettings", "r.DefaultFeature.AntiAliasing", "2"),
+        new("SystemSettings", "r.PostProcessAAQuality", "4")
+    ];
+
+    /// <summary>#189: TAA counts as on when RHI wrote its keys, or when Engine.ini already holds both with the TAA values.</summary>
+    public static bool IsTaaOn(LumaEngineIniOverrideState? state, string? iniPath)
+    {
+        if (state?.Entries.Any(entry => entry.Taa) == true) return true;
+        if (iniPath is null || !File.Exists(iniPath)) return false;
+        var lines = File.ReadAllLines(iniPath);
+        return TaaKeys.All(item => FindKeyAnywhere(lines, item.Key) is var index and >= 0 && GetValue(lines[index]) == item.Value);
+    }
+
+    /// <summary>
+    /// #189: TAA on writes upstream's two keys where Engine.ini does not have them yet (a key already there is never
+    /// overwritten, as upstream <c>ApplyEngineIniCustomKeys</c>); off removes only the TAA keys RHI wrote and that still
+    /// hold its value (upstream removes the keys whoever wrote them). Returns the state to keep on the Luma record; the
+    /// install's wiki keys in it are untouched.
+    /// </summary>
+    public static LumaEngineIniOverrideState? SetTaa(string iniPath, LumaEngineIniOverrideState? state, bool on)
+    {
+        var existed = File.Exists(iniPath);
+        var lines = existed ? File.ReadAllLines(iniPath).ToList() : new List<string>();
+        var owned = (state?.Entries ?? []).ToList();
+        var changed = false;
+        if (on)
+        {
+            foreach (var item in TaaKeys)
+            {
+                if (owned.Any(entry => entry.Taa && entry.Key.Equals(item.Key, StringComparison.OrdinalIgnoreCase))) continue;
+                if (FindKeyAnywhere(lines, item.Key) >= 0) continue;
+                InsertIntoSection(lines, item.Section, $"{item.Key}={item.Value}");
+                owned.Add(new LumaEngineIniOwnedEntry(item.Section, item.Key, item.Value) { Taa = true });
+                changed = true;
+            }
+        }
+        else
+        {
+            foreach (var entry in owned.Where(entry => entry.Taa).ToList())
+            {
+                owned.Remove(entry);
+                var index = FindKeyInSection(lines, entry.Section, entry.Key);
+                if (index < 0 || !string.Equals(GetValue(lines[index]), entry.AppliedValue, StringComparison.Ordinal)) continue;
+                lines.RemoveAt(index);
+                RemoveSectionIfEmpty(lines, entry.Section);
+                changed = true;
+            }
+        }
+        if (changed) WriteIni(iniPath, lines);
+        var created = state?.FileCreatedByRhi == true || (!existed && changed);
+        return owned.Count == 0 && !created ? null : new LumaEngineIniOverrideState(iniPath, created, owned);
     }
 
     internal static string? ResolveEngineIniPath(DetectedGame game)

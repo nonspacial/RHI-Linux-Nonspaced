@@ -335,6 +335,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadePresetService.RemovedPrefix + P;
         yield return ReShadePresetService.KeptChangedPrefix + P;
         yield return ReShadePresetService.NotInstalledPrefix + "Mine.ini";
+        // #189
+        yield return LumaSettingsService.NotManagedPrefix + "Celeste";
+        yield return LumaSettingsService.NoEngineIniPrefix + "Celeste";
         // w5/shell-launch rows
         // w5/reshade-core rows
     }

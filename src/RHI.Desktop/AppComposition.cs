@@ -242,6 +242,7 @@ internal sealed class AppComposition
         // w5/catalogue-info rows
         // w5/ini-presets rows
         managedComponents.ReShadePresets = new ReShadePresetService(records, journal, managedComponents.IniWriteRefusal); // #180
+        managedComponents.LumaSettings = new LumaSettingsService(records, journal, managedComponents.IniWriteRefusal); // #189
         // w5/shell-launch rows
         // w5/reshade-core rows
         return new AppComposition

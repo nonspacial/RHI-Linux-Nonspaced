@@ -39,6 +39,7 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.ReShadeEffectListStyle); // #181
             AssertRoundTrips(OptionLists.OffOn); // #188
             AssertRoundTrips(OptionLists.ReLimiterTargetFps); // #188
+            AssertRoundTrips(OptionLists.LumaHdrMode); // #189
             // w5/shell-launch rows
             // w5/reshade-core rows
         }

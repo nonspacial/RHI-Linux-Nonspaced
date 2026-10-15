@@ -114,4 +114,37 @@ public sealed class IniPresetsPresenterTests
         Assert.True(File.Exists(Path.Combine(bin, "Look.ini")));
         Assert.False(fx.Vm.IsBusy);
     }
+
+    // #189: the Luma ⚙ writes under the busy gate and reports a localised line.
+    [Fact]
+    public async Task LumaHdr_HoldsTheGate_AndSaysWhatWasSet()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-luma-" + Guid.NewGuid().ToString("N"), "Binaries", "Win64");
+        Directory.CreateDirectory(bin);
+        File.WriteAllText(Path.Combine(bin, "ReShade.ini"), "[Luma]\nEnableHDR=1\nDisplayMode=1\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Luma Card", InstallPath = Path.GetDirectoryName(Path.GetDirectoryName(bin))!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77003, Source = "Steam", EngineHint = "Unreal Engine 4"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var card = fx.Vm.AllLibraryGames.Single();
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(card), GameName = card.Name, Component = ManagedComponentKind.LumaFramework,
+            BinaryDirectory = bin, Files = []
+        });
+        fx.Vm.SelectedGame = card;
+
+        using (fx.Vm.Operations.TryBegin("test"))
+            Assert.Equal(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"), await fx.Vm.IniPresets.SetLumaHdrAsync(LumaHdrMode.Off));
+        Assert.Contains("EnableHDR=1", File.ReadAllText(Path.Combine(bin, "ReShade.ini")));
+
+        var line = await fx.Vm.IniPresets.SetLumaHdrAsync(LumaHdrMode.Off);
+
+        Assert.Equal(UiLocalizationService.Format("Ini.LumaHdrSet", OptionLists.LumaHdrMode.Display(LumaHdrMode.Off)), line);
+        Assert.Equal(LumaHdrMode.Off, fx.Vm.IniPresets.LumaSettings()!.Hdr);
+    }
 }
