@@ -339,8 +339,9 @@ public sealed class ComponentInfoTests : IDisposable
             Assert.Equal("Loading notes…", UiLocalizationService.Text("Cat.InfoLoading"));
             Assert.True(presenter.IsOpen);
 
-            await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null); // clicked again while loading
-            await presenter.OpenAsync(game, ManagedComponentKind.OptiScaler, "OptiScaler", null); // or another row's ⓘ
+            // Clicked again while loading, or another row's ⓘ: both return at once (hang guard: a second dialog would wait).
+            await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null).WaitAsync(TimeSpan.FromSeconds(20));
+            await presenter.OpenAsync(game, ManagedComponentKind.OptiScaler, "OptiScaler", null).WaitAsync(TimeSpan.FromSeconds(20));
             Assert.Single(opened);
             Assert.Equal(2, dialog.Activated);
         }
@@ -350,7 +351,7 @@ public sealed class ComponentInfoTests : IDisposable
         for (var i = 0; i < 400 && only.Shown.Count < 2; i++) await Task.Delay(25);
         Assert.Equal(2, only.Shown.Count); // filled in once the sources answered
         Assert.Contains("Turn off in-game sharpening.", only.Shown[1].Blocks.Select(b => b.Text));
-        await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null); // open with its notes: brought forward again
+        await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null).WaitAsync(TimeSpan.FromSeconds(20)); // open with its notes: brought forward again
         Assert.Single(opened);
         Assert.Equal(3, only.Activated);
         Assert.False(first.IsCompleted);
