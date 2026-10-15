@@ -200,6 +200,9 @@ public sealed class ResolutionToggleTests : IDisposable
         Assert.Equal("kscreen-doctor output.DP-1.mode.3840x2160@144", calls[^1]); // tried to go back
         Assert.Equal("1", screen.CurrentId);
         Assert.Null(switcher.Pending); // back where it was: nothing left to restore
+        UiLocalizationService.Apply("en-US");
+        Assert.Equal("The display was not switched (" + UiLocalizationService.Present(result.Detail) + "); the game starts at the current resolution.",
+            ResolutionText.Switch(result, KdePlan("2560x1440")));
 
         failing = "output.DP-1.mode.3840x2160@144";
         Assert.Equal(DisplaySwitchOutcome.Switched, (await switcher.SwitchAsync(KdePlan("2560x1440"))).Outcome);
@@ -226,6 +229,14 @@ public sealed class ResolutionToggleTests : IDisposable
         Assert.Equal("kscreen-doctor output.DP-1.mode.3840x2160@144", calls[^1]); // tried to go back
         Assert.Equal("3", screen.CurrentId); // the display really is switched
         Assert.Equal("3840x2160@144", switcher.Pending!.PreviousMode); // so the record stays: the next start puts it back
+        // w5 re-review nit 3: the status line says the display may still be switched and when it goes back.
+        UiLocalizationService.Apply("en-US");
+        Assert.Equal("Switching the display failed (" + UiLocalizationService.Present(result.Detail)
+                     + ") and it may not be back at its previous mode; RHI puts it back at its next start, or set it in the display settings.",
+            ResolutionText.Switch(result, KdePlan("2560x1440")));
+        UiLocalizationService.Apply("pt-BR");
+        try { Assert.StartsWith("A mudança de tela falhou (", ResolutionText.Switch(result, KdePlan("2560x1440"))); }
+        finally { UiLocalizationService.Apply("en-US"); }
         Assert.Equal(DisplaySwitchOutcome.EarlierSwitchPending, (await switcher.SwitchAsync(KdePlan("2560x1440"))).Outcome);
     }
 

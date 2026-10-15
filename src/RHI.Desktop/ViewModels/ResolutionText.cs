@@ -39,6 +39,8 @@ public static class ResolutionText
             DisplaySwitchOutcome.Switched => TF("Shell.ResSwitched", plan.Target),
             DisplaySwitchOutcome.EarlierSwitchPending => T("Shell.ResEarlierPending"),
             DisplaySwitchOutcome.RecordUnreadable => TF("Shell.ResRecordStuck", result.Detail),
+            // The tool may have applied the mode and going back failed too: the record is kept for the next start (w5 nit 3).
+            DisplaySwitchOutcome.Failed when result.State is not null => TF("Shell.ResSwitchFailedKept", UiLocalizationService.Present(result.Detail)),
             DisplaySwitchOutcome.Failed => TF("Shell.ResSwitchFailed", UiLocalizationService.Present(result.Detail)),
             _ => null
         };
