@@ -45,6 +45,21 @@ public sealed class LocalizationTableTests
         Assert.True(shared.Length == 0, "PT-BR text under several keys:\n" + string.Join("\n", shared));
     }
 
+    // #166: a PT-BR text never keeps an English action word ("será usada no próximo Install"); "download" is everyday
+    // Portuguese and "Remove" is the verb remover, so neither is listed.
+    private static readonly Regex EnglishActionWords = new(@"\b(install|installed|installing|uninstall|update|updated|updating)\b", RegexOptions.IgnoreCase);
+
+    [Fact]
+    public void NoPortugueseText_KeepsAnEnglishActionWord()
+    {
+        var kept = UiLocalizationService.Keys
+            .Select(key => (key, pt: UiLocalizationService.TextFor("pt-BR", key)))
+            .Where(row => EnglishActionWords.IsMatch(row.pt))
+            .Select(row => $"{row.key}: {row.pt}")
+            .ToArray();
+        Assert.True(kept.Length == 0, "PT-BR text with an English action word:\n" + string.Join("\n", kept));
+    }
+
     [Fact]
     public void EveryKey_IsTranslated_WithTheSamePlaceholders_AndNoPortugueseInEnglish()
     {
