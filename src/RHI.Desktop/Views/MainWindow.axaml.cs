@@ -1368,8 +1368,9 @@ public sealed partial class MainWindow : Window
         });
         panel.Children.Add(new OptiScalerNightlyBuildRow(vm.Runtime.OptiScalerNightlyBuild)); // w3/sync #156 hook
 
-        // #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll), locked while installed, names another RHI
-        // component uses left out; the 2 s tooltip says which name the install takes and why.
+        // #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll, or the next free name while it is held),
+        // locked while installed, names another RHI component uses left out; the 2 s tooltip says which name the install
+        // takes and why.
         if (vm.OptiScalerDllName() is { } dllName)
         {
             var dllRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };

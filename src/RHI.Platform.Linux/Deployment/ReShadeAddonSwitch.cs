@@ -70,6 +70,26 @@ public static class ReShadeAddonSwitch
            && record.Files.Any(file => file.Path.EndsWith(OffSuffix, StringComparison.Ordinal) && IsAddonFile(file.Path));
 
     /// <summary>
+    /// True when <paramref name="directory"/> holds an add-on file RHI turned off (only RHI writes the suffix): after
+    /// ReShade was removed while No Addons had them off, these are Addon Manager add-ons (component add-ons keep ReShade
+    /// from being removed).
+    /// </summary>
+    public static bool HasOffAddons(string? directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return false;
+        try
+        {
+            return Directory.EnumerateFiles(directory, "*" + OffSuffix)
+                .Any(path => path.EndsWith(OffSuffix, StringComparison.Ordinal) && IsAddonFile(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("reshade-addons", $"Could not look for add-ons turned off in {directory}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The renames and record changes for ReShade becoming a build with (<paramref name="addonSupport"/>) or without add-on
     /// support, or a refusal naming a file already at a target name. Reads only; changes nothing.
     /// </summary>

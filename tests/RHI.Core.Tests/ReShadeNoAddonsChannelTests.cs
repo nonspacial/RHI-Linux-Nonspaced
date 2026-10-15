@@ -233,6 +233,39 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, readable.Message, StringComparison.Ordinal);
     }
 
+    // Re-review nit 3: ReShade removed while No Addons had the Addon Manager's add-ons off, then installed again as Stable
+    // while that list cannot be read: they stay off, and the status line says so (as on a switch back from No Addons).
+    [Fact]
+    public async Task ReinstalledStable_WithManagerAddonsLeftOff_AndItsListUnreadable_SaysSo()
+    {
+        var (game, store) = CreateGame("manager-reinstall");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var managerAddon = Path.Combine(game.BinaryDirectory!, "manager-pick.addon64");
+        File.WriteAllText(managerAddon, "MZ manager");
+        service.AddonManagerFiles = _ => [managerAddon];
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false })).Success);
+        Assert.True(File.Exists(managerAddon + ReShadeAddonSwitch.OffSuffix));
+        var removed = await service.RemoveAsync(game);
+        Assert.True(removed.Success, removed.Message);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+
+        service.AddonManagerFiles = _ => null; // the manager's saved list cannot be read
+        var reinstalled = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+
+        Assert.True(reinstalled.Success, reinstalled.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.ManagerUnreadableNote, reinstalled.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ manager", File.ReadAllText(managerAddon + ReShadeAddonSwitch.OffSuffix));
+
+        // A fresh install with no add-on left off says nothing, even with the list unreadable.
+        var (fresh, freshStore) = CreateGame("manager-fresh");
+        var freshService = NewService(freshStore, new Handler());
+        freshService.AddonManagerFiles = _ => null;
+        var plain = await freshService.InstallAsync(fresh, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.True(plain.Success, plain.Message);
+        Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, plain.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task NoAddons_AddonsOtherNameTaken_RefusesBeforeAnyChange()
     {

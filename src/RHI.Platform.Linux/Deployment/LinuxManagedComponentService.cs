@@ -1551,7 +1551,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var held = new Dictionary<string, ManagedComponentKind>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory)) return held;
-        var directory = Path.GetFullPath(game.BinaryDirectory);
+        var directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(game.BinaryDirectory));
         foreach (var record in _records.FindAll(game).Where(record => record.Component is not (ManagedComponentKind.OptiScaler or ManagedComponentKind.ReShade)))
             foreach (var file in record.Files.Where(file => !string.IsNullOrWhiteSpace(file.Path)))
             {

@@ -20,7 +20,8 @@ public sealed record DllNameChoices
     [JsonPropertyName("reshade")]
     public string? ReShade { get; set; }
 
-    /// <summary>OptiScaler's DLL name (#172); null = automatic (<c>dxgi.dll</c>).</summary>
+    /// <summary>OptiScaler's DLL name (#172); null = automatic: <c>dxgi.dll</c>, or the first of OptiScaler's names no
+    /// other RHI component holds while dxgi.dll is held (<c>LinuxManagedComponentService.OptiScalerAutomaticProxyName</c>).</summary>
     [JsonPropertyName("optiscaler")]
     public string? OptiScaler { get; set; }
 

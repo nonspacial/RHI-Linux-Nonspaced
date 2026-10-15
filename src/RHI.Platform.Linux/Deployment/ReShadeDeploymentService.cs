@@ -405,8 +405,12 @@ public sealed partial class ReShadeDeploymentService
         var (addonPlan, addonRefusal) = ReShadeAddonSwitch.PlanFor(
             _records.FindAll(game), managerFiles ?? [], addonSupport: staged.Channel != ReShadeChannel.NoAddons);
         // Unreadable manager list while the switch matters (to No Addons, or back from it): its add-ons cannot be told
-        // apart, so they stay as they are and the status line says so.
-        var managerNote = managerFiles is null && (staged.Channel == ReShadeChannel.NoAddons || LacksAddonSupport(existingRecord))
+        // apart, so they stay as they are and the status line says so. A fresh install with add-on support (ReShade was
+        // removed while No Addons had them off) counts as "back from it" while add-on files that are off remain.
+        var managerNote = managerFiles is null
+                          && (staged.Channel == ReShadeChannel.NoAddons
+                              || LacksAddonSupport(existingRecord)
+                              || (existingRecord is null && ReShadeAddonSwitch.HasOffAddons(game.BinaryDirectory)))
             ? ReShadeAddonSwitch.ManagerUnreadableNote : "";
         if (addonRefusal is not null)
         {

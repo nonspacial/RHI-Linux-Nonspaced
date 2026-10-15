@@ -53,6 +53,19 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Equal("dxgi.dll", managed.OptiScalerProxyNameFor(game));
     }
 
+    // Re-review nit 1: a binary folder spelled with a trailing separator still matches the folder of the holder's file.
+    [Fact]
+    public void HeldName_IsFound_WhenTheBinaryFolderEndsWithASeparator()
+    {
+        var (game, store) = CreateGame("choice-held-slash", GraphicsApi.DirectX12);
+        SeedComponentFile(game, store, ManagedComponentKind.UltimateAsiLoader, "winmm.dll");
+        game.BinaryDirectory = game.BinaryDirectory!.TrimEnd('/') + "/";
+        var (managed, _) = ManagedWithChoice(store, CreatePackage("choice-held-slash-package"), "choice-held-slash");
+
+        Assert.DoesNotContain("winmm.dll", managed.OptiScalerProxyNamesFor(game));
+        Assert.Contains("dxgi.dll", managed.OptiScalerProxyNamesFor(game));
+    }
+
     [Fact]
     public void DllNameStore_KeepsReShadesAndOptiScalersChoicesApart()
     {
