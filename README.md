@@ -83,7 +83,10 @@ Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork
 * **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
 * **lists games from other store launchers inside Wine prefixes** (EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io) and from the itch.io app for Linux.
 * **adds RTX Encore** as a managed component (not yet confirmed on Linux).
-* **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts and a right-click menu on library cards.**
+* **installs ReShade on Vulkan games** as a Vulkan layer set up for that one game (not yet confirmed in a real game).
+* **follows the newest DLSS and Streamline** for games that were on the previous newest, if you turn it on, and lets you leave any component out of Update All, for one game or every game.
+* **ports upstream's INI templates, ReShade presets, peak brightness, ReLimiter, Luma and OptiScaler settings**, the ⓘ notes on component rows and the web links on library cards.
+* **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts, a right-click menu on library cards, saved filters, masked log bundles and game reports.**
 * **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
 
 The full list is under [Changes in this fork](#-changes-in-this-fork) and in [`CHANGELOG.md`](CHANGELOG.md).
@@ -199,6 +202,9 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 > Before going back to a build from before 14 October 2026, **remove OptiScaler F5 DLSSNR from every game that has it and set every pinned OptiScaler Nightly game back to "Latest (auto-update)"**. An older build reads F5 as OptiScaler Stable and ignores nightly pins, so its next update would replace them. Reinstall them once you are back on the current build. Details: [`UPSTREAM.md`](UPSTREAM.md#rolling-back-to-a-build-older-than-wave-3-f5-dlssnr-nightly-pins).
 
 > [!NOTE]
+> Before going back to an older build, remove ReShade from every game where its row reads "ReShade · Vulkan": an older build cannot remove the Vulkan layer, so its registration, the Vulkan loader beside the game and its folder in the prefix would stay. Removing it leaves only RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files in the prefix.
+
+> [!NOTE]
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
 
 ## Runtime requirements
@@ -267,11 +273,19 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 * A Wine prefix whose runtime cannot be identified is never given the system Wine for helpers such as Winetricks.
 * Manual games whose folder has gone are shown as "folder missing" and stay removable, instead of disappearing.
 * Detectors report entries they had to skip, rather than failing silently.
-* The graphics API is decided from what the executable actually imports. When an executable names several APIs, DirectX is chosen first (there is no Vulkan ReShade path on Linux yet), and the game's own settings files decide where they can.
+* The graphics API is decided from what the executable actually imports. When an executable names several APIs, DirectX is chosen first, and the game's own settings files decide where they can; set the game's API override to Vulkan to get ReShade as a Vulkan layer instead.
+* **Change resolution while playing** (HDR row): a game RHI starts directly switches the display to the size you chose and back when it ends, also when RHI was closed meanwhile; with Gamescope the size goes to Gamescope. Uses `kscreen-doctor` on KDE Plasma or `wlr-randr` on wlroots desktops. Not yet confirmed on a real desktop.
 
 ## Features
 
 * **ReShade:** choose the DLL name ReShade is installed under; a **No Addons** channel (the ReShade build without add-on support). Switching a game to No Addons turns the add-ons RHI installed off (they stay in the game folder and are not updated meanwhile); switching back to Stable or Nightly turns them on again. Falls back to a cached copy when reshade.me is down.
+* **ReShade for Vulkan games** (Proton or Wine 8 or newer): on a game whose graphics API is Vulkan the row reads **ReShade · Vulkan** and installs ReShade as a Vulkan layer for that game only (the Khronos loader beside the game, the layer and its registration in the prefix). DirectX games are unchanged; a plain reason is given where it cannot work. Changing the API to or from Vulkan while ReShade is installed is refused until it is removed. Not yet confirmed in a real game.
+* **Legacy ReShade** versions from a list, the manifest's per-game pins (Max Payne 3 → 6.4.1) on fresh installs, and the manifest's ReShade note for the game.
+* **INI templates and presets:** editable `reshade.ini`, `reshade.vulkan.ini`, `relimiter.ini` and `DisplayCommander.ini` templates merged on install or deployed from the row's ⚙ or to every game (asked first; a changed add-on INI is kept as a restorable backup); ReShade presets from the ⚙, by dropping a preset `.ini`, or into every game; the effect list style and **Apply to all games** for the screenshot folder and hotkeys.
+* **ReLimiter** global settings (display key, shared presets, DLSS info, FPS cap); **Luma ⚙** on Unreal Engine games (HDR on first boot, TAA); RenoDX **peak brightness** with Auto from your monitor or KDE's display settings, a per-game maximum and the UE-Extended choice; **OptiScaler presets** and a global **OptiScaler menu key**.
+* **Follow newest DLSS / Streamline** (off by default): games whose files are on the previous newest version move to the new one; versions you picked, a game's own files and DLSS 1.x are left alone, and nothing ever moves to an older version.
+* **Update inclusion:** leave a component out of Update All for every game (Settings → Maintenance) or one game (card menu **Update inclusion…**).
+* **ⓘ notes** on component rows for the selected game (manifest notes, the RenoDX and OptiScaler wikis, change logs), and **Available HDR mods** with Nexus/Discord-only RenoDX mods and UE-Extended games.
 * **OptiScaler:** choose the **DLL name** it is installed under (Automatic picks `dxgi.dll`, or the first free name when another RHI component already uses it); the **F5 DLSSNR** channel, with the channel list labelled "Channel: Stable, Nightly, DLSS NR or F5 DLSSNR" and a tooltip for each; pin a game to a **Nightly build**; **GPU type** INI templates (NVIDIA / AMD / Intel) you can edit once for every later install; **OptiPatcher** is installed and updated with OptiScaler; Force Reflex and game Reflex marker settings; the frame-generation `nvngx_dlssg.dll` joins the Streamline stack.
 * **RTX Encore (Beta):** installed, updated and removed like other components, under a DLL name you choose (`version.dll` by default), optionally with NVIDIA's Neural Rendering file. Its row appears only for 64-bit DirectX 11/12 or Vulkan games that ship DLSS. Not yet confirmed on Linux: frame generation and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot.
 * **NR Cost Scaler:** runs Neural Rendering at reduced scale on top of the Neural Rendering method you installed; removing it puts the original file back exactly.
@@ -280,8 +294,9 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 * **Shader profiles:** save, load, rename, export and import named shader-pack selections.
 * **Accounts:** **Settings → Accounts & updates** has **Connect Nexus account** (API key), handling of Nexus "Mod Manager Download" links (each one confirmed before anything is downloaded), and a GitHub token field that checks the token before saving it.
 * **Update notices:** at start-up RHI checks this fork's releases and tells you when a newer one exists. It never downloads or installs anything itself.
-* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), **Nexus Mods page** for every game Nexus has a page for (no account needed) and, for Xbox games, **Show in the app that installed it**.
-* **Edit game** can change the launch command.
+* **Library cards:** right-click (or Shift+F10 / the menu key) for Open folder, Favourite, Hide, View notes, **Create shortcut** (desktop or applications menu; created only when you choose it), **Nexus Mods page** for every game Nexus has a page for (no account needed), **Update inclusion…**, **Discussion / instructions** and **Web pages** (PCGamingWiki, Ultra+, ultrawide fix, HDR Gaming Database, each only where the game has one), **Copy game report** and, for Xbox games, **Show in the app that installed it**.
+* **Edit game** can change the launch command, the name a game is shown under, the wiki mod name used to find its RenoDX mod, and its bitness.
+* **Support:** Settings → Support copies all logs as one zip with your home folder, user name, Steam IDs, tokens and saved keys masked, opens the logs folder and exports the library's game data.
 * **Ported from upstream RHI 2.7.6–2.8.7:** update history, the Available HDR mods list, manifest install warnings, the Donate dialog, mod authors and add-on file names on the game page, Unity per-game RenoDX settings, Control UE ray-reconstruction setup, Neural Rendering version swaps, ShortFuse ZZZ load order, PCGamingWiki single-file data, Luma mods published before they reach the wiki, and manifest DLSS/Streamline folder overrides.
 
 ## Interface & languages
@@ -290,17 +305,17 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 * Every message is available in **English and Brazilian Portuguese**, including errors and launcher guidance.
 * Errors in the interface are logged to `~/.local/state/rhi-linux/logs/rhi.log` instead of closing the app.
 * The Update All summary counts what was really updated, what is current and what could not be checked, and names the first failure.
+* **Saved filters:** save the current search as a named filter chip under the filter tabs.
+* A **New mods** button appears in the toolbar while the RenoDX, Luma or Ultra+ lists have mods you have not seen.
+* **Help** opens from Quick start, and **What's new** from Help or the version in the status bar.
 
 ## In progress
 
 Not on `main` yet; being worked on now (upstream features still to port):
 
-* ReShade for **Vulkan** games.
-* Following the **newest DLSS** and Streamline from the manifest automatically.
-* **Update exclusions:** keep a component on a game, or everywhere, out of Update All.
-* ReShade **presets** and user **INI templates** applied on install.
-* **Info dialogs** for components and links on library cards.
-* **Renaming a game** in Edit game.
+* A **global shader set** and global add-ons, with each game choosing Global, its own selection or Off.
+* Installing a dropped or downloaded **RenoDX add-on** straight into the matching game.
+* **Renaming an installed** ReShade or OptiScaler DLL in place.
 
 ---
 

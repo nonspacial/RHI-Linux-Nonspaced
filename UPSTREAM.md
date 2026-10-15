@@ -452,7 +452,8 @@ build.
   beside the executable with a per-executable `vulkan-1=native,builtin` Wine override, the layer (`ReShade64.dll`/
   `ReShade32.dll` and upstream's `ReShade64.json` manifest) in the prefix's `C:\ProgramData\RHI-Linux\ReShadeVulkan\<game>\`,
   registered under `HKLM\Software\Khronos\Vulkan\ImplicitLayers` (`Wow6432Node` for 32-bit games) in the prefix's
-  `system.reg`, and `ReShade.ini` beside the game. The registration is visible to the whole prefix, but only a program
+  `system.reg`, and `ReShade.ini` beside the game, merged from the user's `reshade.vulkan.ini` template (#181, depth
+  settings kept), as upstream's Vulkan install does; Deploy ReShade.ini on such a game uses that template too. The registration is visible to the whole prefix, but only a program
   that loads a native Khronos loader can see it: the game RHI set up, or (rare, in a shared Heroic/Lutris prefix) another
   game there that ships its own `vulkan-1.dll` with a native override. Games using Wine's own loader, DXVK or
   vkd3d-proton never load it.
@@ -488,6 +489,7 @@ build.
   component that needs ReShade (RenoDX) or from the profile, uses that version; the profile starts on Legacy at it and
   the user may choose another channel. An installed ReShade is never changed by a pin (its own profile is re-applied).
 - Ported: `reshadeGameInfo`: the manifest's ReShade note for the game is shown in the ReShade profile, with its link
-  (https only) when the manifest gives one.
+  when the manifest gives one (https, on the sites manifest notes use, as the ⓘ dialog's note links), and is the text of
+  ReShade's ⓘ dialog (#184).
 - Changed from upstream: upstream stores the pin as a per-game channel override when it first sees the game; RHI Linux
   has no per-game channel setting outside the installed profile, so the pin applies to each fresh install instead.

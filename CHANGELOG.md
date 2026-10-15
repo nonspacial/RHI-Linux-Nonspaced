@@ -11,12 +11,85 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 
 Not on `main` yet (upstream features still to port):
 
-- ReShade for Vulkan games.
-- Following the newest DLSS and Streamline from the manifest automatically.
-- Update exclusions: keeping a component on a game, or everywhere, out of Update All.
-- ReShade presets and user INI templates applied on install.
-- Info dialogs for components and links on library cards.
-- Renaming a game in Edit game.
+- A global shader set and global add-ons, with each game choosing Global, its own selection or Off.
+- Installing a dropped or downloaded RenoDX add-on straight into the matching game.
+- Renaming an installed ReShade or OptiScaler DLL in place.
+
+## Wave 5 — 2026-10-15: Vulkan ReShade, Follow newest DLSS, update inclusion, INI templates and presets, info dialogs
+
+> [!NOTE]
+> Before going back to an older build, remove ReShade from every game where its row reads "ReShade · Vulkan": an older
+> build cannot remove the Vulkan layer, so its registration, the Vulkan loader beside the game and its folder in the
+> prefix would stay. Removing it leaves only RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files
+> in the prefix.
+
+ReShade
+
+- **ReShade for Vulkan games** (Windows games under Proton or Wine 8 or newer). On a game whose graphics API is Vulkan
+  the ReShade row reads **ReShade · Vulkan**, and its Install sets ReShade up as a Vulkan layer for that game only: the
+  Khronos Vulkan loader beside the game, the layer in the prefix, its registration in the prefix's `system.reg`, and a
+  `ReShade.ini` from your `reshade.vulkan.ini` template. DirectX games and multi-renderer games are unchanged, and a
+  component that needs ReShade never installs the layer by itself. A plain reason is given where it cannot work (an old
+  Proton, a prefix never started, a game with its own `vulkan-1.dll`, a 32-bit game in a 32-bit-only prefix). Not yet
+  confirmed in a real game.
+- Changing a game's graphics API to or from Vulkan while ReShade is installed is refused until ReShade is removed.
+- **Legacy ReShade** versions come from a list (the RHI manifest's, or 6.4.1), and games the manifest pins to an older
+  ReShade (Max Payne 3 → 6.4.1) get that version on a fresh install. An installed ReShade is never changed by a pin.
+  The manifest's ReShade note for a game shows in its ReShade profile and in ReShade's ⓘ.
+- **INI templates:** RHI's INIs folder holds editable `reshade.ini`, `reshade.vulkan.ini`, `reshade.rdr2.ini`,
+  `relimiter.ini` and `DisplayCommander.ini`. A ReShade install merges your template into the game's ReShade.ini (every
+  other line stays). Settings → ReShade adds the effect list style (Tabs/Tree), **Apply to all games** for the
+  screenshot folder, hotkeys and effect list, and **Deploy** of each template to every game where RHI manages the
+  component; each asks first, with the number of games. The ⚙ on the ReShade, ReLimiter and Display Commander rows
+  deploys the template to one game. A ReLimiter or Display Commander INI you changed is replaced only after you confirm,
+  and is kept beside it as a backup you can restore.
+- **ReShade presets:** the ReShade row's ⚙ installs a preset into the game; a preset `.ini` dropped on RHI is installed
+  into a game you pick, optionally with the shader packs it needs; Settings → ReShade installs one preset into every
+  game where RHI manages ReShade. A preset already in your presets folder is never overwritten.
+- **ReLimiter** global settings in Settings → Shaders/Add-ons: on-screen display key, shared presets, DLSS info and FPS
+  cap, with Apply to all games.
+
+DLSS and updates
+
+- **Follow newest DLSS / Streamline** (Settings → DLSS/Streamline, off by default): when the DLSS manifest publishes a
+  newer DLSS (SR/RR/FG) or Streamline, games whose files are on the previous newest are moved to it. Versions you picked
+  yourself, a game's own older files and DLSS 1.x stay as they are; a running game waits for the next pass; it never
+  moves a game to an older version.
+- **Update inclusion:** Settings → Maintenance → **Update All includes** leaves a component out of Update All for every
+  game; a card's right-click **Update inclusion…** does it for one game (and leaves that game out of Follow newest). A
+  component's own Update button still works.
+
+RenoDX, Luma and OptiScaler
+
+- **Peak brightness** for RenoDX (Settings → ReShade): a value written into RenoDX's presets on install, **Auto** reads
+  it from your monitor (or KDE's display settings), and Apply to all games. The RenoDX ⚙ sets a game's own maximum nits
+  and the UE-Extended choice.
+- **Luma ⚙** on Unreal Engine games: HDR on first boot and TAA.
+- **OptiScaler presets:** four saved sets of ⚙ settings to apply to any game, and a global **OptiScaler menu key**
+  (Settings → DLSS/Streamline) with Apply to all games.
+
+Library and links
+
+- **ⓘ on component rows** (RenoDX, Luma, OptiScaler, ReLimiter, Display Commander, RE Framework, ReShade): the notes
+  for the selected game from the RHI manifest, the RenoDX and OptiScaler wikis and change logs, with links.
+- The card's right-click menu adds **Discussion / instructions** and a **Web pages** submenu (PCGamingWiki, Ultra+,
+  ultrawide fix, HDR Gaming Database), each only where the game has one. Each kind of link opens only its own sites.
+- **Available HDR mods** also lists RenoDX mods published only on Nexus Mods or Discord, and Unreal Engine games of the
+  UE-Extended database.
+- A **New mods** button appears in the toolbar when the RenoDX, Luma or Ultra+ lists have mods you have not seen.
+- **Edit game** can change the name a game is shown under, the wiki mod name used to find its RenoDX mod, and its
+  bitness (refused while RHI components are installed and the change would matter).
+- **Saved filters:** save the current search as a named filter chip under the filter tabs.
+- **Change resolution while playing** (HDR row): a game RHI starts directly switches the display to the size you chose
+  and back when it ends, also when RHI was closed meanwhile; with Gamescope the size goes to Gamescope instead. Uses
+  `kscreen-doctor` on KDE Plasma or `wlr-randr` on wlroots desktops. Not yet confirmed on a real desktop.
+
+Support
+
+- Settings → **Support**: **Copy logs** (all of RHI's logs zipped, with your home folder, user name, Steam IDs, tokens and
+  saved keys masked), **Open logs folder** and **Export game data**. A card's right-click **Copy game report** saves a
+  masked report for that game.
+- **Help** (from Quick start) and **What's new** (from Help or the version in the status bar).
 
 ## Wave 4 — 2026-10-15: store launchers, RTX Encore, No Addons add-ons, OptiScaler DLL name
 
