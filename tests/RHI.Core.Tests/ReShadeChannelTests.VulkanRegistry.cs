@@ -43,6 +43,28 @@ public sealed partial class ReShadeChannelTests
     }
 
     [Fact]
+    public async Task RegistryValue_EnsureAndRestoreAsync_RefuseWhileWineRuns_BeforeJournalingAnyStep()
+    {
+        // Review nit 9: the refusal comes before the journal step, so a refused edit leaves no undo step behind.
+        var prefix = NewPrefix("hklm-refuse-before-journal");
+        var hive = Path.Combine(prefix, "system.reg");
+        var written = new WineRegistryValueService(new WineRegistryEditor(_ => false)).Ensure(prefix, WineRegistryValueService.SystemHive, LayerKey, LayerName, "dword:00000000");
+        var before = File.ReadAllBytes(hive);
+        var running = new WineRegistryValueService(new WineRegistryEditor(_ => true));
+        var journalDir = Path.Combine(_root, "hklm-refuse-before-journal", "journal");
+        var journal = new DeploymentJournal(journalDir);
+        await using var operation = await journal.BeginAsync("refused registry edit");
+        string Entry() => File.ReadAllText(Path.Combine(journalDir, operation.Id + ".json"));
+
+        await Assert.ThrowsAsync<WineRegistryEditRefusedException>(() =>
+            running.EnsureAsync(operation, prefix, WineRegistryValueService.SystemHive, LayerKey, LayerName + ".other", "dword:00000000"));
+        Assert.Contains("\"Compensations\":[]", Entry(), StringComparison.Ordinal);
+        await Assert.ThrowsAsync<WineRegistryEditRefusedException>(() => running.RestoreAsync(operation, prefix, written));
+        Assert.Contains("\"Compensations\":[]", Entry(), StringComparison.Ordinal);
+        Assert.Equal(before, File.ReadAllBytes(hive));
+    }
+
+    [Fact]
     public void SystemHive_MissingFile_IsRefusedWithItsOwnMessage()
     {
         var prefix = NewPrefix("hklm-missing");
