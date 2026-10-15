@@ -88,7 +88,14 @@ public sealed record GameAnalysis(
     IReadOnlyList<ManagedComponent> Components,
     DlssDetectionResult Dlss,
     SelectionFacts Facts,
-    GameRuntimeFacts Runtime);
+    GameRuntimeFacts Runtime)
+{
+    /// <summary>
+    /// #178: which families Follow newest could move in this game (<see cref="SelectedGameSession.FollowableFor"/>),
+    /// worked out with the analysis, off the UI thread; null when not worked out (no follower wired, or it failed).
+    /// </summary>
+    public (bool Dlss, bool Streamline)? Followable { get; init; }
+}
 
 public enum AnalysisOutcomeKind { Ready, Cached, NoPatchTarget, Failed }
 
@@ -146,6 +153,12 @@ public sealed class SelectedGameSession
         _hdr = hdr;
         _cache = new LruCache<string, GameAnalysis>(capacity, weigh: analysis => analysis.Files.Count, maxWeight: maxCachedPaths);
     }
+
+    /// <summary>
+    /// w5/update-policy (#178, re-review nit n2): works out <see cref="GameAnalysis.Followable"/> from the file index while
+    /// the analysis runs on a worker thread, so the card menu reads it without touching the disk.
+    /// </summary>
+    public Func<DetectedGame, IReadOnlyList<string>, (bool Dlss, bool Streamline)?>? FollowableFor { get; set; }
 
     /// <summary>The game the session analyses (the selected game), or null.</summary>
     public DetectedGame? Game { get; private set; }
@@ -322,7 +335,17 @@ public sealed class SelectedGameSession
         _managed.Decorate(working, components);
         var dlss = skipDlss ? new DlssDetectionResult() : _dlssDefaults.DetectTargets(working, files, cancellationToken);
         var facts = SelectionFacts.Compute(working, dlss, _managed, _hdr);
-        return new GameAnalysis(files, components, dlss, facts, GameRuntimeFacts.Capture(working));
+        return new GameAnalysis(files, components, dlss, facts, GameRuntimeFacts.Capture(working)) { Followable = Followable(working, files) };
+    }
+
+    private (bool Dlss, bool Streamline)? Followable(DetectedGame working, IReadOnlyList<string> files)
+    {
+        try { return FollowableFor?.Invoke(working, files); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("dlss-follow", $"Follow newest: could not work out which files {working.Name} has to follow", ex);
+            return null;
+        }
     }
 
     private void Publish(DetectedGame game, GameAnalysis analysis)

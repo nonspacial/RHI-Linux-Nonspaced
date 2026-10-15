@@ -119,6 +119,17 @@ public sealed class DlssAutoFollowStore : IGameStateStore
             });
     }
 
+    /// <summary>Keys an unreleased earlier build wrote and nothing reads any more (family-wide <c>heldFrom</c>, re-review n3).</summary>
+    internal static readonly IReadOnlyList<string> RetiredKeys = ["heldFrom"];
+
+    private static Dictionary<string, JsonElement>? WithoutRetiredKeys(Dictionary<string, JsonElement>? unknown)
+    {
+        if (unknown is null || !RetiredKeys.Any(unknown.ContainsKey)) return unknown;
+        var kept = new Dictionary<string, JsonElement>(unknown);
+        foreach (var key in RetiredKeys) kept.Remove(key);
+        return kept.Count == 0 ? null : kept;
+    }
+
     private static Dictionary<string, DlssFollowTrack> Copy(Dictionary<string, DlssFollowTrack>? value)
     {
         var copy = JsonStoreMaps.CaseInsensitive(value);
@@ -128,7 +139,7 @@ public sealed class DlssAutoFollowStore : IGameStateStore
             var held = new Dictionary<string, DlssFollowHold>(StringComparer.Ordinal);
             foreach (var (game, hold) in track?.Held ?? [])
                 if (!string.IsNullOrWhiteSpace(game) && hold is not null) held[game] = hold.Copy();
-            copy[key] = new DlssFollowTrack { Newest = track?.Newest ?? "", Held = held, Unknown = track?.Unknown };
+            copy[key] = new DlssFollowTrack { Newest = track?.Newest ?? "", Held = held, Unknown = WithoutRetiredKeys(track?.Unknown) };
         }
         return copy;
     }

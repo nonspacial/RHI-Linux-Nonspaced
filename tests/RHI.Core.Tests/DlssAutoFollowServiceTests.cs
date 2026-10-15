@@ -461,6 +461,90 @@ public sealed class DlssAutoFollowServiceTests : IDisposable
     public void SameVersion_ComparesNumbersPartByPart(string a, string b, bool same)
         => Assert.Equal(same, DlssAutoFollowService.SameVersion(a, b));
 
+    // ---- w5 integration: update-policy re-review leftovers ----
+
+    // Re-review m1 (the reviewer's probe): a held game is never followed DOWN when the newest went backwards but is still
+    // newer than the held version; the baseline is not rewound either.
+    [Fact]
+    public async Task ReviewProbe_BackwardsNewest_DoesNotFollowAHeldGameDown()
+    {
+        const string later = "310.6.0";
+        var game = Game("held-backwards", sr: A);
+        var fx = Fixture(baseline: later);
+        var t = fx.Store.Load()!;
+        t["dlss"].Held[GameRecordIdentity.Key(game)] = new DlssFollowHold { From = [A], Reason = DlssFollowHoldReason.Running, To = later };
+        fx.Store.Save(t);
+
+        await fx.Service.RunAsync([game], new DlssFollowChoice(true, false));
+
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(game)));
+        Assert.Equal(later, fx.Store.Load()!["dlss"].Newest);
+    }
+
+    // Re-review m2: while only holds are left, a game nothing is held for is passed over before its folder is looked at.
+    [Fact]
+    public async Task WhileOnlyHoldsAreLeft_OnlyTheHeldGamesFoldersAreLookedAt()
+    {
+        var held = Game("only-held", sr: A);
+        var notHeld = Game("not-held", sr: A);
+        var fx = Fixture(baseline: B);
+        var t = fx.Store.Load()!;
+        t["dlss"].Held[GameRecordIdentity.Key(held)] = new DlssFollowHold { From = [A], Reason = DlssFollowHoldReason.Running, To = B };
+        fx.Store.Save(t);
+        var looked = new System.Collections.Concurrent.ConcurrentQueue<string>();
+
+        await fx.Service.RunAsync([held, notHeld], new DlssFollowChoice(true, false), game => { looked.Enqueue(game.Name); return null; });
+
+        Assert.Equal(["only-held"], looked);
+        Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(held)));
+        Assert.Equal(A + ".0", DlssAutoFollowService.PeFileVersion(Sr(notHeld)));
+    }
+
+    // Re-review n1: a Repair after move between the check and the apply moved the hold to the game's new key; the apply
+    // reads the holds as saved then, so the moved game is still followed.
+    [Fact]
+    public async Task AHoldMovedBetweenCheckAndApply_IsStillFollowed()
+    {
+        var game = Game("held-moved-mid-pass", sr: A);
+        var running = true;
+        var fx = Fixture(baseline: A, isRunning: _ => running);
+        await fx.Service.RunAsync([game], new DlssFollowChoice(true, false)); // held at A, baseline now B
+        running = false;
+
+        var check = await fx.Service.CheckAsync(new DlssFollowChoice(true, false));
+        Assert.True(check.NeedsApply);
+        var moved = game.ShallowClone();
+        moved.InstallPath = moved.BinaryDirectory = Directory.CreateDirectory(Path.Combine(_root, "moved-mid", "held-moved-mid-pass")).FullName;
+        moved.ExecutablePath = Path.Combine(moved.InstallPath, Path.GetFileName(game.ExecutablePath!));
+        foreach (var file in Directory.EnumerateFiles(game.InstallPath)) File.Copy(file, Path.Combine(moved.InstallPath, Path.GetFileName(file)));
+        var write = fx.Store.StageMove(new GameStateMove(moved, [(game.InstallPath, moved.InstallPath)], [GameRecordIdentity.Key(game)]));
+        RHI.Platform.Linux.Persistence.StagedFileCommit.Commit([write!]);
+
+        var result = await fx.Service.ApplyAsync(check, [moved]);
+
+        Assert.Equal(1, result.UpdatedCount);
+        Assert.Equal(B + ".0", DlssAutoFollowService.PeFileVersion(Sr(moved)));
+        Assert.Empty(fx.Store.Load()!["dlss"].Held);
+    }
+
+    // Re-review n3: the family-wide heldFrom an unreleased build wrote is dropped on load (and so on the next save).
+    [Fact]
+    public void Store_DropsTheRetiredHeldFromKey_KeepsOtherUnknownFields()
+    {
+        var path = Path.Combine(_root, "follow-retired.json");
+        File.WriteAllText(path, """{"dlss": {"newest": "310.4.0", "heldFrom": ["310.3.0"], "laterField": 1}}""");
+        var store = new DlssAutoFollowStore(path);
+
+        var tracks = store.Load()!;
+        store.Save(tracks);
+
+        Assert.False(tracks["dlss"].Unknown!.ContainsKey("heldFrom"));
+        Assert.True(tracks["dlss"].Unknown!.ContainsKey("laterField"));
+        var text = File.ReadAllText(path);
+        Assert.DoesNotContain("heldFrom", text);
+        Assert.Contains("laterField", text);
+    }
+
     // ---- fixture ----
 
     private sealed record Setup(DlssAutoFollowService Service, DlssManagerService Dlss, DlssAutoFollowStore Store,

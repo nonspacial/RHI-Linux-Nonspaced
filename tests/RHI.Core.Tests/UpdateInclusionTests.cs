@@ -364,6 +364,11 @@ public sealed class UpdateInclusionTests : IDisposable
         Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Has Dlss Quest")), item => item.Id == "update-inclusion");
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "No Dlss Quest")), item => item.Id == "update-inclusion");
         Assert.Equal((true, false), fx.Vm.UpdatePolicy.Follow.FollowableFamilies(Row(fx, "Has Dlss Quest").Game, fx.Vm.Session.CachedFiles(Row(fx, "Has Dlss Quest").Game)));
+
+        // Re-review nit n2: the menu reads what the analysis worked out (on its worker thread); it never inspects files.
+        fx.Vm.Session.FollowableFor = (_, _) => throw new InvalidOperationException("the card menu must not read the disk");
+        Assert.Contains(fx.Vm.CardMenuFor(Row(fx, "Has Dlss Quest")), item => item.Id == "update-inclusion");
+        Assert.Equal((true, false), fx.Vm.Session.TryGetCached(Row(fx, "Has Dlss Quest").Game, out var analysed) ? analysed.Followable : null);
     }
 
     [Fact]

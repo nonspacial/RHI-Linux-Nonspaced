@@ -137,7 +137,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w5/update-policy rows
     /// <summary>#177 Follow newest DLSS / Streamline; set by the app composition (and the test fixture). Integrator hook.</summary>
-    public UpdatePolicyFeatures? UpdatePolicy { get; set; }
+    public UpdatePolicyFeatures? UpdatePolicy
+    {
+        get => _updatePolicy;
+        set
+        {
+            _updatePolicy = value;
+            // Re-review nit n2: the card menu's DLSS / Streamline boxes come from the analysis (worker thread), not the disk.
+            _session.FollowableFor = value is null ? null : (game, files) => value.Follow.FollowableFamilies(game, files);
+        }
+    }
+    private UpdatePolicyFeatures? _updatePolicy;
     // w5/catalogue-info rows
     public NewModsPresenter NewMods { get; } = new(); // #185: the "New mods" toolbar button and list
     // w5/ini-presets rows
@@ -1750,7 +1760,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // DLSS / Streamline file Follow newest could move, known from the game's analysis).
         if (UpdatePolicy is { } updatePolicy
             && updatePolicy.InclusionFor(game, _deploymentRecords.FindAll(game).Select(record => record.Component), _settings,
-                _settings.FollowNewestDlss || _settings.FollowNewestStreamline ? updatePolicy.Follow.FollowableFamilies(game, _session.CachedFiles(game)) : null) is { } inclusion)
+                (_settings.FollowNewestDlss || _settings.FollowNewestStreamline) && _session.TryGetCached(game, out var analysed) ? analysed.Followable : null) is { } inclusion)
             items.Add(new("update-inclusion", T("Upd.MenuItem"), new AsyncRelayCommand(async () =>
             {
                 if (await updatePolicy.EditInclusionAsync(game, inclusion, save => TryPersist(save, "Upd.WhatInclusion", sessionOnly: false, reportStatus: false)) is not { } line) return;

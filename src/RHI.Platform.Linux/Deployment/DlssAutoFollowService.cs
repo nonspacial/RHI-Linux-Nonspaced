@@ -317,6 +317,7 @@ public sealed class DlssAutoFollowService
         Func<DetectedGame, IReadOnlyList<string>?>? indexedFiles,
         CancellationToken cancellationToken)
     {
+        plans = WithCurrentHolds(plans);
         var work = FindWork(games, plans, indexedFiles, cancellationToken);
         var swaps = new List<DlssFollowSwap>();
 
@@ -434,6 +435,22 @@ public sealed class DlssAutoFollowService
         }
     }
 
+    /// <summary>
+    /// The holds as saved now, under the busy gate (re-review n1): a Repair after move between <see cref="CheckAsync"/> and
+    /// <see cref="ApplyAsync"/> moved a held game's entry to its new key, which the check's copy does not know.
+    /// </summary>
+    private IReadOnlyList<Plan> WithCurrentHolds(IReadOnlyList<Plan> plans)
+    {
+        if (_store.Load() is not { } tracks) return plans;
+        return plans.Select(plan => plan with
+        {
+            Held = tracks.TryGetValue(plan.Family.Key, out var track)
+                ? track.Held.Where(entry => entry.Value.From.Any(version => IsOlder(version, plan.Newest)))
+                    .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal)
+                : plan.Held
+        }).ToArray();
+    }
+
     // Which files of which games are on a version being followed from. Reads PE versions only (no writes, no network).
     private List<Work> FindWork(
         IReadOnlyList<DetectedGame> games,
@@ -445,7 +462,9 @@ public sealed class DlssAutoFollowService
         foreach (var game in games)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var relevant = plans.Where(plan => Follows(game, plan.Family)).ToArray();
+            // Only plans with a version to follow from for THIS game: while only holds are left, every other game is
+            // passed over before its folder is looked at (re-review m2).
+            var relevant = plans.Where(plan => Follows(game, plan.Family) && plan.FollowFromFor(game).Count > 0).ToArray();
             if (relevant.Length == 0 || !game.HasConfirmedPatchTarget) continue;
             if (string.IsNullOrWhiteSpace(game.InstallPath) || !Directory.Exists(game.InstallPath)) continue;
             var candidate = _targets.InspectForFollow(game, indexedFiles?.Invoke(game), cancellationToken);
