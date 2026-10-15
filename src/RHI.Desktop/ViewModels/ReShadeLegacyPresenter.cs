@@ -73,7 +73,7 @@ public sealed partial class ReShadeLegacyPresenter : ObservableObject
     {
         var listed = await components.LegacyReShadeVersionsAsync();
         _listed = listed.Count > 0 ? listed : [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
-        Sync(_shell.ReShadeLegacyVersion);
+        Sync(_shell.ReShadeProfile.ReShadeLegacyVersion);
     }
 
     /// <summary>The list becomes the manifest's plus <paramref name="keep"/>, changed item by item (never cleared: a cleared

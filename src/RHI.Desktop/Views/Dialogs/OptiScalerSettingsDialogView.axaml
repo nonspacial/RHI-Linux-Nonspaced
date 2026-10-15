@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.OptiScalerSettingsDialogView"
+             x:DataType="vm:OptiScalerSettingsDialogViewModel">
+  <!-- The OptiScaler ⚙ dialog (epic #89). The nightly-build (#156) and presets (#187) rows are lane controls (code-behind). -->
+  <StackPanel Spacing="12" Margin="18">
+    <TextBlock Text="{l:T Win.AdvancedOptiScalerSettings}" FontSize="18" FontWeight="SemiBold"/>
+    <TextBlock Text="{l:T Win.ChooseChannelBeforeInstallingStableDefault}" TextWrapping="Wrap" Opacity="0.72"/>
+    <!-- #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
+         the line under the list say in plain words what the channel is (2 s tooltips, the owner's rule). -->
+    <Grid ColumnDefinitions="280,*" ColumnSpacing="12">
+      <TextBlock Text="{l:T Win.ChannelVariant}" VerticalAlignment="Center" TextWrapping="Wrap"
+                 ToolTip.Tip="{l:T Win.StableUsesOfficialStableReleaseNightly}" ToolTip.ShowDelay="2000"/>
+      <ComboBox Grid.Column="1" ItemsSource="{Binding Runtime.OptiScalerVariantOptions}" SelectedItem="{Binding SelectedVariant}"
+                MinWidth="260" IsEnabled="{Binding CanChooseVariant}"
+                ToolTip.Tip="{Binding ChannelText}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:OptionItem">
+            <TextBlock Text="{Binding Display}" ToolTip.ShowDelay="2000"
+                       ToolTip.Tip="{Binding Converter={x:Static vm:OptiScalerSettingsDialogViewModel.ChannelTip}}"/>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+    </Grid>
+    <TextBlock Text="{Binding ChannelText}" FontSize="12" TextWrapping="Wrap" Opacity="0.78"/>
+    <TextBlock Text="{Binding VariantNote}" FontSize="11" TextWrapping="Wrap" Opacity="0.58"/>
+    <Panel x:Name="NightlyBuildSlot" IsVisible="False"/>
+    <!-- #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll, or the next free name while it is held),
+         locked while installed, names another RHI component uses left out; the 2 s tooltip says which name the install
+         takes and why. -->
+    <Grid ColumnDefinitions="280,*" ColumnSpacing="12" IsVisible="{Binding HasDllName}">
+      <TextBlock Text="{l:T Names.DllNameLabel}" VerticalAlignment="Center"/>
+      <ComboBox Grid.Column="1" ItemsSource="{Binding DllOptions}" SelectedItem="{Binding SelectedDll}" MinWidth="260"
+                IsEnabled="{Binding CanChooseDll}" ToolTip.Tip="{Binding DllHint}" ToolTip.ShowOnDisabled="True" ToolTip.ShowDelay="2000"/>
+    </Grid>
+    <Border Height="1" Background="#1E2630" Margin="0,4"/>
+    <TextBlock Text="OptiScaler.ini" FontSize="14" FontWeight="SemiBold"/>
+    <TextBlock Text="{l:T Win.ControlsBelowEditOnlyOptiScalerIni}" TextWrapping="Wrap" Opacity="0.72"/>
+    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.72" IsVisible="{Binding HasWarning}"/>
+    <ItemsControl ItemsSource="{Binding IniItems}" IsVisible="{Binding HasSettings}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Spacing="12"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.DataTemplates>
+        <DataTemplate DataType="vm:OptiScalerIniDivider">
+          <Border Height="1" Background="#1E2630" Margin="0,4"/>
+        </DataTemplate>
+        <DataTemplate DataType="vm:OptiScalerIniGroup">
+          <TextBlock Text="{Binding Text}" FontSize="14" FontWeight="SemiBold" Margin="0,4,0,0"/>
+        </DataTemplate>
+        <DataTemplate DataType="vm:OptiScalerIniSetting">
+          <Grid ColumnDefinitions="280,*" ColumnSpacing="12">
+            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding Help}"/>
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" MinWidth="260" SelectedIndex="{Binding SelectedIndex}"
+                      IsEnabled="{Binding IsEnabled}"/>
+          </Grid>
+        </DataTemplate>
+      </ItemsControl.DataTemplates>
+    </ItemsControl>
+    <Panel x:Name="PresetsSlot" IsVisible="False"/>
+    <!-- The main window's overlay Cancel is behind this modal dialog: a setting change that is still downloading or
+         waiting can be stopped here; hidden otherwise, and once it starts changing files (Refs #89 unit 7). -->
+    <Button Classes="rhi" Content="{l:T Ui.CancelOperation}" Command="{Binding Operations.CancelCommand}"
+            HorizontalAlignment="Left" IsVisible="{Binding ShowCancel}"/>
+    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.78"/>
+    <TextBlock Text="{Binding IniPath}" FontSize="10" Opacity="0.55" TextWrapping="Wrap" IsVisible="{Binding HasIniPath}"/>
+  </StackPanel>
+</UserControl>

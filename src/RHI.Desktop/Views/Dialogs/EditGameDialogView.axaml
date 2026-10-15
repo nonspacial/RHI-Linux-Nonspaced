@@ -1,0 +1,67 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.EditGameDialogView"
+             x:DataType="vm:EditGameDialogViewModel">
+  <!-- Edit game (epic #89). Name and bitness (Refs #190): plain labels, the explanation in a 2 s tooltip. -->
+  <StackPanel Spacing="9" Margin="20">
+    <TextBlock Text="{Binding Heading}" FontSize="21" FontWeight="SemiBold"/>
+    <TextBlock Text="{l:T Win.ExecutableLauncherUsedStartGameIndependent}" TextWrapping="Wrap" Opacity="0.72"/>
+
+    <TextBlock Text="{l:T Shell.IdentityHeading}" FontWeight="SemiBold" Foreground="LightSkyBlue" Margin="0,8,0,0"/>
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:T Win.GameName}" FontWeight="SemiBold" ToolTip.Tip="{l:T Shell.DisplayNameTip}" ToolTip.ShowDelay="2000"/>
+      <TextBox Text="{Binding DisplayName}" PlaceholderText="{Binding DisplayNamePlaceholder}" MinWidth="200"
+               ToolTip.Tip="{l:T Shell.DisplayNameTip}" ToolTip.ShowDelay="2000"/>
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:T Shell.WikiName}" FontWeight="SemiBold" ToolTip.Tip="{l:T Shell.WikiNameTip}" ToolTip.ShowDelay="2000"/>
+      <TextBox Text="{Binding WikiName}" PlaceholderText="{Binding WikiNamePlaceholder}" MinWidth="200"
+               ToolTip.Tip="{l:T Shell.WikiNameTip}" ToolTip.ShowDelay="2000"/>
+    </StackPanel>
+    <StackPanel Spacing="4">
+      <TextBlock Text="{l:T Shell.Bitness}" FontWeight="SemiBold" ToolTip.Tip="{l:T Shell.BitnessTip}" ToolTip.ShowDelay="2000"/>
+      <ComboBox ItemsSource="{Binding BitnessItems}" SelectedIndex="{Binding BitnessIndex}" MinWidth="160"
+                ToolTip.Tip="{l:T Shell.BitnessTip}" ToolTip.ShowDelay="2000"/>
+    </StackPanel>
+
+    <TextBlock Text="{l:T Win.LaunchHeading}" FontWeight="SemiBold" Foreground="LightSkyBlue" Margin="0,8,0,0"/>
+    <TextBlock Text="{Binding LibrarySource}" FontSize="11" Opacity="0.72"/>
+    <TextBlock Text="{l:T Win.LauncherPlatform}" FontWeight="SemiBold"/>
+    <ComboBox ItemsSource="{Binding ProviderItems}" SelectedIndex="{Binding ProviderIndex}" MinWidth="220"/>
+    <TextBlock Text="{l:T Win.LaunchExecutablePreserved}" FontWeight="SemiBold"/>
+    <TextBlock Text="{Binding LaunchExecutable}" TextWrapping="Wrap" Opacity="0.76"/>
+    <!-- The command that runs on Play (the user's, else the detected one), editable as in Add game. -->
+    <TextBlock Text="{l:T Win.LaunchCommandOptional}" FontWeight="SemiBold"/>
+    <TextBox Text="{Binding LaunchCommand}" PlaceholderText="{l:T Win.OptionalLaunchCommand}"/>
+    <TextBlock Text="{l:T Win.EditLaunchCommandHint}" TextWrapping="Wrap" FontSize="10" Opacity="0.6"/>
+
+    <TextBlock Text="{l:T Win.GameModificationTargetHeading}" FontWeight="SemiBold" Foreground="LightSkyBlue" Margin="0,10,0,0"/>
+    <TextBlock Text="{l:T Win.TargetUsedArchitectureGraphicsAPIDLL}" TextWrapping="Wrap" FontSize="11" Opacity="0.72"/>
+    <TextBlock Text="{l:T Win.TargetExecutable}" FontWeight="SemiBold"/>
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBox Text="{Binding PatchExecutable}" PlaceholderText="{l:T Win.SelectRealGameExecutableEG}" MinWidth="200"/>
+      <Button Grid.Column="1" Content="{l:T Win.Browse}" Padding="10,5" Command="{Binding BrowseExecutableCommand}"/>
+    </Grid>
+    <TextBlock Text="{l:T Win.GameRoot}" FontWeight="SemiBold"/>
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <TextBox Text="{Binding GameRoot}" PlaceholderText="{l:T Win.RealGameRoot}" MinWidth="200"/>
+      <Button Grid.Column="1" Content="{l:T Win.Detect}" Padding="10,5" Command="{Binding DetectRootCommand}"/>
+      <Button Grid.Column="2" Content="{l:T Win.Browse}" Padding="10,5" Command="{Binding BrowseRootCommand}"/>
+    </Grid>
+    <TextBlock Text="{l:T Win.BinariesPatchesDirectory}" FontWeight="SemiBold"/>
+    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <TextBox Text="{Binding BinaryDirectory}" PlaceholderText="{l:T Win.DirectoryContainingExecutableLocalComponentFiles}" MinWidth="200"/>
+      <Button Grid.Column="1" Content="{l:T Win.Detect}" Padding="10,5" Command="{Binding DetectBinaryCommand}"/>
+      <Button Grid.Column="2" Content="{l:T Win.Browse}" Padding="10,5" Command="{Binding BrowseBinaryCommand}"/>
+    </Grid>
+    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.82"/>
+
+    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8" Margin="0,8,0,0">
+      <Button Content="{l:T Win.RestoreAutomaticDetection}" Padding="14,7" Command="{Binding ResetCommand}" IsEnabled="{Binding CanAct}"/>
+      <Button Grid.Column="2" Content="{l:T Win.Cancel}" Padding="14,7" Command="{Binding CancelCommand}" IsEnabled="{Binding CanAct}"/>
+      <Button Grid.Column="3" Content="{l:T Win.Save}" Padding="14,7" Command="{Binding SaveCommand}" IsEnabled="{Binding CanAct}"/>
+    </Grid>
+  </StackPanel>
+</UserControl>

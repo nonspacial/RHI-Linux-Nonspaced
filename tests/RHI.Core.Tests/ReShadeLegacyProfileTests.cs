@@ -33,10 +33,10 @@ public sealed class ReShadeLegacyProfileTests
             var legacy = fx.Vm.ReShadeLegacy;
             await legacy.Loaded.WaitAsync(TimeSpan.FromSeconds(30));
 
-            Assert.True(fx.Vm.IsReShadeLegacy);
-            Assert.Equal("6.4.1", fx.Vm.ReShadeLegacyVersion);
+            Assert.True(fx.Vm.ReShadeProfile.IsReShadeLegacy);
+            Assert.Equal("6.4.1", fx.Vm.ReShadeProfile.ReShadeLegacyVersion);
             // The profile line says what a fresh install will use, not the Stable default.
-            Assert.Contains("6.4.1", fx.Vm.ReShadeUpdateText, StringComparison.Ordinal);
+            Assert.Contains("6.4.1", fx.Vm.ReShadeProfile.ReShadeUpdateText, StringComparison.Ordinal);
             // The manifest's versions, plus the pin it does not list (the selection always has its option).
             Assert.Equal(["6.7.3", "6.6.2", "6.0.0", "6.4.1"], legacy.Versions);
             Assert.Equal("ReShade 6.4.1 is required for RenoDX.", legacy.Note);
@@ -61,15 +61,15 @@ public sealed class ReShadeLegacyProfileTests
         var legacy = fx.Vm.ReShadeLegacy;
         await legacy.Loaded.WaitAsync(TimeSpan.FromSeconds(30));
         var offeredWhenSelected = false;
-        fx.Vm.PropertyChanged += (_, e) =>
+        fx.Vm.ReShadeProfile.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(fx.Vm.ReShadeLegacyVersion) && fx.Vm.ReShadeLegacyVersion == "6.1.1")
+            if (e.PropertyName == nameof(fx.Vm.ReShadeProfile.ReShadeLegacyVersion) && fx.Vm.ReShadeProfile.ReShadeLegacyVersion == "6.1.1")
                 offeredWhenSelected = legacy.Versions.Contains("6.1.1");
         };
 
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == pinned.Name).Game;
 
-        Assert.Equal("6.1.1", fx.Vm.ReShadeLegacyVersion);
+        Assert.Equal("6.1.1", fx.Vm.ReShadeProfile.ReShadeLegacyVersion);
         Assert.True(offeredWhenSelected); // Avalonia drops a selection whose option is missing
     }
 
@@ -85,9 +85,9 @@ public sealed class ReShadeLegacyProfileTests
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == plain.Name).Game;
         var legacy = fx.Vm.ReShadeLegacy;
         await legacy.Loaded.WaitAsync(TimeSpan.FromSeconds(30));
-        Assert.False(fx.Vm.IsReShadeLegacy);
+        Assert.False(fx.Vm.ReShadeProfile.IsReShadeLegacy);
         Assert.False(legacy.HasNote);
-        Assert.Equal("6.4.1", fx.Vm.ReShadeLegacyVersion);
+        Assert.Equal("6.4.1", fx.Vm.ReShadeProfile.ReShadeLegacyVersion);
         Assert.Contains("6.4.1", legacy.Versions);
 
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == oddLink.Name).Game;
@@ -109,11 +109,11 @@ public sealed class ReShadeLegacyProfileTests
         var legacy = fx.Vm.ReShadeLegacy;
         await legacy.Loaded.WaitAsync(TimeSpan.FromSeconds(30));
 
-        fx.Vm.ReShadeLegacyVersion = legacy.Versions[0];
+        fx.Vm.ReShadeProfile.ReShadeLegacyVersion = legacy.Versions[0];
         // A refill (the list read again) keeps the chosen version selected.
-        legacy.Offer(fx.Vm.ReShadeLegacyVersion);
+        legacy.Offer(fx.Vm.ReShadeProfile.ReShadeLegacyVersion);
 
-        Assert.Equal("6.7.3", fx.Vm.ReShadeLegacyVersion);
+        Assert.Equal("6.7.3", fx.Vm.ReShadeProfile.ReShadeLegacyVersion);
         Assert.Equal("6.7.3", legacy.Versions[0]);
     }
 

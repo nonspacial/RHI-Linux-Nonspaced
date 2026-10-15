@@ -34,7 +34,7 @@ public sealed record LinuxSettingsUiSnapshot(
     string CacheRoot,
     string DataRoot);
 
-public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibraryEditHost
+public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibraryEditHost, IStartupSteps
 {
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
@@ -62,7 +62,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     private LinuxGameLibraryState _libraryState;
     private readonly SelectedGameSession _session;
     private bool _libraryHasDlssBatchCandidates;
-    private readonly HashSet<string> _selectedShaderPackIds = new(StringComparer.OrdinalIgnoreCase);
     // GitHub token notice (Refs #133); the settle check runs after queued UI work.
     private readonly OneShotStatusNotice _statusNotice = new(action => Dispatcher.UIThread.Post(action, DispatcherPriority.Background));
 
@@ -86,13 +85,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>The Settings dialog's snapshot, Save / Reset and Clear cache (unit 7 of the split).</summary>
     public SettingsViewModel Settings { get; }
 
+    /// <summary>The ReShade profile section and the Shaders/Add-ons manager behind it (concern 12 of the split).</summary>
+    public ReShadeProfileViewModel ReShadeProfile { get; }
+
     /// <summary>Saved or reset settings take effect: language, view mode, ReShade default, DLSS defaults, background loop.</summary>
     internal void AdoptSettings(LinuxAppSettings settings, bool restartLoop, bool runImmediate)
     {
         _settings = settings;
         UiLocalizationService.Apply(_settings.UiLanguage);
         ViewMode = _settings.ViewMode;
-        ReShadeManageIni = _settings.ReShadeManageIni;
+        ReShadeProfile.ReShadeManageIni = _settings.ReShadeManageIni;
         RefreshLocalizedPresentation();
         NotifyUxSettings();
         if (restartLoop) Updates.RestartBackgroundUpdateLoop(runImmediate);
@@ -106,7 +108,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     internal IReadOnlyList<DetectedGame> AllLibraryGames => _library.AllGames; // w3/parity hook (shortcut launch by key)
     public ObservableCollection<ComponentRowViewModel> Components { get; } = [];
     // Labels and values of every option list come from OptionLists (one mapping, shared with the dialogs; Refs #87).
-    public ObservableCollection<string> ReShadeChannels { get; } = [.. OptionLists.ReShadeChannel.Items];
     public ObservableCollection<string> Dlss5FeederConsumerOptions { get; } = ["RenoDX DLSS5", "Deep Fried Chicken"];
     public string ProductVersionText => $"RHI-Linux v{RhiProductInfo.Version} · {UiLocalizationService.Text("Ui.ProductRuntime")}";
 
@@ -165,20 +166,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>The selected game's disk facts, or null while the analysis runs; getters read only these.</summary>
     private SelectionFacts? Facts => CurrentAnalysis?.Facts;
-    [ObservableProperty] private string selectedReShadeChannel = UiLocalizationService.Text("Ui.OptionStable");
-    [ObservableProperty] private string reShadeLegacyVersion = "6.4.1";
-    [ObservableProperty] private string reShadeCustomDllPath = "";
-    [ObservableProperty] private string reShadeD3DCompiler47Path = "";
     [ObservableProperty] private string dlss5FeederConsumerPackagePath = "";
     [ObservableProperty] private string selectedDlss5FeederConsumer = "RenoDX DLSS5";
     public bool IsDeepFriedChickenFeederConsumer => SelectedDlss5FeederConsumer == "Deep Fried Chicken";
     public bool IsRenoDxDlss5FeederConsumer => !IsDeepFriedChickenFeederConsumer;
-    [ObservableProperty] private bool reShadeManageIni = true;
-    [ObservableProperty] private bool shaderCrosireMaster;
-    [ObservableProperty] private bool shaderCrosireLegacy;
-    [ObservableProperty] private bool shaderClshortfuse;
-    [ObservableProperty] private bool shaderMaxG2D;
-    [ObservableProperty] private string reShadeUpdateText = UiLocalizationService.Text("Ui.ReShadeApplyHint");
 
     private static string LibraryFilterDisplay(string value) => OptionLists.LibraryFilter.Display(value);
 
@@ -319,35 +310,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _ => null
     };
 
-    private static string OrphanedProtonText(DetectedGame game)
-        => TF("Vm.WinetricksUnavailablePrefixWasBuiltBy",
-              game.CompatibilityTool ?? game.Runner ?? "?");
     public bool CanEditSelectedGame => SelectedGame is not null && !IsBusy;
-    public bool CanInstallD3DCompilerWithProtontricks => SelectedGame?.UsesProton == true && HasConfirmedPatchTarget;
-    public bool CanInstallD3DCompilerWithWinetricks
-        => HasConfirmedPatchTarget && SelectedGame is not null && Facts is { CanInstallWithWinetricks: true };
-    public string D3DCompilerWinetricksButtonText
-        => SelectedGame is { } game && D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
-            ? TF("Vm.InstallViaWinetricks", game.CompatibilityTool ?? game.Runner ?? game.Source)
-            : T("Vm.InstallViaWinetricks2");
-    public string D3DCompilerToolHint
-        => SelectedGame switch
-        {
-            null => T("Vm.SelectGameDetermineCorrectD3DCompilerHelper"),
-            { UsesProton: true } => T("Vm.SteamProtonTargetProtontricksUsedSteam"),
-            { } game when Facts is { OrphanedProtonPrefix: true } => OrphanedProtonText(game),
-            { } game when D3DCompilerToolInstaller.IsRuntimeUnknownPrefix(game) => T("Vm.WinetricksUnavailableRuntimeUnknown"),
-            { SteamAppId: null } game when D3DCompilerToolInstaller.IsLauncherManagedPrefix(game)
-                => TF("Vm.TargetWinetricksUsesActiveMatchingPrefix", game.Source, game.CompatibilityTool ?? game.Runner ?? T("Vm.LauncherRunner")),
-            { SteamAppId: null, PrefixPath: not null } => T("Vm.StandaloneSystemWineTargetWinetricksRuns"),
-            _ => T("Vm.NoInitializedWineProtonPrefixWas")
-        };
-    private static string ReShadeChannelDisplay(string value) => OptionLists.ReShadeChannel.Display(value);
-
-    private static string ReShadeChannelValue(string? display) => OptionLists.ReShadeChannel.Value(display);
-
-    public bool IsReShadeLegacy => ReShadeChannelValue(SelectedReShadeChannel).Equals("Legacy", StringComparison.OrdinalIgnoreCase);
-    public bool IsReShadeCustom => ReShadeChannelValue(SelectedReShadeChannel).Equals("Custom", StringComparison.OrdinalIgnoreCase);
 
     public bool CanOpenDlssBatch => !IsBusy && _libraryHasDlssBatchCandidates;
 
@@ -391,6 +354,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Updates = new UpdatesViewModel(this, _updateAll);
         ManualGames = new ManualGamesViewModel(this);
         Settings = new SettingsViewModel(this, _settingsStore);
+        ReShadeProfile = new ReShadeProfileViewModel(this, _managedComponents);
         _session.Changed += OnSessionChanged;
         _session.Completed += OnAnalysisCompleted;
         // Attached before the first load and detached by Dispose; it also receives any store set
@@ -400,11 +364,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
         LibraryFilterMode = _libraryState.FilterMode;
         ViewMode = _settings.ViewMode;
-        SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
-        ReShadeManageIni = _settings.ReShadeManageIni;
-        ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
-        Initialization = InitializeAsync();
-        UiExceptionGuard.Forget(Initialization, "initialize");
+        ReShadeProfile.ShowGlobalDefault();
+        Initialization = StartupSequence.Start(this);
     }
 
     private readonly IDisposable _quarantineSubscription;
@@ -426,7 +387,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>Startup work (manifest, first scan); tests await it instead of polling busy flags.</summary>
+    /// <summary>Start-up work (<see cref="StartupSequence"/>: manifest, first scan); tests await it instead of polling busy flags.</summary>
     internal Task Initialization { get; }
 
     // The panels guard their own list rebuilds (Extras' version pins) or relabel in place (Runtime's option items).
@@ -434,15 +395,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     private void RefreshLocalizedPresentationCore()
     {
-        var channel = ReShadeChannelValue(SelectedReShadeChannel);
-
-        OptionLists.ReShadeChannel.Fill(ReShadeChannels);
-
-        SelectedReShadeChannel = ReShadeChannelDisplay(channel);
+        ReShadeProfile.RefreshLocalized();
         Runtime.RefreshLocalized();
         Extras.RefreshLocalized();
-
-        ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
         if (SelectedGame is not null && CurrentAnalysis is { } cached)
         {
             Components.Clear();
@@ -453,45 +408,32 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         OnPropertyChanged(nameof(ProductVersionText));
         OnPropertyChanged(nameof(GameCountText));
         OnPropertyChanged(nameof(ViewToggleText));
-        OnPropertyChanged(nameof(D3DCompilerWinetricksButtonText));
-        OnPropertyChanged(nameof(D3DCompilerToolHint));
+        ReShadeProfile.NotifyD3DCompilerText();
         NotifyDlss();
     }
 
-    public string ApplyGlobalReShadeSettingsToSelectedGame(LinuxAppSettings settings)
-    {
-        if (SelectedGame is null) return T("Vm.SelectGameFirst");
-        if (IsBusy) return T("Vm.AnotherRHIOperationAlreadyRunning");
-        if (string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return T("Vm.WindowsReShadeSettingsNotAppliedNative");
-        if (!SelectedGame.HasConfirmedPatchTarget)
-            return T("Vm.SetTargetGameExecutableEditGame");
-        if (XboxWriteGate.Refusal(SelectedGame) is { } xbox) return UiLocalizationService.Present(xbox); // w3/scan hook (Refs #90)
-        if (CurrentAnalysis is not { } probe ||
-            !probe.Components.Any(component => component.Kind == ManagedComponentKind.ReShade &&
-                component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable))
-            return T("Vm.InstallDetectReShadeSelectedGameBefore");
-        var path = ReShadeGlobalSettingsApplier.ApplyToGame(settings, SelectedGame);
-        return TF("Vm.ReShadeCaptureHotkeyDefaultsAppliedAt", path);
-    }
+    // Start-up (StartupSequence): the steps it runs, over the shell's panels and services.
+    LinuxHdrHostSnapshot IStartupSteps.ProbeHdrHost() => _hdrProfiles.ProbeHost();
 
-    private async Task InitializeAsync()
+    void IStartupSteps.HdrHostKnown(LinuxHdrHostSnapshot host)
     {
-        // The HDR host (NVIDIA driver, gamescope on PATH) is read once off the UI thread; each analysis refreshes it.
-        var hdrHost = Task.Run(_hdrProfiles.ProbeHost);
-        var neuralVersionCatalogTask = Extras.EnsureNeuralVersionCatalogAsync();
-        // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
-        var dlssManifestTask = LoadDlssManifestAsync();
-        Runtime.LastHdrHost ??= await hdrHost;
+        Runtime.LastHdrHost ??= host;
         Resolution.HostProbed(Runtime.LastHdrHost); // #191 (w5/shell-launch): the display's own sizes, once its tool is known
         Runtime.RaiseHdrPlanChanged();
-        await RefreshAsync();
-        // w6/crash hook (#194, upstream CacheAllShaders): with the setting on, every shader pack is staged in the background.
-        if (_settings.CacheAllShaders) ShaderPackPrefetch = Task.Run(PrefetchShaderPacksAsync); // off the UI context
-        await dlssManifestTask;
-        await neuralVersionCatalogTask;
-        Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
     }
+
+    Task IStartupSteps.LoadNeuralCatalogAsync() => Extras.EnsureNeuralVersionCatalogAsync();
+    Task IStartupSteps.LoadDlssManifestAsync() => LoadDlssManifestAsync();
+    Task IStartupSteps.RefreshLibraryAsync() => RefreshAsync();
+
+    // w6/crash hook (#194, upstream CacheAllShaders): with the setting on, every shader pack is staged in the background.
+    void IStartupSteps.LibraryScanned()
+    {
+        if (_settings.CacheAllShaders) ShaderPackPrefetch = Task.Run(PrefetchShaderPacksAsync); // off the UI context
+    }
+
+    void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
+    bool IStartupSteps.AutoUpdateComponents => _settings.AutoUpdateComponents;
 
     /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
     internal Task? ShaderPackPrefetch { get; private set; }
@@ -738,12 +680,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             StatusText = UiLocalizationService.Text("Vm.DLSS5FeederRenoDXDLSS5SelectedAs");
     }
 
-    partial void OnSelectedReShadeChannelChanged(string value)
-    {
-        OnPropertyChanged(nameof(IsReShadeLegacy));
-        OnPropertyChanged(nameof(IsReShadeCustom));
-    }
-
     /// <summary>
     /// Raised when the selection moves to a different game (not when a refresh puts the same game back): the detail
     /// pane scrolls to the top so the new game's title and actions are never left half under the toolbar (Refs #152).
@@ -777,14 +713,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         {
             _session.Select(null);
             Runtime.OnSelectionChanged(null);
-            ResetReShadeProfile();
+            ReShadeProfile.OnSelectionChanged(null);
             Extras.OnSelectionChanged(null);
             NotifySelected();
             return;
         }
 
         Runtime.OnSelectionChanged(value);
-        LoadReShadeProfile(value);
+        ReShadeProfile.OnSelectionChanged(value);
         Extras.OnSelectionChanged(value);
 
         // A cached analysis is published at once (and reported through OnAnalysisCompleted); otherwise the session
@@ -1463,7 +1399,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
                         game,
                         IsDeepFriedChickenFeederConsumer ? Dlss5FeederConsumer.DeepFriedChicken : Dlss5FeederConsumer.RenoDxDlss5,
                         IsDeepFriedChickenFeederConsumer ? Dlss5FeederConsumerPackagePath : null,
-                        ReShadeD3DCompiler47Path,
+                        ReShadeProfile.ReShadeD3DCompiler47Path,
                         op.Token)
                     : kind == ManagedComponentKind.OptiScaler
                         ? await _managedComponents.InstallOptiScalerAsync(game, Runtime.SelectedOptiScalerVariant.Value, op.Token)
@@ -1493,7 +1429,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     private async Task ReprobeGameAsync(DetectedGame game)
     {
         await _session.ReprobeAsync(game);
-        LoadReShadeProfile(game);
+        ReShadeProfile.Reload(game);
     }
 
     /// <summary>
@@ -1546,165 +1482,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _libraryHasDlssBatchCandidates = batch;
         Updates.NotifyCanUpdateAll();
         OnPropertyChanged(nameof(CanOpenDlssBatch));
-    }
-
-    [RelayCommand]
-    private async Task ApplyReShadeProfileAsync()
-    {
-        if (SelectedGame is null || IsBusy || IsSelectionProbeBusy) return;
-        var game = SelectedGame;
-        if (CurrentAnalysis is not { } probe)
-        {
-            StatusText = T("Vm.WaitGameAnalysisFinishBeforeChanging2");
-            return;
-        }
-
-        var component = probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade);
-        if (component is null)
-        {
-            StatusText = T("Vm.ReShadeComponentStateUnavailableGame");
-            return;
-        }
-        if ((component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable) && !component.ManagedByRhi)
-        {
-            StatusText = T("Vm.ExternalReShadeDetectedRHIWillNot");
-            return;
-        }
-        if (component.Availability == ComponentAvailability.Unsupported)
-        {
-            var note = UiLocalizationService.Present(component.Note);
-            StatusText = string.IsNullOrWhiteSpace(note)
-                ? T("Vm.ReShadeNotCompatibleTarget")
-                : note;
-            return;
-        }
-
-        if (!Enum.TryParse<ReShadeChannel>(ReShadeChannelValue(SelectedReShadeChannel), true, out var channel))
-        {
-            StatusText = T("Vm.UnknownReShadeChannel");
-            return;
-        }
-
-        var packSet = new HashSet<string>(_selectedShaderPackIds, StringComparer.OrdinalIgnoreCase);
-        SetPack(packSet, "CrosireMaster", ShaderCrosireMaster);
-        SetPack(packSet, "CrosireLegacy", ShaderCrosireLegacy);
-        SetPack(packSet, "ClshortfuseShaders", ShaderClshortfuse);
-        SetPack(packSet, "MaxG2DSimpleHDR", ShaderMaxG2D);
-        var packs = packSet.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
-        var options = new ReShadeInstallOptions
-        {
-            Channel = channel,
-            LegacyVersion = ReShadeLegacyVersion,
-            CustomDllPath = ReShadeCustomDllPath,
-            D3DCompiler47Path = ReShadeD3DCompiler47Path,
-            ManageIni = ReShadeManageIni,
-            ShaderPackIds = packs
-        };
-
-        using var op = BeginOperation("reshade");
-        if (op is null) return;
-        try
-        {
-            // Applying a profile installs ReShade when it is not there yet (Available or Unknown), and RE Framework on an
-            // RE Engine game when that is missing; those are the installs the manifest warns about.
-            if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, component.DisplayName,
-                    installsTarget: ManifestInstallWarning.IsFirstInstall(component.Availability), probe.Files)) return;
-            StatusText = TF("Vm.ApplyingReShadeProfile", channel);
-            var result = await _managedComponents.ApplyReShadeAsync(game, options, op.Token);
-            StatusText = OutcomeText(op, result.Success, result.Message);
-            ReShadeUpdateText = UiLocalizationService.Present(result.Message);
-            if (result.Success)
-            {
-                _selectedShaderPackIds.Clear();
-                _selectedShaderPackIds.UnionWith(options.ShaderPackIds);
-                await ReprobeGameAsync(game);
-            }
-        }
-        catch (Exception ex) when (op.WasCancelled(ex))
-        {
-            StatusText = OperationCancelledText();
-        }
-        catch (Exception ex)
-        {
-            ReShadeUpdateText = ShowStatus(TF("Vm.ReShadeProfileFailed", UiLocalizationService.Present(ex.Message)));
-        }
-    }
-
-    [RelayCommand]
-    private async Task InstallD3DCompilerWithProtontricksAsync()
-    {
-        if (SelectedGame is null || IsBusy || !CanInstallD3DCompilerWithProtontricks) return;
-        var game = SelectedGame;
-        using var op = BeginOperation("d3dcompiler");
-        if (op is null) return;
-        try
-        {
-            StatusText = TF("Vm.InstallingNativeD3DCompiler47Protontricks", game.Name);
-            var result = await _managedComponents.InstallD3DCompilerWithProtontricksAsync(game, op.Token);
-            StatusText = OutcomeText(op, result.Success, result.Message);
-            ReShadeUpdateText = UiLocalizationService.Present(result.Message);
-        }
-        catch (Exception ex) when (op.WasCancelled(ex))
-        {
-            StatusText = OperationCancelledText();
-        }
-        catch (Exception ex)
-        {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerProtontricks", UiLocalizationService.Present(ex.Message)));
-        }
-    }
-
-    [RelayCommand]
-    private async Task InstallD3DCompilerWithWinetricksAsync()
-    {
-        if (SelectedGame is null || IsBusy || !CanInstallD3DCompilerWithWinetricks) return;
-        var game = SelectedGame;
-        using var op = BeginOperation("d3dcompiler");
-        if (op is null) return;
-        try
-        {
-            StatusText = TF("Vm.InstallingNativeD3DCompiler47", game.Name, game.CompatibilityTool ?? game.Runner ?? "Winetricks");
-            var result = await _managedComponents.InstallD3DCompilerWithWinetricksAsync(game, op.Token);
-            StatusText = OutcomeText(op, result.Success, result.Message);
-            ReShadeUpdateText = UiLocalizationService.Present(result.Message);
-        }
-        catch (Exception ex) when (op.WasCancelled(ex))
-        {
-            StatusText = OperationCancelledText();
-        }
-        catch (Exception ex)
-        {
-            ReShadeUpdateText = ShowStatus(TF("Vm.FailedInstallD3DCompilerWinetricks", UiLocalizationService.Present(ex.Message)));
-        }
-    }
-
-    [RelayCommand]
-    private async Task CheckReShadeUpdateAsync()
-    {
-        if (SelectedGame is null || IsBusy) return;
-        if (!SelectedGame.HasConfirmedPatchTarget)
-        {
-            ReShadeUpdateText = T("Vm.SetTargetExecutableEditGameBefore3");
-            StatusText = ReShadeUpdateText;
-            return;
-        }
-        using var op = BeginOperation("reshade-check");
-        if (op is null) return;
-        try
-        {
-            var result = await _managedComponents.CheckReShadeUpdateAsync(SelectedGame!, op.Token);
-            ReShadeUpdateText = op.CancelRequested ? OperationCancelledText() : UiLocalizationService.Present(result.Message);
-            StatusText = ReShadeUpdateText;
-        }
-        catch (Exception ex) when (op.WasCancelled(ex))
-        {
-            StatusText = OperationCancelledText();
-        }
-        catch (Exception ex)
-        {
-            ReShadeUpdateText = TF("Vm.UpdateCheckFailed", UiLocalizationService.Present(ex.Message));
-            StatusText = ReShadeUpdateText;
-        }
     }
 
     [RelayCommand]
@@ -1814,139 +1591,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (SelectedGame?.PrefixPath is not { } prefix || !Directory.Exists(prefix)) return;
         if (!LinuxDesktopOpener.TryOpenDirectory(prefix, out var error))
             StatusText = TF("Vm.CouldNotOpenWineProtonPrefix", UiLocalizationService.Present(error));
-    }
-
-    private void LoadReShadeProfile(DetectedGame game)
-    {
-        var managed = _managedComponents.IsReShadeManaged(game);
-        var profile = _managedComponents.GetReShadeOptions(game);
-        // #186: a game the RHI manifest pins to a legacy ReShade (Max Payne 3 → 6.4.1) starts on that version until ReShade
-        // is installed; an installed ReShade always shows its own profile.
-        var pin = managed ? null : ReShadeDeploymentService.DefaultOptionsFor(game) is { Channel: ReShadeChannel.Legacy } pinned ? pinned.LegacyVersion : null;
-        var legacyVersion = pin ?? (string.IsNullOrWhiteSpace(profile.LegacyVersion) ? UpstreamRhiManifestService.DefaultLegacyReShadeVersion : profile.LegacyVersion);
-        ReShadeLegacy.Offer(legacyVersion); // the dropdown's option exists before it is selected
-        SelectedReShadeChannel = ReShadeChannelDisplay(managed ? profile.Channel.ToString() : pin is not null ? nameof(ReShadeChannel.Legacy) : _settings.ReShadeChannel);
-        ReShadeLegacyVersion = legacyVersion;
-        ReShadeCustomDllPath = profile.CustomDllPath ?? "";
-        ReShadeD3DCompiler47Path = profile.D3DCompiler47Path ?? "";
-        ReShadeManageIni = managed ? profile.ManageIni : _settings.ReShadeManageIni;
-        var packs = profile.ShaderPackIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        _selectedShaderPackIds.Clear();
-        _selectedShaderPackIds.UnionWith(packs);
-        ShaderCrosireMaster = packs.Contains("CrosireMaster");
-        ShaderCrosireLegacy = packs.Contains("CrosireLegacy");
-        ShaderClshortfuse = packs.Contains("ClshortfuseShaders");
-        ShaderMaxG2D = packs.Contains("MaxG2DSimpleHDR");
-        ReShadeUpdateText = pin is not null // #186: the version a fresh install will use
-            ? TF("Vm.Profile", ReShadeChannelDisplay(nameof(ReShadeChannel.Legacy)), $" {pin}")
-            : TF("Vm.Profile", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
-    }
-
-    private void ResetReShadeProfile()
-    {
-        SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
-        ReShadeLegacy.Offer(UpstreamRhiManifestService.DefaultLegacyReShadeVersion);
-        ReShadeLegacyVersion = UpstreamRhiManifestService.DefaultLegacyReShadeVersion;
-        ReShadeCustomDllPath = "";
-        ReShadeD3DCompiler47Path = "";
-        ReShadeManageIni = _settings.ReShadeManageIni;
-        ShaderCrosireMaster = false;
-        ShaderCrosireLegacy = false;
-        ShaderClshortfuse = false;
-        ShaderMaxG2D = false;
-        _selectedShaderPackIds.Clear();
-        ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(_settings.ReShadeChannel));
-    }
-
-    public async Task<ShaderAddonManagerUiSnapshot?> GetShaderAddonManagerSnapshotAsync(CancellationToken cancellationToken = default)
-    {
-        if (SelectedGame is null) return null;
-        var game = SelectedGame;
-        var shaderCatalog = await _managedComponents.RefreshReShadeShaderPackCatalogAsync(cancellationToken);
-        var addonSnapshot = await _managedComponents.GetReShadeAddonManagerSnapshotAsync(game, cancellationToken);
-        var selectedShaders = _managedComponents.GetReShadeOptions(game).ShaderPackIds.ToArray();
-        return new ShaderAddonManagerUiSnapshot(
-            shaderCatalog,
-            selectedShaders,
-            addonSnapshot.Catalog,
-            addonSnapshot.SelectedIds,
-            _managedComponents.CustomShaderRoot,
-            addonSnapshot.CustomAddonRoot);
-    }
-
-    public Task<IReadOnlyList<ReShadeShaderPackFileInfo>> GetShaderPackFilesAsync(
-        string packId,
-        CancellationToken cancellationToken = default)
-        => _managedComponents.GetReShadeShaderPackFilesAsync(packId, cancellationToken);
-
-    /// <summary>Saves the pack's file selection; returns the localised failure, or null when saved.</summary>
-    public string? SetShaderPackExcludedFiles(string packId, IEnumerable<string> excluded)
-        => TryPersist(() => _managedComponents.SetReShadeShaderPackExcludedFiles(packId, excluded), "Ui.WhatShaderPackSelection", sessionOnly: false);
-
-    public async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
-        IReadOnlyList<string> shaderIds,
-        IReadOnlyList<string> addonIds,
-        CancellationToken cancellationToken = default)
-    {
-        if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
-        var game = SelectedGame;
-        using var op = BeginOperation("shaders-addons", linkedToken: cancellationToken);
-        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
-        try
-        {
-            // Apply installs ReShade when RHI does not manage it yet (plus RE Framework on RE Engine): warn first.
-            var installsReShade = !_managedComponents.IsReShadeManaged(game) &&
-                (_session.TryGetCached(game, out var probe)
-                    ? probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade) is not { } row || ManifestInstallWarning.IsFirstInstall(row.Availability)
-                    : true);
-            if (!await AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, "ReShade", installsReShade, ProbedFiles(game)))
-                return ComponentOperationResult.Fail(StatusText);
-
-            var options = _managedComponents.GetReShadeOptions(game);
-            options.ShaderPackIds = shaderIds
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            StatusText = T("Vm.ApplyingShaderPackSelection");
-            var shaderResult = await _managedComponents.ApplyReShadeAsync(game, options, op.Token);
-            if (!shaderResult.Success)
-            {
-                StatusText = OutcomeText(op, shaderResult.Success, shaderResult.Message);
-                return shaderResult;
-            }
-
-            StatusText = T("Vm.ApplyingReShadeAddSelection");
-            var addonResult = await _managedComponents.ApplyReShadeAddonSelectionAsync(game, addonIds, op.Token);
-            if (!addonResult.Success)
-            {
-                return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message))));
-            }
-
-            _selectedShaderPackIds.Clear();
-            _selectedShaderPackIds.UnionWith(options.ShaderPackIds);
-            ShaderCrosireMaster = _selectedShaderPackIds.Contains("CrosireMaster");
-            ShaderCrosireLegacy = _selectedShaderPackIds.Contains("CrosireLegacy");
-            ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
-            ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
-            await ReprobeGameAsync(game);
-            return ComponentOperationResult.Ok(ShowStatus(UiLocalizationService.ShaderAddonAppliedFor(
-                UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource)));
-        }
-        catch (Exception ex) when (op.WasCancelled(ex) && op.CancelRequested)
-        {
-            return ComponentOperationResult.Fail(ShowStatus(OperationCancelledText()));
-        }
-        catch (Exception ex) when (!op.Token.IsCancellationRequested)
-        {
-            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", UiLocalizationService.Present(ex.Message))));
-        }
-    }
-
-    private static void SetPack(HashSet<string> packs, string id, bool enabled)
-    {
-        if (enabled) packs.Add(id);
-        else packs.Remove(id);
     }
 
     /// <summary>
@@ -2393,10 +2037,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         ManualGames.NotifyRemove();
         OnPropertyChanged(nameof(ShowRepairAfterMove));
         RepairAfterMoveCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(CanInstallD3DCompilerWithProtontricks));
-        OnPropertyChanged(nameof(CanInstallD3DCompilerWithWinetricks));
-        OnPropertyChanged(nameof(D3DCompilerWinetricksButtonText));
-        OnPropertyChanged(nameof(D3DCompilerToolHint));
+        ReShadeProfile.NotifyD3DCompiler();
         LaunchCommand.NotifyCanExecuteChanged();
         Updates.NotifyCanUpdateAll();
         NotifyDlss();

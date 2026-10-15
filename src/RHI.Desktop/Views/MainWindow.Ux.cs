@@ -167,55 +167,11 @@ public sealed partial class MainWindow
             return;
         }
 
-        var installPath = ManualGamePathInference.InferInstallRoot(executable);
-        var inferredName = ManualGamePathInference.InferGameName(executable, installPath);
-        var nameBox = new TextBox { Text = inferredName, PlaceholderText = T("Win.GameName") };
-        var prefixBox = new TextBox { PlaceholderText = T("Win.OptionalWineProtonPrefixEG") };
-        var launch = LaunchCommandField(null, "Win.LeaveCommandEmptyIfRHIShould");
-        var browsePrefix = new Button { Content = T("Win.BrowsePrefix"), Padding = new Thickness(10, 5) };
-        browsePrefix.Click += (_, _) => RunUiSafe(async () =>
-        {
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            {
-                Title = T("Win.SelectWineProtonPrefix"),
-                AllowMultiple = false
-            });
-            if (folders.Count > 0)
-                prefixBox.Text = folders[0].TryGetLocalPath() ?? prefixBox.Text;
-        });
-
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.75 };
-        var add = new Button { Content = T("Win.AddGame"), Padding = new Thickness(14, 7) };
-        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
-        var form = new StackPanel { Spacing = 8, Margin = new Thickness(18) };
-        form.Children.Add(new TextBlock { Text = T("Win.ManualGame"), FontSize = 20, FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        form.Children.Add(new TextBlock
-        {
-            Text = T("Win.RHIInferredGameRootFromExecutable"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.7
-        });
-        form.Children.Add(new TextBlock { Text = T("Win.Name"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        form.Children.Add(nameBox);
-        form.Children.Add(new TextBlock { Text = T("Win.Executable"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        form.Children.Add(new TextBlock { Text = executable, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 });
-        form.Children.Add(new TextBlock { Text = T("Win.InferredGameRoot"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        form.Children.Add(new TextBlock { Text = installPath, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 });
-        form.Children.Add(new TextBlock { Text = T("Win.WineProtonPrefixOptional"), FontWeight = Avalonia.Media.FontWeight.SemiBold });
-        var prefixRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8 };
-        prefixRow.Children.Add(prefixBox); Grid.SetColumn(prefixBox, 0);
-        prefixRow.Children.Add(browsePrefix); Grid.SetColumn(browsePrefix, 1);
-        form.Children.Add(prefixRow);
-        launch.AddTo(form);
-        form.Children.Add(status);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(add);
-        form.Children.Add(buttons);
-
+        // The layout is the view model's data template (Views/Dialogs/AddGameDialogView.axaml; epic #89).
+        var model = new AddGameDialogViewModel(vm.ManualGames, executable, DialogPickers());
         var dialog = new Window
         {
-            Title = T("Win.AddGameRHILinux"),
+            Title = model.WindowTitle,
             // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
             // window floor (as for Edit game); the form scrolls.
             Width = 620,
@@ -223,269 +179,38 @@ public sealed partial class MainWindow
             MinWidth = 460,
             MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new ScrollViewer { Content = form }
+            Content = new ScrollViewer { Content = model }
         };
-        cancel.Click += (_, _) => dialog.Close();
-        add.Click += (_, _) => RunUiSafe(async () =>
-        {
-            add.IsEnabled = cancel.IsEnabled = false;
-            try
-            {
-                var prefix = string.IsNullOrWhiteSpace(prefixBox.Text) ? null : prefixBox.Text.Trim();
-                var entry = new LinuxManualGameEntry
-                {
-                    Name = nameBox.Text?.Trim() ?? "",
-                    InstallPath = installPath,
-                    ExecutablePath = executable,
-                    PrefixPath = prefix,
-                    LaunchCommand = LinuxGameEditOverride.NormalizeLaunchCommand(launch.Box.Text),
-                    Runner = prefix is null ? "Manual Windows" : "Manual Wine"
-                };
-                // Closes as soon as the entry is saved: a refresh that waits for a running operation
-                // reports to the main status line, not to a disabled dialog with no message.
-                var (added, result) = await vm.ManualGames.TryAddManualGameAsync(entry, saved: dialog.Close);
-                if (!added) status.Text = result;
-            }
-            catch (Exception ex)
-            {
-                status.Text = TF("Win.CouldNotAddGame", UiLocalizationService.Present(ex.Message));
-            }
-            finally
-            {
-                add.IsEnabled = cancel.IsEnabled = true;
-            }
-        });
+        model.CloseRequested += dialog.Close;
         await ShowFittedDialogAsync(dialog);
     }
 
     /// <summary>
-    /// Add game's launch command field (label, text box, hint below), also used by Edit game so the two read, look and
-    /// validate the same (<see cref="LinuxGameEditOverride.NormalizeLaunchCommand"/>).
+    /// The pickers the Add / Edit game dialogs ask for: a folder (Add game's prefix asks the portal as it always did;
+    /// Edit game's folders and executable only when the session can open files).
     /// </summary>
-    private sealed record LaunchCommandFieldControls(TextBlock Label, TextBox Box, TextBlock Hint)
-    {
-        public void AddTo(StackPanel form)
+    private DialogPickers DialogPickers(bool onlyWhenAvailable = false) => new(
+        async title => onlyWhenAvailable && !StorageProvider.CanOpen ? null : await PickFolderAsync(title),
+        async title =>
         {
-            form.Children.Add(Label);
-            form.Children.Add(Box);
-            form.Children.Add(Hint);
-        }
-    }
-
-    private static LaunchCommandFieldControls LaunchCommandField(string? command, string hintKey) => new(
-        new TextBlock { Text = T("Win.LaunchCommandOptional"), FontWeight = FontWeight.SemiBold },
-        new TextBox { Text = command, PlaceholderText = T("Win.OptionalLaunchCommand") },
-        new TextBlock { Text = T(hintKey), TextWrapping = TextWrapping.Wrap, FontSize = 10, Opacity = 0.6 });
-
-    /// <summary>Edit game's name and bitness fields (Refs #190): game name, wiki mod name, bitness.</summary>
-    private sealed record EditGameNameControls(TextBox DisplayName, TextBox WikiName, ComboBox Bitness)
-    {
-        public void AddTo(StackPanel form)
-        {
-            form.Children.Add(new TextBlock { Text = T("Shell.IdentityHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
-            form.Children.Add(Labelled("Win.GameName", "Shell.DisplayNameTip", DisplayName));
-            form.Children.Add(Labelled("Shell.WikiName", "Shell.WikiNameTip", WikiName));
-            form.Children.Add(Labelled("Shell.Bitness", "Shell.BitnessTip", Bitness));
-        }
-
-        public GameNameEdit Read() => new(DisplayName.Text, WikiName.Text,
-            Bitness.SelectedIndex >= 0 ? OptionLists.Bitness.Values[Bitness.SelectedIndex] : null);
-
-        private static StackPanel Labelled(string labelKey, string tipKey, Control field)
-        {
-            var label = new TextBlock { Text = T(labelKey), FontWeight = FontWeight.SemiBold };
-            foreach (var control in new Control[] { label, field })
+            if (!StorageProvider.CanOpen) return null;
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                ToolTip.SetTip(control, T(tipKey));
-                ToolTip.SetShowDelay(control, MiddleEllipsisText.TooltipDelay);
-            }
-            var panel = new StackPanel { Spacing = 4 };
-            panel.Children.Add(label);
-            panel.Children.Add(field);
-            return panel;
-        }
-    }
-
-    private static EditGameNameControls EditGameNameFields(RHI.Core.Models.DetectedGame game)
-    {
-        var bitnessIndex = OptionLists.Bitness.Values.ToList().IndexOf(game.UserArchitectureOverride);
-        return new(
-            new TextBox { Text = game.DisplayName(), PlaceholderText = game.Name, MinWidth = 200 },
-            new TextBox { Text = game.UserWikiName, PlaceholderText = game.DetectedWikiName?.Value ?? T("Shell.WikiNamePlaceholder"), MinWidth = 200 },
-            new ComboBox { ItemsSource = OptionLists.Bitness.Items, SelectedIndex = bitnessIndex >= 0 ? bitnessIndex : 0, MinWidth = 160 });
-    }
+                Title = title,
+                AllowMultiple = false,
+                FileTypeFilter = [WindowsExecutableFileType]
+            });
+            return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        });
 
     private void EditGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
-        var game = vm.SelectedGame;
-
-        // Stored provider values stay the canonical tokens; only the labels are localised.
-        var providerValues = OptionLists.LaunchProvider.Values;
-        var providerIndex = providerValues.ToList().FindIndex(value => string.Equals(value, game.LaunchProvider, StringComparison.OrdinalIgnoreCase));
-        var provider = new ComboBox
-        {
-            ItemsSource = OptionLists.LaunchProvider.Items,
-            SelectedIndex = providerIndex >= 0 ? providerIndex : 0,
-            MinWidth = 220
-        };
-
-        var patchExecutable = new TextBox
-        {
-            Text = game.HasConfirmedPatchTarget ? game.ExecutablePath : "",
-            PlaceholderText = T("Win.SelectRealGameExecutableEG"),
-            MinWidth = 200
-        };
-        var gameRoot = new TextBox
-        {
-            Text = game.HasConfirmedPatchTarget ? game.InstallPath : "",
-            PlaceholderText = T("Win.RealGameRoot"),
-            MinWidth = 200
-        };
-        var binaryDirectory = new TextBox
-        {
-            Text = game.HasConfirmedPatchTarget ? game.BinaryDirectory : "",
-            PlaceholderText = T("Win.DirectoryContainingExecutableLocalComponentFiles"),
-            MinWidth = 200
-        };
-
-        void InferFromExecutable()
-        {
-            var path = patchExecutable.Text?.Trim();
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
-            var full = Path.GetFullPath(path);
-            gameRoot.Text = ManualGamePathInference.InferInstallRoot(full);
-            binaryDirectory.Text = Path.GetDirectoryName(full) ?? gameRoot.Text;
-        }
-
-        var browseExecutable = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
-        browseExecutable.Click += (_, _) => RunUiSafe(async () =>
-        {
-            if (!StorageProvider.CanOpen) return;
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = T("Win.SelectRealGameExecutable"),
-                AllowMultiple = false,
-                FileTypeFilter = [WindowsExecutableFileType]
-            });
-            var selected = files.Count > 0 ? files[0].TryGetLocalPath() : null;
-            if (string.IsNullOrWhiteSpace(selected)) return;
-            patchExecutable.Text = selected;
-            InferFromExecutable();
-        });
-
-        var detectRoot = new Button { Content = T("Win.Detect"), Padding = new Thickness(10, 5) };
-        detectRoot.Click += (_, _) => InferFromExecutable();
-
-        var browseRoot = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
-        browseRoot.Click += (_, _) => RunUiSafe(async () =>
-        {
-            if (!StorageProvider.CanOpen) return;
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            {
-                Title = T("Win.SelectRealGameRoot"),
-                AllowMultiple = false
-            });
-            if (folders.Count > 0)
-                gameRoot.Text = folders[0].TryGetLocalPath() ?? gameRoot.Text;
-        });
-
-        var detectBinary = new Button { Content = T("Win.Detect"), Padding = new Thickness(10, 5) };
-        detectBinary.Click += (_, _) =>
-        {
-            var path = patchExecutable.Text?.Trim();
-            if (!string.IsNullOrWhiteSpace(path))
-                binaryDirectory.Text = Path.GetDirectoryName(path) ?? binaryDirectory.Text;
-        };
-
-        var browseBinary = new Button { Content = T("Win.Browse"), Padding = new Thickness(10, 5) };
-        browseBinary.Click += (_, _) => RunUiSafe(async () =>
-        {
-            if (!StorageProvider.CanOpen) return;
-            var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-            {
-                Title = T("Win.SelectBinariesPatchesDirectory"),
-                AllowMultiple = false
-            });
-            if (folders.Count > 0)
-                binaryDirectory.Text = folders[0].TryGetLocalPath() ?? binaryDirectory.Text;
-        });
-
-        static Grid FieldRow(Control field, params Control[] buttons)
-        {
-            var columns = "*";
-            for (var i = 0; i < buttons.Length; i++) columns += ",Auto";
-            var row = new Grid { ColumnDefinitions = new ColumnDefinitions(columns), ColumnSpacing = 8 };
-            row.Children.Add(field);
-            Grid.SetColumn(field, 0);
-            for (var i = 0; i < buttons.Length; i++)
-            {
-                row.Children.Add(buttons[i]);
-                Grid.SetColumn(buttons[i], i + 1);
-            }
-            return row;
-        }
-
-        // Name and bitness (Refs #190): plain labels, the explanation in a 2 s tooltip.
-        var names = EditGameNameFields(game);
-
-        var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
-        var save = new Button { Content = T("Win.Save"), Padding = new Thickness(14, 7) };
-        var reset = new Button { Content = T("Win.RestoreAutomaticDetection"), Padding = new Thickness(14, 7) };
-        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
-
-        var form = new StackPanel { Spacing = 9, Margin = new Thickness(20) };
-        form.Children.Add(new TextBlock { Text = TF("Win.Edit", game.DisplayName()), FontSize = 21, FontWeight = FontWeight.SemiBold });
-        form.Children.Add(new TextBlock
-        {
-            Text = T("Win.ExecutableLauncherUsedStartGameIndependent"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.72
-        });
-        names.AddTo(form);
-
-        form.Children.Add(new TextBlock { Text = T("Win.LaunchHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
-        form.Children.Add(new TextBlock { Text = TF("Vm.LibrarySource", game.LibraryProvider ?? game.Source), FontSize = 11, Opacity = 0.72 });
-        form.Children.Add(new TextBlock { Text = T("Win.LauncherPlatform"), FontWeight = FontWeight.SemiBold });
-        form.Children.Add(provider);
-        form.Children.Add(new TextBlock { Text = T("Win.LaunchExecutablePreserved"), FontWeight = FontWeight.SemiBold });
-        form.Children.Add(new TextBlock
-        {
-            Text = game.LaunchExecutablePath ?? T("Win.ManagedByLauncherWithoutExposedLocal"),
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.76
-        });
-        // The command that runs on Play (the user's, else the detected one), editable as in Add game; clearing it goes
-        // back to the detected command.
-        var launchCommand = LaunchCommandField(game.LaunchCommand, "Win.EditLaunchCommandHint");
-        launchCommand.AddTo(form);
-
-        form.Children.Add(new TextBlock { Text = T("Win.GameModificationTargetHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 10, 0, 0) });
-        form.Children.Add(new TextBlock
-        {
-            Text = T("Win.TargetUsedArchitectureGraphicsAPIDLL"),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 11,
-            Opacity = 0.72
-        });
-
-        form.Children.Add(new TextBlock { Text = T("Win.TargetExecutable"), FontWeight = FontWeight.SemiBold });
-        form.Children.Add(FieldRow(patchExecutable, browseExecutable));
-        form.Children.Add(new TextBlock { Text = T("Win.GameRoot"), FontWeight = FontWeight.SemiBold });
-        form.Children.Add(FieldRow(gameRoot, detectRoot, browseRoot));
-        form.Children.Add(new TextBlock { Text = T("Win.BinariesPatchesDirectory"), FontWeight = FontWeight.SemiBold });
-        form.Children.Add(FieldRow(binaryDirectory, detectBinary, browseBinary));
-        form.Children.Add(status);
-
-        var footer = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto"), ColumnSpacing = 8, Margin = new Thickness(0, 8, 0, 0) };
-        footer.Children.Add(reset); Grid.SetColumn(reset, 0);
-        footer.Children.Add(cancel); Grid.SetColumn(cancel, 2);
-        footer.Children.Add(save); Grid.SetColumn(save, 3);
-        form.Children.Add(footer);
-
+        // The layout is the view model's data template (Views/Dialogs/EditGameDialogView.axaml; epic #89).
+        var model = new EditGameDialogViewModel(vm.ManualGames, vm.SelectedGame, DialogPickers(onlyWhenAvailable: true));
         var dialog = new Window
         {
-            Title = TF("Win.EditGame", game.DisplayName()),
+            Title = model.WindowTitle,
             // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
             // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically. 860 high
             // so the whole form, footer included, shows at the preferred size with the launch command field (PT-BR wraps more);
@@ -497,58 +222,12 @@ public sealed partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Content = new ScrollViewer
             {
-                Content = form,
+                Content = model,
                 HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
             }
         };
-
-        cancel.Click += (_, _) => dialog.Close();
-        reset.Click += (_, _) => RunUiSafe(async () =>
-        {
-            reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
-            try
-            {
-                // Closes once the reset is saved; a refusal (managed components present) stays visible here.
-                var (reset, message) = await vm.ManualGames.ResetSelectedGameEditAsync(saved: dialog.Close);
-                if (!reset) status.Text = message;
-            }
-            catch (Exception ex)
-            {
-                status.Text = TF("Win.CouldNotRestoreAutomaticDetection", UiLocalizationService.Present(ex.Message));
-            }
-            finally
-            {
-                reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = true;
-            }
-        });
-        save.Click += (_, _) => RunUiSafe(async () =>
-        {
-            reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = false;
-            try
-            {
-                var chosenProvider = provider.SelectedIndex >= 0 ? providerValues[provider.SelectedIndex] : null;
-                // Closes as soon as the edit is saved; the outcome goes to the main status line.
-                var (saved, message) = await vm.ManualGames.SaveSelectedGameEditAsync(
-                    patchExecutable.Text?.Trim() ?? "",
-                    gameRoot.Text?.Trim() ?? "",
-                    binaryDirectory.Text?.Trim() ?? "",
-                    chosenProvider,
-                    launchCommand.Box.Text,
-                    saved: dialog.Close,
-                    names: names.Read());
-                if (!saved) status.Text = message;
-            }
-            catch (Exception ex)
-            {
-                status.Text = TF("Win.CouldNotSave", UiLocalizationService.Present(ex.Message));
-            }
-            finally
-            {
-                reset.IsEnabled = save.IsEnabled = cancel.IsEnabled = true;
-            }
-        });
-
+        model.CloseRequested += dialog.Close;
         await ShowFittedDialogAsync(dialog);
     });
 

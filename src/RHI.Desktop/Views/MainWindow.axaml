@@ -381,27 +381,27 @@
                   <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Text="{DynamicResource Ui.ManagedProfileControls}" Classes="muted" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                      <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
-                      <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
+                      <Button Classes="rhi" Content="{DynamicResource Ui.CheckUpdate}" Command="{Binding ReShadeProfile.CheckReShadeUpdateCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"/>
+                      <Button Content="{DynamicResource Ui.ApplyUpdate}" Command="{Binding ReShadeProfile.ApplyReShadeProfileCommand}" IsEnabled="{Binding HasConfirmedPatchTarget}"
                               Background="#182840" Foreground="#7AACDD" BorderBrush="#2A4468" BorderThickness="1" CornerRadius="8" Padding="14,7"/>
                     </StackPanel>
                   </Grid>
 
                   <Grid ColumnDefinitions="120,220,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="8">
                     <TextBlock Grid.Row="0" Text="{DynamicResource Ui.Channel}" Classes="muted" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ReShadeChannels}" SelectedItem="{Binding SelectedReShadeChannel}"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding ReShadeProfile.ReShadeChannels}" SelectedItem="{Binding ReShadeProfile.SelectedReShadeChannel}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeProfile.ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
 
-                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeLegacy}"/>
+                    <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
                     <!-- w5/reshade-core (#186): the RHI manifest's legacy versions (ReShadeLegacyPresenter). -->
                     <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding ReShadeLegacy.Versions}"
-                              SelectedItem="{Binding ReShadeLegacyVersion, Mode=TwoWay}" IsVisible="{Binding IsReShadeLegacy}"
+                              SelectedItem="{Binding ReShadeProfile.ReShadeLegacyVersion, Mode=TwoWay}" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"
                               ToolTip.Tip="{Binding ReShadeLegacy.VersionTip}" ToolTip.ShowDelay="2000"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsReShadeLegacy}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding ReShadeProfile.IsReShadeLegacy}"/>
 
-                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeCustom}"/>
-                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding IsReShadeCustom}">
-                      <TextBox Text="{Binding ReShadeCustomDllPath}" PlaceholderText="{DynamicResource Ui.CustomDllPlaceholder}"/>
+                    <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}"/>
+                    <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeProfile.IsReShadeCustom}">
+                      <TextBox Text="{Binding ReShadeProfile.ReShadeCustomDllPath}" PlaceholderText="{DynamicResource Ui.CustomDllPlaceholder}"/>
                       <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseReShadeCustomDll_Click" Padding="12,6"/>
                       <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearReShadeCustomDll_Click" Padding="12,6"/>
                     </Grid>
@@ -427,24 +427,24 @@
                     <TextBlock Text="D3DCompiler 47" Classes="muted" VerticalAlignment="Top" Margin="0,7,0,0"/>
                     <StackPanel Grid.Column="1" Spacing="7">
                       <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                        <TextBox Text="{Binding ReShadeD3DCompiler47Path}"
+                        <TextBox Text="{Binding ReShadeProfile.ReShadeD3DCompiler47Path}"
                                  PlaceholderText="{DynamicResource Ui.D3DCompilerPlaceholder}"/>
                         <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseD3DCompiler47_Click" Padding="12,6"/>
                         <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearD3DCompiler47_Click" Padding="12,6"/>
                       </Grid>
                       <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Content="{DynamicResource Ui.InstallProtontricks}"
-                                Command="{Binding InstallD3DCompilerWithProtontricksCommand}"
-                                IsVisible="{Binding CanInstallD3DCompilerWithProtontricks}"
+                                Command="{Binding ReShadeProfile.InstallD3DCompilerWithProtontricksCommand}"
+                                IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithProtontricks}"
                                 Padding="12,6"/>
-                        <Button Content="{Binding D3DCompilerWinetricksButtonText}"
-                                Command="{Binding InstallD3DCompilerWithWinetricksCommand}"
-                                IsVisible="{Binding CanInstallD3DCompilerWithWinetricks}"
+                        <Button Content="{Binding ReShadeProfile.D3DCompilerWinetricksButtonText}"
+                                Command="{Binding ReShadeProfile.InstallD3DCompilerWithWinetricksCommand}"
+                                IsVisible="{Binding ReShadeProfile.CanInstallD3DCompilerWithWinetricks}"
                                 Padding="12,6"/>
                       </StackPanel>
                     </StackPanel>
                   </Grid>
-                  <TextBlock Text="{Binding D3DCompilerToolHint}" Classes="muted" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding ReShadeProfile.D3DCompilerToolHint}" Classes="muted" TextWrapping="Wrap"/>
                   <TextBlock Text="{DynamicResource Ui.D3DCompilerNote}"
                              Classes="muted" TextWrapping="Wrap"/>
 
@@ -509,12 +509,12 @@
                   </Border>
 
                   <WrapPanel Orientation="Horizontal" ItemSpacing="14" LineSpacing="4">
-                    <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeManageIni}"/>
+                    <CheckBox Content="{DynamicResource Ui.ManageReShadeIni}" IsChecked="{Binding ReShadeProfile.ReShadeManageIni}"/>
                     <TextBlock Text="{DynamicResource Ui.QuickPackages}" Classes="muted" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                    <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
-                    <CheckBox Content="{DynamicResource Ui.OfficialLegacy}" IsChecked="{Binding ShaderCrosireLegacy}"/>
-                    <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ShaderClshortfuse}"/>
-                    <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ShaderMaxG2D}"/>
+                    <CheckBox Content="{DynamicResource Ui.Official}" IsChecked="{Binding ReShadeProfile.ShaderCrosireMaster}" ToolTip.Tip="crosire reshade-shaders master"/>
+                    <CheckBox Content="{DynamicResource Ui.OfficialLegacy}" IsChecked="{Binding ReShadeProfile.ShaderCrosireLegacy}"/>
+                    <CheckBox Content="clshortfuse HDR" IsChecked="{Binding ReShadeProfile.ShaderClshortfuse}"/>
+                    <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ReShadeProfile.ShaderMaxG2D}"/>
                     <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
                   </WrapPanel>
                   <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"

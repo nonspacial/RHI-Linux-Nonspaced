@@ -20,7 +20,7 @@ internal static class OptiScalerPresetsRow
 {
     private static string T(string key) => UiLocalizationService.Text(key);
 
-    public static Control Create(OptiScalerPresetsPresenter presets, OptiScalerAdvancedSnapshot snapshot, TextBlock message, Action reopen)
+    public static Control Create(OptiScalerPresetsPresenter presets, OptiScalerAdvancedSnapshot snapshot, Action<string> show, Action reopen)
     {
         var panel = new StackPanel { Spacing = 8, Margin = new Thickness(0, 8, 0, 0) };
         var heading = new TextBlock { Text = T("Shell.PresetsHeading"), FontWeight = FontWeight.SemiBold };
@@ -29,12 +29,12 @@ internal static class OptiScalerPresetsRow
         panel.Children.Add(heading);
         var slots = new WrapPanel { Orientation = Orientation.Horizontal, ItemSpacing = 8, LineSpacing = 8 };
         for (var i = 0; i < OptiScalerPresetsPresenter.SlotCount; i++)
-            slots.Children.Add(Slot(presets, snapshot, i, message, reopen));
+            slots.Children.Add(Slot(presets, snapshot, i, show, reopen));
         panel.Children.Add(slots);
         return panel;
     }
 
-    private static Control Slot(OptiScalerPresetsPresenter presets, OptiScalerAdvancedSnapshot snapshot, int index, TextBlock message, Action reopen)
+    private static Control Slot(OptiScalerPresetsPresenter presets, OptiScalerAdvancedSnapshot snapshot, int index, Action<string> show, Action reopen)
     {
         var name = new TextBox
         {
@@ -64,7 +64,7 @@ internal static class OptiScalerPresetsRow
         void Rename()
         {
             if (string.Equals(name.Text?.Trim() ?? "", presets.Slot(index)?.Name ?? "", StringComparison.Ordinal)) return;
-            if (presets.Rename(index, name.Text) is { } refused) message.Text = refused;
+            if (presets.Rename(index, name.Text) is { } refused) show(refused);
             Refresh();
         }
         name.LostFocus += (_, _) => Rename();
@@ -77,7 +77,7 @@ internal static class OptiScalerPresetsRow
         save.Click += (_, _) =>
         {
             Rename();
-            message.Text = presets.SaveSlot(index);
+            show(presets.SaveSlot(index));
             Refresh();
         };
         apply.Click += (_, _) => UiExceptionGuard.Forget(ApplyAsync(), "OptiScalerPresetApply");
@@ -87,7 +87,7 @@ internal static class OptiScalerPresetsRow
             try
             {
                 var line = await presets.ApplyAsync(index);
-                message.Text = line;
+                show(line);
                 reopen();
             }
             finally { apply.IsEnabled = save.IsEnabled = true; }

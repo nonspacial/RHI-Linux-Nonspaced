@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.AddGameDialogView"
+             x:DataType="vm:AddGameDialogViewModel">
+  <!-- Add game (epic #89). The launch command field matches Edit game's (label, box, hint below). -->
+  <StackPanel Spacing="8" Margin="18">
+    <TextBlock Text="{l:T Win.ManualGame}" FontSize="20" FontWeight="SemiBold"/>
+    <TextBlock Text="{l:T Win.RHIInferredGameRootFromExecutable}" TextWrapping="Wrap" Opacity="0.7"/>
+    <TextBlock Text="{l:T Win.Name}" FontWeight="SemiBold"/>
+    <TextBox Text="{Binding Name}" PlaceholderText="{l:T Win.GameName}"/>
+    <TextBlock Text="{l:T Win.Executable}" FontWeight="SemiBold"/>
+    <TextBlock Text="{Binding Executable}" TextWrapping="Wrap" Opacity="0.78"/>
+    <TextBlock Text="{l:T Win.InferredGameRoot}" FontWeight="SemiBold"/>
+    <TextBlock Text="{Binding InstallPath}" TextWrapping="Wrap" Opacity="0.78"/>
+    <TextBlock Text="{l:T Win.WineProtonPrefixOptional}" FontWeight="SemiBold"/>
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+      <TextBox Text="{Binding Prefix}" PlaceholderText="{l:T Win.OptionalWineProtonPrefixEG}"/>
+      <Button Grid.Column="1" Content="{l:T Win.BrowsePrefix}" Padding="10,5" Command="{Binding BrowsePrefixCommand}"/>
+    </Grid>
+    <TextBlock Text="{l:T Win.LaunchCommandOptional}" FontWeight="SemiBold"/>
+    <TextBox Text="{Binding LaunchCommand}" PlaceholderText="{l:T Win.OptionalLaunchCommand}"/>
+    <TextBlock Text="{l:T Win.LeaveCommandEmptyIfRHIShould}" TextWrapping="Wrap" FontSize="10" Opacity="0.6"/>
+    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.75"/>
+    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+      <Button Content="{l:T Win.Cancel}" Padding="14,7" Command="{Binding CancelCommand}" IsEnabled="{Binding CanAct}"/>
+      <Button Content="{l:T Win.AddGame}" Padding="14,7" Command="{Binding AddCommand}" IsEnabled="{Binding CanAct}"/>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

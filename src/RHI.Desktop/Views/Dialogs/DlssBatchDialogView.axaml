@@ -1,0 +1,71 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.DlssBatchDialogView"
+             x:DataType="vm:DlssBatchDialogViewModel">
+  <!-- The DLSS / Streamline batch dialog (epic #89). Narrow dialogs put the versions under the games (code-behind). -->
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <Grid x:Name="Body" ColumnDefinitions="*,Auto,*" ColumnSpacing="18" Margin="16">
+        <StackPanel x:Name="GamesColumn" Spacing="8" MinWidth="350">
+          <TextBlock Text="{Binding EligibleHeading}" FontSize="16" FontWeight="SemiBold"/>
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="{l:T Win.SelectAll}" Padding="10,5" Command="{Binding SelectAllCommand}"/>
+            <Button Content="{l:T Win.Clear}" Padding="10,5" Command="{Binding ClearAllCommand}"/>
+          </StackPanel>
+          <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Games}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="4"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:DlssBatchGameRow">
+                  <CheckBox IsChecked="{Binding IsChecked}">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                      <TextBlock Text="{Binding Reason}" FontSize="10" Opacity="0.65"/>
+                    </StackPanel>
+                  </CheckBox>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+        <Border x:Name="Divider" Grid.Column="1" Width="1" Background="#2A3038"/>
+        <StackPanel x:Name="VersionsColumn" Grid.Column="2" Spacing="11" MinWidth="270">
+          <TextBlock Text="{l:T Win.Versions}" FontSize="16" FontWeight="SemiBold"/>
+          <TextBlock Text="{l:T Win.FilledFromSettingsDoNotChange}" TextWrapping="Wrap" Opacity="0.68" FontSize="11"/>
+          <StackPanel Spacing="4" DataContext="{Binding SuperResolution}" x:DataType="vm:VersionChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
+            <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding RayReconstruction}" x:DataType="vm:VersionChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
+            <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding FrameGeneration}" x:DataType="vm:VersionChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
+            <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding NeuralRendering}" x:DataType="vm:VersionChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
+            <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding Streamline}" x:DataType="vm:VersionChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
+            <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+        </StackPanel>
+      </Grid>
+    </ScrollViewer>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8" Margin="16">
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
+      <Button Grid.Column="1" Content="{l:T Win.RestoreSelected}" Padding="14,7" Command="{Binding RestoreCommand}" IsEnabled="{Binding CanRun}"/>
+      <Button Grid.Column="2" Content="{l:T Win.Apply}" Padding="14,7" Command="{Binding ApplyCommand}" IsEnabled="{Binding CanRun}"/>
+      <Button Grid.Column="3" Content="{Binding CloseLabel}" Padding="14,7" Command="{Binding CloseCommand}" IsEnabled="{Binding CanClose}"/>
+    </Grid>
+  </Grid>
+</UserControl>

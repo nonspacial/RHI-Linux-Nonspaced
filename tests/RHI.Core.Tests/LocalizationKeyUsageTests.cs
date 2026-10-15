@@ -28,6 +28,15 @@ public sealed class LocalizationKeyUsageTests
             Assert.Matches(KeyLiteral, $"T(\"{family}.Anything\")");
     }
     private static readonly Regex XamlResource = new(@"DynamicResource\s+([A-Za-z0-9_.]+)");
+    // {l:T Win.Key} (TExtension): dialog texts read once when the dialog opens.
+    private static readonly Regex XamlText = new(@"\{l:T\s+(?:Key=)?([A-Za-z0-9_.]+)\s*\}");
+
+    [Fact]
+    public void XamlTextPattern_FindsTheMarkupExtensionKeys()
+    {
+        Assert.Equal("Win.Close", XamlText.Match("Content=\"{l:T Win.Close}\"").Groups[1].Value);
+        Assert.Equal("Win.Close", XamlText.Match("Text=\"{l:T Key=Win.Close}\"").Groups[1].Value);
+    }
     private static readonly Regex XamlDefinedKey = new("x:Key=\"([^\"]+)\"");
 
     [Fact]
@@ -48,7 +57,15 @@ public sealed class LocalizationKeyUsageTests
             foreach (Match m in XamlResource.Matches(File.ReadAllText(file)))
                 if (!known.Contains(m.Groups[1].Value) && !styleKeys.Contains(m.Groups[1].Value))
                     missing.Add($"{Path.GetFileName(file)}: {m.Groups[1].Value}");
+        var xamlTexts = 0;
+        foreach (var file in xaml)
+            foreach (Match m in XamlText.Matches(File.ReadAllText(file)))
+            {
+                xamlTexts++;
+                if (!known.Contains(m.Groups[1].Value)) missing.Add($"{Path.GetFileName(file)}: {m.Groups[1].Value}");
+            }
 
+        Assert.True(xamlTexts > 0, "no {l:T …} texts found in the AXAML");
         Assert.True(code.Count > 10 && xaml.Count > 0, "desktop sources not found");
         Assert.Empty(missing);
     }

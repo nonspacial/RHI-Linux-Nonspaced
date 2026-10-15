@@ -19,7 +19,7 @@ internal static class SupportSettingsTab
 {
     private static string T(string key) => UiLocalizationService.Text(key);
 
-    public static TabItem Create(SupportPresenter support, TextBlock status, Func<string, string?> openFolder, Func<string, Task<bool>> copyText)
+    public static TabItem Create(SupportPresenter support, Action<string> show, Func<string, string?> openFolder, Func<string, Task<bool>> copyText)
     {
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
         panel.Children.Add(new TextBlock { Text = T("Shell.SupportTab"), FontSize = 20, FontWeight = FontWeight.SemiBold });
@@ -28,9 +28,9 @@ internal static class SupportSettingsTab
         var copyLogs = Button("Shell.CopyLogs", "Shell.CopyLogsTip", "CopyLogsButton");
         var openLogs = Button("Shell.OpenLogsFolder", "Shell.OpenLogsFolderTip", "OpenLogsFolderButton");
         var export = Button("Shell.ExportGameData", "Shell.ExportGameDataTip", "ExportGameDataButton");
-        copyLogs.Click += (_, _) => UiExceptionGuard.Forget(Run(copyLogs, status, () => support.CopyLogsAsync(copyText)), "CopyLogs");
-        export.Click += (_, _) => UiExceptionGuard.Forget(Run(export, status, () => support.ExportGameDataAsync(copyText)), "ExportGameData");
-        openLogs.Click += (_, _) => status.Text = openFolder(support.LogDirectory) ?? "";
+        copyLogs.Click += (_, _) => UiExceptionGuard.Forget(Run(copyLogs, show, () => support.CopyLogsAsync(copyText)), "CopyLogs");
+        export.Click += (_, _) => UiExceptionGuard.Forget(Run(export, show, () => support.ExportGameDataAsync(copyText)), "ExportGameData");
+        openLogs.Click += (_, _) => show(openFolder(support.LogDirectory) ?? "");
 
         var buttons = new WrapPanel { ItemSpacing = 8, LineSpacing = 8 };
         buttons.Children.Add(copyLogs);
@@ -40,10 +40,10 @@ internal static class SupportSettingsTab
         return new TabItem { Header = T("Shell.SupportTab"), Content = new ScrollViewer { Content = panel } };
     }
 
-    private static async Task Run(Button button, TextBlock status, Func<Task<string>> action)
+    private static async Task Run(Button button, Action<string> show, Func<Task<string>> action)
     {
         button.IsEnabled = false;
-        try { status.Text = await action(); }
+        try { show(await action()); }
         finally { button.IsEnabled = true; }
     }
 

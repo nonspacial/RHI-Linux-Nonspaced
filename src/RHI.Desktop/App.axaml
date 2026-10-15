@@ -1,6 +1,7 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:dialogs="using:RHI.Desktop.Views.Dialogs"
              x:Class="RHI.Desktop.App"
              RequestedThemeVariant="Dark">
   <Application.Resources>
@@ -57,6 +58,31 @@
         <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Opacity="0.65" IsVisible="{Binding FooterIsPlain}"/>
         <TextBlock Text="{Binding FooterNote}" TextWrapping="Wrap" FontSize="11" Foreground="#D7B65A" Opacity="0.78" IsVisible="{Binding FooterIsWarning}"/>
       </StackPanel>
+    </DataTemplate>
+    <!-- Dialogs moved out of the main window's code-behind (epic #89): Views/Dialogs/*.axaml. -->
+    <DataTemplate DataType="vm:DlssBatchDialogViewModel">
+      <dialogs:DlssBatchDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:RenoDxSettingsDialogViewModel">
+      <dialogs:RenoDxSettingsDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:OptiScalerSettingsDialogViewModel">
+      <dialogs:OptiScalerSettingsDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:AddGameDialogViewModel">
+      <dialogs:AddGameDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:EditGameDialogViewModel">
+      <dialogs:EditGameDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:ShaderAddonsDialogViewModel">
+      <dialogs:ShaderAddonsDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:ShaderPackFilesDialogViewModel">
+      <dialogs:ShaderPackFilesDialogView/>
+    </DataTemplate>
+    <DataTemplate DataType="vm:SettingsDialogViewModel">
+      <dialogs:SettingsDialogView/>
     </DataTemplate>
   </Application.DataTemplates>
 

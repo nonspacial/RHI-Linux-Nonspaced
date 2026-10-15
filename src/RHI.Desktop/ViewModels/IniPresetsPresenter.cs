@@ -313,8 +313,8 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         ComponentOperationResult applied;
         if (ReferenceEquals(game, vm.SelectedGame))
         {
-            var addons = (await vm.GetShaderAddonManagerSnapshotAsync())?.SelectedAddonIds ?? [];
-            applied = await vm.ApplyShaderAddonManagerAsync(shaderIds, addons);
+            var addons = (await vm.ReShadeProfile.GetShaderAddonManagerSnapshotAsync())?.SelectedAddonIds ?? [];
+            applied = await vm.ReShadeProfile.ApplyShaderAddonManagerAsync(shaderIds, addons);
         }
         else
         {
