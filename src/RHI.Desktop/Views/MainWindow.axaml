@@ -75,6 +75,7 @@
                      BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Padding="10,7" FontSize="12"/>
           </Border>
           <Border x:Name="LibraryFilterBar" Grid.Row="1" Padding="10,8" Background="#131820" BorderBrush="#1E2630" BorderThickness="0,0,0,1">
+            <StackPanel>
             <WrapPanel Orientation="Horizontal">
               <Button Classes="chip" Content="{DynamicResource Ui.All}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="All Games"/>
               <Button Classes="chip" Content="{DynamicResource Ui.Favourites}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Favourites"/>
@@ -86,6 +87,9 @@
               <Button Classes="chip" Content="Luma" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Luma"/>
               <Button Classes="chip" Content="{DynamicResource Ui.Hidden}" Margin="0,0,4,4" Command="{Binding SetLibraryFilterCommand}" CommandParameter="Hidden"/>
             </WrapPanel>
+            <!-- #193 saved custom filters: "Save as filter" and one chip per saved filter (hidden while there is neither). -->
+            <views:CustomFilterRow/>
+            </StackPanel>
           </Border>
           <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="12,8">
             <TextBlock Text="{DynamicResource Ui.Library}" Foreground="#6B7A8E" FontSize="10" FontWeight="SemiBold"/>
@@ -250,6 +254,8 @@
                     </WrapPanel>
                     <TextBlock Text="{Binding HdrProfileHint}" Foreground="#6B7A8E" FontSize="11" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding HdrLaunchOptions}" Foreground="#4DC9E6" FontSize="10" TextWrapping="Wrap" IsVisible="{Binding ShowHdrLaunchProfile}"/>
+                    <!-- #191 resolution auto-toggle (per game, with the HDR profile). -->
+                    <views:ResolutionToggleRow/>
                   </StackPanel>
 
                   <TextBlock Grid.Row="10" Grid.Column="0" Text="{DynamicResource Ui.NeuralRendering}" Classes="muted"/>
@@ -675,7 +681,9 @@
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
-        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"/>
+        <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
+        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
+                   Cursor="Hand" Tapped="ProductVersion_Tapped"/>
       </Grid>
     </Border>
   </Grid>

@@ -41,6 +41,9 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.ReLimiterTargetFps); // #188
             AssertRoundTrips(OptionLists.LumaHdrMode); // #189
             // w5/shell-launch rows
+            AssertRoundTrips(OptionLists.Bitness);
+            AssertRoundTrips(OptionLists.OptiScalerMenuKey);
+            AssertRoundTrips(OptionLists.GameResolution);
             // w5/reshade-core rows
         }
         finally

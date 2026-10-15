@@ -247,6 +247,47 @@ public static class OptionLists
          .. ReLimiterIniEditor.TargetFpsPresets.Select(p => new OptionEntry<int>(p.Fps, null, $"{p.Fps} FPS · {p.Hz} Hz VRR")),
          new OptionEntry<int>(CustomTargetFps, "Win.Custom")]);
     // w5/shell-launch rows
+    /// <summary>Edit game's bitness (Refs #190): null is "Automatic" (the manifest's override, else the exe header).</summary>
+    public static readonly OptionList<PeArchitecture?> Bitness = new(null, null,
+        new(null, "Ui.OptionAutomatic"),
+        new(PeArchitecture.X86, "Shell.Bitness32"),
+        new(PeArchitecture.X64, "Shell.Bitness64"));
+
+    /// <summary>#191: the game resolutions offered for the resolution auto-toggle (common 16:9, 16:10 and 21:9 sizes).</summary>
+    public static readonly OptionList<string> GameResolution = new("1920x1080", StringComparer.OrdinalIgnoreCase,
+        new[] { "1280x720", "1280x800", "1366x768", "1600x900", "1680x1050", "1920x1080", "1920x1200", "2560x1080",
+                "2560x1440", "2560x1600", "3440x1440", "3840x1600", "3840x2160", "5120x1440" }
+            .Select(size => new OptionEntry<string>(size, null, size.Replace("x", " × ", StringComparison.Ordinal))).ToArray());
+
+    /// <summary>
+    /// #191: the resolution list from the display's own sizes (largest first, as listed) plus <paramref name="keep"/> (a
+    /// saved choice the display does not offer stays visible and selectable); 1920x1080 is the fallback where offered,
+    /// else the largest size.
+    /// </summary>
+    public static OptionList<string> GameResolutionFrom(IEnumerable<string> displaySizes, string? keep)
+    {
+        var sizes = displaySizes.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (!string.IsNullOrWhiteSpace(keep) && !sizes.Contains(keep, StringComparer.OrdinalIgnoreCase)) sizes.Add(keep);
+        if (sizes.Count == 0) return GameResolution;
+        var fallback = sizes.Contains(GameResolution.Fallback, StringComparer.OrdinalIgnoreCase) ? GameResolution.Fallback : sizes[0];
+        return new OptionList<string>(fallback, StringComparer.OrdinalIgnoreCase,
+            sizes.Select(size => new OptionEntry<string>(size, null, size.Replace("x", " × ", StringComparison.Ordinal))).ToArray());
+    }
+
+    /// <summary>
+    /// #187: the global OptiScaler overlay key: "" keeps each INI template's own key (default), then OptiScaler's Auto,
+    /// upstream's keys (virtual-key codes) and Disabled.
+    /// </summary>
+    public static readonly OptionList<string> OptiScalerMenuKey = new("", StringComparer.OrdinalIgnoreCase,
+        [
+            new("", "Shell.MenuKeyTemplate"),
+            .. OptiScalerDeploymentService.MenuKeyOptions.Select(option => option.Value switch
+            {
+                "auto" => new OptionEntry<string>("auto", "Shell.MenuKeyAuto"),
+                "-1" => new OptionEntry<string>("-1", "Ui.OptionDisabled"),
+                _ => new OptionEntry<string>(option.Value, null, option.Name)
+            })
+        ]);
     // w5/reshade-core rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>

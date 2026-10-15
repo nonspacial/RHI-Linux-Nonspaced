@@ -58,15 +58,17 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
         // Wrapping a store client (xdg-open heroic://…, steam -applaunch) never reaches the game it starts later,
-        // so a launch profile on a hand-off would be reported as applied without effect (#46).
-        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix)) &&
+        // so a launch profile on a hand-off would be reported as applied without effect (#46). Started/Exited listeners
+        // (#191) are not a profile; a command to run after the game (#191) is refused like one (the hand-off ends at once).
+        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix) || options.AfterExit is not null) &&
             LaunchHandoffClassifier.IsHandoff(game))
             throw new InvalidOperationException(HandoffProfileRefused);
+        if (options.AfterExit is not null) CheckAfterExit(options.AfterExit);
 
         // The installer app's own Play entry point runs as an argument vector with no shell, so there is no stderr redirection to a
         // per-launch log: the installer app keeps its own logs, and an early failure is still reported by its exit code.
         var stderrLog = XboxEntryPoint(game) is null ? CreateLaunchLog(game) : null;
-        await RunAndWatchAsync(BuildStartInfo(game, options, stderrLog), stderrLog).ConfigureAwait(false);
+        await RunAndWatchAsync(BuildStartInfo(game, options, stderrLog), stderrLog, options.Started, options.Exited).ConfigureAwait(false);
     }
 
     /// <summary>True when the card can open its title in the owning app (the installer app's <c>--show</c> entry point, Refs #90).</summary>
@@ -106,7 +108,9 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         return psi;
     }
 
-    private async Task RunAndWatchAsync(ProcessStartInfo startInfo, string? stderrLog)
+    /// <param name="started">#191: told the process id once the command started.</param>
+    /// <param name="ended">#191: told once the command has ended (the resolution switch is put back then).</param>
+    private async Task RunAndWatchAsync(ProcessStartInfo startInfo, string? stderrLog, Action<int>? started = null, Action? ended = null)
     {
         var process = new Process { StartInfo = startInfo };
         try
@@ -120,6 +124,9 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
 
         var exited = process.WaitForExitAsync(CancellationToken.None);
+        if (started is not null) Notify(() => started(process.Id));
+        if (ended is not null)
+            _ = exited.ContinueWith(_ => Notify(ended), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         if (await Task.WhenAny(exited, Task.Delay(_earlyExitWindow, CancellationToken.None)).ConfigureAwait(false) != exited)
         {
             _ = exited.ContinueWith(_ => process.Dispose(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -133,6 +140,13 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
             exitCode = process.ExitCode;
         }
         if (exitCode != 0) throw new GameLaunchFailedException(exitCode, LastLine(stderrLog));
+    }
+
+    // A listener's failure never turns a launch into a failure (the game is running).
+    private static void Notify(Action listener)
+    {
+        try { listener(); }
+        catch (Exception ex) { AppLog.Warn("launch", "a launch listener failed", ex); }
     }
 
     internal static ProcessStartInfo BuildStartInfo(DetectedGame game, GameLaunchOptions options, string? stderrLog = null)
@@ -163,8 +177,36 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         if (userCommand) AddUserBinDirectories(psi);
         psi.ArgumentList.Add(userCommand ? "-lc" : "-c");
         var command = BuildShellCommand(game.LaunchCommand!, options.CommandPrefix);
+        if (options.AfterExit is { } afterExit) command = WithAfterExit(command, afterExit);
         psi.ArgumentList.Add(stderrLog is null ? command : WithCappedStderrLog(command, stderrLog));
         return psi;
+    }
+
+    /// <summary>How long the launch shell lets the after-exit command run (with <c>timeout</c> when it is installed).</summary>
+    internal const int AfterExitTimeoutSeconds = 15;
+
+    /// <summary>An after-exit vector must name an absolute program and hold no NUL (it cannot be an argument).</summary>
+    internal static void CheckAfterExit(IReadOnlyList<string> argv)
+    {
+        if (argv.Count == 0 || !argv[0].StartsWith('/') || argv.Any(argument => argument is null || argument.Contains('\0')))
+            throw new ArgumentException("The command to run after the game must be an absolute program path and its arguments.", nameof(argv));
+    }
+
+    /// <summary>
+    /// #191: runs <paramref name="command"/> in a subshell (an <c>exec</c> or <c>exit</c> in it ends only the subshell), then
+    /// <paramref name="afterExit"/> — every entry single-quoted, so it is one argument and nothing in it is expanded — with
+    /// no input or output and a time limit, and exits with the command's status. The launch shell, not RHI, runs it, so it
+    /// happens even when RHI has been closed meanwhile.
+    /// </summary>
+    internal static string WithAfterExit(string command, IReadOnlyList<string> afterExit)
+    {
+        CheckAfterExit(afterExit);
+        var argv = string.Join(" ", afterExit.Select(ShellQuote));
+        return
+            $"(\n{command}\n)\n" +
+            "rhi_game_status=$?\n" +
+            $"if command -v timeout >/dev/null 2>&1; then timeout {AfterExitTimeoutSeconds} {argv}; else {argv}; fi </dev/null >/dev/null 2>&1\n" +
+            "exit $rhi_game_status";
     }
 
     /// <summary>

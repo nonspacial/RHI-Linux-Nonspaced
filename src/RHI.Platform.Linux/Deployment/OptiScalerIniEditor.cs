@@ -20,6 +20,10 @@ internal static class OptiScalerIniEditor
         return GetValueFromLines(File.ReadAllLines(path), section, key);
     }
 
+    /// <summary>A key's value in the OptiScaler INI at <paramref name="path"/> (an INI template, Refs #187); null when absent.</summary>
+    public static string? GetValueInFile(string path, string section, string key)
+        => GetValueFromLines(File.ReadAllLines(path), section, key);
+
     public static void SetValue(string binaryDirectory, string section, string key, string value)
         => SetValues(binaryDirectory, [(section, key, value)]);
 
@@ -34,7 +38,20 @@ internal static class OptiScalerIniEditor
         var path = Path.Combine(binaryDirectory, "OptiScaler.ini");
         if (!File.Exists(path))
             throw new FileNotFoundException("OptiScaler.ini was not found beside the game executable.", path);
+        SetValuesInFile(path, updates, readOnly);
+    }
 
+    /// <summary>
+    /// As <see cref="SetValues"/> for the OptiScaler INI at <paramref name="path"/> (a user INI template, Refs #187): only
+    /// the given keys change, through the user-file write path.
+    /// </summary>
+    public static void SetValuesInFile(
+        string path,
+        IReadOnlyList<(string Section, string Key, string Value)> updates,
+        ReadOnlyUserFile readOnly = ReadOnlyUserFile.Refuse)
+    {
+        ArgumentNullException.ThrowIfNull(updates);
+        if (updates.Count == 0) return;
         var text = File.ReadAllText(path);
         var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n').ToList();

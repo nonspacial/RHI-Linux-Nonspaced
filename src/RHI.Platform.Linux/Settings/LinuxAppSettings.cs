@@ -54,6 +54,11 @@ public sealed class LinuxAppSettings
     public bool PeakNitsEnabled { get; set; } = true;
     public List<int> PeakNitsPresets { get; set; } = [1, 2, 3];
     // w5/shell-launch rows
+    /// <summary>
+    /// #187: the OptiScaler overlay key for every template and install (<c>[Menu] ShortcutKey</c>, a virtual-key code such
+    /// as <c>0x2D</c>, or <c>auto</c>/<c>-1</c>); empty keeps each template's own key (the default: nothing is rewritten).
+    /// </summary>
+    public string OptiScalerMenuKey { get; set; } = "";
     // w5/reshade-core rows
 
     /// <summary>
@@ -98,10 +103,24 @@ public sealed class LinuxAppSettings
         if (PeakNits is < 1 or > RHI.Platform.Linux.Deployment.RenoDxPeakNits.MaxNits) PeakNits = 0; // #182
         PeakNitsPresets = (PeakNitsPresets ?? [1, 2, 3]).Where(n => n is >= 1 and <= 3).Distinct().Order().ToList(); // #182
         // w5/shell-launch rows
+        OptiScalerMenuKey = NormalizeOptiScalerMenuKey(OptiScalerMenuKey);
         // w5/reshade-core rows
         return this;
     }
 
+
+    /// <summary>An OptiScaler overlay key as stored: auto, -1 or a virtual-key code 0x01–0xFE (upper-case hex); anything else = none.</summary>
+    public static string NormalizeOptiScalerMenuKey(string? value)
+    {
+        var key = value?.Trim() ?? "";
+        if (key.Equals("auto", StringComparison.OrdinalIgnoreCase)) return "auto";
+        if (key == "-1") return "-1";
+        return key.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+               && int.TryParse(key[2..], System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var code)
+               && code is > 0 and < 0xFF
+            ? $"0x{code:X2}"
+            : "";
+    }
 
     public static string DefaultUiLanguage()
         => CultureInfo.CurrentUICulture.Name.StartsWith("pt", StringComparison.OrdinalIgnoreCase) ? "pt-BR" : "en-US";

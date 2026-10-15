@@ -20,14 +20,20 @@ public readonly record struct GameLibraryFilterFacts(bool Installed, bool RenoDx
 /// <summary>Pure filtering/search contract shared by the Linux UI and regression tests.</summary>
 public static class GameLibraryFilter
 {
+    /// <param name="customQuery">
+    /// The active saved custom filter's search (Refs #193, upstream <c>CustomFilter</c>): a second search pass on top of
+    /// the search box and the filter tab, independent of both. Null or blank = none.
+    /// </param>
     public static bool Matches(
         DetectedGame game,
         GameLibraryFilterMode mode,
         string? search,
-        GameLibraryFilterFacts facts)
+        GameLibraryFilterFacts facts,
+        string? customQuery = null)
     {
         ArgumentNullException.ThrowIfNull(game);
         if (!MatchesSearch(game, search)) return false;
+        if (!MatchesSearch(game, customQuery)) return false;
 
         if (mode == GameLibraryFilterMode.Hidden) return game.IsHidden;
         if (mode == GameLibraryFilterMode.Favourites) return game.IsFavourite; // upstream intentionally includes hidden favourites
@@ -52,7 +58,9 @@ public static class GameLibraryFilter
         var q = search.Trim();
         bool Has(string? value) => !string.IsNullOrWhiteSpace(value) && value.Contains(q, StringComparison.OrdinalIgnoreCase);
 
-        return Has(game.Name)
+        // The Edit game display name and the detected name both find the card (Refs #190).
+        return Has(game.DisplayName())
+            || Has(game.Name)
             || Has(game.Source)
             || Has(game.Runner)
             || Has(game.CompatibilityTool)
@@ -66,11 +74,15 @@ public static class GameLibraryFilter
             || Has(game.ExecutablePath)
             || Has(game.PrefixPath)
             || game.EffectiveGraphicsApis.Any(api => Has(FormatApi(api)))
-            || (game.ForcedArchitecture is PeArchitecture.X86 && Has("32-bit"))
-            || (game.ForcedArchitecture is PeArchitecture.X64 && Has("64-bit"))
+            || (DeclaredArchitecture(game) is PeArchitecture.X86 && Has("32-bit"))
+            || (DeclaredArchitecture(game) is PeArchitecture.X64 && Has("64-bit"))
             || (game.NativeHdrByManifest && Has("HDR"))
             || (game.IsManuallyAdded && Has("Manual"));
     }
+
+    // Search reads only declared bitness (Edit game, then the manifest), never the exe header: a keystroke must not read files.
+    private static PeArchitecture? DeclaredArchitecture(DetectedGame game)
+        => game.UserArchitectureOverride is PeArchitecture.X86 or PeArchitecture.X64 ? game.UserArchitectureOverride : game.ForcedArchitecture;
 
     private static bool IsUnreal(DetectedGame game)
         => game.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true;

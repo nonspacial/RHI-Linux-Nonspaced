@@ -45,6 +45,15 @@ public sealed class SettingsViewModel : PanelViewModel
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
+    /// <summary>#187: stores the OptiScaler overlay key alone (Apply to all games); null when saved, else the refusal line.</summary>
+    internal string? SaveOptiScalerMenuKey(string key)
+    {
+        var copy = GetLinuxSettingsSnapshot().Settings;
+        copy.OptiScalerMenuKey = key;
+        if (TryPersist(() => _settingsStore.Save(copy), "Ui.WhatSettings", sessionOnly: false) is { } refused) return refused;
+        _shell.AdoptSettings(_settingsStore.Load(), restartLoop: false, runImmediate: false);
+        return null;
+    }
     // w5/reshade-core rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
@@ -87,6 +96,7 @@ public sealed class SettingsViewModel : PanelViewModel
             PeakNitsEnabled = Host.Settings.PeakNitsEnabled, // #182
             PeakNitsPresets = [.. Host.Settings.PeakNitsPresets], // #182
             // w5/shell-launch rows
+            OptiScalerMenuKey = Host.Settings.OptiScalerMenuKey, // #187 OptiScaler overlay key
             // w5/reshade-core rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);

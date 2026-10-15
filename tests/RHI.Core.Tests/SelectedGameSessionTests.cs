@@ -206,6 +206,8 @@ public sealed class SelectedGameSessionTests
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            nameof(DetectedGame.UserDisplayName), nameof(DetectedGame.UserWikiName), nameof(DetectedGame.DetectedWikiName), // Edit game (#190)
+            nameof(DetectedGame.UserArchitectureOverride),
             // w5/reshade-core rows
         ];
         var writable = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite).Select(p => p.Name).ToHashSet();

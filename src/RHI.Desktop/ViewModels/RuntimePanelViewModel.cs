@@ -138,6 +138,73 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     [ObservableProperty] private bool hdrLegacyWsi;
 
+    // #191 resolution auto-toggle (per game, saved with the HDR profile).
+    [ObservableProperty] private bool resolutionToggle;
+
+    [ObservableProperty] private OptionItem<string> selectedResolution = OptionLists.GameResolution.Options().For(OptionLists.GameResolution.Fallback);
+
+    /// <summary>The sizes offered: the display's own once its tool listed them (<see cref="UseDisplayResolutions"/>), else a fixed list.</summary>
+    public OptionItems<string> ResolutionOptions { get; private set; } = OptionLists.GameResolution.Options();
+
+    private OptionList<string> _resolutionList = OptionLists.GameResolution;
+    private IReadOnlyList<string>? _displaySizes;
+
+    /// <summary>
+    /// #191: the display's tool listed its sizes: offer those (the saved choice of the selected game stays in the list
+    /// even when the display lacks it). The shown choice is kept; nothing is saved.
+    /// </summary>
+    internal void UseDisplayResolutions(IReadOnlyList<DisplayResolution> sizes)
+    {
+        _displaySizes = sizes.Select(size => size.ToString()).ToArray();
+        RebuildResolutionOptions(SavedResolution());
+    }
+
+    /// <summary>The selected game's saved resolution, or null.</summary>
+    private string? SavedResolution()
+        => SelectedGame is { } game && Host.LibraryState.HdrProfiles.TryGetValue(LinuxGameLibraryStore.GameKey(game), out var saved)
+            ? saved.Normalize().Resolution
+            : null;
+
+    /// <summary>
+    /// Rebuilds the list from the display's sizes plus <paramref name="keep"/> (callers rebuild only when keep is missing or
+    /// the sizes are new) and selects keep, else the shown choice when still offered, else the list's fallback; nothing is saved.
+    /// </summary>
+    private void RebuildResolutionOptions(string? keep)
+    {
+        if (_displaySizes is null) return;
+        var list = OptionLists.GameResolutionFrom(_displaySizes, keep);
+        var shown = keep ?? (SelectedResolution?.Value is { } current && list.Values.Contains(current, StringComparer.OrdinalIgnoreCase) ? current : list.Fallback);
+        var loading = _loadingHdrProfile;
+        _loadingHdrProfile = true;
+        try
+        {
+            _resolutionList = list;
+            ResolutionOptions = list.Options();
+            OnPropertyChanged(nameof(ResolutionOptions));
+            SelectedResolution = ResolutionOptions.For(shown);
+        }
+        finally { _loadingHdrProfile = loading; }
+        RaiseHdrPlanChanged();
+    }
+
+    /// <summary>#191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).</summary>
+    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
+
+    /// <summary>The profile the controls show (HDR mode, legacy WSI, resolution toggle and size).</summary>
+    private LinuxHdrGameProfile ShownProfile() => new LinuxHdrGameProfile
+    {
+        Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi,
+        ResolutionToggle = ResolutionToggle, Resolution = SelectedResolution?.Value
+    }.Normalize();
+
+    /// <summary>#191: what happens to the display when Play starts the selected game.</summary>
+    public ResolutionPlan SelectedResolutionPlan => SelectedGame is null
+        ? ResolutionPlan.Off
+        : DisplayModeSwitcher.Plan(SelectedGame, ShownProfile(), SelectedHdrPlan, HdrHost);
+
+    /// <summary>#191: the plain line under the resolution controls (hidden while the toggle is off).</summary>
+    public string ResolutionHint => ResolutionText.Hint(SelectedResolutionPlan, SelectedGame);
+
     public string SelectedApi
     {
         get
@@ -251,7 +318,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
         ? LinuxHdrLaunchPlan.NoGame
-        : _hdrProfiles.BuildPlan(SelectedGame, new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }, HdrHost);
+        : _hdrProfiles.BuildPlan(SelectedGame, ShownProfile(), HdrHost);
 
     /// <summary>
     /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
@@ -286,11 +353,17 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             var engine = string.IsNullOrWhiteSpace(SelectedGame.EngineHint)
                 ? T("Vm.NoUpstreamEngineOverride")
                 : SelectedGame.EngineHint;
-            var architecture = SelectedGame.ForcedArchitecture switch
+            // Edit game's bitness wins over the manifest's (Refs #190), as GameArchitecture.Of reads them.
+            var architecture = SelectedGame.UserArchitectureOverride switch
             {
-                PeArchitecture.X64 => T("Vm.ForcedX64"),
-                PeArchitecture.X86 => T("Vm.ForcedX86"),
-                _ => ""
+                PeArchitecture.X64 => T("Shell.UserX64"),
+                PeArchitecture.X86 => T("Shell.UserX86"),
+                _ => SelectedGame.ForcedArchitecture switch
+                {
+                    PeArchitecture.X64 => T("Vm.ForcedX64"),
+                    PeArchitecture.X86 => T("Vm.ForcedX86"),
+                    _ => ""
+                }
             };
             return engine + architecture;
         }
@@ -381,6 +454,23 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(HdrLaunchOptions));
         OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
         OnPropertyChanged(nameof(ShowHdrLaunchProfile));
+        OnPropertyChanged(nameof(SelectedResolutionPlan));
+        OnPropertyChanged(nameof(ResolutionHint));
+        OnPropertyChanged(nameof(ShowResolutionToggle));
+    }
+
+    partial void OnResolutionToggleChanged(bool value)
+    {
+        RaiseHdrPlanChanged();
+        if (_loadingHdrProfile || SelectedGame is null) return;
+        SaveHdrProfile(SelectedGame, HdrControl.Resolution);
+    }
+
+    partial void OnSelectedResolutionChanged(OptionItem<string> value)
+    {
+        RaiseHdrPlanChanged();
+        if (value is null || _loadingHdrProfile || SelectedGame is null) return;
+        SaveHdrProfile(SelectedGame, HdrControl.Resolution);
     }
 
     partial void OnSelectedHdrModeChanged(OptionItem<string> value)
@@ -467,6 +557,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
                 : new LinuxHdrGameProfile();
             SelectedHdrMode = FormatHdrMode(profile.Mode);
             HdrLegacyWsi = profile.EnableLegacyWsi;
+            ResolutionToggle = profile.ResolutionToggle;
+            if (profile.Resolution is { } savedSize && !_resolutionList.Values.Contains(savedSize, StringComparer.OrdinalIgnoreCase))
+                RebuildResolutionOptions(savedSize);
+            SelectedResolution = ResolutionOptions.For(profile.Resolution ?? _resolutionList.Fallback);
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();
@@ -479,6 +573,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         {
             SelectedHdrMode = FormatHdrMode(LinuxHdrModes.Off);
             HdrLegacyWsi = false;
+            ResolutionToggle = false;
+            SelectedResolution = ResolutionOptions.For(_resolutionList.Fallback);
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();
@@ -492,7 +588,11 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             return;
         }
         var key = LinuxGameLibraryStore.GameKey(game);
-        var shown = new LinuxHdrGameProfile { Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi }.Normalize();
+        var shown = ShownProfile();
+        // A size is saved once the toggle has been on (the dropdown shows only then); before that, the dropdown's default
+        // is not a choice and a game without any HDR or resolution setting keeps no profile.
+        if (!shown.ResolutionToggle && !(Host.LibraryState.HdrProfiles.TryGetValue(key, out var before) && before.Resolution is not null))
+            shown.Resolution = null;
         var adopted = Host.AdoptRestoredLibraryFile(reloadHdrControls: false);
         var profile = shown;
         if (adopted)
@@ -500,11 +600,15 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             // The controls showed the stand-in, not the restored profile: change only the control the user touched in
             // the restored profile, then show the result (Refs #149).
             var restored = Host.LibraryState.HdrProfiles.TryGetValue(key, out var saved) ? saved.Normalize() : new LinuxHdrGameProfile();
-            profile = touched == HdrControl.Mode
-                ? new LinuxHdrGameProfile { Mode = shown.Mode, EnableLegacyWsi = restored.EnableLegacyWsi }.Normalize()
-                : new LinuxHdrGameProfile { Mode = restored.Mode, EnableLegacyWsi = shown.EnableLegacyWsi }.Normalize();
+            profile = new LinuxHdrGameProfile
+            {
+                Mode = touched == HdrControl.Mode ? shown.Mode : restored.Mode,
+                EnableLegacyWsi = touched == HdrControl.LegacyWsi ? shown.EnableLegacyWsi : restored.EnableLegacyWsi,
+                ResolutionToggle = touched == HdrControl.Resolution ? shown.ResolutionToggle : restored.ResolutionToggle,
+                Resolution = touched == HdrControl.Resolution ? shown.Resolution : restored.Resolution
+            }.Normalize();
         }
-        if (profile.Mode == LinuxHdrModes.Off && !profile.EnableLegacyWsi) Host.LibraryState.HdrProfiles.Remove(key);
+        if (profile.IsDefault()) Host.LibraryState.HdrProfiles.Remove(key);
         else Host.LibraryState.HdrProfiles[key] = profile;
         Host.PersistLibraryState("Ui.WhatHdrProfile");
         if (adopted) LoadHdrProfile(game);
@@ -512,16 +616,12 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     }
 
     /// <summary>The HDR control a save comes from (<see cref="SaveHdrProfile"/>).</summary>
-    private enum HdrControl { Mode, LegacyWsi }
+    private enum HdrControl { Mode, LegacyWsi, Resolution }
 
     private void NotifyHdrProfile()
     {
         OnPropertyChanged(nameof(CanEditHdrProfile));
-        OnPropertyChanged(nameof(SelectedHdrPlan));
-        OnPropertyChanged(nameof(HdrProfileHint));
-        OnPropertyChanged(nameof(HdrLaunchOptions));
-        OnPropertyChanged(nameof(CanCopyHdrLaunchOptions));
-        OnPropertyChanged(nameof(ShowHdrLaunchProfile));
+        RaiseHdrPlanChanged();
     }
 
     public string GetSelectedHdrLaunchOptions() => HdrLaunchOptions;

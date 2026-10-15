@@ -141,6 +141,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/ini-presets rows
     public IniPresetsPresenter IniPresets => new(this, _managedComponents, _deploymentRecords, _settingsStore.ConfigRoot); // #181: INI ⚙, templates, apply to all
     // w5/shell-launch rows
+    public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
+    public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
+    public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+    public ResolutionLaunchPresenter Resolution => ResolutionLaunchPresenter.For(this); // #191 resolution auto-toggle
     // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
@@ -165,7 +169,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     private static string LibraryFilterDisplay(string value) => OptionLists.LibraryFilter.Display(value);
 
-    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}";
+    public string GameCountText => $"{Games.Count} / {_library.AllGames.Count} {UiLocalizationService.Text("Ui.Games")} · {LibraryFilterDisplay(LibraryFilterMode)}"
+                                   + (CustomFilters.ActiveName is { } custom ? $" · {custom}" : ""); // #193
     public bool IsCompactView => string.Equals(ViewMode, "Compact", StringComparison.OrdinalIgnoreCase);
     public string ViewToggleText => IsCompactView ? UiLocalizationService.Text("Ui.ViewDetail") : UiLocalizationService.Text("Ui.ViewCompact");
     public bool TrayIconEnabled => _settings.TrayIconEnabled;
@@ -221,7 +226,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     }
 
     private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
-    public string SelectedTitle => SelectedGame?.Name ?? UiLocalizationService.Text("Ui.SelectGame");
+    public string SelectedTitle => SelectedGame?.DisplayName() ?? UiLocalizationService.Text("Ui.SelectGame");
     public string SelectedSource => SelectedGame is null ? "" : $"{SelectedGame.Source}  •  {SelectedGame.Runner ?? UiLocalizationService.Text("Ui.UnknownRunner")}";
 
     public string SelectedLibraryProvider => SelectedGame?.LibraryProvider ?? "";
@@ -464,6 +469,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
         var dlssManifestTask = LoadDlssManifestAsync();
         Runtime.LastHdrHost ??= await hdrHost;
+        Resolution.HostProbed(Runtime.LastHdrHost); // #191 (w5/shell-launch): the display's own sizes, once its tool is known
         Runtime.RaiseHdrPlanChanged();
         await RefreshAsync();
         await dlssManifestTask;
@@ -986,12 +992,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             return;
         }
 
+        var resolutionPlan = Runtime.SelectedResolutionPlan; // #191: switch the display around a direct launch
         if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
             var hdrGame = SelectedGame;
             StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
-            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
-                StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
+            var (hdrOptions, hdrNotice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
+            var hdrLine = hdrNotice is null ? TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display)
+                : TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display) + " " + hdrNotice;
+            StatusText = hdrLine;
+            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, hdrOptions)))
+                StatusText = hdrLine;
+            else
+                await Resolution.RestoreAsync();
             return;
         }
 
@@ -1001,6 +1014,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             : TF("Vm.Launching", game.Name);
         // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
         if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
+        if (resolutionPlan.SwitchesAroundLaunch && _launcher is IGameLaunchOptionsLauncher resolutionLauncher) // #191
+        {
+            StatusText = started;
+            var (options, notice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions());
+            if (notice is not null) started += " " + notice;
+            StatusText = started;
+            if (await TryLaunchAsync(game, () => resolutionLauncher.LaunchAsync(game, options)))
+                StatusText = started;
+            else
+                await Resolution.RestoreAsync();
+            return;
+        }
         StatusText = started;
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;
@@ -1721,6 +1746,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (Parity is { } links) items.AddRange(links.GameLinks.MenuItemsFor(game, OpenNexusPage)); // #183: web pages, each only where it exists
         // w5/ini-presets rows
         // w5/shell-launch rows
+        // #192: a support report for this game (dialog with an optional note; saved and copied).
+        items.Add(new("game-report", T("Shell.CopyReport"), new AsyncRelayCommand(() => Support.ReportCommand.ExecuteAsync(game)),
+            SeparatorBefore: true, Tip: T("Shell.CopyReportTip")));
         // w5/reshade-core rows
         return items;
     }
@@ -1880,7 +1908,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         var selected = SelectedGame;
         var mode = ParseLibraryFilterMode(LibraryFilterMode);
         var needsManagedFacts = mode is GameLibraryFilterMode.Installed or GameLibraryFilterMode.RenoDX or GameLibraryFilterMode.Luma;
-        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null);
+        CustomFilters.Sync(_libraryState); // #193: the saved filters' chips, and the active one's search
+        _library.ApplyFilter(mode, SearchText, needsManagedFacts ? CachedLibraryFilterFacts : null, CustomFilters.ActiveQuery);
         OnPropertyChanged(nameof(GameCountText));
         if (selected is not null && _library.IsShown(selected))
         {

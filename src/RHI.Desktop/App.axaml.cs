@@ -40,7 +40,8 @@ public sealed class App : Application
             // service exists that could deploy (installs, start-up auto-update).
             var (wineOverrides, journal) = AppComposition.CreateWineRecovery(records);
             var recovery = RunDeploymentStartup(desktop, journal, records);
-            var services = AppComposition.Create(http, records, wineOverrides, journal);
+            var services = AppComposition.Create(http, records, wineOverrides, journal,
+                displayModes: new RHI.Platform.Linux.Hdr.DisplayModeSwitcher()); // w5/shell-launch (#191): only the app touches the display
             UiLocalizationService.Apply(services.SettingsStore.Load().UiLanguage);
             var vm = services.CreateViewModel();
             vm.Parity = services.Parity; // w3/parity hook

@@ -237,6 +237,7 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        if (t == typeof(DetectedWikiName)) return new DetectedWikiName("x");
         // w5/reshade-core rows
         throw new InvalidOperationException($"Add a sample for {type}");
     }

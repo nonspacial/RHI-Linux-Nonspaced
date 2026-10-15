@@ -42,6 +42,30 @@ public sealed class LinuxGameEditOverride
     public string? LaunchCommand { get; set; }
 
     /// <summary>
+    /// The name the card, the details header, search and sorting show (Edit game, Refs #190). Null = the detected name.
+    /// Presentation only: library keys, shortcuts, launch-by-key and catalogue lookups keep the detected name.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// The name RenoDX/Luma wiki lookups use for this game (Edit game, Refs #190); wins over the upstream manifest's
+    /// wiki-name mapping. Null = the manifest's mapping (if any), else the game's name.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WikiName { get; set; }
+
+    /// <summary>
+    /// The bitness chosen in Edit game (x86/x64, Refs #190); null = Automatic. Read only through
+    /// <see cref="RHI.Core.Services.GameArchitecture.Of"/>, ahead of the manifest's override and the exe header (upstream's order).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PeArchitecture? Architecture { get; set; }
+
+    /// <summary>The rule for typed names (display and wiki name): trimmed; empty or whitespace-only = none.</summary>
+    public static string? NormalizeName(string? name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+    /// <summary>
     /// The rule Add game and Edit game apply to a typed launch command: trimmed; empty or whitespace-only = none.
     /// </summary>
     public static string? NormalizeLaunchCommand(string? command)
@@ -58,11 +82,15 @@ public sealed class LinuxGameEditOverride
         GameRootPath = NormalizeOptionalPath(GameRootPath);
         BinaryDirectory = NormalizeOptionalPath(BinaryDirectory);
         LaunchCommand = NormalizeLaunchCommand(LaunchCommand);
+        DisplayName = NormalizeName(DisplayName);
+        WikiName = NormalizeName(WikiName);
+        Architecture = Architecture is PeArchitecture.X86 or PeArchitecture.X64 ? Architecture : null;
         return this;
     }
 
-    /// <summary>True when the edit still holds anything (a patch target, a launcher badge or a launch command).</summary>
-    public bool IsEmpty() => !HasPatchTarget && LaunchProvider is null && LaunchCommand is null;
+    /// <summary>True when the edit still holds anything (a patch target, a launcher badge, a launch command, a name or a bitness).</summary>
+    public bool IsEmpty() => !HasPatchTarget && LaunchProvider is null && LaunchCommand is null
+                             && DisplayName is null && WikiName is null && Architecture is null;
 
     public bool HasPatchTarget =>
         !string.IsNullOrWhiteSpace(PatchExecutablePath) &&
@@ -74,6 +102,27 @@ public sealed class LinuxGameEditOverride
         if (string.IsNullOrWhiteSpace(value)) return null;
         try { return Path.GetFullPath(Environment.ExpandEnvironmentVariables(value.Trim())); }
         catch { return value.Trim(); }
+    }
+}
+
+/// <summary>A saved custom filter (Refs #193): a name and the search text it applies.</summary>
+public sealed class LinuxCustomFilter
+{
+    public string Name { get; set; } = "";
+    public string Query { get; set; } = "";
+
+    /// <summary>
+    /// Trimmed; entries without a name or a query dropped; a name already used (any case) keeps its first entry, as
+    /// upstream refuses duplicate names. Null when nothing is left.
+    /// </summary>
+    public static List<LinuxCustomFilter>? NormalizeList(IEnumerable<LinuxCustomFilter?>? filters)
+    {
+        var list = (filters ?? [])
+            .Where(filter => filter is not null && !string.IsNullOrWhiteSpace(filter.Name) && !string.IsNullOrWhiteSpace(filter.Query))
+            .Select(filter => new LinuxCustomFilter { Name = filter!.Name.Trim(), Query = filter.Query.Trim() })
+            .DistinctBy(filter => filter.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return list.Count == 0 ? null : list;
     }
 }
 
@@ -92,6 +141,13 @@ public sealed class LinuxGameLibraryState
     /// <summary>Per-game HDR launch orchestration. This stores only RHI launch preferences, never runner binaries/configuration.</summary>
     public Dictionary<string, LinuxHdrGameProfile> HdrProfiles { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public string FilterMode { get; set; } = "All Games";
+
+    /// <summary>
+    /// Saved custom filters (Refs #193, upstream <c>CustomFilter</c>): a named search applied on top of the filter tab and
+    /// the search box. Null when there are none, so a library file without any keeps the shape older builds wrote.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<LinuxCustomFilter>? CustomFilters { get; set; }
 
     public LinuxGameLibraryState Normalize()
     {
@@ -125,6 +181,7 @@ public sealed class LinuxGameLibraryState
             .Select(group => group.Last())
             .ToList();
         FilterMode = LinuxGameLibraryStore.NormalizeFilterMode(FilterMode);
+        CustomFilters = LinuxCustomFilter.NormalizeList(CustomFilters);
         return this;
     }
 
@@ -324,6 +381,9 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     {
         LaunchProvider = edit.LaunchProvider,
         LaunchCommand = edit.LaunchCommand,
+        DisplayName = edit.DisplayName,
+        WikiName = edit.WikiName,
+        Architecture = edit.Architecture,
         PatchExecutablePath = MapOptional(move, edit.PatchExecutablePath),
         GameRootPath = MapOptional(move, edit.GameRootPath),
         BinaryDirectory = MapOptional(move, edit.BinaryDirectory)

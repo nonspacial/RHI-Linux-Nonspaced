@@ -349,6 +349,11 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RenoDxPeakNits.NotManagedPrefix + "Celeste";
         yield return RenoDxPeakNits.NoReShadeIniPrefix + "Celeste";
         // w5/shell-launch rows
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolFailedPrefix + "exit code 1";
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.NoModePrefix + "2560x1440";
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix + "kscreen-doctor";
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix + "/state/display-mode.json";
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer;
         // w5/reshade-core rows
     }
 

@@ -24,11 +24,26 @@ public sealed class LinuxHdrGameProfile
     public string Mode { get; set; } = LinuxHdrModes.Off;
     public bool EnableLegacyWsi { get; set; }
 
+    /// <summary>
+    /// #191: switch the display to <see cref="Resolution"/> while the game runs (upstream's per-game RES toggle; off by
+    /// default). Not written while off, so a profile without it keeps the shape older builds wrote.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ResolutionToggle { get; set; }
+
+    /// <summary>#191: the target resolution, <c>WIDTHxHEIGHT</c>; null = none chosen (the toggle then does nothing).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? Resolution { get; set; }
+
     public LinuxHdrGameProfile Normalize()
     {
         Mode = LinuxHdrModes.Normalize(Mode);
+        Resolution = DisplayResolution.Parse(Resolution)?.ToString();
         return this;
     }
+
+    /// <summary>True when nothing differs from a game without a profile (the entry can be dropped).</summary>
+    public bool IsDefault() => Mode == LinuxHdrModes.Off && !EnableLegacyWsi && !ResolutionToggle && Resolution is null;
 }
 
 /// <param name="Desktop">XDG_CURRENT_DESKTOP (else DESKTOP_SESSION); null when neither is set.</param>
@@ -39,6 +54,12 @@ public sealed record LinuxHdrHostSnapshot(
     string? NvidiaDriverVersion,
     bool LegacyWsiLikelyRequired)
 {
+    /// <summary>#191: <c>kscreen-doctor</c> (KDE Plasma) is on PATH.</summary>
+    public bool KScreenDoctorAvailable { get; init; }
+
+    /// <summary>#191: <c>wlr-randr</c> (wlroots compositors) is on PATH.</summary>
+    public bool WlrRandrAvailable { get; init; }
+
     /// <summary>
     /// Stand-in used before the host has been probed (a getter never probes it on the UI thread); the plan is rebuilt
     /// once the real probe lands. No desktop name: the UI words an unknown desktop in its own language.
@@ -139,7 +160,11 @@ public sealed partial class LinuxHdrLaunchProfileService
         desktop = string.IsNullOrWhiteSpace(desktop) ? null : desktop.Trim();
         var nvidia = _nvidiaVersion();
         var legacy = TryParseMajor(nvidia, out var major) && major < 595;
-        return new LinuxHdrHostSnapshot(wayland, desktop, _commandExists("gamescope"), nvidia, legacy);
+        return new LinuxHdrHostSnapshot(wayland, desktop, _commandExists("gamescope"), nvidia, legacy)
+        {
+            KScreenDoctorAvailable = _commandExists(DisplayModeSwitcher.KScreenDoctor),
+            WlrRandrAvailable = _commandExists(DisplayModeSwitcher.WlrRandr)
+        };
     }
 
     public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile)
@@ -219,7 +244,10 @@ public sealed partial class LinuxHdrLaunchProfileService
         // on top of it; that would duplicate policy already owned by the compositor/runner path.
         var env = new Dictionary<string, string>(StringComparer.Ordinal);
         ApplyLegacyWsi(profile, env);
-        const string prefix = "gamescope --hdr-enabled --";
+        // #191: with the resolution toggle on, gamescope's own output size is the game's resolution (no display switch).
+        var prefix = DisplayModeSwitcher.GamescopeSize(profile) is { } size
+            ? $"gamescope -W {size.Width} -H {size.Height} --hdr-enabled --"
+            : "gamescope --hdr-enabled --";
         var options = BuildLaunchOptions(env, prefix);
         var reason = string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
             ? LinuxHdrPlanReason.GamescopeNativeGame
