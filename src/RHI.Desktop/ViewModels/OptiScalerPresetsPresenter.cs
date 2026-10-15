@@ -61,10 +61,13 @@ public sealed class OptiScalerPresetsPresenter
     /// <summary>The slot's button label: its name, else "Slot n".</summary>
     public string Label(int index) => Slot(index)?.Name ?? UiLocalizationService.Format("Shell.PresetSlot", index + 1);
 
-    /// <summary>Saves the snapshot's current settings into the slot (its name is kept); the line to show.</summary>
-    public string SaveSlot(int index, OptiScalerAdvancedSnapshot snapshot)
+    /// <summary>
+    /// Saves the selected game's settings as they are now into the slot (its name is kept); the line to show. Read at the
+    /// moment of saving: the ⚙ writes each change at once, so a snapshot taken when the dialog opened would be stale.
+    /// </summary>
+    public string SaveSlot(int index)
     {
-        var captured = snapshot.Settings
+        var captured = _shell.GetOptiScalerAdvancedSettings().Settings
             .Where(setting => setting.Id != OptiScalerDeploymentService.MenuShortcutKeySettingId)
             .ToDictionary(setting => setting.Id, setting => setting.CurrentValue, StringComparer.Ordinal);
         var name = Slot(index)?.Name;

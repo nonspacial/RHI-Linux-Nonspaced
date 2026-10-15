@@ -77,11 +77,14 @@ public sealed class OptiScalerPresetsTests : IDisposable
         presets.Store = new OptiScalerPresetStore(Path.Combine(_root, "presets.json"));
 
         Assert.True(OptiScalerPresetsPresenter.AppliesTo(fx.Vm.GetOptiScalerAdvancedSettings()));
-        Assert.StartsWith("Preset \"Slot 2\" saved with ", presets.SaveSlot(1, fx.Vm.GetOptiScalerAdvancedSettings()));
+        // A change made in the ⚙ after it opened is what Save captures (read at the moment of saving).
+        Assert.True((await fx.Vm.SetOptiScalerAdvancedSettingAsync("FGOutput", "dlssg")).Success);
+        Assert.StartsWith("Preset \"Slot 2\" saved with ", presets.SaveSlot(1));
         Assert.Null(presets.Rename(1, " Quiet "));
         var saved = presets.Store.Load().Slots[1]!;
         Assert.Equal("Quiet", saved.Name);
         Assert.Equal("auto", saved.Settings["FGInput"]);
+        Assert.Equal("dlssg", saved.Settings["FGOutput"]);
         Assert.DoesNotContain(OptiScalerDeploymentService.MenuShortcutKeySettingId, saved.Settings.Keys); // the global key row owns it
 
         Assert.Null(presets.Rename(2, "Mixed"));
@@ -95,7 +98,7 @@ public sealed class OptiScalerPresetsTests : IDisposable
 
         var line = await presets.ApplyAsync(2);
 
-        Assert.Equal("Preset \"Mixed\" applied: 3 setting(s) changed. 2 do not apply to this game and were left out.", line);
+        Assert.Equal("Preset \"Mixed\" applied: 2 setting(s) changed. 2 do not apply to this game and were left out.", line);
         var bin = game.BinaryDirectory!;
         var ini = File.ReadAllText(Path.Combine(bin, "OptiScaler.ini"));
         Assert.Contains("FGInput=upscaler", ini);

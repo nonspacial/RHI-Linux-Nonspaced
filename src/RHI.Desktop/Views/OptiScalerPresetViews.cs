@@ -77,7 +77,7 @@ internal static class OptiScalerPresetsRow
         save.Click += (_, _) =>
         {
             Rename();
-            message.Text = presets.SaveSlot(index, snapshot);
+            message.Text = presets.SaveSlot(index);
             Refresh();
         };
         apply.Click += (_, _) => UiExceptionGuard.Forget(ApplyAsync(), "OptiScalerPresetApply");
