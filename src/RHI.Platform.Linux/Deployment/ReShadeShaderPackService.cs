@@ -562,7 +562,53 @@ public sealed class ReShadeShaderPackService
         _ => null
     };
 
+    // One pack cache writer at a time (#194): the start-up prefetch and an install's staging never build the same entry
+    // together (one would delete the other's freshly moved tree).
+    private readonly SemaphoreSlim _packGate = new(1, 1);
+
     internal async Task<string> EnsurePackAsync(
+        ReShadeShaderPackDefinition pack,
+        CancellationToken cancellationToken)
+    {
+        await _packGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await EnsurePackCoreAsync(pack, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _packGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// #194 (upstream 2.8.7 <c>CacheAllShaders</c>, parity T-19): stages every pack the catalogue offers (and the core
+    /// headers) that has no cache entry yet, so a later install needs no download. An entry already there is left as it
+    /// is (an install refreshes it on demand), so this never replaces a tree an install may be copying from. Cache only:
+    /// nothing in any game changes. A pack that fails is logged and skipped. Returns how many packs it staged.
+    /// </summary>
+    public async Task<int> PrefetchMissingAsync(CancellationToken cancellationToken = default)
+    {
+        await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var fetched = 0;
+        foreach (var pack in _packs.Where(pack => !pack.IsCustom).Append(CoreHeadersPack).ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Directory.Exists(Path.Combine(_cacheDir, SafePackDirectoryName(pack.Id), "extracted"))) continue;
+            try
+            {
+                await EnsurePackAsync(pack, cancellationToken).ConfigureAwait(false);
+                fetched++;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                AppLog.Warn("shaders", $"Could not stage the shader pack {pack.DisplayName} at start-up", ex);
+            }
+        }
+        return fetched;
+    }
+
+    private async Task<string> EnsurePackCoreAsync(
         ReShadeShaderPackDefinition pack,
         CancellationToken cancellationToken)
     {

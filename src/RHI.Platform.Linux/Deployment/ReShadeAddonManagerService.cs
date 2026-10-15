@@ -292,13 +292,13 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             }
 
             // Prepare all payloads before touching the game.
-            var prepared = new List<(ReShadeAddonDefinition Definition, string Source, string DeployName)>();
+            var prepared = new List<(ReShadeAddonDefinition Definition, string Source, string DeployName, string? Version)>();
             foreach (var id in normalized)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var definition = byId[id];
                 var payload = await PreparePayloadAsync(definition, architecture, cancellationToken).ConfigureAwait(false);
-                prepared.Add((definition, payload.Path, payload.DeployName));
+                prepared.Add((definition, payload.Path, payload.DeployName, payload.Version));
             }
 
             if (normalized.Length == 0 && existing is null)
@@ -343,15 +343,18 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
                             await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
 
                 var placed = new List<(string AddonId, string Path, string Sha256)>();
+                var versions = new List<(string Path, string? Version, string DisplayName)>();
                 foreach (var item in prepared)
                 {
                     var target = Path.Combine(deployDir, item.DeployName);
                     var hash = await scope.PlaceCopyAsync(item.Source, target, cancellationToken).ConfigureAwait(false);
                     changed.Add(target);
                     placed.Add((item.Definition.Id, target, hash));
+                    versions.Add((target, item.Version, item.Definition.DisplayName));
                 }
 
                 var record = removal ? null : BuildRecord(game, normalized, placed, existing);
+                if (record is not null) SetVersions(record, versions);
                 await WriteCopyInsideAsync(scope, game, record).ConfigureAwait(false);
                 if (record is null) _records.Remove(game, RecordKind);     // the commit point (removal)
                 else _records.Upsert(scope.Stamp(record));               // the commit point (install / change)
@@ -514,12 +517,19 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
 
     private async Task<List<ReShadeAddonDefinition>> RefreshCatalogAsync(
         CancellationToken cancellationToken)
+        => (await LoadCatalogAsync(cancellationToken).ConfigureAwait(false)).Catalog;
+
+    // Live = crosire's Addons.ini was fetched now (not the cached copy): the update check needs the current list.
+    private async Task<(List<ReShadeAddonDefinition> Catalog, bool Live)> LoadCatalogAsync(
+        CancellationToken cancellationToken)
     {
         List<ReShadeAddonDefinition> catalog;
+        var live = false;
         try
         {
             var text = await TrustedDownload.GetStringAsync(_http, AddonsIniUrl, TrustedDownloadPolicy.ReShadeAddons, cancellationToken: cancellationToken).ConfigureAwait(false);
             catalog = ParseAddonsIni(text);
+            live = true;
             Directory.CreateDirectory(_cacheDir);
             await AtomicFile.WriteAllTextAsync(_addonsIniCache, text, cancellationToken).ConfigureAwait(false);
         }
@@ -542,10 +552,10 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
         }
 
         MergeCustom(catalog);
-        return catalog
+        return (catalog
             .OrderBy(x => IsComponentManaged(x))
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            .ToList(), live);
     }
 
     internal static void MergeManifest(
@@ -622,7 +632,7 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
         }
     }
 
-    private async Task<(string Path, string DeployName)> PreparePayloadAsync(
+    private async Task<(string Path, string DeployName, string? Version)> PreparePayloadAsync(
         ReShadeAddonDefinition definition,
         PeArchitecture architecture,
         CancellationToken cancellationToken)
@@ -635,19 +645,26 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             if (string.IsNullOrWhiteSpace(custom) || !File.Exists(custom))
                 throw new InvalidOperationException($"{definition.DisplayName} does not provide a {ext} custom payload.");
             ValidateAddonPayload(custom, ext, architecture);
-            return (custom, EnsureAddonExtension(definition.DeployFileName ?? Path.GetFileNameWithoutExtension(custom), ext));
+            return (custom, EnsureAddonExtension(definition.DeployFileName ?? Path.GetFileNameWithoutExtension(custom), ext), CustomVersion(custom));
         }
 
         var sourceUrl = architecture == PeArchitecture.X86 ? definition.DownloadUrl32 : definition.DownloadUrl64;
         sourceUrl ??= definition.DownloadUrl;
 
+        string? version = null;
         if (!string.IsNullOrWhiteSpace(definition.ReleaseApiUrl))
-            sourceUrl = await ResolveReleaseAssetAsync(definition.ReleaseApiUrl!, ext, cancellationToken).ConfigureAwait(false);
+        {
+            string? tag;
+            (sourceUrl, tag) = await ResolveReleaseAssetAsync(definition.ReleaseApiUrl!, ext, cancellationToken).ConfigureAwait(false);
+            version = TagVersion(tag);
+        }
 
         if (string.IsNullOrWhiteSpace(sourceUrl))
             throw new InvalidOperationException($"{definition.DisplayName} has no {ext} download authority.");
 
         ValidateDirectUrlArchitecture(sourceUrl, ext);
+        // #194: what this download is, for the update check (the release tag, else the server's validators).
+        version ??= await UrlVersionAsync(sourceUrl, cancellationToken).ConfigureAwait(false);
 
         Directory.CreateDirectory(_cacheDir);
         var safeId = Sanitize(definition.Id);
@@ -677,7 +694,7 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
                 var deploy = EnsureAddonExtension(
                     definition.DeployFileName ?? Path.GetFileNameWithoutExtension(entry.Name),
                     ext);
-                return (cachePath, deploy);
+                return (cachePath, deploy, version);
             }
             finally
             {
@@ -694,11 +711,11 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             var deploy = EnsureAddonExtension(
                 definition.DeployFileName ?? Path.GetFileNameWithoutExtension(fromUrl),
                 ext);
-            return (cachePath, deploy);
+            return (cachePath, deploy, version);
         }
     }
 
-    private async Task<string> ResolveReleaseAssetAsync(
+    private async Task<(string Url, string? Tag)> ResolveReleaseAssetAsync(
         string apiUrl,
         string architectureExtension,
         CancellationToken cancellationToken)
@@ -715,6 +732,7 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
         }
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("assets", out var assets))
             throw new InvalidDataException($"GitHub release has no assets: {apiUrl}");
+        var tag = root.TryGetProperty("tag_name", out var tagName) && tagName.ValueKind == JsonValueKind.String ? tagName.GetString() : null;
 
         string? zip = null;
         foreach (var asset in assets.EnumerateArray())
@@ -723,11 +741,11 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
             var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
             if (string.IsNullOrWhiteSpace(url)) continue;
             if (name.EndsWith(architectureExtension, StringComparison.OrdinalIgnoreCase))
-                return url!;
+                return (url!, tag);
             if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                 zip ??= url;
         }
-        return zip ?? throw new InvalidDataException($"GitHub release has no {architectureExtension} or .zip asset: {apiUrl}");
+        return (zip ?? throw new InvalidDataException($"GitHub release has no {architectureExtension} or .zip asset: {apiUrl}"), tag);
     }
 
     private async Task DownloadAsync(string url, string destination, CancellationToken cancellationToken)

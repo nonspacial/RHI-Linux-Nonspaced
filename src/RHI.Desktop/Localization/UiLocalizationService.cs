@@ -1296,6 +1296,14 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix, "O RHI não conseguiu registrar o modo de tela atual, então não o mudou: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer, "A ferramenta de tela indicou uma saída ou modo que o RHI não aceita, então a tela não foi mudada."),
         // w6/crash rows
+        // #194: Addon Manager add-ons in Update All.
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CurrentMessage, "Os add-ons do ReShade Addon Manager estão atualizados."),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdateAvailablePrefix, "Atualização disponível para add-ons do ReShade Addon Manager: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix, "Não foi possível verificar os add-ons do ReShade Addon Manager: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ListUnavailableReason, "não foi possível baixar a lista de add-ons."),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NotInListPrefix, "não está mais na lista de add-ons: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoValidatorPrefix, "o download não oferece nada para comparar: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdatedPrefix, "Add-ons do ReShade Addon Manager atualizados: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ReconcileFailedPrefix,
             "O ReShade Addon Manager não alterou nada: não foi possível levar a lista salva dele para os registros de instalação: "),
         // w5/reshade-core rows

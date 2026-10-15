@@ -111,6 +111,8 @@ public sealed partial class ReShadeDeploymentService
     }
 
     public IReadOnlyList<ReShadeShaderPackInfo> AvailableShaderPacks => _shaderPacks.AvailablePacks;
+    /// <summary>#194: stages every shader pack not in the cache yet (the CacheAllShaders setting; cache only).</summary>
+    public Task<int> PrefetchShaderPacksAsync(CancellationToken cancellationToken = default) => _shaderPacks.PrefetchMissingAsync(cancellationToken);
     public string CustomShaderRoot => _shaderPacks.CustomRoot;
     public Task<IReadOnlyList<ReShadeShaderPackInfo>> RefreshShaderPackCatalogAsync(CancellationToken cancellationToken = default)
         => _shaderPacks.RefreshCatalogAsync(cancellationToken);

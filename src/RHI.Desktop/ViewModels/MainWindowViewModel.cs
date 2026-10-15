@@ -485,9 +485,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Resolution.HostProbed(Runtime.LastHdrHost); // #191 (w5/shell-launch): the display's own sizes, once its tool is known
         Runtime.RaiseHdrPlanChanged();
         await RefreshAsync();
+        // w6/crash hook (#194, upstream CacheAllShaders): with the setting on, every shader pack is staged in the background.
+        if (_settings.CacheAllShaders) ShaderPackPrefetch = Task.Run(PrefetchShaderPacksAsync); // off the UI context
         await dlssManifestTask;
         await neuralVersionCatalogTask;
         Updates.RestartBackgroundUpdateLoop(runImmediate: _settings.AutoUpdateComponents);
+    }
+
+    /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
+    internal Task? ShaderPackPrefetch { get; private set; }
+
+    // Cache only, best effort: a failure is logged and the packs are fetched when an install needs them.
+    private async Task PrefetchShaderPacksAsync()
+    {
+        try { await _managedComponents.PrefetchShaderPacksAsync().ConfigureAwait(false); }
+        catch (Exception ex) { AppLog.Warn("shaders", "Start-up shader-pack staging failed; packs are fetched when an install needs them", ex); }
     }
 
     /// <summary>

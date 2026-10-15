@@ -363,6 +363,14 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix + "/state/display-mode.json";
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer;
         // w6/crash rows
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CurrentMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdateAvailablePrefix + "Generic";
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ListUnavailableReason;
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NotInListPrefix + "generic.addon64";
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoValidatorPrefix + "Generic";
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdatedPrefix + "2";
+        yield return "ReShade Addon Manager is not managed by RHI Linux.";
+        yield return ReShadeAddonSwitch.HeldPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.DisplayName;
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ReconcileFailedPrefix + P;
         // w5/reshade-core rows
         // #92 ReShade as a Vulkan layer
