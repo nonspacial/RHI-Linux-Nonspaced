@@ -120,9 +120,10 @@ public sealed partial class ReShadeDeploymentService
 
     /// <summary>
     /// The add-on files the ReShade Addon Manager installed on a game (#170: switching to No Addons turns them off with
-    /// the component add-ons); set by <see cref="LinuxManagedComponentService"/>, none when unset.
+    /// the component add-ons); set by <see cref="LinuxManagedComponentService"/>, none when unset. Null from the function =
+    /// the manager's saved list cannot be read: its add-ons are left as they are and the result says so.
     /// </summary>
-    public Func<DetectedGame, IReadOnlyList<string>>? AddonManagerFiles { get; set; }
+    public Func<DetectedGame, IReadOnlyList<string>?>? AddonManagerFiles { get; set; }
 
     /// <summary>The per-game proxy DLL names chosen before install (#120); "Repair after move" carries them.</summary>
     public DllNamePreferenceStore DllNames => _dllNames;
@@ -400,8 +401,13 @@ public sealed partial class ReShadeDeploymentService
         }
 
         // #170: the add-ons this channel switch turns off (No Addons) or back on; a taken name refuses before any change.
+        IReadOnlyList<string>? managerFiles = AddonManagerFiles is null ? [] : AddonManagerFiles(game);
         var (addonPlan, addonRefusal) = ReShadeAddonSwitch.PlanFor(
-            _records.FindAll(game), AddonManagerFiles?.Invoke(game) ?? [], addonSupport: staged.Channel != ReShadeChannel.NoAddons);
+            _records.FindAll(game), managerFiles ?? [], addonSupport: staged.Channel != ReShadeChannel.NoAddons);
+        // Unreadable manager list while the switch matters (to No Addons, or back from it): its add-ons cannot be told
+        // apart, so they stay as they are and the status line says so.
+        var managerNote = managerFiles is null && (staged.Channel == ReShadeChannel.NoAddons || LacksAddonSupport(existingRecord))
+            ? ReShadeAddonSwitch.ManagerUnreadableNote : "";
         if (addonRefusal is not null)
         {
             if (updateSnapshot is not null) FileCleanup.TryDelete(updateSnapshot);
@@ -625,7 +631,7 @@ public sealed partial class ReShadeDeploymentService
                 ? ""
                 : $" Native D3DCompiler_47 is active ({d3dCompilerPlan.Description}) with a per-game native,builtin override.";
             var cacheNote = staged.FromCache ? CachedCopyNote : "";
-            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}{ReShadeAddonSwitch.Summary(addonPlan)}", target)
+            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}{ReShadeAddonSwitch.Summary(addonPlan)}{managerNote}", target)
                 with { FromCachedSource = staged.FromCache };
         }
         catch (Exception ex)

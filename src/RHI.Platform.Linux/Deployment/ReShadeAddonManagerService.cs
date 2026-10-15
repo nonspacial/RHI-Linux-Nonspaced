@@ -184,11 +184,16 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         return new(catalog.Select(ToCatalogItem).ToArray(), selected, _customRoot);
     }
 
-    /// <summary>The add-on files this manager installed on <paramref name="game"/> (under their own names), for #170.</summary>
-    public IReadOnlyList<string> OwnedAddonFiles(DetectedGame game)
+    /// <summary>
+    /// The add-on files this manager installed on <paramref name="game"/> (under their own names), for #170; null when its
+    /// saved list cannot be read (then nobody can tell which add-ons are the manager's).
+    /// </summary>
+    public IReadOnlyList<string>? OwnedAddonFiles(DetectedGame game)
     {
-        var state = LoadState();
-        return GameRecordIdentity.TryGet(state.Games, game, out var gs) ? gs.Files.Select(file => file.Path).ToArray() : [];
+        var load = _stateFile.Load();
+        if (load.IsUnreadable) return null;
+        var games = JsonStoreMaps.CaseInsensitive((load.Value ?? new StateDocument()).Games);
+        return GameRecordIdentity.TryGet(games, game, out var gs) ? gs.Files.Select(file => file.Path).ToArray() : [];
     }
 
     public async Task<IReadOnlyList<ReShadeAddonCatalogItem>> RefreshCatalogItemsAsync(

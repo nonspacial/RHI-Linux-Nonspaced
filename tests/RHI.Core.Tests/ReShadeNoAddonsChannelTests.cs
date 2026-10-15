@@ -112,6 +112,9 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         var withExtra = store.Find(game, ManagedComponentKind.RenoDX)!;
         withExtra.Files.Add(new LinuxDeployedFile { Path = extra, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(extra) });
         store.Upsert(withExtra);
+        // The user's own add-on (no record, no Addon Manager entry) is never touched (review nit 5).
+        var users = Path.Combine(game.BinaryDirectory!, "users-own.addon64");
+        File.WriteAllText(users, "MZ user's own");
 
         var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
 
@@ -128,6 +131,8 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.Equal("MZ extra", File.ReadAllText(extra + ReShadeAddonSwitch.OffSuffix));
         Assert.True(ReShadeAddonSwitch.IsOff(renoDx));
         Assert.Equal(other + ReShadeAddonSwitch.OffSuffix, Assert.Single(store.Find(game, ManagedComponentKind.ReLimiter)!.Files).Path);
+        Assert.Equal("MZ user's own", File.ReadAllText(users));
+        Assert.False(File.Exists(users + ReShadeAddonSwitch.OffSuffix));
 
         var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
 
@@ -139,6 +144,7 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.Equal([addon, ini, extra], store.Find(game, ManagedComponentKind.RenoDX)!.Files.Select(f => f.Path));
         Assert.Equal("MZ extra", File.ReadAllText(extra));
         Assert.False(ReShadeAddonSwitch.IsOff(store.Find(game, ManagedComponentKind.ReLimiter)));
+        Assert.Equal("MZ user's own", File.ReadAllText(users));
 
         // Another apply on the same build changes no add-on and says nothing about add-ons.
         var again = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
@@ -183,6 +189,48 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         File.Move(managerAddon, managerAddon + ReShadeAddonSwitch.OffSuffix);
         var cleared = await managed.ApplyReShadeAddonSelectionAsync(game, []);
         Assert.False(File.Exists(managerAddon + ReShadeAddonSwitch.OffSuffix), cleared.Message);
+    }
+
+    // Review minor 4: when the Addon Manager's saved list cannot be read, nobody can tell its add-ons apart; they are left as
+    // they are and the status line says so on a switch to No Addons and back (not on an unrelated Stable update).
+    [Fact]
+    public async Task AddonManagerListUnreadable_SwitchLeavesItsAddons_AndSaysSo()
+    {
+        var (game, store) = CreateGame("manager-unreadable");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var managerAddon = Path.Combine(game.BinaryDirectory!, "manager-pick.addon64");
+        File.WriteAllText(managerAddon, "MZ manager");
+        var component = SeedAddon(game, store, ManagedComponentKind.ReLimiter, "relimiter.addon64");
+
+        // The real manager hands back null (not an empty list) for a list it cannot read.
+        var statePath = Path.Combine(game.InstallPath, "addon-manager.json");
+        File.WriteAllText(statePath, "{ not json");
+        var http = new HttpClient(new Handler { HomeUnreachable = true });
+        var manager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http), Path.Combine(game.InstallPath, "addon-cache"),
+            Path.Combine(game.InstallPath, "custom-addons"), statePath);
+        Assert.Null(manager.OwnedAddonFiles(game));
+        service.AddonManagerFiles = manager.OwnedAddonFiles;
+
+        var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+        Assert.True(off.Success, off.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOffPrefix + "1." + ReShadeAddonSwitch.ManagerUnreadableNote, off.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ manager", File.ReadAllText(managerAddon));
+        Assert.True(File.Exists(component + ReShadeAddonSwitch.OffSuffix)); // component add-ons still switch
+
+        var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.True(on.Success, on.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOnPrefix + "1." + ReShadeAddonSwitch.ManagerUnreadableNote, on.Message, StringComparison.Ordinal);
+
+        var again = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.True(again.Success, again.Message);
+        Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, again.Message, StringComparison.Ordinal);
+
+        // Once the list reads again, the note goes and its add-ons switch as before.
+        File.Delete(statePath);
+        Assert.Empty(manager.OwnedAddonFiles(game)!);
+        var readable = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+        Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, readable.Message, StringComparison.Ordinal);
     }
 
     [Fact]

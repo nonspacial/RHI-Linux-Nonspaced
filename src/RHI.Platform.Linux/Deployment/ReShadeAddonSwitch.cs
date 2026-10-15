@@ -34,6 +34,13 @@ public static class ReShadeAddonSwitch
     public const string HeldPrefix =
         "This add-on is turned off for ReShade's No Addons build; install ReShade with add-on support (Stable or Nightly) on this game first: ";
 
+    /// <summary>
+    /// Appended to a ReShade switch to or from No Addons while the Addon Manager's saved list cannot be read: its add-ons
+    /// were left as they were (PT-BR presentation pair).
+    /// </summary>
+    public const string ManagerUnreadableNote =
+        " Addon Manager add-ons were not checked because its saved list cannot be read, so they were left as they were; apply ReShade again once that list reads.";
+
     /// <summary>Component row note of an add-on that is off (PT-BR presentation pair).</summary>
     public const string OffNote =
         "Turned off for ReShade's No Addons build: the add-on stays in the game folder and comes back on when RHI installs ReShade with add-on support (Stable or Nightly) on this game.";

@@ -1079,6 +1079,8 @@ public static class UiLocalizationService
             "O ReShade não foi alterado: um add-on não pode ser desligado nem religado porque já existe um arquivo com o nome que ele receberia. Tire esse arquivo do lugar primeiro: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.HeldPrefix,
             "Este add-on está desligado pela versão Sem add-ons do ReShade; instale antes neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento): "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.ManagerUnreadableNote,
+            " Os add-ons do Gerenciador de add-ons não foram verificados porque a lista salva dele não pode ser lida, então ficaram como estavam; aplique o ReShade de novo quando essa lista puder ser lida."),
         (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.OffNote,
             "Desligado pela versão Sem add-ons do ReShade: o add-on fica na pasta do jogo e volta a ligar quando o RHI instalar neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento)."),
         // #91 ReShade No Addons channel.
