@@ -41,7 +41,7 @@ public static class XboxWriteGate
 
     /// <summary>Fixed start of the refusal for an installer-app title whose instance RHI does not know; the title's folder follows.</summary>
     public const string UnknownInstancePrefix =
-        "This game was installed by an Xbox app RHI does not know the copy of, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings → Xbox / Game Pass folders. Folder: ";
+        "This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings → Xbox / Game Pass folders. Folder: ";
 
     /// <summary>
     /// The install refusal on an Xbox card whose exe RHI cannot read (encrypted on disk) and whose package declares no

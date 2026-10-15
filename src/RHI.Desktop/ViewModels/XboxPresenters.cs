@@ -63,7 +63,7 @@ public static class XboxCardActions
 
 /// <summary>
 /// The Settings row "Xbox / Game Pass folders" (Refs #90, owner decision C): the folders the Xbox detector searches besides
-/// The installer app's default state folder and <c>~/Games</c>. The host (Settings) binds the list and texts, calls
+/// the installer app's default state folder and <c>~/Games</c>. The host (Settings) binds the list and texts, calls
 /// <see cref="Add"/>/<see cref="Remove"/>, and rescans the Xbox detector when <see cref="Changed"/> fires.
 /// </summary>
 public sealed class XboxFoldersPresenter
@@ -91,9 +91,15 @@ public sealed class XboxFoldersPresenter
 
     public static string Label => UiLocalizationService.Text("Scan.XboxFoldersLabel");
     /// <summary>The tab's plain description: what is listed, Xodus as an upcoming client, when to add a folder.</summary>
-    public static string Intro => UiLocalizationService.Text("Scan.XboxFoldersIntro");
+    public static string Intro => OnePathPerLine(UiLocalizationService.Text("Scan.XboxFoldersIntro"));
     public static string XodusLinkText => UiLocalizationService.Text("Scan.XodusLink");
-    public static string ToolTip => UiLocalizationService.Text("Scan.XboxFoldersTip");
+    public static string ToolTip => OnePathPerLine(UiLocalizationService.Text("Scan.XboxFoldersTip"));
+
+    /// <summary>
+    /// Keeps <c>~/Games</c> on one line: a line may break after a slash (narrow windows wrapped it as "~/" + "Games"), so
+    /// a word joiner (U+2060, invisible) follows the slash.
+    /// </summary>
+    internal static string OnePathPerLine(string text) => text.Replace("~/Games", "~/\u2060Games", StringComparison.Ordinal);
     public static string AddText => UiLocalizationService.Text("Scan.XboxFoldersAdd");
     public static string RemoveText => UiLocalizationService.Text("Vm.Remove");
 

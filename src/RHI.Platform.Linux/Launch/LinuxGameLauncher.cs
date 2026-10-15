@@ -85,8 +85,8 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     }
 
     /// <summary>
-    /// The card's own the installer app Play entry point while it is the card's command (no Edit game command replaced it); null
-    /// otherwise. Refs #90: Play = the installer app <c>--play &lt;storeId&gt;</c>, the installer app's normal launch path.
+    /// The card's own Play entry point of the installer app while it is the card's command (no Edit game command replaced it); null
+    /// otherwise. Refs #90: Play = the installer app's <c>--play &lt;storeId&gt;</c>, its normal launch path.
     /// </summary>
     internal static (IReadOnlyList<string> Argv, IReadOnlyDictionary<string, string>? Environment)? XboxEntryPoint(DetectedGame game)
         => game.XboxPackage is { PlayArgv: { Count: > 0 } argv } package && game.UserLaunchCommand is null &&

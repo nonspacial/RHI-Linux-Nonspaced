@@ -5,8 +5,8 @@ namespace RHI.Platform.Linux.Detection.Launchers;
 
 /// <summary>
 /// Read-only view of the string values in a Wine registry hive (<c>system.reg</c> = HKLM, <c>user.reg</c> = HKCU), for
-/// store launchers' install records (Refs #90). Only keys under the requested roots are kept, so a large hive costs one
-/// streamed pass. Writing the hive is <see cref="Deployment.WineRegistryEditor"/>'s job alone; this never writes.
+/// store launchers' install records (Refs #90). The hive is read whole (capped); only keys under the requested roots are
+/// decoded and kept, matched on the raw bytes first so the rest of a large hive is skipped cheaply. Writing the hive is <see cref="Deployment.WineRegistryEditor"/>'s job alone; this never writes.
 /// </summary>
 internal sealed class WineRegistryReader
 {
