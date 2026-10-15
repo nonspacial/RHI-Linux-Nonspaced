@@ -45,6 +45,13 @@ public sealed class ToolbarPanel : Panel
     public static readonly AttachedProperty<bool> CollapsibleProperty =
         AvaloniaProperty.RegisterAttached<ToolbarPanel, Control, bool>("Collapsible");
 
+    /// <summary>
+    /// #185: an item with nothing to offer right now (the "New mods" button while nothing is new): never shown, takes no
+    /// room and never goes into the overflow menu. Bind it instead of <c>IsVisible</c>, which the panel itself writes.
+    /// </summary>
+    public static readonly AttachedProperty<bool> IsAbsentProperty =
+        AvaloniaProperty.RegisterAttached<ToolbarPanel, Control, bool>("IsAbsent");
+
     public static readonly StyledProperty<double> SpacingProperty =
         AvaloniaProperty.Register<ToolbarPanel, double>(nameof(Spacing), 8);
 
@@ -74,7 +81,7 @@ public sealed class ToolbarPanel : Panel
     {
         _estimates = null;
         InvalidateMeasure();
-    }, [SlotProperty, IsSeparatorProperty, CollapsibleProperty]);
+    }, [SlotProperty, IsSeparatorProperty, CollapsibleProperty, IsAbsentProperty]);
 
     public static ToolbarSlot GetSlot(Control c) => c.GetValue(SlotProperty);
     public static void SetSlot(Control c, ToolbarSlot v) => c.SetValue(SlotProperty, v);
@@ -82,6 +89,8 @@ public sealed class ToolbarPanel : Panel
     public static void SetIsSeparator(Control c, bool v) => c.SetValue(IsSeparatorProperty, v);
     public static bool GetCollapsible(Control c) => c.GetValue(CollapsibleProperty);
     public static void SetCollapsible(Control c, bool v) => c.SetValue(CollapsibleProperty, v);
+    public static bool GetIsAbsent(Control c) => c.GetValue(IsAbsentProperty);
+    public static void SetIsAbsent(Control c, bool v) => c.SetValue(IsAbsentProperty, v);
 
     public double Spacing { get => GetValue(SpacingProperty); set => SetValue(SpacingProperty, value); }
     public double LeadingSpacing { get => GetValue(LeadingSpacingProperty); set => SetValue(LeadingSpacingProperty, value); }
@@ -108,6 +117,7 @@ public sealed class ToolbarPanel : Panel
         public required double LeadingFull;
         public required double LeadingCompact;
         public required Control[] Collapsible;
+        public required Control[] Absent;
     }
 
     private Estimates Estimate()
@@ -115,11 +125,13 @@ public sealed class ToolbarPanel : Panel
         var items = new List<Control>();
         var leading = new List<Control>();
         var trailing = new List<Control>();
+        var absent = new List<Control>();
         Control? overflow = null;
         foreach (var c in Children)
         {
             switch (GetSlot(c))
             {
+                case ToolbarSlot.Item when GetIsAbsent(c): absent.Add(c); break;
                 case ToolbarSlot.Item: items.Add(c); break;
                 case ToolbarSlot.Leading: leading.Add(c); break;
                 case ToolbarSlot.Trailing: trailing.Add(c); break;
@@ -127,7 +139,7 @@ public sealed class ToolbarPanel : Panel
             }
         }
         var collapsible = leading.SelectMany(c => c.GetVisualDescendants().OfType<Control>().Prepend(c)).Where(GetCollapsible).ToArray();
-        var owned = new HashSet<Control>(items);
+        var owned = new HashSet<Control>(items.Concat(absent));
         if (overflow is not null) owned.Add(overflow);
         Release(owned, collapsible);
         var full = new WidthEstimator(new WidthEstimator.Values { IsIncluded = c => owned.Contains(c) || GetCollapsible(c) || c.IsVisible });
@@ -157,7 +169,8 @@ public sealed class ToolbarPanel : Panel
             TrailingWidth = Group(trailing, full, Spacing),
             LeadingFull = Group(leading, full, LeadingSpacing),
             LeadingCompact = Group(leading, compactLeading, LeadingSpacing),
-            Collapsible = collapsible
+            Collapsible = collapsible,
+            Absent = absent.ToArray()
         };
     }
 
@@ -248,6 +261,7 @@ public sealed class ToolbarPanel : Panel
         try
         {
             foreach (var c in e.Collapsible) SetShown(c, !compact);
+            foreach (var c in e.Absent) SetShown(c, false);
             IsLeadingCompact = compact;
             for (var i = 0; i < e.Items.Length; i++) SetShown(e.Items[i], i < kept);
             var hidden = ToolbarOverflow.Hidden(e.Separators, kept);

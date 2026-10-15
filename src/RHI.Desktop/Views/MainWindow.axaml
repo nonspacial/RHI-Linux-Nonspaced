@@ -33,6 +33,8 @@
           </StackPanel>
         </StackPanel>
 
+        <Button x:Name="NewModsButton" Classes="rhi" Content="{Binding NewMods.ButtonText}" Click="NewMods_Click" ToolTip.Tip="{Binding NewMods.ButtonTip}"
+                views:ToolbarPanel.IsAbsent="{Binding NewMods.IsHidden, FallbackValue=True}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.AvailableHdrMods}" Click="AvailableHdrMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableHdrModsTip}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>

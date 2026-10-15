@@ -137,6 +137,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w5/update-policy rows
     // w5/catalogue-info rows
+    public NewModsPresenter NewMods { get; } = new(); // #185: the "New mods" toolbar button and list
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows

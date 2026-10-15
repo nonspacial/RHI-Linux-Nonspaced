@@ -912,6 +912,18 @@ internal static class UiStrings
         ("Cat.InfoAboutDisplayCommander", "O Display Commander é um limitador de quadros que funciona junto com o ReShade para reduzir a latência de entrada e melhorar o ritmo dos quadros.", "Display Commander is a frame limiter that works alongside ReShade to reduce input lag and improve frame pacing."),
         ("Cat.InfoAboutReFramework", "O REFramework é um framework de mods para jogos da RE Engine: permite a injeção do ReShade e outros mods no pipeline de renderização do jogo.", "REFramework is a modding framework for RE Engine games: it enables ReShade injection and other mods in the game's rendering pipeline."),
         ("Cat.InfoAboutReShade", "O ReShade é um injetor de pós-processamento que adiciona efeitos visuais aos jogos. O RenoDX precisa dele para aplicar o mapeamento de tons e a gradação de cores do HDR.", "ReShade is a post-processing injector that adds visual effects to games. RenoDX needs it to apply its HDR tone mapping and colour grading."),
+        // #185 "New mods" notice.
+        ("Cat.NewModsButton", "Mods novos", "New mods"),
+        ("Cat.NewModsTip", "{0} mods de RenoDX, Luma ou Ultra+ apareceram desde a última vez que você os marcou como vistos", "{0} RenoDX, Luma or Ultra+ mods appeared since you last marked them as seen"),
+        ("Cat.NewModsTitle", "Mods novos disponíveis", "New mods available"),
+        ("Cat.NewModsRenoDx", "Mods de RenoDX novos: {0}", "New RenoDX mods: {0}"),
+        ("Cat.NewModsLuma", "Mods de Luma novos: {0}", "New Luma mods: {0}"),
+        ("Cat.NewModsUltraPlus", "Mods do Ultra+ novos: {0}", "New Ultra+ mods: {0}"),
+        ("Cat.NewModsMore", "… e mais {0}", "… and {0} more"),
+        ("Cat.NewModsMarkSeen", "Marcar como vistos", "Mark as seen"),
+        ("Cat.NewModsMarkSeenTip", "Esconde o botão até aparecerem outros mods novos. Fechar mantém o botão.", "Hides the button until more new mods appear. Close keeps the button."),
+        ("Cat.NewModsNotSaved", "Não foi possível guardar a lista de mods vistos; o botão continua até a próxima tentativa.", "The list of seen mods could not be saved; the button stays until the next try."),
+        ("Cat.WhatSeenMods", "a lista de mods vistos", "the list of seen mods"),
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

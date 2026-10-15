@@ -54,6 +54,8 @@ internal sealed class AppComposition
     public RenoDxUnrealDatabaseService? RenoDxUnrealDatabase { get; init; }
     /// <summary>#197: the Available HDR mods list (RenoDX database incl. Nexus/Discord-only mods, UE-Extended, Unity, Luma).</summary>
     public AvailableHdrModsCatalog? HdrModsCatalog { get; init; }
+    /// <summary>#185: the lists the "New mods" notice compares with the seen sets.</summary>
+    public NewModsSources? NewModsSources { get; init; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -282,6 +284,15 @@ internal sealed class AppComposition
             // w5/catalogue-info rows
             RenoDxUnrealDatabase = renodxUnrealDatabase,
             HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase),
+            NewModsSources = new NewModsSources(new SeenModsStore(),
+                async ct => (await renodxCatalog.FetchListingAsync(ct).ConfigureAwait(false))
+                    .Where(mod => mod.SnapshotUrl64 is not null || mod.SnapshotUrl32 is not null || mod.NexusUrl is not null).Select(mod => mod.Name).ToArray(),
+                async ct => (await lumaCatalog.FetchAsync(ct).ConfigureAwait(false)).Select(mod => mod.Name).ToArray(),
+                async _ =>
+                {
+                    await parity.GameLinks.Links!.LoadAsync().ConfigureAwait(false);
+                    return parity.GameLinks.Links.UltraPlusGames.Select(game => game.Name).ToArray();
+                }),
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows

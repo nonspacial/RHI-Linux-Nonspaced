@@ -57,6 +57,7 @@ public sealed class App : Application
             {
                 UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
                 parity.GameLinks.Prefetch(); // #174/#183: the lists behind the card menu's web pages (Nexus, PCGamingWiki, Ultra+, …; 24 h caches)
+                if (services.NewModsSources is { } newMods) UiExceptionGuard.Forget(vm.NewMods.CheckAsync(vm.Initialization, newMods), "NewMods"); // #185
                 var handoff = RHI.Platform.Linux.Ux.InstanceHandoff.Listen(request =>
                     Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, request), "handoff")));
                 desktop.Exit += (_, _) => handoff?.Dispose();

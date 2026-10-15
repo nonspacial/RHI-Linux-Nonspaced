@@ -361,6 +361,12 @@ build.
 - The RenoDX column now lists every named mod of the RHI database (`RenoDXdb.json`), also the ones RHI cannot download because their author publishes them only on Nexus Mods or Discord; their row's Download button opens that page (upstream: download, else Nexus, else Discord). Only https links are offered.
 - Games of RHI's UE-Extended database (`RenoDXdb-unreal.json`, RankFTW/rhi-repo, read under the component-notes download policy, 1 h cache, last good copy offline) join the RenoDX column with ✓ or 🔨 by their `Status` and no link, as upstream; a named mod for the same game keeps its own row. Order as upstream: named mods, UE-Extended, Unity, then Luma merged in by name. The list itself is built once by the app (`AppComposition.HdrModsCatalog`) and shares the UE-Extended database instance with the ⓘ dialogs.
 
+### #185 — "New mods" notice
+
+- A **New mods** button appears at the left of the toolbar's right-hand group (where upstream puts "New Mods Available") when the RenoDX database (mods with a download or a Nexus Mods page, as upstream), the Luma wiki or the Ultra+ games list (#183's list) has mods the user has not marked as seen; with nothing new it is not in the toolbar at all, nor in the '…' menu (owner rule: hidden, never disabled). It joins the toolbar's overflow like every other button when the row is full. Its tooltip gives the count.
+- The button opens the list: one section per catalogue (RenoDX, Ultra+, Luma, as upstream), at most 30 names each and "… and N more". **Mark as seen** remembers every listed mod and hides the button; **Close** keeps it, as upstream's Dismiss / Close.
+- The seen sets live in one file, `~/.local/share/rhi-linux/seen-mods.json` (upstream keeps three). The first time a list is read it is only remembered, so the first start shows no notice; a list that cannot be read (offline) is skipped and never remembered empty; an unreadable file is kept aside and no notice is shown that session. The check runs once after the library has loaded (upstream also re-checks on its background refresh; the lists behind it are refreshed at most daily).
+
 <!-- w5/ini-presets notes -->
 
 <!-- w5/shell-launch notes -->
