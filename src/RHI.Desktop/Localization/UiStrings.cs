@@ -918,6 +918,26 @@ internal static class UiStrings
         ("Ini.ReLimiterApplyTip", "Grava a tecla, as predefinições, as informações do DLSS e o limite de FPS no relimiter.ini de cada jogo com ReLimiter; só essas chaves mudam.", "Writes the key, presets, DLSS info and FPS cap into the relimiter.ini of every game with ReLimiter; only those keys change."),
         ("Ini.ReLimiterApplyNote", "Salva estas configurações e as grava em todos os jogos com ReLimiter e no seu modelo relimiter.ini, para que novas instalações já as recebam.", "Saves these settings and writes them into every game with ReLimiter and into your relimiter.ini template, so new installs get them too."),
         ("Ini.TemplateNotUpdated", "O modelo relimiter.ini não foi atualizado: {0}", "The relimiter.ini template was not updated: {0}"),
+        // #180 ReShade presets.
+        ("Ini.PresetSection", "Predefinições do ReShade", "ReShade presets"),
+        ("Ini.PresetNone", "Nenhuma predefinição ainda: coloque arquivos .ini de predefinição na pasta de predefinições ou solte um sobre o RHI.", "No presets yet: put preset .ini files in the presets folder, or drop one on RHI."),
+        ("Ini.PresetWithPacks", "Também adicionar os pacotes de shaders de que ela precisa", "Also add the shader packs it needs"),
+        ("Ini.PresetWithPacksTip", "Lê as linhas Techniques= da predefinição, encontra os pacotes de shaders que têm esses efeitos e os marca para o jogo (pode baixar pacotes ainda não baixados).", "Reads the preset's Techniques= lines, finds the shader packs that hold those effects and ticks them for the game (packs not downloaded yet may be downloaded)."),
+        ("Ini.PresetInstall", "Instalar predefinição", "Install preset"),
+        ("Ini.PresetOpenFolder", "Abrir pasta de predefinições", "Open presets folder"),
+        ("Ini.PresetInstalledHeading", "Instaladas pelo RHI neste jogo:", "Installed by RHI in this game:"),
+        ("Ini.PresetRemoveTip", "Apaga o arquivo da pasta do jogo, a menos que você o tenha alterado (então ele fica), e tira-o do ReShade.ini.", "Deletes the file from the game folder unless you changed it (then it stays), and takes it out of ReShade.ini."),
+        ("Ini.PresetUnresolved", "Efeitos que nenhum pacote tem: {0}", "Effects no pack has: {0}"),
+        ("Ini.PresetNoPacks", "Nenhum pacote de shaders do RHI tem os efeitos dela.", "No RHI shader pack has its effects."),
+        ("Ini.PresetPacksAlready", "Os pacotes de que ela precisa já estão marcados: {0}", "The packs it needs are already ticked: {0}"),
+        ("Ini.PresetPacksApplied", "Pacotes de shaders adicionados: {0}", "Shader packs added: {0}"),
+        ("Ini.PresetPacksFailed", "Os pacotes de shaders não foram adicionados: {0}", "The shader packs were not added: {0}"),
+        ("Ini.PresetInstallAll", "Instalar em todos os jogos com ReShade", "Install in every game with ReShade"),
+        ("Ini.PresetInstallAllTip", "Copia a predefinição para cada jogo em que o RHI gerencia o ReShade e a seleciona no ReShade.ini; um arquivo do jogo com o mesmo nome que não seja do RHI fica como está.", "Copies the preset into every game where RHI manages ReShade and selects it in ReShade.ini; a game file of the same name that is not RHI's stays as it is."),
+        ("Ini.PresetAllAsk", "Instalar {0} em {1} jogos onde o RHI gerencia o ReShade?", "Install {0} in {1} games where RHI manages ReShade?"),
+        ("Ini.PresetDropTitle", "Instalar predefinição do ReShade", "Install ReShade preset"),
+        ("Ini.PresetDropText", "{0} foi guardada na pasta de predefinições. Instalar em qual jogo?", "{0} was kept in the presets folder. Install it in which game?"),
+        ("Ini.PresetStoredNoGames", "{0} foi guardada na pasta de predefinições; instale o ReShade com o RHI em um jogo para usá-la.", "{0} was kept in the presets folder; install ReShade with RHI in a game to use it."),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

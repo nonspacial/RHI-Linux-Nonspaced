@@ -326,6 +326,15 @@ public sealed class WaveOneMessageLocalizationTests
         yield return UserIniService.DeployedPrefix + P;
         yield return UserIniTemplates.TooLargePrefix + P;
         yield return IniLines.LinkRefusalPrefix + P;
+        // #180
+        yield return ReShadePresetService.NotAPresetPrefix + "notes.ini";
+        yield return ReShadePresetService.TooLargePrefix + P;
+        yield return ReShadePresetService.NoManagedReShadePrefix + "Celeste";
+        yield return ReShadePresetService.NameTakenPrefix + P;
+        yield return ReShadePresetService.InstalledPrefix + P;
+        yield return ReShadePresetService.RemovedPrefix + P;
+        yield return ReShadePresetService.KeptChangedPrefix + P;
+        yield return ReShadePresetService.NotInstalledPrefix + "Mine.ini";
         // w5/shell-launch rows
         // w5/reshade-core rows
     }

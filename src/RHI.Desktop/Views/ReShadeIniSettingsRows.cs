@@ -72,12 +72,28 @@ internal sealed class ReShadeIniSettingsRows
         var confirm = new StackPanel { Spacing = 6, IsVisible = false };
         confirm.Children.Add(confirmText);
         confirm.Children.Add(confirmButtons);
+        var deployHost = new StackPanel();
+        // The one confirmation shows under the row that asked.
+        void ShowConfirm(Panel host)
+        {
+            if (confirm.Parent is Panel previous && !ReferenceEquals(previous, host)) previous.Children.Remove(confirm);
+            if (!host.Children.Contains(confirm)) host.Children.Add(confirm);
+            confirm.IsVisible = true;
+        }
         ManagedComponentKind? pending = null;
-        confirmNo.Click += (_, _) => { pending = null; confirm.IsVisible = false; };
+        string? pendingPreset = null; // #180: a preset for every game is asked the same way
+        confirmNo.Click += (_, _) => { pending = null; pendingPreset = null; confirm.IsVisible = false; };
+        var withPacks = new CheckBox { Name = "PresetAllWithPacks", Content = UiLocalizationService.Text("Ini.PresetWithPacks"), IsChecked = true };
         confirmYes.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
         {
-            if (pending is not { } kind) return;
             confirm.IsVisible = false;
+            if (pendingPreset is { } preset)
+            {
+                pendingPreset = null;
+                showStatus(await presenter.InstallPresetToAllAsync(preset, withPacks.IsChecked == true));
+                return;
+            }
+            if (pending is not { } kind) return;
             pending = null;
             showStatus(await presenter.DeployToAllAsync(kind, Current()));
         }, nameof(ReShadeIniSettingsRows));
@@ -97,8 +113,9 @@ internal sealed class ReShadeIniSettingsRows
                     return;
                 }
                 pending = kind;
+                pendingPreset = null;
                 confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, count);
-                confirm.IsVisible = true;
+                ShowConfirm(deployHost);
             };
             deployButtons.Children.Add(button);
         }
@@ -111,8 +128,37 @@ internal sealed class ReShadeIniSettingsRows
         panel.Children.Add(open);
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.DeployAllHeading"), TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(deployButtons);
-        panel.Children.Add(confirm);
+        panel.Children.Add(deployHost);
         panel.Children.Add(Note(UiLocalizationService.Text("Ini.TemplatesNote")));
+
+        // #180: one preset into every game whose ReShade RHI manages (upstream MassPresetInstall); hidden without presets.
+        var presets = presenter.AvailablePresets();
+        var presetPicker = new ComboBox { Name = "PresetAllPicker", ItemsSource = presets.Select(path => Path.GetFileName(path)).ToList(), MinWidth = 220, Margin = new Thickness(0, 0, 8, 6) };
+        if (presets.Count > 0) presetPicker.SelectedIndex = 0;
+        var presetPanel = new StackPanel { Spacing = 6 };
+        var presetAll = Button("PresetAllInstall", UiLocalizationService.Text("Ini.PresetInstallAll"), UiLocalizationService.Text("Ini.PresetInstallAllTip"));
+        presetAll.Click += (_, _) =>
+        {
+            if (presetPicker.SelectedIndex < 0) return;
+            var count = presenter.PresetTargets().Count;
+            if (count == 0)
+            {
+                confirm.IsVisible = false;
+                showStatus(UiLocalizationService.Format("Ini.BatchNone", presetPicker.SelectedItem?.ToString() ?? ""));
+                return;
+            }
+            pending = null;
+            pendingPreset = presets[presetPicker.SelectedIndex];
+            confirmText.Text = UiLocalizationService.Format("Ini.PresetAllAsk", Path.GetFileName(pendingPreset), count);
+            ShowConfirm(presetPanel);
+        };
+        var presetRow = new WrapPanel { Orientation = Orientation.Horizontal };
+        presetRow.Children.Add(presetPicker);
+        presetRow.Children.Add(presetAll);
+        presetPanel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PresetSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        presetPanel.Children.Add(presetRow);
+        presetPanel.Children.Add(withPacks);
+        if (presets.Count > 0) panel.Children.Add(presetPanel); // no presets: nothing to pick, the rows are left out
         Control = panel;
     }
 

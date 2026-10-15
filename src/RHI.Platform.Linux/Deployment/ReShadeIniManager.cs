@@ -148,6 +148,30 @@ internal static class ReShadeIniManager
         if (defaults.VariableListUseTabs is { } tabs) IniLines.Set(lines, "OVERLAY", "VariableListUseTabs", tabs ? "1" : "0");
     }
 
+    /// <summary>#180: points ReShade at a preset beside it (<c>[GENERAL] PresetPath=.\name.ini</c>); creates ReShade.ini if needed.</summary>
+    public static void SetPresetPath(string gameDirectory, string presetFileName)
+    {
+        var path = ResolveIniPath(gameDirectory);
+        var existed = File.Exists(path);
+        var lines = existed ? File.ReadAllLines(path).ToList() : [];
+        if (IniLines.Set(lines, "GENERAL", "PresetPath", @".\" + presetFileName) || !existed)
+            Write(path, lines, gameDirectory);
+    }
+
+    /// <summary>#180: removes <c>PresetPath</c> while it still names <paramref name="presetFileName"/> beside the game (ReShade then uses its default). True when the file changed.</summary>
+    public static bool ClearPresetPath(string gameDirectory, string presetFileName)
+    {
+        var path = ResolveIniPath(gameDirectory);
+        if (!File.Exists(path)) return false;
+        var lines = File.ReadAllLines(path).ToList();
+        if (IniLines.Get(lines, "GENERAL", "PresetPath") is not { } current) return false;
+        var named = current.Replace('/', '\\').TrimStart('.').TrimStart('\\');
+        if (!named.Equals(presetFileName, StringComparison.OrdinalIgnoreCase)) return false;
+        IniLines.Remove(lines, "GENERAL", "PresetPath");
+        Write(path, lines, gameDirectory);
+        return true;
+    }
+
     public static void Cleanup(
         string path,
         bool createdByRhi,

@@ -544,6 +544,9 @@ public sealed partial class MainWindow
                     if (DataContext is MainWindowViewModel vmArchive)
                         vmArchive.StatusText = TF("Win.ArchiveDetectedRHILinuxDoesNot", Path.GetFileName(path));
                     break;
+                case LinuxDroppedFileKind.ReShadePreset: // w5/ini-presets hook (#180): Views/MainWindow.Presets.cs
+                    await OfferDroppedPresetAsync(path);
+                    break;
             }
         }
     });

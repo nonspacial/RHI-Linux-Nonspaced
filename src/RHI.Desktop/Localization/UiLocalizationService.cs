@@ -1216,6 +1216,15 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.UserIniService.DeployedPrefix, "INI implantado do seu modelo: "),
         (RHI.Platform.Linux.Deployment.UserIniTemplates.TooLargePrefix, "Modelo de INI ignorado: ele tem mais de 1 MiB: "),
         (RHI.Platform.Linux.Deployment.IniLines.LinkRefusalPrefix, "Link de INI não seguido: o destino deve ser um arquivo com o mesmo nome dentro da pasta do jogo. Link: "),
+        // #180 ReShade presets.
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NotAPresetPrefix, "Não é uma predefinição do ReShade (precisa de uma linha Techniques= com pelo menos um efeito .fx): "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.TooLargePrefix, "Predefinição não usada: ela tem mais de 1 MiB: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NoManagedReShadePrefix, "Instale o ReShade com o RHI primeiro; as predefinições vão para jogos cujo ReShade o RHI gerencia: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NameTakenPrefix, "Já existe na pasta do jogo um arquivo com o nome da predefinição que o RHI não colocou ali (ou que você alterou), então ele ficou como está: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.InstalledPrefix, "Predefinição instalada e selecionada no ReShade.ini: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.RemovedPrefix, "Predefinição removida: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.KeptChangedPrefix, "Predefinição tirada da lista do RHI; o arquivo ficou porque mudou desde que o RHI o colocou ali: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NotInstalledPrefix, "O RHI não instalou esta predefinição: "),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

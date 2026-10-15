@@ -73,4 +73,45 @@ public sealed class IniPresetsPresenterTests
         Assert.Equal(UiLocalizationService.Format("Ini.BatchDone", "x", 3), IniPresetsPresenter.BatchSummary("x", new IniBatchResult(3, 0, 0)));
         Assert.Equal(UiLocalizationService.Format("Ini.BatchPartial", "x", 3, 1, 2), IniPresetsPresenter.BatchSummary("x", new IniBatchResult(3, 1, 2)));
     }
+
+    // #180: the presenter installs a stored preset into the selected game under the busy gate.
+    [Fact]
+    public async Task InstallPreset_HoldsTheGate_AndInstallsIntoAGameWithRhiReShade()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-preset-" + Guid.NewGuid().ToString("N"), "bin");
+        Directory.CreateDirectory(bin);
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Preset Card", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77002, Source = "Steam"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var card = fx.Vm.AllLibraryGames.Single();
+        fx.Vm.SelectedGame = card;
+        Assert.False(fx.Vm.IniPresets.PresetsApply()); // ReShade not from RHI: the ⚙ hides the preset rows
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(card), GameName = card.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = bin, Files = []
+        });
+        var presenter = fx.Vm.IniPresets;
+        Directory.CreateDirectory(presenter.PresetsFolder);
+        var preset = Path.Combine(presenter.PresetsFolder, "Look.ini");
+        File.WriteAllText(preset, "Techniques=SMAA@SMAA.fx\n");
+        Assert.Equal([card], presenter.PresetTargets());
+        Assert.True(presenter.PresetsApply());
+        Assert.Equal([preset], presenter.AvailablePresets());
+
+        using (fx.Vm.Operations.TryBegin("test"))
+            Assert.Equal(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"), await presenter.InstallPresetAsync(preset, withShaderPacks: false, card));
+        Assert.False(File.Exists(Path.Combine(bin, "Look.ini")));
+
+        var line = await presenter.InstallPresetAsync(preset, withShaderPacks: false, card);
+
+        Assert.Equal(UiLocalizationService.Present(ReShadePresetService.InstalledPrefix + Path.Combine(bin, "Look.ini")), line);
+        Assert.True(File.Exists(Path.Combine(bin, "Look.ini")));
+        Assert.False(fx.Vm.IsBusy);
+    }
 }

@@ -32,4 +32,27 @@ public sealed partial class ReShadeChannelTests
         Assert.Contains(@"EffectSearchPaths=.\reshade-shaders\Shaders\**", text);
         Assert.True(File.Exists(templates.PathOf(UserIniTemplate.ReShade))); // seeded on first use
     }
+
+    // #180: the preset list rides on ReShade's record, so a ReShade update/reinstall must keep it.
+    [Fact]
+    public async Task Reinstall_KeepsThePresetsRhiInstalled()
+    {
+        var (game, store) = CreateGame("preset-keep");
+        var custom = Path.Combine(_root, "preset-keep", "MyReShade.dll");
+        PeArchitectureDetectorTests.WritePe(custom, 0x8664, 1_100_000);
+        StampReShadeSignature(custom);
+        var service = NewService(store, new MutableHandler(), Path.Combine(_root, "preset-keep-cache"));
+        var options = new ReShadeInstallOptions { Channel = ReShadeChannel.Custom, CustomDllPath = custom, ManageIni = true };
+        Assert.True((await service.InstallAsync(game, options)).Success);
+        var preset = Path.Combine(_root, "preset-keep", "Look.ini");
+        File.WriteAllText(preset, "Techniques=SMAA@SMAA.fx\n");
+        var presets = new ReShadePresetService(store, null, _ => null);
+        Assert.True((await presets.InstallAsync(game, preset)).Success);
+
+        var again = await service.InstallAsync(game, options);
+
+        Assert.True(again.Success, again.Message);
+        Assert.Equal("Look.ini", Assert.Single(presets.Installed(game)).FileName);
+        Assert.Contains(@"PresetPath=.\Look.ini", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini")));
+    }
 }
