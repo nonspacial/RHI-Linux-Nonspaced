@@ -542,6 +542,14 @@ public sealed partial class MainWindow : Window
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        var iniRows = new ReShadeIniSettingsRows(settings, vm.IniPresets, current => // #181: effect list, apply to all, INI templates
+        {
+            current.ScreenshotPath = screenshotPath.Text ?? "";
+            current.PerGameScreenshotFolders = perGameScreenshots.IsChecked == true;
+            current.OverlayHotkey = overlayHotkey.Value;
+            current.ScreenshotHotkey = screenshotHotkey.Value;
+        }, folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), line => status.Text = line);
+        reshadeTab.Children.Add(iniRows.Control); // #181
         // w5/shell-launch rows
         // w5/reshade-core rows
 
@@ -606,6 +614,7 @@ public sealed partial class MainWindow : Window
             // w5/update-policy rows
             // w5/catalogue-info rows
             // w5/ini-presets rows
+            iniRows.Reset(defaults); // #181
             // w5/shell-launch rows
             // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
@@ -683,6 +692,7 @@ public sealed partial class MainWindow : Window
             // w5/update-policy rows
             // w5/catalogue-info rows
             // w5/ini-presets rows
+            ReShadeVariableListUseTabs = iniRows.UseTabs, // #181
             // w5/shell-launch rows
             // w5/reshade-core rows
         };
@@ -1150,6 +1160,9 @@ public sealed partial class MainWindow : Window
 
     // w3/journal hook (#159): RE Framework ⚙ dialog (Views/ReFrameworkSettingsDialog.cs).
     private void ReFrameworkSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(() => DataContext is MainWindowViewModel { SelectedGame: { } game } vm ? ShowFittedDialogAsync(ReFrameworkSettingsDialog.Create(vm.ReFrameworkStorage, game.Name)) : Task.CompletedTask);
+
+    // w5/ini-presets hook (#181): the ReShade / ReLimiter / Display Commander INI ⚙ (Views/ComponentIniDialog.cs).
+    private void IniSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(() => sender is Button { DataContext: ComponentRowViewModel { HasIniSettings: true } row } && DataContext is MainWindowViewModel { SelectedGame: not null } vm ? ShowFittedDialogAsync(ComponentIniDialog.Create(vm, row.Kind, row.Name, folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error))) : Task.CompletedTask);
 
     private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {

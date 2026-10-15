@@ -78,6 +78,7 @@ public sealed class SettingsViewModel : PanelViewModel
             // w5/update-policy rows
             // w5/catalogue-info rows
             // w5/ini-presets rows
+            ReShadeVariableListUseTabs = Host.Settings.ReShadeVariableListUseTabs, // #181
             // w5/shell-launch rows
             // w5/reshade-core rows
         };

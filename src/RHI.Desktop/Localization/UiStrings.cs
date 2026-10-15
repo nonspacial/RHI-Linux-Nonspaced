@@ -880,6 +880,30 @@ internal static class UiStrings
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        // #181 INI templates, apply to all, effect list style.
+        ("Ini.EffectListStyle", "Estilo da lista de efeitos", "Effect list style"),
+        ("Ini.EffectListTabs", "Abas", "Tabs"),
+        ("Ini.EffectListTree", "Árvore", "Tree"),
+        ("Ini.ApplyToAllGames", "Aplicar a todos os jogos", "Apply to all games"),
+        ("Ini.ApplyToAllGamesTip", "Grava a pasta de capturas, os dois atalhos e o estilo da lista de efeitos no ReShade.ini de cada jogo que tem um (e nos ReShade2.ini, ReShade3.ini… ao lado). Red Dead Redemption 2 e Max Payne 3 mantêm a tecla End do modelo deles.", "Writes the screenshot folder, both hotkeys and the effect list style into the ReShade.ini of every game that has one (and the ReShade2.ini, ReShade3.ini… beside it). Red Dead Redemption 2 and Max Payne 3 keep their template's End key."),
+        ("Ini.ApplyToAllGamesNote", "Salva estas configurações do ReShade e as grava em todos os jogos com ReShade. Novas instalações já as recebem.", "Saves these ReShade settings and writes them to every game with ReShade. New installs get them anyway."),
+        ("Ini.ReShadeSettingsWhat", "Configurações do ReShade", "ReShade settings"),
+        ("Ini.TemplateSection", "Modelos de INI", "INI templates"),
+        ("Ini.TemplatesFolderTip", "Pasta: {0}", "Folder: {0}"),
+        ("Ini.TemplatesNote", "Cada modelo (reshade.ini, reshade.rdr2.ini, relimiter.ini, DisplayCommander.ini) é criado uma vez na pasta de INIs e nunca é sobrescrito. Uma nova instalação usa o seu modelo: as chaves do reshade.ini substituem as do jogo (as listas de caminhos de shaders são somadas), e um novo relimiter.ini ou DisplayCommander.ini é uma cópia do modelo.", "Each template (reshade.ini, reshade.rdr2.ini, relimiter.ini, DisplayCommander.ini) is created once in the INIs folder and never overwritten. A new install uses your template: reshade.ini's keys replace the game's (the shader path lists are added together), and a new relimiter.ini or DisplayCommander.ini is a copy of the template."),
+        ("Ini.DeployAllHeading", "Implantar do modelo em todos os jogos:", "Deploy from your template to every game:"),
+        ("Ini.DeployAllReShadeAsk", "Gravar o {0} em {1} jogos onde o RHI gerencia o ReShade? As demais configurações do ReShade.ini de cada jogo ficam.", "Write {0} to {1} games where RHI manages ReShade? Each game's other ReShade.ini settings stay."),
+        ("Ini.DeployAllAddonAsk", "Gravar o {0} em {1} jogos onde o RHI gerencia o componente? O {0} de cada jogo é substituído pelo seu modelo.", "Write {0} to {1} games where RHI manages the component? Each game's {0} is replaced by your template."),
+        ("Ini.DeployAllConfirm", "Implantar", "Deploy"),
+        ("Ini.DeployFile", "Implantar {0}", "Deploy {0}"),
+        ("Ini.DeployReShadeTip", "As chaves do seu modelo reshade.ini e as configurações (pasta de capturas, atalhos, lista de efeitos) vão para o ReShade.ini do jogo; o resto do arquivo fica.", "Your reshade.ini template's keys and the Settings values (screenshot folder, hotkeys, effect list) go into the game's ReShade.ini; the rest of the file stays."),
+        ("Ini.DeployAddonTip", "Substitui o arquivo do jogo pelo seu modelo da pasta de INIs.", "Replaces the game's file with your template from the INIs folder."),
+        ("Ini.DeployFailed", "Não foi possível implantar o {0}: {1}", "Could not deploy {0}: {1}"),
+        ("Ini.SettingsTitle", "Configurações do {0}", "{0} settings"),
+        ("Ini.SettingsTip", "Configurações do {0}: INI do seu modelo", "{0} settings: INI from your template"),
+        ("Ini.BatchNone", "{0}: nenhum jogo para atualizar.", "{0}: no games to update."),
+        ("Ini.BatchDone", "{0}: {1} jogos atualizados.", "{0}: {1} games updated."),
+        ("Ini.BatchPartial", "{0}: {1} jogos atualizados, {2} ignorados, {3} com falha (detalhes no rhi.log).", "{0}: {1} games updated, {2} skipped, {3} failed (details in rhi.log)."),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

@@ -197,6 +197,11 @@ internal sealed class AppComposition
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        // #181: the user's INI templates (beside the OptiScaler ones) feed ReShade.ini, relimiter.ini and DisplayCommander.ini at install.
+        var userIniTemplates = new UserIniTemplates(Path.Combine(settingsStore.ConfigRoot, "inis"));
+        reshade.IniDefaults = game => ReShadeGlobalSettingsApplier.InstallDefaults(settingsStore.Load(), game, userIniTemplates);
+        relimiter.IniTemplates = userIniTemplates;
+        displayCommander.IniTemplates = userIniTemplates;
         // w5/shell-launch rows
         // w5/reshade-core rows
         var managedComponents = new LinuxManagedComponentService(

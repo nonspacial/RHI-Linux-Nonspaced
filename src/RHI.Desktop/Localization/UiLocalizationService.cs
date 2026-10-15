@@ -1210,6 +1210,12 @@ public static class UiLocalizationService
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        // #181 INI templates and deploys.
+        (RHI.Platform.Linux.Deployment.UserIniService.NativeGamePrefix, "Os arquivos INI não foram gravados: este é um jogo nativo do Linux: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.NoFolderPrefix, "Os arquivos INI não foram gravados: a pasta do jogo não está disponível: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.DeployedPrefix, "INI implantado do seu modelo: "),
+        (RHI.Platform.Linux.Deployment.UserIniTemplates.TooLargePrefix, "Modelo de INI ignorado: ele tem mais de 1 MiB: "),
+        (RHI.Platform.Linux.Deployment.IniLines.LinkRefusalPrefix, "Link de INI não seguido: o destino deve ser um arquivo com o mesmo nome dentro da pasta do jogo. Link: "),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

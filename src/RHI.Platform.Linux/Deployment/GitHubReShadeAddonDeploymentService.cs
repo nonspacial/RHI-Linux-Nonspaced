@@ -424,12 +424,21 @@ public sealed class GitHubReShadeAddonDeploymentService
             .ToArray();
     }
 
-    private (string FileName, string Content)? AuxiliaryTemplate => _definition.Kind switch
+    /// <summary>
+    /// The user's INI templates (#181): a new install's relimiter.ini / DisplayCommander.ini is a copy of the user's
+    /// template (upstream <c>Deploy*IniIfAbsent</c>). Null (tests, older wiring): RHI's shipped template.
+    /// </summary>
+    public UserIniTemplates? IniTemplates { get; set; }
+
+    private (string FileName, byte[] Content)? AuxiliaryTemplate => _definition.Kind switch
     {
-        ManagedComponentKind.ReLimiter => ("relimiter.ini", "[UltraLimiter]\n"),
-        ManagedComponentKind.DisplayCommander => ("DisplayCommander.ini", "[DisplayCommander]\n"),
+        ManagedComponentKind.ReLimiter => ("relimiter.ini", TemplateBytes(UserIniTemplate.ReLimiter)),
+        ManagedComponentKind.DisplayCommander => ("DisplayCommander.ini", TemplateBytes(UserIniTemplate.DisplayCommander)),
         _ => null
     };
+
+    private byte[] TemplateBytes(UserIniTemplate template)
+        => IniTemplates is { } templates ? templates.Read(template, out _) : UserIniTemplates.Shipped(template);
 
     // The path the auxiliary config would be created at (null when the add-on has none, or one is already there).
     private string? AuxiliaryConfigPath(string deployDir)
@@ -454,7 +463,7 @@ public sealed class GitHubReShadeAddonDeploymentService
 
             var target = Path.Combine(deployDir, template.Value.FileName);
             // New file only: never replaces a config the user created meanwhile.
-            AtomicFile.WriteNew(target, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(template.Value.Content));
+            AtomicFile.WriteNew(target, template.Value.Content);
             return (target, true, null);
         }
         catch (Exception ex)

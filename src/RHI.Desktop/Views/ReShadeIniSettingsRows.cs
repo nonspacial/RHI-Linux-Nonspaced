@@ -1,0 +1,146 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Layout;
+using Avalonia.Media;
+using RHI.Core.Models;
+using RHI.Desktop.Diagnostics;
+using RHI.Desktop.Localization;
+using RHI.Desktop.ViewModels;
+using RHI.Platform.Linux.Settings;
+
+namespace RHI.Desktop.Views;
+
+/// <summary>
+/// w5/ini-presets (#181): the Settings → ReShade rows for the effect list style (upstream "Effect list: Tabs/Tree"),
+/// "Apply to all games" (screenshot folder, hotkeys, effect list style into every game's ReShade.ini, upstream
+/// <c>ApplyScreenshotPath_Click</c>), the INI templates folder and the mass INI deploy (upstream <c>MassDeployHandler</c>),
+/// which asks once, inline, before writing to every game. The Settings dialog reads <see cref="UseTabs"/>.
+/// </summary>
+internal sealed class ReShadeIniSettingsRows
+{
+    private readonly ComboBox _effectList;
+
+    /// <param name="readReShadeControls">Copies the dialog's screenshot folder, per-game folder and hotkey controls into the
+    /// settings given (the rest of the dialog is saved by Save, as before).</param>
+    public ReShadeIniSettingsRows(LinuxAppSettings settings, IniPresetsPresenter presenter, Action<LinuxAppSettings> readReShadeControls,
+        Func<string, string?> openFolder, Action<string> showStatus)
+    {
+        // The saved settings with this tab's ReShade values as shown; "Apply to all games" saves them first (upstream).
+        LinuxAppSettings Current()
+        {
+            var current = presenter.SavedSettings();
+            readReShadeControls(current);
+            current.ReShadeVariableListUseTabs = UseTabs;
+            return current;
+        }
+
+        _effectList = new ComboBox
+        {
+            Name = "ReShadeEffectListStyle",
+            ItemsSource = OptionLists.ReShadeEffectListStyle.Items,
+            SelectedItem = OptionLists.ReShadeEffectListStyle.Display(settings.ReShadeVariableListUseTabs),
+            MinWidth = 190
+        };
+
+        var applyAll = Button("ReShadeApplyAll", UiLocalizationService.Text("Ini.ApplyToAllGames"), UiLocalizationService.Text("Ini.ApplyToAllGamesTip"));
+        applyAll.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            applyAll.IsEnabled = false;
+            try
+            {
+                var current = Current();
+                presenter.Save(current);
+                showStatus(await presenter.ApplyReShadeSettingsToAllAsync(current));
+            }
+            finally { applyAll.IsEnabled = true; }
+        }, nameof(ReShadeIniSettingsRows));
+
+        var open = Button("IniTemplatesFolder", UiLocalizationService.Text("Names.OpenOptiScalerTemplates"),
+            UiLocalizationService.Format("Ini.TemplatesFolderTip", presenter.TemplatesFolder));
+        open.Click += (_, _) =>
+        {
+            if ((presenter.PrepareTemplatesFolder() ?? openFolder(presenter.TemplatesFolder)) is { } error) showStatus(error);
+        };
+
+        // Mass deploy: one button per file; the first click shows how many games it writes and asks inline.
+        var confirmText = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var confirmYes = Button("IniDeployAllConfirm", UiLocalizationService.Text("Ini.DeployAllConfirm"), null);
+        var confirmNo = Button("IniDeployAllCancel", UiLocalizationService.Text("Win.Cancel"), null);
+        var confirmButtons = new WrapPanel { Orientation = Orientation.Horizontal };
+        confirmButtons.Children.Add(confirmYes);
+        confirmButtons.Children.Add(confirmNo);
+        var confirm = new StackPanel { Spacing = 6, IsVisible = false };
+        confirm.Children.Add(confirmText);
+        confirm.Children.Add(confirmButtons);
+        ManagedComponentKind? pending = null;
+        confirmNo.Click += (_, _) => { pending = null; confirm.IsVisible = false; };
+        confirmYes.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (pending is not { } kind) return;
+            confirm.IsVisible = false;
+            pending = null;
+            showStatus(await presenter.DeployToAllAsync(kind, Current()));
+        }, nameof(ReShadeIniSettingsRows));
+
+        var deployButtons = new WrapPanel { Orientation = Orientation.Horizontal };
+        foreach (var kind in new[] { ManagedComponentKind.ReShade, ManagedComponentKind.ReLimiter, ManagedComponentKind.DisplayCommander })
+        {
+            var file = IniPresetsPresenter.IniFileName(kind);
+            var button = Button("IniDeployAll" + kind, file, UiLocalizationService.Text(kind == ManagedComponentKind.ReShade ? "Ini.DeployReShadeTip" : "Ini.DeployAddonTip"));
+            button.Click += (_, _) =>
+            {
+                var count = presenter.DeployCandidates(kind);
+                if (count == 0)
+                {
+                    confirm.IsVisible = false;
+                    showStatus(UiLocalizationService.Format("Ini.BatchNone", file));
+                    return;
+                }
+                pending = kind;
+                confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, count);
+                confirm.IsVisible = true;
+            };
+            deployButtons.Children.Add(button);
+        }
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.EffectListStyle"), _effectList));
+        panel.Children.Add(applyAll);
+        panel.Children.Add(Note(UiLocalizationService.Text("Ini.ApplyToAllGamesNote")));
+        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(open);
+        panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.DeployAllHeading"), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(deployButtons);
+        panel.Children.Add(confirm);
+        panel.Children.Add(Note(UiLocalizationService.Text("Ini.TemplatesNote")));
+        Control = panel;
+    }
+
+    public Control Control { get; }
+
+    public bool UseTabs => OptionLists.ReShadeEffectListStyle.Value(_effectList.SelectedItem?.ToString());
+
+    public void Reset(LinuxAppSettings defaults)
+        => _effectList.SelectedItem = OptionLists.ReShadeEffectListStyle.Display(defaults.ReShadeVariableListUseTabs);
+
+    private static Button Button(string name, string text, string? tip)
+    {
+        var button = new Button { Name = name, Content = text, Padding = new Thickness(12, 6), Margin = new Thickness(0, 0, 8, 6), HorizontalAlignment = HorizontalAlignment.Left };
+        if (tip is not null)
+        {
+            ToolTip.SetTip(button, tip);
+            ToolTip.SetShowDelay(button, 2000);
+        }
+        return button;
+    }
+
+    private static TextBlock Note(string text) => new() { Text = text, FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap };
+
+    private static StackPanel Labeled(string label, Control control)
+    {
+        var panel = new StackPanel { Spacing = 5 };
+        panel.Children.Add(new TextBlock { Text = label, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(control);
+        return panel;
+    }
+}

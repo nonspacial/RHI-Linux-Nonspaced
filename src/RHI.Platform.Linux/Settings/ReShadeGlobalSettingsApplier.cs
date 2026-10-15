@@ -1,10 +1,16 @@
-using System.Text;
 using RHI.Core.Models;
+using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Platform.Linux.Settings;
 
 public static class ReShadeGlobalSettingsApplier
 {
+    /// <summary>Home: ReShade's own overlay key (upstream writes KeyOverlay at install only when it differs).</summary>
+    public const string DefaultOverlayHotkey = "36,0,0,0";
+
+    /// <summary>Print Screen: ReShade's own screenshot key.</summary>
+    public const string DefaultScreenshotHotkey = "44,0,0,0";
+
     public static string ResolveScreenshotPath(LinuxAppSettings settings, DetectedGame game)
     {
         if (string.IsNullOrWhiteSpace(settings.ScreenshotPath)) return "";
@@ -13,6 +19,38 @@ public static class ReShadeGlobalSettingsApplier
             : settings.ScreenshotPath;
     }
 
+    /// <summary>
+    /// What a ReShade install (and "Deploy ReShade.ini") writes into the game's ReShade.ini besides RHI's shader paths
+    /// (#181; upstream 2.8.7 <c>MergeRsIni</c>): the user's template (<c>reshade.rdr2.ini</c> for RDR2 / Max Payne 3, whose
+    /// Vulkan depth settings are left out of a DirectX install), the screenshot folder, and the two hotkeys and the effect
+    /// list style when they differ from ReShade's own defaults (so the template's choice stands otherwise, as upstream).
+    /// For the Vulkan layer install (#92) pass <paramref name="vulkan"/>: the Vulkan template, depth settings kept.
+    /// </summary>
+    /// <param name="templates">Null: no template (RHI's built-in baseline for a new file, nothing merged into an existing one).</param>
+    public static ReShadeIniDefaults InstallDefaults(LinuxAppSettings settings, DetectedGame game, UserIniTemplates? templates, bool vulkan = false)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(game);
+        var template = UserIniTemplates.ReShadeTemplateFor(game, vulkan);
+        var overlay = LinuxAppSettings.NormalizeHotkey(settings.OverlayHotkey, DefaultOverlayHotkey);
+        var screenshot = LinuxAppSettings.NormalizeHotkey(settings.ScreenshotHotkey, DefaultScreenshotHotkey);
+        return new ReShadeIniDefaults
+        {
+            Template = templates?.Read(template, out _),
+            SkipPreprocessorDefinitions = !vulkan && template == UserIniTemplate.ReShadeRdr2,
+            ScreenshotSavePath = ScreenshotSavePath(settings, game),
+            OverlayHotkey = overlay == DefaultOverlayHotkey ? null : overlay,
+            ScreenshotHotkey = screenshot == DefaultScreenshotHotkey ? null : screenshot,
+            VariableListUseTabs = settings.ReShadeVariableListUseTabs ? null : false
+        };
+    }
+
+    /// <summary>
+    /// "Apply to selected game" / "Apply to all games" (upstream <c>ApplyScreenshotSettingsToIni</c>): the screenshot
+    /// folder (when set), both hotkeys and the effect list style go into the game's ReShade.ini and every numbered
+    /// <c>ReShade&lt;N&gt;.ini</c> beside it (one per extra swap chain). RDR2 / Max Payne 3 keep their template's End key
+    /// (upstream skips the overlay key there). A ReShade.ini is created when the game has none. Returns the main file.
+    /// </summary>
     public static string ApplyToGame(LinuxAppSettings settings, DetectedGame game)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -22,45 +60,55 @@ public static class ReShadeGlobalSettingsApplier
             throw new DirectoryNotFoundException("Selected game binary directory is unavailable.");
 
         // Refs #90: nothing of an Xbox title the installer app is working on (or cannot be checked) is changed.
-        var iniPath = RHI.Core.Services.XboxWriteGate.Checked(FindCaseInsensitive(root, "ReShade.ini") ?? Path.Combine(root, "ReShade.ini")); // w3/scan hook
-        var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string>();
-
-        SetValue(lines, "INPUT", "KeyOverlay", LinuxAppSettings.NormalizeHotkey(settings.OverlayHotkey, "36,0,0,0"));
-        SetValue(lines, "INPUT", "KeyScreenshot", LinuxAppSettings.NormalizeHotkey(settings.ScreenshotHotkey, "44,0,0,0"));
-
+        var mainIni = RHI.Core.Services.XboxWriteGate.Checked(FindCaseInsensitive(root, "ReShade.ini") ?? Path.Combine(root, "ReShade.ini")); // w3/scan hook
+        var defaults = SettingsFor(settings, game);
         var screenshotPath = ResolveScreenshotPath(settings, game);
-        if (!string.IsNullOrWhiteSpace(screenshotPath))
-        {
-            Directory.CreateDirectory(screenshotPath);
-            SetValue(lines, "SCREENSHOT", "SavePath", ToWindowsStylePath(screenshotPath));
-        }
+        if (!string.IsNullOrWhiteSpace(screenshotPath)) Directory.CreateDirectory(screenshotPath);
 
-        File.WriteAllLines(iniPath, lines, new UTF8Encoding(false));
-        return iniPath;
+        foreach (var iniPath in new[] { mainIni }.Concat(NumberedInis(root)))
+        {
+            var lines = IniLines.Read(RHI.Core.Services.XboxWriteGate.Checked(iniPath));
+            var before = File.Exists(iniPath) ? lines.ToList() : null;
+            ReShadeIniManager.ApplySettings(lines, defaults);
+            if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
+                IniLines.Write(iniPath, lines, GameRoots(game, root));
+        }
+        return mainIni;
+    }
+
+    /// <summary>The Settings values "Apply to all games" writes (upstream <c>ApplyScreenshotSettingsToIni</c>).</summary>
+    internal static ReShadeIniDefaults SettingsFor(LinuxAppSettings settings, DetectedGame game) => new()
+    {
+        ScreenshotSavePath = ScreenshotSavePath(settings, game),
+        OverlayHotkey = UserIniTemplates.IsRdr2Template(game.Name) ? null : LinuxAppSettings.NormalizeHotkey(settings.OverlayHotkey, DefaultOverlayHotkey),
+        ScreenshotHotkey = LinuxAppSettings.NormalizeHotkey(settings.ScreenshotHotkey, DefaultScreenshotHotkey),
+        VariableListUseTabs = settings.ReShadeVariableListUseTabs
+    };
+
+    /// <summary><c>ReShade2.ini</c>, <c>ReShade3.ini</c> … beside the main file (any case), never <c>ReShadePreset.ini</c>.</summary>
+    internal static IEnumerable<string> NumberedInis(string directory)
+        => Directory.EnumerateFiles(directory, "*.ini", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
+            .Where(path =>
+            {
+                var stem = Path.GetFileNameWithoutExtension(path);
+                return stem.Length > "reshade".Length
+                       && stem.StartsWith("reshade", StringComparison.OrdinalIgnoreCase)
+                       && stem["reshade".Length..].All(char.IsAsciiDigit);
+            })
+            .Order(StringComparer.Ordinal);
+
+    /// <summary>Folders a symlinked ReShade.ini may point into: the game's binary folder, its install folder.</summary>
+    internal static IReadOnlyList<string> GameRoots(DetectedGame game, string binaryDirectory)
+        => new[] { binaryDirectory, game.InstallPath }.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.Ordinal).ToList()!;
+
+    private static string? ScreenshotSavePath(LinuxAppSettings settings, DetectedGame game)
+    {
+        var path = ResolveScreenshotPath(settings, game);
+        return string.IsNullOrWhiteSpace(path) ? null : ToWindowsStylePath(path);
     }
 
     internal static void SetValue(List<string> lines, string section, string key, string value)
-    {
-        var (start, end) = FindSection(lines, section);
-        if (start < 0)
-        {
-            if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
-            lines.Add($"[{section}]");
-            lines.Add($"{key}={value}");
-            return;
-        }
-
-        for (var i = start + 1; i < end; i++)
-        {
-            var trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith(';') || trimmed.StartsWith('#')) continue;
-            var eq = trimmed.IndexOf('=');
-            if (eq <= 0 || !trimmed[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) continue;
-            lines[i] = $"{key}={value}";
-            return;
-        }
-        lines.Insert(end, $"{key}={value}");
-    }
+        => IniLines.Set(lines, section, key, value);
 
     internal static string ToWindowsStylePath(string path)
     {
@@ -80,24 +128,4 @@ public static class ReShadeGlobalSettingsApplier
     private static string? FindCaseInsensitive(string directory, string fileName)
         => Directory.EnumerateFiles(directory)
             .FirstOrDefault(path => Path.GetFileName(path).Equals(fileName, StringComparison.OrdinalIgnoreCase));
-
-    private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string section)
-    {
-        var target = $"[{section}]";
-        for (var i = 0; i < lines.Count; i++)
-        {
-            if (!lines[i].Trim().Equals(target, StringComparison.OrdinalIgnoreCase)) continue;
-            var end = lines.Count;
-            for (var j = i + 1; j < lines.Count; j++)
-            {
-                if (lines[j].TrimStart().StartsWith("[", StringComparison.Ordinal))
-                {
-                    end = j;
-                    break;
-                }
-            }
-            return (i, end);
-        }
-        return (-1, -1);
-    }
 }

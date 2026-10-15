@@ -2445,6 +2445,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             : Task.FromResult(guard);
     }
 
+    // w5/ini-presets hook (#181): INI deploys and "apply to all games" refuse a game where any install would be refused.
+    public string? IniWriteRefusal(DetectedGame game) => PatchTargetGuard(game)?.Message;
+
 }
 
 /// <summary>Outcome of changing a Neural Rendering add-on pin (see <see cref="LinuxManagedComponentService.PlanNeuralPinChange"/>).</summary>

@@ -320,6 +320,12 @@ public sealed class WaveOneMessageLocalizationTests
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        // #181
+        yield return UserIniService.NativeGamePrefix + "Celeste";
+        yield return UserIniService.NoFolderPrefix + P;
+        yield return UserIniService.DeployedPrefix + P;
+        yield return UserIniTemplates.TooLargePrefix + P;
+        yield return IniLines.LinkRefusalPrefix + P;
         // w5/shell-launch rows
         // w5/reshade-core rows
     }

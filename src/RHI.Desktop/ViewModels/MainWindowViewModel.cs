@@ -138,6 +138,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/update-policy rows
     // w5/catalogue-info rows
     // w5/ini-presets rows
+    public IniPresetsPresenter IniPresets => new(this, _managedComponents, _deploymentRecords, _settingsStore.ConfigRoot); // #181: INI ⚙, templates, apply to all
     // w5/shell-launch rows
     // w5/reshade-core rows
 

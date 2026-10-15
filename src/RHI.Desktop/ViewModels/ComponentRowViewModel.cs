@@ -100,6 +100,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w5/update-policy rows
     // w5/catalogue-info rows
     // w5/ini-presets rows
+    public bool HasIniSettings => IniPresetsPresenter.HasIniSettings(component); // #181: ReShade / ReLimiter / Display Commander INI ⚙
+    public string IniSettingsTip => UiLocalizationService.Format("Ini.SettingsTip", component.DisplayName); // #181
     // w5/shell-launch rows
     // w5/reshade-core rows
     public ICommand Command => command;

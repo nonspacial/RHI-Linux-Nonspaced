@@ -127,6 +127,7 @@ public sealed partial class ReShadeDeploymentService
 
     /// <summary>The per-game proxy DLL names chosen before install (#120); "Repair after move" carries them.</summary>
     public DllNamePreferenceStore DllNames => _dllNames;
+    public Func<DetectedGame, ReShadeIniDefaults?>? IniDefaults { get; set; } // w5/ini-presets hook (#181): template + Settings merged into ReShade.ini
 
     /// <summary>The proxy name the next install of ReShade on <paramref name="game"/> uses, and why (#120).</summary>
     public ProxyNameResolution? ResolveProxyName(DetectedGame game) => ProxyPayloadLocator.Resolve(game, _dllNames.GetReShade(game));
@@ -565,7 +566,7 @@ public sealed partial class ReShadeDeploymentService
             var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
-                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);
+                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, IniDefaults?.Invoke(game)); // w5/ini-presets hook (#181)
             await DeclareIniWritesAsync().ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>

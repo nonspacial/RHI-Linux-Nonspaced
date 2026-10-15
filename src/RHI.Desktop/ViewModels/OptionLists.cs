@@ -226,6 +226,10 @@ public static class OptionLists
     // w5/update-policy rows
     // w5/catalogue-info rows
     // w5/ini-presets rows
+    /// <summary>#181: ReShade's effect list style ([OVERLAY] VariableListUseTabs): Tabs (upstream default) or Tree.</summary>
+    public static readonly OptionList<bool> ReShadeEffectListStyle = new(true, null,
+        new(true, "Ini.EffectListTabs"),
+        new(false, "Ini.EffectListTree"));
     // w5/shell-launch rows
     // w5/reshade-core rows
 

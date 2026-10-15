@@ -42,6 +42,8 @@ public sealed class LinuxAppSettings
     // w5/update-policy rows
     // w5/catalogue-info rows
     // w5/ini-presets rows
+    // #181: ReShade's effect list as Tabs (true, upstream default) or a Tree ([OVERLAY] VariableListUseTabs).
+    public bool ReShadeVariableListUseTabs { get; set; } = true;
     // w5/shell-launch rows
     // w5/reshade-core rows
 
