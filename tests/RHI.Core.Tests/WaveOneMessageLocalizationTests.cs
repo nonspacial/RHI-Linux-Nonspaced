@@ -320,6 +320,34 @@ public sealed class WaveOneMessageLocalizationTests
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        // #181
+        yield return UserIniService.NativeGamePrefix + "Celeste";
+        yield return UserIniService.NoFolderPrefix + P;
+        yield return UserIniService.NotManagedPrefix + "Celeste";
+        yield return UserIniService.DeployedPrefix + P;
+        yield return UserIniService.DeployedBackupPrefix + P;
+        yield return UserIniService.ChangedPrefix + P;
+        yield return UserIniService.RestoredPrefix + P;
+        yield return UserIniService.NoBackupPrefix + P;
+        yield return UserIniService.RestoreChangedPrefix + P;
+        yield return UserIniTemplates.TooLargePrefix + P;
+        yield return IniLines.LinkRefusalPrefix + P;
+        yield return IniLines.LinkRefusalPrefix + P + IniLines.NotPutBackPrefix + P;
+        // #180
+        yield return ReShadePresetService.NotAPresetPrefix + "notes.ini";
+        yield return ReShadePresetService.TooLargePrefix + P;
+        yield return ReShadePresetService.NoManagedReShadePrefix + "Celeste";
+        yield return ReShadePresetService.NameTakenPrefix + P;
+        yield return ReShadePresetService.InstalledPrefix + P;
+        yield return ReShadePresetService.RemovedPrefix + P;
+        yield return ReShadePresetService.KeptChangedPrefix + P;
+        yield return ReShadePresetService.NotInstalledPrefix + "Mine.ini";
+        // #189
+        yield return LumaSettingsService.NotManagedPrefix + "Celeste";
+        yield return LumaSettingsService.NoEngineIniPrefix + "Celeste";
+        // #182
+        yield return RenoDxPeakNits.NotManagedPrefix + "Celeste";
+        yield return RenoDxPeakNits.NoReShadeIniPrefix + "Celeste";
         // w5/shell-launch rows
         // w5/reshade-core rows
     }

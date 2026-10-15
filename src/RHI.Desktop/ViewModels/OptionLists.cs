@@ -226,6 +226,26 @@ public static class OptionLists
     // w5/update-policy rows
     // w5/catalogue-info rows
     // w5/ini-presets rows
+    /// <summary>#181: ReShade's effect list style ([OVERLAY] VariableListUseTabs): Tabs (upstream default) or Tree.</summary>
+    public static readonly OptionList<bool> ReShadeEffectListStyle = new(true, null,
+        new(true, "Ini.EffectListTabs"),
+        new(false, "Ini.EffectListTree"));
+    /// <summary>#189: Luma's HDR on first boot: Default (Luma decides), Off, On.</summary>
+    public static readonly OptionList<LumaHdrMode> LumaHdrMode = new(RHI.Platform.Linux.Deployment.LumaHdrMode.Default, null,
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.Default, "Ini.LumaHdrDefault"),
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.Off, "Ini.Off"),
+        new(RHI.Platform.Linux.Deployment.LumaHdrMode.On, "Ini.On"));
+    /// <summary>#188: Off / On (ReLimiter's shared presets and DLSS info on the display).</summary>
+    public static readonly OptionList<bool> OffOn = new(false, null,
+        new(false, "Ini.Off"),
+        new(true, "Ini.On"));
+    /// <summary>#188: the Custom entry of <see cref="ReLimiterTargetFps"/> (its value comes from the box beside it).</summary>
+    public const int CustomTargetFps = -1;
+    /// <summary>#188: ReLimiter's global FPS cap: Off, upstream's VRR presets, Custom.</summary>
+    public static readonly OptionList<int> ReLimiterTargetFps = new(0, null,
+        [new OptionEntry<int>(0, "Ini.Off"),
+         .. ReLimiterIniEditor.TargetFpsPresets.Select(p => new OptionEntry<int>(p.Fps, null, $"{p.Fps} FPS · {p.Hz} Hz VRR")),
+         new OptionEntry<int>(CustomTargetFps, "Win.Custom")]);
     // w5/shell-launch rows
     // w5/reshade-core rows
 

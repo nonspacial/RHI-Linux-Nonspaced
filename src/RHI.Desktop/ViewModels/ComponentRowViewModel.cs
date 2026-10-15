@@ -102,6 +102,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     public bool HasInfo => ComponentInfoPresenter.HasInfo(component.Kind, component.Availability); // #184: ⓘ dialog
     public string InfoTip => ComponentInfoPresenter.TipFor(Name); // #184
     // w5/ini-presets rows
+    public bool HasIniSettings => IniPresetsPresenter.HasIniSettings(component); // #181: ReShade / ReLimiter / Display Commander INI ⚙
+    public string IniSettingsTip => UiLocalizationService.Format("Ini.SettingsTip", component.DisplayName); // #181
     // w5/shell-launch rows
     // w5/reshade-core rows
     public ICommand Command => command;

@@ -8,6 +8,8 @@ public enum LinuxDroppedFileKind
     ReShadeAddon,
     LumaArchive,
     ModArchive,
+    /// <summary>#180: a <c>.ini</c> offered as a ReShade preset (its Techniques line is checked when it is used).</summary>
+    ReShadePreset,
 }
 
 public static class LinuxDroppedFileClassifier
@@ -28,6 +30,8 @@ public static class LinuxDroppedFileClassifier
             extension.Equals(".7z", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".rar", StringComparison.OrdinalIgnoreCase))
             return LinuxDroppedFileKind.ModArchive;
+        if (extension.Equals(".ini", StringComparison.OrdinalIgnoreCase))
+            return LinuxDroppedFileKind.ReShadePreset;
         return LinuxDroppedFileKind.Unsupported;
     }
 

@@ -55,6 +55,51 @@ public sealed class RenoDxDeploymentService
     /// <summary>Hosts a RenoDX add-on may be downloaded from (see <see cref="TrustedDownloadPolicy.RenoDxAddons"/>).</summary>
     public static TrustedDownloadPolicy DownloadPolicy => TrustedDownloadPolicy.RenoDxAddons;
 
+    /// <summary>#182: the global peak brightness written into RenoDX presets at install (null: none).</summary>
+    public Func<PeakNitsSettings>? PeakNits { get; set; }
+
+    /// <summary>#182: the RenoDX ⚙ UE-Extended choice, kept on the RenoDX record: "on" / "off" (absent = the catalogue's pick).</summary>
+    public const string UeExtendedMetadataKey = "RenoDX.UeExtended";
+
+    /// <summary>Upstream's default UE-Extended add-on (<c>MainViewModel.DefaultUeExtendedUrl</c>).</summary>
+    public const string DefaultUeExtendedUrl = "https://marat569.github.io/renodx/renodx-ue-extended.addon64";
+
+    /// <summary>
+    /// #182: whether the RenoDX ⚙ offers the UE-Extended switch (upstream <c>UeExtendedToggleVisibility</c>): an Unreal
+    /// Engine game (manifest hint, or a generic Unreal / UE-Extended add-on installed) the manifest does not bar from it.
+    /// </summary>
+    public static bool OffersUeExtendedSwitch(DetectedGame game, LinuxDeploymentRecord? record)
+        => record is not null && !game.UeExtendedBlockedByManifest
+           && (game.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true
+               || ModAuthorCredit.IsUeExtendedUrl(record.SourceUrl)
+               || Path.GetFileName(record.SourceUrl ?? "").StartsWith("renodx-unrealengine.", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Whether the installed RenoDX is the UE-Extended build.</summary>
+    public static bool IsUeExtendedInstalled(LinuxDeploymentRecord? record) => ModAuthorCredit.IsUeExtendedUrl(record?.SourceUrl);
+
+    /// <summary>
+    /// #182: the user's UE-Extended choice over the catalogue's pick (upstream <c>ToggleUeExtended</c>): "on" swaps in the
+    /// UE-Extended build; "off" swaps a UE-Extended pick for the generic Unreal add-on (upstream restores the card's earlier
+    /// mod; the fork's catalogue picks UE-Extended only from a manifest override, where the generic add-on is that mod).
+    /// </summary>
+    internal static RenoDxModEntry? ApplyUeExtendedChoice(DetectedGame game, RenoDxModEntry? mod, string? choice)
+    {
+        if (game.UeExtendedBlockedByManifest) return mod;
+        var isUeExtended = mod is not null && ModAuthorCredit.IsUeExtendedUrl(mod.SnapshotUrl64 ?? mod.SnapshotUrl32);
+        if (string.Equals(choice, "on", StringComparison.Ordinal) && !isUeExtended)
+            return new RenoDxModEntry("Unreal Engine (UE-Extended)", DefaultUeExtendedUrl, null, "UE-Extended (chosen in the RenoDX settings)",
+                IsGeneric: true, Author: ModAuthorCredit.UeExtendedAuthor);
+        if (string.Equals(choice, "off", StringComparison.Ordinal) && isUeExtended)
+            return new RenoDxModEntry("Generic Unreal Engine", RenoDxCatalogService.GenericUnrealUrl, null, "Generic Unreal Engine (chosen in the RenoDX settings)",
+                IsGeneric: true, Author: ModAuthorCredit.GenericUnrealAuthor);
+        return mod;
+    }
+
+    // choice: the RenoDX ⚙ switch being applied (review 9); null = the one kept on the record.
+    private async Task<RenoDxModEntry?> ResolveModAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken, string? choice = null)
+        => ApplyUeExtendedChoice(game, await _catalog.ResolveAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false),
+            choice ?? _records.Find(game, ManagedComponentKind.RenoDX)?.Metadata.GetValueOrDefault(UeExtendedMetadataKey));
+
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
     public Task<RenoDxModEntry?> PrepareCompatibilityAsync(
@@ -80,7 +125,7 @@ public sealed class RenoDxDeploymentService
             return new ManagedUpdateCheck(true, false, "Game architecture is unknown; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
         try
         {
-            var mod = await _catalog.ResolveAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
+            var mod = await ResolveModAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false); // #182 UE-Extended choice
             if (mod is null) return new ManagedUpdateCheck(true, false, "No current RenoDX catalog match was found; installed payload was preserved.", record.Version, CouldNotCheck: true);
             var latestUrl = mod.UrlFor(architecture);
             if (string.IsNullOrWhiteSpace(latestUrl))
@@ -180,10 +225,13 @@ public sealed class RenoDxDeploymentService
         return remote.LastModified is not null ? RemoteStampComparison.Same : RemoteStampComparison.Unknown;
     }
 
+    /// <param name="ueExtendedChoice">#182 review 9: the RenoDX ⚙ UE-Extended switch ("on"/"off") this update applies; it is
+    /// saved only with the update's own record (nothing changes when the update fails). Null = the choice on the record.</param>
     public async Task<ComponentOperationResult> UpdateAsync(
         DetectedGame game,
         IReadOnlyList<string> indexedFiles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? ueExtendedChoice = null)
     {
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
         if (record is null) return ComponentOperationResult.Fail("RenoDX is not managed by RHI Linux.");
@@ -195,13 +243,14 @@ public sealed class RenoDxDeploymentService
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be updated: {file.Path}");
         }
-        return await InstallAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
+        return await InstallAsync(game, indexedFiles, cancellationToken, ueExtendedChoice).ConfigureAwait(false);
     }
 
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         IReadOnlyList<string> indexedFiles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? ueExtendedChoice = null)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.");
@@ -222,7 +271,7 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("Could not determine game bitness for the RenoDX add-on.");
 
         RenoDxModEntry? mod;
-        try { mod = await _catalog.ResolveAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false); }
+        try { mod = await ResolveModAsync(game, indexedFiles, cancellationToken, ueExtendedChoice).ConfigureAwait(false); } // #182 UE-Extended choice
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not fetch/parse the RenoDX catalog: {ex.Message}"); }
         if (mod is null)
             return ComponentOperationResult.Fail("Nenhum perfil RenoDX específico ou fallback genérico seguro foi encontrado para este jogo.");
@@ -338,6 +387,7 @@ public sealed class RenoDxDeploymentService
                 : await _engineIniFiles.FetchAsync(game.EngineIniFileOverride!, cancellationToken).ConfigureAwait(false);
 
             RenoDxIniOverrideApplyResult iniApply;
+            Dictionary<string, RenoDxIniOverrideState> peakStates; // #182
             UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
             // Downloads and snapshots are done: from the copy on, Cancel is refused (a late cancel used to leave the
             // add-on and its INI keys in place with no record).
@@ -351,6 +401,10 @@ public sealed class RenoDxDeploymentService
                     ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
                     : null;
                 iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
+                // #182: the global peak brightness into the chosen presets (kept where the user changed it since RHI's write).
+                peakStates = RenoDxPeakNits.Read(existingRecord);
+                if (PeakNits?.Invoke() is { Applies: true } peak)
+                    peakStates = RenoDxPeakNits.Apply(game.BinaryDirectory, game.InstallPath, peak.Nits, RenoDxPeakNits.GlobalSections(peak.Presets), peakStates, force: false);
 
                 if (engineIniTemplate is not null)
                 {
@@ -435,6 +489,9 @@ public sealed class RenoDxDeploymentService
             // Control UE frame generation's FgSlHdr10 (#136) stays owned across updates, so removal can still put it back.
             if (existingRecord?.Metadata.GetValueOrDefault(ControlUeFrameGenerationService.HdrMetadataKey) is { Length: > 0 } fgHdrState)
                 record.Metadata[ControlUeFrameGenerationService.HdrMetadataKey] = fgHdrState;
+            if (peakStates.Count > 0) record.Metadata[RenoDxPeakNits.MetadataKey] = RenoDxPeakNits.Serialize(peakStates); // #182
+            if ((ueExtendedChoice ?? existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey)) is { Length: > 0 } ueChoice)
+                record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates; a new one is saved here, in the update's own record
             try
             {
                 _records.Upsert(record);
@@ -717,7 +774,8 @@ public sealed class RenoDxDeploymentService
             var fgHdrState = record.Metadata.TryGetValue(ControlUeFrameGenerationService.HdrMetadataKey, out var fgHdrJson)
                 ? RenoDxIniOverrideManager.Deserialize(fgHdrJson)
                 : null;
-            var iniSnapshotPath = iniState?.IniPath ?? fgHdrState?.IniPath;
+            var peakStates = RenoDxPeakNits.Read(record); // #182: peak brightness owned per preset section
+            var iniSnapshotPath = iniState?.IniPath ?? fgHdrState?.IniPath ?? peakStates.Values.FirstOrDefault()?.IniPath;
             var iniSnapshot = iniSnapshotPath is not null && File.Exists(iniSnapshotPath)
                 ? await File.ReadAllBytesAsync(iniSnapshotPath, cancellationToken).ConfigureAwait(false)
                 : null;
@@ -737,6 +795,7 @@ public sealed class RenoDxDeploymentService
             {
                 RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
                 RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
+                RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
                 UpstreamEngineIniFileManager.Cleanup(engineIniState);
                 foreach (var file in record.Files)
                     if (File.Exists(file.Path)) File.Delete(file.Path);

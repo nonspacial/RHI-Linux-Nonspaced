@@ -79,12 +79,7 @@ internal static class RenoDxIniOverrideManager
     /// root, its binary folder or <see cref="UserReShadeConfigDirectories"/>.
     /// </summary>
     internal static UserFileLinkPolicy LinkPolicy(string binaryDirectory, string? gameRoot)
-    {
-        var roots = new List<string> { binaryDirectory };
-        if (!string.IsNullOrWhiteSpace(gameRoot)) roots.Add(gameRoot);
-        roots.AddRange(UserReShadeConfigDirectories);
-        return new UserFileLinkPolicy("reshade.ini", roots, LinkRefusalPrefix);
-    }
+        => ReShadeIniManager.LinkPolicy("reshade.ini", binaryDirectory, gameRoot); // w5/ini-presets hook (#181 review 8): the one ReShade.ini rule
 
     /// <param name="section">The section to own keys in (a plain INI name); null = <c>[renodx]</c>. Control UE's
     /// <c>FgSlHdr10</c> lives in <c>[renodx-preset1]</c> (#136).</param>

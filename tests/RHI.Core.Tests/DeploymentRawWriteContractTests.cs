@@ -32,7 +32,6 @@ public sealed class DeploymentRawWriteContractTests
         "ComponentUpdateLog.cs",                       // update-history store, DEP-01 handling
         "RenoDxUnityDatabaseService.cs",               // catalogue cache
         "ReShadeDeploymentService.cs",                 // w3/dllnames
-        "ReShadeIniManager.cs",                        // w3/dllnames
     };
 
     private static IEnumerable<(string File, int Line, string Text)> RawCalls()

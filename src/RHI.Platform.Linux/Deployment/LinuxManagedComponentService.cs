@@ -332,6 +332,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
                 if (component.Kind == ManagedComponentKind.LumaFramework)
                 {
+                    component.UnrealEngine = game.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true; // w5/ini-presets hook (#189)
                     if (component.Availability == ComponentAvailability.Available)
                     {
                         var named = _lumaFramework.GetCachedNamedMatch(game);
@@ -2444,6 +2445,31 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ? _reFramework.DeleteStorageFolderAsync(game, cancellationToken)
             : Task.FromResult(guard);
     }
+
+    // w5/ini-presets hook (#181): INI deploys and "apply to all games" refuse a game where any install would be refused.
+    public string? IniWriteRefusal(DetectedGame game) => PatchTargetGuard(game)?.Message;
+
+    // w5/ini-presets hook (#181 review 2): INI deploys journaled on the component's record (set by the app's composition).
+    public UserIniService? UserIni { get; set; }
+
+    // w5/ini-presets hook (#180): the ReShade preset service (journaled; set by the app's composition).
+    public ReShadePresetService? ReShadePresets { get; set; }
+
+    // w5/ini-presets hook (#189): the Luma ⚙ settings service (journaled; set by the app's composition).
+    public LumaSettingsService? LumaSettings { get; set; }
+
+    // w5/ini-presets hook (#182 review 9): the RenoDX ⚙ UE-Extended switch is a RenoDX update carrying the choice, guarded
+    // and tracked like Update; the choice is saved only by that update's own stamped record.
+    public Task<ComponentOperationResult> UpdateRenoDxUeExtendedAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, bool on, CancellationToken cancellationToken = default)
+    {
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.RenoDX) ?? AddonOffGuard(game, ManagedComponentKind.RenoDX);
+        if (guard is not null) return Task.FromResult(guard);
+        return Track(game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Update,
+            () => _renodx.UpdateAsync(game, indexedFiles, cancellationToken, on ? "on" : "off"));
+    }
+
+    // w5/ini-presets hook (#182): RenoDX peak brightness (journaled; set by the app's composition).
+    public RenoDxPeakNits? RenoDxPeakNits { get; set; }
 
 }
 

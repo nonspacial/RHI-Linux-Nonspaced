@@ -5,6 +5,14 @@ using System.Text.Json;
 
 namespace RHI.Platform.Linux.Deployment;
 
+/// <summary>#189: Luma's "HDR on first boot" (upstream Luma ⚙): Default leaves both keys to Luma, Off / On set them.</summary>
+public enum LumaHdrMode
+{
+    Default,
+    Off,
+    On
+}
+
 internal sealed record LumaIniOverrideEntry(
     string Key,
     string AppliedValue,
@@ -149,6 +157,59 @@ internal static class LumaIniOverrideManager
 
         if (changed)
             AtomicFile.ReplaceUserFileLines(state.IniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
+    }
+
+    /// <summary>
+    /// #189: the HDR-on-first-boot setting as the game's ReShade.ini holds it (upstream <c>LumaCogButton_Click</c>):
+    /// <c>EnableHDR</c> absent = Default, <c>0</c> = Off, anything else = On.
+    /// </summary>
+    public static LumaHdrMode ReadHdrMode(string binaryDirectory)
+    {
+        var iniPath = RenoDxIniOverrideManager.ResolveIniPath(binaryDirectory);
+        if (iniPath is null || !File.Exists(iniPath)) return LumaHdrMode.Default;
+        return IniLines.Get(File.ReadAllLines(iniPath), SectionName, "EnableHDR") switch
+        {
+            null => LumaHdrMode.Default,
+            "0" => LumaHdrMode.Off,
+            _ => LumaHdrMode.On
+        };
+    }
+
+    /// <summary>
+    /// #189: writes the HDR-on-first-boot choice into <c>[Luma]</c> as upstream's ⚙ does (Default removes
+    /// <c>EnableHDR</c>/<c>DisplayMode</c> so Luma decides; Off/On set both to 0/1) and returns the ownership state to
+    /// keep on the Luma record: an Off/On value becomes RHI's applied value (removing Luma puts back what was there
+    /// before), and Default leaves the keys missing, which later Luma updates treat as the user's choice and keep.
+    /// </summary>
+    public static LumaIniOverrideState SetHdrMode(string binaryDirectory, LumaIniOverrideState? state, LumaHdrMode mode, string? gameRoot = null)
+    {
+        var iniPath = RenoDxIniOverrideManager.ResolveIniPath(binaryDirectory);
+        if (iniPath is null || !File.Exists(iniPath))
+            throw new InvalidOperationException("ReShade.ini is required before enabling Luma Framework.");
+        var lines = File.ReadAllLines(iniPath).ToList();
+        var before = lines.ToList();
+        var entries = (state?.Entries ?? []).ToDictionary(entry => entry.Key, StringComparer.OrdinalIgnoreCase);
+        var sectionCreated = state?.SectionCreatedByRhi == true;
+        foreach (var key in RequestedValues.Keys)
+        {
+            if (mode == LumaHdrMode.Default)
+            {
+                IniLines.Remove(lines, SectionName, key);
+                continue;
+            }
+            var value = mode == LumaHdrMode.On ? "1" : "0";
+            if (!entries.TryGetValue(key, out var entry))
+            {
+                var current = IniLines.Get(lines, SectionName, key);
+                if (current is null && IniLines.FindSection(lines, SectionName).Start < 0) sectionCreated = true;
+                entry = new LumaIniOverrideEntry(key, value, current is not null, current);
+            }
+            IniLines.Set(lines, SectionName, key, value);
+            entries[key] = entry with { AppliedValue = value };
+        }
+        if (!lines.SequenceEqual(before, StringComparer.Ordinal))
+            AtomicFile.ReplaceUserFileLines(iniPath, lines, linkPolicy: ReShadeIniManager.LinkPolicy(iniPath, binaryDirectory, gameRoot), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+        return new LumaIniOverrideState(iniPath, sectionCreated, entries.Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
     public static string Serialize(LumaIniOverrideState state) => JsonSerializer.Serialize(state);

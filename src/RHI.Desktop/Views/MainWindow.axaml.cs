@@ -542,6 +542,18 @@ public sealed partial class MainWindow : Window
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        var iniRows = new ReShadeIniSettingsRows(settings, vm.IniPresets, current => // #181: effect list, apply to all, INI templates
+        {
+            current.ScreenshotPath = screenshotPath.Text ?? "";
+            current.PerGameScreenshotFolders = perGameScreenshots.IsChecked == true;
+            current.OverlayHotkey = overlayHotkey.Value;
+            current.ScreenshotHotkey = screenshotHotkey.Value;
+        }, folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), line => status.Text = line);
+        reshadeTab.Children.Add(iniRows.Control); // #181
+        var relimiterRows = new ReLimiterSettingsRows(settings, vm.IniPresets, line => status.Text = line); // #188
+        managerTab.Children.Add(relimiterRows.Control); // #188
+        var peakRows = new PeakBrightnessSettingsRows(settings, vm.IniPresets, line => status.Text = line); // #182
+        reshadeTab.Children.Add(peakRows.Control); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows
 
@@ -606,6 +618,9 @@ public sealed partial class MainWindow : Window
             // w5/update-policy rows
             // w5/catalogue-info rows
             // w5/ini-presets rows
+            iniRows.Reset(defaults); // #181
+            relimiterRows.Reset(defaults); // #188
+            peakRows.Reset(defaults); // #182
             // w5/shell-launch rows
             // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
@@ -683,6 +698,14 @@ public sealed partial class MainWindow : Window
             // w5/update-policy rows
             // w5/catalogue-info rows
             // w5/ini-presets rows
+            ReShadeVariableListUseTabs = iniRows.UseTabs, // #181
+            ReLimiterOsdHotkey = relimiterRows.OsdHotkey, // #188
+            ReLimiterSharedPresets = relimiterRows.SharedPresets, // #188
+            ReLimiterDlssHooks = relimiterRows.DlssHooks, // #188
+            ReLimiterTargetFps = relimiterRows.TargetFps, // #188
+            PeakNits = peakRows.Nits, // #182
+            PeakNitsEnabled = peakRows.Enabled, // #182
+            PeakNitsPresets = peakRows.Presets, // #182
             // w5/shell-launch rows
             // w5/reshade-core rows
         };
@@ -1151,6 +1174,9 @@ public sealed partial class MainWindow : Window
     // w3/journal hook (#159): RE Framework ⚙ dialog (Views/ReFrameworkSettingsDialog.cs).
     private void ReFrameworkSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(() => DataContext is MainWindowViewModel { SelectedGame: { } game } vm ? ShowFittedDialogAsync(ReFrameworkSettingsDialog.Create(vm.ReFrameworkStorage, game.Name)) : Task.CompletedTask);
 
+    // w5/ini-presets hook (#181): the ReShade / ReLimiter / Display Commander INI ⚙ (Views/ComponentIniDialog.cs).
+    private void IniSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(() => sender is Button { DataContext: ComponentRowViewModel { HasIniSettings: true } row } && DataContext is MainWindowViewModel { SelectedGame: not null } vm ? ShowFittedDialogAsync(ComponentIniDialog.Create(vm, row.Kind, row.Name, folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error))) : Task.CompletedTask);
+
     private void Rtx40MfgSettings_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (sender is not Button { DataContext: ComponentRowViewModel row } || !row.HasRtx40MfgSettings) return;
@@ -1219,6 +1245,7 @@ public sealed partial class MainWindow : Window
         }
 
         var message = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        panel.Children.Add(RenoDxPeakPanel.Create(vm.IniPresets, line => message.Text = line)); // w5/ini-presets hook (#182)
 
         if (!snapshot.HasRenoDxSection)
         {

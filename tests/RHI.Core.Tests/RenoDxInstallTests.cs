@@ -6,7 +6,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class RenoDxInstallTests : IDisposable
+public sealed partial class RenoDxInstallTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-renodx-install-tests-" + Guid.NewGuid().ToString("N"));
     public RenoDxInstallTests() => Directory.CreateDirectory(_root);

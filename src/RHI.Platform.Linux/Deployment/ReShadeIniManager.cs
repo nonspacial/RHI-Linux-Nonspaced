@@ -14,51 +14,164 @@ internal sealed record ReShadeIniApplyResult(
     string Sha256);
 
 /// <summary>
-/// Conservative ReShade.ini editor. Existing user settings are preserved byte-for-byte except
-/// for RHI-owned shader search-path tokens that need to be appended/removed.
+/// What an install (or "Deploy ReShade.ini") writes into a game's ReShade.ini besides RHI's shader search paths (#181;
+/// upstream 2.8.7 <c>AuxInstallService.MergeRsIni</c>): the user's template and the Settings values. Null members are
+/// left alone. Built by <c>ReShadeGlobalSettingsApplier.InstallDefaults</c>.
+/// </summary>
+public sealed record ReShadeIniDefaults
+{
+    /// <summary>The template's bytes (<see cref="UserIniTemplates"/>); its keys win over the game's (upstream).</summary>
+    public byte[]? Template { get; init; }
+
+    /// <summary>Leave the template's <c>PreprocessorDefinitions</c> out (upstream strips the RDR2 template's Vulkan depth settings on DirectX installs).</summary>
+    public bool SkipPreprocessorDefinitions { get; init; }
+
+    /// <summary><c>[SCREENSHOT] SavePath</c>, already in the Windows form the game sees.</summary>
+    public string? ScreenshotSavePath { get; init; }
+
+    /// <summary><c>[INPUT] KeyOverlay</c> (upstream writes it at install only when it differs from Home).</summary>
+    public string? OverlayHotkey { get; init; }
+
+    /// <summary><c>[INPUT] KeyScreenshot</c> (upstream writes it at install only when it differs from Print Screen).</summary>
+    public string? ScreenshotHotkey { get; init; }
+
+    /// <summary><c>[OVERLAY] VariableListUseTabs</c>: true = Tabs, false = Tree.</summary>
+    public bool? VariableListUseTabs { get; init; }
+}
+
+/// <summary>
+/// Conservative ReShade.ini editor. Existing user settings are preserved byte-for-byte except for RHI-owned shader
+/// search-path tokens and, when the caller passes <see cref="ReShadeIniDefaults"/>, the keys its template and settings
+/// name (#181). Every write goes through the one user-file path (atomic, a read-only file stays read-only).
 /// </summary>
 internal static class ReShadeIniManager
 {
     private const string IniName = "ReShade.ini";
+    internal const string EffectKey = "EffectSearchPaths";
+    internal const string TextureKey = "TextureSearchPaths";
 
+    /// <param name="gameRoot">The game's install folder (a ReShade.ini link may point into it; see <see cref="LinkPolicy"/>).</param>
     public static ReShadeIniApplyResult Apply(
         string gameDirectory,
         IReadOnlyList<string> effectPaths,
-        IReadOnlyList<string> texturePaths)
+        IReadOnlyList<string> texturePaths,
+        ReShadeIniDefaults? defaults = null,
+        string? gameRoot = null)
     {
         var path = ResolveIniPath(gameDirectory);
         var existed = File.Exists(path);
-        var created = !existed;
         var effectAdded = new List<string>();
         var textureAdded = new List<string>();
-        var effectKeyCreated = false;
-        var textureKeyCreated = false;
 
-        if (!existed)
+        if (!existed && defaults?.Template is null)
         {
             var effects = effectPaths.Count > 0 ? string.Join(',', effectPaths) : @".\reshade-shaders\Shaders\**";
             var textures = texturePaths.Count > 0 ? string.Join(',', texturePaths) : @".\reshade-shaders\Textures\**";
             effectAdded.AddRange(effectPaths);
             textureAdded.AddRange(texturePaths);
-            var text = "[ADDON]\n" +
-                       "DisabledAddons=Generic Depth,Effect Runtime Sync\n\n" +
-                       "[GENERAL]\n" +
-                       $"EffectSearchPaths={effects}\n" +
-                       $"TextureSearchPaths={textures}\n\n" +
-                       "[OVERLAY]\n" +
-                       "TutorialProgress=4\n";
-            File.WriteAllText(path, text, new UTF8Encoding(false));
+            List<string> baseline =
+            [
+                "[ADDON]",
+                "DisabledAddons=Generic Depth,Effect Runtime Sync",
+                "",
+                "[GENERAL]",
+                $"EffectSearchPaths={effects}",
+                $"TextureSearchPaths={textures}",
+                "",
+                "[OVERLAY]",
+                "TutorialProgress=4"
+            ];
+            if (defaults is not null) ApplySettings(baseline, defaults);
+            Write(path, baseline, gameDirectory, gameRoot);
             return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path));
         }
 
-        var lines = File.ReadAllLines(path).ToList();
-        var changed = false;
-        changed |= MergeSearchPath(lines, "GENERAL", "EffectSearchPaths", effectPaths, effectAdded, out effectKeyCreated);
-        changed |= MergeSearchPath(lines, "GENERAL", "TextureSearchPaths", texturePaths, textureAdded, out textureKeyCreated);
-        if (changed)
-            File.WriteAllLines(path, lines, new UTF8Encoding(false));
+        // A new file starts as a copy of the template (upstream copies it as-is); an existing one gets the template merged.
+        var lines = existed ? File.ReadAllLines(path).ToList()
+            : TemplateLines(defaults!.Template!, defaults.SkipPreprocessorDefinitions);
+        var before = existed ? lines.ToList() : null;
+        var effectKeyWasMissing = !existed || IniLines.Get(lines, "GENERAL", EffectKey) is null;
+        var textureKeyWasMissing = !existed || IniLines.Get(lines, "GENERAL", TextureKey) is null;
+        if (existed && defaults?.Template is { } template)
+            MergeTemplate(lines, IniLines.FromBytes(template), defaults.SkipPreprocessorDefinitions, effectAdded, textureAdded, recordTemplatePaths: true);
+        if (defaults is not null) ApplySettings(lines, defaults);
+        MergeSearchPath(lines, "GENERAL", EffectKey, effectPaths, effectAdded);
+        MergeSearchPath(lines, "GENERAL", TextureKey, texturePaths, textureAdded);
+        var effectKeyCreated = effectKeyWasMissing && IniLines.Get(lines, "GENERAL", EffectKey) is not null;
+        var textureKeyCreated = textureKeyWasMissing && IniLines.Get(lines, "GENERAL", TextureKey) is not null;
+        if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
+            Write(path, lines, gameDirectory, gameRoot);
 
-        return new(path, true, false, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
+        return new(path, existed, !existed, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
+    }
+
+    /// <summary>The template's lines for a new ReShade.ini (its <c>[GENERAL] PreprocessorDefinitions</c> dropped when asked).</summary>
+    internal static List<string> TemplateLines(byte[] template, bool skipPreprocessorDefinitions)
+    {
+        var lines = IniLines.FromBytes(template);
+        if (skipPreprocessorDefinitions) IniLines.Remove(lines, "GENERAL", "PreprocessorDefinitions");
+        return lines;
+    }
+
+    /// <summary>
+    /// Upstream's merge: every template key overwrites the game's value (keys the template does not name stay), except
+    /// the two search-path lists, whose template entries are added to the game's list (RHI owns those lists entry by
+    /// entry, so removal can take back exactly what it added). A template <c>PreprocessorDefinitions</c> is left out
+    /// when <paramref name="skipPreprocessorDefinitions"/> is set; the game's own line is never touched.
+    /// </summary>
+    internal static void MergeTemplate(List<string> lines, IReadOnlyList<string> template, bool skipPreprocessorDefinitions,
+        List<string> effectAdded, List<string> textureAdded, bool recordTemplatePaths)
+    {
+        foreach (var (section, key, value) in IniLines.Entries(template))
+        {
+            if (section.Length == 0) continue; // a key outside any section has nowhere to go in ReShade.ini
+            if (section.Equals("GENERAL", StringComparison.OrdinalIgnoreCase))
+            {
+                if (key.Equals("PreprocessorDefinitions", StringComparison.OrdinalIgnoreCase) && skipPreprocessorDefinitions) continue;
+                if (key.Equals(EffectKey, StringComparison.OrdinalIgnoreCase) || key.Equals(TextureKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    var added = key.Equals(EffectKey, StringComparison.OrdinalIgnoreCase) ? effectAdded : textureAdded;
+                    var scratch = new List<string>();
+                    MergeSearchPath(lines, "GENERAL", key, SplitList(value), scratch);
+                    if (recordTemplatePaths) added.AddRange(scratch);
+                    continue;
+                }
+            }
+            IniLines.Set(lines, section, key, value);
+        }
+    }
+
+    /// <summary>Writes the Settings values <paramref name="defaults"/> carries (each only when set).</summary>
+    internal static void ApplySettings(List<string> lines, ReShadeIniDefaults defaults)
+    {
+        if (defaults.ScreenshotSavePath is { Length: > 0 } savePath) IniLines.Set(lines, "SCREENSHOT", "SavePath", savePath);
+        if (defaults.OverlayHotkey is { Length: > 0 } overlay) IniLines.Set(lines, "INPUT", "KeyOverlay", overlay);
+        if (defaults.ScreenshotHotkey is { Length: > 0 } screenshot) IniLines.Set(lines, "INPUT", "KeyScreenshot", screenshot);
+        if (defaults.VariableListUseTabs is { } tabs) IniLines.Set(lines, "OVERLAY", "VariableListUseTabs", tabs ? "1" : "0");
+    }
+
+    /// <summary>#180: points ReShade at a preset beside it (<c>[GENERAL] PresetPath=.\name.ini</c>); creates ReShade.ini if needed.</summary>
+    public static void SetPresetPath(string gameDirectory, string presetFileName, string? gameRoot = null)
+    {
+        var path = ResolveIniPath(gameDirectory);
+        var existed = File.Exists(path);
+        var lines = existed ? File.ReadAllLines(path).ToList() : [];
+        if (IniLines.Set(lines, "GENERAL", "PresetPath", @".\" + presetFileName) || !existed)
+            Write(path, lines, gameDirectory, gameRoot);
+    }
+
+    /// <summary>#180: removes <c>PresetPath</c> while it still names <paramref name="presetFileName"/> beside the game (ReShade then uses its default). True when the file changed.</summary>
+    public static bool ClearPresetPath(string gameDirectory, string presetFileName, string? gameRoot = null)
+    {
+        var path = ResolveIniPath(gameDirectory);
+        if (!File.Exists(path)) return false;
+        var lines = File.ReadAllLines(path).ToList();
+        if (IniLines.Get(lines, "GENERAL", "PresetPath") is not { } current) return false;
+        var named = current.Replace('/', '\\').TrimStart('.').TrimStart('\\');
+        if (!named.Equals(presetFileName, StringComparison.OrdinalIgnoreCase)) return false;
+        IniLines.Remove(lines, "GENERAL", "PresetPath");
+        Write(path, lines, gameDirectory, gameRoot);
+        return true;
     }
 
     public static void Cleanup(
@@ -68,7 +181,8 @@ internal static class ReShadeIniManager
         IReadOnlyList<string> effectPathsAdded,
         IReadOnlyList<string> texturePathsAdded,
         bool effectKeyCreated,
-        bool textureKeyCreated)
+        bool textureKeyCreated,
+        string? gameRoot = null)
     {
         if (!File.Exists(path)) return;
 
@@ -76,17 +190,17 @@ internal static class ReShadeIniManager
         if (createdByRhi && !string.IsNullOrWhiteSpace(lastManagedHash) &&
             string.Equals(FileHash.Sha256Hex(path), lastManagedHash, StringComparison.OrdinalIgnoreCase))
         {
-            File.Delete(path);
+            AtomicFile.Delete(path);
             return;
         }
 
         // User modified the file (or it pre-dated RHI): remove only path tokens inserted by RHI.
         var lines = File.ReadAllLines(path).ToList();
         var changed = false;
-        changed |= RemoveSearchPaths(lines, "GENERAL", "EffectSearchPaths", effectPathsAdded, effectKeyCreated);
-        changed |= RemoveSearchPaths(lines, "GENERAL", "TextureSearchPaths", texturePathsAdded, textureKeyCreated);
+        changed |= RemoveSearchPaths(lines, "GENERAL", EffectKey, effectPathsAdded, effectKeyCreated);
+        changed |= RemoveSearchPaths(lines, "GENERAL", TextureKey, texturePathsAdded, textureKeyCreated);
         if (changed)
-            File.WriteAllLines(path, lines, new UTF8Encoding(false));
+            Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
 
     internal static string ResolveIniPath(string gameDirectory)
@@ -106,33 +220,51 @@ internal static class ReShadeIniManager
         }
     }
 
+    /// <summary>
+    /// The one symlink rule for ReShade.ini and its numbered siblings (review finding 8), used by every path that writes
+    /// one (install, removal, Deploy, presets, Apply to all games, Luma's HDR setting, RenoDX's keys): a link is followed
+    /// only to a file of the same name (any case) inside the game's binary folder, its install folder, or the user's
+    /// ReShade config folder (<c>~/.config/ReShade</c>), where a shared ReShade.ini is kept.
+    /// </summary>
+    internal static UserFileLinkPolicy LinkPolicy(string iniPath, string binaryDirectory, string? gameRoot)
+    {
+        var roots = new List<string> { binaryDirectory };
+        if (!string.IsNullOrWhiteSpace(gameRoot)) roots.Add(gameRoot);
+        roots.AddRange(RenoDxIniOverrideManager.UserReShadeConfigDirectories);
+        return new UserFileLinkPolicy(Path.GetFileName(iniPath), roots, RenoDxIniOverrideManager.LinkRefusalPrefix);
+    }
+
+    /// <summary>A planned ReShade.ini write under <see cref="LinkPolicy"/> (for <see cref="IniLines.WriteAll"/>).</summary>
+    internal static IniFileWrite PlannedWrite(string path, IReadOnlyList<string> lines, string binaryDirectory, string? gameRoot)
+        => new(path, lines, LinkPolicy(path, binaryDirectory, gameRoot));
+
+    // One write path for ReShade.ini: atomic, a user's read-only lock kept, a symlink followed only as LinkPolicy allows.
+    private static void Write(string path, IReadOnlyList<string> lines, string gameDirectory, string? gameRoot)
+        => AtomicFile.ReplaceUserFileLines(path, lines, new UTF8Encoding(false), LinkPolicy(path, gameDirectory, gameRoot), ReadOnlyUserFile.WriteKeepingLock);
+
     private static bool MergeSearchPath(
         List<string> lines,
         string section,
         string key,
         IReadOnlyList<string> requested,
-        List<string> actuallyAdded,
-        out bool keyCreated)
+        List<string> actuallyAdded)
     {
-        keyCreated = false;
         if (requested.Count == 0) return false;
-        var (start, end) = FindSection(lines, section);
+        var (start, end) = IniLines.FindSection(lines, section);
         if (start < 0)
         {
             if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
             lines.Add($"[{section}]");
             lines.Add($"{key}={string.Join(',', requested)}");
             actuallyAdded.AddRange(requested);
-            keyCreated = true;
             return true;
         }
 
-        var keyIndex = FindKey(lines, start + 1, end, key);
+        var keyIndex = IniLines.FindKey(lines, start + 1, end, key);
         if (keyIndex < 0)
         {
             lines.Insert(end, $"{key}={string.Join(',', requested)}");
             actuallyAdded.AddRange(requested);
-            keyCreated = true;
             return true;
         }
 
@@ -159,9 +291,9 @@ internal static class ReShadeIniManager
         bool keyCreated)
     {
         if (remove.Count == 0) return false;
-        var (start, end) = FindSection(lines, section);
+        var (start, end) = IniLines.FindSection(lines, section);
         if (start < 0) return false;
-        var keyIndex = FindKey(lines, start + 1, end, key);
+        var keyIndex = IniLines.FindKey(lines, start + 1, end, key);
         if (keyIndex < 0) return false;
         var eq = lines[keyIndex].IndexOf('=');
         var raw = eq >= 0 ? lines[keyIndex][(eq + 1)..] : "";
@@ -178,32 +310,4 @@ internal static class ReShadeIniManager
 
     private static List<string> SplitList(string raw)
         => raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-
-    private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string section)
-    {
-        var target = $"[{section}]";
-        for (var i = 0; i < lines.Count; i++)
-        {
-            if (!lines[i].Trim().Equals(target, StringComparison.OrdinalIgnoreCase)) continue;
-            var end = lines.Count;
-            for (var j = i + 1; j < lines.Count; j++)
-                if (lines[j].TrimStart().StartsWith("[", StringComparison.Ordinal)) { end = j; break; }
-            return (i, end);
-        }
-        return (-1, -1);
-    }
-
-    private static int FindKey(IReadOnlyList<string> lines, int start, int end, string key)
-    {
-        for (var i = start; i < end; i++)
-        {
-            var trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith(";", StringComparison.Ordinal) || trimmed.StartsWith("#", StringComparison.Ordinal)) continue;
-            var eq = trimmed.IndexOf('=');
-            if (eq <= 0) continue;
-            if (trimmed[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) return i;
-        }
-        return -1;
-    }
-
 }

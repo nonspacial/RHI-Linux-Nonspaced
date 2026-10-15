@@ -1224,6 +1224,34 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DownloadSources.ComponentNotes.RefusalPrefix,
             "Download recusado: links de notas dos componentes devem ser HTTPS em um host confiável (raw.githubusercontent.com). Link recusado: "),
         // w5/ini-presets rows
+        // #181 INI templates and deploys.
+        (RHI.Platform.Linux.Deployment.UserIniService.NativeGamePrefix, "Os arquivos INI não foram gravados: este é um jogo nativo do Linux: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.NoFolderPrefix, "Os arquivos INI não foram gravados: a pasta do jogo não está disponível: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.NotManagedPrefix, "Os arquivos INI não foram gravados: o RHI não instalou este componente neste jogo, e uma cópia que ele não instalou fica como está: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.DeployedPrefix, "INI implantado do seu modelo: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.DeployedBackupPrefix, "INI implantado do seu modelo; o arquivo anterior do jogo fica ao lado como: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.ChangedPrefix, "INI não gravado: o arquivo do jogo mudou desde que o RHI o gravou (ou o RHI não o gravou); confirme para substituí-lo, uma cópia de segurança é mantida: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.RestoredPrefix, "Seu INI anterior voltou: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.NoBackupPrefix, "Não resta nenhuma cópia de segurança de INI guardada pelo RHI para restaurar: "),
+        (RHI.Platform.Linux.Deployment.UserIniService.RestoreChangedPrefix, "A cópia de segurança não foi restaurada: o arquivo do jogo mudou desde que o RHI o gravou; a cópia fica ao lado dele: "),
+        (RHI.Platform.Linux.Deployment.UserIniTemplates.TooLargePrefix, "Modelo de INI ignorado: ele tem mais de 1 MiB: "),
+        (RHI.Platform.Linux.Deployment.IniLines.NotPutBackPrefix, " Estes arquivos já tinham sido gravados e não puderam ser restaurados: "),
+        (RHI.Platform.Linux.Deployment.IniLines.LinkRefusalPrefix, "Link de INI não seguido: o destino deve ser um arquivo com o mesmo nome dentro da pasta do jogo. Link: "),
+        // #180 ReShade presets.
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NotAPresetPrefix, "Não é uma predefinição do ReShade (precisa de uma linha Techniques= com pelo menos um efeito .fx): "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.TooLargePrefix, "Predefinição não usada: ela tem mais de 1 MiB: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NoManagedReShadePrefix, "Instale o ReShade com o RHI primeiro; as predefinições vão para jogos cujo ReShade o RHI gerencia: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NameTakenPrefix, "Já existe na pasta do jogo um arquivo com o nome da predefinição que o RHI não colocou ali (ou que você alterou), então ele ficou como está: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.InstalledPrefix, "Predefinição instalada e selecionada no ReShade.ini: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.RemovedPrefix, "Predefinição removida: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.KeptChangedPrefix, "Predefinição tirada da lista do RHI; o arquivo ficou porque mudou desde que o RHI o colocou ali: "),
+        (RHI.Platform.Linux.Deployment.ReShadePresetService.NotInstalledPrefix, "O RHI não instalou esta predefinição: "),
+        // #189 Luma settings.
+        (RHI.Platform.Linux.Deployment.LumaSettingsService.NotManagedPrefix, "As configurações do Luma precisam do Luma instalado pelo RHI: "),
+        (RHI.Platform.Linux.Deployment.LumaSettingsService.NoEngineIniPrefix, "Nenhum local do Engine.ini foi encontrado para este jogo, então o TAA não foi alterado: "),
+        // #182 peak brightness.
+        (RHI.Platform.Linux.Deployment.RenoDxPeakNits.NotManagedPrefix, "O brilho máximo vai para as predefinições do RenoDX; instale o RenoDX com o RHI primeiro: "),
+        (RHI.Platform.Linux.Deployment.RenoDxPeakNits.NoReShadeIniPrefix, "Este jogo ainda não tem ReShade.ini; inicie-o uma vez com o RenoDX para que ele grave suas predefinições: "),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];
