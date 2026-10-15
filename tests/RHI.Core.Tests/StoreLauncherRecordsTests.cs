@@ -285,6 +285,27 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         => Assert.Equal(plain, StoreLauncherRecords.IsStoreId(id));
 
     [Fact]
+    public void Record_NamingTheGamesDriveBehindTheHomeGamesLink_IsNoGameFolder()
+    {
+        // w4 review minor 5, owner layout: ~/Games -> /media/<disk>/Games; Z:\media\<disk>\Games is the whole games drive.
+        var home = _tree.Dir("owner");
+        var games = _tree.Dir("disk", "Games");
+        _tree.Link(games, "owner", "Games");
+        var prefix = _tree.Dir("disk", "Games", "ubi");
+        _tree.Dir("disk", "Games", "ubi", "drive_c", "windows");
+        _tree.Link("../drive_c", "disk", "Games", "ubi", "dosdevices", "c:");
+        _tree.Link("/", "disk", "Games", "ubi", "dosdevices", "z:");
+        Pe(Path.Combine(games, "Far Cry 6"), "FarCry6.exe", 8192);
+        Registry(prefix,
+            ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\1""", [("InstallDir", "Z:" + games.Replace('/', '\\'))]),
+            ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\5266""", [("InstallDir", "Z:" + Path.Combine(games, "Far Cry 6").Replace('/', '\\'))]));
+
+        var record = Assert.Single(StoreLauncherRecords.Find(prefix, home, CancellationToken.None));
+
+        Assert.Equal(Path.Combine(games, "Far Cry 6"), record.InstallDirectory);
+    }
+
+    [Fact]
     public async Task WinePrefix_UnreadableProductDb_KeepsTheLayoutGames_AndWarns()
     {
         var prefix = Prefix("broken");

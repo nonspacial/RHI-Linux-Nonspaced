@@ -39,6 +39,24 @@ public sealed class GameRootGuardTests
     }
 
     [Fact]
+    public void HomeContainerThatIsASymlink_IsRefusedUnderItsTargetsSpelling()
+    {
+        // w4 review minor 5: the owner's ~/Games is a symlink to /media/<disk>/Games; a record naming the target directly
+        // (a Wine registry Z:\media\<disk>\Games) must be refused like ~/Games itself, the games in it must not.
+        using var tree = new DetectionTestTree();
+        var home = tree.Dir("home", "me");
+        var games = tree.Dir("disk", "Games");
+        var game = tree.Dir("disk", "Games", "Some Game");
+        tree.Link(games, "home", "me", "Games");
+
+        Assert.Equal(GameRootProblem.SharedFolder, GameRootGuard.Check(tree.Path_("home", "me", "Games"), home));
+        Assert.Equal(GameRootProblem.SharedFolder, GameRootGuard.Check(games, home));
+        Assert.Equal(GameRootProblem.SharedFolder, GameRootGuard.Check(games + "/", home));
+        Assert.Equal(GameRootProblem.None, GameRootGuard.Check(game, home));
+        Assert.Equal(GameRootProblem.None, GameRootGuard.Check(tree.Path_("home", "me", "Games", "Some Game"), home));
+    }
+
+    [Fact]
     public void AddAndEditRefusal_NamesTheProblem()
     {
         using var tree = new DetectionTestTree();
