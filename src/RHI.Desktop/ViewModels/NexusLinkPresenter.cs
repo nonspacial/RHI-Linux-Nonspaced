@@ -12,7 +12,7 @@ public sealed record NxmConfirmation(NxmLink Link, NexusModFile? File, string? F
 
 /// <summary>
 /// Nexus Mods links for library games (#99): the card's Nexus Mods page (manifest <c>nexusUrlOverrides</c>,
-/// <see cref="DetectedGame.NexusUrlOverride"/>), and a "Mod Manager Download" (nxm://) link arriving at RHI — parsed
+/// <see cref="DetectedGame.NexusUrlOverride"/>, else <see cref="NexusGameCatalogue"/>; #174), and a "Mod Manager Download" (nxm://) link arriving at RHI — parsed
 /// strictly, confirmed by the user with the mod and file named, downloaded into RHI's cache, then offered for install
 /// through the paths a dropped file takes (each confirms again). Nothing is installed from a link without confirmation.
 /// </summary>
@@ -25,12 +25,16 @@ public sealed class NexusLinkPresenter
     private readonly NexusApiClient _api;
     private readonly NexusDownloadService _downloads;
 
-    public NexusLinkPresenter(NexusAccountPresenter account, NexusApiClient api, NexusDownloadService downloads)
+    public NexusLinkPresenter(NexusAccountPresenter account, NexusApiClient api, NexusDownloadService downloads, NexusGameCatalogue? games = null)
     {
         _account = account;
         _api = api;
         _downloads = downloads;
+        Games = games;
     }
+
+    /// <summary>Which games have a Nexus Mods page beyond the manifest (#174); null = manifest and built-in table only.</summary>
+    public NexusGameCatalogue? Games { get; }
 
     /// <summary>Asks the user to confirm a link's download (set by the window; no window = never confirmed).</summary>
     public Func<NxmConfirmation, Task<bool>>? Confirm { get; set; }
@@ -40,11 +44,22 @@ public sealed class NexusLinkPresenter
 
     /// <summary>
     /// The game's Nexus Mods page (www.nexusmods.com, https, no credentials), or null — the card menu shows "Nexus Mods
-    /// page" only then.
+    /// page" only then. Opening it needs no account (#174). Order: the manifest's page for the game, RHI's built-in
+    /// table of store names Nexus spells differently (Skyrim Special Edition), then Nexus's own game list when
+    /// <paramref name="games"/> has loaded it.
     /// </summary>
-    public static string? PageFor(DetectedGame? game)
+    public static string? PageFor(DetectedGame? game, NexusGameCatalogue? games = null)
     {
-        if (game?.NexusUrlOverride is not { } url || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return null;
+        if (game is null) return null;
+        if (ManifestPageFor(game) is { } manifest) return manifest;
+        var steamAppId = game.SteamAppId ?? game.ManifestSteamAppIdOverride;
+        return games is not null ? games.PageFor(game.Name, steamAppId) : NexusGameCatalogue.KnownPageFor(game.Name, steamAppId);
+    }
+
+    /// <summary>The page named by the manifest's <c>nexusUrlOverrides</c>, when it is an https Nexus Mods link.</summary>
+    private static string? ManifestPageFor(DetectedGame game)
+    {
+        if (game.NexusUrlOverride is not { } url || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return null;
         if (uri.Scheme != Uri.UriSchemeHttps || !uri.IsDefaultPort || !string.IsNullOrEmpty(uri.UserInfo)) return null;
         return uri.Host is "www.nexusmods.com" or "nexusmods.com" ? uri.AbsoluteUri : null;
     }
@@ -90,7 +105,7 @@ public sealed class NexusLinkPresenter
             AppLog.Warn("nxm", "Could not read the mod's file list; the confirmation names the file by number", ex);
         }
 
-        var matches = vm.AllLibraryGames.Where(g => GameDomainOf(PageFor(g)) == link.GameDomain).ToList();
+        var matches = vm.AllLibraryGames.Where(g => GameDomainOf(PageFor(g, Games)) == link.GameDomain).ToList();
         var game = matches.Count == 1 ? matches[0] : null;
         if (Confirm is null || !await Confirm(new NxmConfirmation(link, file, game?.Name)))
         {

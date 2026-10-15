@@ -32,6 +32,17 @@ public sealed partial class OptiScalerDeploymentService
     public const string OptiScalerAlreadyPresentPrefix =
         "An OptiScaler that RHI did not install is already in this game's folder, so RHI will not install a second one (both would load); nothing was changed. Remove that OptiScaler first, then try again. File: ";
 
+    /// <summary>
+    /// Like <see cref="OptiScalerAlreadyPresentPrefix"/>, for an OptiScaler another RHI component recorded as its own
+    /// (w3 final review, nit 2); file and component follow.
+    /// </summary>
+    public const string OptiScalerHeldByRhiComponentPrefix =
+        "Another component RHI installed on this game already brought an OptiScaler, so RHI will not install a second one (both would load); nothing was changed. Remove that component first, then try again. File and component: ";
+
+    /// <summary>The game folder could not be read for the second-OptiScaler check; the reason follows.</summary>
+    public const string FolderUnreadablePrefix =
+        "The game folder could not be read to check for another OptiScaler, so nothing was installed or changed: ";
+
     public const string ProxyNameNotOfferedPrefix = "OptiScaler cannot be installed under this DLL name; choose one of dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll or winhttp.dll: ";
 
     public const string NightlyPinnedCurrentPrefix = "OptiScaler Nightly is pinned and current: ";
@@ -322,8 +333,25 @@ public sealed partial class OptiScalerDeploymentService
             return ComponentOperationResult.Fail("OptiScaler is already managed by RHI Linux for this game. Remove it before reinstalling/updating.");
         // Never a second OptiScaler (review minor 1): one already under ANY supported name (the user's own, usually
         // dxgi.dll) refuses every install, whichever name this one would take.
-        if (ExistingOptiScalerProxy(game.BinaryDirectory) is { } existingProxy)
+        string? existingProxy;
+        try
+        {
+            existingProxy = ExistingOptiScalerProxy(game.BinaryDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // w3 final review, nit 4: an unreadable folder is a failure with nothing changed, never an exception.
+            return ComponentOperationResult.Fail(FolderUnreadablePrefix + ex.Message);
+        }
+        if (existingProxy is not null)
+        {
+            // w3 final review, nit 2: a file another RHI component recorded says which component, not "RHI did not install".
+            var existingPath = Path.GetFullPath(Path.Combine(game.BinaryDirectory, existingProxy));
+            if (_records.FindAll(game).FirstOrDefault(other => other.Component != ManagedComponentKind.OptiScaler
+                    && other.Files.Any(file => Path.GetFullPath(file.Path).Equals(existingPath, StringComparison.Ordinal))) is { } holder)
+                return ComponentOperationResult.Fail(OptiScalerHeldByRhiComponentPrefix + $"{existingProxy} ({LinuxManagedComponentService.DisplayDependencyName(holder.Component)})");
             return ComponentOperationResult.Fail(OptiScalerAlreadyPresentPrefix + existingProxy);
+        }
         if (_overrides.EditRefusal(prefix) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 

@@ -1300,29 +1300,55 @@ public sealed partial class MainWindow : Window
         });
 
         var variantRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
+        // #174: the label names every channel (F5 DLSSNR included) so none hides inside the closed list; each entry and
+        // the line under the list say in plain words what the channel is (2 s tooltips, the owner's rule).
         var variantLabel = new TextBlock
         {
             Text = T("Win.ChannelVariant"),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
         };
         ToolTip.SetTip(variantLabel, T("Win.StableUsesOfficialStableReleaseNightly"));
+        ToolTip.SetShowDelay(variantLabel, MiddleEllipsisText.TooltipDelay);
         var variantCombo = new ComboBox
         {
             ItemsSource = vm.Runtime.OptiScalerVariantOptions,
             SelectedItem = vm.Runtime.SelectedOptiScalerVariant,
             MinWidth = 260,
-            IsEnabled = !snapshot.ManagedByRhi
+            IsEnabled = !snapshot.ManagedByRhi,
+            ItemTemplate = new Avalonia.Controls.Templates.FuncDataTemplate<OptionItem<OptiScalerVariant>>((item, _) =>
+            {
+                var text = new TextBlock { Text = item?.Display };
+                if (item is not null)
+                {
+                    ToolTip.SetTip(text, RuntimePanelViewModel.OptiScalerChannelText(item.Value));
+                    ToolTip.SetShowDelay(text, MiddleEllipsisText.TooltipDelay);
+                }
+                return text;
+            })
         };
+        ToolTip.SetShowOnDisabled(variantCombo, true);
+        ToolTip.SetShowDelay(variantCombo, MiddleEllipsisText.TooltipDelay);
+        var channelText = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        void ShowChannel()
+        {
+            var chosen = (variantCombo.SelectedItem as OptionItem<OptiScalerVariant>)?.Value ?? OptiScalerVariant.Stable;
+            channelText.Text = RuntimePanelViewModel.OptiScalerChannelText(chosen);
+            ToolTip.SetTip(variantCombo, channelText.Text);
+        }
+        ShowChannel();
         variantCombo.SelectionChanged += (_, _) =>
         {
             if (variantCombo.SelectedItem is OptionItem<OptiScalerVariant> value)
                 vm.Runtime.SelectedOptiScalerVariant = value;
+            ShowChannel();
         };
         Grid.SetColumn(variantLabel, 0);
         Grid.SetColumn(variantCombo, 1);
         variantRow.Children.Add(variantLabel);
         variantRow.Children.Add(variantCombo);
         panel.Children.Add(variantRow);
+        panel.Children.Add(channelText);
         panel.Children.Add(new TextBlock
         {
             Text = snapshot.ManagedByRhi
@@ -1333,6 +1359,38 @@ public sealed partial class MainWindow : Window
             Opacity = 0.58
         });
         panel.Children.Add(new OptiScalerNightlyBuildRow(vm.Runtime.OptiScalerNightlyBuild)); // w3/sync #156 hook
+
+        // #172: OptiScaler's DLL name, like ReShade's (#120): Automatic (dxgi.dll), locked while installed, names another RHI
+        // component uses left out; the 2 s tooltip says which name the install takes and why.
+        if (vm.OptiScalerDllName() is { } dllName)
+        {
+            var dllRow = new Grid { ColumnDefinitions = new ColumnDefinitions("280,*"), ColumnSpacing = 12 };
+            var dllLabel = new TextBlock { Text = T("Names.DllNameLabel"), VerticalAlignment = VerticalAlignment.Center };
+            var dllCombo = new ComboBox { ItemsSource = dllName.Options, SelectedItem = dllName.Selected, MinWidth = 260, IsEnabled = dllName.CanChoose };
+            ToolTip.SetTip(dllCombo, dllName.Hint);
+            ToolTip.SetShowOnDisabled(dllCombo, true);
+            ToolTip.SetShowDelay(dllCombo, MiddleEllipsisText.TooltipDelay);
+            var acceptedDll = dllName.Selected;
+            var revertingDll = false;
+            dllCombo.SelectionChanged += (_, _) =>
+            {
+                if (revertingDll || dllCombo.SelectedItem is not DllNameOption chosen || ReferenceEquals(chosen, acceptedDll)) return;
+                if (vm.SaveOptiScalerDllName(chosen.Value))
+                {
+                    acceptedDll = chosen;
+                    if (vm.OptiScalerDllName() is { } refreshed) ToolTip.SetTip(dllCombo, refreshed.Hint);
+                    return;
+                }
+                revertingDll = true;
+                dllCombo.SelectedItem = acceptedDll;
+                revertingDll = false;
+            };
+            Grid.SetColumn(dllLabel, 0);
+            Grid.SetColumn(dllCombo, 1);
+            dllRow.Children.Add(dllLabel);
+            dllRow.Children.Add(dllCombo);
+            panel.Children.Add(dllRow);
+        }
 
         panel.Children.Add(new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#1E2630")), Margin = new Avalonia.Thickness(0, 4) });
         panel.Children.Add(new TextBlock

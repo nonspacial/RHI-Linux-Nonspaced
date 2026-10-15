@@ -490,6 +490,35 @@ public sealed class NrCostScalerUpdateAllTests
             ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewerShortFuse) }
             : null;
 
+    // #170: an add-on RHI turned off for ReShade's No Addons build (its file renamed to <name>.rhi-off) is held, not
+    // updated, and Update All says why in its own words.
+    [Fact]
+    public async Task AddonUpdateWhileTurnedOffForNoAddons_IsHeld_AndUpdateAllSaysSo()
+    {
+        using var fx = await ViewModelFixture.StartAsync([], httpResponse: Respond);
+        var dir = Directory.CreateDirectory(Path.Combine(fx.Root, "games", "Off")).FullName;
+        var exe = Path.Combine(dir, "Off.exe");
+        File.WriteAllBytes(exe, CacheForeignFileRejectionTests.Pe(0x8664, 4096, 7));
+        var game = new DetectedGame { Name = "Off", Source = "Manual", Runner = "Manual Windows", InstallPath = dir, ExecutablePath = exe, BinaryDirectory = dir };
+        var record = new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.ShortFuse, BinaryDirectory = dir, Version = "1.0"
+        };
+        fx.Records.Upsert(record);
+        Assert.True((await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.ShortFuse, [])).UpdateAvailable); // the update exists
+        record.Files.Add(new LinuxDeployedFile { Path = Path.Combine(dir, "renodx-dlss-sf.addon64" + ReShadeAddonSwitch.OffSuffix) });
+        fx.Records.Upsert(record);
+
+        var check = await fx.Managed.CheckManagedUpdateAsync(game, ManagedComponentKind.ShortFuse, []);
+
+        Assert.False(check.UpdateAvailable);
+        Assert.Equal(LinuxManagedComponentService.ReShadeNoAddonsName, check.HeldBy);
+        var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], LinuxUpdateRunMode.Manual);
+        Assert.Equal(1, result.HeldCount);
+        Assert.Equal("Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 add-on(s) turned off for ReShade No Addons (install ReShade Stable or Nightly to update them).",
+            RHI.Desktop.Localization.UiLocalizationService.UpdateAllSummaryFor("en-US", result));
+    }
+
     [Fact]
     public async Task MethodUpdateWhileTheScalerIsInstalled_IsHeldByNrCostScaler_NeverAFailure()
     {

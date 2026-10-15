@@ -1039,6 +1039,8 @@ public static class UiLocalizationService
             "Download recusado: links da API do Nexus Mods devem ser HTTPS em um host confiável (api.nexusmods.com). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.NexusFiles.RefusalPrefix,
             "Download recusado: links de arquivos do Nexus Mods devem ser HTTPS em um host confiável (servidores de arquivos do Nexus Mods, nexus-cdn.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.NexusGameList.RefusalPrefix,
+            "Download recusado: links da lista de jogos do Nexus Mods devem ser HTTPS em um host confiável (data.nexusmods.com). Link recusado: "),
         (RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage, "Não foi possível falar com o Nexus Mods."),
         (RHI.Platform.Linux.Network.NexusDownloadService.NoLinkMessage, "O Nexus Mods não deu nenhum link de download que o RHI aceite para este arquivo."),
         (RHI.Platform.Linux.Network.NexusApiClient.NoAccountMessage, "O Nexus Mods respondeu à verificação da chave sem uma conta."),
@@ -1069,6 +1071,18 @@ public static class UiLocalizationService
         (" The copy RHI kept from before its install stays at ", " A cópia que o RHI guardou de antes da instalação continua em "),
         (": changed outside RHI since the install; kept, not applied again.", ": alterado fora do RHI desde a instalação; mantido, não aplicado de novo."),
         ("RenoDX installed: ", "RenoDX instalado: "),
+        // #170: add-ons turned off/on with ReShade's No Addons channel.
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.TurnedOffPrefix,
+            " Add-ons do ReShade desligados porque o Sem add-ons não consegue carregá-los (ficam na pasta do jogo; voltam a ligar quando o ReShade voltar para Estável ou Desenvolvimento): "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.TurnedOnPrefix, " Add-ons do ReShade religados: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.NameTakenPrefix,
+            "O ReShade não foi alterado: um add-on não pode ser desligado nem religado porque já existe um arquivo com o nome que ele receberia. Tire esse arquivo do lugar primeiro: "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.HeldPrefix,
+            "Este add-on está desligado pela versão Sem add-ons do ReShade; instale antes neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento): "),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.ManagerUnreadableNote,
+            " Os add-ons do Gerenciador de add-ons não foram verificados porque a lista salva dele não pode ser lida, então ficaram como estavam; aplique o ReShade de novo quando essa lista puder ser lida."),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonSwitch.OffNote,
+            "Desligado pela versão Sem add-ons do ReShade: o add-on fica na pasta do jogo e volta a ligar quando o RHI instalar neste jogo o ReShade com suporte a add-ons (Estável ou Desenvolvimento)."),
         // #91 ReShade No Addons channel.
         ("ReShade on this game is the No Addons build, which cannot load add-ons; choose Stable or Nightly in the ReShade profile and apply it first: ",
             "O ReShade deste jogo é a versão Sem add-ons, que não carrega add-ons; escolha Estável ou Desenvolvimento no perfil do ReShade e aplique antes: "),
@@ -1096,8 +1110,16 @@ public static class UiLocalizationService
             "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
         ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
+        // #172: the saved DLL name was skipped because another RHI component holds it.
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.OptiScalerSavedNameSkippedPrefix,
+            " O nome de DLL salvo para o OptiScaler é usado por outro componente que o RHI instalou neste jogo, então o OptiScaler foi instalado com o nome automático. Nome salvo e componente: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix,
             "Já existe na pasta deste jogo um OptiScaler que o RHI não instalou, então o RHI não instala um segundo (os dois seriam carregados); nada foi alterado. Remova esse OptiScaler primeiro e tente de novo. Arquivo: "),
+        // #173 (w3 final review nits 2 and 4).
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.OptiScalerHeldByRhiComponentPrefix,
+            "Outro componente que o RHI instalou neste jogo já trouxe um OptiScaler, então o RHI não instala um segundo (os dois seriam carregados); nada foi alterado. Remova esse componente primeiro e tente de novo. Arquivo e componente: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.FolderUnreadablePrefix,
+            "Não foi possível ler a pasta do jogo para procurar outro OptiScaler, então nada foi instalado nem alterado: "),
         // #136 Control UE OptiScaler frame generation step.
         ("Control UE frame generation set up: OptiScaler Nightly pinned as winmm.dll with Streamline, DLSS Enabler and the frame generation settings. Build: ",
             "Geração de quadros do Control UE configurada: OptiScaler Nightly fixado como winmm.dll com Streamline, DLSS Enabler e as configurações de geração de quadros. Build: "),
@@ -1179,8 +1201,12 @@ public static class UiLocalizationService
             result.ChangedCount, result.CurrentCount, result.DeferredCount, result.FailedCount);
         if (result.UncheckedCount > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllUnchecked"), result.UncheckedCount);
-        if (result.HeldCount > 0) // w3/parity (#96)
-            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount);
+        // w3/parity (#96): held by NR Cost Scaler; #170: add-ons turned off for ReShade No Addons, counted apart.
+        var heldOff = result.Items.Count(item => item.HeldBy == RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ReShadeNoAddonsName);
+        if (result.HeldCount - heldOff > 0)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount - heldOff);
+        if (heldOff > 0)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeldNoAddons"), heldOff);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

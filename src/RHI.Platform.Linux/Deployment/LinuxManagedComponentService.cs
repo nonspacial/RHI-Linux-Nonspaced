@@ -65,6 +65,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
+        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.OwnedAddonFiles; // #170: No Addons turns these off too
         _renodx = renodx;
         _renodxUpgrade = renodxUpgrade;
         _optiscaler = optiscaler;
@@ -815,6 +816,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 component.ActionAllowed = false;
                 component.Note = ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + component.DisplayName;
             }
+        // #170: an installed add-on RHI turned off for No Addons says so (its Remove stays available).
+        foreach (var component in components.Where(c => ReShadeAddonSwitch.IsOff(Find(c.Kind))))
+            component.Note = ReShadeAddonSwitch.OffNote;
 
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
     }
@@ -882,6 +886,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w3/parity (#96): an nvngx_dlssnr.dll owner is not reinstalled, updated, swapped or removed under the NR Cost Scaler.
     private ComponentOperationResult? LayerGuard(DetectedGame game, ManagedComponentKind component)
         => NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered ? ComponentOperationResult.Fail(layered) : null;
+
+    /// <summary>
+    /// #170: an add-on RHI turned off for ReShade's No Addons build is not installed over or updated (that would put a
+    /// loadable copy back while ReShade cannot load it); removing it stays possible.
+    /// </summary>
+    private ComponentOperationResult? AddonOffGuard(DetectedGame game, ManagedComponentKind component)
+        => ReShadeAddonSwitch.IsOff(_records.Find(game, component))
+            ? ComponentOperationResult.Fail(ReShadeAddonSwitch.HeldPrefix + DisplayDependencyName(component))
+            : null;
 
     // w3/parity (#96): the NR Cost Scaler's own install and removal, through the same guard and history as every component.
     public Task<ComponentOperationResult> InstallNrCostScalerAsync(DetectedGame game, CancellationToken cancellationToken = default)
@@ -1411,6 +1424,81 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The store of per-game proxy DLL names chosen before install.</summary>
     public DllNamePreferenceStore ReShadeDllNames => _reshade.DllNames;
 
+    /// <summary>
+    /// The names OptiScaler's DLL-name dropdown offers on <paramref name="game"/> (#172): OptiScaler's names except those a
+    /// file of another RHI component sits under (RHI's own ReShade moves aside for OptiScaler, so its name stays offered).
+    /// </summary>
+    public IReadOnlyList<string> OptiScalerProxyNamesFor(DetectedGame game)
+    {
+        var held = OptiScalerNamesHeld(game);
+        return OptiScalerDeploymentService.ProxyNames.Where(name => !held.ContainsKey(name)).ToArray();
+    }
+
+    /// <summary>
+    /// The name "Automatic" stands for on <paramref name="game"/> (#172): <see cref="OptiScalerDeploymentService.DefaultProxyName"/>,
+    /// or the first of OptiScaler's names no other RHI component holds when that one is held (dxgi.dll again when every
+    /// name is held; the install then refuses with the holder's name).
+    /// </summary>
+    public string OptiScalerAutomaticProxyName(DetectedGame game)
+        => OptiScalerProxyNamesFor(game).FirstOrDefault() ?? OptiScalerDeploymentService.DefaultProxyName;
+
+    /// <summary>
+    /// The name OptiScaler is (or will be) installed under on <paramref name="game"/> (#172): the recorded one while it is
+    /// installed, else the saved choice while it is still offered, else <see cref="OptiScalerAutomaticProxyName"/>.
+    /// </summary>
+    public string OptiScalerProxyNameFor(DetectedGame game)
+    {
+        if (_records.Find(game, ManagedComponentKind.OptiScaler) is { } record) return OptiScalerDeploymentService.GetProxyName(record);
+        // No ReShade service (a test wiring OptiScaler alone) = no saved choice.
+        return _reshade?.DllNames.GetOptiScaler(game) is { } chosen && OptiScalerProxyNamesFor(game).Contains(chosen, StringComparer.OrdinalIgnoreCase)
+            ? chosen
+            : OptiScalerAutomaticProxyName(game);
+    }
+
+    /// <summary>
+    /// The saved OptiScaler name the next install skips because another RHI component holds it, with that component's
+    /// name ("winmm.dll (Ultimate ASI Loader)"); null when OptiScaler is installed, nothing is saved or the name is free.
+    /// </summary>
+    public string? OptiScalerSkippedChoice(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.OptiScaler) is null
+           && _reshade?.DllNames.GetOptiScaler(game) is { } chosen
+           && OptiScalerNamesHeld(game).TryGetValue(chosen, out var holder)
+            ? $"{chosen} ({DisplayDependencyName(holder)})"
+            : null;
+
+    /// <summary>Appended to an OptiScaler install that skipped the saved DLL name (#172); saved name and component follow.</summary>
+    public const string OptiScalerSavedNameSkippedPrefix =
+        " The DLL name saved for OptiScaler is used by another component RHI installed on this game, so OptiScaler was installed under the automatic name instead. Saved name and component: ";
+
+    // OptiScaler's names that a file of another RHI component sits under in the game folder, with that component.
+    private Dictionary<string, ManagedComponentKind> OptiScalerNamesHeld(DetectedGame game)
+    {
+        var held = new Dictionary<string, ManagedComponentKind>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory)) return held;
+        var directory = Path.GetFullPath(game.BinaryDirectory);
+        foreach (var record in _records.FindAll(game).Where(record => record.Component is not (ManagedComponentKind.OptiScaler or ManagedComponentKind.ReShade)))
+            foreach (var file in record.Files.Where(file => !string.IsNullOrWhiteSpace(file.Path)))
+            {
+                var full = Path.GetFullPath(file.Path);
+                if (string.Equals(Path.GetDirectoryName(full), directory, StringComparison.Ordinal)
+                    && OptiScalerDeploymentService.ProxyNames.Contains(Path.GetFileName(full), StringComparer.OrdinalIgnoreCase))
+                    held.TryAdd(Path.GetFileName(full), record.Component);
+            }
+        return held;
+    }
+
+    // Every OptiScaler install path (#172): the name OptiScalerProxyNameFor decides, and a plain sentence when the saved
+    // choice was skipped because another RHI component holds it.
+    private async Task<ComponentOperationResult> InstallOptiScalerUnderChosenNameAsync(
+        DetectedGame game, OptiScalerVariant variant, string? nightlyBuild, CancellationToken cancellationToken)
+    {
+        var skipped = OptiScalerSkippedChoice(game);
+        var result = await _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), cancellationToken).ConfigureAwait(false);
+        return result.Success && skipped is not null
+            ? result with { Message = result.Message + OptiScalerSavedNameSkippedPrefix + skipped }
+            : result;
+    }
+
     /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
     public ProxyNameResolution? ResolveReShadeProxyName(DetectedGame game) => _reshade.ResolveProxyName(game);
 
@@ -1593,7 +1681,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind kind,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        // #170: a swap would put a loadable copy back (DX11 Bridge) or miss the renamed file (Feeder, ShortFuse) while
+        // No Addons has the add-on turned off; it is refused like an update, before any download.
+        var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, kind);
         if (guard is not null) return Task.FromResult(guard);
         if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse))
             return SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken);
@@ -1666,7 +1756,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public Task<ComponentOperationResult> SetShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        // #170: the rename needs the add-on under its own name; while No Addons has it turned off nothing changes.
+        var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, ManagedComponentKind.ShortFuse);
         return guard is null ? _shortFuse.SetZzzLoadOrderAsync(game, enabled, cancellationToken) : Task.FromResult(guard);
     }
 
@@ -1695,13 +1786,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             cancellationToken)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The Extras ShortFuse Remove: the generic removal itself, so both Remove buttons give one answer. Removal is the
+    /// user's own choice and works while No Addons has the add-on turned off (#170; it deletes the off file).
+    /// </summary>
     public Task<ComponentOperationResult> RemoveShortFuseAsync(DetectedGame game, CancellationToken cancellationToken = default)
-    {
-        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.ShortFuse); // w3/parity (#96)
-        return guard is null
-            ? Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Remove, () => _shortFuse.RemoveAsync(game, cancellationToken))
-            : Task.FromResult(guard);
-    }
+        => RemoveAsync(game, ManagedComponentKind.ShortFuse, cancellationToken);
 
     public LinuxDeploymentRecord? GetUltimateAsiLoaderRecord(DetectedGame game)
         => _ultimateAsiLoader.GetRecord(game);
@@ -1874,7 +1964,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private ManagedUpdateCheck HeldByLayer(DetectedGame game, ManagedComponentKind component, ManagedUpdateCheck check)
         => check.UpdateAvailable && NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered
             ? check with { UpdateAvailable = false, Message = layered, HeldBy = NrCostScalerService.DisplayName }
-            : check;
+            // #170: an add-on turned off for No Addons is held by ReShade's channel, not updated.
+            : check.UpdateAvailable && AddonOffGuard(game, component) is { } off
+                ? check with { UpdateAvailable = false, Message = off.Message, HeldBy = ReShadeNoAddonsName }
+                : check;
+
+    /// <summary>What holds an add-on turned off for No Addons in Update All's summary (#170).</summary>
+    public const string ReShadeNoAddonsName = "ReShade No Addons";
 
     private async Task<ManagedUpdateCheck> CheckReShadeManagedUpdateAsync(DetectedGame game, CancellationToken cancellationToken)
     {
@@ -1889,7 +1985,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component); // w3/parity (#96), #170
         if (guard is not null) return Task.FromResult(guard);
 
         return Track(game, component, ComponentUpdateAction.Update, () => component switch
@@ -1935,7 +2031,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler); // w3/parity (#96)
         return guard is not null
             ? Task.FromResult(guard)
-            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install, () => _optiscaler.InstallAsync(game, variant, nightlyBuild, cancellationToken));
+            : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
+                () => InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken)); // #172
     }
 
     /// <summary>
@@ -1982,7 +2079,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game) ?? LayerGuard(game, component); // w3/parity (#96)
+        var guard = InstallGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component); // w3/parity (#96), #170
         if (guard is not null) return guard;
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2003,7 +2100,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.ReShade => _reshade.InstallAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.InstallAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.InstallAsync(game, cancellationToken),
-            ManagedComponentKind.OptiScaler => _optiscaler.InstallAsync(game, cancellationToken),
+            ManagedComponentKind.OptiScaler => InstallOptiScalerUnderChosenNameAsync(game, OptiScalerVariant.Stable, null, cancellationToken), // #172
             ManagedComponentKind.ReLimiter => _relimiter.InstallAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.InstallAsync(game, cancellationToken),
             ManagedComponentKind.MfgAdaUnlock => InstallMfgAdaUnlockAsync(game, cancellationToken),

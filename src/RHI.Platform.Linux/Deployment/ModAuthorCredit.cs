@@ -46,21 +46,22 @@ public static class ModAuthorCredit
     /// <summary>
     /// Add-on file names (.addon, .addon32, .addon64) recorded for a managed component. When the probe found add-on
     /// files for the row (<paramref name="detected"/>), only recorded names it found are kept, so a record that no
-    /// longer matches the disk does not show stale names.
+    /// longer matches the disk does not show stale names. An add-on ReShade's No Addons build turned off (#170) keeps its
+    /// own name here (the probe cannot see the renamed file, so the found-on-disk filter does not apply to it).
     /// </summary>
     public static IReadOnlyList<string> AddonFileNames(LinuxDeploymentRecord? record, IReadOnlyCollection<string>? detected = null)
     {
         if (record is null) return [];
-        var names = record.Files
+        var onDisk = detected is { Count: > 0 } ? new HashSet<string>(detected, StringComparer.OrdinalIgnoreCase) : null;
+        return record.Files
             .Select(file => Path.GetFileName(file.Path))
-            .Where(IsAddonFileName)
-            .Distinct(StringComparer.Ordinal);
-        if (detected is { Count: > 0 })
-        {
-            var onDisk = new HashSet<string>(detected, StringComparer.OrdinalIgnoreCase);
-            names = names.Where(onDisk.Contains);
-        }
-        return names.ToArray();
+            .Select(name => name.EndsWith(ReShadeAddonSwitch.OffSuffix, StringComparison.Ordinal)
+                ? (Name: name[..^ReShadeAddonSwitch.OffSuffix.Length], Off: true)
+                : (Name: name, Off: false))
+            .Where(entry => IsAddonFileName(entry.Name) && (entry.Off || onDisk is null || onDisk.Contains(entry.Name)))
+            .Select(entry => entry.Name)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     /// <summary>

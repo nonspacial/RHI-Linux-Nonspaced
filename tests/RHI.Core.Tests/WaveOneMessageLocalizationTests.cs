@@ -252,6 +252,17 @@ public sealed class WaveOneMessageLocalizationTests
         yield return P + OptiScalerIniTemplates.UnavailablePrefix + P;
         yield return "OptiScaler install failed: " + OptiScalerDeploymentService.NameHeldByRhiComponentPrefix + "winmm.dll (Ultimate ASI Loader)";
         yield return OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "DXGI.dll";
+        yield return OptiScalerDeploymentService.OptiScalerHeldByRhiComponentPrefix + "version.dll (DLSS Enabler)";
+        yield return OptiScalerDeploymentService.FolderUnreadablePrefix + P;
+        // #170
+        yield return "ReShade 6.8.0 [NoAddons] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + ReShadeAddonSwitch.TurnedOffPrefix + "2.";
+        yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + ReShadeAddonSwitch.TurnedOnPrefix + "2.";
+        yield return ReShadeAddonSwitch.NameTakenPrefix + P;
+        yield return ReShadeAddonSwitch.OffNote;
+        yield return ReShadeAddonSwitch.HeldPrefix + "ReLimiter";
+        yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + ReShadeAddonSwitch.ManagerUnreadableNote;
+        // #172
+        yield return P + LinuxManagedComponentService.OptiScalerSavedNameSkippedPrefix + "winmm.dll (Ultimate ASI Loader)";
         yield return ControlUeFrameGenerationService.NotSetUpPrefix + OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "dxgi.dll"
             + ControlUeFrameGenerationService.HdrSetPrefix + "0";
     }

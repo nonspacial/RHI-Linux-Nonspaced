@@ -139,8 +139,11 @@ public sealed class ControlUeFrameGenerationService
         RenoDxIniOverrideApplyResult applied;
         try
         {
-            // The INI writer follows a link to its target (UserFileLinkPolicy), so the target is what changes.
-            var written = File.ResolveLinkTarget(iniPath, returnFinalTarget: true)?.FullName ?? iniPath;
+            // The INI writer follows a link to its target (UserFileLinkPolicy), so the target is what changes. Resolved by
+            // the writer's own rule before anything is copied (w3 final review, finding 1): a link the policy refuses is
+            // refused here, so no rollback copy is ever written beside a target outside the game's folders, and the file
+            // tracked is exactly the one the writer replaces.
+            var written = AtomicFile.ResolveUserFileTarget(iniPath, RenoDxIniOverrideManager.LinkPolicy(game.BinaryDirectory, game.InstallPath));
             await scope.TrackAsync(written, CancellationToken.None).ConfigureAwait(false);
             applied = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, new Dictionary<string, string> { [HdrKey] = value },
                 previous, gameRoot: game.InstallPath, section: HdrSection);

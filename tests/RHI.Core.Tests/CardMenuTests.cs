@@ -173,6 +173,35 @@ public sealed class CardMenuTests : IDisposable
         Assert.False(page.SeparatorBefore); // one separator before the parity group
     }
 
+    /// <summary>
+    /// #174 (owner, 2026-10-14): "Nexus Mods page" never showed, not even for Skyrim Special Edition — it only came from
+    /// the manifest's 25 overrides. Steam's name for it is not Nexus's, so the built-in table answers, with or without
+    /// the parity services (opening a page needs no account).
+    /// </summary>
+    [Fact]
+    public async Task NexusPage_IsOffered_ForSkyrimSpecialEdition_WithoutAManifestEntry()
+    {
+        var skyrim = Game("The Elder Scrolls V: Skyrim Special Edition");
+        using var fx = await ViewModelFixture.StartAsync([skyrim, Game("Plain Quest")]);
+
+        var bare = Assert.Single(fx.Vm.CardMenuFor(Row(fx, "The Elder Scrolls V: Skyrim Special Edition")), i => i.Id == "nexus-page");
+        Assert.Equal("https://www.nexusmods.com/skyrimspecialedition", bare.Tip);
+
+        using var http = new HttpClient(new OfflineHandler());
+        var wine = new RHI.Platform.Linux.Deployment.WineDllOverrideService();
+        var services = RHI.Desktop.AppComposition.Create(http,
+            new RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore(Path.Combine(_root, "app-records.json")), wine,
+            RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(wine, Path.Combine(_root, "journal")));
+        fx.Vm.Parity = services.Parity;
+        Assert.NotNull(services.Parity!.NexusLinks.Games); // the app wires Nexus's game list
+
+        var page = Assert.Single(fx.Vm.CardMenuFor(Row(fx, "The Elder Scrolls V: Skyrim Special Edition")), i => i.Id == "nexus-page");
+        Assert.Equal("https://www.nexusmods.com/skyrimspecialedition", page.Tip);
+        Assert.Equal(UiLocalizationService.Text("Parity.NexusPage"), page.Label);
+        Assert.True(page.Command.CanExecute(null));
+        Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "nexus-page"); // no page known: left out
+    }
+
     private sealed class OfflineHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

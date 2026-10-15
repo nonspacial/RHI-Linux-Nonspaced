@@ -93,30 +93,259 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
     }
 
-    // Owner decision (#91): as upstream, a game switches to No Addons with add-ons still installed; they stay in place and
-    // simply stop loading (a warning is tracked as #170).
+    // Owner decisions (#91, #170): a game switches to No Addons with add-ons installed; their add-on files are turned off
+    // (renamed to <name>.rhi-off, kept, never loaded), recorded, and switching back turns exactly those on again. The
+    // status line says how many.
     [Fact]
-    public async Task NoAddons_WithRhiAddonsInstalled_SwitchesLikeUpstream_AndLeavesTheAddonsInPlace()
+    public async Task NoAddons_TurnsInstalledAddonsOff_AndBackOn_KeepingEveryByte()
     {
         var (game, store) = CreateGame("switch");
         var handler = new Handler { AddonVersion = "6.8.0", NoAddonsVersion = "6.8.0" };
         var service = NewService(store, handler);
         Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
-        var addon = Path.Combine(game.BinaryDirectory!, "renodx-game.addon64");
-        File.WriteAllText(addon, "MZ RenoDX");
-        store.Upsert(new LinuxDeploymentRecord
+        var addon = SeedAddon(game, store, ManagedComponentKind.RenoDX, "renodx-game.addon64", withIni: true);
+        var other = SeedAddon(game, store, ManagedComponentKind.ReLimiter, "relimiter.addon64");
+        var ini = Path.Combine(game.BinaryDirectory!, "renodx-game.ini");
+        // A second add-on file of the same component: still one add-on in the count.
+        var extra = Path.Combine(game.BinaryDirectory!, "renodx-game-extra.addon32");
+        File.WriteAllText(extra, "MZ extra");
+        var withExtra = store.Find(game, ManagedComponentKind.RenoDX)!;
+        withExtra.Files.Add(new LinuxDeployedFile { Path = extra, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(extra) });
+        store.Upsert(withExtra);
+        // The user's own add-on (no record, no Addon Manager entry) is never touched (review nit 5).
+        var users = Path.Combine(game.BinaryDirectory!, "users-own.addon64");
+        File.WriteAllText(users, "MZ user's own");
+
+        var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+
+        Assert.True(off.Success, off.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOffPrefix + "2.", off.Message, StringComparison.Ordinal);
+        Assert.Contains("NO-ADDON-BUILD", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "dxgi.dll"), Encoding.Latin1));
+        Assert.False(File.Exists(addon));
+        Assert.False(File.Exists(other));
+        Assert.Equal("MZ " + Path.GetFileName(addon), File.ReadAllText(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal("MZ " + Path.GetFileName(other), File.ReadAllText(other + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal("[renodx]", File.ReadAllText(ini)); // only the add-on file itself is turned off
+        var renoDx = store.Find(game, ManagedComponentKind.RenoDX)!;
+        Assert.Equal([addon + ReShadeAddonSwitch.OffSuffix, ini, extra + ReShadeAddonSwitch.OffSuffix], renoDx.Files.Select(f => f.Path));
+        Assert.Equal("MZ extra", File.ReadAllText(extra + ReShadeAddonSwitch.OffSuffix));
+        Assert.True(ReShadeAddonSwitch.IsOff(renoDx));
+        Assert.Equal(other + ReShadeAddonSwitch.OffSuffix, Assert.Single(store.Find(game, ManagedComponentKind.ReLimiter)!.Files).Path);
+        Assert.Equal("MZ user's own", File.ReadAllText(users));
+        Assert.False(File.Exists(users + ReShadeAddonSwitch.OffSuffix));
+
+        var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+
+        Assert.True(on.Success, on.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOnPrefix + "2.", on.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ " + Path.GetFileName(addon), File.ReadAllText(addon));
+        Assert.Equal("MZ " + Path.GetFileName(other), File.ReadAllText(other));
+        Assert.False(File.Exists(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal([addon, ini, extra], store.Find(game, ManagedComponentKind.RenoDX)!.Files.Select(f => f.Path));
+        Assert.Equal("MZ extra", File.ReadAllText(extra));
+        Assert.False(ReShadeAddonSwitch.IsOff(store.Find(game, ManagedComponentKind.ReLimiter)));
+        Assert.Equal("MZ user's own", File.ReadAllText(users));
+
+        // Another apply on the same build changes no add-on and says nothing about add-ons.
+        var again = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.DoesNotContain(ReShadeAddonSwitch.TurnedOnPrefix.Trim(), again.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoAddons_TurnsAddonManagerAddonsOffAndOn_AndClearingTheSelectionDeletesTheOffCopy()
+    {
+        var (game, store) = CreateGame("manager");
+        var handler = new Handler();
+        var service = NewService(store, handler);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var managerAddon = Path.Combine(game.BinaryDirectory!, "manager-pick.addon64");
+        File.WriteAllText(managerAddon, "MZ manager");
+        service.AddonManagerFiles = _ => [managerAddon];
+
+        var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOffPrefix + "1.", off.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ manager", File.ReadAllText(managerAddon + ReShadeAddonSwitch.OffSuffix));
+        Assert.False(File.Exists(managerAddon));
+
+        var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOnPrefix + "1.", on.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ manager", File.ReadAllText(managerAddon));
+
+        // The real manager: an add-on it installed, turned off, is deleted with the selection (removal is the user's act).
+        var managed = Managed(store, game.InstallPath);
+        var manager = (ReShadeAddonManagerService)typeof(LinuxManagedComponentService)
+            .GetField("_addonManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(managed)!;
+        var statePath = Path.Combine(game.InstallPath, "addon-manager.json");
+        var hash = RHI.Core.Deployment.FileHash.Sha256Hex(managerAddon);
+        File.WriteAllText(statePath, System.Text.Json.JsonSerializer.Serialize(new
         {
-            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.RenoDX,
-            BinaryDirectory = game.BinaryDirectory!, Version = "mod", Files = [new LinuxDeployedFile { Path = addon }]
-        });
+            Schema = 1,
+            Games = new Dictionary<string, object>
+            {
+                [RHI.Platform.Linux.Settings.GameRecordIdentity.Key(game)] = new { SelectedIds = new[] { "pick" }, Files = new[] { new { AddonId = "pick", Path = managerAddon, Sha256 = hash } } }
+            }
+        }));
+        Assert.Equal([managerAddon], manager.OwnedAddonFiles(game));
+        File.Move(managerAddon, managerAddon + ReShadeAddonSwitch.OffSuffix);
+        var cleared = await managed.ApplyReShadeAddonSelectionAsync(game, []);
+        Assert.False(File.Exists(managerAddon + ReShadeAddonSwitch.OffSuffix), cleared.Message);
+    }
+
+    // Review minor 4: when the Addon Manager's saved list cannot be read, nobody can tell its add-ons apart; they are left as
+    // they are and the status line says so on a switch to No Addons and back (not on an unrelated Stable update).
+    [Fact]
+    public async Task AddonManagerListUnreadable_SwitchLeavesItsAddons_AndSaysSo()
+    {
+        var (game, store) = CreateGame("manager-unreadable");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var managerAddon = Path.Combine(game.BinaryDirectory!, "manager-pick.addon64");
+        File.WriteAllText(managerAddon, "MZ manager");
+        var component = SeedAddon(game, store, ManagedComponentKind.ReLimiter, "relimiter.addon64");
+
+        // The real manager hands back null (not an empty list) for a list it cannot read.
+        var statePath = Path.Combine(game.InstallPath, "addon-manager.json");
+        File.WriteAllText(statePath, "{ not json");
+        var http = new HttpClient(new Handler { HomeUnreachable = true });
+        var manager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http), Path.Combine(game.InstallPath, "addon-cache"),
+            Path.Combine(game.InstallPath, "custom-addons"), statePath);
+        Assert.Null(manager.OwnedAddonFiles(game));
+        service.AddonManagerFiles = manager.OwnedAddonFiles;
+
+        var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+        Assert.True(off.Success, off.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOffPrefix + "1." + ReShadeAddonSwitch.ManagerUnreadableNote, off.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ manager", File.ReadAllText(managerAddon));
+        Assert.True(File.Exists(component + ReShadeAddonSwitch.OffSuffix)); // component add-ons still switch
+
+        var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.True(on.Success, on.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOnPrefix + "1." + ReShadeAddonSwitch.ManagerUnreadableNote, on.Message, StringComparison.Ordinal);
+
+        var again = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+        Assert.True(again.Success, again.Message);
+        Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, again.Message, StringComparison.Ordinal);
+
+        // Once the list reads again, the note goes and its add-ons switch as before.
+        File.Delete(statePath);
+        Assert.Empty(manager.OwnedAddonFiles(game)!);
+        var readable = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+        Assert.DoesNotContain(ReShadeAddonSwitch.ManagerUnreadableNote, readable.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NoAddons_AddonsOtherNameTaken_RefusesBeforeAnyChange()
+    {
+        var (game, store) = CreateGame("taken");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var addon = SeedAddon(game, store, ManagedComponentKind.RenoDX, "renodx-game.addon64");
+        File.WriteAllText(addon + ReShadeAddonSwitch.OffSuffix, "user's own file");
+        var dxgi = File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "dxgi.dll"));
+        var ledger = File.ReadAllText(Path.Combine(_root, "taken", "records.json"));
 
         var result = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
 
-        Assert.True(result.Success, result.Message);
-        Assert.Contains("NO-ADDON-BUILD", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "dxgi.dll"), Encoding.Latin1));
-        Assert.Equal(ReShadeChannel.NoAddons, service.GetInstalledOptions(game).Channel);
-        Assert.Equal("MZ RenoDX", File.ReadAllText(addon));
-        Assert.NotNull(store.Find(game, ManagedComponentKind.RenoDX));
+        Assert.False(result.Success);
+        Assert.Equal(ReShadeAddonSwitch.NameTakenPrefix + addon + ReShadeAddonSwitch.OffSuffix, result.Message);
+        Assert.Equal(dxgi, File.ReadAllBytes(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.Equal("MZ renodx-game.addon64", File.ReadAllText(addon));
+        Assert.Equal("user's own file", File.ReadAllText(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal(ledger, File.ReadAllText(Path.Combine(_root, "taken", "records.json")));
+    }
+
+    [Fact]
+    public async Task NoAddons_RecordSaveFails_PutsTheAddonsBack()
+    {
+        var (game, store) = CreateGame("save-fails");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var addon = SeedAddon(game, store, ManagedComponentKind.RenoDX, "renodx-game.addon64");
+        store.SaveFaultForTesting = () => new IOException("disk full");
+
+        var result = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+
+        store.SaveFaultForTesting = null;
+        Assert.False(result.Success);
+        Assert.Equal("MZ renodx-game.addon64", File.ReadAllText(addon));
+        Assert.False(File.Exists(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal(addon, Assert.Single(store.Find(game, ManagedComponentKind.RenoDX)!.Files).Path);
+    }
+
+    [Fact]
+    public async Task NoAddons_CrashBeforeTheLedgerWrite_NextStartPutsTheAddonsBack()
+    {
+        var (game, store) = CreateGame("crash");
+        Assert.True((await NewService(store, new Handler()).InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var addon = SeedAddon(game, store, ManagedComponentKind.RenoDX, "renodx-game.addon64");
+        var journalDir = Path.Combine(_root, "crash", "journal");
+        var (journal, overrides) = SimulatedDeath.NewJournal(journalDir, store);
+        var service = NewService(store, new Handler(), journal, overrides);
+        var ledgerPath = Path.Combine(_root, "crash", "records.json");
+        var ledgerBefore = File.ReadAllText(ledgerPath);
+        using var death = new SimulatedDeath(journal);
+        store.SaveFaultForTesting = death.Die;
+
+        var (died, _) = await death.RunUntilDeathAsync(() => service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false }));
+        Assert.True(died);
+        Assert.True(File.Exists(addon + ReShadeAddonSwitch.OffSuffix)); // renamed, then the process died before the ledger write
+
+        await SimulatedDeath.RecoverAsync(journalDir, ledgerPath);
+
+        Assert.Equal("MZ renodx-game.addon64", File.ReadAllText(addon));
+        Assert.False(File.Exists(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Equal(ledgerBefore, File.ReadAllText(ledgerPath));
+    }
+
+    [Fact]
+    public async Task AddonTurnedOff_IsNotUpdatedOrReinstalled_ShowsWhy_AndRemovalDeletesItsFile()
+    {
+        var (game, store) = CreateGame("held");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var addon = SeedAddon(game, store, ManagedComponentKind.ReLimiter, "relimiter.addon64");
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false })).Success);
+        var relimiter = new GitHubReShadeAddonDeploymentService(new HttpClient(new Handler { HomeUnreachable = true }), store,
+            new GitHubReShadeAddonDefinition(ManagedComponentKind.ReLimiter, "ReLimiter", "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
+                "relimiter.addon64", "relimiter.addon32", 100 * 1024, ManagedComponentKind.DisplayCommander), Path.Combine(_root, "held", "relimiter-cache"));
+        var managed = Managed(store, game.InstallPath, relimiter);
+
+        var update = await managed.UpdateManagedAsync(game, ManagedComponentKind.ReLimiter, []);
+        Assert.False(update.Success);
+        Assert.Equal(ReShadeAddonSwitch.HeldPrefix + "ReLimiter", update.Message);
+        var reinstall = await managed.InstallAsync(game, ManagedComponentKind.ReLimiter, []);
+        Assert.Equal(ReShadeAddonSwitch.HeldPrefix + "ReLimiter", reinstall.Message);
+        Assert.Equal("MZ relimiter.addon64", File.ReadAllText(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.False(File.Exists(addon));
+
+        var rows = new List<ManagedComponent> { new() { Kind = ManagedComponentKind.ReLimiter, DisplayName = "ReLimiter", Availability = ComponentAvailability.Installed, ActionAllowed = true } };
+        managed.Decorate(game, rows);
+        Assert.Equal(ReShadeAddonSwitch.OffNote, rows[0].Note);
+        Assert.True(rows[0].ActionAllowed); // Remove stays offered
+
+        var removed = await managed.RemoveAsync(game, ManagedComponentKind.ReLimiter);
+        Assert.True(removed.Success, removed.Message);
+        Assert.False(File.Exists(addon + ReShadeAddonSwitch.OffSuffix));
+        Assert.Null(store.Find(game, ManagedComponentKind.ReLimiter));
+    }
+
+    private static string SeedAddon(DetectedGame game, LinuxDeploymentRecordStore store, ManagedComponentKind kind, string name, bool withIni = false)
+    {
+        var addon = Path.Combine(game.BinaryDirectory!, name);
+        File.WriteAllText(addon, "MZ " + name);
+        var files = new List<LinuxDeployedFile> { new() { Path = addon, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(addon) } };
+        if (withIni)
+        {
+            var ini = Path.Combine(game.BinaryDirectory!, Path.GetFileNameWithoutExtension(name) + ".ini");
+            File.WriteAllText(ini, "[renodx]");
+            files.Add(new LinuxDeployedFile { Path = ini, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(ini), AllowUserChanges = true });
+        }
+        store.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind,
+            BinaryDirectory = game.BinaryDirectory!, Version = "1.0", Files = files
+        });
+        return addon;
     }
 
     // w3 review nit 7: the No Addons build has its own cache folder, so both builds of one version stay cached and a later
@@ -193,17 +422,18 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
     }
 
     // A real (offline) Addon Manager, so a missing guard shows as a different answer, not as a null reference.
-    private static LinuxManagedComponentService Managed(LinuxDeploymentRecordStore records, string root)
+    private static LinuxManagedComponentService Managed(LinuxDeploymentRecordStore records, string root, GitHubReShadeAddonDeploymentService? relimiter = null)
     {
         var http = new HttpClient(new Handler { HomeUnreachable = true });
         var addonManager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http), Path.Combine(root, "addon-cache"),
             Path.Combine(root, "custom-addons"), Path.Combine(root, "addon-manager.json"));
-        return Managed(records, addonManager);
+        return Managed(records, addonManager, relimiter);
     }
 
-    private static LinuxManagedComponentService Managed(LinuxDeploymentRecordStore records, ReShadeAddonManagerService addonManager)
+    private static LinuxManagedComponentService Managed(LinuxDeploymentRecordStore records, ReShadeAddonManagerService addonManager,
+        GitHubReShadeAddonDeploymentService? relimiter = null)
         => new(records, reshade: null!, addonManager: addonManager, renodx: null!, renodxUpgrade: null!,
-            optiscaler: null!, relimiter: null!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
+            optiscaler: null!, relimiter: relimiter!, displayCommander: null!, mfgAdaUnlock: null!, dlssg2030: null!,
             dlssEnablerStandalone: null!, rtx40Mfg: null!, dlss5Feeder: null!, dlss5Bridge: null!, d3dCompilerTools: null!,
             ultimateAsiLoader: null!, shortFuse: null!, dofFix: null!, reFramework: null!, lumaFramework: null!, lumaPolicy: null!);
 
@@ -225,13 +455,15 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
     }
 
     // One cache for every service in a test, as in the app: the outage test needs the add-on build seeded there.
-    private ReShadeDeploymentService NewService(LinuxDeploymentRecordStore store, Handler handler)
+    private ReShadeDeploymentService NewService(LinuxDeploymentRecordStore store, Handler handler,
+        RHI.Core.Deployment.DeploymentJournal? journal = null, WineDllOverrideService? overrides = null)
     {
         var http = new HttpClient(handler);
         var cache = Path.Combine(_root, "cache");
-        return new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(), store, new WineDllOverrideService(),
+        return new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(), store, overrides ?? new WineDllOverrideService(),
             new MarkingExtractor(), cache,
-            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")));
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")),
+            journal: journal);
     }
 
     private sealed class Handler : HttpMessageHandler

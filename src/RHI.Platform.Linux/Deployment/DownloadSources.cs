@@ -122,6 +122,14 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy OptiPatcher = new(
         "OptiPatcher", "GitHub", GitHubReleaseHosts, maxBytes: TrustedDownloadPolicy.AddonMaxBytes);
 
+    // w4/smalls rows
+    /// <summary>
+    /// Nexus Mods' public game list (#174, upstream's games.json: which games have a Nexus page; no account): the
+    /// data.nexusmods.com file host only, metadata cap.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy NexusGameList = new(
+        "Nexus Mods game list", "data.nexusmods.com", ["data.nexusmods.com"], maxBytes: TrustedDownload.MetadataMaxBytes);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -137,5 +145,7 @@ public static class DownloadSources
         // w3/vmsplit rows
         // w3/dllnames rows
         OptiPatcher,
+        // w4/smalls rows
+        NexusGameList,
     ];
 }

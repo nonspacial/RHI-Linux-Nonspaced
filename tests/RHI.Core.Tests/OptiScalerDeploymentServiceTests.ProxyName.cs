@@ -183,6 +183,61 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
     }
 
+    // w3 final review, nit 2: an OptiScaler another RHI component recorded as its own file is named with that component,
+    // not as one "RHI did not install".
+    [Fact]
+    public async Task Install_BesideAnOptiScalerAnotherRhiComponentRecorded_NamesThatComponent()
+    {
+        var (game, store) = CreateGame("proxy-existing-rhi-" + Guid.NewGuid().ToString("N"), GraphicsApi.DirectX12);
+        var held = Path.Combine(game.BinaryDirectory!, "version.dll");
+        WriteSignedTextFile(held, "optiscaler/OptiScaler bundled by another component");
+        store.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game),
+            GameName = game.Name,
+            Component = ManagedComponentKind.DlssEnablerStandalone,
+            BinaryDirectory = game.BinaryDirectory!,
+            Files = [new LinuxDeployedFile { Path = held, Sha256 = Sha256(held) }]
+        });
+        var provider = new FakePackageProvider(CreatePackage("proxy-existing-rhi-package-" + Guid.NewGuid().ToString("N")));
+        var service = NewService(store, provider);
+
+        var result = await service.InstallAsync(game, OptiScalerVariant.Stable, null, "dxgi.dll");
+
+        Assert.False(result.Success);
+        Assert.Equal(OptiScalerDeploymentService.OptiScalerHeldByRhiComponentPrefix
+                     + $"version.dll ({LinuxManagedComponentService.DisplayDependencyName(ManagedComponentKind.DlssEnablerStandalone)})", result.Message);
+        Assert.Equal(0, provider.CallCount);
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+    }
+
+    // w3 final review, nit 4: a game folder that cannot be listed fails the install with nothing changed; never throws.
+    [Fact]
+    public async Task Install_WhenTheGameFolderCannotBeListed_FailsWithNothingChanged()
+    {
+        var (game, store) = CreateGame("proxy-unreadable-" + Guid.NewGuid().ToString("N"), GraphicsApi.DirectX12);
+        var provider = new FakePackageProvider(CreatePackage("proxy-unreadable-package-" + Guid.NewGuid().ToString("N")));
+        var service = NewService(store, provider);
+        var userReg = File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg"));
+        File.SetUnixFileMode(game.BinaryDirectory!, UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        ComponentOperationResult result;
+        try
+        {
+            result = await service.InstallAsync(game, OptiScalerVariant.Stable, null, "dxgi.dll");
+        }
+        finally
+        {
+            File.SetUnixFileMode(game.BinaryDirectory!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        Assert.False(result.Success);
+        Assert.StartsWith(OptiScalerDeploymentService.FolderUnreadablePrefix, result.Message);
+        Assert.Equal(0, provider.CallCount);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "dxgi.dll")));
+        Assert.Equal(userReg, File.ReadAllText(Path.Combine(game.PrefixPath!, "user.reg")));
+        Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+    }
+
     [Fact]
     public async Task Install_BesideAnotherProxyThatIsNotOptiScaler_StillInstalls()
     {

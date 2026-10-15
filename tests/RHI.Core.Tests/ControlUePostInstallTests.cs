@@ -591,6 +591,74 @@ public sealed class ControlUePostInstallTests : IDisposable
         Assert.Empty(Directory.GetFiles(journalDir));
     }
 
+    // w3 final review, finding 1: a reshade.ini link the writer's policy refuses (target outside the game's folders) is
+    // refused before anything is copied: no rollback copy is written beside the outside target. The outside folder is
+    // read-only, so a copy attempted there fails with a permission error instead of the link refusal.
+    [Fact]
+    public async Task FrameGenerationHdrKey_IniLinkedOutsideTheGame_IsRefusedBeforeAnyCopyIsMade()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        File.WriteAllText(ini, "[GENERAL]\n");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var outside = Path.Combine(_root, "outside");
+        Directory.CreateDirectory(outside);
+        var target = Path.Combine(outside, "reshade.ini");
+        const string original = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(target, original);
+        File.Delete(ini);
+        File.CreateSymbolicLink(ini, target);
+        File.SetUnixFileMode(outside, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var journalDir = Path.Combine(_root, "journal-link");
+            var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+            var frameGeneration = new ControlUeFrameGenerationService(null!, store, journal);
+
+            var note = await frameGeneration.SetHdrKeyAsync(game, useHdr: true);
+
+            Assert.StartsWith(ControlUeFrameGenerationService.HdrNotSetPrefix + RenoDxIniOverrideManager.LinkRefusalPrefix, note);
+            Assert.Equal([target], Directory.GetFiles(outside));
+            Assert.Equal(original, File.ReadAllText(target));
+            Assert.False(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
+        }
+        finally
+        {
+            File.SetUnixFileMode(outside, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    // w3 final review, nit 5: after a crash between the FgSlHdr10 write and the record save, a reshade.ini the user
+    // edited before the next start is the user's: recovery keeps it and sets RHI's pre-change copy aside, never restores
+    // over it.
+    [Fact]
+    public async Task FrameGenerationHdrKey_CrashThenTheUserEditsReshadeIni_RecoveryKeepsTheUsersEdit()
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        const string original = "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n";
+        File.WriteAllText(ini, original);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var journalDir = Path.Combine(_root, "journal-user-edit");
+        var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+        var frameGeneration = new ControlUeFrameGenerationService(null!, store, journal);
+        using var death = new SimulatedDeath(journal);
+        store.SaveFaultForTesting = death.Die;
+
+        var (died, _) = await death.RunUntilDeathAsync(() => frameGeneration.SetHdrKeyAsync(game, useHdr: true));
+        Assert.True(died);
+        const string userEdit = "[GENERAL]\nEffectSearchPaths=.\\my-own-shaders\n";
+        File.WriteAllText(ini, userEdit);
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, Path.Combine(_root, "records.json"));
+
+        Assert.Single(report!.Entries);
+        Assert.Equal(userEdit, File.ReadAllText(ini));
+        var setAside = Directory.GetFiles(Path.Combine(game.BinaryDirectory!, ".rhi-recovered"), "*.pre-rhi", SearchOption.AllDirectories);
+        Assert.Equal(original, File.ReadAllText(Assert.Single(setAside)));
+        Assert.False(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
+    }
+
     private (DetectedGame Game, RenoDxDeploymentService Service, LinuxDeploymentRecordStore Store) Arrange(string name)
     {
         var bin = Path.Combine(_root, "steamapps", "common", "Control");

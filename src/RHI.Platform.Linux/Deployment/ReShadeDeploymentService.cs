@@ -118,6 +118,13 @@ public sealed partial class ReShadeDeploymentService
         => _shaderPacks.SetExcludedFiles(packId, excluded);
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.ReShade) is not null;
 
+    /// <summary>
+    /// The add-on files the ReShade Addon Manager installed on a game (#170: switching to No Addons turns them off with
+    /// the component add-ons); set by <see cref="LinuxManagedComponentService"/>, none when unset. Null from the function =
+    /// the manager's saved list cannot be read: its add-ons are left as they are and the result says so.
+    /// </summary>
+    public Func<DetectedGame, IReadOnlyList<string>?>? AddonManagerFiles { get; set; }
+
     /// <summary>The per-game proxy DLL names chosen before install (#120); "Repair after move" carries them.</summary>
     public DllNamePreferenceStore DllNames => _dllNames;
 
@@ -208,8 +215,8 @@ public sealed partial class ReShadeDeploymentService
         }
         var directProxy = resolution.Name;
 
-        // Switching to No Addons with add-ons installed is allowed, as upstream: they stay in place and simply stop
-        // loading (owner decision #91; a warning is #170).
+        // Switching to No Addons with add-ons installed is allowed (owner decision #91); its add-ons are turned off, and
+        // back on when ReShade goes back to a build with add-on support (owner decision #170, ReShadeAddonSwitch below).
 
         var existingRecord = _records.Find(game, ManagedComponentKind.ReShade);
         var managedOptiScaler = _records.Find(game, ManagedComponentKind.OptiScaler);
@@ -392,6 +399,21 @@ public sealed partial class ReShadeDeploymentService
                 return ComponentOperationResult.Fail(ex.Message);
             }
         }
+
+        // #170: the add-ons this channel switch turns off (No Addons) or back on; a taken name refuses before any change.
+        IReadOnlyList<string>? managerFiles = AddonManagerFiles is null ? [] : AddonManagerFiles(game);
+        var (addonPlan, addonRefusal) = ReShadeAddonSwitch.PlanFor(
+            _records.FindAll(game), managerFiles ?? [], addonSupport: staged.Channel != ReShadeChannel.NoAddons);
+        // Unreadable manager list while the switch matters (to No Addons, or back from it): its add-ons cannot be told
+        // apart, so they stay as they are and the status line says so.
+        var managerNote = managerFiles is null && (staged.Channel == ReShadeChannel.NoAddons || LacksAddonSupport(existingRecord))
+            ? ReShadeAddonSwitch.ManagerUnreadableNote : "";
+        if (addonRefusal is not null)
+        {
+            if (updateSnapshot is not null) FileCleanup.TryDelete(updateSnapshot);
+            return ComponentOperationResult.Fail(addonRefusal);
+        }
+        var addonMoves = new List<ReShadeAddonSwitch.Move>();
 
         // Write-ahead journal (#23): every file this install can change is tracked and every Wine
         // override is journaled before it is made, so a crash before the record is saved is rolled
@@ -594,7 +616,9 @@ public sealed partial class ReShadeDeploymentService
                 Files = files,
                 Metadata = metadata
             };
-            _records.Upsert(record);
+            // #170: add-on files renamed last (journaled), their records saved in the same ledger write as ReShade's.
+            await ReShadeAddonSwitch.ApplyAsync(addonPlan, operation, addonMoves).ConfigureAwait(false);
+            _records.Commit([record, .. addonPlan.Records]);
             // The record carries the operation id, so it is the commit point even if this cleanup fails.
             if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
             try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
@@ -607,11 +631,12 @@ public sealed partial class ReShadeDeploymentService
                 ? ""
                 : $" Native D3DCompiler_47 is active ({d3dCompilerPlan.Description}) with a per-game native,builtin override.";
             var cacheNote = staged.FromCache ? CachedCopyNote : "";
-            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}", target)
+            return ComponentOperationResult.Ok($"ReShade {staged.Version} [{staged.Channel}] applied as {mode}; {packs}. Existing ReShade.ini customizations are preserved.{compilerNote}{cacheNote}{ReShadeAddonSwitch.Summary(addonPlan)}{managerNote}", target)
                 with { FromCachedSource = staged.FromCache };
         }
         catch (Exception ex)
         {
+            ReShadeAddonSwitch.Undo(addonMoves); // #170: add-ons back under their names before anything else
             // Best-effort rollback. On an update, the long-lived .original is the real pre-RHI game file,
             // so do not restore it over the previous managed ReShade. Instead the update is blocked before
             // destructive operations where possible; for a fresh install, restore/remove normally.

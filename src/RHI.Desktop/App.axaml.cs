@@ -56,6 +56,7 @@ public sealed class App : Application
             if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), single-instance hand-off (#162, #99)
             {
                 UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
+                parity.NexusLinks.Games?.Prefetch(); // #174: Nexus's game list (24 h cache) for the card menu's "Nexus Mods page"
                 var handoff = RHI.Platform.Linux.Ux.InstanceHandoff.Listen(request =>
                     Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, request), "handoff")));
                 desktop.Exit += (_, _) => handoff?.Dispose();

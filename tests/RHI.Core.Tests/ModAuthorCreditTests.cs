@@ -193,6 +193,21 @@ public sealed class ModAuthorCreditTests : IDisposable
         Assert.Equal(["renodx-prey.addon64"], components[0].InstalledAddonFiles);
     }
 
+    // #170 review nit 6: an add-on ReShade's No Addons build turned off keeps its name on the row (the probe cannot see
+    // the renamed file, so the found-on-disk filter does not drop it); a non-add-on file with the suffix is not listed.
+    [Fact]
+    public void AddonFileNames_AnAddonTurnedOff_KeepsItsOwnName()
+    {
+        var game = new DetectedGame { Name = "Prey", InstallPath = _root };
+        var record = Record(game, ManagedComponentKind.RenoDX, [
+            Path.Combine(_root, "renodx-prey.addon64" + ReShadeAddonSwitch.OffSuffix),
+            Path.Combine(_root, "renodx-prey.ini" + ReShadeAddonSwitch.OffSuffix),
+            Path.Combine(_root, "renodx-gone.addon64")]);
+
+        Assert.Equal(["renodx-prey.addon64", "renodx-gone.addon64"], ModAuthorCredit.AddonFileNames(record));
+        Assert.Equal(["renodx-prey.addon64"], ModAuthorCredit.AddonFileNames(record, ["other.addon64"]));
+    }
+
     [Fact]
     public void Probe_ReportsTheRenoDxAndLumaAddonFilesItFound()
     {
