@@ -1,7 +1,9 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using CommunityToolkit.Mvvm.Input;
 using RHI.Desktop.Localization;
+using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Network;
 
 namespace RHI.Desktop.ViewModels;
@@ -11,12 +13,13 @@ namespace RHI.Desktop.ViewModels;
 public sealed record NxmConfirmation(NxmLink Link, NexusModFile? File, string? ForGame);
 
 /// <summary>
-/// Nexus Mods links for library games (#99): the card's Nexus Mods page (manifest <c>nexusUrlOverrides</c>,
+/// The web pages a library card links to (#183: PCGamingWiki, Ultra+, an ultrawide fix, the HDR Gaming Database and
+/// the RenoDX mod's discussion page, through <see cref="GameLinkCatalogue"/>), and Nexus Mods (#99): the card's Nexus Mods page (manifest <c>nexusUrlOverrides</c>,
 /// <see cref="DetectedGame.NexusUrlOverride"/>, else <see cref="NexusGameCatalogue"/>; #174), and a "Mod Manager Download" (nxm://) link arriving at RHI — parsed
 /// strictly, confirmed by the user with the mod and file named, downloaded into RHI's cache, then offered for install
 /// through the paths a dropped file takes (each confirms again). Nothing is installed from a link without confirmation.
 /// </summary>
-public sealed class NexusLinkPresenter
+public sealed class GameLinksPresenter
 {
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
@@ -25,7 +28,7 @@ public sealed class NexusLinkPresenter
     private readonly NexusApiClient _api;
     private readonly NexusDownloadService _downloads;
 
-    public NexusLinkPresenter(NexusAccountPresenter account, NexusApiClient api, NexusDownloadService downloads, NexusGameCatalogue? games = null)
+    public GameLinksPresenter(NexusAccountPresenter account, NexusApiClient api, NexusDownloadService downloads, NexusGameCatalogue? games = null)
     {
         _account = account;
         _api = api;
@@ -35,6 +38,56 @@ public sealed class NexusLinkPresenter
 
     /// <summary>Which games have a Nexus Mods page beyond the manifest (#174); null = manifest and built-in table only.</summary>
     public NexusGameCatalogue? Games { get; }
+
+    /// <summary>#183: the card links' lists and PCGamingWiki lookups; null = Nexus Mods only (set by <c>AppComposition</c>).</summary>
+    public GameLinkCatalogue? Links { get; set; }
+
+    /// <summary>#183: the RenoDX catalogue whose matched mod names the "Discussion / instructions" page; null = no such entry.</summary>
+    public RenoDxCatalogService? RenoDx { get; set; }
+
+    /// <summary>Starts (or joins) every list behind the card links in the background (Nexus's game list included).</summary>
+    public void Prefetch()
+    {
+        Games?.Prefetch();
+        Links?.Prefetch();
+    }
+
+    /// <summary>Full Refresh: the card links' lists are downloaded again in the background (never awaited).</summary>
+    public Task RefreshListsAsync() => Links?.RefreshAsync() ?? Task.CompletedTask;
+
+    /// <summary>
+    /// #183: the card menu's web-page entries for a game, each listed only where the game has that page (hidden
+    /// otherwise): "Discussion / instructions" for the RenoDX mod matched to the game, then a "Web pages" submenu with
+    /// PCGamingWiki, Ultra+, Ultrawide fix and HDR Gaming Database. Each entry's tooltip is its link. A list still loading
+    /// is joined, never awaited; a PCGamingWiki page nobody knows yet is looked up in the background, so it appears the
+    /// next time the menu opens.
+    /// </summary>
+    public IReadOnlyList<CardMenuItem> MenuItemsFor(DetectedGame game, Action<string> open)
+    {
+        Links?.Prefetch();
+        var items = new List<CardMenuItem>();
+        if (DiscussionPageFor(game) is { } discussion)
+            items.Add(Entry("discussion", T("Cat.DiscussionPage"), discussion, open));
+        if (Links is not { } links) return items;
+        if (links.PcgwPageFor(game) is null) links.ResolvePcgwInBackground(game);
+        var pages = new List<CardMenuItem>(4);
+        if (links.PcgwPageFor(game) is { } pcgw) pages.Add(Entry("pcgw-page", T("Cat.PcgwPage"), pcgw, open));
+        if (links.UltraPlusPageFor(game) is { } ultraPlus) pages.Add(Entry("ultraplus-page", T("Cat.UltraPlusPage"), ultraPlus, open));
+        if (links.UltrawideFixPageFor(game) is { } uwFix) pages.Add(Entry("uwfix-page", T("Cat.UltrawideFixPage"), uwFix, open));
+        if (links.HdrDatabasePageFor(game) is { } hdr) pages.Add(Entry("hdr-database-page", T("Cat.HdrDatabasePage"), hdr, open));
+        if (pages.Count > 0)
+            items.Add(new CardMenuItem("web-pages", T("Cat.WebPages"), CardMenuItem.OpensSubmenu, Children: pages, Tip: T("Cat.WebPagesTip")));
+        return items;
+    }
+
+    /// <summary>#183: the discussion / instructions page of the RenoDX mod RHI matched to the game (https, on GitHub), else null.</summary>
+    public string? DiscussionPageFor(DetectedGame? game)
+        => game is not null && RenoDx is { } renoDx && renoDx.TryGetResolvedMatch(game, out var mod)
+            ? GameLinkCatalogue.SafePage(mod?.DiscussionUrl, LinkHosts.Discussion)
+            : null;
+
+    private static CardMenuItem Entry(string id, string label, string url, Action<string> open)
+        => new(id, label, new RelayCommand(() => open(url)), Tip: url);
 
     /// <summary>Asks the user to confirm a link's download (set by the window; no window = never confirmed).</summary>
     public Func<NxmConfirmation, Task<bool>>? Confirm { get; set; }

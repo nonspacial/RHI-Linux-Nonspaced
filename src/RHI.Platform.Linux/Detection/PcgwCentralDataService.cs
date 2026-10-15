@@ -187,6 +187,12 @@ public sealed class PcgwCentralDataService
     /// <summary>Why the last load used a fallback or found nothing; null after a clean live/cached load.</summary>
     public string? LastError { get; private set; }
 
+    /// <summary>#183: the data once loaded this session, else null (never starts or waits for a load).</summary>
+    public PcgwCentralData? Current
+    {
+        get { lock (_sync) return _data; }
+    }
+
     /// <summary>
     /// Returns the loaded data, or null when no source is reachable (retried after a pause).
     /// <paramref name="cancellationToken"/> only stops this caller waiting; the shared load carries on.

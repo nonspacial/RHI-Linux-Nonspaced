@@ -271,6 +271,32 @@ public static class TrustedDownload
         using var request = new HttpRequestMessage(HttpMethod.Get, policy.Validate(url));
         request.Headers.UserAgent.Add(DefaultUserAgent);
         if (!string.IsNullOrWhiteSpace(accept)) request.Headers.Accept.ParseAdd(accept);
+        return await SendCappedAsync(http, request, url, policy, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// #184: a metadata POST of a JSON body (a public GraphQL query) under the policy, with the same checks and cap as
+    /// <see cref="GetBytesAsync"/>: requested and final URL checked, success status required, answer capped.
+    /// </summary>
+    public static async Task<byte[]> PostJsonAsync(
+        HttpClient http,
+        string url,
+        TrustedDownloadPolicy policy,
+        string json,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, policy.Validate(url))
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.UserAgent.Add(DefaultUserAgent);
+        request.Headers.Accept.ParseAdd("application/json");
+        return await SendCappedAsync(http, request, url, policy, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<byte[]> SendCappedAsync(
+        HttpClient http, HttpRequestMessage request, string url, TrustedDownloadPolicy policy, CancellationToken cancellationToken)
+    {
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         policy.ValidateFinal(response, url);

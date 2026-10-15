@@ -13,8 +13,9 @@ public partial class MainWindow
 {
     internal void AttachParity(ParityFeatures parity)
     {
-        parity.NexusLinks.Confirm = ConfirmNxmAsync;
-        parity.NexusLinks.OfferFile = OfferDownloadedFileAsync;
+        parity.GameLinks.Confirm = ConfirmNxmAsync;
+        parity.GameLinks.OfferFile = OfferDownloadedFileAsync;
+        if (parity.ComponentInfo is { } info) info.Open = CreateComponentInfoDialog; // w5/catalogue-info (#184)
     }
 
     private async Task<bool> ConfirmNxmAsync(NxmConfirmation confirmation)

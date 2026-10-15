@@ -136,6 +136,35 @@ public static class DownloadSources
 
     // w5/update-policy rows
     // w5/catalogue-info rows
+    /// <summary>#183: the Ultra+ game list (theultraplace.com/games/, a web page read for its game links), small cap.</summary>
+    public static readonly TrustedDownloadPolicy UltraPlusGameList = new(
+        "Ultra+ game list", "theultraplace.com", ["theultraplace.com", "www.theultraplace.com"], maxBytes: 4L * 1024 * 1024);
+
+    /// <summary>#183: Lyall's ultrawide fixes (Codeberg's public repository list API), small cap.</summary>
+    public static readonly TrustedDownloadPolicy UltrawideFixList = new(
+        "Ultrawide fix list", "codeberg.org", ["codeberg.org"], maxBytes: 4L * 1024 * 1024);
+
+    /// <summary>
+    /// #183/#184: community game lists kept as README files on GitHub (RoseTheFlower's and p1xel8ted's ultrawide fixes,
+    /// the HDR Gaming Database): raw.githubusercontent.com only, small cap.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy CommunityGameList = new(
+        "Community game list", "raw.githubusercontent.com", ["raw.githubusercontent.com"], maxBytes: 4L * 1024 * 1024);
+
+    /// <summary>#183: Steam store search (a game's Steam AppID for its PCGamingWiki page): store.steampowered.com only.</summary>
+    public static readonly TrustedDownloadPolicy SteamStoreSearch = new(
+        "Steam store search", "store.steampowered.com", ["store.steampowered.com"], maxBytes: 1L * 1024 * 1024);
+
+    /// <summary>#184: the OptiScaler wiki's compatibility pages (GitHub wiki HTML, read as text): github.com only, 8 MB cap.</summary>
+    public static readonly TrustedDownloadPolicy OptiScalerWiki = new(
+        "OptiScaler wiki", "github.com", ["github.com"], maxBytes: 8L * 1024 * 1024);
+
+    /// <summary>
+    /// #184: component change logs and RHI's game databases for the ⓘ dialogs (ReLimiter's and Display Commander's
+    /// CHANGELOG.md, RenoDXdb-unreal.json): raw.githubusercontent.com only, small cap.
+    /// </summary>
+    public static readonly TrustedDownloadPolicy ComponentNotes = new(
+        "Component notes", "raw.githubusercontent.com", ["raw.githubusercontent.com"], maxBytes: 4L * 1024 * 1024);
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -160,6 +189,7 @@ public static class DownloadSources
         RtxEncore,
         // w5/update-policy rows
         // w5/catalogue-info rows
+        UltraPlusGameList, UltrawideFixList, CommunityGameList, SteamStoreSearch, OptiScalerWiki, ComponentNotes,
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

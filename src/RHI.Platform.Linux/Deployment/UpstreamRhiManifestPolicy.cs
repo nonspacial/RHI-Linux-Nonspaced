@@ -8,6 +8,16 @@ public sealed record UpstreamDllNamesDefinition(string? ReShade, string? Display
 public sealed record UpstreamUeExtendedCompatibilityDefinition(bool? Hdr, bool? Lut);
 public sealed record UpstreamGameNoteDefinition(string? Notes, string? Url, string? UrlLabel);
 
+/// <summary>#184: keys of <see cref="UpstreamLibraryPolicySnapshot.ComponentGameNotes"/> (one per manifest <c>*GameInfo</c> map).</summary>
+public static class ComponentNoteKeys
+{
+    public const string ReFramework = "reframework";
+    public const string ReLimiter = "relimiter";
+    public const string DisplayCommander = "displayCommander";
+    public const string OptiScaler = "optiScaler";
+    public const string Luma = "luma";
+}
+
 /// <summary>
 /// Normalized, Linux-consumable policy snapshot from upstream RHI's remote manifest.
 /// It intentionally contains policy metadata even when the corresponding deployment
@@ -58,6 +68,22 @@ public sealed class UpstreamLibraryPolicySnapshot
         = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
     // w5/update-policy rows
     // w5/catalogue-info rows
+    /// <summary>#183: PCGamingWiki's AppID redirect (<c>api/appid.php</c>) is usable again (manifest <c>pcgwUseAppId</c>).</summary>
+    public bool PcgwUseAppId { get; init; }
+    /// <summary>#183: a higher value than the one stored wipes RHI's PCGamingWiki link cache (manifest <c>pcgwUrlCacheVersion</c>).</summary>
+    public int PcgwUrlCacheVersion { get; init; }
+    /// <summary>#184: Luma's per-game notes for the ⓘ dialog (manifest <c>lumaGameNotes</c>).</summary>
+    public IReadOnlyDictionary<string, UpstreamGameNoteDefinition> LumaGameNotes { get; init; }
+        = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>#184: game → its name on the OptiScaler wiki's compatibility lists (manifest <c>optiScalerWikiNames</c>).</summary>
+    public IReadOnlyDictionary<string, string> OptiScalerWikiNames { get; init; } = EmptyStrings();
+    /// <summary>
+    /// #184: per-component game notes for the ⓘ dialogs, by component key (<see cref="ComponentNoteKeys"/>): manifest
+    /// <c>reframeworkGameInfo</c>, <c>relimiterGameInfo</c>, <c>displayCommanderGameInfo</c>, <c>optiScalerGameInfo</c>,
+    /// <c>lumaGameInfo</c> (RenoDX's are <c>gameNotes</c>, already on the card).
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, UpstreamGameNoteDefinition>> ComponentGameNotes { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, UpstreamGameNoteDefinition>>(StringComparer.Ordinal);
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -152,6 +178,32 @@ internal sealed partial class UpstreamManifestDocument
     public Dictionary<string, UpstreamManifestGameNote>? GameNotes { get; set; }
     // w5/update-policy rows
     // w5/catalogue-info rows
+    [JsonPropertyName("pcgwUseAppId")]
+    public bool? PcgwUseAppId { get; set; }
+
+    [JsonPropertyName("pcgwUrlCacheVersion")]
+    public int? PcgwUrlCacheVersion { get; set; }
+
+    [JsonPropertyName("lumaGameNotes")]
+    public Dictionary<string, UpstreamManifestGameNote>? LumaGameNotes { get; set; }
+
+    [JsonPropertyName("optiScalerWikiNames")]
+    public Dictionary<string, string>? OptiScalerWikiNames { get; set; }
+
+    [JsonPropertyName("reframeworkGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? ReFrameworkGameInfo { get; set; }
+
+    [JsonPropertyName("relimiterGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? ReLimiterGameInfo { get; set; }
+
+    [JsonPropertyName("displayCommanderGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? DisplayCommanderGameInfo { get; set; }
+
+    [JsonPropertyName("optiScalerGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? OptiScalerGameInfo { get; set; }
+
+    [JsonPropertyName("lumaGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? LumaGameInfo { get; set; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -246,6 +298,18 @@ public sealed partial class UpstreamRhiManifestService
             GameNotes = NormalizeGameNotes(manifest.GameNotes),
             // w5/update-policy rows
             // w5/catalogue-info rows
+            PcgwUseAppId = manifest.PcgwUseAppId == true,
+            PcgwUrlCacheVersion = Math.Max(0, manifest.PcgwUrlCacheVersion ?? 0),
+            LumaGameNotes = NormalizeGameNotes(manifest.LumaGameNotes),
+            OptiScalerWikiNames = NormalizeStringDictionary(manifest.OptiScalerWikiNames),
+            ComponentGameNotes = new Dictionary<string, IReadOnlyDictionary<string, UpstreamGameNoteDefinition>>(StringComparer.Ordinal)
+            {
+                [ComponentNoteKeys.ReFramework] = NormalizeGameNotes(manifest.ReFrameworkGameInfo),
+                [ComponentNoteKeys.ReLimiter] = NormalizeGameNotes(manifest.ReLimiterGameInfo),
+                [ComponentNoteKeys.DisplayCommander] = NormalizeGameNotes(manifest.DisplayCommanderGameInfo),
+                [ComponentNoteKeys.OptiScaler] = NormalizeGameNotes(manifest.OptiScalerGameInfo),
+                [ComponentNoteKeys.Luma] = NormalizeGameNotes(manifest.LumaGameInfo),
+            },
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
@@ -311,6 +375,13 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.LumaRenoDxCompat);
         // w5/update-policy rows
         // w5/catalogue-info rows
+        Add(result, manifest.LumaGameNotes?.Keys);
+        Add(result, manifest.OptiScalerWikiNames?.Keys);
+        Add(result, manifest.ReFrameworkGameInfo?.Keys);
+        Add(result, manifest.ReLimiterGameInfo?.Keys);
+        Add(result, manifest.DisplayCommanderGameInfo?.Keys);
+        Add(result, manifest.OptiScalerGameInfo?.Keys);
+        Add(result, manifest.LumaGameInfo?.Keys);
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

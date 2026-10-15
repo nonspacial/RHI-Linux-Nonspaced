@@ -50,6 +50,12 @@ internal sealed class AppComposition
     public required DllNamePreferenceStore DllNames { get; init; }
     // w5/update-policy rows
     // w5/catalogue-info rows
+    /// <summary>#184/#197: RHI's UE-Extended database (ⓘ notes, Available HDR mods rows); one instance, one 1 h cache.</summary>
+    public RenoDxUnrealDatabaseService? RenoDxUnrealDatabase { get; init; }
+    /// <summary>#197: the Available HDR mods list (RenoDX database incl. Nexus/Discord-only mods, UE-Extended, Unity, Luma).</summary>
+    public AvailableHdrModsCatalog? HdrModsCatalog { get; init; }
+    /// <summary>#185: the lists the "New mods" notice compares with the seen sets.</summary>
+    public NewModsSources? NewModsSources { get; init; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -225,7 +231,7 @@ internal sealed class AppComposition
             NexusAccount = nexusAccount,
             ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
             NrCostScaler = new NrCostScalerPresenter(managedComponents),
-            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
+            GameLinks = new GameLinksPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
@@ -235,6 +241,14 @@ internal sealed class AppComposition
         // w3/dllnames rows
         // w5/update-policy rows
         // w5/catalogue-info rows
+        // #183: the card menu's web pages (PCGamingWiki shares the graphics-API lookup's request gate).
+        parity.GameLinks.Links = new GameLinkCatalogue(http, pcgwData: pcgwData, pcgwSearch: pcgwGraphics,
+            policy: async ct => await upstreamManifest.FetchLibraryPolicyAsync(ct).ConfigureAwait(false));
+        parity.GameLinks.RenoDx = renodxCatalog;
+        // #184: the component rows' ⓘ dialogs.
+        var renodxUnrealDatabase = new RenoDxUnrealDatabaseService(http);
+        parity.ComponentInfo = new ComponentInfoPresenter(new ComponentInfoCatalogue(http, upstreamManifest, renodxCatalog, lumaCatalog,
+            new OptiScalerWikiCatalogue(http), renodxUnrealDatabase, renodxUnityDatabase, parity.GameLinks.Links));
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
@@ -268,6 +282,17 @@ internal sealed class AppComposition
             DllNames = reshade.DllNames,
             // w5/update-policy rows
             // w5/catalogue-info rows
+            RenoDxUnrealDatabase = renodxUnrealDatabase,
+            HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase),
+            NewModsSources = new NewModsSources(new SeenModsStore(),
+                async ct => (await renodxCatalog.FetchListingAsync(ct).ConfigureAwait(false))
+                    .Where(mod => mod.SnapshotUrl64 is not null || mod.SnapshotUrl32 is not null || mod.NexusUrl is not null).Select(mod => mod.Name).ToArray(),
+                async ct => (await lumaCatalog.FetchAsync(ct).ConfigureAwait(false)).Select(mod => mod.Name).ToArray(),
+                async _ =>
+                {
+                    await parity.GameLinks.Links!.LoadAsync().ConfigureAwait(false);
+                    return parity.GameLinks.Links.UltraPlusGames.Select(game => game.Name).ToArray();
+                }),
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows

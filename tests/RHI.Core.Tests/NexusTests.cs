@@ -487,7 +487,7 @@ public sealed class NexusPresenterTests : IDisposable
         return buffer.ToArray();
     }
 
-    private (NexusAccountPresenter Account, NexusLinkPresenter Links, NexusApiClientTests.FakeNexus Http) Build(
+    private (NexusAccountPresenter Account, GameLinksPresenter Links, NexusApiClientTests.FakeNexus Http) Build(
         Func<HttpRequestMessage, HttpResponseMessage>? respond = null, NexusSsoClientTests.FakeSocket? socket = null, string? slug = null,
         Func<string, (bool Opened, string? Error)>? openLink = null)
     {
@@ -503,7 +503,7 @@ public sealed class NexusPresenterTests : IDisposable
         var handler = new NxmHandlerRegistration(Path.Combine(_root, "apps"), () => ["/opt/rhi/RHI"], (_, _) => Task.FromResult<(int, string)?>((0, "")));
         var account = new NexusAccountPresenter(new SecretFileStore(KeyPath), api, new AccountsPreferenceStore(Path.Combine(_root, "accounts.json")), handler,
             socket is null ? null : () => new NexusSsoClient(() => socket), slug, openLink ?? (_ => (true, null)));
-        return (account, new NexusLinkPresenter(account, api, new NexusDownloadService(http, api, Path.Combine(_root, "cache"))), fake);
+        return (account, new GameLinksPresenter(account, api, new NexusDownloadService(http, api, Path.Combine(_root, "cache"))), fake);
     }
 
     [Fact]
@@ -670,11 +670,11 @@ public sealed class NexusPresenterTests : IDisposable
     [Fact]
     public void NexusPage_OnlyHttpsNexusmodsCom()
     {
-        Assert.Equal("https://www.nexusmods.com/games/cyberpunk2077", NexusLinkPresenter.PageFor(Cyberpunk(_root)));
-        Assert.Null(NexusLinkPresenter.PageFor(new DetectedGame { Name = "x", NexusUrlOverride = "http://www.nexusmods.com/games/x" }));
-        Assert.Null(NexusLinkPresenter.PageFor(new DetectedGame { Name = "x", NexusUrlOverride = "https://nexusmods.com.evil.example/games/x" }));
-        Assert.Equal("cyberpunk2077", NexusLinkPresenter.GameDomainOf("https://www.nexusmods.com/games/cyberpunk2077"));
-        Assert.Equal("skyrim", NexusLinkPresenter.GameDomainOf("https://www.nexusmods.com/skyrim/mods/12"));
+        Assert.Equal("https://www.nexusmods.com/games/cyberpunk2077", GameLinksPresenter.PageFor(Cyberpunk(_root)));
+        Assert.Null(GameLinksPresenter.PageFor(new DetectedGame { Name = "x", NexusUrlOverride = "http://www.nexusmods.com/games/x" }));
+        Assert.Null(GameLinksPresenter.PageFor(new DetectedGame { Name = "x", NexusUrlOverride = "https://nexusmods.com.evil.example/games/x" }));
+        Assert.Equal("cyberpunk2077", GameLinksPresenter.GameDomainOf("https://www.nexusmods.com/games/cyberpunk2077"));
+        Assert.Equal("skyrim", GameLinksPresenter.GameDomainOf("https://www.nexusmods.com/skyrim/mods/12"));
     }
 }
 

@@ -56,7 +56,8 @@ public sealed class App : Application
             if (services.Parity is { } parity) // w3/parity hook: start-up update check (#100), single-instance hand-off (#162, #99)
             {
                 UiExceptionGuard.Forget(parity.AppUpdate.NotifyAtStartupAsync(vm.Initialization, vm.ReportParityNotice), "AppUpdateCheck");
-                parity.NexusLinks.Games?.Prefetch(); // #174: Nexus's game list (24 h cache) for the card menu's "Nexus Mods page"
+                parity.GameLinks.Prefetch(); // #174/#183: the lists behind the card menu's web pages (Nexus, PCGamingWiki, Ultra+, …; 24 h caches)
+                if (services.NewModsSources is { } newMods) UiExceptionGuard.Forget(vm.NewMods.CheckAsync(vm.Initialization, newMods), "NewMods"); // #185
                 var handoff = RHI.Platform.Linux.Ux.InstanceHandoff.Listen(request =>
                     Dispatcher.UIThread.Post(() => UiExceptionGuard.Forget(parity.HandleHandoffAsync(vm, request), "handoff")));
                 desktop.Exit += (_, _) => handoff?.Dispose();
@@ -67,7 +68,7 @@ public sealed class App : Application
             {
                 DataContext = vm,
                 UpdateLogStore = services.UpdateLog,
-                HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog, services.RenoDxUnityDatabase), // w3/sync #126 hook
+                HdrModsCatalog = services.HdrModsCatalog, // w3/sync #126 hook; #197: built by AppComposition
                 UpstreamManifest = services.UpstreamManifest
             };
             if (services.Parity is { } windowParity) ((MainWindow)desktop.MainWindow).AttachParity(windowParity); // w3/parity hook (#99)

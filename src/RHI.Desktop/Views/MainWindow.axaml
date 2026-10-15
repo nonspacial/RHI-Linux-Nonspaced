@@ -33,6 +33,8 @@
           </StackPanel>
         </StackPanel>
 
+        <Button x:Name="NewModsButton" Classes="rhi" Content="{Binding NewMods.ButtonText}" Click="NewMods_Click" ToolTip.Tip="{Binding NewMods.ButtonTip}"
+                views:ToolbarPanel.IsAbsent="{Binding NewMods.IsHidden, FallbackValue=True}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.QuickStart}" Click="QuickStart_Click" ToolTip.Tip="{DynamicResource Ui.QuickStartTip}"/>
         <Button Classes="rhi" Content="{DynamicResource Ui.AvailableHdrMods}" Click="AvailableHdrMods_Click" ToolTip.Tip="{DynamicResource Ui.AvailableHdrModsTip}"/>
         <Border views:ToolbarPanel.IsSeparator="True" Width="1" Height="20" Background="#1E2630" Margin="4,0"/>
@@ -530,7 +532,7 @@
                     <DataTemplate x:DataType="vm:ComponentRowViewModel">
                       <Border Background="#101820" BorderBrush="#1E2630" BorderThickness="1" CornerRadius="8" Margin="0,0,0,8" Padding="14,11">
                         <StackPanel Spacing="6">
-                          <views:ResponsiveRow Columns="220,180,*,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160">
+                          <views:ResponsiveRow Columns="220,180,*,Auto,Auto,Auto" ColumnSpacing="12" LineSpacing="8" HeadColumns="2" MinStarWidth="160">
                             <!-- Names wider than the 220 px column end in a word ellipsis; the full name is in a 2 s tooltip. -->
                             <TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="#E8ECF2" FontWeight="SemiBold" VerticalAlignment="Center"
                                        TextTrimming="WordEllipsis" ToolTip.Tip="{Binding Name}" ToolTip.ShowDelay="2000"/>
@@ -553,6 +555,8 @@
                             <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"
                                     Content="{Binding Action}" IsEnabled="{Binding IsActionEnabled}" Command="{Binding Command}"
                                     CommandParameter="{Binding CommandParameter}" ToolTip.Tip="{Binding Note}" MinWidth="80" IsVisible="{Binding HasAction}"/>
+                            <Button Grid.Column="5" Classes="rhi" Content="ⓘ" IsVisible="{Binding HasInfo}" Click="ComponentInfo_Click"
+                                    ToolTip.Tip="{Binding InfoTip}" ToolTip.ShowDelay="2000" Padding="10,6"/>
                           </views:ResponsiveRow>
                           <!-- RenoDX/Luma only: installed add-on file name(s) and mod author on one line; a line wider than
                                the row is shortened in the middle, full text in a 2 s tooltip. -->

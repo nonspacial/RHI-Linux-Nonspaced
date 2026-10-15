@@ -137,6 +137,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w5/update-policy rows
     // w5/catalogue-info rows
+    public NewModsPresenter NewMods { get; } = new(); // #185: the "New mods" toolbar button and list
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -895,6 +896,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             if (onlyDetectors is null) _session.InvalidateAll();
             // Full Refresh bypasses the session NR version and latest-version caches (upstream 2.7.9).
             var neuralCatalogRefresh = onlyDetectors is null ? Extras.ReportNeuralCatalogLoadAsync(Extras.Versions.FullRefreshAsync()) : null;
+            if (onlyDetectors is null && Parity is { } catalogue) UiExceptionGuard.Forget(catalogue.RefreshCatalogueListsAsync(), "CatalogueLists"); // w5/catalogue-info: web lists too
             SelectedGame = null;
 
             var scan = await _scanner.ScanWithReportAsync(onlyDetectors, op.Token);
@@ -1710,11 +1712,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             separated = true;
         }
         // #174: every game Nexus has a page for (no account needed to open it); a list still loading is joined, not awaited.
-        Parity?.NexusLinks.Games?.Prefetch();
-        if (NexusLinkPresenter.PageFor(game, Parity?.NexusLinks.Games) is { } nexusUrl)
+        Parity?.GameLinks.Games?.Prefetch();
+        if (GameLinksPresenter.PageFor(game, Parity?.GameLinks.Games) is { } nexusUrl)
             items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
         // w5/update-policy rows
         // w5/catalogue-info rows
+        if (Parity is { } links) items.AddRange(links.GameLinks.MenuItemsFor(game, OpenNexusPage)); // #183: web pages, each only where it exists
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
