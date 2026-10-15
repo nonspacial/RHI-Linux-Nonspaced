@@ -1119,7 +1119,6 @@ internal static class UiStrings
         ("Shell.MenuKeyTip", "A tecla que abre o menu do OptiScaler no jogo. Fica em cada modelo de INI e em cada nova instalação; Aplicar a todos os jogos muda também os jogos que já têm o OptiScaler do RHI.", "The key that opens OptiScaler's menu in game. Every INI template and new install gets it; Apply to all games also changes the games that already have RHI's OptiScaler."),
         ("Shell.MenuKeyTemplate", "Como no modelo de INI", "As in the INI template"),
         ("Shell.MenuKeyAuto", "Automático (Insert)", "Automatic (Insert)"),
-        ("Shell.MenuKeyApplyAll", "Aplicar a todos os jogos", "Apply to all games"),
         ("Shell.MenuKeyApplyAllTip", "Salva esta tecla e a grava nos modelos de INI e no OptiScaler.ini de cada jogo com o OptiScaler do RHI.", "Saves this key and writes it to the INI templates and to the OptiScaler.ini of every game with RHI's OptiScaler."),
         ("Shell.MenuKeyChooseFirst", "Escolha uma tecla primeiro.", "Choose a key first."),
         ("Shell.MenuKeyApplied", "Tecla do menu do OptiScaler gravada em {0} jogo(s) e {1} modelo(s) de INI.", "OptiScaler menu key written to {0} game(s) and {1} INI template(s)."),

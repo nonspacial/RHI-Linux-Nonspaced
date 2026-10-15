@@ -122,7 +122,7 @@ internal sealed class OptiScalerMenuKeyRow
             SelectedItem = OptionLists.OptiScalerMenuKey.Display(settings.OptiScalerMenuKey),
             MinWidth = 230
         };
-        var apply = new Button { Content = UiLocalizationService.Text("Shell.MenuKeyApplyAll"), Padding = new Thickness(12, 6), Name = "OptiScalerMenuKeyApplyAll" };
+        var apply = new Button { Content = UiLocalizationService.Text("Ini.ApplyToAllGames"), Padding = new Thickness(12, 6), Name = "OptiScalerMenuKeyApplyAll" };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Shell.MenuKeyApplyAllTip"));
         ToolTip.SetShowDelay(apply, MiddleEllipsisText.TooltipDelay);
         apply.IsVisible = Key.Length > 0;
