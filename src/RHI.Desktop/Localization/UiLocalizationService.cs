@@ -1295,6 +1295,9 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix, "A ferramenta de tela não está instalada: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix, "O RHI não conseguiu registrar o modo de tela atual, então não o mudou: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer, "A ferramenta de tela indicou uma saída ou modo que o RHI não aceita, então a tela não foi mudada."),
+        // w6/crash rows
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ReconcileFailedPrefix,
+            "O ReShade Addon Manager não alterou nada: não foi possível levar a lista salva dele para os registros de instalação: "),
         // w5/reshade-core rows
         // #92 ReShade as a Vulkan layer.
         (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RunnerTooOldPrefix, "A camada Vulkan do ReShade precisa do Proton ou do Wine 8 ou mais novo. O prefixo deste jogo foi criado por: "),

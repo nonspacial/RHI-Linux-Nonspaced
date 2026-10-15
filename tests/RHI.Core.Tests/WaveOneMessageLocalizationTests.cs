@@ -362,6 +362,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix + "kscreen-doctor";
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix + "/state/display-mode.json";
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer;
+        // w6/crash rows
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ReconcileFailedPrefix + P;
         // w5/reshade-core rows
         // #92 ReShade as a Vulkan layer
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ApiSwitchLayerInstalledMessage;

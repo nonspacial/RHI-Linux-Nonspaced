@@ -45,7 +45,8 @@ public static class ReShadeAddonSwitch
     public const string OffNote =
         "Turned off for ReShade's No Addons build: the add-on stays in the game folder and comes back on when RHI installs ReShade with add-on support (Stable or Nightly) on this game.";
 
-    /// <summary>One file rename; <see cref="Owner"/> is the add-on component, null for an Addon Manager add-on.</summary>
+    /// <summary>One file rename; <see cref="Owner"/> is the add-on component (<see cref="ManagedComponentKind.ReShadeAddonManager"/>
+    /// for the Addon Manager's record), null for a manager add-on known only from the hook's list.</summary>
     public sealed record Move(string From, string To, ManagedComponentKind? Owner);
 
     /// <summary>What switching to a build with (or without) add-on support changes; empty when nothing is affected.</summary>
@@ -99,7 +100,11 @@ public static class ReShadeAddonSwitch
         var turningOff = !addonSupport;
         var moves = new List<Move>();
         var changed = new List<LinuxDeploymentRecord>();
-        foreach (var record in gameRecords.Where(r => LinuxComponentDependencyPolicy.IsReShadeAddon(r.Component)))
+        // #168: the Addon Manager's record is renamed like a component add-on's (its add-ons are no component, so they
+        // never keep ReShade from being removed).
+        var addonRecords = gameRecords.Where(r => LinuxComponentDependencyPolicy.IsReShadeAddon(r.Component)
+                                                  || r.Component == ManagedComponentKind.ReShadeAddonManager).ToList();
+        foreach (var record in addonRecords)
         {
             LinuxDeploymentRecord? copy = null;
             foreach (var (file, index) in record.Files.Select((file, index) => (file, index)))
@@ -118,7 +123,11 @@ public static class ReShadeAddonSwitch
             }
             if (copy is not null) changed.Add(copy);
         }
-        foreach (var path in addonManagerFiles.Where(p => !string.IsNullOrWhiteSpace(p) && IsAddonFile(p)))
+        var recorded = addonRecords.SelectMany(r => r.Files).Select(file => file.Path)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path.EndsWith(OffSuffix, StringComparison.Ordinal) ? path[..^OffSuffix.Length] : path)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var path in addonManagerFiles.Where(p => !string.IsNullOrWhiteSpace(p) && IsAddonFile(p) && !recorded.Contains(p)))
         {
             if (turningOff && File.Exists(path)) moves.Add(new Move(path, path + OffSuffix, null));
             else if (!turningOff && File.Exists(path + OffSuffix)) moves.Add(new Move(path + OffSuffix, path, null));
@@ -164,9 +173,11 @@ public static class ReShadeAddonSwitch
         }
     }
 
-    /// <summary>How many add-ons a plan turns off or on (a component counts once, whatever its number of files).</summary>
+    /// <summary>How many add-ons a plan turns off or on (a component counts once, whatever its number of files; each Addon
+    /// Manager add-on counts on its own).</summary>
     public static int AddonCount(Plan plan)
-        => plan.Moves.Select(move => move.Owner is { } owner ? owner.ToString() : move.From).Distinct(StringComparer.Ordinal).Count();
+        => plan.Moves.Select(move => move.Owner is { } owner && owner != ManagedComponentKind.ReShadeAddonManager ? owner.ToString() : move.From)
+            .Distinct(StringComparer.Ordinal).Count();
 
     /// <summary>The status-line sentence for what was done (empty when nothing changed).</summary>
     public static string Summary(Plan plan)

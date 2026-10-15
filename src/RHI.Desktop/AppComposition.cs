@@ -128,7 +128,7 @@ internal sealed class AppComposition
         // w3/parity hook (#93): the one shader-pack service, shared with the shader-profile export (same cache dir as before).
         var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest);
         var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, reshadeExtractor, shaderPacks: shaderPacks, upstreamManifest: upstreamManifest, journal: journal);
-        var addonManager = new ReShadeAddonManagerService(http, upstreamManifest);
+        var addonManager = new ReShadeAddonManagerService(http, upstreamManifest, records: records, journal: journal); // #168: state in the ledger
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,

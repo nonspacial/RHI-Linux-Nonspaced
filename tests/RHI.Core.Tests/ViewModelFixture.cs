@@ -216,7 +216,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/shell-launch rows
         // w5/reshade-core rows
         var managed = new LinuxManagedComponentService(
-            records, reshade, new ReShadeAddonManagerService(http, upstreamManifest), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
+            records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
             new D3DCompilerToolInstaller(wineOverrides), ual, shortFuse, new DofFixDeploymentService(http, records, upstreamManifest),
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,

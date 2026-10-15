@@ -71,7 +71,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
-        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.OwnedAddonFiles; // #170: No Addons turns these off too
+        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.ReconcileForReShade; // #170/#168: No Addons turns these off too (through their record)
         _renodx = renodx;
         _renodxUpgrade = renodxUpgrade;
         _optiscaler = optiscaler;

@@ -27,7 +27,10 @@ public enum ManagedComponentKind
     // w3/parity (#96): a layer over the nvngx_dlssnr.dll owner, never an owner itself.
     NrCostScaler = 20,
     // w4/encore (#158): a proxy DLL under a chosen name; owns nvngx_dlssnr.dll only with its Neural Rendering file.
-    RtxEncore = 21
+    RtxEncore = 21,
+    // w6/crash (#168): the Addon Manager's per-game add-on selection (no component row; addon-manager.json is the
+    // copy older builds read).
+    ReShadeAddonManager = 22
 }
 
 public enum ComponentAvailability
