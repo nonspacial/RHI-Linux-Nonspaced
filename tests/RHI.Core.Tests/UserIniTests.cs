@@ -547,6 +547,66 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
+    public void ApplyToGame_AFailedWrite_PutsBackTheFilesAlreadyWritten()
+    {
+        // Review finding 6: a game is updated whole or not at all.
+        var game = Game();
+        File.WriteAllText(Ini(game), "[OVERLAY]\nVariableListUseTabs=1\n");
+        var second = Path.Combine(game.BinaryDirectory!, "ReShade2.ini");
+        File.WriteAllText(second, "[OVERLAY]\nVariableListUseTabs=1\n");
+        IniLines.WriteFaultForTesting.Value = path => path == second ? new IOException("disk full (test)") : null;
+        try
+        {
+            Assert.Throws<IOException>(() => ReShadeGlobalSettingsApplier.ApplyToGame(new LinuxAppSettings { ReShadeVariableListUseTabs = false }, game));
+        }
+        finally { IniLines.WriteFaultForTesting.Value = null; }
+
+        Assert.Equal("[OVERLAY]\nVariableListUseTabs=1\n", File.ReadAllText(Ini(game)));
+        Assert.Equal("[OVERLAY]\nVariableListUseTabs=1\n", File.ReadAllText(second));
+
+        // A main file the write created is taken away again.
+        File.Delete(Ini(game));
+        IniLines.WriteFaultForTesting.Value = path => path == second ? new IOException("disk full (test)") : null;
+        try
+        {
+            Assert.Throws<IOException>(() => ReShadeGlobalSettingsApplier.ApplyToGame(new LinuxAppSettings { ReShadeVariableListUseTabs = false }, game));
+        }
+        finally { IniLines.WriteFaultForTesting.Value = null; }
+        Assert.False(File.Exists(Ini(game)));
+    }
+
+    [Fact]
+    public async Task ReShadeIni_LinkedToTheUsersReShadeFolder_IsWrittenByInstallDeployAndApplyToAll_AndALinkOutIsRefusedByAll()
+    {
+        // Review finding 8: one link rule for ReShade.ini (game folders and ~/.config/ReShade), whichever path writes it.
+        var shared = Path.Combine(RHI.Platform.Linux.Paths.LinuxPaths.ConfigHome, "ReShade", Guid.NewGuid().ToString("N"), "ReShade.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
+        File.WriteAllText(shared, "[OVERLAY]\nVariableListUseTabs=1\n");
+        var linked = Game("Linked");
+        File.CreateSymbolicLink(Ini(linked), shared);
+        var outside = Path.Combine(_root, "outside", "ReShade.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+        File.WriteAllText(outside, "[OVERLAY]\n");
+        var escaped = Game("Escaped");
+        File.CreateSymbolicLink(Ini(escaped), outside);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(linked, ManagedComponentKind.ReShade).Manage(escaped, ManagedComponentKind.ReShade);
+        var service = Service(records: records);
+
+        var applied = await service.ApplyReShadeSettingsToAllAsync([linked, escaped], new LinuxAppSettings { ReShadeVariableListUseTabs = false });
+
+        Assert.Equal(new IniBatchResult(1, 0, 1), applied);
+        Assert.Contains("VariableListUseTabs=0", File.ReadAllText(shared));
+        Assert.NotNull(new FileInfo(Ini(linked)).LinkTarget); // the link stays a link
+        Assert.True(service.DeployReShadeIni(linked, new LinuxAppSettings()).Success);
+        ReShadeIniManager.Apply(linked.BinaryDirectory!, [], [], null, linked.InstallPath);
+        Assert.Contains("TutorialProgress=4", File.ReadAllText(shared));
+
+        Assert.Throws<IOException>(() => service.DeployReShadeIni(escaped, new LinuxAppSettings()));
+        Assert.Throws<IOException>(() => ReShadeGlobalSettingsApplier.ApplyToGame(new LinuxAppSettings(), escaped));
+        Assert.Equal("[OVERLAY]\n", File.ReadAllText(outside));
+    }
+
+    [Fact]
     public void Deploy_EntersTheWritePhaseBeforeItWrites()
     {
         var game = Game();

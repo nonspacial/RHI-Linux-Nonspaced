@@ -332,6 +332,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return UserIniService.RestoreChangedPrefix + P;
         yield return UserIniTemplates.TooLargePrefix + P;
         yield return IniLines.LinkRefusalPrefix + P;
+        yield return IniLines.LinkRefusalPrefix + P + IniLines.NotPutBackPrefix + P;
         // #180
         yield return ReShadePresetService.NotAPresetPrefix + "notes.ini";
         yield return ReShadePresetService.TooLargePrefix + P;

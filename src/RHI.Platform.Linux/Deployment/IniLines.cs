@@ -3,6 +3,9 @@ using RHI.Core.Deployment;
 
 namespace RHI.Platform.Linux.Deployment;
 
+/// <summary>One file of an <see cref="IniLines.WriteAll"/>: its path, its new lines and the link rule it is written under.</summary>
+public sealed record IniFileWrite(string Path, IReadOnlyList<string> Lines, UserFileLinkPolicy Policy);
+
 /// <summary>
 /// Line-preserving INI edits for the user files RHI writes settings into (ReShade.ini, relimiter.ini, the user's INI
 /// templates; w5/ini-presets). Unlike upstream's parse-and-rewrite (which drops comments, blank lines and duplicate
@@ -11,6 +14,10 @@ namespace RHI.Platform.Linux.Deployment;
 /// </summary>
 public static class IniLines
 {
+    /// <summary>A plain INI write under the default rule (same-named file inside <paramref name="allowedRoots"/>).</summary>
+    public static IniFileWrite PlannedWrite(string path, IReadOnlyList<string> lines, IReadOnlyList<string> allowedRoots)
+        => new(path, lines, Policy(path, allowedRoots));
+
     /// <summary>The file's lines (a leading UTF-8 BOM dropped), or an empty list when it does not exist.</summary>
     public static List<string> Read(string path)
         => File.Exists(path) ? File.ReadAllLines(path).ToList() : [];
@@ -157,6 +164,53 @@ public static class IniLines
 
     private static UserFileLinkPolicy Policy(string path, IReadOnlyList<string> allowedRoots)
         => new(Path.GetFileName(path), allowedRoots, LinkRefusalPrefix);
+
+    /// <summary>
+    /// Writes several INI files of one game whole or not at all (review finding 6): every link is checked and every file's
+    /// bytes read before the first write; when a write fails, each file already written is put back as it was (one that
+    /// did not exist is deleted) and the failure is rethrown, naming any file that could not be put back. Each write is
+    /// the one user-file replace (a read-only lock kept). Never cancelled.
+    /// </summary>
+    public static void WriteAll(IReadOnlyList<IniFileWrite> files)
+    {
+        var targets = files.Select(file => AtomicFile.ResolveUserFileTarget(file.Path, file.Policy)).ToList();
+        var before = targets.Select(target => File.Exists(target) ? File.ReadAllBytes(target) : null).ToList();
+        var written = new List<int>();
+        try
+        {
+            for (var i = 0; i < files.Count; i++)
+            {
+                if (WriteFaultForTesting.Value?.Invoke(files[i].Path) is { } fault) throw fault;
+                AtomicFile.ReplaceUserFileLines(files[i].Path, files[i].Lines, linkPolicy: files[i].Policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                written.Add(i);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            var notPutBack = new List<string>();
+            foreach (var i in Enumerable.Reverse(written))
+            {
+                try
+                {
+                    if (before[i] is { } bytes) AtomicFile.ReplaceUserFile(files[i].Path, bytes, files[i].Policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                    else AtomicFile.Delete(targets[i]);
+                }
+                catch (Exception putBack) when (putBack is IOException or UnauthorizedAccessException or InvalidOperationException)
+                {
+                    RHI.Core.Services.AppLog.Warn("ini-write", $"Could not put back {targets[i]}", putBack);
+                    notPutBack.Add(targets[i]);
+                }
+            }
+            if (notPutBack.Count > 0) throw new IOException(ex.Message + NotPutBackPrefix + string.Join(", ", notPutBack), ex);
+            throw;
+        }
+    }
+
+    /// <summary>Test seam: fails the write of the file whose path it is given (null = write it).</summary>
+    internal static readonly AsyncLocal<Func<string, Exception?>?> WriteFaultForTesting = new();
+
+    /// <summary>Fixed text before the files an incomplete <see cref="WriteAll"/> could not put back (localisation key).</summary>
+    public const string NotPutBackPrefix = " These files were already written and could not be put back: ";
 
     /// <summary>Fixed text before "link -> target" when a symlinked INI points outside the game (localisation key).</summary>
     public const string LinkRefusalPrefix = "INI link not followed: its target must be a file of the same name inside the game folder. Link: ";

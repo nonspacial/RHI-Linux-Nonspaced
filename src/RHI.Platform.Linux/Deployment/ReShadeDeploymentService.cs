@@ -465,7 +465,7 @@ public sealed partial class ReShadeDeploymentService
             // Remove only RHI-owned shader/INI entries from the previous profile before applying a new profile.
             if (existingRecord is not null)
             {
-                CleanupManagedIni(existingRecord);
+                CleanupManagedIni(existingRecord, game.InstallPath); // w5/ini-presets hook (review 8)
                 await DeclareIniWritesAsync().ConfigureAwait(false);
                 _shaderPacks.Cleanup(game.BinaryDirectory);
             }
@@ -566,7 +566,7 @@ public sealed partial class ReShadeDeploymentService
             var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
-                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, IniDefaults?.Invoke(game)); // w5/ini-presets hook (#181)
+                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, IniDefaults?.Invoke(game), game.InstallPath); // w5/ini-presets hook (#181, review 8)
             await DeclareIniWritesAsync().ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>
@@ -680,7 +680,7 @@ public sealed partial class ReShadeDeploymentService
                 {
                     var oldShaders = await _shaderPacks.SyncAsync(game.BinaryDirectory, oldOptions.ShaderPackIds, CancellationToken.None).ConfigureAwait(false);
                     if (oldOptions.ManageIni)
-                        _ = ReShadeIniManager.Apply(game.BinaryDirectory, oldShaders.EffectSearchPaths, oldShaders.TextureSearchPaths);
+                        _ = ReShadeIniManager.Apply(game.BinaryDirectory, oldShaders.EffectSearchPaths, oldShaders.TextureSearchPaths, gameRoot: game.InstallPath); // w5/ini-presets hook (review 8)
                 }
                 catch { }
             }
@@ -757,7 +757,7 @@ public sealed partial class ReShadeDeploymentService
             if (record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } managedIni)
             {
                 await scope.TrackAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
-                CleanupManagedIni(record);
+                CleanupManagedIni(record, game.InstallPath); // w5/ini-presets hook (review 8)
                 await scope.DeclareWrittenContentAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
             }
 
@@ -1405,7 +1405,7 @@ public sealed partial class ReShadeDeploymentService
         return (version, addonBuild ? StableSetupUrl(version) : NoAddonsSetupUrl(version));
     }
 
-    private void CleanupManagedIni(LinuxDeploymentRecord record)
+    private void CleanupManagedIni(LinuxDeploymentRecord record, string? gameRoot) // w5/ini-presets hook (review 8): gameRoot for the one link rule
     {
         var ini = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
         if (ini is null) return;
@@ -1416,7 +1416,8 @@ public sealed partial class ReShadeDeploymentService
             ReadStringList(record.Metadata.GetValueOrDefault(MetaIniEffectAdded)),
             ReadStringList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
             ReadBool(record.Metadata, MetaIniEffectCreated),
-            ReadBool(record.Metadata, MetaIniTextureCreated));
+            ReadBool(record.Metadata, MetaIniTextureCreated),
+            gameRoot);
     }
 
     private static void WriteIniMetadata(Dictionary<string, string> metadata, ReShadeIniApplyResult? ini)

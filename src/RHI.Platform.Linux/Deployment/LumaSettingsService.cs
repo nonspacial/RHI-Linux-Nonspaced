@@ -37,7 +37,7 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
             var ini = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory!)
                       ?? throw new InvalidOperationException("ReShade.ini is required before enabling Luma Framework.");
             await scope.TrackAsync(ini, token).ConfigureAwait(false);
-            var state = LumaIniOverrideManager.SetHdrMode(game.BinaryDirectory!, LumaIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(LumaIniOverrideManager.MetadataKey)), mode);
+            var state = LumaIniOverrideManager.SetHdrMode(game.BinaryDirectory!, LumaIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(LumaIniOverrideManager.MetadataKey)), mode, game.InstallPath);
             await scope.DeclareWrittenContentAsync(ini, token).ConfigureAwait(false);
             record.Metadata[LumaIniOverrideManager.MetadataKey] = LumaIniOverrideManager.Serialize(state);
             return ini;

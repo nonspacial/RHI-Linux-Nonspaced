@@ -50,11 +50,13 @@ internal static class ReShadeIniManager
     internal const string EffectKey = "EffectSearchPaths";
     internal const string TextureKey = "TextureSearchPaths";
 
+    /// <param name="gameRoot">The game's install folder (a ReShade.ini link may point into it; see <see cref="LinkPolicy"/>).</param>
     public static ReShadeIniApplyResult Apply(
         string gameDirectory,
         IReadOnlyList<string> effectPaths,
         IReadOnlyList<string> texturePaths,
-        ReShadeIniDefaults? defaults = null)
+        ReShadeIniDefaults? defaults = null,
+        string? gameRoot = null)
     {
         var path = ResolveIniPath(gameDirectory);
         var existed = File.Exists(path);
@@ -80,7 +82,7 @@ internal static class ReShadeIniManager
                 "TutorialProgress=4"
             ];
             if (defaults is not null) ApplySettings(baseline, defaults);
-            Write(path, baseline, gameDirectory);
+            Write(path, baseline, gameDirectory, gameRoot);
             return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path));
         }
 
@@ -98,7 +100,7 @@ internal static class ReShadeIniManager
         var effectKeyCreated = effectKeyWasMissing && IniLines.Get(lines, "GENERAL", EffectKey) is not null;
         var textureKeyCreated = textureKeyWasMissing && IniLines.Get(lines, "GENERAL", TextureKey) is not null;
         if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
-            Write(path, lines, gameDirectory);
+            Write(path, lines, gameDirectory, gameRoot);
 
         return new(path, existed, !existed, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
     }
@@ -149,17 +151,17 @@ internal static class ReShadeIniManager
     }
 
     /// <summary>#180: points ReShade at a preset beside it (<c>[GENERAL] PresetPath=.\name.ini</c>); creates ReShade.ini if needed.</summary>
-    public static void SetPresetPath(string gameDirectory, string presetFileName)
+    public static void SetPresetPath(string gameDirectory, string presetFileName, string? gameRoot = null)
     {
         var path = ResolveIniPath(gameDirectory);
         var existed = File.Exists(path);
         var lines = existed ? File.ReadAllLines(path).ToList() : [];
         if (IniLines.Set(lines, "GENERAL", "PresetPath", @".\" + presetFileName) || !existed)
-            Write(path, lines, gameDirectory);
+            Write(path, lines, gameDirectory, gameRoot);
     }
 
     /// <summary>#180: removes <c>PresetPath</c> while it still names <paramref name="presetFileName"/> beside the game (ReShade then uses its default). True when the file changed.</summary>
-    public static bool ClearPresetPath(string gameDirectory, string presetFileName)
+    public static bool ClearPresetPath(string gameDirectory, string presetFileName, string? gameRoot = null)
     {
         var path = ResolveIniPath(gameDirectory);
         if (!File.Exists(path)) return false;
@@ -168,7 +170,7 @@ internal static class ReShadeIniManager
         var named = current.Replace('/', '\\').TrimStart('.').TrimStart('\\');
         if (!named.Equals(presetFileName, StringComparison.OrdinalIgnoreCase)) return false;
         IniLines.Remove(lines, "GENERAL", "PresetPath");
-        Write(path, lines, gameDirectory);
+        Write(path, lines, gameDirectory, gameRoot);
         return true;
     }
 
@@ -179,7 +181,8 @@ internal static class ReShadeIniManager
         IReadOnlyList<string> effectPathsAdded,
         IReadOnlyList<string> texturePathsAdded,
         bool effectKeyCreated,
-        bool textureKeyCreated)
+        bool textureKeyCreated,
+        string? gameRoot = null)
     {
         if (!File.Exists(path)) return;
 
@@ -197,7 +200,7 @@ internal static class ReShadeIniManager
         changed |= RemoveSearchPaths(lines, "GENERAL", EffectKey, effectPathsAdded, effectKeyCreated);
         changed |= RemoveSearchPaths(lines, "GENERAL", TextureKey, texturePathsAdded, textureKeyCreated);
         if (changed)
-            Write(path, lines, Path.GetDirectoryName(path) ?? path);
+            Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
 
     internal static string ResolveIniPath(string gameDirectory)
@@ -217,11 +220,27 @@ internal static class ReShadeIniManager
         }
     }
 
-    // One write path for ReShade.ini: atomic, a user's read-only lock kept, a symlink followed only inside the game
-    // folder or the user's ReShade config folder (RenoDX's policy for the same file).
-    private static void Write(string path, IReadOnlyList<string> lines, string gameDirectory)
-        => AtomicFile.ReplaceUserFileLines(path, lines, new UTF8Encoding(false),
-            RenoDxIniOverrideManager.LinkPolicy(gameDirectory, null), ReadOnlyUserFile.WriteKeepingLock);
+    /// <summary>
+    /// The one symlink rule for ReShade.ini and its numbered siblings (review finding 8), used by every path that writes
+    /// one (install, removal, Deploy, presets, Apply to all games, Luma's HDR setting, RenoDX's keys): a link is followed
+    /// only to a file of the same name (any case) inside the game's binary folder, its install folder, or the user's
+    /// ReShade config folder (<c>~/.config/ReShade</c>), where a shared ReShade.ini is kept.
+    /// </summary>
+    internal static UserFileLinkPolicy LinkPolicy(string iniPath, string binaryDirectory, string? gameRoot)
+    {
+        var roots = new List<string> { binaryDirectory };
+        if (!string.IsNullOrWhiteSpace(gameRoot)) roots.Add(gameRoot);
+        roots.AddRange(RenoDxIniOverrideManager.UserReShadeConfigDirectories);
+        return new UserFileLinkPolicy(Path.GetFileName(iniPath), roots, RenoDxIniOverrideManager.LinkRefusalPrefix);
+    }
+
+    /// <summary>A planned ReShade.ini write under <see cref="LinkPolicy"/> (for <see cref="IniLines.WriteAll"/>).</summary>
+    internal static IniFileWrite PlannedWrite(string path, IReadOnlyList<string> lines, string binaryDirectory, string? gameRoot)
+        => new(path, lines, LinkPolicy(path, binaryDirectory, gameRoot));
+
+    // One write path for ReShade.ini: atomic, a user's read-only lock kept, a symlink followed only as LinkPolicy allows.
+    private static void Write(string path, IReadOnlyList<string> lines, string gameDirectory, string? gameRoot)
+        => AtomicFile.ReplaceUserFileLines(path, lines, new UTF8Encoding(false), LinkPolicy(path, gameDirectory, gameRoot), ReadOnlyUserFile.WriteKeepingLock);
 
     private static bool MergeSearchPath(
         List<string> lines,

@@ -181,7 +181,7 @@ internal static class LumaIniOverrideManager
     /// keep on the Luma record: an Off/On value becomes RHI's applied value (removing Luma puts back what was there
     /// before), and Default leaves the keys missing, which later Luma updates treat as the user's choice and keep.
     /// </summary>
-    public static LumaIniOverrideState SetHdrMode(string binaryDirectory, LumaIniOverrideState? state, LumaHdrMode mode)
+    public static LumaIniOverrideState SetHdrMode(string binaryDirectory, LumaIniOverrideState? state, LumaHdrMode mode, string? gameRoot = null)
     {
         var iniPath = RenoDxIniOverrideManager.ResolveIniPath(binaryDirectory);
         if (iniPath is null || !File.Exists(iniPath))
@@ -208,7 +208,7 @@ internal static class LumaIniOverrideManager
             entries[key] = entry with { AppliedValue = value };
         }
         if (!lines.SequenceEqual(before, StringComparer.Ordinal))
-            AtomicFile.ReplaceUserFileLines(iniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock);
+            AtomicFile.ReplaceUserFileLines(iniPath, lines, linkPolicy: ReShadeIniManager.LinkPolicy(iniPath, binaryDirectory, gameRoot), readOnly: ReadOnlyUserFile.WriteKeepingLock);
         return new LumaIniOverrideState(iniPath, sectionCreated, entries.Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 

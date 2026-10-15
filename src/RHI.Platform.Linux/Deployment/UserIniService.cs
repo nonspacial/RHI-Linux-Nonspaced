@@ -53,7 +53,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
         if (records.Find(game, ManagedComponentKind.ReShade) is null) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates));
+        var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates), game.InstallPath);
         return ComponentOperationResult.Ok(DeployedPrefix + result.Path, result.Path);
     }
 
@@ -302,18 +302,17 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
                 if (Refusal(game) is { } refused) return Task.FromResult(ComponentOperationResult.Fail(refused));
                 var inis = ReLimiterInis(game);
                 var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
-                // Every file is checked before the first is written: a game is updated whole or not at all.
-                foreach (var ini in inis)
-                {
-                    XboxWriteGate.ThrowIfRefused(ini);
-                    IniLines.CheckLinks(ini, roots);
-                }
-                _ = OperationCancellation.BeginWrites(token);
+                foreach (var ini in inis) XboxWriteGate.ThrowIfRefused(ini);
+                var writes = new List<IniFileWrite>();
                 foreach (var ini in inis)
                 {
                     var lines = IniLines.Read(ini);
-                    if (ReLimiterIniEditor.Apply(lines, globals)) IniLines.Write(ini, lines, roots);
+                    if (ReLimiterIniEditor.Apply(lines, globals)) writes.Add(IniLines.PlannedWrite(ini, lines, roots));
                 }
+                foreach (var write in writes) IniLines.CheckLinks(write.Path, roots); // refused before anything is written
+                _ = OperationCancellation.BeginWrites(token);
+                // A game is updated whole or not at all: a failed write puts back the files already written (review 6).
+                IniLines.WriteAll(writes);
                 return Task.FromResult(ComponentOperationResult.Ok(string.Join(", ", inis)));
             },
             "relimiter-settings", cancellationToken);

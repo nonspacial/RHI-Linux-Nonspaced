@@ -218,7 +218,7 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             var sha = await scope.PlaceBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
             var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
             await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
-            ReShadeIniManager.SetPresetPath(game.BinaryDirectory, fileName);
+            ReShadeIniManager.SetPresetPath(game.BinaryDirectory, fileName, game.InstallPath);
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
             installed.RemoveAll(p => p.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
@@ -262,7 +262,7 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             if (File.Exists(ini))
             {
                 await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
-                if (ReShadeIniManager.ClearPresetPath(game.BinaryDirectory, preset.FileName))
+                if (ReShadeIniManager.ClearPresetPath(game.BinaryDirectory, preset.FileName, game.InstallPath))
                     await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
             }
             installed.Remove(preset);

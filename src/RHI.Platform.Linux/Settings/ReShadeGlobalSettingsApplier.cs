@@ -65,14 +65,18 @@ public static class ReShadeGlobalSettingsApplier
         var screenshotPath = ResolveScreenshotPath(settings, game);
         if (!string.IsNullOrWhiteSpace(screenshotPath)) Directory.CreateDirectory(screenshotPath);
 
+        // Every file of the game is planned first and written whole or not at all (review finding 6), under the one
+        // ReShade.ini link rule (review finding 8).
+        var writes = new List<IniFileWrite>();
         foreach (var iniPath in new[] { mainIni }.Concat(NumberedInis(root)))
         {
             var lines = IniLines.Read(RHI.Core.Services.XboxWriteGate.Checked(iniPath));
             var before = File.Exists(iniPath) ? lines.ToList() : null;
             ReShadeIniManager.ApplySettings(lines, defaults);
             if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
-                IniLines.Write(iniPath, lines, GameRoots(game, root));
+                writes.Add(ReShadeIniManager.PlannedWrite(iniPath, lines, root, game.InstallPath));
         }
+        IniLines.WriteAll(writes);
         return mainIni;
     }
 

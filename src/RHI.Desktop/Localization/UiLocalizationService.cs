@@ -1221,6 +1221,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.UserIniService.NoBackupPrefix, "Não resta nenhuma cópia de segurança de INI guardada pelo RHI para restaurar: "),
         (RHI.Platform.Linux.Deployment.UserIniService.RestoreChangedPrefix, "A cópia de segurança não foi restaurada: o arquivo do jogo mudou desde que o RHI o gravou; a cópia fica ao lado dele: "),
         (RHI.Platform.Linux.Deployment.UserIniTemplates.TooLargePrefix, "Modelo de INI ignorado: ele tem mais de 1 MiB: "),
+        (RHI.Platform.Linux.Deployment.IniLines.NotPutBackPrefix, " Estes arquivos já tinham sido gravados e não puderam ser restaurados: "),
         (RHI.Platform.Linux.Deployment.IniLines.LinkRefusalPrefix, "Link de INI não seguido: o destino deve ser um arquivo com o mesmo nome dentro da pasta do jogo. Link: "),
         // #180 ReShade presets.
         (RHI.Platform.Linux.Deployment.ReShadePresetService.NotAPresetPrefix, "Não é uma predefinição do ReShade (precisa de uma linha Techniques= com pelo menos um efeito .fx): "),

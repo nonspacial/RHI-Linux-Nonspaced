@@ -117,6 +117,24 @@ public sealed class ReLimiterGlobalsTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyToAll_AFailedSecondWrite_PutsTheFirstBack()
+    {
+        // Review finding 6: "whole or not at all" holds for a write that fails after the checks, not only for links.
+        var re = Game("Re", storage: true);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(re, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(new UserIniTemplates(Path.Combine(_root, "inis")), records, _ => null);
+        var storage = Path.Combine(re.BinaryDirectory!, "_storage_", "relimiter.ini");
+        IniLines.WriteFaultForTesting.Value = path => path == storage ? new IOException("disk full (test)") : null;
+        IniBatchResult result;
+        try { result = await service.ApplyReLimiterSettingsToAllAsync([re], new ReLimiterGlobals("F11", false, false, 0)); }
+        finally { IniLines.WriteFaultForTesting.Value = null; }
+
+        Assert.Equal(new IniBatchResult(0, 0, 1), result);
+        Assert.Equal("[FrameLimiter]\nkeep=1\n", File.ReadAllText(Path.Combine(re.BinaryDirectory!, "relimiter.ini")));
+        Assert.Equal("[FrameLimiter]\n", File.ReadAllText(storage));
+    }
+
+    [Fact]
     public async Task ApplyToAll_AStorageLinkOutOfTheGame_FailsThatGameOnly()
     {
         var linked = Game("Linked");
