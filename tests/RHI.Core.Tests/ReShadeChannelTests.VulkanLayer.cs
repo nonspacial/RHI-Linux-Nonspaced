@@ -393,6 +393,30 @@ public sealed partial class ReShadeChannelTests
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "vulkan-1.dll")));
     }
 
+    [Theory]
+    [InlineData(true, "win32", true)]
+    [InlineData(true, "win64", false)]
+    [InlineData(false, "win32", false)]
+    public async Task VulkanLayer_A32BitGameInAWin32OnlyPrefix_IsRefusedWithAPlainReason_BeforeAnyDownload(bool is32, string arch, bool refused)
+    {
+        var (game, store) = CreateVulkanGame($"vk-arch-{is32}-{arch}", is32);
+        var hive = Path.Combine(game.PrefixPath!, "system.reg");
+        File.WriteAllText(hive, File.ReadAllText(hive).Replace("#arch=win64", "#arch=" + arch, StringComparison.Ordinal));
+        var handler = new LunarGHandler();
+        var service = NewVulkanService(store, handler, Path.Combine(_root, $"vk-arch-{is32}-{arch}-cache"));
+
+        Assert.Equal(refused ? ReShadeVulkanLayer.Win32PrefixMessage : null, ReShadeVulkanLayer.OfferRefusal(game));
+        var result = await service.InstallAsync(game, LayerOptions());
+
+        Assert.Equal(!refused, result.Success);
+        if (refused)
+        {
+            Assert.Equal(ReShadeVulkanLayer.Win32PrefixMessage, result.Message);
+            Assert.Equal(0, handler.RequestCount);
+            Assert.False(Directory.Exists(Path.Combine(game.PrefixPath!, "drive_c")));
+        }
+    }
+
     [Fact]
     public async Task VulkanLayer_Install_RefusesWhileWineRunsInThePrefix()
     {

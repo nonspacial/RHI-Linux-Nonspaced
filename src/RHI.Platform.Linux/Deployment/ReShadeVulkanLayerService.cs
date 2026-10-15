@@ -50,6 +50,8 @@ public static partial class ReShadeVulkanLayer
         "ReShade's Vulkan layer needs Proton or Wine 8 or newer. This game's prefix was made by: ";
     public const string UnknownRunnerMessage =
         "RHI cannot tell which Proton or Wine version runs this game, and ReShade's Vulkan layer needs version 8 or newer. Choose a Proton version for the game in its launcher, start the game once, then try again.";
+    public const string Win32PrefixMessage =
+        "This 32-bit game runs in a 32-bit-only Wine prefix (an older Wine or Lutris prefix), where ReShade's Vulkan layer cannot load, so it is not offered. Proton prefixes and new Wine prefixes are 64-bit.";
     public const string GameShipsLoaderPrefix =
         "This game has its own vulkan-1.dll beside its executable; RHI does not replace it with the Vulkan loader ReShade needs, so nothing was installed. File: ";
     public const string DllReShadeInstalledMessage =
@@ -109,6 +111,8 @@ public static partial class ReShadeVulkanLayer
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath)
             || !WineRegistryEditor.HasSystemHive(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return PrefixNotStartedMessage;
+        // Review nit 7: a 32-bit game reads the layer from Wow6432Node, which a win32-only prefix does not have.
+        if (GameArchitecture.Of(game) == PeArchitecture.X86 && IsWin32OnlyPrefix(game.PrefixPath)) return Win32PrefixMessage;
         string? marker;
         try
         {
@@ -121,6 +125,27 @@ public static partial class ReShadeVulkanLayer
             marker = null;
         }
         return RunnerRefusal(marker, game.CompatibilityTool);
+    }
+
+    /// <summary>Whether the prefix's <c>system.reg</c> header says <c>#arch=win32</c> (read from the first lines only).</summary>
+    internal static bool IsWin32OnlyPrefix(string prefixPath)
+    {
+        try
+        {
+            using var reader = new StreamReader(WineRegistryEditor.SystemHivePath(prefixPath), System.Text.Encoding.Latin1);
+            for (var i = 0; i < 16 && reader.ReadLine() is { } line; i++)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("#arch=", StringComparison.OrdinalIgnoreCase))
+                    return trimmed["#arch=".Length..].Trim().Equals("win32", StringComparison.OrdinalIgnoreCase);
+                if (trimmed.StartsWith('[')) break;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("reshade-vulkan", $"Could not read the architecture of {prefixPath}", ex);
+        }
+        return false;
     }
 
     /// <summary>
