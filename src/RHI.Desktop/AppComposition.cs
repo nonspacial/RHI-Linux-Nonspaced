@@ -48,6 +48,11 @@ internal sealed class AppComposition
     // w3/vmsplit rows
     // w3/dllnames rows
     public required DllNamePreferenceStore DllNames { get; init; }
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -188,11 +193,24 @@ internal sealed class AppComposition
         var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         var updateLog = new ComponentUpdateLogStore();
         var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
+        // w5 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
             updateLog, nrCostScaler: nrCostScaler, // w3/parity hook (#96): named argument
-            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal)); // w4/encore (#158)
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
+            // w5 lane rows: named arguments, each line starting with a comma
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
+            );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
         // w3/journal rows
@@ -215,6 +233,11 @@ internal sealed class AppComposition
         };
         // w3/vmsplit rows
         // w3/dllnames rows
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -243,6 +266,11 @@ internal sealed class AppComposition
             // w3/vmsplit rows
             // w3/dllnames rows
             DllNames = reshade.DllNames,
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         };
     }
 }

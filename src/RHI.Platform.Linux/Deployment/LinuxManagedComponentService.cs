@@ -1021,7 +1021,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             _addonManager, _neuralVersionPins, _updateLog,
             _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
             _shortFuse?.GameState, _lumaPolicy?.GameState,
-            _reshade?.DllNames // w3/dllnames (#120); RTX Encore's name and NR choice live in the same store (#158)
+            _reshade?.DllNames, // w3/dllnames (#120); RTX Encore's name and NR choice live in the same store (#158)
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }

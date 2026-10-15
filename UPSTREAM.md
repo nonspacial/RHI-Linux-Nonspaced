@@ -335,3 +335,15 @@ build.
 - Ported: every OptiScaler install also puts the newest OptiPatcher (`optiscaler/OptiPatcher`, `rolling` release, its single `OptiPatcher.asi`) into `plugins/` beside the game exe, as upstream 2.8.7 (install step 7). Every install sets `[Plugins] LoadAsiPlugins=true` in `OptiScaler.ini`, as upstream, also when OptiPatcher was not deployed (unreachable, or a `plugins/OptiPatcher.asi` of the user's own, which then loads). The build is the release notes' "Build commit" (upstream's version key); the file is cached per build through the stamped cache with GitHub's published SHA-256 checked, must be a 64-bit Windows DLL, and is downloaded under its own `DownloadSources.OptiPatcher` policy (GitHub release hosts). It is part of the OptiScaler record (`OptiScaler.OptiPatcherVersion`, `Download.OptiPatcher.*`): removed with OptiScaler, journaled with it.
 - OptiPatcher being unreachable never fails OptiScaler (upstream logs and skips it); the install line says it was not deployed. A `plugins/OptiPatcher.asi` RHI does not own is left as it is.
 - "Auto-updates silently": upstream re-copies a newer rolling build into every game that has it. On Linux a newer build makes OptiScaler's update check report an update (`OptiPatcher update available: old → new`; the check reads the release's build and digest only, never the file, as upstream `CheckOptiPatcherUpdateAsync`), so Update All and the opt-in background component updates refresh it; an install that has no OptiPatcher (before #98) does not gain one on update (upstream only refreshes existing copies). A pinned nightly (#156, Control UE FG) stays as it is, OptiPatcher included, and is never asked about.
+
+## Parity notes (upstream 2.8.7 residuals)
+
+<!-- w5/update-policy notes -->
+
+<!-- w5/catalogue-info notes -->
+
+<!-- w5/ini-presets notes -->
+
+<!-- w5/shell-launch notes -->
+
+<!-- w5/reshade-core notes -->

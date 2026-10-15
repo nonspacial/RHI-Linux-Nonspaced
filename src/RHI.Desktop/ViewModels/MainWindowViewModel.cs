@@ -134,6 +134,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>The selected game's analysis (unit 1 of the split; Refs #71, #72, #74, #82, #83).</summary>
     public SelectedGameSession Session => _session;
     public DllNamePickerViewModel DllNamePicker => DllNamePickerViewModel.For(this, _managedComponents, TryPersist); // w3/dllnames (#120)
+    // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1707,6 +1713,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         Parity?.NexusLinks.Games?.Prefetch();
         if (NexusLinkPresenter.PageFor(game, Parity?.NexusLinks.Games) is { } nexusUrl)
             items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         return items;
     }
 

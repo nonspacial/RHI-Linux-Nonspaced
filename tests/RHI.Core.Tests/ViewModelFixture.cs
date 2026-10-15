@@ -40,6 +40,11 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         )
     {
         Directory.CreateDirectory(ConfigDir);
@@ -57,9 +62,20 @@ internal sealed class ViewModelFixture : IDisposable
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
+        // w5 lane rows: hand the view model what the fixture builds
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     }
 
     /// <param name="seed">Writes the library store before the view model loads it (e.g. a saved manual entry).</param>
@@ -80,6 +96,11 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -89,6 +110,11 @@ internal sealed class ViewModelFixture : IDisposable
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -124,6 +150,11 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/parity rows
         // w3/vmsplit rows
         // w3/dllnames rows
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         )
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
@@ -169,13 +200,26 @@ internal sealed class ViewModelFixture : IDisposable
         var lumaCatalog = new LumaCatalogService(http, upstreamManifest);
         var lumaPolicy = new LumaPolicyService(upstreamManifest, new LumaModePreferenceStore(Path.Combine(prefs, "luma.json")));
         var luma = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
+        // w5 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         var managed = new LinuxManagedComponentService(
             records, reshade, new ReShadeAddonManagerService(http, upstreamManifest), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
             new D3DCompilerToolInstaller(wineOverrides), ual, shortFuse, new DofFixDeploymentService(http, records, upstreamManifest),
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,
             new NeuralAddonVersionPreferenceStore(Path.Combine(prefs, "neural.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")),
-            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, Path.Combine(cacheDir, "rtx-encore"))); // w4/encore (#158)
+            rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, Path.Combine(cacheDir, "rtx-encore")) // w4/encore (#158)
+            // w5 lane rows: named arguments, each line starting with a comma
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
+            );
         built(managed);
         return new MainWindowViewModel(scanner, launcher ?? new LinuxGameLauncher(), probe ?? new NoProbe(), dlss, managed,
             new GraphicsApiOverrideStore(Path.Combine(prefs, "api.json")), new OptiScalerVariantPreferenceStore(Path.Combine(prefs, "opti.json")),

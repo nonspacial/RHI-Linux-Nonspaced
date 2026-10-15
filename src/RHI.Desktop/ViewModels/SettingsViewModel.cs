@@ -40,6 +40,13 @@ public sealed class SettingsViewModel : PanelViewModel
     internal static readonly IReadOnlySet<string> XboxFolderDetectors =
         new HashSet<string>(StringComparer.Ordinal) { RHI.Platform.Linux.Detection.Xbox.XboxGameDetector.SourceName, "Wine" };
 
+    // w5 lane rows: Settings hooks (one member each)
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
+
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
         var copy = new LinuxAppSettings
@@ -67,7 +74,12 @@ public sealed class SettingsViewModel : PanelViewModel
             DefaultDlssnrVersion = Host.Settings.DefaultDlssnrVersion,
             DefaultStreamlineVersion = Host.Settings.DefaultStreamlineVersion,
             OptiScalerGpuType = Host.Settings.OptiScalerGpuType, // w3/dllnames hook (#97)
-            OptiScalerDlssInputs = Host.Settings.OptiScalerDlssInputs // w3/dllnames hook (#97)
+            OptiScalerDlssInputs = Host.Settings.OptiScalerDlssInputs, // w3/dllnames hook (#97)
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

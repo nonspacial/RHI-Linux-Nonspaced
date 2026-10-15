@@ -279,6 +279,11 @@ public sealed class GameLibraryScanner
             // w3/parity rows
             // w3/vmsplit rows
             // w3/dllnames rows
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         }
         return first;
     }

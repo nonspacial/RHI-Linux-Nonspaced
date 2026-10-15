@@ -134,6 +134,12 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy RtxEncore = new(
         "RTX Encore", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
 
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -152,5 +158,10 @@ public static class DownloadSources
         // w4/smalls rows
         NexusGameList,
         RtxEncore,
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     ];
 }

@@ -198,6 +198,11 @@ public sealed class DetectedGame
     // w3/parity rows
     // w3/vmsplit rows
     // w3/dllnames rows
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 
     /// <summary>
     /// Game-local patch target is ready when no explicit split is required or when a real game executable has been

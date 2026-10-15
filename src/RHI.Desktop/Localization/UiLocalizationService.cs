@@ -582,7 +582,12 @@ public static class UiLocalizationService
         ("58% Balanced", "58% Balanceado"),
         ("50% Performance", "50% Desempenho"),
         ("45% Performance-", "45% Desempenho-"),
-        ("33% Ultra Performance", "33% Ultra Desempenho")
+        ("33% Ultra Performance", "33% Ultra Desempenho"),
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1202,6 +1207,11 @@ public static class UiLocalizationService
         (" OptiScaler.ini comes from your INI template: ", " O OptiScaler.ini vem do seu modelo de INI: "),
         (" The OptiScaler INI template could not be prepared, so the package's OptiScaler.ini was used: ",
             " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

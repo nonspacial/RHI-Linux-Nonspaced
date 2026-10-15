@@ -877,5 +877,10 @@ internal static class UiStrings
         ("Win.RtxEncoreInstalled", "Instalado: {0} como {1}. Para trocar o nome, remova e instale de novo.", "Installed: {0} as {1}. To change the name, remove it and install it again."),
         ("Ui.RtxEncoreCheck", "Verificar atualização", "Check for update"),
         ("Ui.RtxEncoreFooter", "Ainda não confirmado no Linux: geração de quadros ×3–×6 e Neural Rendering podem funcionar pelo DLSS do Proton; Smooth Motion não (precisa do driver do Windows). Use só em jogos offline: o mod roda dentro do jogo.", "Not yet confirmed on Linux: frame generation ×3–×6 and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot (it needs the Windows driver). Offline games only: the mod runs inside the game."),
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     ];
 }

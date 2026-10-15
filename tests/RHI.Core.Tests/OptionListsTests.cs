@@ -33,6 +33,11 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.GraphicsApiOverride);
             AssertRoundTrips(OptionLists.LibraryFilter);
             AssertRoundTrips(OptionLists.LaunchProvider);
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         }
         finally
         {

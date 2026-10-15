@@ -96,6 +96,12 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
         && (component.ManagedByRhi || component.Availability == ComponentAvailability.Available); // not for an RTX Encore RHI did not install
     public bool HasReFrameworkSettings => ReFrameworkStoragePresenter.HasSettings(component); // w3/journal hook (#159)
     public string ReFrameworkSettingsTip => ReFrameworkStoragePresenter.SettingsTip; // w3/journal hook (#159)
+    // w5 lane rows: component-row members (one member each)
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

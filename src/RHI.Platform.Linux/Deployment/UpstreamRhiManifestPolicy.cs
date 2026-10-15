@@ -56,6 +56,11 @@ public sealed class UpstreamLibraryPolicySnapshot
         = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyDictionary<string, UpstreamGameNoteDefinition> GameNotes { get; init; }
         = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -145,6 +150,11 @@ internal sealed partial class UpstreamManifestDocument
 
     [JsonPropertyName("gameNotes")]
     public Dictionary<string, UpstreamManifestGameNote>? GameNotes { get; set; }
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 }
 
 internal sealed class UpstreamManifestSplitGame
@@ -233,7 +243,12 @@ public sealed partial class UpstreamRhiManifestService
             UltraPlusUrlOverrides = NormalizeStringDictionary(manifest.UltraPlusUrlOverrides),
             AuthorOverrides = NormalizeStringDictionary(manifest.AuthorOverrides),
             InstallWarnings = NormalizeNestedDictionary(manifest.InstallWarnings),
-            GameNotes = NormalizeGameNotes(manifest.GameNotes)
+            GameNotes = NormalizeGameNotes(manifest.GameNotes),
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         };
     }
 
@@ -294,6 +309,11 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.LumaNameOverrides?.Keys);
         Add(result, manifest.LumaDefaultGames);
         Add(result, manifest.LumaRenoDxCompat);
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         return result;
     }
 

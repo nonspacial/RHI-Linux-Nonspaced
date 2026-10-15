@@ -317,6 +317,11 @@ public sealed class WaveOneMessageLocalizationTests
         yield return P + LinuxManagedComponentService.OptiScalerSavedNameSkippedPrefix + "winmm.dll (Ultimate ASI Loader)";
         yield return ControlUeFrameGenerationService.NotSetUpPrefix + OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "dxgi.dll"
             + ControlUeFrameGenerationService.HdrSetPrefix + "0";
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
     }
 
     [Theory]

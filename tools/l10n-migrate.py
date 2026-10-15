@@ -222,7 +222,7 @@ ENTRY_KEY = re.compile(r'^[ \t]+\("([^"]+)",')
 FULL_LINE_COMMENT = re.compile(r'^[ \t]+//')
 
 def table_layout():
-    """The table's rows (by key) and full-line comments (the wave's per-lane anchors, `// w3/<lane> rows`) in file
+    """The table's rows (by key) and full-line comments (the wave's per-lane anchors, `// w<N>/<lane> rows`) in file
     order, so a rewrite keeps every anchor where it was. New keys go after the last item."""
     if not os.path.exists(TABLE):
         return []

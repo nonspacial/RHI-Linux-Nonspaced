@@ -223,6 +223,12 @@ public static class OptionLists
             : value == LinuxGameIdentityService.OtherLaunchProvider ? new OptionEntry<string>(value, "Win.ProviderOther", null, "Other")
             : new OptionEntry<string>(value, null, value)).ToArray());
 
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
+
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");
 

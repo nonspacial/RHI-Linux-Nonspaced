@@ -538,6 +538,12 @@ public sealed partial class MainWindow : Window
         var optiScalerTemplates = new OptiScalerTemplateSettingsRows(settings, Path.Combine(snapshot.ConfigRoot, "inis"), // w3/dllnames hook (#97)
             folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), line => status.Text = line);
         dlssTab.Children.Add(optiScalerTemplates.Control); // w3/dllnames hook (#97)
+        // w5 lane rows: Settings rows (build your row object here, add it to its tab)
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
 
         var pathGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto"), ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 14, RowSpacing = 8 };
         void AddPathRow(int row, string label, string value)
@@ -597,6 +603,11 @@ public sealed partial class MainWindow : Window
             defaultDlssnr.SelectedItem = OptionLists.DoNotChangeDisplay();
             defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
             optiScalerTemplates.Reset(defaults); // w3/dllnames hook (#97)
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -668,7 +679,12 @@ public sealed partial class MainWindow : Window
             DefaultDlssnrVersion = ReadDlssDefault(defaultDlssnr),
             DefaultStreamlineVersion = ReadDlssDefault(defaultStreamline),
             OptiScalerGpuType = optiScalerTemplates.GpuType, // w3/dllnames hook (#97)
-            OptiScalerDlssInputs = optiScalerTemplates.DlssInputs // w3/dllnames hook (#97)
+            OptiScalerDlssInputs = optiScalerTemplates.DlssInputs, // w3/dllnames hook (#97)
+            // w5/update-policy rows
+            // w5/catalogue-info rows
+            // w5/ini-presets rows
+            // w5/shell-launch rows
+            // w5/reshade-core rows
         };
 
         static string ReadDlssDefault(ComboBox combo)
@@ -722,7 +738,12 @@ public sealed partial class MainWindow : Window
                 new TabItem { Header = UiLocalizationService.Text("Ui.UxTab"), Content = new ScrollViewer { Content = uxTab } },
                 new TabItem { Header = UiLocalizationService.Text("Ui.MaintenanceTab"), Content = new ScrollViewer { Content = maintenance } },
                 XboxFoldersSettingsTab.Create(vm.Settings.XboxFolders, status, PickFolderAsync), // w3/scan Settings row (#90)
-                ParitySettingsTab.Create(vm.Settings.Parity) // w3/parity Settings rows (#100 #163 #99)
+                ParitySettingsTab.Create(vm.Settings.Parity), // w3/parity Settings rows (#100 #163 #99)
+                // w5/update-policy rows
+                // w5/catalogue-info rows
+                // w5/ini-presets rows
+                // w5/shell-launch rows
+                // w5/reshade-core rows
             }
         };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };

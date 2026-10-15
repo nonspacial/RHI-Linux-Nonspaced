@@ -39,6 +39,11 @@ public sealed class LinuxAppSettings
     // "DLSS Inputs"; defaults NVIDIA / on, as upstream). Set by the Settings dialog's controls.
     public string OptiScalerGpuType { get; set; } = "NVIDIA";
     public bool OptiScalerDlssInputs { get; set; } = true;
+    // w5/update-policy rows
+    // w5/catalogue-info rows
+    // w5/ini-presets rows
+    // w5/shell-launch rows
+    // w5/reshade-core rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -74,6 +79,11 @@ public sealed class LinuxAppSettings
             "INTEL" => "Intel",
             _ => "NVIDIA"
         };
+        // w5/update-policy rows
+        // w5/catalogue-info rows
+        // w5/ini-presets rows
+        // w5/shell-launch rows
+        // w5/reshade-core rows
         return this;
     }
 
