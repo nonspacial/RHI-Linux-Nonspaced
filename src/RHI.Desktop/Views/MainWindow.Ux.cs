@@ -488,9 +488,9 @@ public sealed partial class MainWindow
             // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
             // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically. 860 high
             // so the whole form, footer included, shows at the preferred size with the launch command field (PT-BR wraps more);
-            // 1060 since the name and bitness fields (Refs #190).
+            // 1120 since the name and bitness fields (Refs #190; PT-BR's form is 1074 high).
             Width = 790,
-            Height = 1060,
+            Height = 1120,
             MinWidth = 460,
             MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
