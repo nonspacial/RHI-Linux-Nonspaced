@@ -2000,10 +2000,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var updated = 0;
         var failures = new List<(string Game, string Reason)>();
         var templates = 0;
-        try { templates = _optiscaler.IniTemplates?.ApplyMenuKey(key) ?? 0; }
+        try
+        {
+            if (_optiscaler.IniTemplates?.ApplyMenuKey(key) is { } written)
+            {
+                templates = written.Updated;
+                failures.AddRange(written.Failures); // each template that kept its file, by name
+            }
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            failures.Add((_optiscaler.IniTemplates!.Directory, ex.Message));
+            failures.Add((_optiscaler.IniTemplates!.Directory, ex.Message)); // the folder could not be listed
         }
         foreach (var game in games)
         {

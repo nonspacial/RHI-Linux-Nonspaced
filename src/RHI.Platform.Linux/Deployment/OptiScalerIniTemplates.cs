@@ -84,19 +84,28 @@ public sealed class OptiScalerIniTemplates
 
     /// <summary>
     /// Sets the global overlay key (#187, upstream's hotkey row) in every template that exists in the INIs folder; returns
-    /// how many files hold it now. Only <c>[Menu] ShortcutKey</c> changes; a template the user locked read-only is written
-    /// and stays locked (the user-locked INI rule).
+    /// how many files hold it now and the ones that could not be written (each named by its file name; the loop goes on
+    /// past a failure). Only <c>[Menu] ShortcutKey</c> changes; a template the user locked read-only is written and stays
+    /// locked (the user-locked INI rule). Throws only when the folder itself cannot be listed.
     /// </summary>
-    public int ApplyMenuKey(string key)
+    public OptiScalerTemplateKeyResult ApplyMenuKey(string key)
     {
-        if (!System.IO.Directory.Exists(Directory)) return 0;
+        if (!System.IO.Directory.Exists(Directory)) return new(0, []);
         var count = 0;
-        foreach (var path in System.IO.Directory.EnumerateFiles(Directory, "OptiScaler*.ini", SearchOption.TopDirectoryOnly))
+        var failures = new List<(string File, string Reason)>();
+        foreach (var path in System.IO.Directory.EnumerateFiles(Directory, "OptiScaler*.ini", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
         {
-            SetMenuKey(path, key);
-            count++;
+            try
+            {
+                SetMenuKey(path, key);
+                count++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add((Path.GetFileName(path), ex.Message));
+            }
         }
-        return count;
+        return new(count, failures);
     }
 
     private static void SetMenuKey(string path, string key)
@@ -142,3 +151,6 @@ public sealed class OptiScalerIniTemplates
         _ => ""
     };
 }
+
+/// <summary>#187: the INI templates the global overlay key was written to, and the ones that kept their file (name, reason).</summary>
+public sealed record OptiScalerTemplateKeyResult(int Updated, IReadOnlyList<(string File, string Reason)> Failures);

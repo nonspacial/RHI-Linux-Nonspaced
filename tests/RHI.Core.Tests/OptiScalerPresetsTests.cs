@@ -134,7 +134,9 @@ public sealed class OptiScalerPresetsTests : IDisposable
         File.WriteAllText(own, "; mine\n[Menu]\nShortcutKey=auto\n[Upscalers]\nDx12Upscaler=xess\n");
         File.SetUnixFileMode(own, UnixFileMode.UserRead); // the user locked it
 
-        Assert.Equal(2, templates.ApplyMenuKey("0x74"));
+        var written = templates.ApplyMenuKey("0x74");
+        Assert.Equal(2, written.Updated);
+        Assert.Empty(written.Failures);
 
         Assert.Equal("; mine\n[Menu]\nShortcutKey=0x74\n[Upscalers]\nDx12Upscaler=xess\n", File.ReadAllText(own));
         Assert.Equal(UnixFileMode.UserRead, File.GetUnixFileMode(own)); // still locked
@@ -144,6 +146,67 @@ public sealed class OptiScalerPresetsTests : IDisposable
         var keep = new OptiScalerIniTemplates(folder, () => new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true));
         keep.EnsureSeeded(OptiScalerVariant.Nightly);
         Assert.Contains("ShortcutKey=0x74", File.ReadAllText(seeded));
+    }
+
+    [Fact]
+    public void Templates_AFileThatCannotBeWritten_IsCounted_AndTheRestStillGetTheKey()
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "inis-broken")).FullName;
+        var broken = Path.Combine(folder, "OptiScaler.a-broken.ini"); // sorts first
+        File.WriteAllText(broken, "[Menu]\nShortcutKey=auto\n");
+        File.SetUnixFileMode(broken, UnixFileMode.None); // neither readable nor writable
+        var later = Path.Combine(folder, "OptiScaler.b.ini");
+        File.WriteAllText(later, "[Menu]\nShortcutKey=auto\n");
+        var last = Path.Combine(folder, "OptiScaler_nightly.c.ini");
+        File.WriteAllText(last, "[Menu]\nShortcutKey=auto\n");
+
+        var written = new OptiScalerIniTemplates(folder, () => new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true)).ApplyMenuKey("0x74");
+
+        Assert.Equal(2, written.Updated);
+        Assert.Equal("OptiScaler.a-broken.ini", Assert.Single(written.Failures).File);
+        Assert.Contains("ShortcutKey=0x74", File.ReadAllText(later));
+        Assert.Contains("ShortcutKey=0x74", File.ReadAllText(last));
+    }
+
+    [Fact]
+    public async Task ApplyToAllGames_NamesATemplateThatKeptItsFile()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var templates = Directory.CreateDirectory(Path.Combine(fx.ConfigDir, "inis")).FullName;
+        var broken = Path.Combine(templates, "OptiScaler.a-broken.ini");
+        File.WriteAllText(broken, "[Menu]\nShortcutKey=auto\n");
+        File.SetUnixFileMode(broken, UnixFileMode.None);
+        File.WriteAllText(Path.Combine(templates, "OptiScaler_nightly.nvidia.ini"), "[Menu]\nShortcutKey=auto\n");
+        try
+        {
+            var line = await fx.Vm.OptiScalerPresets.ApplyMenuKeyToAllAsync("0x74");
+
+            Assert.StartsWith("OptiScaler menu key written to 0 game(s) and 1 INI template(s). 1 kept their file; first: OptiScaler.a-broken.ini — ", line);
+        }
+        finally { File.SetUnixFileMode(broken, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    [Fact]
+    public async Task APresetSaveThatIsRefused_ChangesNoSlot_AndALaterSaveDoesNotCarryIt()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var presets = fx.Vm.OptiScalerPresets;
+        var file = Path.Combine(_root, "presets-refused.json");
+        File.WriteAllText(file, "{ not json");
+        presets.Store = new OptiScalerPresetStore(file);
+
+        var refused = presets.Rename(1, "Mine");
+
+        Assert.NotNull(refused); // the unreadable file is never saved over
+        Assert.Equal(UiLocalizationService.Format("Shell.PresetSlot", 2), presets.Label(1)); // nothing adopted
+        Assert.Null(presets.Slot(1));
+        Assert.Equal("{ not json", File.ReadAllText(file));
+
+        File.Delete(file); // the user removed the broken file
+        Assert.Null(presets.Rename(3, "Other"));
+        var saved = new OptiScalerPresetStore(file).Load();
+        Assert.Equal("Other", saved.Slots[3]!.Name);
+        Assert.Null(saved.Slots[1]); // the refused rename is not carried by the later save
     }
 
     [Fact]
