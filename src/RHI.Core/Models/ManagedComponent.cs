@@ -65,4 +65,22 @@ public sealed class ManagedComponent
     /// <summary>w5/ini-presets (#189): the game is an Unreal Engine game (manifest engine hint); set on the Luma row, whose
     /// ⚙ (HDR on first boot, TAA in Engine.ini) applies to Unreal Engine games only, as upstream.</summary>
     public bool UnrealEngine { get; set; }
+    /// <summary>
+    /// #178: whether Update All and the background pass leave this installed component alone, for this game (its update
+    /// inclusion) or for every game (Settings); on the DLSS and Streamline rows, whether Follow newest skips this game.
+    /// Set by the component service's decoration.
+    /// </summary>
+    public UpdateExclusion UpdateExclusion { get; set; }
+}
+
+/// <summary>#178: why Update All (and the background pass) leaves a component alone, if it does.</summary>
+public enum UpdateExclusion
+{
+    None,
+    /// <summary>Left out for this game (the game's update inclusion).</summary>
+    ThisGame,
+    /// <summary>Left out for every game (Settings).</summary>
+    AllGames,
+    /// <summary>The update-inclusion file cannot be read: everything is left out until it reads again.</summary>
+    Unreadable
 }

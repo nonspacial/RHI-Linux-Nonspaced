@@ -540,6 +540,8 @@ public sealed partial class MainWindow : Window
         dlssTab.Children.Add(optiScalerTemplates.Control); // w3/dllnames hook (#97)
         // w5 lane rows: Settings rows (build your row object here, add it to its tab)
         // w5/update-policy rows
+        var updatePolicyRows = new UpdatePolicySettingsRows(settings); // #177 Follow newest DLSS / Streamline
+        dlssTab.Children.Add(updatePolicyRows.FollowControl);
         // w5/catalogue-info rows
         // w5/ini-presets rows
         var iniRows = new ReShadeIniSettingsRows(settings, vm.IniPresets, current => // #181: effect list, apply to all, INI templates
@@ -618,6 +620,7 @@ public sealed partial class MainWindow : Window
             defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
             optiScalerTemplates.Reset(defaults); // w3/dllnames hook (#97)
             // w5/update-policy rows
+            updatePolicyRows.Reset(defaults);
             // w5/catalogue-info rows
             // w5/ini-presets rows
             iniRows.Reset(defaults); // #181
@@ -658,6 +661,7 @@ public sealed partial class MainWindow : Window
         maintenance.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ui.Maintenance"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         maintenance.Children.Add(Labeled(T("Win.BackgroundComponentUpdates"), autoUpdateComponents,
             T("Win.DisabledByDefaultWhenEnabledRHI")));
+        maintenance.Children.Add(updatePolicyRows.InclusionControl); // w5/update-policy hook (#178): Update All includes
         maintenance.Children.Add(pathGrid);
         var pathButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         pathButtons.Children.Add(openConfig); pathButtons.Children.Add(openCache); pathButtons.Children.Add(openData);
@@ -699,6 +703,14 @@ public sealed partial class MainWindow : Window
             OptiScalerGpuType = optiScalerTemplates.GpuType, // w3/dllnames hook (#97)
             OptiScalerDlssInputs = optiScalerTemplates.DlssInputs, // w3/dllnames hook (#97)
             // w5/update-policy rows
+            FollowNewestDlss = updatePolicyRows.FollowDlss,
+            FollowNewestStreamline = updatePolicyRows.FollowStreamline,
+            GlobalSkipReShadeUpdates = updatePolicyRows.Skips(ManagedComponentKind.ReShade), // #178
+            GlobalSkipRenoDxUpdates = updatePolicyRows.Skips(ManagedComponentKind.RenoDX),
+            GlobalSkipReLimiterUpdates = updatePolicyRows.Skips(ManagedComponentKind.ReLimiter),
+            GlobalSkipDisplayCommanderUpdates = updatePolicyRows.Skips(ManagedComponentKind.DisplayCommander),
+            GlobalSkipOptiScalerUpdates = updatePolicyRows.Skips(ManagedComponentKind.OptiScaler),
+            GlobalSkipReFrameworkUpdates = updatePolicyRows.Skips(ManagedComponentKind.REFramework),
             // w5/catalogue-info rows
             // w5/ini-presets rows
             ReShadeVariableListUseTabs = iniRows.UseTabs, // #181

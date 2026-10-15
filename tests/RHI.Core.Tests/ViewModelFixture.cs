@@ -63,6 +63,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w3/vmsplit rows
             // w3/dllnames rows
             // w5/update-policy rows
+            , out var updatePolicy
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -72,6 +73,7 @@ internal sealed class ViewModelFixture : IDisposable
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
         // w5 lane rows: hand the view model what the fixture builds
         // w5/update-policy rows
+        Vm.UpdatePolicy = updatePolicy; // #177
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -151,6 +153,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/vmsplit rows
         // w3/dllnames rows
         // w5/update-policy rows
+        , out UpdatePolicyFeatures updatePolicy
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -202,6 +205,12 @@ internal sealed class ViewModelFixture : IDisposable
         var luma = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
+        var updateInclusion = new UpdateInclusionStore(Path.Combine(prefs, "update-inclusion.json"),
+            () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load()), () => DlssFollowChoice.From(settingsStore.Load())); // #178
+        var dlssFollowStore = new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json"));
+        updatePolicy = new UpdatePolicyFeatures(new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records,
+            dlssFollowStore, new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")), // #177: the components' history file
+            updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -215,6 +224,8 @@ internal sealed class ViewModelFixture : IDisposable
             rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, Path.Combine(cacheDir, "rtx-encore")) // w4/encore (#158)
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
+            , updateInclusion: updateInclusion
+            , dlssFollow: dlssFollowStore
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

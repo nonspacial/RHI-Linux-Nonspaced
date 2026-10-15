@@ -49,6 +49,8 @@ internal sealed class AppComposition
     // w3/dllnames rows
     public required DllNamePreferenceStore DllNames { get; init; }
     // w5/update-policy rows
+    /// <summary>#177 Follow newest DLSS / Streamline; handed to the view model by <see cref="CreateViewModel"/>.</summary>
+    public UpdatePolicyFeatures? UpdatePolicy { get; init; }
     // w5/catalogue-info rows
     /// <summary>#184/#197: RHI's UE-Extended database (ⓘ notes, Available HDR mods rows); one instance, one 1 h cache.</summary>
     public RenoDxUnrealDatabaseService? RenoDxUnrealDatabase { get; init; }
@@ -71,6 +73,7 @@ internal sealed class AppComposition
             UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
         vm.Settings.UseXboxFolders(XboxFolders); // w3/scan Settings row (#90): the one store the detectors read
         vm.Resolution.Switcher = DisplayModes; // #191: also puts back a display switch an earlier run left behind
+        vm.UpdatePolicy = UpdatePolicy; // w5/update-policy hook (#177)
         return vm;
     }
 
@@ -209,6 +212,9 @@ internal sealed class AppComposition
         var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
+        var updateInclusion = new UpdateInclusionStore(globalSkips: () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load()), // #178
+            followChoice: () => DlssFollowChoice.From(settingsStore.Load()));
+        var dlssFollowStore = new DlssAutoFollowStore(); // #177: per-game holds move with the game
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // #181: the user's INI templates (beside the OptiScaler ones) feed ReShade.ini, relimiter.ini and DisplayCommander.ini at install.
@@ -226,6 +232,8 @@ internal sealed class AppComposition
             rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
+            , updateInclusion: updateInclusion
+            , dlssFollow: dlssFollowStore
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -254,6 +262,9 @@ internal sealed class AppComposition
         // w3/vmsplit rows
         // w3/dllnames rows
         // w5/update-policy rows
+        var updatePolicy = new UpdatePolicyFeatures( // #177: the same history store the components write; #178 the same inclusion store
+            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, dlssFollowStore, updateLog,
+                updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // #183: the card menu's web pages (PCGamingWiki shares the graphics-API lookup's request gate).
         parity.GameLinks.Links = new GameLinkCatalogue(http, pcgwData: pcgwData, pcgwSearch: pcgwGraphics,
@@ -299,6 +310,7 @@ internal sealed class AppComposition
             // w3/dllnames rows
             DllNames = reshade.DllNames,
             // w5/update-policy rows
+            UpdatePolicy = updatePolicy,
             // w5/catalogue-info rows
             RenoDxUnrealDatabase = renodxUnrealDatabase,
             HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase),

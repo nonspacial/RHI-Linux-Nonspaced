@@ -1234,6 +1234,16 @@ public static class UiLocalizationService
         (" The OptiScaler INI template could not be prepared, so the package's OptiScaler.ini was used: ",
             " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
         // w5/update-policy rows
+        // #177 Follow newest DLSS / Streamline: history notes and per-file failures.
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.AutomaticDlssNote, "Automático: Seguir o DLSS mais recente está ligado."),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.AutomaticStreamlineNote, "Automático: Seguir o Streamline mais recente está ligado."),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.RefusedPrefix, "Não seguido: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.DownloadFailedPrefix, "Não foi possível baixar a versão mais recente: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.NotInManifestPrefix, "Não está mais no manifesto de DLSS: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.SwapFailedMessage, "A troca falhou; o arquivo do jogo foi mantido."),
+        // #178
+        (RHI.Platform.Linux.Deployment.LinuxUpdateAllService.LeftOutMessage, "Deixado de fora de Atualizar tudo pela inclusão em atualizações."),
+        (RHI.Platform.Linux.Deployment.LinuxUpdateAllService.LeftOutUnreadableMessage, "Deixado de fora de Atualizar tudo: não é possível ler o arquivo de inclusão em atualizações."),
         // w5/catalogue-info rows
         // #183 card links: one row per download source's refusal text.
         (RHI.Platform.Linux.Deployment.DownloadSources.UltraPlusGameList.RefusalPrefix,
@@ -1367,6 +1377,10 @@ public static class UiLocalizationService
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeld"), result.HeldCount - heldOff);
         if (heldOff > 0)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Parity.UpdateAllHeldNoAddons"), heldOff);
+        if (result.ExcludedCount - result.ExcludedUnreadableCount > 0) // w5/update-policy (#178)
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcluded"), result.ExcludedCount - result.ExcludedUnreadableCount);
+        if (result.ExcludedUnreadableCount > 0) // #178: the inclusion file cannot be read, so everything was left out
+            text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcludedUnreadable"), result.ExcludedUnreadableCount);
         text += ".";
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;

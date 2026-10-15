@@ -74,5 +74,60 @@ public sealed class DlssManifestConditionalGetTests : IDisposable
         Assert.Equal([null], site.IfNoneMatch);
     }
 
+    // w5 review finding 3 (#177): whether the network answered is returned with each fetch, never kept on the shared
+    // service, so a cached fallback is never read as answered.
+    [Fact]
+    public async Task FetchWithStatus_IsAnsweredFor200And304_NotForTheCachedFallback()
+    {
+        var site = new EtagSite(Manifest, "\"v1\"");
+        var service = Service(site);
+
+        var downloaded = await service.FetchManifestWithStatusAsync();
+        var notModified = await service.FetchManifestWithStatusAsync();
+        var fallback = await Service(new Failing()).FetchManifestWithStatusAsync();
+
+        Assert.Equal((true, true, false), (downloaded.Answered, notModified.Answered, fallback.Answered));
+        Assert.Equal("310.9.16", fallback.Manifest.Dlss.Single().Version);
+    }
+
+    [Fact]
+    public async Task FetchWithStatus_IsPerCall_AConcurrentFetchCannotChangeIt()
+    {
+        await Service(new EtagSite(Manifest, "\"v1\"")).FetchManifestAsync(); // the cache now holds a copy
+        var site = new HeldThenFailing(Manifest);
+        var service = Service(site);
+
+        var held = service.FetchManifestWithStatusAsync();   // answered, but only once released
+        await site.FirstArrived.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        var failed = await service.FetchManifestWithStatusAsync(); // fails meanwhile: the cached copy stands in
+        site.Release.SetResult();
+        var answered = await held.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.False(failed.Answered);
+        Assert.True(answered.Answered);
+    }
+
+    private sealed class Failing : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new HttpRequestException("offline test");
+    }
+
+    // The first request waits until released, then answers; every later one fails at once.
+    private sealed class HeldThenFailing(string body) : HttpMessageHandler
+    {
+        private int _requests;
+        public TaskCompletionSource FirstArrived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _requests) > 1) throw new HttpRequestException("offline test");
+            FirstArrived.SetResult();
+            await Release.Task.ConfigureAwait(false);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+        }
+    }
+
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
 }

@@ -4,6 +4,7 @@ using RHI.Core.Services;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -18,6 +19,9 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     internal UpdatesViewModel(IPanelHost host, LinuxUpdateAllService updateAll) : base(host) => _updateAll = updateAll;
 
     private CancellationTokenSource? _backgroundUpdateCts;
+    // #177: stops a Follow newest pass a Full Refresh started when the shell closes.
+    private readonly CancellationTokenSource _followCts = new();
+    private Task? _followRequest;
 
     // Library-wide facts that need disk access, worked out off the UI thread after scans and operations (Refs #71).
     private bool _libraryHasManagedTargets;
@@ -38,6 +42,8 @@ public sealed partial class UpdatesViewModel : PanelViewModel
     /// <summary>Stops the background loop (the shell is closing).</summary>
     internal void StopBackgroundLoop()
     {
+        try { _followCts.Cancel(); }
+        catch (ObjectDisposedException) { /* already stopped */ }
         try { _backgroundUpdateCts?.Cancel(); }
         catch (ObjectDisposedException) { /* already stopped */ }
         _backgroundUpdateCts?.Dispose();
@@ -114,7 +120,7 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         try { _backgroundUpdateCts?.Cancel(); } catch { }
         _backgroundUpdateCts?.Dispose();
         _backgroundUpdateCts = null;
-        if (!Host.Settings.AutoUpdateComponents) return;
+        if (!LoopWanted(Host.Settings)) return;
         _backgroundUpdateCts = new CancellationTokenSource();
         UiExceptionGuard.Forget(BackgroundUpdateLoopAsync(_backgroundUpdateCts.Token, runImmediate), "BackgroundUpdateLoopAsync");
     }
@@ -124,7 +130,14 @@ public sealed partial class UpdatesViewModel : PanelViewModel
         => BackgroundUpdateLoop.RunAsync(RunBackgroundUpdatePassAsync, TimeSpan.FromHours(Host.Settings.UpdateCheckIntervalHours), runImmediate,
             (ex, retry) => StatusText = BackgroundUpdateLoop.FailedStatus(ex, retry), cancellationToken);
 
+    // One pass: the component updates (when that setting is on), then, with the gate released, Follow newest (#177).
     private async Task RunBackgroundUpdatePassAsync(CancellationToken cancellationToken)
+    {
+        await RunBackgroundComponentPassAsync(cancellationToken);
+        await FollowNewestAsync(cancellationToken);
+    }
+
+    private async Task RunBackgroundComponentPassAsync(CancellationToken cancellationToken)
     {
         if (!Host.Settings.AutoUpdateComponents || IsBusy) return;
         var games = Host.AllGames.ToArray();
@@ -150,6 +163,86 @@ public sealed partial class UpdatesViewModel : PanelViewModel
             // The user cancelled this pass; the loop runs the next one on schedule.
             await InvalidateAllAndReprobeSelectedAsync();
             StatusText = OperationCancelledText() + T("Vm.Background");
+        }
+    }
+
+    /// <summary>#177: the background loop runs while component updates or either Follow newest toggle is on.</summary>
+    internal static bool LoopWanted(LinuxAppSettings settings)
+        => settings.AutoUpdateComponents || settings.FollowNewestDlss || settings.FollowNewestStreamline;
+
+    /// <summary>Whether a Settings save must restart the background loop.</summary>
+    internal static bool LoopSettingsChanged(LinuxAppSettings previous, LinuxAppSettings saved)
+        => previous.AutoUpdateComponents != saved.AutoUpdateComponents
+           || previous.UpdateCheckIntervalHours != saved.UpdateCheckIntervalHours
+           || previous.FollowNewestDlss != saved.FollowNewestDlss
+           || previous.FollowNewestStreamline != saved.FollowNewestStreamline;
+
+    /// <summary>A restarted loop runs at once when component updates are on, or when a Follow newest toggle was just
+    /// turned on (its first pass seeds the baseline from today's manifest).</summary>
+    internal static bool RunsImmediatelyAfterSave(LinuxAppSettings previous, LinuxAppSettings saved)
+        => saved.AutoUpdateComponents
+           || (saved.FollowNewestDlss && !previous.FollowNewestDlss)
+           || (saved.FollowNewestStreamline && !previous.FollowNewestStreamline);
+
+    /// <summary>
+    /// #177: a Full Refresh (start-up's included) asks for a Follow newest pass once the gate is free; a request made
+    /// while one is pending joins it. Runs with the toggles off too: that pass only forgets the baselines.
+    /// </summary>
+    internal Task RequestFollowNewest()
+    {
+        if (_followRequest is { IsCompleted: false } pending) return pending;
+        var request = FollowNewestWhenIdleAsync();
+        _followRequest = request;
+        UiExceptionGuard.Forget(request, "dlss-follow");
+        return request;
+    }
+
+    /// <summary>The last Follow newest pass a Full Refresh asked for (tests wait on it).</summary>
+    internal Task? LastFollowRequest => _followRequest;
+
+    private async Task FollowNewestWhenIdleAsync()
+    {
+        await Task.Yield(); // the refresh that asked still holds the gate until it returns
+        var token = _followCts.Token;
+        try { await FollowNewestAsync(token); }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { /* the shell closed */ }
+    }
+
+    /// <summary>
+    /// #177: one Follow newest pass. The manifest check runs without the busy gate (nothing changes on disk but the
+    /// baseline file); only a pass that found a newer version takes the gate as a background operation (Cancel between
+    /// games) and swaps the files. A gate still taken after waiting for it skips the pass: the next one repeats it.
+    /// </summary>
+    internal async Task FollowNewestAsync(CancellationToken cancellationToken = default)
+    {
+        if (Shell.UpdatePolicy is not { } policy) return;
+        var choice = UpdatePolicyFeatures.ChoiceFrom(Host.Settings);
+        var check = await Task.Run(() => policy.Follow.CheckAsync(choice, cancellationToken), cancellationToken);
+        if (!check.NeedsApply) return;
+        await Host.Operations.WhenIdleAsync(cancellationToken);
+        using var op = Host.Operations.TryBegin("dlss-follow", linkedToken: cancellationToken);
+        if (op is null) return;
+        var games = Host.AllGames.ToArray();
+        // File indexes the selection analysis already built; the service builds the rest itself, off the UI thread.
+        var cached = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var game in games)
+            if (Host.Session.CachedFiles(game) is { } files) cached[Key(game)] = files;
+        try
+        {
+            var result = await Task.Run(() => policy.Follow.ApplyAsync(check, games,
+                game => cached.TryGetValue(Key(game), out var files) ? files : null, op.Token));
+            if (result.UpdatedCount > 0) await InvalidateAllAndReprobeSelectedAsync();
+            if (UpdatePolicyFeatures.FollowSummary(result) is { } line) StatusText = line;
+        }
+        catch (Exception ex) when (op.WasCancelled(ex))
+        {
+            await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were swapped
+            StatusText = OperationCancelledText();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            AppLog.Warn("dlss-follow", "Follow newest DLSS/Streamline pass failed", ex);
+            StatusText = TF("Upd.FollowFailed", UiLocalizationService.Present(ex.Message));
         }
     }
 }

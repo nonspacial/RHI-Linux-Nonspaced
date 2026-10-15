@@ -136,6 +136,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public DllNamePickerViewModel DllNamePicker => DllNamePickerViewModel.For(this, _managedComponents, TryPersist); // w3/dllnames (#120)
     // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w5/update-policy rows
+    /// <summary>#177 Follow newest DLSS / Streamline; set by the app composition (and the test fixture). Integrator hook.</summary>
+    public UpdatePolicyFeatures? UpdatePolicy { get; set; }
     // w5/catalogue-info rows
     public NewModsPresenter NewMods { get; } = new(); // #185: the "New mods" toolbar button and list
     // w5/ini-presets rows
@@ -958,6 +960,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             var scanDone = LibraryScanStatusText.Done(_library.AllGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             await RefreshLibraryFactsAsync(); // Update All / DLSS batch availability for the new library, off the UI thread
+            if (onlyDetectors is null) _ = Updates.RequestFollowNewest(); // w5/update-policy hook (#177): start-up and Full Refresh
             return true;
         }
         catch (Exception ex) when (op.WasCancelled(ex))
@@ -1743,6 +1746,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (GameLinksPresenter.PageFor(game, Parity?.GameLinks.Games) is { } nexusUrl)
             items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
         // w5/update-policy rows
+        // #178: the game's update inclusion; only where it would offer a box (an RHI component Update All updates, or a
+        // DLSS / Streamline file Follow newest could move, known from the game's analysis).
+        if (UpdatePolicy is { } updatePolicy
+            && updatePolicy.InclusionFor(game, _deploymentRecords.FindAll(game).Select(record => record.Component), _settings,
+                _settings.FollowNewestDlss || _settings.FollowNewestStreamline ? updatePolicy.Follow.FollowableFamilies(game, _session.CachedFiles(game)) : null) is { } inclusion)
+            items.Add(new("update-inclusion", T("Upd.MenuItem"), new AsyncRelayCommand(async () =>
+            {
+                if (await updatePolicy.EditInclusionAsync(game, inclusion, save => TryPersist(save, "Upd.WhatInclusion", sessionOnly: false, reportStatus: false)) is not { } line) return;
+                StatusText = line;
+                _session.Recompose(game); // the rows' held notes follow the new choice
+            }), Tip: T("Upd.MenuTip")));
         // w5/catalogue-info rows
         if (Parity is { } links) items.AddRange(links.GameLinks.MenuItemsFor(game, OpenNexusPage)); // #183: web pages, each only where it exists
         // w5/ini-presets rows
