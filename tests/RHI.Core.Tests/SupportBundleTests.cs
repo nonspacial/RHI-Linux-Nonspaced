@@ -46,6 +46,30 @@ public sealed class SupportBundleTests : IDisposable
     }
 
     [Fact]
+    public void Mask_HidesTheSavedSecretsAndApiKeyValues_WhateverTheirShape()
+    {
+        var config = Directory.CreateDirectory(Path.Combine(_root, "cfg")).FullName;
+        var nexus = Path.Combine(config, "nexus_api.txt");
+        var github = Path.Combine(config, "github_api.txt");
+        const string NexusKey = "q7Rk2LmN0pXz+Yv9/AbCdEf==--Wx3Tq8sUu";
+        const string OddToken = "my-own-token-1234";
+        File.WriteAllText(nexus, NexusKey + "\n");
+        File.WriteAllText(github, OddToken);
+        var tiny = Path.Combine(config, "tiny.txt");
+        File.WriteAllText(tiny, "key"); // too short to be a real key: masking it would hide ordinary words
+        var bundle = new DiagnosticsBundle(Logs, Out, Home, "alice", secretFiles: [nexus, github, tiny, Path.Combine(config, "missing.txt")]);
+        var text = $"nexus said {NexusKey}; token {OddToken}; GET https://api.nexusmods.com/v1/users/validate.json?key=abc123XYZ&x=1; " +
+                   "apikey: zzz999; \"api_key\": \"yyy888\"; ShortcutKey=0x2D; key: steam:1";
+
+        var masked = bundle.Mask(text);
+
+        Assert.Equal("nexus said [secret]; token [secret]; GET https://api.nexusmods.com/v1/users/validate.json?key=[secret]&x=1; " +
+                     "apikey: [secret]; \"api_key\": \"[secret]\"; ShortcutKey=0x2D; key: steam:1", masked);
+        Assert.Equal([RHI.Platform.Linux.Network.GitHubTokenSettingsService.DefaultTokenPath, NexusAccountPresenter.DefaultKeyPath],
+            SupportPresenter.SecretFiles());
+    }
+
+    [Fact]
     public void LogsArchive_HoldsEveryLogMasked_SkipsLinks_AndNeverReplacesAFile()
     {
         Directory.CreateDirectory(Path.Combine(Logs, "launch"));

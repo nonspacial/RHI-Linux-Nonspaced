@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Ux;
 
@@ -13,8 +14,9 @@ namespace RHI.Platform.Linux.Ux;
 /// The support bundle (Refs #192, upstream <c>CopyLogsArchive_Click</c>, <c>CrashReporter.SanitisePath</c>,
 /// <c>GameReportEncoder</c>, <c>ExportGameData_Click</c>): RHI's logs as one zip, a game's report as markdown and the
 /// library's game data as a zipped JSON. Every text that leaves the machine goes through <see cref="Mask"/>: the home
-/// folder becomes <c>~</c>, the user name <c>[user]</c>, Steam user ids and SteamID64s placeholders, token-shaped strings
-/// <c>[token]</c>, and the private Xbox installer app's name a neutral placeholder. Files are written whole through
+/// folder becomes <c>~</c>, the user name <c>[user]</c>, Steam user ids and SteamID64s placeholders, the secrets RHI keeps
+/// (the GitHub token and Nexus API key files' values) and API-key values (<c>apikey</c>, <c>key=</c> in a link)
+/// <c>[secret]</c>, token-shaped strings <c>[token]</c>, and the private Xbox installer app's name a neutral placeholder. Files are written whole through
 /// <see cref="AtomicFile.WriteNew"/> into RHI's own support folder (<c>$XDG_STATE_HOME/rhi-linux/support</c>), never into a
 /// game folder, and never replace an existing file.
 /// </summary>
@@ -29,19 +31,30 @@ public sealed class DiagnosticsBundle
     private readonly string _home;
     private readonly string _userName;
     private readonly Func<DateTime> _clock;
+    private readonly IReadOnlyList<SecretFileStore> _secrets;
 
-    public DiagnosticsBundle(string logDirectory, string outputDirectory, string home, string userName, Func<DateTime>? clock = null)
+    /// <param name="secretFiles">RHI's saved secret files (GitHub token, Nexus API key): their values are masked wherever they appear.</param>
+    public DiagnosticsBundle(string logDirectory, string outputDirectory, string home, string userName, Func<DateTime>? clock = null,
+        IEnumerable<string>? secretFiles = null)
     {
         LogDirectory = logDirectory;
         OutputDirectory = outputDirectory;
         _home = Path.TrimEndingDirectorySeparator(home ?? "");
         _userName = userName ?? "";
         _clock = clock ?? (() => DateTime.Now);
+        _secrets = (secretFiles ?? []).Select(path => new SecretFileStore(path, "support-bundle")).ToArray();
     }
 
-    /// <summary>The current user's log folder and RHI's support folder.</summary>
-    public static DiagnosticsBundle ForCurrentUser()
-        => new(LinuxPaths.LogDirectory, Path.Combine(LinuxPaths.StateHome, "rhi-linux", "support"), LinuxPaths.Home, Environment.UserName);
+    /// <summary>The current user's log folder and RHI's support folder; <paramref name="secretFiles"/> = every secret file RHI keeps.</summary>
+    public static DiagnosticsBundle ForCurrentUser(IEnumerable<string> secretFiles)
+        => new(LinuxPaths.LogDirectory, Path.Combine(LinuxPaths.StateHome, "rhi-linux", "support"), LinuxPaths.Home, Environment.UserName,
+            secretFiles: secretFiles);
+
+    /// <summary>The placeholder for a saved secret or an API-key value.</summary>
+    public const string SecretPlaceholder = "[secret]";
+
+    /// <summary>Shorter saved values are not masked as text (they would hit ordinary words); real keys are far longer.</summary>
+    private const int MinMaskedSecretLength = 8;
 
     public string LogDirectory { get; }
 
@@ -50,6 +63,8 @@ public sealed class DiagnosticsBundle
 
     private static readonly Regex SteamUserData = new(@"(userdata[/\\])\d+(?=[/\\]|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex SteamId64 = new(@"\b7656119\d{10}\b", RegexOptions.Compiled);
+    private static readonly Regex KeyInLink = new(@"([?&](?:api_?key|key)=)[^\s&#""']+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ApiKeyField = new(@"(\bapi_?key\b[""']?\s*[:=]\s*[""']?)[^\s""',;&]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex GitHubToken = new(@"\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b", RegexOptions.Compiled);
     private static readonly Regex InstallerName = new(Regex.Escape(XboxInstallerApp.FileTag), RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -69,6 +84,12 @@ public sealed class DiagnosticsBundle
             masked = Regex.Replace(masked, Regex.Escape(_home) + @"(?![\w.-])", "~"); // the folder itself or anything below it
         if (_userName.Length >= 2)
             masked = Regex.Replace(masked, @"(?<![\w.-])" + Regex.Escape(_userName) + @"(?![\w.-])", "[user]");
+        // Saved secrets first, by value (a key that is not token-shaped, or one pasted into a message), then key fields.
+        foreach (var secret in _secrets.Select(store => store.ValueForMasking()).OfType<string>()
+                     .Where(value => value.Length >= MinMaskedSecretLength).Distinct(StringComparer.Ordinal).OrderByDescending(value => value.Length))
+            masked = masked.Replace(secret, SecretPlaceholder, StringComparison.Ordinal);
+        masked = KeyInLink.Replace(masked, "$1" + SecretPlaceholder);
+        masked = ApiKeyField.Replace(masked, "$1" + SecretPlaceholder);
         masked = SteamUserData.Replace(masked, "$1[userid]");
         masked = SteamId64.Replace(masked, "[steamid]");
         masked = GitHubToken.Replace(masked, "[token]");

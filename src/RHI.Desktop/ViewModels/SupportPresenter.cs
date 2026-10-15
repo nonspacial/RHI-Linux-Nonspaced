@@ -33,7 +33,11 @@ public sealed class SupportPresenter
     }
 
     /// <summary>The bundle the actions write through (test seam; the current user's folders by default).</summary>
-    internal DiagnosticsBundle Bundle { get; set; } = DiagnosticsBundle.ForCurrentUser();
+    internal DiagnosticsBundle Bundle { get; set; } = DiagnosticsBundle.ForCurrentUser(SecretFiles());
+
+    /// <summary>Every secret file RHI keeps (GitHub token, Nexus API key): their values are masked in everything the bundle writes.</summary>
+    internal static IReadOnlyList<string> SecretFiles()
+        => [RHI.Platform.Linux.Network.GitHubTokenSettingsService.DefaultTokenPath, NexusAccountPresenter.DefaultKeyPath];
 
     /// <summary>Set by the window: shows Copy game report's dialog (the note box) for a game.</summary>
     public Func<DetectedGame, Task>? ShowReportDialogAsync { get; set; }

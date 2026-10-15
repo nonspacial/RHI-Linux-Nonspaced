@@ -107,6 +107,26 @@ public sealed class SecretFileStore
         }
     }
 
+    /// <summary>
+    /// The saved text (trimmed) for masking it out of text that leaves the machine (#192 support bundle), whatever the file's
+    /// mode or shape; null when there is none or it cannot be read. Never changes the file and never logs the value.
+    /// </summary>
+    public string? ValueForMasking()
+    {
+        try
+        {
+            if (!File.Exists(FilePath)) return null;
+            var info = new FileInfo(FilePath);
+            if (info.Length > MaxLength * 4L) return null;
+            var value = File.ReadAllText(FilePath).Trim();
+            return value.Length == 0 ? null : value;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Saves <paramref name="secret"/> atomically and durably at mode 0600 (throws an <see cref="IOException"/> when it cannot).</summary>
     public void Write(string secret)
     {
