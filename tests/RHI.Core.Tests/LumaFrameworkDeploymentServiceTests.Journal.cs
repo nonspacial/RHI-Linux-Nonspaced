@@ -122,6 +122,78 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
         }
     }
 
+    // The DX9 removal (w6/crash review 1): dgVoodoo2 goes and RHI's ReShade moves back from dxgi.dll to d3d9.dll. ReShade's
+    // restored record is saved in the removal's commit write, so a crash at any ledger write leaves both records naming the
+    // files the next start leaves on disk. Save 3 exists only if ReShade's record were saved on its own first: then the crash
+    // lands after that write and before the removal's, and recovery would put dxgi.dll back under a record naming d3d9.dll.
+    [Theory]
+    [InlineData(1)] // the removal's stamp
+    [InlineData(2)] // the commit point
+    [InlineData(3)]
+    public async Task Dx9Remove_CrashAtAnyLedgerWrite_LeavesReShadesRecordWhereItsFileIs(int crashAtSave)
+    {
+        var (service, records, game, root, journal, journalDirectory, recordsPath, package) = CreateDx9LumaFixture("crash-dx9-remove-" + crashAtSave);
+        var installedResult = await service.InstallLocalPackageAsync(game, package);
+        Assert.True(installedResult.Success, installedResult.Message);
+        var dxgi = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var d3d9 = Path.Combine(game.BinaryDirectory!, "d3d9.dll");
+        var dgVoodooConf = Path.Combine(game.BinaryDirectory!, "dgVoodoo.conf");
+        Assert.Equal(dxgi, Assert.Single(records.Find(game, ManagedComponentKind.ReShade)!.Files).Path);
+        var installed = CancelAtWritePhase.Snapshot(root);
+        var stillInstalled = false;
+        bool died;
+        Task<ComponentOperationResult> run;
+        using (var death = new SimulatedDeath(journal))
+        {
+            var saves = 0;
+            records.SaveFaultForTesting = () => ++saves == crashAtSave ? death.Die() : null;
+            (died, run) = await death.RunUntilDeathAsync(() => service.RemoveAsync(game));
+            if (died)
+            {
+                await SimulatedDeath.RecoverAsync(journalDirectory, recordsPath);
+                // The next start, before anything else runs (in a real crash nothing runs after the fault).
+                var fresh = new LinuxDeploymentRecordStore(recordsPath);
+                var reShade = fresh.Find(game, ManagedComponentKind.ReShade)!;
+                AssertRecordDescribesTheFiles(reShade);
+                var luma = fresh.Find(game, ManagedComponentKind.LumaFramework);
+                stillInstalled = luma is not null;
+                if (luma is not null)
+                {
+                    AssertRecordDescribesTheFiles(luma);
+                    CancelAtWritePhase.AssertUnchanged(installed, root); // rolled back: every file as installed
+                    Assert.Equal(dxgi, Assert.Single(reShade.Files).Path);
+                }
+                else
+                {
+                    Assert.Equal(d3d9, Assert.Single(reShade.Files).Path);
+                    Assert.False(File.Exists(dgVoodooConf));
+                }
+            }
+        }
+        var result = await run;
+        records.SaveFaultForTesting = null;
+        if (!died) Assert.True(result.Success, result.Message);
+        if (stillInstalled)
+        {
+            var again = await service.RemoveAsync(game);
+            Assert.True(again.Success, again.Message);
+        }
+        var final = new LinuxDeploymentRecordStore(recordsPath);
+        Assert.Null(final.Find(game, ManagedComponentKind.LumaFramework));
+        var restored = final.Find(game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(d3d9, Assert.Single(restored.Files).Path);
+        AssertRecordDescribesTheFiles(restored);
+        Assert.False(File.Exists(dgVoodooConf));
+    }
+
+    private static void AssertRecordDescribesTheFiles(LinuxDeploymentRecord record)
+        => Assert.All(record.Files, file =>
+        {
+            Assert.True(File.Exists(file.Path), file.Path);
+            if (!string.IsNullOrEmpty(file.Sha256) && !file.AllowUserChanges)
+                Assert.Equal(file.Sha256, Sha256(File.ReadAllBytes(file.Path)), ignoreCase: true);
+        });
+
     private (LumaFrameworkDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, string Root,
         DeploymentJournal Journal, string JournalDirectory, string RecordsPath, string Package) CreateDx9LumaFixture(string name)
     {
