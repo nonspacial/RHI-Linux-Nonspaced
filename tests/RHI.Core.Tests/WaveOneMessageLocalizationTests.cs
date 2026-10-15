@@ -346,6 +346,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.WineRegistryEditor.MissingSystemHiveMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UpdatedPrefix + "6.8.1" + RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderRestoredNote;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.Win32PrefixMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
     }
 

@@ -486,6 +486,50 @@ public sealed partial class ReShadeChannelTests
     }
 
     [Fact]
+    public async Task VulkanGame_AddonRows_NeverPromiseAnAutomaticReShade_AndShortFuseSaysItNeedsTheDll()
+    {
+        // Review nit 8: on a Vulkan game the add-on rows said "RHI will install ReShade automatically first", then refused.
+        var (game, store) = CreateVulkanGame("vk-addon-notes");
+        var reshade = NewVulkanService(store, new LunarGHandler(), Path.Combine(_root, "vk-addon-notes-cache"));
+        var components = ManagedComponents(store, reshade);
+        var kinds = new[] { ManagedComponentKind.ReShade, ManagedComponentKind.ReLimiter, ManagedComponentKind.DisplayCommander,
+            ManagedComponentKind.RenoDXUpgrade, ManagedComponentKind.MfgAdaUnlock, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.DofFix,
+            ManagedComponentKind.ShortFuse };
+        game.DofFixForcedByManifest = true;
+        List<ManagedComponent> Rows()
+        {
+            var rows = ComponentProbe.Probe(game, []).Where(c => kinds.Contains(c.Kind)).ToList();
+            components.Decorate(game, rows);
+            return rows;
+        }
+        ManagedComponent Row(List<ManagedComponent> rows, ManagedComponentKind kind) => rows.Single(c => c.Kind == kind);
+
+        var vulkan = Rows();
+        foreach (var kind in new[] { ManagedComponentKind.ReLimiter, ManagedComponentKind.DisplayCommander, ManagedComponentKind.RenoDXUpgrade,
+                     ManagedComponentKind.MfgAdaUnlock, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.DofFix })
+            Assert.Equal(ReShadeVulkanLayer.NotOnRequestMessage, Row(vulkan, kind).Note);
+        // A row that already refuses for its own reason keeps it: ReLimiter beside a Display Commander found on disk.
+        var withDisplayCommander = ComponentProbe.Probe(game, [Path.Combine(game.BinaryDirectory!, "display_commander.addon64")])
+            .Where(c => kinds.Contains(c.Kind)).ToList();
+        components.Decorate(game, withDisplayCommander);
+        Assert.False(Row(withDisplayCommander, ManagedComponentKind.ReLimiter).ActionAllowed);
+        Assert.StartsWith("ReLimiter and Display Commander are mutually exclusive", Row(withDisplayCommander, ManagedComponentKind.ReLimiter).Note, StringComparison.Ordinal);
+        Assert.False(Row(vulkan, ManagedComponentKind.ShortFuse).ActionAllowed);
+        Assert.Equal(ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage, Row(vulkan, ManagedComponentKind.ShortFuse).Note);
+        // What the note says is what the add-on's install does.
+        var relimiter = await components.InstallAsync(game, ManagedComponentKind.ReLimiter, []);
+        Assert.False(relimiter.Success);
+        Assert.Contains(ReShadeVulkanLayer.NotOnRequestMessage, relimiter.Message, StringComparison.Ordinal);
+
+        // A DirectX game keeps the automatic-ReShade notes.
+        game.UserGraphicsApiOverride = GraphicsApi.DirectX11;
+        var directX = Rows();
+        Assert.Contains("automaticamente", Row(directX, ManagedComponentKind.ReLimiter).Note, StringComparison.Ordinal);
+        Assert.Contains("automaticamente", Row(directX, ManagedComponentKind.RenoDXUpgrade).Note, StringComparison.Ordinal);
+        Assert.NotEqual(ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage, Row(directX, ManagedComponentKind.ShortFuse).Note);
+    }
+
+    [Fact]
     public async Task VulkanRow_InstalledLayer_ShowsInstalledByRhi_AndShortFuseOrOptiScalerAreRefused()
     {
         var (game, store) = CreateVulkanGame("vk-row-installed");

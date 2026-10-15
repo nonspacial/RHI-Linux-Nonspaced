@@ -58,6 +58,8 @@ public static partial class ReShadeVulkanLayer
         "ReShade is installed on this game as a DLL. A game gets one ReShade: remove it first, then install the Vulkan layer.";
     public const string NotOnRequestMessage =
         "On a Vulkan game RHI installs ReShade only when you ask for it: install ReShade (Vulkan layer) from its row first.";
+    public const string DllOnlyOnVulkanGameMessage =
+        "On a Vulkan game ReShade can only be installed as a Vulkan layer, and this component works only with ReShade as a DLL beside the game.";
     public const string NeedsDllReShadePrefix =
         "ReShade is installed on this game as a Vulkan layer, and this component works only with ReShade as a DLL beside the game, so nothing was installed: ";
     public const string LayerFolderTakenPrefix =

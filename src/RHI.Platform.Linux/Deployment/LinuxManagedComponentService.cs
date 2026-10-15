@@ -858,6 +858,19 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 component.ActionAllowed = false;
                 component.Note = ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + component.DisplayName;
             }
+        // w5/reshade-core (#92 review nit 8): on a Vulkan game with no ReShade nothing installs ReShade by itself (the layer
+        // is the user's choice on its own row), so an add-on row never promises an automatic ReShade first; ShortFuse
+        // moves ReShade's DLL, which the layer does not have, so it is not offered there.
+        if (Find(ManagedComponentKind.ReShade) is null && ReShadeVulkanLayer.IsVulkanTarget(game)
+            && !components.Any(c => c.Kind == ManagedComponentKind.ReShade && c.Availability == ComponentAvailability.Installed))
+            foreach (var component in components.Where(c => LinuxComponentDependencyPolicy.IsReShadeAddon(c.Kind)
+                         && c.Availability == ComponentAvailability.Available && c.ActionAllowed && Find(c.Kind) is null))
+            {
+                if (component.Kind == ManagedComponentKind.ShortFuse) component.ActionAllowed = false;
+                component.Note = component.Kind == ManagedComponentKind.ShortFuse
+                    ? ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage
+                    : ReShadeVulkanLayer.NotOnRequestMessage;
+            }
         // #170: an installed add-on RHI turned off for No Addons says so (its Remove stays available).
         foreach (var component in components.Where(c => ReShadeAddonSwitch.IsOff(Find(c.Kind))))
             component.Note = ReShadeAddonSwitch.OffNote;

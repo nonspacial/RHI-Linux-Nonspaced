@@ -606,6 +606,8 @@ public static class UiLocalizationService
             "Jogo Vulkan: o ReShade é instalado como camada Vulkan só para este jogo (o carregador Vulkan da Khronos ao lado do executável). Apenas títulos single-player/offline; a injeção de add-ons pode acionar anti-cheat."),
         (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RemovedMessage,
             "ReShade (camada Vulkan) removido: o carregador, a camada, o registro dela e a substituição do Wine foram retirados."),
+        (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage,
+            "Em um jogo Vulkan, o ReShade só pode ser instalado como camada Vulkan, e este componente só funciona com o ReShade como DLL ao lado do jogo."),
         (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.Win32PrefixMessage,
             "Este jogo de 32 bits roda em um prefixo Wine só de 32 bits (um prefixo antigo do Wine ou do Lutris), onde a camada Vulkan do ReShade não carrega, então ela não é oferecida. Prefixos do Proton e prefixos novos do Wine são de 64 bits."),
         (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.IncompleteRecordMessage,
