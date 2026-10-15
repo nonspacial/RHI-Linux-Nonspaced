@@ -110,6 +110,24 @@ public sealed partial class ReShadeDeploymentService
                     loaderVersion = latest;
                     loaderNote = ReShadeVulkanLayer.LoaderUpdatedNote;
                 }
+                else if (!File.Exists(loaderTarget))
+                {
+                    // Review finding 5: the loader beside the game is gone (without it the game loads Wine's own loader
+                    // and no layer): the recorded version goes back, from the cache when LunarG cannot be reached.
+                    var restoreVersion = loaderVersion ?? latest;
+                    try
+                    {
+                        if (restoreVersion is null) throw new InvalidOperationException(VulkanRuntimeProvider.LatestUnavailableMessage);
+                        (loaderSource, loaderDownload) = await VulkanRuntime.EnsureLoaderAsync(restoreVersion, architecture, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+                    {
+                        AppLog.Warn("reshade-vulkan", "The missing Vulkan loader could not be fetched again; the update was stopped", ex);
+                        return ComponentOperationResult.Fail(ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + ex.Message);
+                    }
+                    loaderVersion = restoreVersion;
+                    loaderNote = ReShadeVulkanLayer.LoaderRestoredNote;
+                }
             }
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)

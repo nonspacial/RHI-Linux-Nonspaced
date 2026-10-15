@@ -72,6 +72,9 @@ public static partial class ReShadeVulkanLayer
     public const string UpdatedPrefix = "ReShade (Vulkan layer) updated. Version: ";
     public const string LoaderUpdatedNote = " The Vulkan loader was updated too.";
     public const string LoaderCheckSkippedNote = " LunarG could not be reached, so the Vulkan loader was left as it is.";
+    public const string LoaderRestoredNote = " The Vulkan loader beside the game was missing and was put back.";
+    public const string LoaderMissingNotRestoredPrefix =
+        "The Vulkan loader beside the game is missing and RHI could not fetch it again, so nothing was changed; try again when LunarG can be reached: ";
     public const string RemovedMessage = "ReShade (Vulkan layer) removed: the loader, the layer, its registration and the Wine override are gone.";
     public const string FailedRolledBackPrefix = "ReShade (Vulkan layer) failed and was rolled back; nothing was changed: ";
     public const string ModifiedFilePrefix = "A file of ReShade's Vulkan layer was changed outside RHI, so it was left as it is and nothing was changed: ";

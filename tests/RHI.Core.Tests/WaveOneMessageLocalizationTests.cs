@@ -344,6 +344,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "ReShade source preparation failed: " + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderMissingPrefix + "x86/vulkan-1.dll";
         yield return "ReShade source preparation failed: " + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderInvalidPrefix + "x64/vulkan-1.dll";
         yield return RHI.Platform.Linux.Deployment.WineRegistryEditor.MissingSystemHiveMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UpdatedPrefix + "6.8.1" + RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderRestoredNote;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
     }
 
     [Theory]

@@ -336,6 +336,64 @@ public sealed partial class ReShadeChannelTests
     }
 
     [Fact]
+    public async Task VulkanLayer_Update_PutsAMissingLoaderBack_FromTheCacheWhenLunarGIsOffline()
+    {
+        // Review finding 5: delete vulkan-1.dll beside the exe, click Update; LunarG has nothing newer.
+        var (game, store) = CreateVulkanGame("vk-loader-missing");
+        var handler = new LunarGHandler();
+        var service = NewVulkanService(store, handler, Path.Combine(_root, "vk-loader-missing-cache"));
+        Assert.True((await service.InstallAsync(game, LayerOptions())).Success);
+        var loader = Path.Combine(game.BinaryDirectory!, "vulkan-1.dll");
+        File.Delete(loader);
+        handler.Inner.StableVersion = "10.0.0";
+
+        var same = await service.UpdateAsync(game);
+
+        Assert.True(same.Success, same.Message);
+        Assert.Contains(ReShadeVulkanLayer.LoaderRestoredNote, same.Message, StringComparison.Ordinal);
+        Assert.Equal(LunarGHandler.Loader(x86: false), File.ReadAllBytes(loader));
+        var record = store.Find(game, ManagedComponentKind.ReShade)!;
+        Assert.Equal(await FileHash.Sha256HexAsync(loader), record.Files.Single(f => f.Path == loader).Sha256, ignoreCase: true);
+        Assert.Equal("1.4.363.0", record.Metadata[ReShadeVulkanLayer.MetaLoaderVersion]);
+
+        File.Delete(loader);
+        handler.LatestUnreachable = true;
+        handler.ZipUnreachable = true;
+        handler.Inner.StableVersion = "10.0.1";
+        var offline = await service.UpdateAsync(game);
+
+        Assert.True(offline.Success, offline.Message);
+        Assert.Contains(ReShadeVulkanLayer.LoaderRestoredNote, offline.Message, StringComparison.Ordinal);
+        Assert.Equal(LunarGHandler.Loader(x86: false), File.ReadAllBytes(loader));
+    }
+
+    [Fact]
+    public async Task VulkanLayer_Update_WithTheLoaderMissingAndNoWayToFetchIt_ChangesNothingAndSaysSo()
+    {
+        var (game, store) = CreateVulkanGame("vk-loader-gone");
+        var handler = new LunarGHandler();
+        var cache = Path.Combine(_root, "vk-loader-gone-cache");
+        var service = NewVulkanService(store, handler, cache);
+        Assert.True((await service.InstallAsync(game, LayerOptions())).Success);
+        File.Delete(Path.Combine(game.BinaryDirectory!, "vulkan-1.dll"));
+        Directory.Delete(Path.Combine(cache, "vulkan-runtime"), recursive: true);
+        handler.LatestUnreachable = true;
+        handler.ZipUnreachable = true;
+        handler.Inner.StableVersion = "10.0.0";
+        var layerDll = Path.Combine(LayerFolder(game), "ReShade64.dll");
+        var dllBefore = File.ReadAllBytes(layerDll);
+        var recordBefore = store.Find(game, ManagedComponentKind.ReShade)!;
+
+        var result = await service.UpdateAsync(game);
+
+        Assert.False(result.Success);
+        Assert.StartsWith(ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix, result.Message, StringComparison.Ordinal);
+        Assert.Equal(dllBefore, File.ReadAllBytes(layerDll));
+        Assert.Equal(recordBefore.Version, store.Find(game, ManagedComponentKind.ReShade)!.Version);
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "vulkan-1.dll")));
+    }
+
+    [Fact]
     public async Task VulkanLayer_Install_RefusesWhileWineRunsInThePrefix()
     {
         var (game, store) = CreateVulkanGame("vk-wine-running");
@@ -562,6 +620,7 @@ public sealed partial class ReShadeChannelTests
         public MutableHandler Inner => (MutableHandler)InnerHandler!;
         public string LatestVersion { get; set; } = "1.4.363.0";
         public bool LatestUnreachable { get; set; }
+        public bool ZipUnreachable { get; set; }
         public string LoaderDescription { get; set; } = "Vulkan Loader";
         public int RequestCount { get; private set; }
         public int ZipRequests { get; private set; }
@@ -585,6 +644,7 @@ public sealed partial class ReShadeChannelTests
             if (uri.Host == "sdk.lunarg.com")
             {
                 ZipRequests++;
+                if (ZipUnreachable) throw new HttpRequestException("Connection refused");
                 var version = uri.Segments[3].TrimEnd('/');
                 using var memory = new MemoryStream();
                 using (var archive = new ZipArchive(memory, ZipArchiveMode.Create, true))
