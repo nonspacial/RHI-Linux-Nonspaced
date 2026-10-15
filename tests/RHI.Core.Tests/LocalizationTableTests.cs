@@ -45,9 +45,25 @@ public sealed class LocalizationTableTests
         Assert.True(shared.Length == 0, "PT-BR text under several keys:\n" + string.Join("\n", shared));
     }
 
-    // #166: a PT-BR text never keeps an English action word ("será usada no próximo Install"); "download" is everyday
-    // Portuguese and "Remove" is the verb remover, so neither is listed.
-    private static readonly Regex EnglishActionWords = new(@"\b(install|installed|installing|uninstall|update|updated|updating)\b", RegexOptions.IgnoreCase);
+    // #166: a PT-BR text never keeps an English action word ("será usada no próximo Install"), in any inflection
+    // (installs, installer, reinstall, updates…; w6 review 6); "download" is everyday Portuguese and "Remove" is the verb
+    // remover, so neither is listed.
+    private static readonly Regex EnglishActionWords = new(@"\b(install\w*|uninstall\w*|reinstall\w*|update\w*)\b", RegexOptions.IgnoreCase);
+
+    [Theory]
+    [InlineData("no próximo Install")]
+    [InlineData("Installs do jogo")]
+    [InlineData("o installer do jogo")]
+    [InlineData("faça um reinstall")]
+    [InlineData("Updates pendentes")]
+    [InlineData("o uninstaller")]
+    public void TheEnglishActionWordGuard_CatchesEveryInflection(string text) => Assert.Matches(EnglishActionWords, text);
+
+    [Theory]
+    [InlineData("na próxima instalação")]
+    [InlineData("Atualizar tudo")]
+    [InlineData("Download concluído")]
+    public void TheEnglishActionWordGuard_LeavesPortugueseWords(string text) => Assert.DoesNotMatch(EnglishActionWords, text);
 
     [Fact]
     public void NoPortugueseText_KeepsAnEnglishActionWord()
