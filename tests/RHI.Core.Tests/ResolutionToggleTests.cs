@@ -595,6 +595,20 @@ public sealed class ResolutionToggleTests : IDisposable
     }
 
     [Fact]
+    public void TheRestoreCommand_NamesTheToolByAnAbsolutePath_NeverFromARelativePathEntry()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "relbin")).FullName;
+        File.WriteAllText(Path.Combine(bin, DisplayModeSwitcher.KScreenDoctor), "#!/bin/sh\nexit 99\n");
+        var relative = Path.GetRelativePath(Directory.GetCurrentDirectory(), bin);
+        Assert.False(Path.IsPathRooted(relative));
+        var state = new DisplayModeState { Tool = DisplayTool.KScreenDoctor, Output = "DP-1", RestoreArguments = ["output.DP-1.mode.3840x2160@144"] };
+
+        Assert.Null(new DisplayModeSwitcher(Path.Combine(_root, "r", "display-mode.json"), name => name == "PATH" ? relative : null).RestoreCommand(state));
+        Assert.Equal([Path.Combine(bin, DisplayModeSwitcher.KScreenDoctor), "output.DP-1.mode.3840x2160@144"],
+            new DisplayModeSwitcher(Path.Combine(_root, "r", "display-mode.json"), name => name == "PATH" ? relative + ":" + bin : null).RestoreCommand(state));
+    }
+
+    [Fact]
     public void AGameWithoutARecordedStartTime_IsNeverWaitedOn()
     {
         var proc = Directory.CreateDirectory(Path.Combine(_root, "proc", "4242")).FullName;

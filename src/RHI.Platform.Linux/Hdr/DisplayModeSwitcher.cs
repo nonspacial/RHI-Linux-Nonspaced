@@ -639,6 +639,9 @@ public sealed class DisplayModeSwitcher
         if (name.Length == 0) return null;
         foreach (var dir in (_environment("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
+            // A relative PATH entry names a folder below whatever the current directory is: never run a tool from there
+            // (and the launch shell's restore needs an absolute path).
+            if (!Path.IsPathRooted(dir)) continue;
             string candidate;
             try { candidate = Path.Combine(dir, name); }
             catch (ArgumentException) { continue; }
