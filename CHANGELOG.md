@@ -15,7 +15,7 @@ Not on `main` yet (upstream features still to port):
 - Installing a dropped or downloaded RenoDX add-on straight into the matching game.
 - Renaming an installed ReShade or OptiScaler DLL in place.
 
-## Wave 6 — not on `main` yet
+## Wave 6 — 2026-10-15: Addon Manager updates, non-Steam shortcuts, crash-safe Feeder and Luma
 
 > [!NOTE]
 > **Repair after move** now treats ReShade Addon Manager add-ons like every other component. If an add-on RHI placed
@@ -23,6 +23,53 @@ Not on `main` yet (upstream features still to port):
 > missing, and the moved game's installs, updates and removals stay blocked until the repair succeeds. Before, the
 > repair skipped missing add-ons. Put the file back at the new location (or move the game back and remove that add-on
 > there first), then run the repair again.
+
+> [!NOTE]
+> Going back to an older build: the Addon Manager's selection is still written to `addon-manager.json`, which older
+> builds read, so they keep seeing the add-ons. An older build drops the Addon Manager's entries from RHI's install
+> records the first time it saves them. Back on this build, RHI takes the selection up again from that file, including
+> changes the older build made; where the entries were dropped, Update All downloads those add-ons once more, because
+> the versions recorded for them are gone.
+
+Library
+
+- **Non-Steam games added to Steam** (Steam's "Add a Non-Steam Game") get their own cards when the shortcut points at
+  a Windows game's `.exe`, with the Proton prefix and compatibility tool Steam uses for it; Play starts the shortcut
+  through Steam. A shortcut to the EA app, Ubisoft Connect, Battle.net, Rockstar or itch.io gives no card of its own:
+  the games that launcher installed in the shortcut's prefix get cards instead, modded in their real folders, and Play
+  starts that launcher through Steam for you to start the game from. Installers, uninstallers, native programs and scripts are not listed, and a shortcuts file that
+  cannot be read is a scan warning; the rest of the Steam library is still listed. These cards show as
+  "Steam/Non-Steam".
+- The Luma mod for a game is found by the wiki name set in **Edit game** (or the manifest's) as well as by its
+  detected name, and changing the wiki name looks it up again.
+
+Components
+
+- **ReShade Addon Manager add-ons are updated** by Update All and by the background update pass. Each add-on records
+  the release or file it was downloaded as; when that cannot be compared with the add-on list, the add-on is reported
+  as "could not be checked" rather than current. An add-on turned off for No Addons is held, not updated. Update
+  inclusion lists it as "ReShade Addon Manager".
+- **Download every shader pack at start-up** (Settings, on by default; upstream's "cache all shaders"): every shader
+  pack not yet in RHI's cache is downloaded in the background once the library is listed, ready for later ReShade
+  installs. A pack already cached is not replaced, and closing RHI stops the download.
+- **Deploy ReShade.ini** is now recorded on ReShade's install record, so removing ReShade takes back the search paths
+  and settings it added, and still deletes a ReShade.ini RHI created. A change you made to the file meanwhile is kept.
+- The OptiScaler ⚙ dialog shows the "not RHI-managed" warning once instead of twice.
+
+Safety
+
+- The Addon Manager's selection is part of RHI's install records: a failed or interrupted change puts the add-on files
+  and the selection back together.
+- **DLSS5 Feeder** and **Luma** installs and removals are one journaled operation each, including their INI edits and,
+  for DirectX 9 games, dgVoodoo2 and the move of ReShade between `d3d9.dll` and `dxgi.dll`: a failure or crash puts
+  every file back, and ReShade's record always names the file ReShade is really in. ReShade's shader-pack folder is journaled with
+  ReShade's install and update.
+- A display switch that failed and could not go back says the display may not be at its previous mode and that RHI
+  puts it back at its next start.
+
+Interface
+
+- Brazilian Portuguese: the OptiScaler ⚙ dialog's channel note no longer uses the English word "Install".
 
 ## Wave 5 — 2026-10-15: Vulkan ReShade, Follow newest DLSS, update inclusion, INI templates and presets, info dialogs
 

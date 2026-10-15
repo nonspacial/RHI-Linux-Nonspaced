@@ -81,10 +81,11 @@ Compared with the wizardkof beta it started from (`v0.9.23.4-beta.1`), this fork
 * **leaves your Wine prefixes alone while they run**, and keeps DLL overrides you set yourself.
 * **follows upstream RHI to 2.8.7**, including OptiScaler F5 DLSSNR, nightly pinning, OptiPatcher, the NR Cost Scaler, RTX Encore and Control Ultimate Edition frame generation.
 * **lists Xbox / Game Pass games** from Xodus-format installs and from a configurable list of Xbox game folders.
-* **lists games from other store launchers inside Wine prefixes** (EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io) and from the itch.io app for Linux.
+* **lists games from other store launchers inside Wine prefixes** (EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io), from the itch.io app for Linux, and non-Steam games added to Steam.
 * **adds RTX Encore** as a managed component (not yet confirmed on Linux).
 * **installs ReShade on Vulkan games** as a Vulkan layer set up for that one game (not yet confirmed in a real game).
 * **follows the newest DLSS and Streamline** for games that were on the previous newest, if you turn it on, and lets you leave any component out of Update All, for one game or every game.
+* **updates ReShade Addon Manager add-ons** with Update All, and can download every shader pack at start-up.
 * **ports upstream's INI templates, ReShade presets, peak brightness, ReLimiter, Luma and OptiScaler settings**, the ⓘ notes on component rows and the web links on library cards.
 * **adds Nexus Mods and GitHub accounts, update notices, desktop shortcuts, a right-click menu on library cards, saved filters, masked log bundles and game reports.**
 * **fits any window size** from 640×480 up, landscape or portrait, in English or Brazilian Portuguese.
@@ -105,8 +106,9 @@ RHI Linux supports Steam games running through Proton, including:
 * Proton prefix detection
 * game executable discovery
 * launching through Steam / Proton
+* non-Steam games added to Steam (**Add a Non-Steam Game**) that point at a Windows game's `.exe`, with the Proton prefix and compatibility tool Steam uses for them; Play starts them through Steam
 
-Tools, DLC and other entries Steam itself does not class as games are not listed.
+Tools, DLC and other entries Steam itself does not class as games are not listed. A non-Steam shortcut to the EA app, Ubisoft Connect, Battle.net, Rockstar or itch.io gets no card of its own; the games that launcher installed in the shortcut's prefix are listed instead (see [Other store launchers](#other-store-launchers)). Installers, native programs and scripts added as shortcuts are not listed.
 
 ## Heroic
 
@@ -207,6 +209,9 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 > [!NOTE]
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
 
+> [!NOTE]
+> Older builds still read the ReShade Addon Manager's selection from `addon-manager.json`, but drop its entries from RHI's install records the first time they save them. Back on the current build, RHI takes the selection up again from that file, and Update All downloads those add-ons once more.
+
 ## Runtime requirements
 
 * The AppImage bundles the .NET runtime; nothing else from .NET is needed on the host.
@@ -253,7 +258,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## Safety
 
-* **Crash-safe installs.** Every install, update and removal is journaled. Files are written to a temporary copy, checked, then moved into place. If anything fails, or RHI is interrupted, the change is rolled back as a whole the next time RHI starts. Files you changed yourself in the meantime are kept, never overwritten. A removal is marked on its record before it starts, so an interrupted removal is finished or undone, never left half-done.
+* **Crash-safe installs.** Every install, update and removal is journaled. Files are written to a temporary copy, checked, then moved into place. If anything fails, or RHI is interrupted, the change is rolled back as a whole the next time RHI starts. Files you changed yourself in the meantime are kept, never overwritten. A removal is marked on its record before it starts, so an interrupted removal is finished or undone, never left half-done. This covers DLSS5 Feeder and Luma with dgVoodoo2 and their INI edits, ReShade's shader-pack folder, and the ReShade Addon Manager's selection together with its add-on files.
 * **Cancel.** Cancel stops an operation only before it has changed anything in the game or prefix. After that point the operation finishes or rolls back completely, so a cancelled install never leaves half-installed files.
 * **Verified downloads.** Each source (ReShade, OptiScaler, RenoDX, Luma and the rest) has its own policy: HTTPS only, a fixed list of allowed hosts (checked again after redirects) and a size limit. Checksums are verified whenever the publisher announces one; where none is published, RHI records the SHA-256 of what it installed. Cached downloads are reused only when they still match what was recorded. Archives are unpacked with size limits and integrity checks, and 7-Zip archives that contain links are refused. Per-source details: [`docs/download-trust.md`](docs/download-trust.md).
 * **Wine registry.** RHI does not edit a prefix's registry while Wine is running in that prefix; it changes nothing and asks you to close the game first. DLL overrides you set yourself are kept, and removing a component puts back the value that was there before, unless you have changed it since.
@@ -266,6 +271,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 * **Xbox / Game Pass** games, as described under [Xbox / Game Pass](#xbox--game-pass). Cards are named after the product that was installed (**Control Ultimate Edition**).
 * **Other store launchers:** games of the EA app, Ubisoft Connect, Battle.net, Rockstar and itch.io inside Wine, Lutris and Heroic prefixes, and of the itch.io app for Linux, as described under [Other store launchers](#other-store-launchers).
+* **Non-Steam games added to Steam** get their own cards ("Steam/Non-Steam"), as described under [Steam / Proton](#steam--proton).
 * **HDR launch guidance.** For games started by Steam, Heroic or Lutris, RHI does not wrap the store's launch. It tells you exactly where to paste the HDR settings in that launcher (Steam launch options, Heroic's Advanced settings, Lutris's command prefix). Games started directly with a Proton build's `wine` are told that Proton's HDR variables do not apply to them.
 * Wrapper commands (`gamemoderun`, `mangohud`, `gamescope … --` and similar) are seen through, so a launch is always recognised as the store's.
 * A game's error output goes to a capped log file under `~/.local/state/rhi-linux/logs/launch/`; if the game exits at once, the last line is shown.
@@ -278,6 +284,7 @@ Everything below is on the fork's `main` branch. Dated entries are in [`CHANGELO
 
 ## Features
 
+* **ReShade Addon Manager:** its add-ons are updated by Update All and the background update pass; one that cannot be compared with the add-on list is reported as "could not be checked". **Download every shader pack at start-up** (Settings, on by default) fills RHI's shader cache in the background. **Deploy ReShade.ini** is recorded, so removing ReShade takes back what it added.
 * **ReShade:** choose the DLL name ReShade is installed under; a **No Addons** channel (the ReShade build without add-on support). Switching a game to No Addons turns the add-ons RHI installed off (they stay in the game folder and are not updated meanwhile); switching back to Stable or Nightly turns them on again. Falls back to a cached copy when reshade.me is down.
 * **ReShade for Vulkan games** (Proton or Wine 8 or newer): on a game whose graphics API is Vulkan the row reads **ReShade · Vulkan** and installs ReShade as a Vulkan layer for that game only (the Khronos loader beside the game, the layer and its registration in the prefix). DirectX games are unchanged; a plain reason is given where it cannot work. Changing the API to or from Vulkan while ReShade is installed is refused until it is removed. Not yet confirmed in a real game.
 * **Legacy ReShade** versions from a list, the manifest's per-game pins (Max Payne 3 → 6.4.1) on fresh installs, and the manifest's ReShade note for the game.
