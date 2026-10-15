@@ -2458,6 +2458,16 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w5/ini-presets hook (#189): the Luma ⚙ settings service (journaled; set by the app's composition).
     public LumaSettingsService? LumaSettings { get; set; }
 
+    // w5/ini-presets hook (#182 review 9): the RenoDX ⚙ UE-Extended switch is a RenoDX update carrying the choice, guarded
+    // and tracked like Update; the choice is saved only by that update's own stamped record.
+    public Task<ComponentOperationResult> UpdateRenoDxUeExtendedAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, bool on, CancellationToken cancellationToken = default)
+    {
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.RenoDX) ?? AddonOffGuard(game, ManagedComponentKind.RenoDX);
+        if (guard is not null) return Task.FromResult(guard);
+        return Track(game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Update,
+            () => _renodx.UpdateAsync(game, indexedFiles, cancellationToken, on ? "on" : "off"));
+    }
+
     // w5/ini-presets hook (#182): RenoDX peak brightness (journaled; set by the app's composition).
     public RenoDxPeakNits? RenoDxPeakNits { get; set; }
 

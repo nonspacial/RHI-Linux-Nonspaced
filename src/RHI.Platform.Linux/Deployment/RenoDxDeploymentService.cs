@@ -95,9 +95,10 @@ public sealed class RenoDxDeploymentService
         return mod;
     }
 
-    private async Task<RenoDxModEntry?> ResolveModAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken)
+    // choice: the RenoDX ⚙ switch being applied (review 9); null = the one kept on the record.
+    private async Task<RenoDxModEntry?> ResolveModAsync(DetectedGame game, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken, string? choice = null)
         => ApplyUeExtendedChoice(game, await _catalog.ResolveAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false),
-            _records.Find(game, ManagedComponentKind.RenoDX)?.Metadata.GetValueOrDefault(UeExtendedMetadataKey));
+            choice ?? _records.Find(game, ManagedComponentKind.RenoDX)?.Metadata.GetValueOrDefault(UeExtendedMetadataKey));
 
     public bool IsManaged(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX) is not null;
 
@@ -224,10 +225,13 @@ public sealed class RenoDxDeploymentService
         return remote.LastModified is not null ? RemoteStampComparison.Same : RemoteStampComparison.Unknown;
     }
 
+    /// <param name="ueExtendedChoice">#182 review 9: the RenoDX ⚙ UE-Extended switch ("on"/"off") this update applies; it is
+    /// saved only with the update's own record (nothing changes when the update fails). Null = the choice on the record.</param>
     public async Task<ComponentOperationResult> UpdateAsync(
         DetectedGame game,
         IReadOnlyList<string> indexedFiles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? ueExtendedChoice = null)
     {
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
         if (record is null) return ComponentOperationResult.Fail("RenoDX is not managed by RHI Linux.");
@@ -239,13 +243,14 @@ public sealed class RenoDxDeploymentService
             if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be updated: {file.Path}");
         }
-        return await InstallAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false);
+        return await InstallAsync(game, indexedFiles, cancellationToken, ueExtendedChoice).ConfigureAwait(false);
     }
 
     public async Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,
         IReadOnlyList<string> indexedFiles,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? ueExtendedChoice = null)
     {
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
             return ComponentOperationResult.Fail("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.");
@@ -266,7 +271,7 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("Could not determine game bitness for the RenoDX add-on.");
 
         RenoDxModEntry? mod;
-        try { mod = await ResolveModAsync(game, indexedFiles, cancellationToken).ConfigureAwait(false); } // #182 UE-Extended choice
+        try { mod = await ResolveModAsync(game, indexedFiles, cancellationToken, ueExtendedChoice).ConfigureAwait(false); } // #182 UE-Extended choice
         catch (Exception ex) { return ComponentOperationResult.Fail($"Could not fetch/parse the RenoDX catalog: {ex.Message}"); }
         if (mod is null)
             return ComponentOperationResult.Fail("Nenhum perfil RenoDX específico ou fallback genérico seguro foi encontrado para este jogo.");
@@ -485,8 +490,8 @@ public sealed class RenoDxDeploymentService
             if (existingRecord?.Metadata.GetValueOrDefault(ControlUeFrameGenerationService.HdrMetadataKey) is { Length: > 0 } fgHdrState)
                 record.Metadata[ControlUeFrameGenerationService.HdrMetadataKey] = fgHdrState;
             if (peakStates.Count > 0) record.Metadata[RenoDxPeakNits.MetadataKey] = RenoDxPeakNits.Serialize(peakStates); // #182
-            if (existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey) is { Length: > 0 } ueChoice)
-                record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates
+            if ((ueExtendedChoice ?? existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey)) is { Length: > 0 } ueChoice)
+                record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates; a new one is saved here, in the update's own record
             try
             {
                 _records.Upsert(record);

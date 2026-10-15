@@ -467,27 +467,16 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     public bool UeExtendedInstalled() => vm.SelectedGame is { } game && RenoDxDeploymentService.IsUeExtendedInstalled(records.Find(game, ManagedComponentKind.RenoDX));
 
     /// <summary>
-    /// The UE-Extended switch (upstream <c>ToggleUeExtended</c>): the choice is kept on the RenoDX record and RenoDX is
-    /// reinstalled through the normal update path; a failed reinstall puts the earlier choice back.
+    /// The UE-Extended switch (upstream <c>ToggleUeExtended</c>): RenoDX is reinstalled through the normal update path with
+    /// the choice, which is saved only by that update's own stamped record (review finding 9): nothing is saved outside
+    /// the operation, and a failed reinstall leaves the earlier choice as it was.
     /// </summary>
     public async Task<string> SetUeExtendedAsync(bool on)
     {
-        var (_, shown) = await vm.RunComponentUpdateAsync(async (game, token) =>
-        {
-            if (records.Find(game, ManagedComponentKind.RenoDX) is not { } record)
-                return ComponentOperationResult.Fail(RenoDxPeakNits.NotManagedPrefix + game.Name);
-            var previous = record.Metadata.GetValueOrDefault(RenoDxDeploymentService.UeExtendedMetadataKey);
-            record.Metadata[RenoDxDeploymentService.UeExtendedMetadataKey] = on ? "on" : "off";
-            records.Upsert(record);
-            var result = await managed.UpdateManagedAsync(game, ManagedComponentKind.RenoDX, vm.Session.CachedFiles(game) ?? [], token);
-            if (!result.Success && records.Find(game, ManagedComponentKind.RenoDX) is { } kept)
-            {
-                if (previous is null) kept.Metadata.Remove(RenoDxDeploymentService.UeExtendedMetadataKey);
-                else kept.Metadata[RenoDxDeploymentService.UeExtendedMetadataKey] = previous;
-                records.Upsert(kept);
-            }
-            return result;
-        });
+        var (_, shown) = await vm.RunComponentUpdateAsync((game, token) =>
+            records.Find(game, ManagedComponentKind.RenoDX) is null
+                ? Task.FromResult(ComponentOperationResult.Fail(RenoDxPeakNits.NotManagedPrefix + game.Name))
+                : managed.UpdateRenoDxUeExtendedAsync(game, vm.Session.CachedFiles(game) ?? [], on, token));
         return shown;
     }
 

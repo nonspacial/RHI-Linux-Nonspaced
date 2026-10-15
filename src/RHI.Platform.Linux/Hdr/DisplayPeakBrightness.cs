@@ -104,7 +104,7 @@ public static class DisplayPeakBrightness
                 {
                     var cv = ext[i + 4];
                     if (cv == 0) return null; // "not indicated"
-                    return (int)Math.Round(50 * Math.Pow(2, cv / 32.0));
+                    return Clamp(50 * Math.Pow(2, cv / 32.0));
                 }
                 i += 1 + length;
             }
@@ -148,7 +148,7 @@ public static class DisplayPeakBrightness
                     if (!output.TryGetProperty("edidHash", out var hash) || hash.ValueKind != JsonValueKind.String) continue;
                     if (!output.TryGetProperty("maxPeakBrightnessOverride", out var peak) || peak.ValueKind != JsonValueKind.Number) continue;
                     if (peak.TryGetDouble(out var nits) && nits is >= 1 and <= 100_000 && hash.GetString() is { Length: > 0 } key)
-                        result[key] = (int)Math.Round(nits);
+                        result[key] = Clamp(nits);
                 }
             }
         }
@@ -158,6 +158,12 @@ public static class DisplayPeakBrightness
         }
         return result;
     }
+
+    /// <summary>
+    /// Whole nits, at most what the peak brightness box and RenoDX's presets take (<see cref="RHI.Platform.Linux.Deployment.RenoDxPeakNits.MaxNits"/>),
+    /// so the monitor line shows the value Auto puts in the box (review nit 11).
+    /// </summary>
+    private static int Clamp(double nits) => (int)Math.Min(Math.Round(nits), RHI.Platform.Linux.Deployment.RenoDxPeakNits.MaxNits);
 
     private static byte[] ReadBounded(string path)
     {

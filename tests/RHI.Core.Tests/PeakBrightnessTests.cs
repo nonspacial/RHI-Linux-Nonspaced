@@ -93,6 +93,32 @@ public sealed class PeakBrightnessTests : IDisposable
         Assert.Single(DisplayPeakBrightness.Read(Path.Combine(_root, "drm"), Path.Combine(_root, "no-kwin.json")));
     }
 
+    [Fact]
+    public void Read_KdesPeakWinsOverTheMonitorsOwnLuminance()
+    {
+        // Review finding 7: a monitor that declares a luminance AND has a value set in KDE shows KDE's (what the desktop uses).
+        var edid = Edid("HDR Monitor", HdrBlock(138)); // declares 993 nits
+        Connector("card1-DP-1", edid);
+        var kwin = Path.Combine(_root, "kwinoutputconfig.json");
+        File.WriteAllText(kwin, $$"""[{"name":"outputs","data":[{"edidHash":"{{Convert.ToHexString(MD5.HashData(edid)).ToLowerInvariant()}}","maxPeakBrightnessOverride":640}]}]""");
+
+        Assert.Equal([new DisplayPeak("DP-1", "HDR Monitor", 640, DisplayPeakSource.KdeDisplaySettings)], DisplayPeakBrightness.Read(Path.Combine(_root, "drm"), kwin));
+    }
+
+    [Fact]
+    public void Read_NeverReportsMoreThanTheBoxTakes()
+    {
+        // Review nit 11: Auto puts the value shown into a box capped at 10000 nits; the line says the same value.
+        Assert.Equal(10_000, DisplayPeakBrightness.PeakNits(Edid("Bright", HdrBlock(255)))); // 50·2^(255/32) ≈ 12525
+        var edid = Edid("Bright KDE", HdrBlock(138));
+        Connector("card1-DP-1", edid);
+        var kwin = Path.Combine(_root, "kwinoutputconfig.json");
+        File.WriteAllText(kwin, $$"""[{"name":"outputs","data":[{"edidHash":"{{Convert.ToHexString(MD5.HashData(edid)).ToLowerInvariant()}}","maxPeakBrightnessOverride":20000}]}]""");
+
+        Assert.Equal(10_000, Assert.Single(DisplayPeakBrightness.Read(Path.Combine(_root, "drm"), kwin)).PeakNits);
+        Assert.Equal(10_000, RenoDxPeakNits.MaxNits);
+    }
+
     // ---- ToneMapPeakNits ownership --------------------------------------------------------------
 
     private string Bin(string ini)
@@ -278,6 +304,40 @@ public sealed partial class RenoDxInstallTests
     }
 
     [Fact]
+    public async Task Update_KeepsAPeakValueChangedInRenoDxsOverlay_AndMovesTheOthersToTheNewGlobalValue()
+    {
+        // Review finding 7 (Ini.PeakEnabledTip, UPSTREAM.md): an install or update never overwrites an overlay edit.
+        var (service, _, game, ini) = PeakFixture("overlay", "[renodx-preset1]\nToneMapPeakNits=400\n");
+        service.PeakNits = () => new PeakNitsSettings(1000, true, [1, 2]);
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        File.WriteAllText(ini, File.ReadAllText(ini).Replace("[renodx-preset1]\nToneMapPeakNits=1000", "[renodx-preset1]\nToneMapPeakNits=750"));
+        service.PeakNits = () => new PeakNitsSettings(1100, true, [1, 2]);
+
+        Assert.True((await service.UpdateAsync(game, [game.ExecutablePath!])).Success);
+
+        var text = File.ReadAllText(ini);
+        Assert.Contains("[renodx-preset1]\nToneMapPeakNits=750", text);
+        Assert.Contains("[renodx-preset2]\nToneMapPeakNits=1100", text);
+    }
+
+    [Fact]
+    public async Task Update_WithTheUeExtendedSwitch_SavesTheChoiceInTheUpdatesOwnRecord()
+    {
+        // Review finding 9: the RenoDX ⚙ switch passes its choice into the update; nothing is saved before it.
+        var (service, store, game, _) = PeakFixture("ue-switch", "[GENERAL]\n");
+        game.EngineHint = "Unreal Engine 4";
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        Assert.False(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxDeploymentService.UeExtendedMetadataKey));
+
+        Assert.True((await service.UpdateAsync(game, [game.ExecutablePath!], default, ueExtendedChoice: "on")).Success);
+
+        var updated = store.Find(game, ManagedComponentKind.RenoDX)!;
+        Assert.Equal(RenoDxDeploymentService.DefaultUeExtendedUrl, updated.SourceUrl);
+        Assert.Equal("on", updated.Metadata[RenoDxDeploymentService.UeExtendedMetadataKey]);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-ue-extended.addon64")));
+    }
+
+    [Fact]
     public async Task Install_WithUeExtendedOn_DeploysUeExtended_AndTheChoiceSurvivesAnUpdate()
     {
         var (service, store, game, _) = PeakFixture("ue", "[GENERAL]\n");
@@ -368,10 +428,14 @@ public sealed class PeakBrightnessSettingsTests
         {
             Assert.True(fx.Vm.IniPresets.OffersUeExtended());
             Assert.False(fx.Vm.IniPresets.UeExtendedInstalled());
+            var before = fx.Records.Find(card, ManagedComponentKind.RenoDX)!;
 
             await fx.Vm.IniPresets.SetUeExtendedAsync(true);
 
-            Assert.False(fx.Records.Find(card, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxDeploymentService.UeExtendedMetadataKey));
+            // Review finding 9: nothing is saved outside the update's operation (SavedAtUtc is Wine recovery's "later record").
+            var after = fx.Records.Find(card, ManagedComponentKind.RenoDX)!;
+            Assert.False(after.Metadata.ContainsKey(RenoDxDeploymentService.UeExtendedMetadataKey));
+            Assert.Equal(before.SavedAtUtc, after.SavedAtUtc);
             Assert.False(fx.Vm.IsBusy);
         }
     }
