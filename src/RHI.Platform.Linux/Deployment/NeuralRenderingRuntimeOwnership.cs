@@ -78,6 +78,22 @@ public static class NeuralRenderingRuntimeOwnership
             _ => false
         };
 
+    /// <summary>
+    /// Every record of the game that owns <c>nvngx_dlssnr.dll</c> under rule 1 (normally at most one): OptiScaler DLSS NR /
+    /// F5 DLSSNR, DLSS5 Feeder, ShortFuse, RTX Encore with its Neural Rendering file. Their files are never direct DLSS
+    /// swap/restore targets (<see cref="LinuxDlssDefaultsService.DetectTargets"/>), so the DLSS panel, Quick Apply, Batch
+    /// Deploy and Restore can never replace an owner's runtime nor consume the <c>.original</c> it puts back on removal.
+    /// </summary>
+    public static IReadOnlyList<LinuxDeploymentRecord> OwnerRecords(LinuxDeploymentRecordStore records, DetectedGame game)
+        => OwnerKinds
+            .Where(kind => ComponentOwnsRuntime(records, game, kind))
+            .Select(kind => records.Find(game, kind))
+            .OfType<LinuxDeploymentRecord>()
+            .ToArray();
+
+    private static readonly ManagedComponentKind[] OwnerKinds =
+        [ManagedComponentKind.OptiScaler, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.ShortFuse, ManagedComponentKind.RtxEncore];
+
     public static string RefusalFor(string owner) => OwnedByPrefix + owner;
 
     /// <summary>RTX Encore's name as an owner (#158).</summary>

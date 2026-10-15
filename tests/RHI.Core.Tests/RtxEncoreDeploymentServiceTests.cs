@@ -15,7 +15,7 @@ namespace RHI.Core.Tests;
 /// override per .dll name, journaled install/update/removal, NVIDIA's exact 310.8.0 Neural Rendering file under the
 /// one-owner rule (#157), fail-closed download (GitHub digest + SHA256SUMS + RTX Encore's own version resource).
 /// </summary>
-public sealed class RtxEncoreDeploymentServiceTests : IDisposable
+public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
 {
     private const string Rc3 = "1.0.0-rc.3";
     private const string Rc4 = "1.0.0-rc.4";
