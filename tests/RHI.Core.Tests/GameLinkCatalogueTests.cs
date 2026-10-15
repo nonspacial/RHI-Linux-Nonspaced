@@ -439,6 +439,72 @@ public sealed class GameLinkCatalogueTests : IDisposable
     }
 
     [Fact]
+    public async Task Pcgw_ASearchThatFailedOrWasPaused_IsNotRememberedAsNoPage()
+    {
+        var clock = new ManualClock(DateTimeOffset.Parse("2026-10-15T12:00:00Z"));
+        var mode = "offline";
+        var searches = 0;
+        var pcgwHttp = new Fake(request =>
+        {
+            Interlocked.Increment(ref searches);
+            return mode switch
+            {
+                "offline" => throw new HttpRequestException("offline"),
+                "busy" => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                _ => Text("""["Late Game", ["Late Game"], [""], ["https://www.pcgamingwiki.com/wiki/Late_Game"]]""", "application/json")
+            };
+        });
+        var pcgwSearch = new PcGamingWikiGraphicsApiService(new HttpClient(pcgwHttp), Path.Combine(_root, "pcgw-api.json"), clock, minRequestGap: TimeSpan.Zero);
+        var steam = Lists(request => request.RequestUri!.Host == "store.steampowered.com" ? Text("""{"total": 0, "items": []}""", "application/json") : null);
+        var links = new GameLinkCatalogue(new HttpClient(steam), CacheDir, pcgwSearch: pcgwSearch, timeProvider: clock);
+        var game = Named("Late Game");
+
+        await links.ResolvePcgwAsync(game); // PCGW unreachable
+        Assert.Equal(1, searches);
+        Assert.Null(links.PcgwPageFor(game));
+
+        clock.Now += TimeSpan.FromMinutes(6); // the network pause is over
+        mode = "busy";
+        await links.ResolvePcgwAsync(game); // PCGW answers 503: paused again
+        Assert.Equal(2, searches);
+        Assert.True(pcgwSearch.IsPaused);
+
+        await links.ResolvePcgwAsync(game); // still paused: nothing asked, and still not "no page"
+        Assert.Equal(2, searches);
+
+        clock.Now += TimeSpan.FromMinutes(16);
+        mode = "answers";
+        await links.ResolvePcgwAsync(game);
+        Assert.Equal(3, searches);
+        Assert.Equal("https://www.pcgamingwiki.com/wiki/Late_Game", links.PcgwPageFor(game));
+    }
+
+    [Fact]
+    public async Task SteamSearch_ARateLimit_PausesStoreSearchesForFiveMinutes()
+    {
+        var clock = new ManualClock(DateTimeOffset.Parse("2026-10-15T12:00:00Z"));
+        var limited = true;
+        var http = Lists(request => request.RequestUri!.Host == "store.steampowered.com"
+            ? limited ? new HttpResponseMessage(HttpStatusCode.TooManyRequests) : Text("""{"total": 0, "items": []}""", "application/json")
+            : null);
+        int SteamRequests() => http.Requests.Count(r => r.RequestUri!.Host == "store.steampowered.com");
+        var links = new GameLinkCatalogue(new HttpClient(http), CacheDir, timeProvider: clock); // no PCGW search: each lookup ends after Steam
+
+        await links.ResolvePcgwAsync(Named("First Game"));
+        Assert.Equal(1, SteamRequests()); // 429
+
+        await links.ResolvePcgwAsync(Named("Second Game"));
+        clock.Now += TimeSpan.FromMinutes(4);
+        await links.ResolvePcgwAsync(Named("Third Game"));
+        Assert.Equal(1, SteamRequests()); // paused: Steam is not asked again
+
+        clock.Now += TimeSpan.FromMinutes(2);
+        limited = false;
+        await links.ResolvePcgwAsync(Named("Fourth Game"));
+        Assert.Equal(2, SteamRequests());
+    }
+
+    [Fact]
     public void SteamSearch_MatchesOnlyTheSameNormalisedName()
     {
         var raw = Encoding.UTF8.GetBytes("""{"items": [{"id": 1, "name": "Game 2"}, {"id": 2, "name": "GAME™"}, {"id": "x", "name": "Game"}]}""");
