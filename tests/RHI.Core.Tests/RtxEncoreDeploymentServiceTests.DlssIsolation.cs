@@ -24,6 +24,11 @@ public sealed partial class RtxEncoreDeploymentServiceTests
         var gameNr = Path.Combine(engine, "nvngx_dlssnr.dll");
         var gameNrBytes = Pe(0x50);
         File.WriteAllBytes(gameNr, gameNrBytes);
+        var gameSr = Path.Combine(_bin, "nvngx_dlss.dll");
+        var gameRr = Path.Combine(_bin, "nvngx_dlssd.dll");
+        var gameFg = Path.Combine(_bin, "nvngx_dlssg.dll");
+        File.WriteAllBytes(gameRr, [4, 5, 6]);
+        File.WriteAllBytes(gameFg, [7, 8, 9]);
         var handler = new EncoreHandler();
         _names.SetRtxEncoreNeuralRendering(_game, true);
         var encore = Service(handler);
@@ -47,6 +52,16 @@ public sealed partial class RtxEncoreDeploymentServiceTests
         Assert.Equal(new[] { gameNr }, defaults.DetectTargets(_game).DlssnrPaths);
         Assert.True(defaults.TryPanelTargets(_game, stale, "NR", out var kind, out var paths));
         Assert.Equal(new[] { gameNr }, paths);
+        // Re-review finding 2: only RTX Encore's own NR file leaves the targets; SR, RR and FG stay available.
+        var fresh = defaults.DetectTargets(_game);
+        Assert.Contains(gameSr, fresh.DlssPaths);
+        Assert.Contains(gameRr, fresh.DlssdPaths);
+        Assert.Contains(gameFg, fresh.DlssgPaths);
+        foreach (var (panel, file) in new[] { ("SR", gameSr), ("RR", gameRr), ("FG", gameFg) })
+        {
+            Assert.True(defaults.TryPanelTargets(_game, stale, panel, out _, out var panelPaths), panel);
+            Assert.Contains(file, panelPaths);
+        }
 
         // Per-game panel swap and Restore.
         Assert.True((await dlss.SwapAsync(kind, paths, OtherNrVersion)).Success);

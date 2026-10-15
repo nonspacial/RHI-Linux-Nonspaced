@@ -92,6 +92,7 @@ public sealed class DllNameChoicesTests : IDisposable
     [InlineData("reshade")]
     [InlineData("rtxEncore")]
     [InlineData("rtxEncoreNeuralRendering")]
+    [InlineData("optiscaler")]
     public void EverySetter_KeepsEveryOtherStoredField_AndFieldsANewerRhiWrote(string changed)
     {
         new DllNamePreferenceStore(File_).SetReShade(_game, "dxgi.dll"); // creates the game's entry under its real key
@@ -107,6 +108,7 @@ public sealed class DllNameChoicesTests : IDisposable
         {
             case "reshade": store.SetReShade(_game, "d3d11.dll"); break;
             case "rtxEncore": store.SetRtxEncore(_game, "winmm.dll"); break;
+            case "optiscaler": store.SetOptiScaler(_game, "winmm.dll"); break;
             default: store.SetRtxEncoreNeuralRendering(_game, false); break;
         }
 
@@ -118,6 +120,27 @@ public sealed class DllNameChoicesTests : IDisposable
             Assert.Equal(JsonSerializer.Serialize(property.GetValue(full)), saved.GetProperty(name).GetRawText());
         }
         Assert.Equal("kept", saved.GetProperty("fromANewerRhi").GetString());
+    }
+
+    // Re-review finding 1: clearing the last choice this build knows must not drop an entry that still holds a field a
+    // newer RHI wrote (IsEmpty counts unknown fields).
+    [Fact]
+    public void ClearingTheLastKnownChoice_KeepsAnEntryHoldingAFieldANewerRhiWrote()
+    {
+        new DllNamePreferenceStore(File_).SetRtxEncore(_game, "winmm.dll"); // creates the game's entry under its real key
+        var key = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(File_))!.Keys.Single();
+        File.WriteAllText(File_, new System.Text.Json.Nodes.JsonObject
+        {
+            [key] = new System.Text.Json.Nodes.JsonObject { ["rtxEncore"] = "winmm.dll", ["fromANewerRhi"] = "kept" }
+        }.ToJsonString());
+
+        new DllNamePreferenceStore(File_).SetRtxEncore(_game, null);
+
+        var saved = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(File_))!;
+        Assert.True(saved.TryGetValue(key, out var entry), "the entry holding a newer RHI's field was dropped");
+        Assert.Equal("kept", entry.GetProperty("fromANewerRhi").GetString());
+        Assert.False(entry.TryGetProperty("rtxEncore", out _));
+        Assert.Null(new DllNamePreferenceStore(File_).GetRtxEncore(_game));
     }
 
     public void Dispose() { try { Directory.Delete(_root, true); } catch { } }
