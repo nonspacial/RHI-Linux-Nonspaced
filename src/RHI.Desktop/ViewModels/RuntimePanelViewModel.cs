@@ -165,7 +165,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             ? saved.Normalize().Resolution
             : null;
 
-    /// <summary>Rebuilds the display-size list when <paramref name="keep"/> is not in it (or it was never built); selects keep, else the fallback.</summary>
+    /// <summary>
+    /// Rebuilds the list from the display's sizes plus <paramref name="keep"/> (callers rebuild only when keep is missing or
+    /// the sizes are new) and selects keep, else the shown choice when still offered, else the list's fallback; nothing is saved.
+    /// </summary>
     private void RebuildResolutionOptions(string? keep)
     {
         if (_displaySizes is null) return;
