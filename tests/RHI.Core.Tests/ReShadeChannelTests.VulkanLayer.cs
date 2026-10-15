@@ -446,19 +446,60 @@ public sealed partial class ReShadeChannelTests
     }
 
     [Fact]
-    public void ComponentProbe_SeesTheLayerFootprint_OnlyWithBothTheLoaderAndReShadeIni()
+    public void ComponentProbe_SeesTheLayerFootprint_OnlyWithTheLoaderReShadeIniAndThisGamesLayerInThePrefix()
     {
         var (game, _) = CreateVulkanGame("vk-probe");
         var bin = game.BinaryDirectory!;
-        bool ReShadeFound(params string[] names)
-            => ComponentProbe.Probe(game, names.Select(name => Path.Combine(bin, name)).ToArray())
+        bool ReShadeFound(DetectedGame target, params string[] names)
+            => ComponentProbe.Probe(target, names.Select(name => Path.Combine(bin, name)).ToArray())
                 .Single(c => c.Kind == ManagedComponentKind.ReShade).Availability == ComponentAvailability.Installed;
 
-        Assert.False(ReShadeFound("vulkan-1.dll"));
-        Assert.False(ReShadeFound("ReShade.ini"));
-        Assert.True(ReShadeFound("vulkan-1.dll", "ReShade.ini"));
+        // The loader and ReShade.ini alone are not ReShade: a game may ship its own vulkan-1.dll and keep a ReShade.ini.
+        Assert.False(ReShadeFound(game, "vulkan-1.dll", "ReShade.ini"));
+
+        // Another game's layer in the same (shared) prefix does not count for this one.
+        var other = game.ShallowClone();
+        other.SteamAppId = 4343;
+        Directory.CreateDirectory(LayerFolder(other));
+        File.WriteAllText(Path.Combine(LayerFolder(other), "ReShade64.json"), "{}");
+        Assert.False(ReShadeFound(game, "vulkan-1.dll", "ReShade.ini"));
+        Assert.True(ReShadeFound(other, "vulkan-1.dll", "ReShade.ini"));
+
+        Directory.CreateDirectory(LayerFolder(game));
+        File.WriteAllText(Path.Combine(LayerFolder(game), "ReShade32.json"), "{}");
+        Assert.True(ReShadeFound(game, "vulkan-1.dll", "ReShade.ini"));
+        Assert.False(ReShadeFound(game, "vulkan-1.dll"));
+        Assert.False(ReShadeFound(game, "ReShade.ini"));
         Assert.False(ComponentProbe.Probe(game, [Path.Combine(bin, "sub", "vulkan-1.dll"), Path.Combine(bin, "ReShade.ini")])
             .Single(c => c.Kind == ManagedComponentKind.ReShade).Availability == ComponentAvailability.Installed);
+    }
+
+    [Fact]
+    public void ComponentProbe_ADirectXGameWithItsOwnVulkanLoader_IsNotLockedByTheReShadeIniItKeptAfterARemoval()
+    {
+        // Review w5 finding 1: a DX11 game shipping vulkan-1.dll; the DLL ReShade is removed and its edited ReShade.ini kept.
+        var (game, store) = CreateGame("vk-dx-own-loader");
+        game.GraphicsApi = GraphicsApi.DirectX11;
+        File.WriteAllBytes(Path.Combine(game.BinaryDirectory!, "vulkan-1.dll"), [0x4d, 0x5a, 1, 2]);
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini"), "[GENERAL]\nEffectSearchPaths=.\\mine\n");
+
+        var row = ComponentProbe.Probe(game, GameFileIndexer.Build(game.InstallPath)).Single(c => c.Kind == ManagedComponentKind.ReShade);
+
+        Assert.NotEqual(ComponentAvailability.Installed, row.Availability);
+        Assert.Null(store.Find(game, ManagedComponentKind.ReShade));
+    }
+
+    [Fact]
+    public async Task ComponentProbe_SeesALayerTheInstallLeft_WhenItsRecordIsGone()
+    {
+        var (game, store) = CreateVulkanGame("vk-probe-orphan");
+        var service = NewVulkanService(store, new LunarGHandler(), Path.Combine(_root, "vk-probe-orphan-cache"));
+        Assert.True((await service.InstallAsync(game, LayerOptions())).Success);
+        store.Remove(game, ManagedComponentKind.ReShade);
+
+        var row = ComponentProbe.Probe(game, GameFileIndexer.Build(game.InstallPath)).Single(c => c.Kind == ManagedComponentKind.ReShade);
+
+        Assert.Equal(ComponentAvailability.Installed, row.Availability);
     }
 
     public static TheoryData<string?, string?, int?> RunnerNames => new()

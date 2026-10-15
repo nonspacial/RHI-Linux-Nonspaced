@@ -1,6 +1,4 @@
 using System.IO.Compression;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using RHI.Core.Deployment;
@@ -153,26 +151,10 @@ public static partial class ReShadeVulkanLayer
     private static partial Regex LeadingVersion();
 
     /// <summary>The game's folder for the layer inside its prefix, and the same folder as Windows sees it (<c>C:\…</c>).</summary>
-    public static (string LinuxPath, string WindowsPath) LayerFolder(DetectedGame game)
-    {
-        var id = FolderId(game);
-        return (Path.Combine(game.PrefixPath!, "drive_c", "ProgramData", "RHI-Linux", "ReShadeVulkan", id),
-            $@"C:\ProgramData\RHI-Linux\ReShadeVulkan\{id}");
-    }
-
-    /// <summary><c>&lt;exe stem&gt;-&lt;8 hex of the game key&gt;</c>: readable, and distinct per game in a shared prefix.</summary>
-    internal static string FolderId(DetectedGame game)
-    {
-        var stem = Path.GetFileNameWithoutExtension(game.ExecutablePath ?? game.Name ?? "game");
-        var clean = new string(stem.Select(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' ? c : '_').ToArray()).Trim('.');
-        if (clean.Length == 0) clean = "game";
-        if (clean.Length > 40) clean = clean[..40];
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(LinuxDeploymentRecordStore.GameKey(game))))[..8].ToLowerInvariant();
-        return $"{clean}-{hash}";
-    }
+    public static (string LinuxPath, string WindowsPath) LayerFolder(DetectedGame game) => ReShadeVulkanLayerFolder.For(game);
 
     public static string LayerDllName(bool is32) => is32 ? "ReShade32.dll" : "ReShade64.dll";
-    public static string ManifestName(bool is32) => is32 ? "ReShade32.json" : "ReShade64.json";
+    public static string ManifestName(bool is32) => ReShadeVulkanLayerFolder.ManifestName(is32);
     internal static string RegistryKey(bool is32) => is32 ? ImplicitLayersKey32 : ImplicitLayersKey;
 
     /// <summary>The layer manifest (upstream's <c>ReShade64.json</c>; the 32-bit one names <c>ReShade32.dll</c>).</summary>
