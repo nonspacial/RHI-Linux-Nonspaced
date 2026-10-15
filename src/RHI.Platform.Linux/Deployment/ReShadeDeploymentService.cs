@@ -1496,6 +1496,42 @@ public sealed partial class ReShadeDeploymentService
         metadata[MetaIniTextureAdded] = JsonSerializer.Serialize(ini.AddedTexturePaths);
     }
 
+    /// <summary>
+    /// #203: adds a later RHI write into ReShade.ini (Deploy ReShade.ini) to what <paramref name="record"/> says RHI did
+    /// there, so removal still takes all of it back — merged, never replaced: search paths RHI added stay recorded while
+    /// the file still lists them, a key or file RHI created stays RHI's, and the file's hash becomes the new write's only
+    /// when the file held RHI's last write before it (<paramref name="hashBefore"/> null = there was no file), so a change
+    /// the user made meanwhile is never counted as RHI's. False when the record does not manage ReShade.ini.
+    /// </summary>
+    internal static bool RecordIniWrite(LinuxDeploymentRecord record, ReShadeIniApplyResult ini, string? hashBefore)
+    {
+        var entry = record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return false;
+        var metadata = record.Metadata;
+        if (hashBefore is null || (entry.Sha256 is { Length: > 0 } last && FileHash.HexEquals(hashBefore, last)))
+        {
+            entry.Path = ini.Path;
+            entry.Sha256 = ini.Sha256;
+        }
+        if (ini.CreatedByRhi) metadata[MetaIniCreated] = bool.TrueString;
+        foreach (var (key, createdKey, addedKey, added, created) in new[]
+                 {
+                     (ReShadeIniManager.EffectKey, MetaIniEffectCreated, MetaIniEffectAdded, ini.AddedEffectPaths, ini.EffectKeyCreated),
+                     (ReShadeIniManager.TextureKey, MetaIniTextureCreated, MetaIniTextureAdded, ini.AddedTexturePaths, ini.TextureKeyCreated)
+                 })
+        {
+            var listed = ReShadeIniManager.SearchPaths(ini.Path, key);
+            var merged = ReadStringList(metadata.GetValueOrDefault(addedKey))
+                .Where(path => listed?.Contains(path, StringComparer.OrdinalIgnoreCase) == true)
+                .Concat(added)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            metadata[addedKey] = JsonSerializer.Serialize(merged);
+            metadata[createdKey] = ((ReadBool(metadata, createdKey) || created) && listed is not null).ToString();
+        }
+        return true;
+    }
+
     /// <summary>INI files an install or update may rewrite: ReShade.ini (old record's and current) and, when coexisting, OptiScaler.ini.</summary>
     private static IEnumerable<string> IniPathsTouchedByInstall(DetectedGame game, LinuxDeploymentRecord? existingRecord, bool coexist)
     {

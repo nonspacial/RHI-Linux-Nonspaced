@@ -119,7 +119,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         try
         {
             var result = await Task.Run(() => kind == ManagedComponentKind.ReShade
-                ? Task.FromResult(service.DeployReShadeIni(game, settings, op.Token))
+                ? service.DeployReShadeIniAsync(game, settings, op.Token)
                 : service.DeployAddonIniAsync(game, kind, replaceChanged, op.Token));
             return Report(UiLocalizationService.Present(result.Message));
         }

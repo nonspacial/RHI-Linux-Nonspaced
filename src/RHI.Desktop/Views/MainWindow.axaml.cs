@@ -1496,21 +1496,21 @@ public sealed partial class MainWindow : Window
             if (args.PropertyName == nameof(OperationCoordinator.CanCancel)) SyncCancel();
         }
         vm.Operations.PropertyChanged += OnOperationsChanged;
-        if (!string.IsNullOrWhiteSpace(snapshot.Warning))
+        // #166: the warning is shown once — above the settings, or as the one line in their place.
+        var (noticeWarning, noticeMessage) = OptiScalerSettingsNotice.For(snapshot);
+        if (noticeWarning is not null)
         {
             panel.Children.Add(new TextBlock
             {
-                Text = UiLocalizationService.Present(snapshot.Warning),
+                Text = noticeWarning,
                 TextWrapping = TextWrapping.Wrap,
                 Opacity = 0.72
             });
         }
 
-        if (!snapshot.ManagedByRhi || snapshot.Settings.Count == 0)
+        if (noticeMessage is not null)
         {
-            message.Text = string.IsNullOrWhiteSpace(snapshot.Warning)
-                ? T("Win.NoRHIManagedOptiScalerSettingsAvailable")
-                : UiLocalizationService.Present(snapshot.Warning);
+            message.Text = noticeMessage;
             panel.Children.Add(message);
         }
         else

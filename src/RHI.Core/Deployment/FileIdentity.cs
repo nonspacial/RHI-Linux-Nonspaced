@@ -24,6 +24,27 @@ public readonly record struct FileIdentity(ulong Device, ulong Inode)
     }
 }
 
+/// <summary>What kind of file a path names on Linux (statx(2), symlinks followed), which .NET does not expose.</summary>
+public static class FileKind
+{
+    private const uint MaskType = 0x1;
+    private const int ModeOffset = 28;
+    private const int TypeBits = 0xF000;
+    private const int RegularFile = 0x8000;
+
+    /// <summary>
+    /// True for a regular file, false for anything else (FIFO, device, socket, folder); a link counts as what it leads to.
+    /// Null where it cannot be told (not Linux, no statx, missing or dangling path).
+    /// </summary>
+    public static bool? IsRegularFile(string path)
+    {
+        var buffer = new byte[Statx.BufferSize];
+        if (!Statx.TryRead(path, followSymlinks: true, MaskType, buffer)) return null;
+        if ((MemoryMarshal.Read<uint>(buffer.AsSpan(Statx.MaskOffset)) & MaskType) == 0) return null;
+        return (MemoryMarshal.Read<ushort>(buffer.AsSpan(ModeOffset)) & TypeBits) == RegularFile;
+    }
+}
+
 /// <summary>statx(2) through the C library; its buffer layout is the same on every Linux architecture.</summary>
 internal static class Statx
 {

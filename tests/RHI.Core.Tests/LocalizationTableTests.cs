@@ -45,6 +45,37 @@ public sealed class LocalizationTableTests
         Assert.True(shared.Length == 0, "PT-BR text under several keys:\n" + string.Join("\n", shared));
     }
 
+    // #166: a PT-BR text never keeps an English action word ("será usada no próximo Install"), in any inflection
+    // (installs, installer, reinstall, updates…; w6 review 6); "download" is everyday Portuguese and "Remove" is the verb
+    // remover, so neither is listed.
+    private static readonly Regex EnglishActionWords = new(@"\b(install\w*|uninstall\w*|reinstall\w*|update\w*)\b", RegexOptions.IgnoreCase);
+
+    [Theory]
+    [InlineData("no próximo Install")]
+    [InlineData("Installs do jogo")]
+    [InlineData("o installer do jogo")]
+    [InlineData("faça um reinstall")]
+    [InlineData("Updates pendentes")]
+    [InlineData("o uninstaller")]
+    public void TheEnglishActionWordGuard_CatchesEveryInflection(string text) => Assert.Matches(EnglishActionWords, text);
+
+    [Theory]
+    [InlineData("na próxima instalação")]
+    [InlineData("Atualizar tudo")]
+    [InlineData("Download concluído")]
+    public void TheEnglishActionWordGuard_LeavesPortugueseWords(string text) => Assert.DoesNotMatch(EnglishActionWords, text);
+
+    [Fact]
+    public void NoPortugueseText_KeepsAnEnglishActionWord()
+    {
+        var kept = UiLocalizationService.Keys
+            .Select(key => (key, pt: UiLocalizationService.TextFor("pt-BR", key)))
+            .Where(row => EnglishActionWords.IsMatch(row.pt))
+            .Select(row => $"{row.key}: {row.pt}")
+            .ToArray();
+        Assert.True(kept.Length == 0, "PT-BR text with an English action word:\n" + string.Join("\n", kept));
+    }
+
     [Fact]
     public void EveryKey_IsTranslated_WithTheSamePlaceholders_AndNoPortugueseInEnglish()
     {

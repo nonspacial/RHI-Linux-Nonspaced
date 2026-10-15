@@ -189,7 +189,7 @@ public sealed class LumaCatalogService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(game);
-        var key = LinuxDeploymentRecordStore.GameKey(game);
+        var key = ResolutionKey(game);
         lock (_resolutionLock)
             if (_resolutionCache.TryGetValue(key, out var cached)) return cached;
 
@@ -213,9 +213,16 @@ public sealed class LumaCatalogService
             return null;
         }
 
-        var target = string.IsNullOrWhiteSpace(mappedName) ? game.Name : mappedName!;
-        var normalized = NormalizeName(target);
-        var resolved = entries.FirstOrDefault(entry => NormalizeName(entry.Name) == normalized);
+        // Upstream's order (MatchLumaGame): the manifest's Luma name, then the wiki name (Edit game's, else the manifest's
+        // wikiNameOverride, as RenoDX's lookup uses), then the detected name; the first that names a listed mod wins.
+        LumaCatalogEntry? resolved = null;
+        foreach (var target in new[] { mappedName, game.WikiNameOverride, game.Name })
+        {
+            if (string.IsNullOrWhiteSpace(target)) continue;
+            var normalized = NormalizeName(target);
+            resolved = entries.FirstOrDefault(entry => NormalizeName(entry.Name) == normalized);
+            if (resolved is not null) break;
+        }
 
         lock (_resolutionLock) _resolutionCache[key] = resolved;
         return resolved;
@@ -245,9 +252,12 @@ public sealed class LumaCatalogService
 
     public bool TryGetCached(DetectedGame game, out LumaCatalogEntry? entry)
     {
-        var key = LinuxDeploymentRecordStore.GameKey(game);
-        lock (_resolutionLock) return _resolutionCache.TryGetValue(key, out entry);
+        lock (_resolutionLock) return _resolutionCache.TryGetValue(ResolutionKey(game), out entry);
     }
+
+    // The wiki name is part of the key: an Edit-game wiki name changes the answer without changing the game's key.
+    private static string ResolutionKey(DetectedGame game)
+        => LinuxDeploymentRecordStore.GameKey(game) + "|" + NormalizeName(game.WikiNameOverride ?? "");
 
     public bool TryGetGenericCached(DetectedGame game, out LumaGenericGameEntry? entry)
     {

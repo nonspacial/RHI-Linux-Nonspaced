@@ -203,6 +203,10 @@ internal static class ReShadeIniManager
             Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
 
+    /// <summary>The entries of <c>[GENERAL] <paramref name="key"/></c> in the file at <paramref name="path"/>; null when the file or key is missing.</summary>
+    internal static IReadOnlyList<string>? SearchPaths(string path, string key)
+        => File.Exists(path) && IniLines.Get(File.ReadAllLines(path).ToList(), "GENERAL", key) is { } value ? SplitList(value) : null;
+
     internal static string ResolveIniPath(string gameDirectory)
     {
         var canonical = Path.Combine(gameDirectory, IniName);
@@ -235,6 +239,14 @@ internal static class ReShadeIniManager
         roots.AddRange(RenoDxIniOverrideManager.UserReShadeConfigDirectories);
         return new UserFileLinkPolicy(Path.GetFileName(iniPath), roots, RenoDxIniOverrideManager.LinkRefusalPrefix);
     }
+
+    /// <summary>
+    /// The file a ReShade.ini write to <paramref name="iniPath"/> replaces under <see cref="LinkPolicy"/>: the link's allowed
+    /// target (a shared file in the user's ReShade folder) or the path itself; throws the write's refusal. A journal tracks
+    /// this file, never the link, so a rollback keeps the link and puts the shared file's content back.
+    /// </summary>
+    internal static string ResolveWriteTarget(string iniPath, string binaryDirectory, string? gameRoot)
+        => AtomicFile.ResolveUserFileTarget(iniPath, LinkPolicy(iniPath, binaryDirectory, gameRoot));
 
     /// <summary>A planned ReShade.ini write under <see cref="LinkPolicy"/> (for <see cref="IniLines.WriteAll"/>).</summary>
     internal static IniFileWrite PlannedWrite(string path, IReadOnlyList<string> lines, string binaryDirectory, string? gameRoot)
