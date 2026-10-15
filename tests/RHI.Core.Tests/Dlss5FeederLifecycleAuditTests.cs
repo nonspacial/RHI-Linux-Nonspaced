@@ -11,7 +11,7 @@ using Xunit;
 
 namespace RHI.Core.Tests;
 
-public sealed class Dlss5FeederLifecycleAuditTests
+public sealed partial class Dlss5FeederLifecycleAuditTests
 {
     [Fact]
     public async Task FullStack_BothConsumersInstallRemoveReinstallAndSwitchWithHdrOwnershipPreserved()
@@ -208,7 +208,8 @@ public sealed class Dlss5FeederLifecycleAuditTests
         public GateWatchingHandler Watch { get; }
 
         /// <param name="x86">A 32-bit game: the Feeder deploys its host64 helper with a 64-bit ReShade from reshade.me.</param>
-        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false)
+        /// <param name="journaled">#169: the app's journal (Wine never running) for the simulated-crash tests.</param>
+        public FeederFixture(bool preexistingEarlyLoad = false, bool missingIncludes = false, bool dx9 = false, bool x86 = false, bool journaled = false)
         {
             Bin = Path.Combine(_root, "game");
             var prefix = Path.Combine(_root, "prefix");
@@ -288,13 +289,17 @@ public sealed class Dlss5FeederLifecycleAuditTests
                 ManagedComponentKind.Dlss5Feeder, "dlss5-feed", "DLSS5 Feeder", "https://github.com/rhi-tests/unused-release", 64 * 1024,
                 DeployFileName64: "dlss5-feed.addon64"), Path.Combine(_root, "cache-legacy"));
             var overrides = new WineDllOverrideService();
+            if (journaled) (Journal, overrides) = SimulatedDeath.NewJournal(JournalDirectory, Records);
             var reShade = new ReShadeDeploymentService(_http, new TransactionalFileDeploymentService(), Records, overrides, new StandInExtractor(),
                 Path.Combine(_root, "cache-reshade"), new ReShadeShaderPackService(_http, Path.Combine(_root, "cache-packs"), customRoot: Path.Combine(_root, "custom")));
             Service = new Dlss5FeederFullDeploymentService(_http, Records, dlss, legacy, Path.Combine(_root, "cache-feeder"), overrides,
                 reShade: reShade,
                 dgVoodoo: new DgVoodooDeploymentService(_http, Path.Combine(_root, "cache-dgvoodoo")),
-                dx9ReShade: new Dx9TranslationReShadeCoordinator(Records, overrides));
+                dx9ReShade: new Dx9TranslationReShadeCoordinator(Records, overrides, Journal), journal: Journal);
         }
+
+        public DeploymentJournal? Journal { get; }
+        public string JournalDirectory => Path.Combine(_root, "journal");
 
         public Task<ComponentOperationResult> Install(Dlss5FeederConsumer consumer, CancellationToken cancellationToken = default)
             => Service.InstallAsync(Game, consumer, consumer == Dlss5FeederConsumer.DeepFriedChicken ? _package : null, null, cancellationToken);

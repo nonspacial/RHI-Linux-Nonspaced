@@ -24,12 +24,12 @@ public sealed class IniEditDurabilityTests : IDisposable
     public void FeederPresetAndTokenRemoval_WriteALockedIni_AndKeepItLocked()
     {
         var ini = Ini("[GENERAL]\nPresetPath=.\\user.ini\nLoadFromDllMain=0\n");
-        var preset = Dlss5FeederFullDeploymentService.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
-        var token = Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(ini, "dlss5-feed.addon64");
+        var preset = ReShadeIniTokenEditor.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
+        var token = ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(ini, "dlss5-feed.addon64");
         Lock(ini);
 
-        Dlss5FeederFullDeploymentService.RemoveLoadFromDllMainToken(ini, token);
-        Dlss5FeederFullDeploymentService.RestorePresetPath(ini, preset);
+        ReShadeIniTokenEditor.RemoveLoadFromDllMainToken(ini, token);
+        ReShadeIniTokenEditor.RestorePresetPath(ini, preset);
 
         var text = File.ReadAllText(ini);
         Assert.Contains(@"PresetPath=.\user.ini", text);
@@ -45,7 +45,7 @@ public sealed class IniEditDurabilityTests : IDisposable
         Lock(ini);
         var before = File.ReadAllBytes(ini);
 
-        Assert.ThrowsAny<IOException>(() => Dlss5FeederFullDeploymentService.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini"));
+        Assert.ThrowsAny<IOException>(() => ReShadeIniTokenEditor.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini"));
 
         Assert.Equal(before, File.ReadAllBytes(ini));
     }
@@ -58,7 +58,7 @@ public sealed class IniEditDurabilityTests : IDisposable
         File.CreateSymbolicLink(link, real);
         var before = File.ReadAllBytes(real);
 
-        Assert.ThrowsAny<IOException>(() => Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(link, "dlss5-feed.addon64"));
+        Assert.ThrowsAny<IOException>(() => ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(link, "dlss5-feed.addon64"));
 
         Assert.Equal(before, File.ReadAllBytes(real));
     }

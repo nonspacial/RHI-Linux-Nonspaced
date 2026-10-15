@@ -43,7 +43,7 @@ public sealed class RepairStoreWiringTests
     }
 
     /// <summary>Every object reachable from <paramref name="root"/> through fields of RHI types, collections and closures.</summary>
-    private static IEnumerable<object> Reachable(object root)
+    internal static IEnumerable<object> Reachable(object root)
     {
         var seen = new HashSet<object>(ReferenceEqualityComparer.Instance);
         var queue = new Queue<object>([root]);

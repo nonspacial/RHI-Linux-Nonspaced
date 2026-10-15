@@ -10,7 +10,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
+public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-luma-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -664,9 +664,15 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
     // w2/vmsplit review finding 1: Cancel is honoured only before the first write; the rollback never uses the
     // cancelled token (it used to throw on the ReShade.ini write and leave Luma's keys in ReShade.ini and Engine.ini).
     private sealed record LumaCancelFixture(
-        LumaFrameworkDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, string Root, string EngineIni, HttpClient Http);
+        LumaFrameworkDeploymentService Service, LinuxDeploymentRecordStore Records, DetectedGame Game, string Root, string EngineIni, HttpClient Http)
+    {
+        public DeploymentJournal? Journal { get; init; }
+        public string JournalDirectory { get; init; } = "";
+        public string RecordsPath { get; init; } = "";
+    }
 
-    private LumaCancelFixture CreateLumaCancelFixture(string name)
+    /// <param name="journaled">#169: the app's journal (Wine never running) for the simulated-crash tests.</param>
+    private LumaCancelFixture CreateLumaCancelFixture(string name, bool journaled = false)
     {
         const string wikiUrl = "https://github.com/rhi-tests/luma-generic-wiki";
         var root = Path.Combine(_root, name);
@@ -708,7 +714,12 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
             var url => throw new InvalidOperationException("Unexpected URL: " + url)
         }));
         var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
-        return new(new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, "cache-" + name), catalog), records, game, root, engineIni, http);
+        var journalDirectory = Path.Combine(_root, name + "-journal");
+        var journal = journaled ? SimulatedDeath.NewJournal(journalDirectory, records).Journal : null;
+        return new(new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, "cache-" + name), catalog, journal: journal), records, game, root, engineIni, http)
+        {
+            Journal = journal, JournalDirectory = journalDirectory, RecordsPath = Path.Combine(_root, name + "-records.json")
+        };
     }
 
     [Fact]
@@ -740,13 +751,16 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
     }
 
     // w2 merge review, nit 3: a rollback step that fails with something other than an I/O error is logged like any
-    // other, the remaining steps still run, and the staging folder with RHI's rollback copies is kept.
+    // other and the remaining steps still run. #169: the install's DeploymentScope holds RHI's verified copies, so the
+    // file that step could not restore is put back from them anyway (it used to stay changed, with copies in a folder).
     [Fact]
-    public async Task Install_RollbackStepFailingUnexpectedly_StillRunsTheOtherSteps_AndKeepsTheRollbackCopies()
+    public async Task Install_RollbackStepFailingUnexpectedly_StillRunsTheOtherSteps_AndTheScopePutsTheFileBack()
     {
         var fx = CreateLumaCancelFixture("rollback-unexpected");
         using var http = fx.Http;
         var engineBefore = File.ReadAllText(fx.EngineIni);
+        var ini = Directory.GetFiles(fx.Game.BinaryDirectory!, "*.ini").Single(path => Path.GetFileName(path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase));
+        var iniBefore = File.ReadAllBytes(ini);
         var logPath = Path.Combine(_root, "rollback-unexpected.log");
         fx.Records.SaveFaultForTesting = () => new IOException("Simulated ledger failure");
         fx.Service.RollbackStepFaultForTesting = what =>
@@ -760,14 +774,43 @@ public sealed class LumaFrameworkDeploymentServiceTests : IDisposable
         fx.Records.SaveFaultForTesting = null;
 
         Assert.False(result.Success);
-        Assert.StartsWith(LumaFrameworkDeploymentService.RollbackIncompletePrefix, result.Message, StringComparison.Ordinal);
+        Assert.StartsWith("Luma Framework installation rolled back: ", result.Message, StringComparison.Ordinal);
         Assert.Equal(engineBefore, File.ReadAllText(fx.EngineIni)); // a later step still ran
+        Assert.Equal(iniBefore, File.ReadAllBytes(ini));             // and the scope restored what the failed step left
         var log = File.ReadAllText(logPath);
         Assert.Contains("Could not restore ReShade.ini", log, StringComparison.Ordinal);
         Assert.Contains("NullReferenceException", log, StringComparison.Ordinal);
-        var kept = System.Text.RegularExpressions.Regex.Match(log, "RHI's copies are kept at (\\S+)").Groups[1].Value;
-        Assert.True(Directory.Exists(kept), $"the rollback copies at '{kept}' were deleted");
-        Directory.Delete(kept, recursive: true);
+    }
+
+    // #169: a rollback that cannot finish says so with the scope's note and keeps RHI's copies (the next start retries).
+    [Fact]
+    public async Task Install_RollbackThatCannotFinish_SaysSo_AndKeepsTheCopies()
+    {
+        var fx = CreateLumaCancelFixture("rollback-incomplete");
+        using var http = fx.Http;
+        var bin = fx.Game.BinaryDirectory!;
+        var mode = File.GetUnixFileMode(bin);
+        fx.Records.SaveFaultForTesting = () =>
+        {
+            File.SetUnixFileMode(bin, UnixFileMode.UserRead | UnixFileMode.UserExecute); // nothing can be put back or removed
+            return new IOException("Simulated ledger failure");
+        };
+
+        ComponentOperationResult result;
+        try
+        {
+            result = await fx.Service.InstallAsync(fx.Game);
+        }
+        finally
+        {
+            File.SetUnixFileMode(bin, mode);
+            fx.Records.SaveFaultForTesting = null;
+        }
+
+        Assert.False(result.Success);
+        Assert.StartsWith(LumaFrameworkDeploymentService.RollbackIncompletePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Contains(DeploymentScope.RollbackIncompletePrefix, result.Message, StringComparison.Ordinal);
+        Assert.NotEmpty(Directory.GetFiles(bin, "*" + OwnedFileSet.SnapshotMarker + "*", SearchOption.AllDirectories)); // every copy kept
     }
 
     // w3/journal (#31): the rollback restores ReShade.ini through the one user-file writer: a ReShade.ini the user locked

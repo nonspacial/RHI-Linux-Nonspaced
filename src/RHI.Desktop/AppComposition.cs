@@ -207,7 +207,7 @@ internal sealed class AppComposition
             () => OptiScalerIniTemplates.ChoiceFrom(settingsStore.Load()));
         var lumaModeStore = new LumaModePreferenceStore();
         var lumaPolicy = new LumaPolicyService(upstreamManifest, lumaModeStore);
-        var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
+        var lumaFramework = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade, journal: journal); // #169
         var updateLog = new ComponentUpdateLogStore();
         var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)

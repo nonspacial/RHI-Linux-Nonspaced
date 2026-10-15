@@ -1794,13 +1794,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (guard is not null) return guard;
         if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.Dlss5Feeder) is { } layered) return ComponentOperationResult.Fail(layered); // w3/parity (#96)
 
-        var preflight = Dlss5FeederFullDeploymentService.ValidateTarget(game, consumer, requireReShade: false);
+        var preflight = FeederLayoutPlanner.ValidateTarget(game, consumer, requireReShade: false);
         if (preflight is not null) return preflight;
         if (consumer == Dlss5FeederConsumer.DeepFriedChicken &&
             (string.IsNullOrWhiteSpace(deepFriedChickenPackagePath) || !File.Exists(deepFriedChickenPackagePath)))
             return ComponentOperationResult.Fail("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial .zip ou .7z antes que dependências sejam alteradas.");
         if (consumer == Dlss5FeederConsumer.DeepFriedChicken &&
-            !Dlss5FeederFullDeploymentService.IsSupportedDeepFriedChickenArchive(deepFriedChickenPackagePath!))
+            !DeepFriedChickenPackageVerifier.IsSupportedDeepFriedChickenArchive(deepFriedChickenPackagePath!))
             return ComponentOperationResult.Fail("O pacote consumidor do Deep Fried Chicken deve ser um arquivo oficial .zip ou .7z.");
 
         return await Track(game, ManagedComponentKind.Dlss5Feeder, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(

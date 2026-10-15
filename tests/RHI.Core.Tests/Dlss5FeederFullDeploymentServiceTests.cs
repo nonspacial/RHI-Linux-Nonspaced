@@ -67,7 +67,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
             PrefixPath = prefix
         };
 
-        var plan = Dlss5FeederFullDeploymentService.ResolveCompilerPlan(game, PeArchitecture.X64, selectedExternalPath: null);
+        var plan = FeederLayoutPlanner.ResolveCompilerPlan(game, PeArchitecture.X64, selectedExternalPath: null);
 
         Assert.Equal(compiler, plan.UsablePath);
         Assert.Null(plan.DeploySourcePath);
@@ -91,7 +91,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
             PrefixPath = prefix
         };
 
-        var plan = Dlss5FeederFullDeploymentService.ResolveCompilerPlan(game, PeArchitecture.X64, source);
+        var plan = FeederLayoutPlanner.ResolveCompilerPlan(game, PeArchitecture.X64, source);
 
         Assert.Equal(Path.Combine(binary, "D3DCompiler_47.dll"), plan.UsablePath);
         Assert.Equal(source, plan.DeploySourcePath);
@@ -116,12 +116,12 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "ReShade.ini");
         File.WriteAllText(ini, "[GENERAL]\nPresetPath=.\\UserPreset.ini\nEffectSearchPaths=.\\user\\Shaders\\**\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
+        var mutation = ReShadeIniTokenEditor.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
         Assert.True(mutation.PreviousKeyExisted);
         Assert.Equal(@".\UserPreset.ini", mutation.PreviousValue);
         Assert.Contains(@"PresetPath=.\RHI-DLSS5-Feeder.ini", File.ReadAllText(ini));
 
-        Dlss5FeederFullDeploymentService.RestorePresetPath(ini, mutation);
+        ReShadeIniTokenEditor.RestorePresetPath(ini, mutation);
         var text = File.ReadAllText(ini);
         Assert.Contains(@"PresetPath=.\UserPreset.ini", text);
         Assert.Contains(@"EffectSearchPaths=.\user\Shaders\**", text);
@@ -133,10 +133,10 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "ReShade-no-preset.ini");
         File.WriteAllText(ini, "[GENERAL]\nEffectSearchPaths=.\\user\\Shaders\\**\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
+        var mutation = ReShadeIniTokenEditor.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
         Assert.False(mutation.PreviousKeyExisted);
 
-        Dlss5FeederFullDeploymentService.RestorePresetPath(ini, mutation);
+        ReShadeIniTokenEditor.RestorePresetPath(ini, mutation);
         var text = File.ReadAllText(ini);
         Assert.DoesNotContain("PresetPath=", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(@"EffectSearchPaths=.\user\Shaders\**", text);
@@ -148,10 +148,10 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "ReShade-user-change.ini");
         File.WriteAllText(ini, "[GENERAL]\nPresetPath=.\\Old.ini\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
+        var mutation = ReShadeIniTokenEditor.SetPresetPath(ini, @".\RHI-DLSS5-Feeder.ini");
         File.WriteAllText(ini, "[GENERAL]\nPresetPath=.\\NewUserChoice.ini\n");
 
-        Dlss5FeederFullDeploymentService.RestorePresetPath(ini, mutation);
+        ReShadeIniTokenEditor.RestorePresetPath(ini, mutation);
         Assert.Contains(@"PresetPath=.\NewUserChoice.ini", File.ReadAllText(ini));
     }
 
@@ -418,7 +418,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         CreateDeepFriedChickenZip(zip, "1.4.8-alpha", arm: true, corruptAddonHash: false, includeSums: true, windowsLayout: true);
         Assert.True(new FileInfo(zip).Length < 1024, "Regression fixture must remain highly compressible so outer ZIP size is not used as a validity signal.");
 
-        var bundle = Dlss5FeederFullDeploymentService.ExtractDeepFriedChickenBundle(zip, dest);
+        var bundle = DeepFriedChickenPackageVerifier.ExtractDeepFriedChickenBundle(zip, dest);
 
         Assert.Equal("1.4.8-alpha", bundle.Version);
         Assert.True(File.Exists(bundle.AddonPath));
@@ -435,7 +435,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var dest = Path.Combine(_root, "dfc-valid-async");
         CreateDeepFriedChickenZip(zip, "1.6.8", arm: true, corruptAddonHash: false, includeSums: true, windowsLayout: true);
 
-        var bundle = await Dlss5FeederFullDeploymentService.ExtractDeepFriedChickenBundleAsync(zip, dest);
+        var bundle = await DeepFriedChickenPackageVerifier.ExtractDeepFriedChickenBundleAsync(zip, dest);
 
         Assert.Equal("1.6.8", bundle.Version);
         Assert.True(File.Exists(bundle.AddonPath));
@@ -449,7 +449,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     [InlineData("Deep-Fried-Chicken-1.6.8.rar", false)]
     public void DeepFriedChickenArchiveSupport_AcceptsZipAnd7zOnly(string fileName, bool expected)
     {
-        Assert.Equal(expected, Dlss5FeederFullDeploymentService.IsSupportedDeepFriedChickenArchive(fileName));
+        Assert.Equal(expected, DeepFriedChickenPackageVerifier.IsSupportedDeepFriedChickenArchive(fileName));
     }
 
     [Fact]
@@ -459,7 +459,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         // ZIP local header + encrypted flag + WinZip AES method 99.
         File.WriteAllBytes(archive, [0x50, 0x4B, 0x03, 0x04, 0x33, 0x00, 0x01, 0x00, 0x63, 0x00]);
 
-        Assert.True(Dlss5FeederFullDeploymentService.IsAesEncryptedZipArchive(archive));
+        Assert.True(DeepFriedChickenPackageVerifier.IsAesEncryptedZipArchive(archive));
     }
 
     [Fact]
@@ -475,7 +475,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var destination = Path.Combine(_root, "dfc-extracted-validated");
         CreateDeepFriedChickenDirectory(extracted, "1.6.8", arm: true, corruptAddonHash: false, includeSums: true);
 
-        var bundle = Dlss5FeederFullDeploymentService.ValidateExtractedDeepFriedChickenDirectory(
+        var bundle = DeepFriedChickenPackageVerifier.ValidateExtractedDeepFriedChickenDirectory(
             Path.Combine(_root, "dfc-extracted"), destination);
 
         Assert.Equal("1.6.8", bundle.Version);
@@ -491,7 +491,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         CreateDeepFriedChickenZip(zip, "1.4.8-alpha", arm: true, corruptAddonHash: true, includeSums: true);
 
         var ex = Assert.Throws<InvalidDataException>(() =>
-            Dlss5FeederFullDeploymentService.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-bad-hash-out")));
+            DeepFriedChickenPackageVerifier.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-bad-hash-out")));
 
         Assert.Contains("SHA-256", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -503,7 +503,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         CreateDeepFriedChickenZip(zip, "1.4.8-alpha", arm: true, corruptAddonHash: false, includeSums: false);
 
         var ex = Assert.Throws<InvalidDataException>(() =>
-            Dlss5FeederFullDeploymentService.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-no-sums-out")));
+            DeepFriedChickenPackageVerifier.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-no-sums-out")));
 
         Assert.Contains("SHA256SUMS.txt", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -515,7 +515,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         CreateDeepFriedChickenZip(zip, "1.4.8-alpha", arm: false, corruptAddonHash: false, includeSums: true);
 
         var ex = Assert.Throws<InvalidDataException>(() =>
-            Dlss5FeederFullDeploymentService.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-disarmed-out")));
+            DeepFriedChickenPackageVerifier.ExtractDeepFriedChickenBundle(zip, Path.Combine(_root, "dfc-disarmed-out")));
 
         Assert.Contains("arm=1", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -526,11 +526,11 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "reshade-addon-list.ini");
         File.WriteAllText(ini, "[ADDON]\nLoadFromDllMain=existing.addon64\n\n[GENERAL]\nPresetPath=.\\User.ini\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
+        var mutation = ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
         Assert.True(mutation.AddedByRhi);
         Assert.Contains("LoadFromDllMain=existing.addon64,deep-fried-chicken.addon64", File.ReadAllText(ini));
 
-        Dlss5FeederFullDeploymentService.RemoveLoadFromDllMainToken(ini, mutation);
+        ReShadeIniTokenEditor.RemoveLoadFromDllMainToken(ini, mutation);
         var text = File.ReadAllText(ini);
         Assert.Contains("LoadFromDllMain=existing.addon64", text);
         Assert.DoesNotContain("deep-fried-chicken.addon64", text, StringComparison.OrdinalIgnoreCase);
@@ -542,10 +542,10 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "reshade-preexisting-dfc.ini");
         File.WriteAllText(ini, "[ADDON]\nLoadFromDllMain=deep-fried-chicken.addon64\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
+        var mutation = ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
         Assert.False(mutation.AddedByRhi);
 
-        Dlss5FeederFullDeploymentService.RemoveLoadFromDllMainToken(ini, mutation);
+        ReShadeIniTokenEditor.RemoveLoadFromDllMainToken(ini, mutation);
         Assert.Contains("deep-fried-chicken.addon64", File.ReadAllText(ini), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -555,10 +555,10 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "reshade-user-added-addon.ini");
         File.WriteAllText(ini, "[ADDON]\nDisabledAddons=Generic Depth\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
+        var mutation = ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
         File.WriteAllText(ini, "[ADDON]\nLoadFromDllMain=deep-fried-chicken.addon64,user-later.addon64\nDisabledAddons=Generic Depth\n");
 
-        Dlss5FeederFullDeploymentService.RemoveLoadFromDllMainToken(ini, mutation);
+        ReShadeIniTokenEditor.RemoveLoadFromDllMainToken(ini, mutation);
         var text = File.ReadAllText(ini);
         Assert.Contains("LoadFromDllMain=user-later.addon64", text);
         Assert.DoesNotContain("deep-fried-chicken.addon64", text, StringComparison.OrdinalIgnoreCase);
@@ -570,12 +570,12 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var ini = Path.Combine(_root, "reshade-no-addon-section.ini");
         File.WriteAllText(ini, "[GENERAL]\nPresetPath=.\\User.ini\n");
 
-        var mutation = Dlss5FeederFullDeploymentService.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
+        var mutation = ReShadeIniTokenEditor.EnsureLoadFromDllMainToken(ini, "deep-fried-chicken.addon64");
         Assert.True(mutation.AddedByRhi);
         Assert.Contains("[ADDON]", File.ReadAllText(ini));
         Assert.Contains("LoadFromDllMain=deep-fried-chicken.addon64", File.ReadAllText(ini));
 
-        Dlss5FeederFullDeploymentService.RemoveLoadFromDllMainToken(ini, mutation);
+        ReShadeIniTokenEditor.RemoveLoadFromDllMainToken(ini, mutation);
         Assert.DoesNotContain("LoadFromDllMain=", File.ReadAllText(ini), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -674,9 +674,9 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     [Fact]
     public void ReinstallPolicy_PreexistingDeepFriedConfig_IsReusableButProtectedBinariesStillBlock()
     {
-        Assert.False(Dlss5FeederFullDeploymentService.IsBlockingPreexistingFullStackTarget("/game/deep-fried-chicken.cfg"));
-        Assert.True(Dlss5FeederFullDeploymentService.IsBlockingPreexistingFullStackTarget("/game/deep-fried-chicken.addon64"));
-        Assert.True(Dlss5FeederFullDeploymentService.IsBlockingPreexistingFullStackTarget("/game/nvngx_dlss.dll"));
+        Assert.False(FeederLayoutPlanner.IsBlockingPreexistingFullStackTarget("/game/deep-fried-chicken.cfg"));
+        Assert.True(FeederLayoutPlanner.IsBlockingPreexistingFullStackTarget("/game/deep-fried-chicken.addon64"));
+        Assert.True(FeederLayoutPlanner.IsBlockingPreexistingFullStackTarget("/game/nvngx_dlss.dll"));
     }
 
     [Fact]
@@ -690,8 +690,8 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
             Sha256 = "install-hash"
         };
 
-        Assert.True(Dlss5FeederFullDeploymentService.ShouldPreserveOnRemove(file, "install-hash"));
-        Assert.True(Dlss5FeederFullDeploymentService.ShouldPreserveOnRemove(file, "changed-hash"));
+        Assert.True(FeederLayoutPlanner.ShouldPreserveOnRemove(file, "install-hash"));
+        Assert.True(FeederLayoutPlanner.ShouldPreserveOnRemove(file, "changed-hash"));
     }
 
     [Fact]
@@ -700,7 +700,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var binaryDir = Path.Combine(_root, "x86-layout");
         var addonDir = Path.Combine(binaryDir, "addons");
 
-        var layout = Dlss5FeederFullDeploymentService.ResolveFeederLayout(
+        var layout = FeederLayoutPlanner.ResolveFeederLayout(
             binaryDir, addonDir, PeArchitecture.X86, Dlss5FeederConsumer.RenoDxDlss5);
 
         Assert.Equal(Path.Combine(addonDir, "dlss5-feed.addon32"), layout.FeederTarget);
@@ -718,7 +718,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
         var binaryDir = Path.Combine(_root, "x64-layout");
         var addonDir = Path.Combine(binaryDir, "addons");
 
-        var layout = Dlss5FeederFullDeploymentService.ResolveFeederLayout(
+        var layout = FeederLayoutPlanner.ResolveFeederLayout(
             binaryDir, addonDir, PeArchitecture.X64, Dlss5FeederConsumer.RenoDxDlss5);
 
         Assert.Equal(Path.Combine(addonDir, "dlss5-feed.addon64"), layout.FeederTarget);
@@ -734,7 +734,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     public void FeederLayout_RejectsUnprovenX86DeepFriedChickenConsumer()
     {
         var ex = Assert.Throws<NotSupportedException>(() =>
-            Dlss5FeederFullDeploymentService.ResolveFeederLayout(
+            FeederLayoutPlanner.ResolveFeederLayout(
                 Path.Combine(_root, "x86-dfc"),
                 Path.Combine(_root, "x86-dfc", "addons"),
                 PeArchitecture.X86,
@@ -780,7 +780,7 @@ public sealed class Dlss5FeederFullDeploymentServiceTests : IDisposable
     public void RenoDxDlss5Consumer_DoesNotReuseDeepFriedChickenPackageContract()
     {
         Assert.NotEqual(Dlss5FeederConsumer.DeepFriedChicken, Dlss5FeederConsumer.RenoDxDlss5);
-        Assert.False(Dlss5FeederFullDeploymentService.IsSupportedDeepFriedChickenArchive("renodx-dlss5.addon64"));
+        Assert.False(DeepFriedChickenPackageVerifier.IsSupportedDeepFriedChickenArchive("renodx-dlss5.addon64"));
     }
 
     public void Dispose()
