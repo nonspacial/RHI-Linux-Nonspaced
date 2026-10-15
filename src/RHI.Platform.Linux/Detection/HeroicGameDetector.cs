@@ -133,15 +133,14 @@ public sealed class HeroicGameDetector : IGameDetector
     }
 
     /// <summary>
-    /// The sideloaded Heroic app in a prefix that is this store's client (by its executable), else any sideloaded store
-    /// client there; null when the prefix has none (an Epic/GOG game is never started to reach another store's game).
+    /// The sideloaded Heroic app in a prefix that is this store's own client (by its executable); null when the prefix has
+    /// none: another store's client cannot start the game, and an Epic/GOG game is never started to reach it either.
     /// </summary>
     private static DetectedGame? StoreClientApp(IEnumerable<DetectedGame> sharing, Launchers.StoreLauncher store)
     {
         var provider = Launchers.StoreLauncherRecords.ProviderName(store);
-        var sideloaded = sharing.Where(g => g.Source == DisplaySource("sideload") && !string.IsNullOrWhiteSpace(g.LaunchCommand)).ToList();
-        return sideloaded.FirstOrDefault(g => ProviderOf(g) == provider)
-               ?? sideloaded.FirstOrDefault(g => ProviderOf(g) is not null);
+        return sharing.FirstOrDefault(g => g.Source == DisplaySource("sideload") && !string.IsNullOrWhiteSpace(g.LaunchCommand) &&
+                                           ProviderOf(g) == provider);
     }
 
     private static string? ProviderOf(DetectedGame game)

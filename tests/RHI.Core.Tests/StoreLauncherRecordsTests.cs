@@ -437,6 +437,43 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Single(games, g => g.ExecutablePath == epicGame);
     }
 
+    [Fact]
+    public async Task HeroicPrefix_AnotherStoresClient_NeverStartsTheGame_ItsOwnItchClientDoes()
+    {
+        // w4 review minor 4: a Ubisoft game in a prefix whose only sideloaded client is Battle.net got Play = Battle.net.
+        // Nit 7: the itch app's own client (itch.exe) is recognised, so an itch game gets it as its parent.
+        var heroic = _tree.Dir("home", ".config", "heroic");
+        var prefix = Prefix("Heroic-mixed");
+        var bnetDir = Path.Combine(prefix, "drive_c", "Program Files (x86)", "Battle.net");
+        var bnet = Pe(bnetDir, "Battle.net.exe");
+        var itchDir = Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Local", "itch", "app-26.1.9");
+        var itch = Pe(itchDir, "itch.exe");
+        var ubiDir = Path.Combine(prefix, "drive_c", "UbiGames", "Anno 1800");
+        Pe(ubiDir, "Anno1800.exe", 8192);
+        Registry(prefix, ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\4553""", [("InstallDir", "C:/UbiGames/Anno 1800/")]));
+        var skyDir = Path.Combine(prefix, "drive_c", "users", "steamuser", "AppData", "Roaming", "itch", "apps", "sky-runner");
+        Pe(skyDir, "SkyRunner.exe", 8192);
+        ItchReceipt(skyDir, 2002, "Sky Runner");
+        File.WriteAllText(Path.Combine(_tree.Dir("home", ".config", "heroic", "sideload_apps"), "library.json"), $$$"""
+            {"games":[{"runner":"sideload","app_name":"bnet","title":"Battle.net","folder_name":"{{{bnetDir}}}","is_installed":true,
+                       "install":{"executable":"{{{bnet}}}","platform":"Windows"}},
+                      {"runner":"sideload","app_name":"itchapp","title":"itch","folder_name":"{{{itchDir}}}","is_installed":true,
+                       "install":{"executable":"{{{itch}}}","platform":"Windows"}}]}
+            """);
+        foreach (var app in new[] { "bnet", "itchapp" })
+            File.WriteAllText(Path.Combine(_tree.Dir("home", ".config", "heroic", "GamesConfig"), app + ".json"),
+                "{\"" + app + "\":{\"winePrefix\":\"" + prefix + "\",\"wineVersion\":{\"type\":\"wine\",\"name\":\"Wine-GE\"}}}");
+
+        var games = await new HeroicGameDetector([heroic], [Path.Combine(heroic, "legendaryConfig")], []).DetectAsync();
+
+        var anno = Assert.Single(games, g => g.InstallPath == ubiDir);
+        Assert.Null(anno.LaunchCommand);
+        Assert.Null(anno.ParentLauncherName);
+        var sky = Assert.Single(games, g => g.InstallPath == skyDir);
+        Assert.Equal("itch", sky.ParentLauncherName);
+        Assert.Equal("xdg-open 'heroic://launch?appName=itchapp&runner=sideload'", sky.LaunchCommand);
+    }
+
     // ── hand-off ────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Theory]
@@ -477,6 +514,14 @@ public sealed class StoreLauncherRecordsTests : IDisposable
             text.Append('\n');
         }
         File.WriteAllText(Path.Combine(prefix, "system.reg"), text.ToString(), Encoding.Latin1);
+    }
+
+    private static void ItchReceipt(string folder, long gameId, string title)
+    {
+        Directory.CreateDirectory(Path.Combine(folder, ".itch"));
+        using var file = File.Create(Path.Combine(folder, ".itch", "receipt.json.gz"));
+        using var gzip = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionLevel.Fastest);
+        gzip.Write(Encoding.UTF8.GetBytes($$$"""{"game":{"id":{{{gameId}}},"title":"{{{title}}}"}}"""));
     }
 
     private static string Pe(string directory, string name, int bytes = 64)
