@@ -324,6 +324,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return DlssAutoFollowService.RefusedPrefix + DeploymentRelocation.GuardPrefix + "/jogos/Antigo" + DeploymentRelocation.GuardSuffix;
         yield return DlssAutoFollowService.DownloadFailedPrefix + DlssAutoFollowService.NotInManifestPrefix + "DLSS SR (nvngx_dlss.dll) 310.5.2";
         yield return DlssAutoFollowService.SwapFailedMessage;
+        // #178 update inclusion
+        yield return LinuxUpdateAllService.LeftOutMessage;
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

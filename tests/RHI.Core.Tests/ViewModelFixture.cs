@@ -205,8 +205,11 @@ internal sealed class ViewModelFixture : IDisposable
         var luma = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
+        var updateInclusion = new UpdateInclusionStore(Path.Combine(prefs, "update-inclusion.json"),
+            () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load())); // #178
         updatePolicy = new UpdatePolicyFeatures(new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records,
-            new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")))); // #177: the components' history file
+            new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")), // #177: the components' history file
+            updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -220,6 +223,7 @@ internal sealed class ViewModelFixture : IDisposable
             rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, Path.Combine(cacheDir, "rtx-encore")) // w4/encore (#158)
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
+            , updateInclusion: updateInclusion
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

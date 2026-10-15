@@ -75,7 +75,11 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
             : UiLocalizationService.Text("Ui.ActionInstall");
     public bool IsInstallAction => component.Availability is not (ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable);
     public bool IsRemoveAction => !IsInstallAction;
-    public string Note => component.Kind == ManagedComponentKind.Streamline
+    /// <summary>The row's note, then (#178) what the update inclusion leaves out, so the row says why Update All skips it.</summary>
+    public string Note => UpdateExclusionNote is { } leftOut
+        ? string.IsNullOrWhiteSpace(ComponentNote) ? leftOut : ComponentNote.TrimEnd() + " " + leftOut
+        : ComponentNote;
+    private string ComponentNote => component.Kind == ManagedComponentKind.Streamline
         ? UiLocalizationService.Text(component.Availability == ComponentAvailability.Installed
             ? "Ui.StreamlineDetectedNote"
             : "Ui.StreamlineMissingNote")
@@ -98,6 +102,15 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     public string ReFrameworkSettingsTip => ReFrameworkStoragePresenter.SettingsTip; // w3/journal hook (#159)
     // w5 lane rows: component-row members (one member each)
     // w5/update-policy rows
+    /// <summary>#178: the held note — left out of Update All (this game / every game), or not followed to the newest DLSS.</summary>
+    public string? UpdateExclusionNote => component.UpdateExclusion switch
+    {
+        UpdateExclusion.ThisGame when component.Kind is ManagedComponentKind.Dlss or ManagedComponentKind.Streamline
+            => UiLocalizationService.Text("Upd.RowNotFollowed"),
+        UpdateExclusion.ThisGame => UiLocalizationService.Text("Upd.RowLeftOutThisGame"),
+        UpdateExclusion.AllGames => UiLocalizationService.Text("Upd.RowLeftOutAllGames"),
+        _ => null
+    };
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows

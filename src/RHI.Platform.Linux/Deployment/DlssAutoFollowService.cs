@@ -66,7 +66,8 @@ public sealed class DlssFollowCheck
 /// RHI-recorded file (<see cref="LinuxDlssDefaultsService.InspectForFollow"/>); <c>nvngx_dlssnr.dll</c> is never followed
 /// (one owner per game). A running game is skipped and followed by the next pass; a swap that fails keeps the file and
 /// the baseline still advances (upstream). Every payload is downloaded before the first game file changes, Cancel stops
-/// the pass between games, and each swapped file gets one automatic update-history entry.
+/// the pass between games, and each swapped file gets one automatic update-history entry. A game whose update inclusion
+/// leaves DLSS or Streamline out (#178) is not followed for that family.
 /// </summary>
 public sealed class DlssAutoFollowService
 {
@@ -109,6 +110,7 @@ public sealed class DlssAutoFollowService
     private readonly IGameRunningProbe _running;
     private readonly DeploymentRelocation _relocation;
     private readonly Func<DateTime> _utcNow;
+    private readonly UpdateInclusionStore? _inclusion;
     // One check or apply at a time (start-up, Full Refresh and the background loop may all ask).
     private readonly SemaphoreSlim _pass = new(1, 1);
 
@@ -119,8 +121,10 @@ public sealed class DlssAutoFollowService
         DlssAutoFollowStore store,
         ComponentUpdateLogStore? updateLog = null,
         IGameRunningProbe? runningProbe = null,
-        Func<DateTime>? utcNow = null)
+        Func<DateTime>? utcNow = null,
+        UpdateInclusionStore? updateInclusion = null)
     {
+        _inclusion = updateInclusion;
         _dlss = dlss;
         _targets = targets;
         _records = records;
@@ -390,8 +394,9 @@ public sealed class DlssAutoFollowService
         return work;
     }
 
-    /// <summary>Whether this game follows <paramref name="family"/> (a seam for the per-game update inclusion).</summary>
-    private static bool Follows(DetectedGame game, Family family) => true;
+    /// <summary>#178: a game whose update inclusion leaves DLSS (SR/RR/FG) or Streamline out is not followed.</summary>
+    private bool Follows(DetectedGame game, Family family)
+        => _inclusion?.ExclusionFor(game, family.IsStreamline ? ManagedComponentKind.Streamline : ManagedComponentKind.Dlss) is null or UpdateExclusion.None;
 
     // Records left pointing at the folder the game was moved from (Refs #38): nothing changes until Repair after move.
     private string? Refusal(DetectedGame game) => _relocation.Guard(game) is { } refused ? refused.Message : null;

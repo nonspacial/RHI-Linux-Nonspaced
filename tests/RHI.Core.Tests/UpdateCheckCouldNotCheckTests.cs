@@ -59,6 +59,52 @@ public sealed class UpdateCheckCouldNotCheckTests
         }
     }
 
+    /// <summary>#178: one row per Update All family left out by the game's inclusion, and one per Settings component.</summary>
+    public static TheoryData<ManagedComponentKind, string> ExcludedCases()
+    {
+        var data = new TheoryData<ManagedComponentKind, string>();
+        foreach (var kind in LinuxUpdateAllService.SupportedComponents) data.Add(kind, "this-game");
+        foreach (var kind in RHI.Platform.Linux.Paths.UpdateInclusionStore.GlobalComponents) data.Add(kind, "every-game");
+        return data;
+    }
+
+    // #178: a family the update inclusion leaves out is neither checked, updated nor "could not be checked", in both
+    // modes and through the app's real services: it counts as left out. Dropping the exclusion for any family turns its
+    // row back into "could not be checked" (offline) and fails here.
+    [Theory]
+    [MemberData(nameof(ExcludedCases))]
+    public async Task ExcludedFamily_IsLeftOut_NotCheckedOrCouldNotCheck_InBothUpdateAllModes(ManagedComponentKind kind, string scope)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = Game(fx.Root, "offline");
+        var record = new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = kind,
+            BinaryDirectory = game.BinaryDirectory!, Version = "1.0", SourceUrl = "https://github.com/rhi-tests/x/releases/download/1.0/x.zip"
+        };
+        if (kind == ManagedComponentKind.Dlss5Feeder) record.Metadata["Feeder.FullStack"] = "1";
+        fx.Records.Upsert(record);
+        if (scope == "this-game")
+            fx.Vm.UpdatePolicy!.Inclusion!.SetExcluded(game, [kind], [kind]);
+        else
+        {
+            var settings = fx.Vm.Settings.GetLinuxSettingsSnapshot().Settings;
+            settings.GlobalSkipReShadeUpdates = kind == ManagedComponentKind.ReShade;
+            settings.GlobalSkipRenoDxUpdates = kind == ManagedComponentKind.RenoDX;
+            settings.GlobalSkipReLimiterUpdates = kind == ManagedComponentKind.ReLimiter;
+            settings.GlobalSkipDisplayCommanderUpdates = kind == ManagedComponentKind.DisplayCommander;
+            settings.GlobalSkipOptiScalerUpdates = kind == ManagedComponentKind.OptiScaler;
+            settings.GlobalSkipReFrameworkUpdates = kind == ManagedComponentKind.REFramework;
+            fx.Vm.Settings.SaveLinuxSettings(settings);
+        }
+
+        foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
+        {
+            var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], mode);
+            Assert.Equal((0, 0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount, result.ExcludedCount));
+        }
+    }
+
     private static DetectedGame Game(string root, string variant)
     {
         var dir = Directory.CreateDirectory(Path.Combine(root, "games", "Checked Game")).FullName;

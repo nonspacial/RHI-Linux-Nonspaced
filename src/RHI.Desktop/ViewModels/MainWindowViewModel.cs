@@ -1717,6 +1717,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (NexusLinkPresenter.PageFor(game, Parity?.NexusLinks.Games) is { } nexusUrl)
             items.Add(new("nexus-page", T("Parity.NexusPage"), new RelayCommand(() => OpenNexusPage(nexusUrl)), SeparatorBefore: !separated, Tip: nexusUrl));
         // w5/update-policy rows
+        // #178: the game's update inclusion; only where it would offer a box (an RHI component Update All updates, or Follow newest on).
+        if (UpdatePolicy is { } updatePolicy
+            && updatePolicy.InclusionFor(game, _deploymentRecords.FindAll(game).Select(record => record.Component), _settings) is { } inclusion)
+            items.Add(new("update-inclusion", T("Upd.MenuItem"), new AsyncRelayCommand(async () =>
+            {
+                if (await updatePolicy.EditInclusionAsync(game, inclusion, save => TryPersist(save, "Upd.WhatInclusion", sessionOnly: false, reportStatus: false)) is not { } line) return;
+                StatusText = line;
+                _session.Recompose(game); // the rows' held notes follow the new choice
+            }), Tip: T("Upd.MenuTip")));
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

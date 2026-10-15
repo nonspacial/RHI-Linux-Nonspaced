@@ -35,23 +35,27 @@ public sealed record LinuxUpdateItemResult(
     // Counted as failed because updates are refused for this game (no confirmed patch target).
     bool Blocked = false,
     // w3/parity (#96): held by a layer (ManagedUpdateCheck.HeldBy); counted on its own.
-    string? HeldBy = null);
+    string? HeldBy = null,
+    // #178: left out by the update inclusion (this game's, or Settings' for every game); never checked, never updated.
+    bool Excluded = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
     public int ChangedCount => Items.Count(item => item.Changed);
     public int FailedCount => Items.Count(item => !item.Success && !item.Deferred);
     public int DeferredCount => Items.Count(item => item.Deferred);
-    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked && item.HeldBy is null);
+    public int CurrentCount => Items.Count(item => item.Success && !item.Changed && !item.Deferred && !item.Unchecked && item.HeldBy is null && !item.Excluded);
     public int UncheckedCount => Items.Count(item => item.Unchecked);
     public int HeldCount => Items.Count(item => item.HeldBy is not null); // w3/parity (#96)
+    public int ExcludedCount => Items.Count(item => item.Excluded); // #178
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
         : $"Update All: {ChangedCount} updated · {CurrentCount} current · {DeferredCount} deferred · {FailedCount} failed"
           + (UncheckedCount > 0 ? $" · {UncheckedCount} could not be checked" : "")
-          + (HeldCount > 0 ? $" · {HeldCount} held by " + string.Join(", ", Items.Select(item => item.HeldBy).OfType<string>().Distinct()) : "") + ".";
+          + (HeldCount > 0 ? $" · {HeldCount} held by " + string.Join(", ", Items.Select(item => item.HeldBy).OfType<string>().Distinct()) : "")
+          + (ExcludedCount > 0 ? $" · {ExcludedCount} left out" : "") + ".";
 }
 
 public interface ILinuxManagedUpdateBackend
@@ -67,6 +71,9 @@ public interface ILinuxManagedUpdateBackend
         ManagedComponentKind component,
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default);
+
+    /// <summary>#178: whether the update inclusion leaves this component of this game out of Update All.</summary>
+    UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component) => UpdateExclusion.None;
 }
 
 public interface IGameRunningProbe
@@ -170,6 +177,9 @@ public sealed class LinuxUpdateAllService
 
     public static IReadOnlyList<ManagedComponentKind> SupportedComponents => SupportedReadOnly;
 
+    /// <summary>#178: the item message of a component the update inclusion leaves out.</summary>
+    public const string LeftOutMessage = "Left out of Update All by its update inclusion.";
+
     public bool HasManagedTargets(IEnumerable<DetectedGame> games)
         => games.Any(game => _records.FindAll(game).Any(record => IsSupported(record.Component)));
 
@@ -197,6 +207,13 @@ public sealed class LinuxUpdateAllService
                     .Distinct()
                     .OrderBy(UpdateOrder)
                     .ToArray();
+                if (targets.Length == 0) continue;
+
+                // #178: what the update inclusion leaves out is neither checked nor updated, and never "could not check".
+                var excluded = targets.Where(component => _backend.UpdateExclusionFor(game, component) != UpdateExclusion.None).ToArray();
+                foreach (var component in excluded)
+                    results.Add(new LinuxUpdateItemResult(game.Name, component, true, false, false, LeftOutMessage, Excluded: true));
+                targets = targets.Except(excluded).ToArray();
                 if (targets.Length == 0) continue;
 
                 if (_running.IsRunning(game))

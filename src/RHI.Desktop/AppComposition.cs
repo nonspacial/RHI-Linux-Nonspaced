@@ -198,6 +198,7 @@ internal sealed class AppComposition
         var nrCostScaler = new NrCostScalerService(http, records, journal); // w3/parity hook (#96)
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
+        var updateInclusion = new UpdateInclusionStore(globalSkips: () => UpdateInclusionStore.GlobalSkipsFrom(settingsStore.Load())); // #178
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -209,6 +210,7 @@ internal sealed class AppComposition
             rtxEncore: new RtxEncoreDeploymentService(http, records, wineOverrides, reshade.DllNames, dlss, journal: journal) // w4/encore (#158)
             // w5 lane rows: named arguments, each line starting with a comma
             // w5/update-policy rows
+            , updateInclusion: updateInclusion
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -237,8 +239,9 @@ internal sealed class AppComposition
         // w3/vmsplit rows
         // w3/dllnames rows
         // w5/update-policy rows
-        var updatePolicy = new UpdatePolicyFeatures( // #177: the same history store the components write
-            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, new DlssAutoFollowStore(), updateLog));
+        var updatePolicy = new UpdatePolicyFeatures( // #177: the same history store the components write; #178 the same inclusion store
+            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, new DlssAutoFollowStore(), updateLog,
+                updateInclusion: updateInclusion), updateInclusion);
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

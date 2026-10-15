@@ -59,10 +59,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         NeuralAddonVersionPreferenceStore? neuralVersionPins = null,
         ComponentUpdateLogStore? updateLog = null,
         NrCostScalerService? nrCostScaler = null, // w3/parity (#96)
-        RtxEncoreDeploymentService? rtxEncore = null) // w4/encore (#158)
+        RtxEncoreDeploymentService? rtxEncore = null, // w4/encore (#158)
+        UpdateInclusionStore? updateInclusion = null) // w5/update-policy (#178)
     {
         _nrCostScaler = nrCostScaler;
         _rtxEncore = rtxEncore;
+        _updateInclusion = updateInclusion;
         _records = records;
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
@@ -846,6 +848,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             component.Note = ReShadeAddonSwitch.OffNote;
 
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
+        DecorateUpdateInclusion(game, components); // w5/update-policy (#178)
     }
 
     // w4/encore (#158): RTX Encore's row before install. Hidden (Unsupported) where it cannot apply: not a 64-bit Windows
@@ -939,6 +942,29 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
     private readonly NrCostScalerService? _nrCostScaler; // w3/parity (#96)
     private readonly RtxEncoreDeploymentService? _rtxEncore; // w4/encore (#158)
+    private readonly UpdateInclusionStore? _updateInclusion; // w5/update-policy (#178)
+
+    /// <summary>#178: what the game's update inclusion (and Settings, for every game) leaves out of Update All.</summary>
+    public UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component)
+        => _updateInclusion?.ExclusionFor(game, component) ?? UpdateExclusion.None;
+
+    // #178: installed RHI-managed rows Update All takes part in say when the inclusion leaves them out; the DLSS and
+    // Streamline rows say so when Follow newest skips this game (only the game's own choice applies there).
+    private void DecorateUpdateInclusion(DetectedGame game, IReadOnlyList<ManagedComponent> components)
+    {
+        if (_updateInclusion is null) return;
+        foreach (var component in components)
+        {
+            var installed = component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable;
+            if (!installed) continue;
+            if (component.Kind is ManagedComponentKind.Dlss or ManagedComponentKind.Streamline)
+                component.UpdateExclusion = _updateInclusion.ExclusionFor(game, component.Kind) == UpdateExclusion.ThisGame
+                    ? UpdateExclusion.ThisGame
+                    : UpdateExclusion.None;
+            else if (component.ManagedByRhi && LinuxUpdateAllService.IsSupported(component.Kind))
+                component.UpdateExclusion = _updateInclusion.ExclusionFor(game, component.Kind);
+        }
+    }
 
     private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
         => XboxWriteGate.Refusal(game) is { } busy ? ComponentOperationResult.Fail(busy) // w3/scan hook (Refs #90)
@@ -1023,6 +1049,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             _shortFuse?.GameState, _lumaPolicy?.GameState,
             _reshade?.DllNames, // w3/dllnames (#120); RTX Encore's name and NR choice live in the same store (#158)
             // w5/update-policy rows
+            _updateInclusion, // #178 per-game update inclusion
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

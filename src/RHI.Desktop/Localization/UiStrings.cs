@@ -888,6 +888,22 @@ internal static class UiStrings
         ("Upd.FollowFailedPart", " · {0} falharam e ficaram como estavam (detalhes em Atualizações)", " · {0} failed and were kept as they were (details in Updates)"),
         ("Upd.FollowDeferredPart", " · {0} jogo(s) em execução ficam para a próxima verificação", " · {0} running game(s) left for the next check"),
         ("Upd.FollowFailed", "Falha ao seguir o DLSS/Streamline mais recente: {0}", "Follow newest DLSS/Streamline failed: {0}"),
+        // #178 update inclusion (Settings → Maintenance, card menu, dialog, component rows, Update All summary).
+        ("Upd.GlobalHeading", "Atualizar tudo inclui", "Update All includes"),
+        ("Upd.GlobalNote", "Componentes desmarcados ficam de fora de Atualizar tudo e das atualizações em segundo plano em todos os jogos; os botões Instalar / Remover deles continuam funcionando. Por jogo: clique com o botão direito num card → Inclusão em atualizações…", "Cleared components are left out of Update All and the background updates in every game; their own Install / Remove buttons still work. Per game: right-click a card → Update inclusion…"),
+        ("Upd.MenuItem", "Inclusão em atualizações…", "Update inclusion…"),
+        ("Upd.MenuTip", "Escolha o que Atualizar tudo e as atualizações em segundo plano podem mudar neste jogo.", "Choose what Update All and the background updates may change in this game."),
+        ("Upd.DialogTitle", "Inclusão em atualizações — {0}", "Update inclusion — {0}"),
+        ("Upd.DialogIntro", "Os itens marcados fazem parte de Atualizar tudo e das atualizações em segundo plano neste jogo. Os botões Instalar / Remover de cada componente sempre funcionam.", "Ticked items take part in Update All and the background updates in this game. Each component's own Install / Remove buttons always work."),
+        ("Upd.DialogDlss", "DLSS (seguir o mais recente)", "DLSS (follow newest)"),
+        ("Upd.DialogStreamline", "Streamline (seguir o mais recente)", "Streamline (follow newest)"),
+        ("Upd.DialogAllGamesNote", "Fora de Atualizar tudo em todos os jogos (Configurações → Manutenção): {0}", "Left out of Update All in every game (Settings → Maintenance): {0}"),
+        ("Upd.InclusionSaved", "Inclusão em atualizações salva para {0}.", "Update inclusion saved for {0}."),
+        ("Upd.WhatInclusion", "a inclusão em atualizações", "the update inclusion"),
+        ("Upd.RowLeftOutThisGame", "Fora de Atualizar tudo neste jogo.", "Left out of Update All in this game."),
+        ("Upd.RowLeftOutAllGames", "Fora de Atualizar tudo em todos os jogos (Configurações).", "Left out of Update All in every game (Settings)."),
+        ("Upd.RowNotFollowed", "Não passa sozinho para a versão mais recente neste jogo.", "Not moved to the newest version automatically in this game."),
+        ("Upd.UpdateAllExcluded", " · {0} deixado(s) de fora (inclusão em atualizações)", " · {0} left out (update inclusion)"),
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

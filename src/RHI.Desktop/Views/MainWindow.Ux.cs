@@ -66,6 +66,7 @@ public sealed partial class MainWindow
                 confirmVm.ConfirmControlUeAsync = ShowControlUeConfirmationAsync; // w3/dllnames hook (#136)
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
+                if (confirmVm.UpdatePolicy is { } updatePolicy) updatePolicy.ShowInclusionAsync = ShowUpdateInclusionAsync; // w5/update-policy hook (#178)
             }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();

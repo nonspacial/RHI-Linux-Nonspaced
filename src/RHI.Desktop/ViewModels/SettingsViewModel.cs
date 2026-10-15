@@ -78,6 +78,12 @@ public sealed class SettingsViewModel : PanelViewModel
             // w5/update-policy rows
             FollowNewestDlss = Host.Settings.FollowNewestDlss, // #177
             FollowNewestStreamline = Host.Settings.FollowNewestStreamline, // #177
+            GlobalSkipReShadeUpdates = Host.Settings.GlobalSkipReShadeUpdates, // #178
+            GlobalSkipRenoDxUpdates = Host.Settings.GlobalSkipRenoDxUpdates,
+            GlobalSkipReLimiterUpdates = Host.Settings.GlobalSkipReLimiterUpdates,
+            GlobalSkipDisplayCommanderUpdates = Host.Settings.GlobalSkipDisplayCommanderUpdates,
+            GlobalSkipOptiScalerUpdates = Host.Settings.GlobalSkipOptiScalerUpdates,
+            GlobalSkipReFrameworkUpdates = Host.Settings.GlobalSkipReFrameworkUpdates,
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

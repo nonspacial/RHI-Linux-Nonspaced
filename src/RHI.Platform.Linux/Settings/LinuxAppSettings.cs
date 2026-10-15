@@ -44,6 +44,13 @@ public sealed class LinuxAppSettings
     // follow the manifest's newest. The baselines live in dlss-follow.json, never here.
     public bool FollowNewestDlss { get; set; }
     public bool FollowNewestStreamline { get; set; }
+    // #178 (upstream GlobalSkip*Updates): components Update All and the background pass leave alone in every game.
+    public bool GlobalSkipReShadeUpdates { get; set; }
+    public bool GlobalSkipRenoDxUpdates { get; set; }
+    public bool GlobalSkipReLimiterUpdates { get; set; }
+    public bool GlobalSkipDisplayCommanderUpdates { get; set; }
+    public bool GlobalSkipOptiScalerUpdates { get; set; }
+    public bool GlobalSkipReFrameworkUpdates { get; set; }
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows

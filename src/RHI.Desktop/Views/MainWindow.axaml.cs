@@ -643,6 +643,7 @@ public sealed partial class MainWindow : Window
         maintenance.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ui.Maintenance"), FontSize = 20, FontWeight = FontWeight.SemiBold });
         maintenance.Children.Add(Labeled(T("Win.BackgroundComponentUpdates"), autoUpdateComponents,
             T("Win.DisabledByDefaultWhenEnabledRHI")));
+        maintenance.Children.Add(updatePolicyRows.InclusionControl); // w5/update-policy hook (#178): Update All includes
         maintenance.Children.Add(pathGrid);
         var pathButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         pathButtons.Children.Add(openConfig); pathButtons.Children.Add(openCache); pathButtons.Children.Add(openData);
@@ -686,6 +687,12 @@ public sealed partial class MainWindow : Window
             // w5/update-policy rows
             FollowNewestDlss = updatePolicyRows.FollowDlss,
             FollowNewestStreamline = updatePolicyRows.FollowStreamline,
+            GlobalSkipReShadeUpdates = updatePolicyRows.Skips(ManagedComponentKind.ReShade), // #178
+            GlobalSkipRenoDxUpdates = updatePolicyRows.Skips(ManagedComponentKind.RenoDX),
+            GlobalSkipReLimiterUpdates = updatePolicyRows.Skips(ManagedComponentKind.ReLimiter),
+            GlobalSkipDisplayCommanderUpdates = updatePolicyRows.Skips(ManagedComponentKind.DisplayCommander),
+            GlobalSkipOptiScalerUpdates = updatePolicyRows.Skips(ManagedComponentKind.OptiScaler),
+            GlobalSkipReFrameworkUpdates = updatePolicyRows.Skips(ManagedComponentKind.REFramework),
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

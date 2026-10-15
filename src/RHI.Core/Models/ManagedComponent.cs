@@ -61,4 +61,20 @@ public sealed class ManagedComponent
     /// <c>OptiScaler/</c> folder does not count). Set by the probe on the RTX Encore row, which needs the game's DLSS.
     /// </summary>
     public bool GameShipsDlss { get; set; }
+    /// <summary>
+    /// #178: whether Update All and the background pass leave this installed component alone, for this game (its update
+    /// inclusion) or for every game (Settings); on the DLSS and Streamline rows, whether Follow newest skips this game.
+    /// Set by the component service's decoration.
+    /// </summary>
+    public UpdateExclusion UpdateExclusion { get; set; }
+}
+
+/// <summary>#178: why Update All (and the background pass) leaves a component alone, if it does.</summary>
+public enum UpdateExclusion
+{
+    None,
+    /// <summary>Left out for this game (the game's update inclusion).</summary>
+    ThisGame,
+    /// <summary>Left out for every game (Settings).</summary>
+    AllGames
 }
