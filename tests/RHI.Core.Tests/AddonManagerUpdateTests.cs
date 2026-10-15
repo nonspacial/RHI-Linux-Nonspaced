@@ -169,6 +169,25 @@ public sealed class AddonManagerUpdateTests : IDisposable
         Assert.True(check.CouldNotCheck, check.Message);
     }
 
+    // w6/crash review 7: add-ons selected but no add-on file recorded (an older copy imported with an empty file list)
+    // gives nothing to compare, even with the list live: could not be checked, never current.
+    [Fact]
+    public async Task SelectionWithNoRecordedFiles_IsCouldNotBeChecked_NeverCurrent()
+    {
+        var s = Fixture();
+        Assert.True((await s.Manager.ApplySelectionAsync(s.Game, ["01"])).Success);
+        var record = s.Record;
+        record.Files.Clear();
+        s.Records.Upsert(record);
+        Assert.Equal(["01"], ReShadeAddonManagerService.SelectedIdsOf(s.Record));
+
+        var check = await s.Manager.CheckUpdateAsync(s.Game);
+
+        Assert.False(check.UpdateAvailable, check.Message);
+        Assert.True(check.CouldNotCheck, check.Message);
+        Assert.Equal(ReShadeAddonManagerService.CouldNotCheckPrefix + ReShadeAddonManagerService.NoFilesRecordedReason, check.Message);
+    }
+
     [Fact]
     public async Task ListUnreachable_IsCouldNotBeChecked_NeverCurrent()
     {
@@ -299,6 +318,70 @@ public sealed class AddonManagerUpdateTests : IDisposable
         Assert.Equal(0, await service.PrefetchMissingAsync());
     }
 
+    /// <summary>One GitHub-release pack (PumboAutoHDR) whose release moves on with every lookup; everything else 404s.</summary>
+    private sealed class MovingReleaseHandler : HttpMessageHandler
+    {
+        private const string Api = "https://api.github.com/repos/Filoppi/PumboAutoHDR/releases/latest";
+        private int _release;
+        public int ReleaseLookups => Volatile.Read(ref _release);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var url = request.RequestUri!.AbsoluteUri;
+            if (url == Api)
+            {
+                var tag = "v" + Interlocked.Increment(ref _release);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new
+                    {
+                        tag_name = tag,
+                        assets = new[] { new { name = "Pumbo.zip", browser_download_url = $"https://github.com/Filoppi/PumboAutoHDR/releases/download/{tag}/Pumbo.zip" } }
+                    }), Encoding.UTF8)
+                });
+            }
+            const string download = "https://github.com/Filoppi/PumboAutoHDR/releases/download/";
+            if (!url.StartsWith(download, StringComparison.Ordinal)) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            var release = url[download.Length..].Split('/')[0];
+            using var stream = new MemoryStream();
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                using var entry = new StreamWriter(zip.CreateEntry("Pumbo-main/Shaders/Pumbo.fx", CompressionLevel.NoCompression).Open());
+                entry.Write($"// {release} " + new string('x', 600));
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(stream.ToArray()) });
+        }
+    }
+
+    // w6/crash review 4: the "already staged" check is made under the pack cache gate. An install that stages a pack while
+    // the prefetch waits for the gate (and a new release appears meanwhile) is seen, so the prefetch never replaces the
+    // tree that install is copying from.
+    [Fact]
+    public async Task Prefetch_ChecksForAStagedPackUnderTheCacheGate_AnInstallStagingItMeanwhileKeepsItsTree()
+    {
+        var handler = new MovingReleaseHandler();
+        using var http = new HttpClient(handler);
+        var cache = P("race-cache");
+        var service = new ReShadeShaderPackService(http, cache, customRoot: P("race-custom"));
+        string? installStaged = null;
+        Exception? installFailed = null;
+        service.BeforePrefetchGateForTesting = async pack =>
+        {
+            if (pack.Id != "PumboAutoHDR") return;
+            try { installStaged = await service.EnsurePackAsync(pack, CancellationToken.None); } // an install, just before the prefetch's turn
+            catch (Exception ex) { installFailed = ex; }
+        };
+
+        var fetched = await service.PrefetchMissingAsync();
+
+        Assert.Null(installFailed);
+        Assert.NotNull(installStaged);
+        Assert.Equal(1, handler.ReleaseLookups); // the install's lookup only: the prefetch left the staged pack alone
+        Assert.Equal(0, fetched);
+        var shader = Assert.Single(Directory.GetFiles(installStaged!, "Pumbo.fx", SearchOption.AllDirectories));
+        Assert.StartsWith("// v1 ", File.ReadAllText(shader), StringComparison.Ordinal);
+    }
+
     public void Dispose()
     {
         try { Directory.Delete(_root, recursive: true); }
@@ -332,6 +415,27 @@ public sealed class ShaderPackPrefetchStartUpTests
         {
             Assert.Null(fx.Vm.ShaderPackPrefetch);
         }
+    }
+
+    // w6/crash review 8: closing the window (disposing the view model) cancels the start-up staging; a stalled download
+    // does not keep running after it.
+    [Fact]
+    public async Task StartUp_Prefetch_StopsWhenTheViewModelIsDisposed()
+    {
+        var stalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var fx = await ViewModelFixture.StartAsync([], cacheAllShaders: true, hangWhen: request =>
+        {
+            if (!request.RequestUri!.AbsoluteUri.Contains("reshade-shaders", StringComparison.OrdinalIgnoreCase)) return false;
+            stalled.TrySetResult();
+            return true;
+        });
+        Assert.NotNull(fx.Vm.ShaderPackPrefetch);
+        await stalled.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        Assert.False(fx.Vm.ShaderPackPrefetch!.IsCompleted);
+
+        fx.Vm.Dispose();
+
+        await fx.Vm.ShaderPackPrefetch.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
 }

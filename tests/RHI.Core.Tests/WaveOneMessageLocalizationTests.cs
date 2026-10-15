@@ -366,6 +366,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CurrentMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdateAvailablePrefix + "Generic";
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ListUnavailableReason;
+        yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoFilesRecordedReason;
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NotInListPrefix + "generic.addon64";
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix + RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoValidatorPrefix + "Generic";
         yield return RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdatedPrefix + "2";

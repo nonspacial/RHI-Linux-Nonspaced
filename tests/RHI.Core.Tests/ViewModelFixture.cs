@@ -47,8 +47,10 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/reshade-core rows
         // w6/crash rows
         , bool cacheAllShaders = false
+        , Func<HttpRequestMessage, bool>? hangWhen = null
         )
     {
+        _hang.When = hangWhen;
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
         Settings = new LinuxSettingsStore(Path.Combine(ConfigDir, "settings.json"), Path.Combine(Root, "cache"), DataDir);
@@ -108,6 +110,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/reshade-core rows
         // w6/crash rows
         , bool cacheAllShaders = false
+        , Func<HttpRequestMessage, bool>? hangWhen = null
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -124,6 +127,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w5/reshade-core rows
             // w6/crash rows
             , cacheAllShaders
+            , hangWhen
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;

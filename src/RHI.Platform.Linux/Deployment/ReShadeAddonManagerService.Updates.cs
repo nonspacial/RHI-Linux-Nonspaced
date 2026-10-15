@@ -27,6 +27,8 @@ public sealed partial class ReShadeAddonManagerService
     public const string CouldNotCheckPrefix = "ReShade Addon Manager add-ons could not be checked: ";
     /// <summary>The reason when crosire's add-on list could not be fetched (PT-BR pair).</summary>
     public const string ListUnavailableReason = "the add-on list could not be downloaded.";
+    /// <summary>The reason when add-ons are selected but no add-on file is recorded to compare (PT-BR pair).</summary>
+    public const string NoFilesRecordedReason = "no add-on file is recorded for the selected add-ons.";
     /// <summary>Fixed text before the add-on name when it is no longer in the add-on list (PT-BR pair).</summary>
     public const string NotInListPrefix = "no longer in the add-on list: ";
     /// <summary>Fixed text before the add-on name when its source says nothing that tells versions apart (PT-BR pair).</summary>
@@ -55,6 +57,10 @@ public sealed partial class ReShadeAddonManagerService
         var hasRemote = record.Files.Any(file => !IsCustomId(AddonIdOf(record, file.Path)));
         if (!live && (hasRemote || record.Files.Count == 0))
             return new ManagedUpdateCheck(true, false, CouldNotCheckPrefix + ListUnavailableReason, installed, CouldNotCheck: true);
+        // A selection with no recorded files (an older copy imported with an empty file list) has nothing to compare:
+        // could not be checked, never "current" (w6/crash review 7).
+        if (record.Files.Count == 0 && SelectedIdsOf(record).Count > 0)
+            return new ManagedUpdateCheck(true, false, CouldNotCheckPrefix + NoFilesRecordedReason, installed, CouldNotCheck: true);
 
         var architecture = RenoDxUpgradeDeploymentService.ResolveArchitecture(game);
         var byId = catalog.ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);

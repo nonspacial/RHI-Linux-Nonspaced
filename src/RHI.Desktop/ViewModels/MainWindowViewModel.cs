@@ -421,6 +421,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _session.Completed -= OnAnalysisCompleted;
         _runtimeProbe.LateMetadataAvailable -= OnLateProbeMetadata;
         _session.Cancel();
+        _shaderPackPrefetchCancel.Cancel(); // w6/crash review 8: the start-up shader-pack staging stops with the window
         Updates.StopBackgroundLoop();
         GC.SuppressFinalize(this);
     }
@@ -495,10 +496,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
     internal Task? ShaderPackPrefetch { get; private set; }
 
-    // Cache only, best effort: a failure is logged and the packs are fetched when an install needs them.
+    private readonly CancellationTokenSource _shaderPackPrefetchCancel = new();
+
+    // Cache only, best effort: a failure is logged and the packs are fetched when an install needs them. Disposing the
+    // view model cancels it.
     private async Task PrefetchShaderPacksAsync()
     {
-        try { await _managedComponents.PrefetchShaderPacksAsync().ConfigureAwait(false); }
+        var cancel = _shaderPackPrefetchCancel.Token;
+        try { await _managedComponents.PrefetchShaderPacksAsync(cancel).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested) { }
         catch (Exception ex) { AppLog.Warn("shaders", "Start-up shader-pack staging failed; packs are fetched when an install needs them", ex); }
     }
 

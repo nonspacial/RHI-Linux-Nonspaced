@@ -578,6 +578,9 @@ public sealed class ReShadeShaderPackService
     /// <summary>Test seam: runs right after a journaled sync wrote the game's shader-pack manifest.</summary>
     internal Action<string>? ManifestWrittenForTesting { get; set; }
 
+    /// <summary>Test seam: runs in the prefetch right before it waits for the pack cache gate.</summary>
+    internal Func<ReShadeShaderPackDefinition, Task>? BeforePrefetchGateForTesting { get; set; }
+
     internal async Task<string> EnsurePackAsync(
         ReShadeShaderPackDefinition pack,
         CancellationToken cancellationToken)
@@ -596,8 +599,10 @@ public sealed class ReShadeShaderPackService
     /// <summary>
     /// #194 (upstream 2.8.7 <c>CacheAllShaders</c>, parity T-19): stages every pack the catalogue offers (and the core
     /// headers) that has no cache entry yet, so a later install needs no download. An entry already there is left as it
-    /// is (an install refreshes it on demand), so this never replaces a tree an install may be copying from. Cache only:
-    /// nothing in any game changes. A pack that fails is logged and skipped. Returns how many packs it staged.
+    /// is (an install refreshes it on demand), so this never replaces a tree an install may be copying from: the check
+    /// is made under the pack cache gate (w6/crash review 4), so an install that staged the pack while the prefetch
+    /// waited is seen. Cache only: nothing in any game changes. A pack that fails is logged and skipped. Returns how many
+    /// packs it staged.
     /// </summary>
     public async Task<int> PrefetchMissingAsync(CancellationToken cancellationToken = default)
     {
@@ -606,11 +611,9 @@ public sealed class ReShadeShaderPackService
         foreach (var pack in _packs.Where(pack => !pack.IsCustom).Append(CoreHeadersPack).ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (Directory.Exists(Path.Combine(_cacheDir, SafePackDirectoryName(pack.Id), "extracted"))) continue;
             try
             {
-                await EnsurePackAsync(pack, cancellationToken).ConfigureAwait(false);
-                fetched++;
+                if (await EnsurePackIfMissingAsync(pack, cancellationToken).ConfigureAwait(false)) fetched++;
             }
             catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
@@ -618,6 +621,23 @@ public sealed class ReShadeShaderPackService
             }
         }
         return fetched;
+    }
+
+    /// <summary>Stages <paramref name="pack"/> only when it has no cache entry, checked under the pack cache gate.</summary>
+    private async Task<bool> EnsurePackIfMissingAsync(ReShadeShaderPackDefinition pack, CancellationToken cancellationToken)
+    {
+        if (BeforePrefetchGateForTesting is { } beforeGate) await beforeGate(pack).ConfigureAwait(false);
+        await _packGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Directory.Exists(Path.Combine(_cacheDir, SafePackDirectoryName(pack.Id), "extracted"))) return false;
+            await EnsurePackCoreAsync(pack, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            _packGate.Release();
+        }
     }
 
     private async Task<string> EnsurePackCoreAsync(

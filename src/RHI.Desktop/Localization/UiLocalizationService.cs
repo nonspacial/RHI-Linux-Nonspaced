@@ -1301,6 +1301,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdateAvailablePrefix, "Atualização disponível para add-ons do ReShade Addon Manager: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.CouldNotCheckPrefix, "Não foi possível verificar os add-ons do ReShade Addon Manager: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.ListUnavailableReason, "não foi possível baixar a lista de add-ons."),
+        (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoFilesRecordedReason, "nenhum arquivo de add-on está registrado para os add-ons selecionados."),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NotInListPrefix, "não está mais na lista de add-ons: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.NoValidatorPrefix, "o download não oferece nada para comparar: "),
         (RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.UpdatedPrefix, "Add-ons do ReShade Addon Manager atualizados: "),
