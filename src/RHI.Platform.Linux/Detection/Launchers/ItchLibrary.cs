@@ -148,7 +148,8 @@ internal static class ItchLibrary
                 var parts = relative.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length == 0 || parts.Any(part => part is ".." or ".")) continue;
                 var exe = Path.Combine([folder, .. parts]);
-                if (File.Exists(exe)) return (exe, flavor);
+                // A symlinked subfolder must not lead out of the game's folder either.
+                if (File.Exists(exe) && PathIdentity.IsSameOrInside(exe, folder)) return (exe, flavor);
             }
         }
         catch (JsonException ex)

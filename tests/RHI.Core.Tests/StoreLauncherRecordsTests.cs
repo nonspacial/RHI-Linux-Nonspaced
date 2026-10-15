@@ -245,6 +245,46 @@ public sealed class StoreLauncherRecordsTests : IDisposable
     }
 
     [Fact]
+    public async Task HostileStoreIds_NeverReachALaunchArgument()
+    {
+        // w4 review minor 1 (c): a key name or product code that is not a plain id is never put in the launch command;
+        // the card still opens the store client, where the user starts the game.
+        var prefix = Prefix("ids");
+        var ubisoft = Pe(Path.Combine(prefix, "drive_c", "Program Files (x86)", "Ubisoft", "Ubisoft Game Launcher"), "UbisoftConnect.exe");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files (x86)", "Battle.net"), "Battle.net.exe");
+        Pe(Path.Combine(prefix, "drive_c", "Program Files", "Electronic Arts", "EA Desktop", "EA Desktop"), "EADesktop.exe");
+        Pe(Path.Combine(prefix, "drive_c", "UbiGames", "Anno"), "Anno.exe", 8192);
+        Pe(Path.Combine(prefix, "drive_c", "BlizzardGames", "ow"), "Overwatch.exe", 8192);
+        var eaDir = Path.Combine(prefix, "drive_c", "EAGames", "Unravel");
+        Pe(eaDir, "Unravel.exe", 8192);
+        _tree.File("<DiPManifest><contentIDs><contentID>O 1;x</contentID></contentIDs></DiPManifest>",
+            "home", "Games", "ids", "drive_c", "EAGames", "Unravel", "__Installer", "installerdata.xml");
+        ProductDbFile(prefix, ("prometheus", "pro x", "C:/BlizzardGames/ow", true));
+        Registry(prefix,
+            ("""Software\\Wow6432Node\\Ubisoft\\Launcher\\Installs\\1'; touch x""", [("InstallDir", "C:/UbiGames/Anno/")]),
+            ("""Software\\Wow6432Node\\Origin Games\\Origin.OFR.1""", [("InstallDir", "C:\\EAGames\\Unravel"), ("DisplayName", "Unravel")]));
+
+        var records = StoreLauncherRecords.Find(prefix, Home, CancellationToken.None);
+
+        Assert.Equal([StoreLauncher.EaApp, StoreLauncher.UbisoftConnect, StoreLauncher.BattleNet], records.Select(r => r.Store).Order());
+        Assert.All(records, record => Assert.Empty(record.PlayArguments));
+        var anno = Assert.Single(await DetectWine(), g => g.Name == "Anno");
+        Assert.Equal($"WINEPREFIX='{prefix}' wine '{ubisoft}'", anno.LaunchCommand);
+        Assert.Equal("Ubisoft Connect", anno.ParentLauncherName);
+    }
+
+    [Theory]
+    [InlineData("5266", true)]
+    [InlineData("Origin.OFR.50.0005083", true)]
+    [InlineData("pro_x-1", true)]
+    [InlineData("1'; x", false)]
+    [InlineData("pro x", false)]
+    [InlineData("a/b", false)]
+    [InlineData("", false)]
+    public void StoreId_IsPlainLettersDigitsAndDotDashUnderscore(string id, bool plain)
+        => Assert.Equal(plain, StoreLauncherRecords.IsStoreId(id));
+
+    [Fact]
     public async Task WinePrefix_UnreadableProductDb_KeepsTheLayoutGames_AndWarns()
     {
         var prefix = Prefix("broken");

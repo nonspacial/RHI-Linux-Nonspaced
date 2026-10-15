@@ -153,6 +153,38 @@ public sealed class ItchDetectionTests : IDisposable
     }
 
     [Fact]
+    public void HostileButlerRecords_NeverMakeACardOfTheRootHomeAPrefix_OrATargetOutsideTheGame()
+    {
+        // w4 review minor 1 (a, b): install folders that hold far more than one game, and launch candidates that leave
+        // the game's folder, from butler's caves and from receipts in a hostile install location.
+        var userData = _tree.Dir("itch");
+        Directory.CreateDirectory(Path.Combine(userData, "db"));
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "itch-butler-hostile.db"), Path.Combine(userData, "db", "butler.db"));
+        _tree.Exe("home", "Stray.exe");
+        Receipt(Home, 4002, "Whole Home");
+        _tree.Exe("home", ".wine", "Wine.exe");
+        Receipt(Path.Combine(Home, ".wine"), 4003, "Wine Folder");
+        _tree.Exe("home", "Games", "Games.exe");
+        Receipt(Path.Combine(Home, "Games"), 4004, "Games Folder");
+        _tree.Dir("library", "pfx", "drive_c", "windows");
+        _tree.File("WINE REGISTRY Version 2\n", "library", "pfx", "system.reg");
+        Receipt(_tree.Path_("library", "pfx"), 4005, "Prefix Root");
+        // The escape cave: only bin/Good.exe is the game's own program.
+        var escape = _tree.Dir("library", "escape");
+        var good = _tree.Exe("library", "escape", "bin", "Good.exe");
+        _tree.Exe("library", "escape", "Dot.exe");
+        _tree.Exe("library", "outside", "Evil.exe");
+        _tree.Exe("library", "outside", "deeper", "Evil.exe");
+        _tree.Link(_tree.Path_("library", "outside", "deeper"), "library", "escape", "linked");
+
+        var installs = ItchLibrary.Read(userData, recorded => recorded == "/" ? "/" : MapFixture(recorded), Home, CancellationToken.None);
+
+        var only = Assert.Single(installs);
+        Assert.Equal(("Escape Artist", escape), (only.Name, only.Folder));
+        Assert.Equal(good, only.Executable);
+    }
+
+    [Fact]
     public void Receipt_ThatIsNotGzip_IsSkipped_WithTheFolderName()
     {
         var folder = _tree.Dir("game");
