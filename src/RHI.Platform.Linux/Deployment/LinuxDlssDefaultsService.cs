@@ -111,6 +111,27 @@ public sealed class LinuxDlssDefaultsService
     }
 
     /// <summary>
+    /// #177: the targets following the newest DLSS / Streamline may swap: the Quick Apply set (<see cref="Inspect"/>:
+    /// manifest path overrides, <c>dlssSkipGames</c>, no <c>OptiScaler/</c> folder, no file an NR owner or OptiScaler
+    /// records, no ShortFuse / DLSS5 Feeder Full stack) minus every file ANY RHI record of the game lists, and a
+    /// Streamline folder holding such a file. An automatic swap never touches a file a component installed.
+    /// </summary>
+    public LinuxDlssBatchCandidate InspectForFollow(
+        DetectedGame game,
+        IReadOnlyList<string>? indexedFiles = null,
+        CancellationToken cancellationToken = default)
+    {
+        var candidate = Inspect(game, indexedFiles, cancellationToken);
+        if (!candidate.Eligible) return candidate;
+        var recorded = _records.FindAll(game)
+            .SelectMany(record => record.Files)
+            .Select(file => file.Path)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .ToArray();
+        return candidate with { Detection = DlssManagerService.ExcludeProtected(candidate.Detection, recorded) };
+    }
+
+    /// <summary>
     /// The game's direct DLSS/Streamline swap/restore targets: every per-game, Quick Apply,
     /// Batch Deploy and Restore All flow must take its paths from here. Files RHI-managed
     /// OptiScaler owns (its record, incl. the FG stack), the files of whichever record owns

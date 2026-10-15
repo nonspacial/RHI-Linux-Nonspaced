@@ -76,6 +76,8 @@ public sealed class SettingsViewModel : PanelViewModel
             OptiScalerGpuType = Host.Settings.OptiScalerGpuType, // w3/dllnames hook (#97)
             OptiScalerDlssInputs = Host.Settings.OptiScalerDlssInputs, // w3/dllnames hook (#97)
             // w5/update-policy rows
+            FollowNewestDlss = Host.Settings.FollowNewestDlss, // #177
+            FollowNewestStreamline = Host.Settings.FollowNewestStreamline, // #177
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -89,8 +91,8 @@ public sealed class SettingsViewModel : PanelViewModel
         var previous = Host.Settings;
         if (TryPersist(() => _settingsStore.Save(settings), "Ui.WhatSettings", sessionOnly: false) is { } notSaved) return notSaved;
         var saved = _settingsStore.Load();
-        var loopChanged = previous.AutoUpdateComponents != saved.AutoUpdateComponents || previous.UpdateCheckIntervalHours != saved.UpdateCheckIntervalHours;
-        _shell.AdoptSettings(saved, restartLoop: loopChanged, runImmediate: saved.AutoUpdateComponents);
+        var loopChanged = UpdatesViewModel.LoopSettingsChanged(previous, saved); // w5/update-policy hook (#177)
+        _shell.AdoptSettings(saved, restartLoop: loopChanged, runImmediate: UpdatesViewModel.RunsImmediatelyAfterSave(previous, saved));
         return UiLocalizationService.Format("Vm.SettingsSaved", _settingsStore.SettingsPath);
     }
 

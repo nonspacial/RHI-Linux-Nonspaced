@@ -540,6 +540,8 @@ public sealed partial class MainWindow : Window
         dlssTab.Children.Add(optiScalerTemplates.Control); // w3/dllnames hook (#97)
         // w5 lane rows: Settings rows (build your row object here, add it to its tab)
         // w5/update-policy rows
+        var updatePolicyRows = new UpdatePolicySettingsRows(settings); // #177 Follow newest DLSS / Streamline
+        dlssTab.Children.Add(updatePolicyRows.FollowControl);
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -604,6 +606,7 @@ public sealed partial class MainWindow : Window
             defaultStreamline.SelectedItem = OptionLists.DoNotChangeDisplay();
             optiScalerTemplates.Reset(defaults); // w3/dllnames hook (#97)
             // w5/update-policy rows
+            updatePolicyRows.Reset(defaults);
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -681,6 +684,8 @@ public sealed partial class MainWindow : Window
             OptiScalerGpuType = optiScalerTemplates.GpuType, // w3/dllnames hook (#97)
             OptiScalerDlssInputs = optiScalerTemplates.DlssInputs, // w3/dllnames hook (#97)
             // w5/update-policy rows
+            FollowNewestDlss = updatePolicyRows.FollowDlss,
+            FollowNewestStreamline = updatePolicyRows.FollowStreamline,
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

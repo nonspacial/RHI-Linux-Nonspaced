@@ -49,6 +49,8 @@ internal sealed class AppComposition
     // w3/dllnames rows
     public required DllNamePreferenceStore DllNames { get; init; }
     // w5/update-policy rows
+    /// <summary>#177 Follow newest DLSS / Streamline; handed to the view model by <see cref="CreateViewModel"/>.</summary>
+    public UpdatePolicyFeatures? UpdatePolicy { get; init; }
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
@@ -59,6 +61,7 @@ internal sealed class AppComposition
         var vm = new MainWindowViewModel(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
             UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
         vm.Settings.UseXboxFolders(XboxFolders); // w3/scan Settings row (#90): the one store the detectors read
+        vm.UpdatePolicy = UpdatePolicy; // w5/update-policy hook (#177)
         return vm;
     }
 
@@ -234,6 +237,8 @@ internal sealed class AppComposition
         // w3/vmsplit rows
         // w3/dllnames rows
         // w5/update-policy rows
+        var updatePolicy = new UpdatePolicyFeatures( // #177: the same history store the components write
+            new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records, new DlssAutoFollowStore(), updateLog));
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -267,6 +272,7 @@ internal sealed class AppComposition
             // w3/dllnames rows
             DllNames = reshade.DllNames,
             // w5/update-policy rows
+            UpdatePolicy = updatePolicy,
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows

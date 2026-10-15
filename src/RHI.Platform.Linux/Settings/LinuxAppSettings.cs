@@ -40,6 +40,10 @@ public sealed class LinuxAppSettings
     public string OptiScalerGpuType { get; set; } = "NVIDIA";
     public bool OptiScalerDlssInputs { get; set; } = true;
     // w5/update-policy rows
+    // #177 (upstream AutoUpdateDlss / AutoUpdateStreamline, both off by default): files on the previous newest version
+    // follow the manifest's newest. The baselines live in dlss-follow.json, never here.
+    public bool FollowNewestDlss { get; set; }
+    public bool FollowNewestStreamline { get; set; }
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows

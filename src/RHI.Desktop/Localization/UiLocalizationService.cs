@@ -1208,6 +1208,13 @@ public static class UiLocalizationService
         (" The OptiScaler INI template could not be prepared, so the package's OptiScaler.ini was used: ",
             " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
         // w5/update-policy rows
+        // #177 Follow newest DLSS / Streamline: history notes and per-file failures.
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.AutomaticDlssNote, "Automático: Seguir o DLSS mais recente está ligado."),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.AutomaticStreamlineNote, "Automático: Seguir o Streamline mais recente está ligado."),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.RefusedPrefix, "Não seguido: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.DownloadFailedPrefix, "Não foi possível baixar a versão mais recente: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.NotInManifestPrefix, "Não está mais no manifesto de DLSS: "),
+        (RHI.Platform.Linux.Deployment.DlssAutoFollowService.SwapFailedMessage, "A troca falhou; o arquivo do jogo foi mantido."),
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

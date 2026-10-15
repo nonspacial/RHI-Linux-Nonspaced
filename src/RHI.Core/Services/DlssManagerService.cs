@@ -61,8 +61,16 @@ public sealed class DlssManagerService
     public Task<DlssManifestData> FetchManifestAsync(CancellationToken cancellationToken = default)
         => FetchManifestAsync(conditional: true, cancellationToken);
 
+    /// <summary>
+    /// True when the last <see cref="FetchManifestAsync(CancellationToken)"/> got its answer from the network (a fresh
+    /// download, or a 304 confirming the cached copy); false when it fell back to the cached copy after a failure or
+    /// threw. #177: following the newest DLSS moves its baseline only after an answered fetch.
+    /// </summary>
+    public bool LastManifestFetchAnswered { get; private set; }
+
     private async Task<DlssManifestData> FetchManifestAsync(bool conditional, CancellationToken cancellationToken)
     {
+        LastManifestFetchAnswered = false;
         var cachePath = Path.Combine(_cacheRoot, "dlss_manifest.json");
         var etagPath = cachePath + ".etag";
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -80,6 +88,7 @@ public sealed class DlssManagerService
                 if (await TryReadCachedManifestAsync(cachePath, cancellationToken).ConfigureAwait(false) is { } unchanged)
                 {
                     _manifest = unchanged;
+                    LastManifestFetchAnswered = true;
                     return unchanged;
                 }
                 // The cache no longer reads: forget its ETag and ask for the whole manifest again.
@@ -92,6 +101,7 @@ public sealed class DlssManagerService
                          ?? throw new InvalidDataException("DLSS manifest was empty or invalid.");
             ValidateManifest(parsed);
             _manifest = parsed;
+            LastManifestFetchAnswered = true;
             // Durable and atomic (#39): a crash never leaves a truncated fallback manifest, and a
             // cache that cannot be written does not discard the manifest just downloaded.
             // CancellationToken.None: the manifest is already parsed and in use; a cancellation here

@@ -878,6 +878,16 @@ internal static class UiStrings
         ("Ui.RtxEncoreCheck", "Verificar atualização", "Check for update"),
         ("Ui.RtxEncoreFooter", "Ainda não confirmado no Linux: geração de quadros ×3–×6 e Neural Rendering podem funcionar pelo DLSS do Proton; Smooth Motion não (precisa do driver do Windows). Use só em jogos offline: o mod roda dentro do jogo.", "Not yet confirmed on Linux: frame generation ×3–×6 and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot (it needs the Windows driver). Offline games only: the mod runs inside the game."),
         // w5/update-policy rows
+        // #177 Follow newest DLSS / Streamline (Settings → DLSS/Streamline).
+        ("Upd.FollowHeading", "Seguir a versão mais recente", "Follow the newest version"),
+        ("Upd.FollowDlss", "Seguir o DLSS mais recente (SR/RR/FG)", "Follow newest DLSS (SR/RR/FG)"),
+        ("Upd.FollowStreamline", "Seguir o Streamline mais recente", "Follow newest Streamline"),
+        ("Upd.FollowNote", "Desligado por padrão. Só arquivos na versão mais recente anterior mudam; versões que você escolheu ficam como estão.", "Off by default. Only files on the previous newest version change; versions you picked stay as they are."),
+        ("Upd.FollowTip", "Quando o manifesto de DLSS publica uma versão mais nova, os jogos cujo arquivo está na versão mais recente anterior recebem a nova (o arquivo do jogo fica guardado como .original). Jogos numa versão escolhida por você, na versão do próprio jogo ou no DLSS 1.x ficam como estão. Verificado ao iniciar, a cada Atualizar e a cada verificação em segundo plano; cada troca aparece em Atualizações.", "When the DLSS manifest publishes a newer version, games whose file is on the previous newest version get the new one (the game's file is kept as .original). Games on a version you picked, the game's own version or DLSS 1.x stay as they are. Checked at start-up, at every Refresh and at every background check; each swap shows in Updates."),
+        ("Upd.FollowSummary", "Seguir o mais recente (DLSS/Streamline): {0} arquivo(s) atualizado(s)", "Follow newest DLSS/Streamline: {0} file(s) updated"),
+        ("Upd.FollowFailedPart", " · {0} falharam e ficaram como estavam (detalhes em Atualizações)", " · {0} failed and were kept as they were (details in Updates)"),
+        ("Upd.FollowDeferredPart", " · {0} jogo(s) em execução ficam para a próxima verificação", " · {0} running game(s) left for the next check"),
+        ("Upd.FollowFailed", "Falha ao seguir o DLSS/Streamline mais recente: {0}", "Follow newest DLSS/Streamline failed: {0}"),
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

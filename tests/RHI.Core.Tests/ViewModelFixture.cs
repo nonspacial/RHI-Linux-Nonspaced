@@ -63,6 +63,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w3/vmsplit rows
             // w3/dllnames rows
             // w5/update-policy rows
+            , out var updatePolicy
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
@@ -72,6 +73,7 @@ internal sealed class ViewModelFixture : IDisposable
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
         // w5 lane rows: hand the view model what the fixture builds
         // w5/update-policy rows
+        Vm.UpdatePolicy = updatePolicy; // #177
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -151,6 +153,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w3/vmsplit rows
         // w3/dllnames rows
         // w5/update-policy rows
+        , out UpdatePolicyFeatures updatePolicy
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
@@ -202,6 +205,8 @@ internal sealed class ViewModelFixture : IDisposable
         var luma = new LumaFrameworkDeploymentService(http, records, catalog: lumaCatalog, policy: lumaPolicy, manifest: upstreamManifest, dgVoodoo: dgVoodoo, dx9ReShade: dx9ReShade);
         // w5 lane rows: services LinuxManagedComponentService takes (named args below)
         // w5/update-policy rows
+        updatePolicy = new UpdatePolicyFeatures(new DlssAutoFollowService(dlss, new LinuxDlssDefaultsService(dlss, records), records,
+            new DlssAutoFollowStore(Path.Combine(prefs, "dlss-follow.json")), new ComponentUpdateLogStore(Path.Combine(prefs, "update-log.json")))); // #177: the components' history file
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows

@@ -136,6 +136,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public DllNamePickerViewModel DllNamePicker => DllNamePickerViewModel.For(this, _managedComponents, TryPersist); // w3/dllnames (#120)
     // w5 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w5/update-policy rows
+    /// <summary>#177 Follow newest DLSS / Streamline; set by the app composition (and the test fixture). Integrator hook.</summary>
+    public UpdatePolicyFeatures? UpdatePolicy { get; set; }
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
@@ -948,6 +950,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             var scanDone = LibraryScanStatusText.Done(_library.AllGames.Count);
             StatusText = scanProblems is null ? scanDone : _statusNotice.Raise(scanProblems, scanDone);
             await RefreshLibraryFactsAsync(); // Update All / DLSS batch availability for the new library, off the UI thread
+            if (onlyDetectors is null) _ = Updates.RequestFollowNewest(); // w5/update-policy hook (#177): start-up and Full Refresh
             return true;
         }
         catch (Exception ex) when (op.WasCancelled(ex))
