@@ -235,6 +235,88 @@ public sealed class GameLinkCatalogueTests : IDisposable
         Assert.Equal(4L * 1024 * 1024, DownloadSources.CommunityGameList.MaxBytes);
     }
 
+    [Fact]
+    public async Task EachLinkKind_OpensOnlyItsOwnSites_FromTheManifest_TheLists_AndTheCacheFiles()
+    {
+        foreach (var (hosts, allowed, refused) in new (IReadOnlySet<string>, string, string)[]
+                 {
+                     (LinkHosts.Pcgw, "https://www.pcgamingwiki.com/wiki/X", "https://theultraplace.com/games/x/"),
+                     (LinkHosts.UltraPlus, "https://theultraplace.com/games/x/", "https://www.pcgamingwiki.com/wiki/X"),
+                     (LinkHosts.UltrawideFix, "https://codeberg.org/Lyall/XFix", "https://theultraplace.com/games/x/"),
+                     (LinkHosts.HdrDatabase, "https://github.com/KoKlusz/HDR-Gaming-Database/discussions/1", "https://www.nexusmods.com/x/mods/1"),
+                     (LinkHosts.Discussion, "https://github.com/clshortfuse/renodx/discussions/1", "https://discord.com/channels/1/2"),
+                     (LinkHosts.ModPage, "https://gamebanana.com/mods/1", "https://github.com/x/y"),
+                     (LinkHosts.Discord, "https://discord.gg/x", "https://www.nexusmods.com/x/mods/1"),
+                     (LinkHosts.ManifestNote, "https://store.steampowered.com/app/1", "https://evil.example/x"),
+                 })
+        {
+            Assert.Equal(allowed, GameLinkCatalogue.SafePage(allowed, hosts));
+            Assert.Null(GameLinkCatalogue.SafePage(refused, hosts));
+            Assert.Null(GameLinkCatalogue.SafePage(allowed.Replace("https://", "http://", StringComparison.Ordinal), hosts));
+            var host = new Uri(allowed).Host;
+            Assert.Null(GameLinkCatalogue.SafePage(allowed.Replace(host, host + ".evil.example", StringComparison.Ordinal), hosts));
+        }
+
+        // The manifest's overrides: another kind's site is not taken.
+        var links = new GameLinkCatalogue(new HttpClient(Lists()), CacheDir);
+        var crossed = Named("Crossed Game");
+        crossed.PcgwUrlOverride = "https://theultraplace.com/games/crossed/";
+        crossed.UltraPlusUrlOverride = "https://www.pcgamingwiki.com/wiki/Crossed_Game";
+        crossed.UwFixUrlOverride = "https://theultraplace.com/games/crossed/";
+        Assert.Null(links.PcgwPageFor(crossed));
+        Assert.Null(links.UltraPlusPageFor(crossed));
+        Assert.Null(links.UltrawideFixPageFor(crossed));
+        var right = Named("Right Game");
+        right.PcgwUrlOverride = "https://www.pcgamingwiki.com/wiki/Right_Game";
+        right.UltraPlusUrlOverride = "https://theultraplace.com/games/right/";
+        right.UwFixUrlOverride = "https://www.nexusmods.com/rightgame/mods/7";
+        Assert.Equal("https://www.pcgamingwiki.com/wiki/Right_Game", links.PcgwPageFor(right));
+        Assert.Equal("https://theultraplace.com/games/right/", links.UltraPlusPageFor(right));
+        Assert.Equal("https://www.nexusmods.com/rightgame/mods/7", links.UltrawideFixPageFor(right));
+
+        // A README pointing a game at another site gets no entry (the reviewer's repro).
+        Assert.Empty(GameLinkCatalogue.ParseRose("# Foo ultrawide\n[Download page and instructions](https://evil.example/x)"));
+        Assert.Empty(GameLinkCatalogue.ParseRose("# Foo ultrawide\n[Download page and instructions](https://theultraplace.com/games/foo/)"));
+
+        // Cache files edited to point elsewhere are not used; the good entries beside them are.
+        var seeded = Path.Combine(_root, "seeded");
+        void Seed(string file, params (string Name, string Url)[] entries)
+        {
+            Directory.CreateDirectory(seeded);
+            File.WriteAllText(Path.Combine(seeded, file), System.Text.Json.JsonSerializer.Serialize(new
+            {
+                fetchedAtUtc = DateTimeOffset.UtcNow,
+                entries = entries.Select(e => new { e.Name, e.Url }).ToArray()
+            }));
+        }
+        Seed("ultraplus-games.json", ("Seeded Game", "https://codeberg.org/x"), ("Good Game", "https://theultraplace.com/games/good/"));
+        Seed("uwfix-lyall.json", ("Seeded Game", "https://theultraplace.com/games/seeded/"), ("Good Game", "https://codeberg.org/Lyall/GoodFix"));
+        Seed("hdr-gaming-database.json", ("Seeded Game", "https://www.nexusmods.com/x/mods/1"), ("Good Game", "https://github.com/KoKlusz/HDR-Gaming-Database/discussions/5"));
+        File.WriteAllText(Path.Combine(seeded, "pcgw-links.json"), System.Text.Json.JsonSerializer.Serialize(new
+        {
+            version = 0,
+            pages = new Dictionary<string, string>
+            {
+                [NexusGameCatalogue.NormalizeName("Seeded Game")] = "https://github.com/x",
+                [NexusGameCatalogue.NormalizeName("Good Game")] = "https://www.pcgamingwiki.com/wiki/Good_Game"
+            },
+            misses = new Dictionary<string, DateTimeOffset>(),
+            appIds = new Dictionary<string, int>()
+        }));
+        var cached = new GameLinkCatalogue(new HttpClient(new Fake(_ => throw new HttpRequestException("offline"))), seeded);
+        await cached.LoadAsync();
+        var seededGame = Named("Seeded Game");
+        Assert.Null(cached.UltraPlusPageFor(seededGame));
+        Assert.Null(cached.UltrawideFixPageFor(seededGame));
+        Assert.Null(cached.HdrDatabasePageFor(seededGame));
+        Assert.Null(cached.PcgwPageFor(seededGame));
+        var good = Named("Good Game");
+        Assert.Equal("https://theultraplace.com/games/good/", cached.UltraPlusPageFor(good));
+        Assert.Equal("https://codeberg.org/Lyall/GoodFix", cached.UltrawideFixPageFor(good));
+        Assert.Equal("https://github.com/KoKlusz/HDR-Gaming-Database/discussions/5", cached.HdrDatabasePageFor(good));
+        Assert.Equal("https://www.pcgamingwiki.com/wiki/Good_Game", cached.PcgwPageFor(good));
+    }
+
     // ── PCGamingWiki ────────────────────────────────────────────────────────────────────────────────────────────
 
     private const string CentralJson = """

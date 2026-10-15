@@ -77,10 +77,10 @@ public sealed class GameLinksPresenter
         return items;
     }
 
-    /// <summary>#183: the discussion / instructions page of the RenoDX mod RHI matched to the game (https only), else null.</summary>
+    /// <summary>#183: the discussion / instructions page of the RenoDX mod RHI matched to the game (https, on GitHub), else null.</summary>
     public string? DiscussionPageFor(DetectedGame? game)
         => game is not null && RenoDx is { } renoDx && renoDx.TryGetResolvedMatch(game, out var mod)
-            ? GameLinkCatalogue.SafePage(mod?.DiscussionUrl)
+            ? GameLinkCatalogue.SafePage(mod?.DiscussionUrl, LinkHosts.Discussion)
             : null;
 
     private static CardMenuItem Entry(string id, string label, string url, Action<string> open)

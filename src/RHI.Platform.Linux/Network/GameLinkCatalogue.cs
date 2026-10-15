@@ -76,12 +76,16 @@ public sealed partial class GameLinkCatalogue
         _policy = policy;
         var directory = cacheDirectory ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "links");
         var fresh = freshness ?? DefaultFreshness;
-        _ultraPlus = Links("Ultra+", UltraPlusGamesUrl, DownloadSources.UltraPlusGameList, ParseUltraPlus, Path.Combine(directory, "ultraplus-games.json"), fresh);
-        _lyall = Links("Lyall ultrawide fixes", LyallReposUrl, DownloadSources.UltrawideFixList, ParseLyall, Path.Combine(directory, "uwfix-lyall.json"), fresh);
-        _rose = Links("RoseTheFlower ultrawide fixes", RoseReadmeUrl, DownloadSources.CommunityGameList, ParseRose, Path.Combine(directory, "uwfix-rose.json"), fresh);
-        _p1xel = Links("p1xel8ted ultrawide fixes", P1xelReadmeUrl, DownloadSources.CommunityGameList, ParseP1xel, Path.Combine(directory, "uwfix-p1xel8ted.json"), fresh);
-        _hdrDatabase = Links("HDR Gaming Database", HdrDatabaseReadmeUrl, DownloadSources.CommunityGameList, ParseHdrDatabase, Path.Combine(directory, "hdr-gaming-database.json"), fresh,
-            HdrDatabaseKey);
+        _ultraPlus = Links("Ultra+", UltraPlusGamesUrl, DownloadSources.UltraPlusGameList, ParseUltraPlus, LinkHosts.UltraPlus,
+            Path.Combine(directory, "ultraplus-games.json"), fresh);
+        _lyall = Links("Lyall ultrawide fixes", LyallReposUrl, DownloadSources.UltrawideFixList, ParseLyall, LinkHosts.UltrawideFix,
+            Path.Combine(directory, "uwfix-lyall.json"), fresh);
+        _rose = Links("RoseTheFlower ultrawide fixes", RoseReadmeUrl, DownloadSources.CommunityGameList, ParseRose, LinkHosts.UltrawideFix,
+            Path.Combine(directory, "uwfix-rose.json"), fresh);
+        _p1xel = Links("p1xel8ted ultrawide fixes", P1xelReadmeUrl, DownloadSources.CommunityGameList, ParseP1xel, LinkHosts.UltrawideFix,
+            Path.Combine(directory, "uwfix-p1xel8ted.json"), fresh);
+        _hdrDatabase = Links("HDR Gaming Database", HdrDatabaseReadmeUrl, DownloadSources.CommunityGameList, ParseHdrDatabase, LinkHosts.HdrDatabase,
+            Path.Combine(directory, "hdr-gaming-database.json"), fresh, HdrDatabaseKey);
         _pcgwStore = new JsonFileStore<PcgwLinkCache>(Path.Combine(directory, "pcgw-links.json"), new JsonSerializerOptions { WriteIndented = false },
             JsonStoreKind.Cache, parse: text => JsonSerializer.Deserialize<PcgwLinkCache>(text) is { } parsed
                 ? new PcgwLinkCache
@@ -94,9 +98,10 @@ public sealed partial class GameLinkCatalogue
                 : null);
     }
 
+    /// <summary>One list; an entry (live or from the cache file) is used only when its page is on the list's own sites.</summary>
     private CachedRemoteList<GameLinkEntry> Links(string name, string url, TrustedDownloadPolicy policy, Func<string, IReadOnlyList<GameLinkEntry>> parse,
-        string cachePath, TimeSpan freshness, Func<string?, string>? key = null)
-        => new(name, url, policy, parse, entry => entry.Name, entry => SafePage(entry.Url) is not null, cachePath, freshness, _time, _http, key);
+        IReadOnlySet<string> hosts, string cachePath, TimeSpan freshness, Func<string?, string>? key = null)
+        => new(name, url, policy, parse, entry => entry.Name, entry => SafePage(entry.Url, hosts) is not null, cachePath, freshness, _time, _http, key);
 
     /// <summary>Starts (or joins) every list's background load. Never blocks, never faults.</summary>
     public void Prefetch()
@@ -117,13 +122,13 @@ public sealed partial class GameLinkCatalogue
 
     /// <summary>The game's Ultra+ page: the manifest's, else the Ultra+ list's, else null.</summary>
     public string? UltraPlusPageFor(DetectedGame? game)
-        => game is null ? null : SafePage(game.UltraPlusUrlOverride) ?? _ultraPlus.Find(NexusGameCatalogue.NormalizeName(game.Name))?.Url;
+        => game is null ? null : SafePage(game.UltraPlusUrlOverride, LinkHosts.UltraPlus) ?? _ultraPlus.Find(NexusGameCatalogue.NormalizeName(game.Name))?.Url;
 
     /// <summary>The game's ultrawide fix: the manifest's, then Lyall's, RoseTheFlower's, p1xel8ted's (upstream's order).</summary>
     public string? UltrawideFixPageFor(DetectedGame? game)
     {
         if (game is null) return null;
-        if (SafePage(game.UwFixUrlOverride) is { } manifest) return manifest;
+        if (SafePage(game.UwFixUrlOverride, LinkHosts.UltrawideFix) is { } manifest) return manifest;
         var key = NexusGameCatalogue.NormalizeName(game.Name);
         return _lyall.Find(key)?.Url ?? _rose.Find(key)?.Url ?? _p1xel.Find(key)?.Url;
     }
@@ -138,12 +143,12 @@ public sealed partial class GameLinkCatalogue
     public string? PcgwPageFor(DetectedGame? game)
     {
         if (game is null) return null;
-        if (SafePage(game.PcgwUrlOverride) is { } manifest) return manifest;
+        if (SafePage(game.PcgwUrlOverride, LinkHosts.Pcgw) is { } manifest) return manifest;
         if (_pcgwData?.Current?.TryLookup(game.Name, SteamAppIdOf(game)) is { } central) return PcgwWikiUrl(central.PageTitle);
         var key = NexusGameCatalogue.NormalizeName(game.Name);
         if (key.Length == 0) return null;
         var cache = PcgwCache();
-        lock (_pcgwSync) return cache.Pages.TryGetValue(key, out var page) ? page : null;
+        lock (_pcgwSync) return cache.Pages.TryGetValue(key, out var page) ? SafePage(page, LinkHosts.Pcgw) : null;
     }
 
     /// <summary>
@@ -206,7 +211,7 @@ public sealed partial class GameLinkCatalogue
             }
             if (_pcgwSearch is null) return;
             var (page, missing) = await _pcgwSearch.SearchPageAsync(game.Name).ConfigureAwait(false);
-            if (SafePage(page) is { } safe) Remember(cache => cache.Pages[game.Key] = safe);
+            if (SafePage(page, LinkHosts.Pcgw) is { } safe) Remember(cache => cache.Pages[game.Key] = safe);
             else if (missing) Remember(cache => cache.Misses[game.Key] = _time.GetUtcNow());
         }
         catch (Exception ex)
@@ -230,11 +235,15 @@ public sealed partial class GameLinkCatalogue
     /// <summary>PCGamingWiki's redirect from a Steam AppID to its page (used when the manifest says it works).</summary>
     public static string PcgwAppIdUrl(int appId) => $"https://www.pcgamingwiki.com/api/appid.php?appid={appId}";
 
-    /// <summary>A link RHI may hand to the desktop opener: https, default port, no credentials; else null.</summary>
-    public static string? SafePage(string? url)
+    /// <summary>
+    /// A link RHI may hand to the desktop opener: https, default port, no credentials, and a host of its kind
+    /// (<see cref="LinkHosts"/>); else null.
+    /// </summary>
+    public static string? SafePage(string? url, IReadOnlySet<string> hosts)
     {
         if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return null;
         return uri.Scheme == Uri.UriSchemeHttps && uri.IsDefaultPort && string.IsNullOrEmpty(uri.UserInfo) && uri.Host.Length > 0
+               && hosts.Contains(uri.Host)
             ? uri.AbsoluteUri
             : null;
     }
@@ -410,7 +419,7 @@ public sealed partial class GameLinkCatalogue
             var name = WebUtility.HtmlDecode(match.Groups[2].Value).Trim();
             var path = match.Groups[1].Value.Trim();
             if (name.Length == 0 || path.Contains("..", StringComparison.Ordinal)) continue;
-            if (SafePage("https://theultraplace.com" + path) is { } url) result.Add(new(name, url));
+            if (SafePage("https://theultraplace.com" + path, LinkHosts.UltraPlus) is { } url) result.Add(new(name, url));
         }
         return result;
     }
@@ -426,7 +435,7 @@ public sealed partial class GameLinkCatalogue
             if (repo.ValueKind != JsonValueKind.Object) continue;
             var name = String(repo, "name");
             var description = String(repo, "description");
-            var url = SafePage(String(repo, "html_url"));
+            var url = SafePage(String(repo, "html_url"), LinkHosts.UltrawideFix);
             var hasReleases = repo.TryGetProperty("has_releases", out var releases) && releases.ValueKind == JsonValueKind.True;
             if (!hasReleases || url is null || string.IsNullOrEmpty(description)) continue;
             if (string.Equals(name, "UltrawidePatches", StringComparison.OrdinalIgnoreCase)) continue;
@@ -465,7 +474,7 @@ public sealed partial class GameLinkCatalogue
             var tag = RoseReleaseTag().Match(line);
             if (tag.Success)
             {
-                if (SafePage(releaseBase + tag.Groups[1].Value) is { } page) result.Add(new(game, page));
+                if (SafePage(releaseBase + tag.Groups[1].Value, LinkHosts.UltrawideFix) is { } page) result.Add(new(game, page));
                 game = null;
                 continue;
             }
@@ -476,7 +485,7 @@ public sealed partial class GameLinkCatalogue
                 url = "https://github.com/RoseTheFlower/" + url["/../../../".Length..].Replace("#readme", "", StringComparison.Ordinal);
             else if (url.StartsWith("/../../", StringComparison.Ordinal))
                 url = "https://github.com/RoseTheFlower/UltrawideIndex/" + url["/../../".Length..];
-            if (SafePage(url) is { } link && !link.Contains("/../", StringComparison.Ordinal)) result.Add(new(game, link));
+            if (SafePage(url, LinkHosts.UltrawideFix) is { } link && !link.Contains("/../", StringComparison.Ordinal)) result.Add(new(game, link));
             game = null;
         }
         return result;
@@ -489,7 +498,7 @@ public sealed partial class GameLinkCatalogue
         foreach (Match match in P1xelHeader().Matches(markdown))
         {
             var name = match.Groups[1].Value.Trim();
-            if (name.Length > 0 && SafePage(match.Groups[2].Value) is { } url) result.Add(new(name, url));
+            if (name.Length > 0 && SafePage(match.Groups[2].Value, LinkHosts.UltrawideFix) is { } url) result.Add(new(name, url));
         }
         return result;
     }

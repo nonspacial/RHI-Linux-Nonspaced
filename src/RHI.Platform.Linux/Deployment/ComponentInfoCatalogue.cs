@@ -25,8 +25,11 @@ public enum ComponentInfoLinkKind
     WikiPage,
     /// <summary>The game's HDR analysis on the HDR Gaming Database (RenoDX and Luma).</summary>
     HdrDatabase,
-    /// <summary>The RenoDX mod's page on Nexus Mods, for a mod RHI cannot download.</summary>
-    NexusMods,
+    /// <summary>
+    /// The RenoDX mod's page on Nexus Mods or GameBanana (the database's <c>nexusUrl</c> holds either), for a mod RHI cannot
+    /// download; the dialog names the site the link really opens.
+    /// </summary>
+    ModPage,
     /// <summary>The RenoDX mod's Discord, for a mod RHI cannot download.</summary>
     Discord,
     /// <summary>The component's releases page (ReLimiter, Display Commander).</summary>
@@ -155,7 +158,7 @@ public sealed partial class ComponentInfoCatalogue
                 "RenoDX catalogue", cancellationToken).ConfigureAwait(false);
             var mod = match is { IsGeneric: false } ? match : listed;
             var notes = mod?.Notes is { } text && !IsRhiOwnNote(text) ? text.Trim() : null;
-            var page = GameLinkCatalogue.SafePage(mod?.DiscussionUrl);
+            var page = GameLinkCatalogue.SafePage(mod?.DiscussionUrl, LinkHosts.Discussion);
             if (notes is not null || page is not null || game.WikiStatusOverride is { Length: > 0 })
             {
                 AddLink(links, ComponentInfoLinkKind.WikiPage, page);
@@ -204,7 +207,7 @@ public sealed partial class ComponentInfoCatalogue
     private static void AddPublisherLinks(List<ComponentInfoLink> links, RenoDxModEntry? listed)
     {
         if (listed is null) return;
-        AddLink(links, ComponentInfoLinkKind.NexusMods, listed.NexusUrl);
+        AddLink(links, ComponentInfoLinkKind.ModPage, listed.NexusUrl);
         if (listed.NexusUrl is null) AddLink(links, ComponentInfoLinkKind.Discord, listed.DiscordUrl);
     }
 
@@ -374,14 +377,25 @@ public sealed partial class ComponentInfoCatalogue
 
     private static void AddNoteLink(List<ComponentInfoLink> links, string? url, string? label)
     {
-        if (GameLinkCatalogue.SafePage(url) is { } safe)
+        if (GameLinkCatalogue.SafePage(url, LinkHosts.ManifestNote) is { } safe)
             links.Add(new(ComponentInfoLinkKind.Notes, safe, string.IsNullOrWhiteSpace(label) ? null : label.Trim()));
     }
 
     private static void AddLink(List<ComponentInfoLink> links, ComponentInfoLinkKind kind, string? url)
     {
-        if (GameLinkCatalogue.SafePage(url) is { } safe && links.All(l => l.Url != safe)) links.Add(new(kind, safe));
+        if (GameLinkCatalogue.SafePage(url, HostsFor(kind)) is { } safe && links.All(l => l.Url != safe)) links.Add(new(kind, safe));
     }
+
+    /// <summary>The sites a link of each kind may open (a database or manifest naming any other site is left out).</summary>
+    internal static IReadOnlySet<string> HostsFor(ComponentInfoLinkKind kind) => kind switch
+    {
+        ComponentInfoLinkKind.WikiPage => LinkHosts.Wiki,
+        ComponentInfoLinkKind.HdrDatabase => LinkHosts.HdrDatabase,
+        ComponentInfoLinkKind.ModPage => LinkHosts.ModPage,
+        ComponentInfoLinkKind.Discord => LinkHosts.Discord,
+        ComponentInfoLinkKind.Releases => LinkHosts.Releases,
+        _ => LinkHosts.ManifestNote
+    };
 
     private static string? Bounded(string? text)
     {

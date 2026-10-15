@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using RHI.Core.Models;
+using RHI.Platform.Linux.Network;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -15,9 +16,10 @@ public sealed record RenoDxModEntry(
     bool IsGeneric = false,
     bool IsWorkInProgress = false,
     string? Author = null,
-    // #183: the mod's discussion / instructions page (RHI database discussionUrl, the wiki's name link), https only.
+    // #183: the mod's discussion / instructions page (RHI database discussionUrl, the wiki's name link), https on GitHub only.
     string? DiscussionUrl = null,
-    // #184/#197: where a mod without an RHI download is published (RHI database nexusUrl / discordUrl), https only.
+    // #184/#197: where a mod without an RHI download is published (RHI database nexusUrl = Nexus Mods or GameBanana page,
+    // discordUrl = Discord), https on those sites only (LinkHosts).
     string? NexusUrl = null,
     string? DiscordUrl = null)
 {
@@ -330,7 +332,7 @@ public sealed class RenoDxCatalogService
             result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes,
                 IsWorkInProgress: string.Equals(Text(item, "status")?.Trim(), "WIP", StringComparison.OrdinalIgnoreCase),
                 Author: string.IsNullOrWhiteSpace(author) ? null : author,
-                DiscussionUrl: DiscussionUrlOf(item), NexusUrl: HttpsLink(Text(item, "nexusUrl")), DiscordUrl: HttpsLink(Text(item, "discordUrl"))));
+                DiscussionUrl: DiscussionUrlOf(item), NexusUrl: GameLinkCatalogue.SafePage(Text(item, "nexusUrl"), LinkHosts.ModPage), DiscordUrl: GameLinkCatalogue.SafePage(Text(item, "discordUrl"), LinkHosts.Discord)));
         }
         return result
             .GroupBy(entry => NormalizeName(entry.Name), StringComparer.Ordinal)
@@ -403,7 +405,7 @@ public sealed class RenoDxCatalogService
             var notes = cells.Count > 3 ? Clean(cells[cells.Count - 1].InnerText) : null;
             // #183: the name cell's own link is the mod's discussion / instructions page (upstream WikiService NameUrl).
             var nameLink = cells[0].SelectSingleNode(".//a[@href]") is { } a
-                ? HttpsLink(MakeAbsolute(HtmlEntity.DeEntitize(a.GetAttributeValue("href", "")).Trim()))
+                ? GameLinkCatalogue.SafePage(MakeAbsolute(HtmlEntity.DeEntitize(a.GetAttributeValue("href", "")).Trim()), LinkHosts.Discussion)
                 : null;
             result.Add(new RenoDxModEntry(name, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, DiscussionUrl: nameLink));
         }
@@ -449,14 +451,7 @@ public sealed class RenoDxCatalogService
 
     /// <summary>#183: the entry's <c>discussionUrl</c> when it is an https link, else null.</summary>
     private static string? DiscussionUrlOf(JsonElement item)
-        => item.TryGetProperty("discussionUrl", out var value) && value.ValueKind == JsonValueKind.String ? HttpsLink(value.GetString()) : null;
-
-    /// <summary>An https link with a host and no credentials (the desktop opener receives it), else null.</summary>
-    internal static string? HttpsLink(string? url)
-        => Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.Host.Length > 0
-           && string.IsNullOrEmpty(uri.UserInfo) && uri.IsDefaultPort
-            ? uri.AbsoluteUri
-            : null;
+        => item.TryGetProperty("discussionUrl", out var value) && value.ValueKind == JsonValueKind.String ? GameLinkCatalogue.SafePage(value.GetString(), LinkHosts.Discussion) : null;
 
     private static bool LooksLikeAddonUrl(string href)
         => href.EndsWith(".addon64", StringComparison.OrdinalIgnoreCase) ||

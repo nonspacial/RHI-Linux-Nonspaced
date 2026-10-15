@@ -130,11 +130,11 @@ public sealed partial class OptiScalerWikiCatalogue
             : href.StartsWith('/') ? "https://github.com" + href
             : href.Contains(':', StringComparison.Ordinal) ? null
             : WikiBase + href.TrimStart('.', '/');
-        return absolute is not null && IsWikiPage(absolute) ? GameLinkCatalogue.SafePage(absolute) : null;
+        return absolute is not null && IsWikiPage(absolute) ? GameLinkCatalogue.SafePage(absolute, LinkHosts.Wiki) : null;
     }
 
     private static bool IsWikiPage(string url)
-        => GameLinkCatalogue.SafePage(url) is { } safe
+        => GameLinkCatalogue.SafePage(url, LinkHosts.Wiki) is { } safe
            && new Uri(safe) is { Host: "github.com" } uri
            && uri.AbsolutePath.StartsWith("/optiscaler/OptiScaler/wiki/", StringComparison.OrdinalIgnoreCase);
 

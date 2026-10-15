@@ -903,6 +903,7 @@ internal static class UiStrings
         ("Cat.InfoWikiPage", "Ver página no wiki", "View wiki page"),
         ("Cat.InfoHdrDatabase", "Análise de HDR — HDR Gaming Database", "HDR analysis – HDR Gaming Database"),
         ("Cat.InfoNexusMods", "Página do mod no Nexus Mods", "Mod page on Nexus Mods"),
+        ("Cat.InfoGameBanana", "Página do mod no GameBanana", "Mod page on GameBanana"),
         ("Cat.InfoDiscord", "Mod no Discord", "Mod on Discord"),
         ("Cat.InfoReleases", "Todas as versões", "All releases"),
         ("Cat.InfoAboutRenoDx", "O RenoDX é um framework de mods que leva jogos SDR ao HDR usando o ReShade, com mapeamento de tons e conversão de cores próprios de cada jogo.", "RenoDX is an HDR mod framework that upgrades SDR games to HDR using ReShade, with per-game tone mapping and colour conversion."),

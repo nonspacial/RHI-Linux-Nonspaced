@@ -91,7 +91,7 @@ public sealed class ComponentInfoTests : IDisposable
          "lumaGameInfo": {"Luma Manifest": {"notes": "Luma manifest note"}},
          "optiScalerWikiNames": {"Code Vein II": "Code Vein 2"},
          "optiScalerGameInfo": {"Opti Manifest": {"notes": "OptiScaler manifest note", "notesUrl": "http://insecure.example/x"}},
-         "relimiterGameInfo": {"Limited Game": {"notes": "Use the in-game cap", "notesUrl": "https://example.org/cap", "notesUrlLabel": "Read"}},
+         "relimiterGameInfo": {"Limited Game": {"notes": "Use the in-game cap", "notesUrl": "https://www.nexusmods.com/limited/mods/3", "notesUrlLabel": "Read"}},
          "displayCommanderGameInfo": {"DC Game": {"notes": "DC note"}},
          "reframeworkGameInfo": {"RE Game": {"notes": "REF note"}}
         }
@@ -101,7 +101,8 @@ public sealed class ComponentInfoTests : IDisposable
         [{"name": "Wiki Game", "status": "Done", "author": "A", "snapshotUrl": "https://github.com/a/b/releases/download/snapshot/renodx-wiki.addon64",
           "discussionUrl": "https://github.com/clshortfuse/renodx/discussions/9", "notes": "Turn off in-game sharpening."},
          {"name": "Nexus Only Game", "status": "Done", "author": "B", "snapshotUrl": null, "nexusUrl": "https://www.nexusmods.com/nexusonly/mods/50"},
-         {"name": "Discord Only Game", "status": "WIP", "author": "C", "discordUrl": "https://discord.gg/abc"}]
+         {"name": "Discord Only Game", "status": "WIP", "author": "C", "discordUrl": "https://discord.gg/abc"},
+         {"name": "Banana Game", "status": "Done", "author": "D", "nexusUrl": "https://gamebanana.com/mods/123"}]
         """;
 
     private const string Unreal = """
@@ -222,7 +223,7 @@ public sealed class ComponentInfoTests : IDisposable
         var services = Build();
         var nexus = await services.Catalogue.ResolveAsync(Game("Nexus Only Game"), ManagedComponentKind.RenoDX);
         Assert.Equal(["Replaces the game's HDR tonemapper."], nexus.Texts);
-        Assert.Equal([new ComponentInfoLink(ComponentInfoLinkKind.NexusMods, "https://www.nexusmods.com/nexusonly/mods/50")], nexus.Links);
+        Assert.Equal([new ComponentInfoLink(ComponentInfoLinkKind.ModPage, "https://www.nexusmods.com/nexusonly/mods/50")], nexus.Links);
         var query = Assert.Single(services.Http.Requests, r => r.Method == HttpMethod.Post);
         Assert.Equal("api.nexusmods.com", query.RequestUri!.Host);
         Assert.False(query.Headers.Contains("apikey")); // a public query: no account key is sent
@@ -230,6 +231,66 @@ public sealed class ComponentInfoTests : IDisposable
         var discord = await services.Catalogue.ResolveAsync(Game("Discord Only Game"), ManagedComponentKind.RenoDX);
         Assert.True(discord.GeneralText);
         Assert.Equal([new ComponentInfoLink(ComponentInfoLinkKind.Discord, "https://discord.gg/abc")], discord.Links);
+    }
+
+    [Fact]
+    public async Task RenoDx_AModPageOnGameBanana_IsNamedGameBanana_NotNexusMods()
+    {
+        var services = Build();
+        var banana = await services.Catalogue.ResolveAsync(Game("Banana Game"), ManagedComponentKind.RenoDX);
+        Assert.Equal([new ComponentInfoLink(ComponentInfoLinkKind.ModPage, "https://gamebanana.com/mods/123")], banana.Links);
+        Assert.DoesNotContain(services.Http.Requests, r => r.Method == HttpMethod.Post); // no Nexus summary for a GameBanana page
+        var nexus = await services.Catalogue.ResolveAsync(Game("Nexus Only Game"), ManagedComponentKind.RenoDX);
+
+        Assert.Equal(["Mod page on GameBanana"], ComponentInfoPresenter.Compose(banana, "Banana Game", "RenoDX").Links.Select(l => l.Label));
+        Assert.Equal(["Mod page on Nexus Mods"], ComponentInfoPresenter.Compose(nexus, "Nexus Only Game", "RenoDX").Links.Select(l => l.Label));
+        UiLocalizationService.Apply("pt-BR");
+        try
+        {
+            Assert.Equal(["Página do mod no GameBanana"], ComponentInfoPresenter.Compose(banana, "Banana Game", "RenoDX").Links.Select(l => l.Label));
+            Assert.Equal(["Página do mod no Nexus Mods"], ComponentInfoPresenter.Compose(nexus, "Nexus Only Game", "RenoDX").Links.Select(l => l.Label));
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    [Fact]
+    public async Task Links_OpenOnlyTheirKindsSites()
+    {
+        var listing = RenoDxCatalogService.ParseStructuredListing("""
+            [{"name": "Wrong Sites", "nexusUrl": "https://discord.gg/x", "discordUrl": "https://www.nexusmods.com/w/mods/1", "discussionUrl": "https://www.nexusmods.com/w/mods/2"},
+             {"name": "Right Sites", "nexusUrl": "https://gamebanana.com/mods/9", "discordUrl": "https://discord.com/channels/1/2", "discussionUrl": "https://github.com/clshortfuse/renodx/discussions/3"}]
+            """).ToDictionary(e => e.Name);
+        Assert.Null(listing["Wrong Sites"].NexusUrl);
+        Assert.Null(listing["Wrong Sites"].DiscordUrl);
+        Assert.Null(listing["Wrong Sites"].DiscussionUrl);
+        Assert.Equal("https://gamebanana.com/mods/9", listing["Right Sites"].NexusUrl);
+        Assert.Equal("https://discord.com/channels/1/2", listing["Right Sites"].DiscordUrl);
+        Assert.Equal("https://github.com/clshortfuse/renodx/discussions/3", listing["Right Sites"].DiscussionUrl);
+        Assert.Null(RenoDxCatalogService.ParseStructuredDatabase("""
+            [{"name": "W", "snapshotUrl": "https://github.com/x/y/releases/download/snapshot/w.addon64", "discussionUrl": "https://discord.gg/w"}]
+            """).Single().DiscussionUrl);
+        var wiki = RenoDxCatalogService.ParseWiki("""
+            <table><tr><th>Name</th><th>Mod</th><th>Status</th><th>Notes</th></tr>
+            <tr><td><a href="https://www.nexusmods.com/elsewhere/mods/1">Elsewhere Game</a></td><td><a href="https://github.com/a/b/releases/download/snapshot/renodx-e.addon64">x</a></td><td>✅</td><td></td></tr>
+            </table>
+            """);
+        Assert.Null(Assert.Single(wiki).DiscussionUrl);
+
+        // A manifest note's link: the community sites only.
+        var services = Build();
+        var noted = Game("Noted Elsewhere");
+        noted.ManifestGameNote = "Note";
+        noted.ManifestGameNoteUrl = "https://evil.example/x";
+        Assert.Empty((await services.Catalogue.ResolveAsync(noted, ManagedComponentKind.RenoDX)).Links);
+        noted.ManifestGameNoteUrl = "https://store.steampowered.com/app/1";
+        Assert.Equal("https://store.steampowered.com/app/1", Assert.Single((await services.Catalogue.ResolveAsync(noted, ManagedComponentKind.RenoDX)).Links).Url);
+
+        Assert.Same(LinkHosts.ModPage, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.ModPage));
+        Assert.Same(LinkHosts.Discord, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.Discord));
+        Assert.Same(LinkHosts.HdrDatabase, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.HdrDatabase));
+        Assert.Same(LinkHosts.Wiki, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.WikiPage));
+        Assert.Same(LinkHosts.Releases, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.Releases));
+        Assert.Same(LinkHosts.ManifestNote, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.Notes));
     }
 
     [Fact]
@@ -303,7 +364,7 @@ public sealed class ComponentInfoTests : IDisposable
         var limited = await services.Catalogue.ResolveAsync(Game("Limited Game"), ManagedComponentKind.ReLimiter, "3.3.4");
         Assert.Equal(ComponentInfoSource.Manifest, limited.Source);
         Assert.Equal(["Use the in-game cap"], limited.Texts);
-        Assert.Equal(["https://example.org/cap", ComponentInfoCatalogue.ReLimiterReleasesUrl], limited.Links.Select(l => l.Url));
+        Assert.Equal(["https://www.nexusmods.com/limited/mods/3", ComponentInfoCatalogue.ReLimiterReleasesUrl], limited.Links.Select(l => l.Url));
         Assert.Equal(["DC note"], (await services.Catalogue.ResolveAsync(Game("DC Game"), ManagedComponentKind.DisplayCommander)).Texts);
         Assert.Equal(["REF note"], (await services.Catalogue.ResolveAsync(Game("RE Game"), ManagedComponentKind.REFramework)).Texts);
     }

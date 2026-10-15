@@ -81,10 +81,14 @@ public sealed class ComponentInfoPresenter(ComponentInfoCatalogue catalogue)
         ComponentInfoLinkKind.Notes => link.Label ?? T("Card.OpenNotesLink"),
         ComponentInfoLinkKind.WikiPage => T("Cat.InfoWikiPage"),
         ComponentInfoLinkKind.HdrDatabase => T("Cat.InfoHdrDatabase"),
-        ComponentInfoLinkKind.NexusMods => T("Cat.InfoNexusMods"),
+        ComponentInfoLinkKind.ModPage => T(IsGameBanana(link.Url) ? "Cat.InfoGameBanana" : "Cat.InfoNexusMods"),
         ComponentInfoLinkKind.Discord => T("Cat.InfoDiscord"),
         _ => T("Cat.InfoReleases")
     };
+
+    /// <summary>The database's <c>nexusUrl</c> also holds GameBanana pages: the button names the site it really opens.</summary>
+    private static bool IsGameBanana(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host.EndsWith("gamebanana.com", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Upstream's general text per component (<c>AddonInfoResolver.Fallback*</c>), localised.</summary>
     public static string GeneralText(ManagedComponentKind kind) => T(kind switch
