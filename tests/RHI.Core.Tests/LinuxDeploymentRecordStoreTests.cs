@@ -224,9 +224,11 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
             DirectoriesCreatedByRhi = ["/g/bin/d"],
             WineOverride = new WineOverrideRecord { DllName = "dxgi", PreviousValue = "builtin", PreviousValueIsRaw = true, ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "game.exe", WrittenValue = "native,builtin" },
             AdditionalWineOverrides = [new WineOverrideRecord { DllName = "d3dcompiler_47", PreviousValue = "b", ChangedByRhi = true, SectionCreatedByRhi = true, ApplicationName = "g.exe", WrittenValue = "native,builtin" }],
+            // #92: the Vulkan layer's registration in system.reg.
+            RegistryValues = [new WineRegistryValueRecord { Hive = "user", Key = @"Software\K", Name = @"C:\x.json", PreviousValue = "dword:00000001", ChangedByRhi = true, SectionCreatedByRhi = true, WrittenValue = "dword:00000000" }],
             Metadata = new(StringComparer.OrdinalIgnoreCase) { ["Key"] = "Value" }
         };
-        foreach (var item in new object[] { original, original.Files[0], original.WineOverride })
+        foreach (var item in new object[] { original, original.Files[0], original.WineOverride, original.RegistryValues[0] })
             foreach (var property in item.GetType().GetProperties())
             {
                 var value = property.GetValue(item);
@@ -240,6 +242,7 @@ public sealed class LinuxDeploymentRecordStoreTests : IDisposable
         Assert.Equal(System.Text.Json.JsonSerializer.Serialize(original), System.Text.Json.JsonSerializer.Serialize(copy));
         Assert.NotSame(original.Files[0], copy.Files[0]);
         Assert.NotSame(original.WineOverride, copy.WineOverride);
+        Assert.NotSame(original.RegistryValues[0], copy.RegistryValues[0]);
         Assert.NotSame(original.Metadata, copy.Metadata);
         Assert.Equal("Value", copy.Metadata["KEY"]);
     }

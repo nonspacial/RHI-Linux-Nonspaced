@@ -24,6 +24,11 @@ public sealed class ReShadeInstallOptions
     /// <summary>Optional path to a native Microsoft D3DCompiler_47.dll. An explicit selection is validated and persisted on Apply even when no ordinary RHI shader pack is selected; Proton/Wine prefixes can also install the compiler through the dedicated helper buttons.</summary>
     public string? D3DCompiler47Path { get; set; }
     public IReadOnlyList<string> ShaderPackIds { get; set; } = [];
+    /// <summary>
+    /// #92: install ReShade as a Vulkan layer (the explicit choice on a Vulkan game; never set by a dependency install).
+    /// An installed layer keeps this path on every update whatever this says, and a DLL ReShade is never converted.
+    /// </summary>
+    public bool VulkanLayer { get; set; }
 
 }
 

@@ -139,6 +139,12 @@ public static class DownloadSources
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    /// <summary>
+    /// The Khronos Vulkan loader for ReShade's Vulkan layer (#92): LunarG's Vulkan runtime components zip from
+    /// sdk.lunarg.com and its version list from vulkan.lunarg.com (~18 MB; LunarG publishes no digest).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy LunarGVulkanRuntime = new(
+        "Vulkan runtime", "LunarG", ["sdk.lunarg.com", "vulkan.lunarg.com"], maxBytes: 128L * 1024 * 1024);
 
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
@@ -163,5 +169,6 @@ public static class DownloadSources
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        LunarGVulkanRuntime,
     ];
 }

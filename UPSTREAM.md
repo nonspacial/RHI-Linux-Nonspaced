@@ -347,3 +347,29 @@ build.
 <!-- w5/shell-launch notes -->
 
 <!-- w5/reshade-core notes -->
+
+### #92 — ReShade for Vulkan games (implicit layer)
+
+- Ported, adapted to Wine/Proton (spike: Wine's own `vulkan-1.dll` loads no Windows layers; the Khronos loader reads
+  implicit layers only from HKEY_LOCAL_MACHINE under Wine, never HKEY_CURRENT_USER; DXVK and vkd3d-proton load
+  `winevulkan.dll` directly, so DirectX games never see the layer). Upstream registers one global layer for the whole
+  PC; RHI Linux sets it up per game: the Khronos Vulkan loader (`vulkan-1.dll`, newest from LunarG's Vulkan runtime)
+  beside the executable with a per-executable `vulkan-1=native,builtin` Wine override, the layer (`ReShade64.dll`/
+  `ReShade32.dll` and upstream's `ReShade64.json` manifest) in the prefix's `C:\ProgramData\RHI-Linux\ReShadeVulkan\<game>\`,
+  registered under `HKLM\Software\Khronos\Vulkan\ImplicitLayers` (`Wow6432Node` for 32-bit games) in the prefix's
+  `system.reg`, and `ReShade.ini` beside the game. Only that game loads the layer, also in a shared Heroic/Lutris prefix.
+- Offered only for a Windows game whose graphics API is Vulkan (Vulkan alone found in the executable, or the user's own
+  API override set to Vulkan): the ReShade row then reads "ReShade · Vulkan" and its Install (or the ReShade profile's
+  Apply) is the explicit choice. A multi-renderer game stays DirectX first; a component that needs ReShade (RenoDX, Luma
+  …) never installs the layer by itself. Refused with a plain reason on Proton/Wine older than 8, an unknown runner, a
+  prefix never started, or a game with its own `vulkan-1.dll`. One ReShade per game: the layer is refused while a DLL
+  ReShade is installed; ShortFuse and OptiScaler (which move ReShade's DLL) are refused while the layer is installed.
+- Update swaps the ReShade DLL; the loader only when LunarG lists a newer version (offline: kept, and the line says so).
+  Update All never switches a game between the DLL and the layer. Removal takes away the loader, the layer files, the
+  registration (only while it still holds RHI's value) and the Wine override, all journaled; Repair after move keeps
+  working because the registration names a `C:\` path inside the prefix.
+- Changed from upstream (PAR-D07, `e8cdedf`): changing the graphics-API override to or from Vulkan while ReShade is
+  installed is refused until ReShade is removed (upstream uninstalls ReShade on the switch; RHI never removes a
+  component the user did not ask to remove). Changes within DirectX are not affected.
+- Not ported: upstream's global layer for every game and its footprint marker (`RDXC_VULKAN_FOOTPRINT`; the record owns
+  the files). Native Linux Vulkan games are out of scope (vkBasalt is a different tool).

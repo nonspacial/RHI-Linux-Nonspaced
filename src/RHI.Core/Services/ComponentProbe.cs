@@ -42,6 +42,10 @@ public static class ComponentProbe
             return ProxyDllNames.IsReShadeOnDisk(path);
         });
 
+        // #92: ReShade as a Vulkan layer leaves the Khronos loader and ReShade.ini beside the executable (its DLL sits in the
+        // prefix). Both together are the footprint; a game's own vulkan-1.dll alone is not ReShade.
+        reShadeInstalled = reShadeInstalled || HasVulkanLayerFootprint(indexedFiles, binaryDirectory);
+
         // RTX Encore (#158) under any of its names beside the executable, or its .asi in an ASI loader's folder; its version
         // resource decides (its body mentions ReShade and OptiScaler).
         var rtxEncoreInstalled = binaryDirectory is not null && indexedFiles.Any(path => IsRtxEncoreCandidate(path, binaryDirectory)
@@ -115,6 +119,16 @@ public static class ComponentProbe
         }
 
         return result;
+    }
+
+    private static bool HasVulkanLayerFootprint(IReadOnlyList<string> indexedFiles, string? binaryDirectory)
+    {
+        if (binaryDirectory is null) return false;
+        bool Beside(string name) => indexedFiles.Any(path =>
+            Path.GetFileName(path).Equals(name, StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(path) is { } parent
+            && Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar).Equals(binaryDirectory, StringComparison.Ordinal));
+        return Beside("vulkan-1.dll") && Beside("ReShade.ini");
     }
 
     /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>

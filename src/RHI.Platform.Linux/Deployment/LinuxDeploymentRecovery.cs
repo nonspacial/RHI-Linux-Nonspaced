@@ -293,7 +293,10 @@ public static class LinuxDeploymentRecovery
     public static DeploymentJournal CreateJournal(
         WineDllOverrideService overrides, string? directory = null, Func<string, bool>? isPrefixInUse = null, LinuxDeploymentRecordStore? records = null)
         => new(directory ?? JournalDirectory,
-            [new WineOverrideCompensator(overrides, isPrefixInUse, records), new WineOverrideReapplyCompensator(overrides, isPrefixInUse)]);
+            [new WineOverrideCompensator(overrides, isPrefixInUse, records), new WineOverrideReapplyCompensator(overrides, isPrefixInUse),
+             // w5/reshade-core (#92): registry values (the Vulkan implicit layer in system.reg)
+             new WineRegistryValueCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse, records),
+             new WineRegistryValueReapplyCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse)]);
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)

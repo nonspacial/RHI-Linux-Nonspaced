@@ -221,6 +221,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     component.Availability = ComponentAvailability.Installed;
                 }
 
+                // w5/reshade-core (#92): ReShade's Vulkan layer lives in the prefix; its record decides, and the row says which ReShade.
+                if (component.Kind == ManagedComponentKind.ReShade && ReShadeVulkanLayer.IsLayerRecord(record))
+                {
+                    component.DisplayName = ReShadeVulkanLayer.RowName;
+                    if (component.Availability == ComponentAvailability.Available &&
+                        record!.Files.Any(file => !file.AllowUserChanges && File.Exists(file.Path)))
+                        component.Availability = ComponentAvailability.Installed;
+                }
+
                 if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.RtxEncore && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
                     record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)))
@@ -262,7 +271,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
                 if (component.Kind == ManagedComponentKind.ReShade && component.Availability == ComponentAvailability.Available)
                 {
-                    if (ReShadeDeploymentService.SelectProxyName(game.EffectiveGraphicsApi) is null)
+                    // w5/reshade-core (#92): on a Vulkan game the row is the explicit "install ReShade as a Vulkan layer" choice.
+                    if (record is null && ReShadeVulkanLayer.IsVulkanTarget(game))
+                    {
+                        component.DisplayName = ReShadeVulkanLayer.RowName;
+                        var notOffered = ReShadeVulkanLayer.OfferRefusal(game);
+                        component.ActionAllowed = notOffered is null;
+                        component.Note = notOffered ?? ReShadeVulkanLayer.RowNote;
+                    }
+                    else if (ReShadeDeploymentService.SelectProxyName(game.EffectiveGraphicsApi) is null)
                     {
                         component.ActionAllowed = false;
                         component.Note = "Safe game-local ReShade deployment is currently enabled for DirectX 8/9/10/11/12 and OpenGL targets; this API needs a different integration path.";
@@ -953,6 +970,44 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private ComponentOperationResult? InstallGuard(DetectedGame game) // w3/scan hook
         => PatchTargetGuard(game) ?? (XboxWriteGate.InstallRefusal(game) is { } install ? ComponentOperationResult.Fail(install) : null);
 
+    /// <summary>
+    /// #92: the ReShade row's (and profile Apply's) install on a game without a DLL ReShade whose API is Vulkan takes the
+    /// Vulkan-layer path; that explicit choice is the only way the layer is installed (dependency installs never ask).
+    /// </summary>
+    private ReShadeInstallOptions ReShadeRowOptions(DetectedGame game)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        return new ReShadeInstallOptions
+        {
+            VulkanLayer = ReShadeVulkanLayer.IsLayerRecord(record) || (record is null && ReShadeVulkanLayer.IsVulkanTarget(game))
+        };
+    }
+
+    /// <summary>
+    /// #92 (upstream PAR-D07): why a graphics-API override change must wait while ReShade is installed, or null. A
+    /// Vulkan-layer ReShade on a game that would no longer be Vulkan, or a DLL ReShade on a game that would become Vulkan,
+    /// would leave the wrong ReShade for the API; RHI refuses until ReShade is removed (upstream removes it on the switch;
+    /// RHI never removes a component the user did not ask to remove). Changes within DirectX are never refused.
+    /// </summary>
+    public string? ReShadeApiSwitchRefusal(DetectedGame game, GraphicsApi? newOverride)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null) return null;
+        var after = game.ShallowClone();
+        after.UserGraphicsApiOverride = newOverride;
+        var layer = ReShadeVulkanLayer.IsLayerRecord(record);
+        if (layer && !ReShadeVulkanLayer.IsVulkanTarget(after)) return ReShadeVulkanLayer.ApiSwitchLayerInstalledMessage;
+        if (!layer && ReShadeVulkanLayer.IsVulkanTarget(after) && !ReShadeVulkanLayer.IsVulkanTarget(game)) return ReShadeVulkanLayer.ApiSwitchDllInstalledMessage;
+        return null;
+    }
+
+    /// <summary>#92: ShortFuse and OptiScaler move ReShade's DLL, which a Vulkan-layer ReShade does not have beside the game.</summary>
+    private ComponentOperationResult? VulkanLayerConflict(DetectedGame game, ManagedComponentKind component)
+        => component is ManagedComponentKind.ShortFuse or ManagedComponentKind.OptiScaler
+           && ReShadeVulkanLayer.IsLayerRecord(_records.Find(game, ManagedComponentKind.ReShade))
+            ? ComponentOperationResult.Fail(ReShadeVulkanLayer.NeedsDllReShadePrefix + DisplayDependencyName(component))
+            : null;
+
     // w3/parity (#96): an nvngx_dlssnr.dll owner is not reinstalled, updated, swapped or removed under the NR Cost Scaler.
     private ComponentOperationResult? LayerGuard(DetectedGame game, ManagedComponentKind component)
         => NrCostScalerService.OwnerChangeRefusal(_records, game, component) is { } layered ? ComponentOperationResult.Fail(layered) : null;
@@ -1596,13 +1651,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = InstallGuard(game);
         if (guard is not null) return guard;
+        // w5/reshade-core (#92): Apply on a Vulkan game is the explicit layer choice too; its shaders need no D3DCompiler.
+        options.VulkanLayer = options.VulkanLayer || ReShadeRowOptions(game).VulkanLayer;
         return await Track(game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
             ManagedComponentKind.ReShade,
             indexedFiles: null,
             async () =>
             {
-                if (options.ShaderPackIds.Count > 0 && string.IsNullOrWhiteSpace(options.D3DCompiler47Path))
+                if (!options.VulkanLayer && options.ShaderPackIds.Count > 0 && string.IsNullOrWhiteSpace(options.D3DCompiler47Path))
                 {
                     var compiler = await EnsureNativeD3DCompilerDependencyAsync(
                         game,
@@ -2135,7 +2192,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         string? nightlyBuild,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler); // w3/parity (#96)
+        var guard = InstallGuard(game) ?? LayerGuard(game, ManagedComponentKind.OptiScaler) // w3/parity (#96)
+                    ?? VulkanLayerConflict(game, ManagedComponentKind.OptiScaler); // w5/reshade-core (#92)
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
@@ -2186,7 +2244,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         IReadOnlyList<string> indexedFiles,
         CancellationToken cancellationToken = default)
     {
-        var guard = InstallGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component); // w3/parity (#96), #170
+        var guard = InstallGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component) // w3/parity (#96), #170
+                    ?? VulkanLayerConflict(game, component); // w5/reshade-core (#92)
         if (guard is not null) return guard;
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2204,7 +2263,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken)
         => component switch
         {
-            ManagedComponentKind.ReShade => _reshade.InstallAsync(game, cancellationToken),
+            ManagedComponentKind.ReShade => _reshade.InstallAsync(game, ReShadeRowOptions(game), cancellationToken), // w5/reshade-core (#92)
             ManagedComponentKind.RenoDX => _renodx.InstallAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.InstallAsync(game, cancellationToken),
             ManagedComponentKind.OptiScaler => InstallOptiScalerUnderChosenNameAsync(game, OptiScalerVariant.Stable, null, cancellationToken), // #172

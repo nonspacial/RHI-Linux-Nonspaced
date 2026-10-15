@@ -322,6 +322,28 @@ public sealed class WaveOneMessageLocalizationTests
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // #92 ReShade as a Vulkan layer
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ApiSwitchLayerInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ApiSwitchDllInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NotVulkanTargetMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.PrefixNotStartedMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UnknownRunnerMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllReShadeInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NotOnRequestMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RowNote;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RemovedMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.IncompleteRecordMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.RunnerTooOldPrefix + "GE-Proton7-55";
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.GameShipsLoaderPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LayerFolderTakenPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.InstalledPrefix + "6.8.0" + RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderCheckSkippedNote;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.UpdatedPrefix + "6.8.1" + RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderUpdatedNote;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.FailedRolledBackPrefix + RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.ModifiedFilePrefix + P;
+        yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.NeedsDllReShadePrefix + "OptiScaler";
+        yield return "ReShade source preparation failed: " + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
+        yield return "ReShade source preparation failed: " + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderMissingPrefix + "x86/vulkan-1.dll";
+        yield return "ReShade source preparation failed: " + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderInvalidPrefix + "x64/vulkan-1.dll";
+        yield return RHI.Platform.Linux.Deployment.WineRegistryEditor.MissingSystemHiveMessage;
     }
 
     [Theory]
