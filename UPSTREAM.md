@@ -346,4 +346,9 @@ build.
 
 <!-- w5/shell-launch notes -->
 
+### #190 — Edit game: name, wiki mod name, bitness
+
+- Ported: Edit game has a **Name and bitness** block (upstream's Game Overrides name/wiki/bitness rows): **Game name** (what the card, the details header, search and sorting show; search still finds the detected name), **Wiki mod name** (the name RenoDX wiki lookups use; wins over the manifest's `wikiNameOverrides`, and clearing it brings the manifest's back) and **Bitness** (Automatic / 32-bit / 64-bit). All three are library-state edits (`game-library.json` `GameEdits`), kept across rescans and Repair after move, cleared by Restore automatic detection. Bitness precedence is upstream's `ResolveIs32Bit`: the user's choice, then the manifest's override, then the exe header (`GameArchitecture.Of`; the user's choice is never stored in the manifest field).
+- Linux deviations: the display name is presentation only — library keys, desktop shortcuts, launch-by-key, status lines and catalogue lookups keep the detected name (upstream renames the game everywhere and its lookups then use the new name; here the wiki name field is the lookup override). A bitness change that moves the game's effective bitness is refused while RHI components are installed (upstream uninstalls every component first; the fork never removes components as a side effect, as for a patch-target change); choosing the bitness the game already has is always allowed. The Luma lookup does not read the wiki name yet (it matches by name as before).
+
 <!-- w5/reshade-core notes -->

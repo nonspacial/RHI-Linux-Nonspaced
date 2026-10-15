@@ -52,7 +52,9 @@ public static class GameLibraryFilter
         var q = search.Trim();
         bool Has(string? value) => !string.IsNullOrWhiteSpace(value) && value.Contains(q, StringComparison.OrdinalIgnoreCase);
 
-        return Has(game.Name)
+        // The Edit game display name and the detected name both find the card (Refs #190).
+        return Has(game.DisplayName())
+            || Has(game.Name)
             || Has(game.Source)
             || Has(game.Runner)
             || Has(game.CompatibilityTool)
@@ -66,11 +68,15 @@ public static class GameLibraryFilter
             || Has(game.ExecutablePath)
             || Has(game.PrefixPath)
             || game.EffectiveGraphicsApis.Any(api => Has(FormatApi(api)))
-            || (game.ForcedArchitecture is PeArchitecture.X86 && Has("32-bit"))
-            || (game.ForcedArchitecture is PeArchitecture.X64 && Has("64-bit"))
+            || (DeclaredArchitecture(game) is PeArchitecture.X86 && Has("32-bit"))
+            || (DeclaredArchitecture(game) is PeArchitecture.X64 && Has("64-bit"))
             || (game.NativeHdrByManifest && Has("HDR"))
             || (game.IsManuallyAdded && Has("Manual"));
     }
+
+    // Search reads only declared bitness (Edit game, then the manifest), never the exe header: a keystroke must not read files.
+    private static PeArchitecture? DeclaredArchitecture(DetectedGame game)
+        => game.UserArchitectureOverride is PeArchitecture.X86 or PeArchitecture.X64 ? game.UserArchitectureOverride : game.ForcedArchitecture;
 
     private static bool IsUnreal(DetectedGame game)
         => game.EngineHint?.Contains("Unreal", StringComparison.OrdinalIgnoreCase) == true;

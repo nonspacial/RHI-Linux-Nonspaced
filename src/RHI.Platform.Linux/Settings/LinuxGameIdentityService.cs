@@ -35,6 +35,7 @@ public static class LinuxGameIdentityService
         ArgumentNullException.ThrowIfNull(game);
 
         ApplyLaunchCommand(game, edit);
+        ApplyNames(game, edit);
         game.LibraryIdentityPath ??= game.InstallPath;
         game.LibraryProvider = InferLibraryProvider(game);
         game.LaunchExecutablePath ??= game.ExecutablePath;
@@ -117,6 +118,21 @@ public static class LinuxGameIdentityService
         game.UserLaunchCommand = LinuxGameEditOverride.NormalizeLaunchCommand(edit?.LaunchCommand);
         game.LaunchCommand = game.UserLaunchCommand ?? game.DetectedLaunch.Command;
         game.ParentLauncherName = game.UserLaunchCommand is null ? game.DetectedLaunch.ParentLauncherName : null;
+    }
+
+    /// <summary>
+    /// Edit game's display name, wiki mod name and bitness (Refs #190). The wiki name replaces the manifest's mapping
+    /// (upstream: a user mapping wins); the manifest's is captured once per card instance, so resolving the same card
+    /// again (Repair after move) never takes the user's name for the manifest's, and clearing it brings that back.
+    /// The display name never touches <see cref="DetectedGame.Name"/>: keys, shortcuts and catalogue lookups keep it.
+    /// </summary>
+    private static void ApplyNames(DetectedGame game, LinuxGameEditOverride? edit)
+    {
+        game.DetectedWikiName ??= new DetectedWikiName(game.WikiNameOverride);
+        game.UserWikiName = LinuxGameEditOverride.NormalizeName(edit?.WikiName);
+        game.WikiNameOverride = game.UserWikiName ?? game.DetectedWikiName.Value;
+        game.UserDisplayName = LinuxGameEditOverride.NormalizeName(edit?.DisplayName);
+        game.UserArchitectureOverride = edit?.Architecture is PeArchitecture.X86 or PeArchitecture.X64 ? edit.Architecture : null;
     }
 
     public static string InferLibraryProvider(DetectedGame game)

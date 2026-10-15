@@ -286,11 +286,17 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             var engine = string.IsNullOrWhiteSpace(SelectedGame.EngineHint)
                 ? T("Vm.NoUpstreamEngineOverride")
                 : SelectedGame.EngineHint;
-            var architecture = SelectedGame.ForcedArchitecture switch
+            // Edit game's bitness wins over the manifest's (Refs #190), as GameArchitecture.Of reads them.
+            var architecture = SelectedGame.UserArchitectureOverride switch
             {
-                PeArchitecture.X64 => T("Vm.ForcedX64"),
-                PeArchitecture.X86 => T("Vm.ForcedX86"),
-                _ => ""
+                PeArchitecture.X64 => T("Shell.UserX64"),
+                PeArchitecture.X86 => T("Shell.UserX86"),
+                _ => SelectedGame.ForcedArchitecture switch
+                {
+                    PeArchitecture.X64 => T("Vm.ForcedX64"),
+                    PeArchitecture.X86 => T("Vm.ForcedX86"),
+                    _ => ""
+                }
             };
             return engine + architecture;
         }

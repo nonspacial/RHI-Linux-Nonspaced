@@ -275,6 +275,44 @@ public sealed partial class MainWindow
         new TextBox { Text = command, PlaceholderText = T("Win.OptionalLaunchCommand") },
         new TextBlock { Text = T(hintKey), TextWrapping = TextWrapping.Wrap, FontSize = 10, Opacity = 0.6 });
 
+    /// <summary>Edit game's name and bitness fields (Refs #190): game name, wiki mod name, bitness.</summary>
+    private sealed record EditGameNameControls(TextBox DisplayName, TextBox WikiName, ComboBox Bitness)
+    {
+        public void AddTo(StackPanel form)
+        {
+            form.Children.Add(new TextBlock { Text = T("Shell.IdentityHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
+            form.Children.Add(Labelled("Win.GameName", "Shell.DisplayNameTip", DisplayName));
+            form.Children.Add(Labelled("Shell.WikiName", "Shell.WikiNameTip", WikiName));
+            form.Children.Add(Labelled("Shell.Bitness", "Shell.BitnessTip", Bitness));
+        }
+
+        public GameNameEdit Read() => new(DisplayName.Text, WikiName.Text,
+            Bitness.SelectedIndex >= 0 ? OptionLists.Bitness.Values[Bitness.SelectedIndex] : null);
+
+        private static StackPanel Labelled(string labelKey, string tipKey, Control field)
+        {
+            var label = new TextBlock { Text = T(labelKey), FontWeight = FontWeight.SemiBold };
+            foreach (var control in new Control[] { label, field })
+            {
+                ToolTip.SetTip(control, T(tipKey));
+                ToolTip.SetShowDelay(control, MiddleEllipsisText.TooltipDelay);
+            }
+            var panel = new StackPanel { Spacing = 4 };
+            panel.Children.Add(label);
+            panel.Children.Add(field);
+            return panel;
+        }
+    }
+
+    private static EditGameNameControls EditGameNameFields(RHI.Core.Models.DetectedGame game)
+    {
+        var bitnessIndex = OptionLists.Bitness.Values.ToList().IndexOf(game.UserArchitectureOverride);
+        return new(
+            new TextBox { Text = game.DisplayName(), PlaceholderText = game.Name, MinWidth = 200 },
+            new TextBox { Text = game.UserWikiName, PlaceholderText = game.DetectedWikiName?.Value ?? T("Shell.WikiNamePlaceholder"), MinWidth = 200 },
+            new ComboBox { ItemsSource = OptionLists.Bitness.Items, SelectedIndex = bitnessIndex >= 0 ? bitnessIndex : 0, MinWidth = 160 });
+    }
+
     private void EditGame_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         if (DataContext is not MainWindowViewModel vm || vm.SelectedGame is null) return;
@@ -386,19 +424,23 @@ public sealed partial class MainWindow
             return row;
         }
 
+        // Name and bitness (Refs #190): plain labels, the explanation in a 2 s tooltip.
+        var names = EditGameNameFields(game);
+
         var status = new TextBlock { TextWrapping = TextWrapping.Wrap, Opacity = 0.82 };
         var save = new Button { Content = T("Win.Save"), Padding = new Thickness(14, 7) };
         var reset = new Button { Content = T("Win.RestoreAutomaticDetection"), Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
 
         var form = new StackPanel { Spacing = 9, Margin = new Thickness(20) };
-        form.Children.Add(new TextBlock { Text = TF("Win.Edit", game.Name), FontSize = 21, FontWeight = FontWeight.SemiBold });
+        form.Children.Add(new TextBlock { Text = TF("Win.Edit", game.DisplayName()), FontSize = 21, FontWeight = FontWeight.SemiBold });
         form.Children.Add(new TextBlock
         {
             Text = T("Win.ExecutableLauncherUsedStartGameIndependent"),
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
         });
+        names.AddTo(form);
 
         form.Children.Add(new TextBlock { Text = T("Win.LaunchHeading"), FontWeight = FontWeight.SemiBold, Foreground = Brushes.LightSkyBlue, Margin = new Thickness(0, 8, 0, 0) });
         form.Children.Add(new TextBlock { Text = TF("Vm.LibrarySource", game.LibraryProvider ?? game.Source), FontSize = 11, Opacity = 0.72 });
@@ -441,12 +483,13 @@ public sealed partial class MainWindow
 
         var dialog = new Window
         {
-            Title = TF("Win.EditGame", game.Name),
+            Title = TF("Win.EditGame", game.DisplayName()),
             // Preferred size; ShowFittedDialogAsync caps it to the main window. The minimum stays below the 640x480
             // window floor so the dialog can always be made smaller than its owner; the form scrolls vertically. 860 high
-            // so the whole form, footer included, shows at the preferred size with the launch command field (PT-BR wraps more).
+            // so the whole form, footer included, shows at the preferred size with the launch command field (PT-BR wraps more);
+            // 1060 since the name and bitness fields (Refs #190).
             Width = 790,
-            Height = 860,
+            Height = 1060,
             MinWidth = 460,
             MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -490,7 +533,8 @@ public sealed partial class MainWindow
                     binaryDirectory.Text?.Trim() ?? "",
                     chosenProvider,
                     launchCommand.Box.Text,
-                    saved: dialog.Close);
+                    saved: dialog.Close,
+                    names: names.Read());
                 if (!saved) status.Text = message;
             }
             catch (Exception ex)

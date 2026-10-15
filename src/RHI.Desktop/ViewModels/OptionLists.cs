@@ -227,6 +227,11 @@ public static class OptionLists
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
+    /// <summary>Edit game's bitness (Refs #190): null is "Automatic" (the manifest's override, else the exe header).</summary>
+    public static readonly OptionList<PeArchitecture?> Bitness = new(null, null,
+        new(null, "Ui.OptionAutomatic"),
+        new(PeArchitecture.X86, "Shell.Bitness32"),
+        new(PeArchitecture.X64, "Shell.Bitness64"));
     // w5/reshade-core rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>

@@ -42,6 +42,30 @@ public sealed class LinuxGameEditOverride
     public string? LaunchCommand { get; set; }
 
     /// <summary>
+    /// The name the card, the details header, search and sorting show (Edit game, Refs #190). Null = the detected name.
+    /// Presentation only: library keys, shortcuts, launch-by-key and catalogue lookups keep the detected name.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// The name RenoDX/Luma wiki lookups use for this game (Edit game, Refs #190); wins over the upstream manifest's
+    /// wiki-name mapping. Null = the manifest's mapping (if any), else the game's name.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? WikiName { get; set; }
+
+    /// <summary>
+    /// The bitness chosen in Edit game (x86/x64, Refs #190); null = Automatic. Read only through
+    /// <see cref="RHI.Core.Services.GameArchitecture.Of"/>, ahead of the manifest's override and the exe header (upstream's order).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PeArchitecture? Architecture { get; set; }
+
+    /// <summary>The rule for typed names (display and wiki name): trimmed; empty or whitespace-only = none.</summary>
+    public static string? NormalizeName(string? name) => string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+    /// <summary>
     /// The rule Add game and Edit game apply to a typed launch command: trimmed; empty or whitespace-only = none.
     /// </summary>
     public static string? NormalizeLaunchCommand(string? command)
@@ -58,11 +82,15 @@ public sealed class LinuxGameEditOverride
         GameRootPath = NormalizeOptionalPath(GameRootPath);
         BinaryDirectory = NormalizeOptionalPath(BinaryDirectory);
         LaunchCommand = NormalizeLaunchCommand(LaunchCommand);
+        DisplayName = NormalizeName(DisplayName);
+        WikiName = NormalizeName(WikiName);
+        Architecture = Architecture is PeArchitecture.X86 or PeArchitecture.X64 ? Architecture : null;
         return this;
     }
 
-    /// <summary>True when the edit still holds anything (a patch target, a launcher badge or a launch command).</summary>
-    public bool IsEmpty() => !HasPatchTarget && LaunchProvider is null && LaunchCommand is null;
+    /// <summary>True when the edit still holds anything (a patch target, a launcher badge, a launch command, a name or a bitness).</summary>
+    public bool IsEmpty() => !HasPatchTarget && LaunchProvider is null && LaunchCommand is null
+                             && DisplayName is null && WikiName is null && Architecture is null;
 
     public bool HasPatchTarget =>
         !string.IsNullOrWhiteSpace(PatchExecutablePath) &&
@@ -324,6 +352,9 @@ public sealed class LinuxGameLibraryStore : IGameStateStore
     {
         LaunchProvider = edit.LaunchProvider,
         LaunchCommand = edit.LaunchCommand,
+        DisplayName = edit.DisplayName,
+        WikiName = edit.WikiName,
+        Architecture = edit.Architecture,
         PatchExecutablePath = MapOptional(move, edit.PatchExecutablePath),
         GameRootPath = MapOptional(move, edit.GameRootPath),
         BinaryDirectory = MapOptional(move, edit.BinaryDirectory)

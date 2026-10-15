@@ -881,6 +881,20 @@ internal static class UiStrings
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        // #190 Edit game: name, wiki mod name, bitness.
+        ("Shell.IdentityHeading", "Nome e arquitetura", "Name and bitness"),
+        ("Shell.DisplayNameTip", "O nome que o cartão, o cabeçalho, a busca e a ordenação mostram. Vazio = o nome detectado. Favoritos, atalhos e o que o RHI instalou continuam ligados ao jogo.", "The name the card, the header, search and sorting show. Empty = the detected name. Favourites, shortcuts and what RHI installed stay with the game."),
+        ("Shell.WikiName", "Nome do mod na wiki", "Wiki mod name"),
+        ("Shell.WikiNameTip", "O nome usado para procurar este jogo na wiki do RenoDX. Vazio = o nome do jogo (ou o mapeamento do manifesto do RHI, se houver).", "The name used to look this game up on the RenoDX wiki. Empty = the game's name (or the RHI manifest's mapping, if there is one)."),
+        ("Shell.WikiNamePlaceholder", "Nome exato na wiki", "Exact wiki name"),
+        ("Shell.Bitness", "Arquitetura", "Bitness"),
+        ("Shell.BitnessTip", "Automático usa a escolha do manifesto do RHI, senão o cabeçalho do executável. 32 ou 64 bits força o valor para todas as instalações. Para mudar com componentes do RHI instalados, remova-os antes.", "Automatic uses the RHI manifest's choice, else the executable's header. 32-bit or 64-bit forces the value for every install. To change it with RHI components installed, remove them first."),
+        ("Shell.Bitness32", "32 bits", "32-bit"),
+        ("Shell.Bitness64", "64 bits", "64-bit"),
+        ("Shell.UserX64", " · x64 escolhido em Editar jogo", " · x64 set in Edit game"),
+        ("Shell.UserX86", " · x86 escolhido em Editar jogo", " · x86 set in Edit game"),
+        ("Shell.RemoveComponentsBeforeBitness", "Remova primeiro os componentes gerenciados pelo RHI antes de mudar a arquitetura: os arquivos deles foram escolhidos para a arquitetura atual.", "Remove RHI-managed components before changing the bitness: their files were picked for the current one."),
+        ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
     ];
 }

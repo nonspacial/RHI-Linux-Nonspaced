@@ -219,7 +219,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     }
 
     private bool CanRepairAfterMove() => !IsBusy && SelectedGame is not null;
-    public string SelectedTitle => SelectedGame?.Name ?? UiLocalizationService.Text("Ui.SelectGame");
+    public string SelectedTitle => SelectedGame?.DisplayName() ?? UiLocalizationService.Text("Ui.SelectGame");
     public string SelectedSource => SelectedGame is null ? "" : $"{SelectedGame.Source}  •  {SelectedGame.Runner ?? UiLocalizationService.Text("Ui.UnknownRunner")}";
 
     public string SelectedLibraryProvider => SelectedGame?.LibraryProvider ?? "";

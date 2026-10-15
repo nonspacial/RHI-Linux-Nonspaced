@@ -52,15 +52,27 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
     /// The Edit game launch command box (Add game's rule: trimmed, blank = none). None, or the detected command itself,
     /// saves no command: the card uses the detected (launcher or Add game) command again.
     /// </param>
+    /// <param name="names">
+    /// Edit game's display name, wiki mod name and bitness (Refs #190); null keeps the ones already saved. A name equal to
+    /// the detected one (or the manifest's wiki name) saves none. A bitness change that moves the game's effective
+    /// bitness is refused while RHI components are installed (their files were picked for the old bitness).
+    /// </param>
     public async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
         string patchExecutablePath,
         string gameRootPath,
         string binaryDirectory,
         string? launchProvider,
         string? launchCommand,
-        Action? saved = null)
+        Action? saved = null,
+        GameNameEdit? names = null)
     {
         if (SelectedGame is null) return (false, T("Vm.SelectGameFirst"));
+        names = names?.Normalized(SelectedGame) ?? GameNameEdit.Current(SelectedGame);
+        var namesChanged = names != GameNameEdit.Current(SelectedGame);
+        if (names.Architecture != SelectedGame.UserArchitectureOverride
+            && GameArchitecture.With(SelectedGame, names.Architecture) != GameArchitecture.Of(SelectedGame)
+            && Host.DeploymentRecords.FindAll(SelectedGame).Count > 0)
+            return (false, T("Shell.RemoveComponentsBeforeBitness"));
 
         var detectedCommand = SelectedGame.DetectedLaunch is { } detected ? detected.Command
             : SelectedGame.UserLaunchCommand is null ? SelectedGame.LaunchCommand : null;
@@ -69,11 +81,11 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             userCommand = null;
         var commandChanged = !string.Equals(userCommand, SelectedGame.UserLaunchCommand, StringComparison.Ordinal);
 
-        // All three target fields left blank with a new launch command: only the launch fields are saved, and a saved
+        // All three target fields left blank with a new launch command or new names: only those are saved, and a saved
         // patch target stays as it is (a launcher card has none to show; a stale one waits for Repair after move).
-        if (commandChanged && string.IsNullOrWhiteSpace(patchExecutablePath) && string.IsNullOrWhiteSpace(gameRootPath)
+        if ((commandChanged || namesChanged) && string.IsNullOrWhiteSpace(patchExecutablePath) && string.IsNullOrWhiteSpace(gameRootPath)
             && string.IsNullOrWhiteSpace(binaryDirectory))
-            return await SaveSelectedGameEditAsync(null, launchProvider, userCommand, saved);
+            return await SaveSelectedGameEditAsync(null, launchProvider, userCommand, names, saved);
 
         if (string.IsNullOrWhiteSpace(patchExecutablePath) || !File.Exists(patchExecutablePath))
             return (false, T("Vm.SelectRealGameExecutableShouldReceive"));
@@ -110,16 +122,17 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             PatchExecutablePath = executable,
             GameRootPath = root,
             BinaryDirectory = binaries
-        }, launchProvider, userCommand, saved);
+        }, launchProvider, userCommand, names, saved);
     }
 
     /// <param name="target">The patch target to save; null keeps the one already saved for the game (if any).</param>
     private async Task<(bool Saved, string Message)> SaveSelectedGameEditAsync(
-        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, Action? saved)
+        LinuxGameEditOverride? target, string? launchProvider, string? userCommand, GameNameEdit names, Action? saved)
     {
         var targetFieldsBlank = target is null;
         var game = SelectedGame!;
         var commandChanged = !string.Equals(userCommand, game.UserLaunchCommand, StringComparison.Ordinal);
+        var namesChanged = names != GameNameEdit.Current(game);
         // Mutate a copy and adopt it only once it is on disk: a refused save must not stay in
         // _libraryState, or the next unrelated library save would persist it.
         var state = Host.WorkingLibraryCopy();
@@ -133,7 +146,10 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             PatchExecutablePath = target?.PatchExecutablePath,
             GameRootPath = target?.GameRootPath,
             BinaryDirectory = target?.BinaryDirectory,
-            LaunchCommand = userCommand
+            LaunchCommand = userCommand,
+            DisplayName = names.DisplayName,
+            WikiName = names.WikiName,
+            Architecture = names.Architecture
         }.Normalize();
         if (edit.IsEmpty()) state.GameEdits.Remove(key);
         else state.GameEdits[key] = edit;
@@ -145,6 +161,7 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
         Host.Session.Invalidate(game);
         var refreshed = await Host.RefreshWhenIdleAsync(MainWindowViewModel.NoDetectors);
         var message = !refreshed ? TF("Vm.ModificationTargetSavedButLibraryWas", name)
+            : !commandChanged && targetFieldsBlank && namesChanged ? TF("Shell.EditSavedNames", name)
             : !commandChanged ? TF("Vm.ModificationTargetSavedLauncherStartupWas", name)
             : targetKept
                 ? userCommand is null ? TF("Vm.EditSavedTargetKeptPlayUsesDetectedCommand", name) : TF("Vm.EditSavedTargetKeptPlayUsesYourCommand", name)
@@ -279,5 +296,30 @@ public sealed partial class ManualGamesViewModel : PanelViewModel
             return normalizedCandidate.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
+    }
+}
+
+/// <summary>
+/// Edit game's display name, wiki mod name and bitness (Refs #190); null fields = automatic (the detected name, the
+/// manifest's wiki mapping or the game's name, the bitness <see cref="GameArchitecture.Of"/> finds without a choice).
+/// </summary>
+public sealed record GameNameEdit(string? DisplayName, string? WikiName, PeArchitecture? Architecture)
+{
+    /// <summary>What <paramref name="game"/> has saved now.</summary>
+    public static GameNameEdit Current(DetectedGame game)
+        => new(game.UserDisplayName, game.UserWikiName, game.UserArchitectureOverride);
+
+    /// <summary>
+    /// Typed values as they are saved: trimmed, blank = none; a display name equal to the detected name and a wiki name
+    /// equal to the manifest's mapping save none (the card shows the same either way); bitness only x86/x64.
+    /// </summary>
+    public GameNameEdit Normalized(DetectedGame game)
+    {
+        var display = LinuxGameEditOverride.NormalizeName(DisplayName);
+        if (string.Equals(display, game.Name, StringComparison.Ordinal)) display = null;
+        var wiki = LinuxGameEditOverride.NormalizeName(WikiName);
+        var manifestWiki = game.DetectedWikiName is { } detected ? detected.Value : game.UserWikiName is null ? game.WikiNameOverride : null;
+        if (string.Equals(wiki, LinuxGameEditOverride.NormalizeName(manifestWiki), StringComparison.Ordinal)) wiki = null;
+        return new(display, wiki, Architecture is PeArchitecture.X86 or PeArchitecture.X64 ? Architecture : null);
     }
 }

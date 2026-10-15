@@ -13,7 +13,8 @@ namespace RHI.Desktop.ViewModels;
 public sealed class GameRowViewModel(DetectedGame game) : ObservableObject
 {
     public DetectedGame Game { get; } = game;
-    public string Name => Game.Name;
+    /// <summary>The card's name: Edit game's display name, else the detected name (Refs #190).</summary>
+    public string Name => Game.DisplayName();
     public string Source => Game.Source;
     public bool IsFavourite => Game.IsFavourite;
     public bool IsHidden => Game.IsHidden;
@@ -88,7 +89,7 @@ public sealed class LibraryViewModel
     {
         var wanted = _all
             .Where(game => GameLibraryFilter.Matches(game, mode, search, facts?.Invoke(game) ?? default))
-            .OrderBy(game => game.Name, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(game => game.DisplayName(), StringComparer.CurrentCultureIgnoreCase)
             .Select(game => _rows[game])
             .ToList();
         var wantedSet = wanted.ToHashSet(ReferenceEqualityComparer.Instance);

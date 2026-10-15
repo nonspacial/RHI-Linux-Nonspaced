@@ -283,6 +283,10 @@ public sealed class GameLibraryScanner
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            first.UserDisplayName ??= candidate.UserDisplayName;
+            first.UserWikiName ??= candidate.UserWikiName;
+            first.DetectedWikiName ??= candidate.DetectedWikiName;
+            first.UserArchitectureOverride ??= candidate.UserArchitectureOverride;
             // w5/reshade-core rows
         }
         return first;

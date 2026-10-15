@@ -202,6 +202,16 @@ public sealed class DetectedGame
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
+    /// <summary>Edit game's display name (Refs #190), applied by identity resolution; null = <see cref="Name"/>. Presentation only.</summary>
+    public string? UserDisplayName { get; set; }
+    /// <summary>Edit game's wiki mod name (Refs #190), applied by identity resolution as <see cref="WikiNameOverride"/>.</summary>
+    public string? UserWikiName { get; set; }
+    /// <summary>The manifest's <see cref="WikiNameOverride"/>, captured by the first identity resolution so an Edit game wiki name can replace it and clearing that name brings it back.</summary>
+    public DetectedWikiName? DetectedWikiName { get; set; }
+    /// <summary>Edit game's bitness (x86/x64, Refs #190); read only through <see cref="RHI.Core.Services.GameArchitecture.Of"/>.</summary>
+    public PeArchitecture? UserArchitectureOverride { get; set; }
+    /// <summary>The name the card, header, search and sort show: Edit game's display name, else the detected name.</summary>
+    public string DisplayName() => string.IsNullOrWhiteSpace(UserDisplayName) ? Name : UserDisplayName;
     // w5/reshade-core rows
 
     /// <summary>

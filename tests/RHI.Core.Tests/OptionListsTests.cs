@@ -37,6 +37,7 @@ public sealed class OptionListsTests
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            AssertRoundTrips(OptionLists.Bitness);
             // w5/reshade-core rows
         }
         finally
