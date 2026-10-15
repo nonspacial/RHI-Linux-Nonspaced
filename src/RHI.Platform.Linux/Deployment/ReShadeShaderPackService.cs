@@ -428,9 +428,18 @@ public sealed class ReShadeShaderPackService
             effectPaths.Add(@".\reshade-shaders\RHI\_Core\Shaders\**");
         }
 
-        if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
-        new JsonFileStore<Manifest>(manifestPath).Save(outputManifest);
-        if (operation is not null) await operation.RecordWrittenContentAsync(manifestPath, CancellationToken.None).ConfigureAwait(false);
+        var manifestFile = new JsonFileStore<Manifest>(manifestPath);
+        if (operation is null) manifestFile.Save(outputManifest);
+        else
+        {
+            // Declared BEFORE the write (w6/crash review 3): a crash right after it rolls the manifest back with the pack
+            // files; declared after, recovery would keep the new manifest as user content over the restored packs.
+            var manifestBytes = manifestFile.Stage(_ => outputManifest)!.After;
+            await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+            await operation.RecordWriteAsync(manifestPath, FileHash.Sha256HexOf(manifestBytes), CancellationToken.None).ConfigureAwait(false);
+            AtomicFile.WriteStoreFile(manifestPath, manifestBytes);
+        }
+        ManifestWrittenForTesting?.Invoke(manifestPath);
         return new(root, effectPaths, texturePaths, normalized);
     }
 
@@ -565,6 +574,9 @@ public sealed class ReShadeShaderPackService
     // One pack cache writer at a time (#194): the start-up prefetch and an install's staging never build the same entry
     // together (one would delete the other's freshly moved tree).
     private readonly SemaphoreSlim _packGate = new(1, 1);
+
+    /// <summary>Test seam: runs right after a journaled sync wrote the game's shader-pack manifest.</summary>
+    internal Action<string>? ManifestWrittenForTesting { get; set; }
 
     internal async Task<string> EnsurePackAsync(
         ReShadeShaderPackDefinition pack,

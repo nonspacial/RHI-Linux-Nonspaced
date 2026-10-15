@@ -1106,9 +1106,12 @@ public sealed partial class ReShadeChannelTests : IDisposable
         // aligned with the real CrosireMaster DirectUrl authority so profile-only
         // update tests remain offline and exercise D3DCompiler ownership instead
         // of accidentally falling through to the network handler.
-        var sourceIdentity = packId.Equals("CrosireMaster", StringComparison.OrdinalIgnoreCase)
-            ? "https://github.com/crosire/reshade-shaders/archive/refs/heads/master.zip"
-            : throw new InvalidOperationException($"SeedShaderCache has no source identity fixture for '{packId}'.");
+        var sourceIdentity = packId switch
+        {
+            "CrosireMaster" => "https://github.com/crosire/reshade-shaders/archive/refs/heads/master.zip",
+            "CrosireLegacy" => "https://github.com/crosire/reshade-shaders/archive/refs/heads/legacy.zip",
+            _ => throw new InvalidOperationException($"SeedShaderCache has no source identity fixture for '{packId}'.")
+        };
         File.WriteAllText(Path.Combine(pack, ".source"), sourceIdentity);
         // A cache entry RHI itself extracted also carries its download stamp (#142).
         CacheStamp.Write(Path.Combine(pack, "extracted"), sourceIdentity, sourceIdentity);
