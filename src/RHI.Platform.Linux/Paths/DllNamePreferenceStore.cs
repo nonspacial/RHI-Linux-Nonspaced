@@ -7,8 +7,12 @@ using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
-/// <summary>A game's chosen proxy DLL names (#120; RTX Encore's since #158). Null = automatic/default.</summary>
-public sealed class DllNameChoices
+/// <summary>
+/// A game's chosen proxy DLL names (#120; RTX Encore's since #158). Null = automatic/default. A record, so a change to
+/// one choice copies every other one generically (<see cref="Copy"/>, <see cref="IsEmpty"/>): a choice added later is
+/// kept by every setter without touching <c>DllNamePreferenceStore.Update</c>.
+/// </summary>
+public sealed record DllNameChoices
 {
     [JsonPropertyName("reshade")]
     public string? ReShade { get; set; }
@@ -21,7 +25,15 @@ public sealed class DllNameChoices
     [JsonPropertyName("rtxEncoreNeuralRendering")]
     public bool? RtxEncoreNeuralRendering { get; set; }
 
-    internal bool IsEmpty => ReShade is null && RtxEncore is null && RtxEncoreNeuralRendering is null;
+    /// <summary>Fields a newer RHI wrote that this build does not know: kept as they are on every save.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
+
+    /// <summary>Every field, copied (record <c>with</c>); the unknown fields are never changed, so sharing them is safe.</summary>
+    internal DllNameChoices Copy() => this with { };
+
+    /// <summary>No choice at all (every field at its default): the game's entry can go.</summary>
+    internal bool IsEmpty() => this with { Unknown = Unknown is { Count: > 0 } ? Unknown : null } == new DllNameChoices();
 }
 
 /// <summary>
@@ -116,10 +128,10 @@ public sealed class DllNamePreferenceStore : IGameStateStore
         {
             var entries = LoadUnsafe();
             var choices = GameRecordIdentity.TryGet(entries, game, out var existing) && existing is not null
-                ? new DllNameChoices { ReShade = existing.ReShade, RtxEncore = existing.RtxEncore, RtxEncoreNeuralRendering = existing.RtxEncoreNeuralRendering }
+                ? existing.Copy()
                 : new DllNameChoices();
             change(choices);
-            if (choices.IsEmpty) GameRecordIdentity.Remove(entries, game);
+            if (choices.IsEmpty()) GameRecordIdentity.Remove(entries, game);
             else GameRecordIdentity.Set(entries, game, choices);
             _file.Save(entries);
         }
