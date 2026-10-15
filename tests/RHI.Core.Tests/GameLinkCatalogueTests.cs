@@ -75,8 +75,10 @@ public sealed class GameLinkCatalogueTests : IDisposable
         => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, type) };
 
     /// <summary>Serves every list; counts requests per host.</summary>
-    private static Fake Lists(Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null) => new(request =>
-        request.RequestUri!.AbsoluteUri switch
+    private static Fake Lists(Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null) => new(request => ListResponse(request, fallback));
+
+    private static HttpResponseMessage ListResponse(HttpRequestMessage request, Func<HttpRequestMessage, HttpResponseMessage?>? fallback = null)
+        => request.RequestUri!.AbsoluteUri switch
         {
             GameLinkCatalogue.UltraPlusGamesUrl => Text(UltraPlusHtml, "text/html"),
             GameLinkCatalogue.LyallReposUrl => Text(LyallJson, "application/json"),
@@ -84,7 +86,7 @@ public sealed class GameLinkCatalogueTests : IDisposable
             GameLinkCatalogue.P1xelReadmeUrl => Text(P1xelMarkdown),
             GameLinkCatalogue.HdrDatabaseReadmeUrl => Text(HdrMarkdown),
             _ => fallback?.Invoke(request) ?? new HttpResponseMessage(HttpStatusCode.NotFound)
-        });
+        };
 
     private static DetectedGame Named(string name) => new() { Name = name, InstallPath = "/games/" + name };
 
@@ -233,6 +235,33 @@ public sealed class GameLinkCatalogueTests : IDisposable
         Assert.False(DownloadSources.SteamStoreSearch.IsTrusted("https://steamcommunity.com/"));
         Assert.Equal(4L * 1024 * 1024, DownloadSources.UltraPlusGameList.MaxBytes);
         Assert.Equal(4L * 1024 * 1024, DownloadSources.CommunityGameList.MaxBytes);
+    }
+
+    [Fact]
+    public async Task FullRefresh_DownloadsEveryListAgain_EvenWhenFresh_AndAFailedDownloadKeepsTheLoadedCopy()
+    {
+        var ultraPlus = UltraPlusHtml;
+        var offline = false;
+        var http = new Fake(request => offline ? throw new HttpRequestException("offline")
+            : request.RequestUri!.AbsoluteUri == GameLinkCatalogue.UltraPlusGamesUrl ? Text(ultraPlus, "text/html") : ListResponse(request));
+        var links = new GameLinkCatalogue(new HttpClient(http), CacheDir);
+        await links.LoadAsync();
+        await links.LoadAsync(); // loaded: the session's copy is used
+        Assert.Equal(5, http.Requests.Count);
+
+        ultraPlus = """<a href="/games/brandnew/" class="game-card"><h3>Brand New Game</h3></a>""";
+        Assert.Null(links.UltraPlusPageFor(Named("Brand New Game")));
+        await links.RefreshAsync(); // every cached copy is still fresh: downloaded again all the same
+        Assert.Equal(10, http.Requests.Count);
+        Assert.Equal("https://theultraplace.com/games/brandnew/", links.UltraPlusPageFor(Named("Brand New Game")));
+        Assert.Null(links.UltraPlusPageFor(Named("Cyberpunk 2077")));
+
+        offline = true;
+        File.Delete(Path.Combine(CacheDir, "ultraplus-games.json")); // nothing to fall back on but what is loaded
+        await links.RefreshAsync();
+        Assert.Equal(15, http.Requests.Count);
+        Assert.Equal("https://theultraplace.com/games/brandnew/", links.UltraPlusPageFor(Named("Brand New Game")));
+        Assert.True(links.UltraPlusLoaded);
     }
 
     [Fact]
@@ -505,6 +534,37 @@ public sealed class GameLinkCatalogueTests : IDisposable
     }
 
     [Fact]
+    public async Task PcgwCache_ASlowSaveOfAnOlderCopy_NeverOverwritesANewerFile()
+    {
+        var links = new GameLinkCatalogue(new HttpClient(Lists()), CacheDir,
+            policy: _ => Task.FromResult<UpstreamLibraryPolicySnapshot?>(Policy(useAppId: true)));
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        var saves = 0;
+        links.PcgwCopyTakenForTesting = () =>
+        {
+            // The first game's second save (its page) is held after its copy was taken, while the second game saves.
+            if (Interlocked.Increment(ref saves) != 2) return;
+            parked.TrySetResult();
+            release.Wait(TimeSpan.FromSeconds(60));
+        };
+        var first = Named("First Game");
+        first.SteamAppId = 11;
+        var second = Named("Second Game");
+        second.SteamAppId = 22;
+
+        var slow = links.ResolvePcgwAsync(first);
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        await links.ResolvePcgwAsync(second).WaitAsync(TimeSpan.FromSeconds(60));
+        release.Set();
+        await slow.WaitAsync(TimeSpan.FromSeconds(60));
+
+        var reread = new GameLinkCatalogue(new HttpClient(new Fake(_ => throw new HttpRequestException("offline"))), CacheDir);
+        Assert.Equal("https://www.pcgamingwiki.com/api/appid.php?appid=11", reread.PcgwPageFor(first));
+        Assert.Equal("https://www.pcgamingwiki.com/api/appid.php?appid=22", reread.PcgwPageFor(second));
+    }
+
+    [Fact]
     public void SteamSearch_MatchesOnlyTheSameNormalisedName()
     {
         var raw = Encoding.UTF8.GetBytes("""{"items": [{"id": 1, "name": "Game 2"}, {"id": 2, "name": "GAME™"}, {"id": "x", "name": "Game"}]}""");
@@ -547,6 +607,33 @@ public sealed class GameLinkCatalogueTests : IDisposable
 
         Assert.Empty(presenter.MenuItemsFor(Named("Plain Quest"), opened.Add)); // no page: nothing, not a disabled entry
         Assert.Empty(new GameLinksPresenter(null!, null!, null!).MenuItemsFor(shared, opened.Add)); // no catalogue wired
+    }
+
+    [Fact]
+    public async Task MenuItems_NeverWaitForAListLoad_OrAPcgwLookup()
+    {
+        var held = new HeldFake(request => ListResponse(request));
+        var central = new PcgwCentralDataService(new HttpClient(held), Path.Combine(_root, "pcgw_data.json"), fallbackUrl: null);
+        var pcgwSearch = new PcGamingWikiGraphicsApiService(new HttpClient(held), Path.Combine(_root, "pcgw-api.json"), minRequestGap: TimeSpan.Zero);
+        var presenter = new GameLinksPresenter(null!, null!, null!)
+        {
+            Links = new GameLinkCatalogue(new HttpClient(held), CacheDir, pcgwData: central, pcgwSearch: pcgwSearch,
+                policy: _ => Task.FromResult<UpstreamLibraryPolicySnapshot?>(Policy()))
+        };
+        var game = Named("Cyberpunk 2077");
+        try
+        {
+            // Every server holds its answer: the menu is built at once from what is known (nothing yet).
+            var items = await Task.Run(() => presenter.MenuItemsFor(game, _ => { })).WaitAsync(TimeSpan.FromSeconds(20));
+            Assert.Empty(items);
+            await held.Asked(GameLinkCatalogue.UltraPlusGamesUrl).WaitAsync(TimeSpan.FromSeconds(20)); // the lists were started meanwhile
+            Assert.Empty(await Task.Run(() => presenter.MenuItemsFor(game, _ => { })).WaitAsync(TimeSpan.FromSeconds(20))); // opened again: still no wait
+        }
+        finally { held.Release(); }
+
+        await presenter.Links.LoadAsync();
+        var pages = Assert.Single(presenter.MenuItemsFor(game, _ => { }));
+        Assert.Contains(pages.Children!, c => c.Id == "ultraplus-page");
     }
 
     [Fact]
@@ -689,5 +776,31 @@ public sealed class GameLinksCardMenuTests : IDisposable
         Assert.Equal(["pcgw-page", "ultraplus-page"], pages.Children!.Select(c => c.Id));
         Assert.Equal(UiLocalizationService.Text("Cat.UltraPlusPage"), pages.Children![1].Label);
         Assert.DoesNotContain(fx.Vm.CardMenuFor(fx.Vm.Games.Single(r => r.Name == "Plain Quest")), i => i.Id is "web-pages" or "discussion");
+    }
+
+    [Fact]
+    public async Task FullRefresh_DownloadsTheCardLinkAndInfoDialogListsAgain()
+    {
+        var game = new DetectedGame { Name = "Refreshed Quest", Source = "Steam", InstallPath = Path.Combine(_root, "refreshed"), SteamAppId = 103 };
+        Directory.CreateDirectory(game.InstallPath);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var asked = new System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource>(StringComparer.Ordinal);
+        Task Asked(string url) => asked.GetOrAdd(url, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+        using var http = new HttpClient(new GameLinkCatalogueTests.Fake(request =>
+        {
+            asked.GetOrAdd(request.RequestUri!.AbsoluteUri, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+            throw new HttpRequestException("offline test");
+        }));
+        var wine = new WineDllOverrideService();
+        var services = RHI.Desktop.AppComposition.Create(http, new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")), wine,
+            LinuxDeploymentRecovery.CreateJournal(wine, Path.Combine(_root, "journal")));
+        fx.Vm.Parity = services.Parity;
+        Assert.False(Asked(GameLinkCatalogue.UltraPlusGamesUrl).IsCompleted);
+
+        await fx.Vm.RefreshCommand.ExecuteAsync(null);
+        await Asked(GameLinkCatalogue.UltraPlusGamesUrl).WaitAsync(TimeSpan.FromSeconds(30)); // the card links' lists
+        await Asked(GameLinkCatalogue.HdrDatabaseReadmeUrl).WaitAsync(TimeSpan.FromSeconds(30));
+        await Asked(OptiScalerWikiCatalogue.CompatibilityListUrl).WaitAsync(TimeSpan.FromSeconds(30)); // the ⓘ dialogs' lists
+        await Asked(RenoDxUnrealDatabaseService.LiveUrl).WaitAsync(TimeSpan.FromSeconds(30));
     }
 }

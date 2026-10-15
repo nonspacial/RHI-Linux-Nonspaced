@@ -54,6 +54,9 @@ public sealed partial class OptiScalerWikiCatalogue
     /// <summary>Loads (or joins the load of) both lists; never faults.</summary>
     public Task LoadAsync() => Task.WhenAll(_standard.LoadAsync(), _fsr4.LoadAsync());
 
+    /// <summary>Full Refresh: both pages downloaded again (the loaded rows stay in use until then).</summary>
+    public Task RefreshAsync() => Task.WhenAll(_standard.RefreshAsync(), _fsr4.RefreshAsync());
+
     /// <summary>The game's rows on the general and FSR4 lists by its wiki name (case and quote style ignored); null until loaded.</summary>
     public (OptiScalerCompatEntry? Standard, OptiScalerCompatEntry? Fsr4) Find(string wikiName)
         => (_standard.Find(Key(wikiName)), _fsr4.Find(Key(wikiName)));

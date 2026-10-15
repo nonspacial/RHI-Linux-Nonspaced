@@ -50,6 +50,26 @@ public sealed class NewModsTests : IDisposable
     }
 
     [Fact]
+    public async Task ButtonTip_WordsOneNewModInTheSingular_InBothLanguages()
+    {
+        await new NewModsPresenter().CheckAsync(Task.CompletedTask, Sources(["Alpha"], ["Luma One"], ["Ultra One"]));
+        var one = new NewModsPresenter();
+        await one.CheckAsync(Task.CompletedTask, Sources(["Alpha", "Beta"], ["Luma One"], ["Ultra One"]));
+        Assert.Equal("1 RenoDX, Luma or Ultra+ mod appeared since you last marked the mods as seen", one.ButtonTip);
+        var two = new NewModsPresenter();
+        await two.CheckAsync(Task.CompletedTask, Sources(["Alpha", "Beta"], ["Luma One", "Luma Two"], ["Ultra One"]));
+        Assert.Equal("2 RenoDX, Luma or Ultra+ mods appeared since you last marked them as seen", two.ButtonTip);
+
+        UiLocalizationService.Apply("pt-BR");
+        try
+        {
+            Assert.Equal("1 mod de RenoDX, Luma ou Ultra+ apareceu desde a última vez que você marcou os mods como vistos", one.ButtonTip);
+            Assert.Equal("2 mods de RenoDX, Luma ou Ultra+ apareceram desde a última vez que você os marcou como vistos", two.ButtonTip);
+        }
+        finally { UiLocalizationService.Apply("en-US"); }
+    }
+
+    [Fact]
     public async Task MarkAsSeen_RemembersAndHides_CloseKeepsTheButton()
     {
         await new NewModsPresenter().CheckAsync(Task.CompletedTask, Sources(["Alpha"], ["Luma One"], ["Ultra One"]));

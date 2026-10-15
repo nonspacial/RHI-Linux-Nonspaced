@@ -111,6 +111,16 @@ public sealed partial class ComponentInfoCatalogue
         or ManagedComponentKind.LumaFramework or ManagedComponentKind.OptiScaler or ManagedComponentKind.ReLimiter
         or ManagedComponentKind.DisplayCommander or ManagedComponentKind.REFramework;
 
+    /// <summary>
+    /// Full Refresh: the OptiScaler wiki and the UE-Extended database are downloaded again, and the change logs and Nexus Mods
+    /// summaries fetched this session are forgotten (the next dialog asks again). Never blocks, never faults.
+    /// </summary>
+    public Task RefreshAsync()
+    {
+        lock (_sync) _texts.Clear();
+        return Task.WhenAll(_optiScalerWiki?.RefreshAsync() ?? Task.CompletedTask, _unreal?.RefreshAsync() ?? Task.CompletedTask);
+    }
+
     /// <summary>Works out the dialog's content. Never throws for a remote source; <paramref name="cancellationToken"/> stops waiting.</summary>
     public async Task<ComponentInfo> ResolveAsync(DetectedGame game, ManagedComponentKind kind, string? installedVersion = null,
         CancellationToken cancellationToken = default)

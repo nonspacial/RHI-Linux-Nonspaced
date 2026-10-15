@@ -896,6 +896,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             if (onlyDetectors is null) _session.InvalidateAll();
             // Full Refresh bypasses the session NR version and latest-version caches (upstream 2.7.9).
             var neuralCatalogRefresh = onlyDetectors is null ? Extras.ReportNeuralCatalogLoadAsync(Extras.Versions.FullRefreshAsync()) : null;
+            if (onlyDetectors is null && Parity is { } catalogue) UiExceptionGuard.Forget(catalogue.RefreshCatalogueListsAsync(), "CatalogueLists"); // w5/catalogue-info: web lists too
             SelectedGame = null;
 
             var scan = await _scanner.ScanWithReportAsync(onlyDetectors, op.Token);

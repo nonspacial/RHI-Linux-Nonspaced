@@ -10,7 +10,8 @@ namespace RHI.Platform.Linux.Network;
 /// <summary>
 /// One web list (#183 card links, #184 info dialogs, #185 new mods): downloaded under its own policy, parsed, kept in a cache file
 /// (<see cref="JsonStoreKind.Cache"/>; the time of the download is recorded inside it), the last good copy reused when
-/// the list cannot be fetched, retried after a pause when nothing is available. Lookups never wait for it.
+/// the list cannot be fetched, retried after a pause when nothing is available. Lookups never wait for it. Full Refresh
+/// downloads it again (<see cref="RefreshAsync"/>).
 /// </summary>
 internal sealed class CachedRemoteList<T> where T : class
 {
@@ -67,23 +68,37 @@ internal sealed class CachedRemoteList<T> where T : class
     {
         lock (_sync)
         {
-            if (_loaded is not null) return Task.CompletedTask;
+            if (_loaded is not null) return Task.CompletedTask; // a Full Refresh running meanwhile is not waited for
             if (_load is null)
             {
                 if (_time.GetUtcNow() < _retryAfter) return Task.CompletedTask;
-                _load = Task.Run(LoadSharedAsync, CancellationToken.None);
+                _load = Task.Run(() => LoadSharedAsync(refresh: false), CancellationToken.None);
             }
             return _load;
         }
     }
 
-    private async Task LoadSharedAsync()
+    /// <summary>
+    /// Full Refresh: downloads the list again even when the cached copy is fresh (a load already running is joined). The
+    /// loaded entries stay in use until the new copy is in; a failed download keeps them.
+    /// </summary>
+    public Task RefreshAsync()
+    {
+        lock (_sync)
+        {
+            if (_load is not null) return _load;
+            _retryAfter = DateTimeOffset.MinValue;
+            return _load = Task.Run(() => LoadSharedAsync(refresh: true), CancellationToken.None);
+        }
+    }
+
+    private async Task LoadSharedAsync(bool refresh)
     {
         Loaded? loaded = null;
         try
         {
             using var timeout = new CancellationTokenSource(LoadTimeout);
-            loaded = await LoadCoreAsync(timeout.Token).ConfigureAwait(false);
+            loaded = await LoadCoreAsync(refresh, timeout.Token).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -93,14 +108,14 @@ internal sealed class CachedRemoteList<T> where T : class
         {
             _load = null;
             if (loaded is not null) _loaded = loaded;
-            else _retryAfter = _time.GetUtcNow() + FailureRetryDelay;
+            else _retryAfter = _time.GetUtcNow() + FailureRetryDelay; // a loaded copy stays in use meanwhile
         }
     }
 
-    private async Task<Loaded?> LoadCoreAsync(CancellationToken cancellationToken)
+    private async Task<Loaded?> LoadCoreAsync(bool refresh, CancellationToken cancellationToken)
     {
         var cached = ReadCache();
-        if (cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh) return fresh;
+        if (!refresh && cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh) return fresh;
         try
         {
             var text = await TrustedDownload.GetStringAsync(_http, _url, _policy, cancellationToken: cancellationToken).ConfigureAwait(false);

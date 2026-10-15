@@ -52,6 +52,9 @@ public sealed class ComponentInfoPresenter(ComponentInfoCatalogue catalogue)
     public static bool HasInfo(ManagedComponentKind kind, ComponentAvailability availability)
         => ComponentInfoCatalogue.HasInfo(kind) && availability != ComponentAvailability.Unsupported;
 
+    /// <summary>Full Refresh: the ⓘ dialogs' lists and texts are fetched again (never awaited).</summary>
+    public Task RefreshListsAsync() => catalogue.RefreshAsync();
+
     /// <summary>The ⓘ button's tooltip.</summary>
     public static string TipFor(string componentName) => TF("Cat.InfoTip", componentName);
 

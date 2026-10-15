@@ -20,6 +20,9 @@ public sealed class ParityFeatures
     /// <summary>w5/catalogue-info (#184): the component rows' ⓘ dialogs; null = no ⓘ dialog wired.</summary>
     public ComponentInfoPresenter? ComponentInfo { get; set; }
 
+    /// <summary>w5/catalogue-info: Full Refresh downloads the card links' and ⓘ dialogs' lists again, in the background.</summary>
+    public Task RefreshCatalogueListsAsync() => Task.WhenAll(GameLinks.RefreshListsAsync(), ComponentInfo?.RefreshListsAsync() ?? Task.CompletedTask);
+
     /// <summary>A request a shortcut or link brought to this RHI (its own command line or the hand-off). UI thread.</summary>
     public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch
     {

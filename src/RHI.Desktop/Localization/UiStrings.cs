@@ -917,6 +917,7 @@ internal static class UiStrings
         // #185 "New mods" notice.
         ("Cat.NewModsButton", "Mods novos", "New mods"),
         ("Cat.NewModsTip", "{0} mods de RenoDX, Luma ou Ultra+ apareceram desde a última vez que você os marcou como vistos", "{0} RenoDX, Luma or Ultra+ mods appeared since you last marked them as seen"),
+        ("Cat.NewModsTipOne", "1 mod de RenoDX, Luma ou Ultra+ apareceu desde a última vez que você marcou os mods como vistos", "1 RenoDX, Luma or Ultra+ mod appeared since you last marked the mods as seen"),
         ("Cat.NewModsTitle", "Mods novos disponíveis", "New mods available"),
         ("Cat.NewModsRenoDx", "Mods de RenoDX novos: {0}", "New RenoDX mods: {0}"),
         ("Cat.NewModsLuma", "Mods de Luma novos: {0}", "New Luma mods: {0}"),

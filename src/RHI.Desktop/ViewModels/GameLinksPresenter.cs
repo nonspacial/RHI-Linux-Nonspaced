@@ -52,6 +52,9 @@ public sealed class GameLinksPresenter
         Links?.Prefetch();
     }
 
+    /// <summary>Full Refresh: the card links' lists are downloaded again in the background (never awaited).</summary>
+    public Task RefreshListsAsync() => Links?.RefreshAsync() ?? Task.CompletedTask;
+
     /// <summary>
     /// #183: the card menu's web-page entries for a game, each listed only where the game has that page (hidden
     /// otherwise): "Discussion / instructions" for the RenoDX mod matched to the game, then a "Web pages" submenu with

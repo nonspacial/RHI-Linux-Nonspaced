@@ -35,6 +35,9 @@ public sealed class RenoDxUnrealDatabaseService
             cachePath ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "renodx", "RenoDXdb-unreal.json"),
             freshness ?? DefaultFreshness, timeProvider ?? TimeProvider.System, http, Key);
 
+    /// <summary>Full Refresh: the database downloaded again (the loaded copy stays in use until then).</summary>
+    public Task RefreshAsync() => _list.RefreshAsync();
+
     /// <summary>Every game in the database once loaded (empty until then or when nothing could be read).</summary>
     public async Task<IReadOnlyList<RenoDxUnrealDbEntry>> GetAsync()
     {

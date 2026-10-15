@@ -386,6 +386,26 @@ public sealed class ComponentInfoTests : IDisposable
     }
 
     [Fact]
+    public async Task FullRefresh_FetchesTheWikiAndDatabaseAgain_AndForgetsTheSessionsChangeLogs()
+    {
+        var services = Build();
+        await services.Catalogue.ResolveAsync(Game("Code Vein II"), ManagedComponentKind.OptiScaler);
+        await services.Catalogue.ResolveAsync(Game("Any Game"), ManagedComponentKind.ReLimiter, "3.3.4");
+        await services.Catalogue.ResolveAsync(Game("Wiki Game"), ManagedComponentKind.RenoDX);
+        await services.Catalogue.ResolveAsync(Game("Any Game"), ManagedComponentKind.ReLimiter, "3.3.4"); // kept for the session
+        int Asked(string url) => services.Http.Requests.Count(r => r.RequestUri!.AbsoluteUri == url);
+        Assert.Equal(1, Asked(OptiScalerWikiCatalogue.CompatibilityListUrl));
+        Assert.Equal(1, Asked(RenoDxUnrealDatabaseService.LiveUrl));
+        Assert.Equal(1, Asked(ComponentInfoCatalogue.ReLimiterChangelogUrl));
+
+        await services.Catalogue.RefreshAsync();
+        Assert.Equal(2, Asked(OptiScalerWikiCatalogue.CompatibilityListUrl)); // fresh cache, downloaded again all the same
+        Assert.Equal(2, Asked(RenoDxUnrealDatabaseService.LiveUrl));
+        await services.Catalogue.ResolveAsync(Game("Any Game"), ManagedComponentKind.ReLimiter, "3.3.4");
+        Assert.Equal(2, Asked(ComponentInfoCatalogue.ReLimiterChangelogUrl));
+    }
+
+    [Fact]
     public async Task RenoDxAndLuma_LinkTheHdrGamingDatabase_WhichMakesGeneralTextCountAsGameContent()
     {
         var services = Build(hdrMarkdown: "* [Plain Game](https://github.com/KoKlusz/HDR-Gaming-Database/discussions/77)\n");

@@ -50,7 +50,15 @@ public sealed partial class NewModsPresenter : ObservableObject
 
     public string ButtonText => T("Cat.NewModsButton");
 
-    public string ButtonTip => TF("Cat.NewModsTip", NewRenoDx.Count + NewLuma.Count + NewUltraPlus.Count);
+    /// <summary>The button's tooltip: how many mods are new (worded for one or several).</summary>
+    public string ButtonTip
+    {
+        get
+        {
+            var count = NewRenoDx.Count + NewLuma.Count + NewUltraPlus.Count;
+            return count == 1 ? T("Cat.NewModsTipOne") : TF("Cat.NewModsTip", count);
+        }
+    }
 
     /// <summary>Set by the window: shows the list; true when the user chose "Mark as seen".</summary>
     public Func<IReadOnlyList<NewModsSection>, Task<bool>>? Show { get; set; }

@@ -56,6 +56,10 @@ public sealed partial class GameLinkCatalogue
     private readonly JsonFileStore<PcgwLinkCache> _pcgwStore;
     private readonly object _pcgwSync = new();
     private PcgwLinkCache? _pcgwCache;
+    // Each copy taken for a save gets the next number (under _pcgwSync); a save goes to disk only when its copy is newer
+    // than the last one written (under _pcgwStore), so a slow save of an older copy never overwrites a newer file.
+    private long _pcgwCopyNumber;
+    private long _pcgwSavedNumber;
     private readonly Dictionary<string, Task> _pcgwLookups = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _steamGate = new(1, 1);
     private long _steamPausedUntilTicks;
@@ -111,6 +115,12 @@ public sealed partial class GameLinkCatalogue
 
     /// <summary>Every list's load (never faults). Tests await it; the app calls <see cref="Prefetch"/>.</summary>
     public Task LoadAsync() => Task.WhenAll(Lists.Select(list => list.LoadAsync()));
+
+    /// <summary>
+    /// Full Refresh: downloads every list again even when its cached copy is still fresh; lookups keep the copy they have
+    /// until the new one is in, and a failed download keeps it. Never blocks, never faults (tests await the task).
+    /// </summary>
+    public Task RefreshAsync() => Task.WhenAll(Lists.Select(list => list.RefreshAsync()));
 
     private IEnumerable<CachedRemoteList<GameLinkEntry>> Lists => [_ultraPlus, _lyall, _rose, _p1xel, _hdrDatabase];
 
@@ -298,11 +308,16 @@ public sealed partial class GameLinkCatalogue
         Persist();
     }
 
+    /// <summary>Test seam: runs after a save's copy is taken and before it is written (outside every lock).</summary>
+    internal Action? PcgwCopyTakenForTesting { get; set; }
+
     private void Persist()
     {
         PcgwLinkCache copy;
+        long number;
         var cache = PcgwCache();
         lock (_pcgwSync)
+        {
             copy = new PcgwLinkCache
             {
                 Version = cache.Version,
@@ -310,10 +325,19 @@ public sealed partial class GameLinkCatalogue
                 Misses = new(cache.Misses, StringComparer.OrdinalIgnoreCase),
                 AppIds = new(cache.AppIds, StringComparer.OrdinalIgnoreCase)
             };
+            number = ++_pcgwCopyNumber;
+        }
+        PcgwCopyTakenForTesting?.Invoke();
         try
         {
             if (Path.GetDirectoryName(_pcgwStore.FilePath) is { Length: > 0 } directory) AtomicFile.CreateDirectoryDurable(directory);
-            lock (_pcgwStore) _pcgwStore.Save(copy);
+            lock (_pcgwStore)
+            {
+                // A newer copy (it holds every change this one holds) is already on disk: never write the older one over it.
+                if (number <= _pcgwSavedNumber) return;
+                _pcgwStore.Save(copy);
+                _pcgwSavedNumber = number;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
