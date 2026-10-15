@@ -213,7 +213,7 @@ internal sealed class AppComposition
         // w5/ini-presets rows
         // #181: the user's INI templates (beside the OptiScaler ones) feed ReShade.ini, relimiter.ini and DisplayCommander.ini at install.
         var userIniTemplates = new UserIniTemplates(Path.Combine(settingsStore.ConfigRoot, "inis"));
-        reshade.IniDefaults = game => ReShadeGlobalSettingsApplier.InstallDefaults(settingsStore.Load(), game, userIniTemplates);
+        reshade.IniDefaults = (game, vulkan) => ReShadeGlobalSettingsApplier.InstallDefaults(settingsStore.Load(), game, userIniTemplates, vulkan);
         relimiter.IniTemplates = userIniTemplates;
         displayCommander.IniTemplates = userIniTemplates;
         renodx.PeakNits = () => PeakNitsSettings.From(settingsStore.Load()); // #182: peak brightness into RenoDX presets at install

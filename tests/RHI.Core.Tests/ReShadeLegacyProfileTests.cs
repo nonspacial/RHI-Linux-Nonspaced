@@ -93,6 +93,11 @@ public sealed class ReShadeLegacyProfileTests
         fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == oddLink.Name).Game;
         Assert.True(legacy.HasNote);
         Assert.False(legacy.HasNoteLink);
+        // w5 integration: an https link to a site manifest notes never use is not offered either (LinkHosts.ManifestNote).
+        fx.Vm.SelectedGame!.ManifestReShadeNoteUrl = "https://evil.example/notes";
+        Assert.False(legacy.HasNoteLink);
+        fx.Vm.SelectedGame!.ManifestReShadeNoteUrl = "https://github.com/rhi-tests/notes";
+        Assert.True(legacy.HasNoteLink);
     }
 
     [Fact]

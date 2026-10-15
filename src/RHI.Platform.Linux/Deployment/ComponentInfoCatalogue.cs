@@ -137,6 +137,7 @@ public sealed partial class ComponentInfoCatalogue
             ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
                 => await ReleaseNotesAsync(game, kind, policy, installedVersion, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.REFramework => ManifestOrGeneral(kind, ManifestNote(policy, ComponentNoteKeys.ReFramework, game)),
+            ManagedComponentKind.ReShade => ManifestOrGeneral(kind, ManifestNote(policy, ComponentNoteKeys.ReShade, game)), // w5 integration (#186)
             _ => General(kind)
         };
         return info;

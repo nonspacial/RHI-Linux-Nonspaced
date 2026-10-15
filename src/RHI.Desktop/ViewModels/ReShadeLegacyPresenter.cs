@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Network;
 using RHI.Platform.Linux.Paths;
 
 namespace RHI.Desktop.ViewModels;
@@ -51,9 +52,8 @@ public sealed partial class ReShadeLegacyPresenter : ObservableObject
     public string NoteLinkLabel => string.IsNullOrWhiteSpace(_shell.SelectedGame?.ManifestReShadeNoteUrlLabel)
         ? UiLocalizationService.Text("Card.OpenNotesLink")
         : _shell.SelectedGame!.ManifestReShadeNoteUrlLabel!.Trim();
-    /// <summary>Only an https link is offered (manifest data).</summary>
-    public string? NoteUrl => _shell.SelectedGame?.ManifestReShadeNoteUrl?.Trim() is { } url
-                              && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps ? url : null;
+    /// <summary>Only an https link to a site manifest notes use is offered (manifest data; w5 integration: same hosts as the ⓘ dialog's note link).</summary>
+    public string? NoteUrl => GameLinkCatalogue.SafePage(_shell.SelectedGame?.ManifestReShadeNoteUrl, LinkHosts.ManifestNote);
 
     [RelayCommand]
     private void OpenNoteLink()

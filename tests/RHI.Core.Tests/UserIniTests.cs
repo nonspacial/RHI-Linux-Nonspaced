@@ -360,6 +360,31 @@ public sealed class UserIniTests : IDisposable
         Assert.True(service.DeployReShadeIni(game, new LinuxAppSettings()).Success);
     }
 
+    [Fact]
+    public void DeployReShadeIni_OnAVulkanLayerReShade_UsesTheVulkanTemplate()
+    {
+        // w5 integration (#92 × #181): a ReShade RHI installed as the Vulkan layer gets reshade.vulkan.ini, as its install did.
+        var layer = Game("Layer Game");
+        var proxy = Game("Proxy Game");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "layer-records.json")).Manage(proxy, ManagedComponentKind.ReShade);
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(layer),
+            GameName = layer.Name,
+            Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = layer.BinaryDirectory!,
+            Files = [],
+            Metadata = new Dictionary<string, string> { [ReShadeVulkanLayer.MetaPath] = ReShadeVulkanLayer.PathValue }
+        });
+        var service = Service(records: records);
+
+        Assert.True(service.DeployReShadeIni(layer, new LinuxAppSettings()).Success);
+        Assert.True(service.DeployReShadeIni(proxy, new LinuxAppSettings()).Success);
+
+        Assert.Contains("RESHADE_DEPTH_INPUT_IS_REVERSED=1", File.ReadAllText(Ini(layer)));
+        Assert.DoesNotContain("RESHADE_DEPTH_INPUT_IS_REVERSED", File.ReadAllText(Ini(proxy)));
+    }
+
     private string ReLimiterTemplate(string content)
     {
         var templates = Templates();

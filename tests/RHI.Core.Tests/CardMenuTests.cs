@@ -150,7 +150,10 @@ public sealed class CardMenuTests : IDisposable
     {
         var nexus = Game("Nexus Quest");
         nexus.NexusUrlOverride = "https://www.nexusmods.com/games/nexusquest";
-        using var fx = await ViewModelFixture.StartAsync([nexus, Game("Plain Quest")]);
+        var wiki = Game("Wiki Quest");
+        wiki.NexusUrlOverride = "https://www.nexusmods.com/games/wikiquest";
+        wiki.PcgwUrlOverride = "https://www.pcgamingwiki.com/wiki/Wiki_Quest";
+        using var fx = await ViewModelFixture.StartAsync([nexus, wiki, Game("Plain Quest")]);
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id is "create-shortcut" or "nexus-page"); // built without parity
         using var http = new HttpClient(new OfflineHandler());
         var wine = new RHI.Platform.Linux.Deployment.WineDllOverrideService();
@@ -171,6 +174,11 @@ public sealed class CardMenuTests : IDisposable
         var page = noted.Single(i => i.Id == "nexus-page");
         Assert.Equal("https://www.nexusmods.com/games/nexusquest", page.Tip);
         Assert.False(page.SeparatorBefore); // one separator before the parity group
+
+        // w5 integration (#183 × #192): the web pages (where the game has one) come before the game report.
+        var linked = fx.Vm.CardMenuFor(Row(fx, "Wiki Quest"));
+        Assert.Equal(["open-folder", "favourite", "hide", "create-shortcut", "nexus-page", "web-pages", "game-report"], linked.Select(i => i.Id));
+        Assert.Equal(["pcgw-page"], linked.Single(i => i.Id == "web-pages").Children!.Select(i => i.Id));
     }
 
     /// <summary>

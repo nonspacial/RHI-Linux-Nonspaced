@@ -93,7 +93,8 @@ public sealed class ComponentInfoTests : IDisposable
          "optiScalerGameInfo": {"Opti Manifest": {"notes": "OptiScaler manifest note", "notesUrl": "http://insecure.example/x"}},
          "relimiterGameInfo": {"Limited Game": {"notes": "Use the in-game cap", "notesUrl": "https://www.nexusmods.com/limited/mods/3", "notesUrlLabel": "Read"}},
          "displayCommanderGameInfo": {"DC Game": {"notes": "DC note"}},
-         "reframeworkGameInfo": {"RE Game": {"notes": "REF note"}}
+         "reframeworkGameInfo": {"RE Game": {"notes": "REF note"}},
+         "reshadeGameInfo": {"RS Game": {"notes": "ReShade 6.4.1 is required", "notesUrl": "https://github.com/rhi-tests/notes"}}
         }
         """;
 
@@ -480,6 +481,12 @@ public sealed class ComponentInfoTests : IDisposable
         Assert.Equal(["https://www.nexusmods.com/limited/mods/3", ComponentInfoCatalogue.ReLimiterReleasesUrl], limited.Links.Select(l => l.Url));
         Assert.Equal(["DC note"], (await services.Catalogue.ResolveAsync(Game("DC Game"), ManagedComponentKind.DisplayCommander)).Texts);
         Assert.Equal(["REF note"], (await services.Catalogue.ResolveAsync(Game("RE Game"), ManagedComponentKind.REFramework)).Texts);
+        // w5 integration (#186 × #184): the manifest's reshadeGameInfo note is ReShade's ⓘ text, with its link.
+        var reshade = await services.Catalogue.ResolveAsync(Game("RS Game"), ManagedComponentKind.ReShade);
+        Assert.Equal(ComponentInfoSource.Manifest, reshade.Source);
+        Assert.Equal(["ReShade 6.4.1 is required"], reshade.Texts);
+        Assert.Equal(["https://github.com/rhi-tests/notes"], reshade.Links.Select(l => l.Url));
+        Assert.True((await services.Catalogue.ResolveAsync(Game("RE Game"), ManagedComponentKind.ReShade)).GeneralText);
     }
 
     [Fact]
@@ -554,6 +561,7 @@ public sealed class ComponentInfoTests : IDisposable
         Assert.Equal("Use the in-game cap", policy.ComponentGameNotes[ComponentNoteKeys.ReLimiter]["Limited Game"].Notes);
         Assert.Equal("DC note", policy.ComponentGameNotes[ComponentNoteKeys.DisplayCommander]["DC Game"].Notes);
         Assert.Equal("REF note", policy.ComponentGameNotes[ComponentNoteKeys.ReFramework]["RE Game"].Notes);
+        Assert.Equal("ReShade 6.4.1 is required", policy.ComponentGameNotes[ComponentNoteKeys.ReShade]["RS Game"].Notes);
         Assert.Equal("OptiScaler manifest note", policy.ComponentGameNotes[ComponentNoteKeys.OptiScaler]["Opti Manifest"].Notes);
         Assert.Equal("Luma manifest note", policy.ComponentGameNotes[ComponentNoteKeys.Luma]["Luma Manifest"].Notes);
         Assert.Contains("Code Vein II", policy.KnownGameNames);

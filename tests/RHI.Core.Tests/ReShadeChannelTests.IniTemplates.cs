@@ -18,7 +18,7 @@ public sealed partial class ReShadeChannelTests
         StampReShadeSignature(custom);
         var templates = new UserIniTemplates(Path.Combine(_root, "ini-template", "inis"));
         var service = NewService(store, new MutableHandler(), Path.Combine(_root, "ini-template-cache"));
-        service.IniDefaults = g => ReShadeGlobalSettingsApplier.InstallDefaults(new LinuxAppSettings { OverlayHotkey = "45,0,0,0" }, g, templates);
+        service.IniDefaults = (g, vulkan) => ReShadeGlobalSettingsApplier.InstallDefaults(new LinuxAppSettings { OverlayHotkey = "45,0,0,0" }, g, templates, vulkan);
 
         var installed = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Custom, CustomDllPath = custom, ManageIni = true });
 

@@ -172,7 +172,7 @@ public sealed partial class ReShadeDeploymentService
             await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
             if (existing is not null)
             {
-                CleanupManagedIni(existing);
+                CleanupManagedIni(existing, game.InstallPath); // w5 integration: the one ReShade.ini link rule (ini-presets review 8)
                 await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
                 _shaderPacks.Cleanup(binaryDirectory);
             }
@@ -208,7 +208,9 @@ public sealed partial class ReShadeDeploymentService
 
             // ReShade's layer stays inactive without a ReShade.ini beside the game, so the layer always manages one.
             var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
-            var iniResult = ReShadeIniManager.Apply(binaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths);
+            // w5 integration: the user's reshade.vulkan.ini template and Settings (#181), depth defines kept.
+            var iniResult = ReShadeIniManager.Apply(binaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths,
+                IniDefaults?.Invoke(game, true), game.InstallPath);
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
             var files = new List<LinuxDeployedFile>

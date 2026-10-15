@@ -16,6 +16,8 @@ public static class ComponentNoteKeys
     public const string DisplayCommander = "displayCommander";
     public const string OptiScaler = "optiScaler";
     public const string Luma = "luma";
+    /// <summary>w5 integration: manifest <c>reshadeGameInfo</c> (#186), also shown in ReShade's ⓘ dialog.</summary>
+    public const string ReShade = "reshade";
 }
 
 /// <summary>
@@ -316,6 +318,7 @@ public sealed partial class UpstreamRhiManifestService
             ComponentGameNotes = new Dictionary<string, IReadOnlyDictionary<string, UpstreamGameNoteDefinition>>(StringComparer.Ordinal)
             {
                 [ComponentNoteKeys.ReFramework] = NormalizeGameNotes(manifest.ReFrameworkGameInfo),
+                [ComponentNoteKeys.ReShade] = NormalizeGameNotes(manifest.ReShadeGameInfo), // w5 integration (#186 × #184)
                 [ComponentNoteKeys.ReLimiter] = NormalizeGameNotes(manifest.ReLimiterGameInfo),
                 [ComponentNoteKeys.DisplayCommander] = NormalizeGameNotes(manifest.DisplayCommanderGameInfo),
                 [ComponentNoteKeys.OptiScaler] = NormalizeGameNotes(manifest.OptiScalerGameInfo),

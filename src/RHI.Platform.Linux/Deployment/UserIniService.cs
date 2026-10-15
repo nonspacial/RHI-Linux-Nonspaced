@@ -51,9 +51,11 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     public ComponentOperationResult DeployReShadeIni(DetectedGame game, LinuxAppSettings settings, CancellationToken cancellationToken = default)
     {
         if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
-        if (records.Find(game, ManagedComponentKind.ReShade) is null) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
+        if (records.Find(game, ManagedComponentKind.ReShade) is not { } record) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates), game.InstallPath);
+        // w5 integration: a ReShade installed as the Vulkan layer (#92) gets the Vulkan template, as its install did.
+        var defaults = ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates, vulkan: ReShadeVulkanLayer.IsLayerRecord(record));
+        var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], defaults, game.InstallPath);
         return ComponentOperationResult.Ok(DeployedPrefix + result.Path, result.Path);
     }
 
