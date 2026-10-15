@@ -8,7 +8,9 @@ namespace RHI.Platform.Linux.Deployment;
 /// <list type="number">
 /// <item><b>One owner.</b> Per game, at most one RHI component owns <c>nvngx_dlssnr.dll</c>: ShortFuse, DLSS5 Feeder
 /// (any Feeder record: Full deploys the runtime, and an add-on-only record is treated the same, as before), OptiScaler
-/// DLSS NR or OptiScaler F5 DLSSNR. OptiScaler Stable and Nightly never deploy it and are no owners.</item>
+/// DLSS NR or OptiScaler F5 DLSSNR, or RTX Encore while its record lists the file (#158: only with its "Neural Rendering
+/// file" choice; without it RTX Encore uses whatever runtime is there and is no owner). OptiScaler Stable and Nightly never
+/// deploy it and are no owners.</item>
 /// <item><b>Refused, not shared.</b> Installing an owner while another owner is recorded is refused before any download,
 /// file or registry change, and the refusal names the current owner (<see cref="RefusalFor"/>). There is no
 /// co-ownership ledger: the user removes one owner first.</item>
@@ -58,6 +60,8 @@ public static class NeuralRenderingRuntimeOwnership
             && OptiScalerOwner(optiScalerRecord) is { } optiScaler) return (optiScaler, optiScalerRecord);
         if (requester != ManagedComponentKind.Dlss5Feeder && records.Find(game, ManagedComponentKind.Dlss5Feeder) is { } feeder) return ("DLSS5 Feeder", feeder);
         if (requester != ManagedComponentKind.ShortFuse && records.Find(game, ManagedComponentKind.ShortFuse) is { } shortFuse) return ("ShortFuse", shortFuse);
+        if (requester != ManagedComponentKind.RtxEncore && records.Find(game, ManagedComponentKind.RtxEncore) is { } encore
+            && ListsRuntime(encore)) return (RtxEncoreOwnerName, encore);
         return null;
     }
 
@@ -70,8 +74,36 @@ public static class NeuralRenderingRuntimeOwnership
         {
             ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder => true,
             ManagedComponentKind.OptiScaler => OptiScalerOwner(records, game) is not null,
+            ManagedComponentKind.RtxEncore => records.Find(game, ManagedComponentKind.RtxEncore) is { } encore && ListsRuntime(encore),
             _ => false
         };
 
+    /// <summary>
+    /// Every record of the game that owns <c>nvngx_dlssnr.dll</c> under rule 1 (normally at most one): OptiScaler DLSS NR /
+    /// F5 DLSSNR, DLSS5 Feeder, ShortFuse, RTX Encore with its Neural Rendering file. Their files are never direct DLSS
+    /// swap/restore targets (<see cref="LinuxDlssDefaultsService.DetectTargets"/>), so the DLSS panel, Quick Apply, Batch
+    /// Deploy and Restore can never replace an owner's runtime nor consume the <c>.original</c> it puts back on removal.
+    /// </summary>
+    public static IReadOnlyList<LinuxDeploymentRecord> OwnerRecords(LinuxDeploymentRecordStore records, DetectedGame game)
+        => OwnerKinds
+            .Where(kind => ComponentOwnsRuntime(records, game, kind))
+            .Select(kind => records.Find(game, kind))
+            .OfType<LinuxDeploymentRecord>()
+            .ToArray();
+
+    private static readonly ManagedComponentKind[] OwnerKinds =
+        [ManagedComponentKind.OptiScaler, ManagedComponentKind.Dlss5Feeder, ManagedComponentKind.ShortFuse, ManagedComponentKind.RtxEncore];
+
     public static string RefusalFor(string owner) => OwnedByPrefix + owner;
+
+    /// <summary>RTX Encore's name as an owner (#158).</summary>
+    public const string RtxEncoreOwnerName = "RTX Encore";
+
+    /// <summary>RTX Encore when its record owns the runtime (its Neural Rendering file is installed), else null.</summary>
+    public static string? RtxEncoreOwner(LinuxDeploymentRecordStore records, DetectedGame game)
+        => ComponentOwnsRuntime(records, game, ManagedComponentKind.RtxEncore) ? RtxEncoreOwnerName : null;
+
+    /// <summary>Whether <paramref name="record"/> lists <c>nvngx_dlssnr.dll</c> among its files.</summary>
+    public static bool ListsRuntime(LinuxDeploymentRecord record)
+        => record.Files.Any(file => Path.GetFileName(file.Path).Equals(DllName, StringComparison.OrdinalIgnoreCase));
 }

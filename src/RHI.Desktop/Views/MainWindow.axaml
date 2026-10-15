@@ -546,6 +546,8 @@
                                     Click="StandaloneDlssEnablerSettings_Click" ToolTip.Tip="{DynamicResource Ui.DlssEnablerStandaloneSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtx40MfgSettings}"
                                     Click="Rtx40MfgSettings_Click" ToolTip.Tip="{DynamicResource Ui.Rtx40MfgSettingsTip}" Padding="10,6"/>
+                            <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasRtxEncoreSettings}"
+                                    Click="RtxEncoreSettings_Click" ToolTip.Tip="{DynamicResource Ui.RtxEncoreSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="3" Classes="rhi" Content="⚙" IsVisible="{Binding HasReFrameworkSettings}"
                                     Click="ReFrameworkSettings_Click" ToolTip.Tip="{Binding ReFrameworkSettingsTip}" Padding="10,6"/>
                             <Button Grid.Column="4" Classes="rhi" Classes.remove="{Binding IsRemoveAction}"

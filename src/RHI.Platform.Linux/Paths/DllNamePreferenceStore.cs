@@ -8,9 +8,9 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Platform.Linux.Paths;
 
 /// <summary>
-/// A game's chosen proxy DLL names (#120). Null = automatic (RHI manifest name, else by graphics API). A record so the
-/// store copies every choice with <c>with</c> and tells "all automatic" by value equality: a choice added later is kept
-/// and compared without touching <see cref="DllNamePreferenceStore"/>'s update code.
+/// A game's chosen proxy DLL names (#120; OptiScaler's since #172, RTX Encore's since #158). Null = automatic/default.
+/// A record, so a change to one choice copies every other one generically (<see cref="Copy"/>, <see cref="IsEmpty"/>):
+/// a choice added later is kept by every setter without touching <c>DllNamePreferenceStore.Update</c>.
 /// </summary>
 public sealed record DllNameChoices
 {
@@ -23,13 +23,30 @@ public sealed record DllNameChoices
     /// <summary>OptiScaler's DLL name (#172); null = automatic (<c>dxgi.dll</c>).</summary>
     [JsonPropertyName("optiscaler")]
     public string? OptiScaler { get; set; }
+
+    /// <summary>RTX Encore's name (#158); null = its default (<c>version.dll</c>).</summary>
+    [JsonPropertyName("rtxEncore")]
+    public string? RtxEncore { get; set; }
+
+    /// <summary>Whether RTX Encore is installed with NVIDIA's Neural Rendering file (#158); null = no.</summary>
+    [JsonPropertyName("rtxEncoreNeuralRendering")]
+    public bool? RtxEncoreNeuralRendering { get; set; }
+
+    /// <summary>Fields a newer RHI wrote that this build does not know: kept as they are on every save.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unknown { get; set; }
+
+    /// <summary>Every field, copied (record <c>with</c>); the unknown fields are never changed, so sharing them is safe.</summary>
+    internal DllNameChoices Copy() => this with { };
+
+    /// <summary>No choice at all (every field at its default): the game's entry can go.</summary>
+    internal bool IsEmpty() => this with { Unknown = Unknown is { Count: > 0 } ? Unknown : null } == new DllNameChoices();
 }
 
 /// <summary>
-/// Per-game proxy DLL names chosen before ReShade (#120) or OptiScaler (#172) is installed (upstream's per-game DLL-name
-/// dropdowns). Only names
-/// in <see cref="ProxyDllNames.Offered"/> are stored or handed out, so the file can never point a deployment at another
-/// folder. A name chosen while ReShade is installed is refused by the picker; the install keeps the recorded name.
+/// Per-game proxy DLL names chosen before ReShade (#120), OptiScaler (#172) or RTX Encore (#158) is installed
+/// (upstream's per-game DLL-name dropdowns). Only names each component offers are stored or handed out, so the file can
+/// never point a deployment at another folder. A name chosen while ReShade is installed is refused by the picker; the install keeps the recorded name.
 /// </summary>
 public sealed class DllNamePreferenceStore : IGameStateStore
 {
@@ -85,6 +102,20 @@ public sealed class DllNamePreferenceStore : IGameStateStore
         }
     }
 
+    /// <summary>The RTX Encore name chosen for <paramref name="game"/> (#158), or null for its default. A stored name RTX
+    /// Encore does not use (edited by hand) reads as the default and is logged.</summary>
+    public string? GetRtxEncore(DetectedGame game)
+    {
+        lock (_gate)
+        {
+            if (!GameRecordIdentity.TryGet(LoadUnsafe(), game, out var choices) || string.IsNullOrWhiteSpace(choices?.RtxEncore))
+                return null;
+            if (RtxEncoreNames.Canonical(choices.RtxEncore) is { } name) return name;
+            AppLog.Warn("dll-names", $"Ignored an RTX Encore name that RHI does not offer for {game.Name}: {choices.RtxEncore}");
+            return null;
+        }
+    }
+
     /// <summary>Saves OptiScaler's name for <paramref name="game"/> (#172); null (or blank) goes back to automatic.</summary>
     /// <exception cref="ArgumentException">The name is not one of OptiScaler's names.</exception>
     public void SetOptiScaler(DetectedGame game, string? name)
@@ -98,17 +129,43 @@ public sealed class DllNamePreferenceStore : IGameStateStore
     private static string? OptiScalerCanonical(string name)
         => Deployment.OptiScalerDeploymentService.ProxyNames.FirstOrDefault(known => known.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    // One component's choice changes; every other choice is copied as it is (the entry goes only when all are automatic).
+    /// <summary>Saves RTX Encore's name for <paramref name="game"/>; null goes back to its default.</summary>
+    /// <exception cref="ArgumentException">The name is not one of <see cref="RtxEncoreNames.All"/>.</exception>
+    public void SetRtxEncore(DetectedGame game, string? name)
+    {
+        var canonical = string.IsNullOrWhiteSpace(name)
+            ? null
+            : RtxEncoreNames.Canonical(name) ?? throw new ArgumentException($"Not a name RTX Encore uses: {name}", nameof(name));
+        Update(game, choices => choices.RtxEncore = canonical);
+    }
+
+    /// <summary>Whether RTX Encore's next install brings NVIDIA's Neural Rendering file (#158).</summary>
+    public bool GetRtxEncoreNeuralRendering(DetectedGame game)
+    {
+        lock (_gate)
+            return GameRecordIdentity.TryGet(LoadUnsafe(), game, out var choices) && choices?.RtxEncoreNeuralRendering == true;
+    }
+
+    public void SetRtxEncoreNeuralRendering(DetectedGame game, bool enabled)
+        => Update(game, choices => choices.RtxEncoreNeuralRendering = enabled ? true : null);
+
+    /// <summary>Throws <see cref="JsonStoreUnavailableException"/> when the file cannot be saved (read before a deployment).</summary>
+    public void EnsureWritable()
+    {
+        lock (_gate) _file.EnsureWritable();
+    }
+
+    // One entry per game holds every choice: a change to one keeps the others; an entry left empty is removed.
     private void Update(DetectedGame game, Action<DllNameChoices> change)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
             var choices = GameRecordIdentity.TryGet(entries, game, out var existing) && existing is not null
-                ? existing with { }
-                : DllNameChoices.Automatic;
+                ? existing.Copy()
+                : new DllNameChoices();
             change(choices);
-            if (choices == DllNameChoices.Automatic) GameRecordIdentity.Remove(entries, game);
+            if (choices.IsEmpty()) GameRecordIdentity.Remove(entries, game);
             else GameRecordIdentity.Set(entries, game, choices);
             _file.Save(entries);
         }

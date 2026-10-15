@@ -29,7 +29,8 @@ public sealed class NrCostScalerPresenter
         var canAct = game.HasConfirmedPatchTarget && !vm.IsBusy && !vm.IsSelectionProbeBusy;
         if (scaler.GetRecord(game) is { } record)
             return new(true, true, canAct, TF("Parity.NrScalerInstalled", record.Version ?? "?"));
-        return scaler.FindOwner(game) is { } owner
+        // Hidden where it cannot apply: no owner, or RTX Encore's runtime (#158).
+        return scaler.FindOwner(game) is { } owner && NrCostScalerService.CanWrap(owner.Owner)
             ? new(true, false, canAct, TF("Parity.NrScalerAvailable", owner.Owner))
             : new(false, false, false, "");
     }

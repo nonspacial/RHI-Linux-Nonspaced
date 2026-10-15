@@ -130,6 +130,10 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy NexusGameList = new(
         "Nexus Mods game list", "data.nexusmods.com", ["data.nexusmods.com"], maxBytes: TrustedDownload.MetadataMaxBytes);
 
+    /// <summary>RTX Encore (#158): SilyNoMeta/rtx-encore GitHub releases (a ~120 MB zip; GitHub's digest and SHA256SUMS are checked).</summary>
+    public static readonly TrustedDownloadPolicy RtxEncore = new(
+        "RTX Encore", "GitHub", GitHubReleaseHosts, maxBytes: PayloadArchiveMaxBytes);
+
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -147,5 +151,6 @@ public static class DownloadSources
         OptiPatcher,
         // w4/smalls rows
         NexusGameList,
+        RtxEncore,
     ];
 }

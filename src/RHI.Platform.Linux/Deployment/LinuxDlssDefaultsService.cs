@@ -113,9 +113,11 @@ public sealed class LinuxDlssDefaultsService
     /// <summary>
     /// The game's direct DLSS/Streamline swap/restore targets: every per-game, Quick Apply,
     /// Batch Deploy and Restore All flow must take its paths from here. Files RHI-managed
-    /// OptiScaler owns (its record, incl. the FG stack) and the whole <c>OptiScaler/</c> folder
-    /// are excluded, so a swap or restore can never break OptiScaler's hash ownership or consume
-    /// an <c>.original</c> that OptiScaler restores on disable/removal.
+    /// OptiScaler owns (its record, incl. the FG stack), the files of whichever record owns
+    /// <c>nvngx_dlssnr.dll</c> (<see cref="NeuralRenderingRuntimeOwnership.OwnerRecords"/>, e.g. RTX
+    /// Encore's pinned 310.8.0) and the whole <c>OptiScaler/</c> folder are excluded, so a swap or
+    /// restore can never break an owner's hash ownership or consume an <c>.original</c> the owner
+    /// restores on disable/removal.
     /// </summary>
     public DlssDetectionResult DetectTargets(
         DetectedGame game,
@@ -163,12 +165,20 @@ public sealed class LinuxDlssDefaultsService
     private DlssDetectionResult PanelTargets(DetectedGame? game, DlssDetectionResult cached)
         => game is null ? cached : ExcludeOwnedTargets(game, cached);
 
+    // OptiScaler's files (any channel: its FG stack too) and every file of a record that owns nvngx_dlssnr.dll
+    // (NeuralRenderingRuntimeOwnership: OptiScaler DLSS NR/F5, DLSS5 Feeder, ShortFuse, RTX Encore with its file).
+    // Excluding the owned path also keeps the owner's <path>.original out of every restore.
     private IReadOnlyList<string> RhiOwnedFiles(DetectedGame game)
-        => _records.Find(game, ManagedComponentKind.OptiScaler)?.Files
-               .Select(file => file.Path)
-               .Where(path => !string.IsNullOrWhiteSpace(path))
-               .ToArray()
-           ?? [];
+    {
+        var owners = NeuralRenderingRuntimeOwnership.OwnerRecords(_records, game).ToList();
+        if (_records.Find(game, ManagedComponentKind.OptiScaler) is { } optiScaler) owners.Add(optiScaler);
+        return owners
+            .SelectMany(record => record.Files)
+            .Select(file => file.Path)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
 
     public async Task<LinuxDlssBatchResult> ApplyDefaultsAsync(
         DetectedGame game,

@@ -118,6 +118,42 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
     }
 
+    // w4/encore review minor 2: RTX Encore with its Neural Rendering file owns the runtime (#158); OptiScaler's NR variants
+    // are refused at their own entry point, before the package is requested. Without that file RTX Encore owns nothing.
+    [Theory]
+    [InlineData(OptiScalerVariant.F5, true)]
+    [InlineData(OptiScalerVariant.DlssNr, true)]
+    [InlineData(OptiScalerVariant.F5, false)]
+    public async Task Install_NrVariant_IsRefusedOnlyWhileRtxEncoreOwnsTheRuntime(OptiScalerVariant variant, bool encoreListsRuntime)
+    {
+        var (game, store) = CreateGame($"encore-owns-{variant}-{encoreListsRuntime}", GraphicsApi.DirectX12);
+        store.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.RtxEncore,
+            BinaryDirectory = game.BinaryDirectory!,
+            Files = encoreListsRuntime
+                ? [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, "version.dll"), Sha256 = "00" },
+                   new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, "nvngx_dlssnr.dll"), Sha256 = "00" }]
+                : [new LinuxDeployedFile { Path = Path.Combine(game.BinaryDirectory!, "version.dll"), Sha256 = "00" }]
+        });
+        var provider = new FakePackageProvider(CreateF5Package($"encore-owns-package-{variant}-{encoreListsRuntime}"));
+        var service = NewService(store, provider);
+
+        var result = await service.InstallAsync(game, variant);
+
+        if (encoreListsRuntime)
+        {
+            Assert.Equal(NeuralRenderingRuntimeOwnership.RefusalFor("RTX Encore"), result.Message);
+            Assert.Equal(0, provider.CallCount);
+            Assert.Null(store.Find(game, ManagedComponentKind.OptiScaler));
+        }
+        else
+        {
+            Assert.NotEqual(NeuralRenderingRuntimeOwnership.RefusalFor("RTX Encore"), result.Message);
+            Assert.Equal(1, provider.CallCount);
+        }
+    }
+
     [Theory]
     [InlineData(OptiScalerVariant.Stable)]
     [InlineData(OptiScalerVariant.Nightly)]

@@ -25,7 +25,9 @@ public enum ManagedComponentKind
     DlssEnablerStandalone = 18,
     Rtx40MfgStandalone = 19,
     // w3/parity (#96): a layer over the nvngx_dlssnr.dll owner, never an owner itself.
-    NrCostScaler = 20
+    NrCostScaler = 20,
+    // w4/encore (#158): a proxy DLL under a chosen name; owns nvngx_dlssnr.dll only with its Neural Rendering file.
+    RtxEncore = 21
 }
 
 public enum ComponentAvailability
@@ -54,4 +56,9 @@ public sealed class ManagedComponent
     public IReadOnlyList<string> InstalledAddonFiles { get; set; } = [];
     /// <summary>Display-ready mod author(s) (e.g. "Musa, ShortFuse"), or null when unknown.</summary>
     public string? Author { get; set; }
+    /// <summary>
+    /// The game ships its own <c>nvngx_dlss.dll</c> (<see cref="Services.DlssManagerService.ShipsOwnDlss"/>: an
+    /// <c>OptiScaler/</c> folder does not count). Set by the probe on the RTX Encore row, which needs the game's DLSS.
+    /// </summary>
+    public bool GameShipsDlss { get; set; }
 }

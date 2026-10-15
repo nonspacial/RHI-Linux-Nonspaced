@@ -58,9 +58,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         LumaPolicyService lumaPolicy,
         NeuralAddonVersionPreferenceStore? neuralVersionPins = null,
         ComponentUpdateLogStore? updateLog = null,
-        NrCostScalerService? nrCostScaler = null) // w3/parity (#96)
+        NrCostScalerService? nrCostScaler = null, // w3/parity (#96)
+        RtxEncoreDeploymentService? rtxEncore = null) // w4/encore (#158)
     {
         _nrCostScaler = nrCostScaler;
+        _rtxEncore = rtxEncore;
         _records = records;
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
@@ -171,6 +173,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                 continue;
             }
 
+            // w4/encore (#158): hidden where it cannot apply, with or without a confirmed patch target (never RHI's own install).
+            if (component.Kind == ManagedComponentKind.RtxEncore && component.Availability == ComponentAvailability.Available
+                && Find(ManagedComponentKind.RtxEncore) is null && HideRtxEncore(game, component, components))
+                continue;
+
             if (!game.HasConfirmedPatchTarget)
             {
                 component.ActionAllowed = false;
@@ -183,7 +190,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             if (component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.RenoDX or ManagedComponentKind.RenoDXUpgrade or ManagedComponentKind.OptiScaler or
                 ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander or ManagedComponentKind.MfgAdaUnlock or ManagedComponentKind.Dlssg2030Unlock or ManagedComponentKind.DlssEnablerStandalone or ManagedComponentKind.Rtx40MfgStandalone or
                 ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse or
-                ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework)
+                ManagedComponentKind.DofFix or ManagedComponentKind.REFramework or ManagedComponentKind.LumaFramework or
+                ManagedComponentKind.RtxEncore)
             {
                 if (component.Kind == ManagedComponentKind.REFramework && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
@@ -213,7 +221,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     component.Availability = ComponentAvailability.Installed;
                 }
 
-                if (component.Kind == ManagedComponentKind.Rtx40MfgStandalone && record is not null &&
+                if (component.Kind is ManagedComponentKind.Rtx40MfgStandalone or ManagedComponentKind.RtxEncore && record is not null &&
                     component.Availability == ComponentAvailability.Available &&
                     record.Files.Any(file => !string.IsNullOrWhiteSpace(file.Path) && File.Exists(file.Path)))
                 {
@@ -697,6 +705,20 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                     }
                 }
 
+                // Not for RHI's own install (its file may be gone): that row stays, removable, whatever the game is now.
+                if (component.Kind == ManagedComponentKind.RtxEncore && component.Availability == ComponentAvailability.Available && record is null)
+                    DecorateRtxEncore(game, component, components);
+
+                // w4/encore (#158): RTX Encore with its Neural Rendering file owns nvngx_dlssnr.dll (one owner, #157).
+                if (component.Kind is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder &&
+                    component.Availability == ComponentAvailability.Available &&
+                    Find(ManagedComponentKind.RtxEncore) is { } encoreRecord && NeuralRenderingRuntimeOwnership.ListsRuntime(encoreRecord))
+                {
+                    component.ActionAllowed = false;
+                    component.Note = NeuralRenderingRuntimeOwnership.RefusalFor(NeuralRenderingRuntimeOwnership.RtxEncoreOwnerName);
+                    continue;
+                }
+
                 if (component.Kind == ManagedComponentKind.ShortFuse && component.Availability == ComponentAvailability.Available)
                 {
                     if (managedRtx40Mfg is not null)
@@ -801,6 +823,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         }
                         component.Note = $"Managed by RHI Linux{channel}{consumer}{(string.IsNullOrWhiteSpace(record.Version) ? "" : $" · {record.Version}")}.";
                     }
+                    // w4/encore (#158): every RTX Encore row says it is not confirmed under Proton yet.
+                    if (component.Kind == ManagedComponentKind.RtxEncore && component.ActionAllowed)
+                        component.Note = RtxEncoreDeploymentService.NotYetConfirmedNote;
                 }
             }
             else
@@ -821,6 +846,50 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             component.Note = ReShadeAddonSwitch.OffNote;
 
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
+    }
+
+    // w4/encore (#158): RTX Encore's row before install. Hidden (Unsupported) where it cannot apply: not a 64-bit Windows
+    // DX11/DX12/Vulkan game, or a game without its own DLSS (everything RTX Encore can do under Proton works through it).
+    private bool HideRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
+    {
+        // The probe's own-DLSS answer (an OptiScaler/ folder does not count), the rule the install applies.
+        var ineligible = _rtxEncore is null ? RtxEncoreDeploymentService.NotInstalledMessage : RtxEncoreDeploymentService.IneligibleReason(game, component.GameShipsDlss);
+        if (ineligible is null) return false;
+        component.Availability = ComponentAvailability.Unsupported;
+        component.ActionAllowed = false;
+        component.Note = ineligible;
+        return true;
+    }
+
+    private void DecorateRtxEncore(DetectedGame game, ManagedComponent component, IReadOnlyList<ManagedComponent> components)
+    {
+        if (_rtxEncore is null || HideRtxEncore(game, component, components)) return;
+        var name = _rtxEncore.ChosenName(game);
+        if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath))
+        {
+            component.ActionAllowed = false;
+            component.Note = RtxEncoreDeploymentService.PrefixMessage;
+        }
+        else if (RtxEncoreDeploymentService.ResolveBinaryDirectory(game) is null)
+        {
+            component.ActionAllowed = false;
+            component.Note = RtxEncoreDeploymentService.BinaryFolderMessage;
+        }
+        else if (!_rtxEncore.OfferedNames(game).Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            component.ActionAllowed = false;
+            component.Note = RtxEncoreDeploymentService.NameNotOfferedPrefix + name;
+        }
+        else if (_rtxEncore.NeuralRenderingChosen(game)
+                 && NeuralRenderingRuntimeOwnership.OwnerOtherThan(_records, game, ManagedComponentKind.RtxEncore) is { } owner)
+        {
+            component.ActionAllowed = false;
+            component.Note = NeuralRenderingRuntimeOwnership.RefusalFor(owner);
+        }
+        else
+        {
+            component.Note = RtxEncoreDeploymentService.NotYetConfirmedNote;
+        }
     }
 
     // Upstream 2.8.1: the detail shows which RenoDX/Luma add-on file is installed and who made each mod. Credit what
@@ -869,6 +938,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // Every mutating entry point goes through this: an unconfirmed patch target, or records left
     // pointing at the folder the game was moved from (Refs #38), refuse before anything is touched.
     private readonly NrCostScalerService? _nrCostScaler; // w3/parity (#96)
+    private readonly RtxEncoreDeploymentService? _rtxEncore; // w4/encore (#158)
 
     private ComponentOperationResult? PatchTargetGuard(DetectedGame game)
         => XboxWriteGate.Refusal(game) is { } busy ? ComponentOperationResult.Fail(busy) // w3/scan hook (Refs #90)
@@ -951,7 +1021,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             _addonManager, _neuralVersionPins, _updateLog,
             _dlssg2030?.GameState, _rtx40Mfg?.GameState, _dlssEnablerStandalone?.GameState,
             _shortFuse?.GameState, _lumaPolicy?.GameState,
-            _reshade?.DllNames // w3/dllnames (#120)
+            _reshade?.DllNames // w3/dllnames (#120); RTX Encore's name and NR choice live in the same store (#158)
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
@@ -1317,6 +1387,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             return ComponentOperationResult.Fail("RTX 20 FG Unlock legado já está ativo. Remova-o antes de instalar ShortFuse.");
         if (target == ManagedComponentKind.ShortFuse && _records.Find(game, ManagedComponentKind.Rtx40MfgStandalone) is not null)
             return ComponentOperationResult.Fail("Universal MFG Experimental já está ativo. Remova-o antes de instalar ShortFuse.");
+        // w4/encore (#158): never switch away from RTX Encore's Neural Rendering file; the user removes it first. Refused
+        // here, before any dependency (ReShade) is installed.
+        if (target is ManagedComponentKind.ShortFuse or ManagedComponentKind.Dlss5Feeder
+            && NeuralRenderingRuntimeOwnership.RtxEncoreOwner(_records, game) is { } encoreOwner)
+            return ComponentOperationResult.Fail(NeuralRenderingRuntimeOwnership.RefusalFor(encoreOwner));
 
         if ((target is ManagedComponentKind.LumaFramework or ManagedComponentKind.ShortFuse) &&
             _records.Find(game, ManagedComponentKind.ReShade) is null &&
@@ -1356,6 +1431,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.DlssEnablerStandalone => "DLSS Enabler (Standalone)",
         ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
+        ManagedComponentKind.RtxEncore => RtxEncoreDeploymentService.DisplayName, // w4/encore (#158)
         _ => kind.ToString()
     };
 
@@ -1819,6 +1895,30 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public LinuxDeploymentRecord? GetStandaloneDlssEnablerRecord(DetectedGame game)
         => _dlssEnablerStandalone.GetRecord(game);
 
+    // w4/encore (#158): RTX Encore's ⚙ choices and checks.
+    public RtxEncoreDeploymentService? RtxEncore => _rtxEncore;
+
+    public LinuxDeploymentRecord? GetRtxEncoreRecord(DetectedGame game) => _rtxEncore?.GetRecord(game);
+
+    public ComponentOperationResult SetRtxEncoreName(DetectedGame game, string name)
+        => _rtxEncore is null ? ComponentOperationResult.Fail(RtxEncoreDeploymentService.NotInstalledMessage) : _rtxEncore.SetName(game, name);
+
+    public Task<RtxEncoreUpdateStatus> CheckRtxEncoreUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+        => _rtxEncore is null
+            ? Task.FromResult(new RtxEncoreUpdateStatus(false, null, null, false, RtxEncoreDeploymentService.NotInstalledMessage))
+            : _rtxEncore.CheckLatestAsync(game, cancellationToken);
+
+    /// <summary>The Neural Rendering file choice: saved before install, applied in place (journaled, history) once installed.</summary>
+    public Task<ComponentOperationResult> SetRtxEncoreNeuralRenderingAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
+    {
+        if (_rtxEncore is null) return Task.FromResult(ComponentOperationResult.Fail(RtxEncoreDeploymentService.NotInstalledMessage));
+        if (_rtxEncore.GetRecord(game) is null) return _rtxEncore.SetNeuralRenderingAsync(game, enabled, cancellationToken);
+        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.RtxEncore);
+        return guard is not null
+            ? Task.FromResult(guard)
+            : Track(game, ManagedComponentKind.RtxEncore, ComponentUpdateAction.Update, () => _rtxEncore.SetNeuralRenderingAsync(game, enabled, cancellationToken));
+    }
+
     public LinuxDeploymentRecord? GetRtx40MfgRecord(DetectedGame game)
         => _rtx40Mfg.GetRecord(game);
 
@@ -1952,6 +2052,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DofFix => await _dofFix.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.DlssEnablerStandalone => await _dlssEnablerStandalone.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Rtx40MfgStandalone => await _rtx40Mfg.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.RtxEncore when _rtxEncore is not null => await _rtxEncore.CheckManagedUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
@@ -2000,6 +2101,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DofFix => _dofFix.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.UpdateAsync(game, cancellationToken),
+            ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse
                 => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
@@ -2107,6 +2209,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlssg2030Unlock => _dlssg2030.InstallAsync(game, cancellationToken: cancellationToken),
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.InstallAsync(game, cancellationToken: cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.InstallAsync(game, cancellationToken: cancellationToken),
+            ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.InstallAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Feeder => InstallNeuralRenderingManagedAsync(game, ManagedComponentKind.Dlss5Feeder, cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge => InstallNeuralRenderingManagedAsync(game, ManagedComponentKind.Dlss5Dx11Bridge, cancellationToken),
             ManagedComponentKind.ShortFuse => InstallNeuralRenderingManagedAsync(game, ManagedComponentKind.ShortFuse, cancellationToken),
@@ -2297,6 +2400,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlssg2030Unlock => _dlssg2030.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.DlssEnablerStandalone => _dlssEnablerStandalone.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.Rtx40MfgStandalone => _rtx40Mfg.RemoveAsync(game, cancellationToken),
+            ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Feeder => _dlss5Feeder.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge => _dlss5Bridge.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.ShortFuse => _shortFuse.RemoveAsync(game, cancellationToken),

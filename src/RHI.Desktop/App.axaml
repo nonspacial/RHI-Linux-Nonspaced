@@ -37,8 +37,13 @@
         <Grid ColumnDefinitions="220,*" ColumnSpacing="12">
           <TextBlock Text="{Binding ProxyLabel}" VerticalAlignment="Center" TextWrapping="Wrap"/>
           <ComboBox Grid.Column="1" ItemsSource="{Binding ProxyOptions}" SelectedItem="{Binding SelectedProxy}" MinWidth="{Binding ProxyMinWidth}"
-                    IsEnabled="{Binding CanChoose}"/>
+                    IsEnabled="{Binding CanChoose}" IsVisible="{Binding !ShowsProxyAsText}" ToolTip.Tip="{Binding ProxyTip}"/>
+          <!-- RTX Encore installed: its name cannot change, so it is plain text, not a dead dropdown (#158). -->
+          <TextBlock Grid.Column="1" Text="{Binding SelectedProxy}" VerticalAlignment="Center" IsVisible="{Binding ShowsProxyAsText}"/>
         </Grid>
+        <!-- w4/encore (#158): RTX Encore's Neural Rendering file; only that dialog has it. -->
+        <CheckBox Content="{Binding NeuralRenderingLabel}" IsChecked="{Binding NeuralRenderingChosen}" IsVisible="{Binding HasNeuralRendering}"
+                  IsEnabled="{Binding CanChangeNeuralRendering}" ToolTip.Tip="{Binding NeuralRenderingTip}"/>
         <TextBlock Text="{Binding CompatibilityText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding HasCompatibility}"/>
         <TextBlock Text="{Binding InstalledText}" TextWrapping="Wrap" Opacity="0.74" IsVisible="{Binding IsInstalled}"/>
         <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsInstalled}">
