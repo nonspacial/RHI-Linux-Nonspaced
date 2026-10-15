@@ -11,7 +11,7 @@ using RHI.Platform.Linux.Paths;
 namespace RHI.Core.Tests;
 
 /// <summary>Upstream RHI 2.7.9 NR fixes: rc sort order, Update All coverage and in-place add-on swap.</summary>
-public sealed class NeuralAddonVersionSwapTests : IDisposable
+public sealed partial class NeuralAddonVersionSwapTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-nr-swap-" + Guid.NewGuid().ToString("N"));
 

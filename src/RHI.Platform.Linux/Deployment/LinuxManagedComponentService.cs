@@ -1636,7 +1636,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind kind,
         CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        // #170: a swap would put a loadable copy back (DX11 Bridge) or miss the renamed file (Feeder, ShortFuse) while
+        // No Addons has the add-on turned off; it is refused like an update, before any download.
+        var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, kind);
         if (guard is not null) return Task.FromResult(guard);
         if (kind is not (ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.ShortFuse))
             return SwapNeuralAddonVersionCoreAsync(game, kind, cancellationToken);
@@ -1709,7 +1711,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     public Task<ComponentOperationResult> SetShortFuseZzzLoadOrderAsync(DetectedGame game, bool enabled, CancellationToken cancellationToken = default)
     {
-        var guard = PatchTargetGuard(game);
+        // #170: the rename needs the add-on under its own name; while No Addons has it turned off nothing changes.
+        var guard = PatchTargetGuard(game) ?? AddonOffGuard(game, ManagedComponentKind.ShortFuse);
         return guard is null ? _shortFuse.SetZzzLoadOrderAsync(game, enabled, cancellationToken) : Task.FromResult(guard);
     }
 
@@ -1738,13 +1741,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             cancellationToken)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The Extras ShortFuse Remove: the generic removal itself, so both Remove buttons give one answer. Removal is the
+    /// user's own choice and works while No Addons has the add-on turned off (#170; it deletes the off file).
+    /// </summary>
     public Task<ComponentOperationResult> RemoveShortFuseAsync(DetectedGame game, CancellationToken cancellationToken = default)
-    {
-        var guard = PatchTargetGuard(game) ?? LayerGuard(game, ManagedComponentKind.ShortFuse) ?? AddonOffGuard(game, ManagedComponentKind.ShortFuse); // w3/parity (#96), #170
-        return guard is null
-            ? Track(game, ManagedComponentKind.ShortFuse, ComponentUpdateAction.Remove, () => _shortFuse.RemoveAsync(game, cancellationToken))
-            : Task.FromResult(guard);
-    }
+        => RemoveAsync(game, ManagedComponentKind.ShortFuse, cancellationToken);
 
     public LinuxDeploymentRecord? GetUltimateAsiLoaderRecord(DetectedGame game)
         => _ultimateAsiLoader.GetRecord(game);
