@@ -55,14 +55,19 @@ public sealed class WineRegistryValueService(WineRegistryEditor registry)
         => hive == SystemHive ? Registry.EditSystemHive(prefixPath, edit) : Registry.EditUserHive(prefixPath, edit);
 
     /// <summary>The record <see cref="Ensure"/> would return, without changing anything (journal step before the write).</summary>
-    public WineRegistryValueRecord Plan(string prefixPath, string hive, string key, string name, string rightHandSide)
+    public WineRegistryValueRecord Plan(string prefixPath, string hive, string key, string name, string rightHandSide, string? rhiNamePrefix = null)
     {
         if (!HasHive(prefixPath, hive))
             throw new FileNotFoundException(MissingHiveMessage(hive), HivePath(prefixPath, hive));
-        return PlanFromText(ReadHive(prefixPath, hive), hive, key, name, rightHandSide);
+        return PlanFromText(ReadHive(prefixPath, hive), hive, key, name, rightHandSide, rhiNamePrefix);
     }
 
-    private static WineRegistryValueRecord PlanFromText(string text, string hive, string key, string name, string rightHandSide)
+    /// <param name="rhiNamePrefix">
+    /// Value names that only RHI writes in this key (the Vulkan layers' <c>C:\ProgramData\RHI-Linux\ReShadeVulkan\</c>): a
+    /// section that holds nothing else is RHI's, so the value set last in a shared prefix also takes the emptied section
+    /// away on removal, whichever game RHI set up first.
+    /// </param>
+    private static WineRegistryValueRecord PlanFromText(string text, string hive, string key, string name, string rightHandSide, string? rhiNamePrefix)
     {
         var current = WineHiveText.Read(text, Section(key), Quoted(name));
         var already = current is { } read && SameRaw(Raw(read), rightHandSide);
@@ -71,16 +76,17 @@ public sealed class WineRegistryValueService(WineRegistryEditor registry)
             Hive = hive, Key = key, Name = name,
             PreviousValue = current is { } value ? Raw(value) : null,
             ChangedByRhi = !already,
-            SectionCreatedByRhi = !already && !WineHiveText.HasSection(text, Section(key)),
+            SectionCreatedByRhi = !already && (!WineHiveText.HasSection(text, Section(key))
+                || (rhiNamePrefix is not null && WineHiveText.HoldsOnlyValuesNamed(text, Section(key), "\"" + WineRegistryEditor.EscapeValueName(rhiNamePrefix)))),
             WrittenValue = already ? null : rightHandSide
         };
     }
 
     /// <summary>Sets the value (planned from the text read under the lock, so the record matches what was replaced).</summary>
-    public WineRegistryValueRecord Ensure(string prefixPath, string hive, string key, string name, string rightHandSide)
+    public WineRegistryValueRecord Ensure(string prefixPath, string hive, string key, string name, string rightHandSide, string? rhiNamePrefix = null)
         => Edit(prefixPath, hive, text =>
         {
-            var plan = PlanFromText(text, hive, key, name, rightHandSide);
+            var plan = PlanFromText(text, hive, key, name, rightHandSide, rhiNamePrefix);
             return (plan.ChangedByRhi ? WineHiveText.Set(text, Section(key), Quoted(name), rightHandSide) : null, plan);
         });
 
@@ -90,15 +96,15 @@ public sealed class WineRegistryValueService(WineRegistryEditor registry)
     /// </summary>
     public async Task<WineRegistryValueRecord> EnsureAsync(
         DeploymentOperation? operation, string prefixPath, string hive, string key, string name, string rightHandSide,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, string? rhiNamePrefix = null)
     {
         if (EditRefusal(prefixPath) is { } refusal)
             throw new WineRegistryEditRefusedException(refusal, inUse: true);
         if (operation is not null)
             await operation.AddCompensationAsync(WineRegistryValueCompensator.KindName,
-                WineRegistryValueCompensator.Describe(prefixPath, Plan(prefixPath, hive, key, name, rightHandSide)),
+                WineRegistryValueCompensator.Describe(prefixPath, Plan(prefixPath, hive, key, name, rightHandSide, rhiNamePrefix)),
                 cancellationToken).ConfigureAwait(false);
-        return Ensure(prefixPath, hive, key, name, rightHandSide);
+        return Ensure(prefixPath, hive, key, name, rightHandSide, rhiNamePrefix);
     }
 
     /// <summary>

@@ -41,6 +41,25 @@ internal static class WineHiveText
     internal static bool HasSection(string text, string sectionName) => FindSection(SplitLines(text), sectionName).Start >= 0;
 
     /// <summary>
+    /// Whether the section exists and every value in it has a quoted name starting with <paramref name="quotedNamePrefix"/>
+    /// (comments and blank lines aside); an empty section qualifies too.
+    /// </summary>
+    internal static bool HoldsOnlyValuesNamed(string text, string sectionName, string quotedNamePrefix)
+    {
+        var lines = SplitLines(text);
+        var (start, end) = FindSection(lines, sectionName);
+        if (start < 0) return false;
+        for (var i = start + 1; i < end; i++)
+        {
+            var line = lines[i].Trim();
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            if (!line.StartsWith(quotedNamePrefix, StringComparison.OrdinalIgnoreCase)) return false;
+            i += ContinuationLines(lines, i, end);
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Sets <paramref name="quotedName"/> to <paramref name="rightHandSide"/> (written as it is: <c>"value"</c> for a
     /// string, <c>dword:00000000</c>, or raw text whose line feeds become the hive's line ending), creating the section
     /// at the end of the hive when it is missing.

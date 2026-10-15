@@ -88,6 +88,30 @@ public sealed partial class ReShadeChannelTests
     }
 
     [Fact]
+    public void RegistryValue_ASectionHoldingOnlyRhisLayerValues_IsRhis_OneWithAnyOtherValueIsNot()
+    {
+        const string rhiNames = @"C:\ProgramData\RHI-Linux\ReShadeVulkan\";
+        const string section = "\n[Software\\\\Khronos\\\\Vulkan\\\\ImplicitLayers] 1\n#time=1\n\"C:\\\\ProgramData\\\\RHI-Linux\\\\ReShadeVulkan\\\\a-1\\\\ReShade64.json\"=dword:00000000\n";
+        var values = new WineRegistryValueService(new WineRegistryEditor(_ => false));
+        string PrefixWith(string name, string hiveText)
+        {
+            var prefix = NewPrefix(name);
+            File.WriteAllText(Path.Combine(prefix, "system.reg"), hiveText);
+            return prefix;
+        }
+
+        var onlyRhi = PrefixWith("hklm-owned-section", SystemRegText + section);
+        Assert.True(values.Ensure(onlyRhi, WineRegistryValueService.SystemHive, LayerKey, LayerName, "dword:00000000", rhiNames).SectionCreatedByRhi);
+
+        var mixed = PrefixWith("hklm-mixed-section", SystemRegText + section + "\"C:\\\\Tools\\\\obs.json\"=dword:00000000\n");
+        Assert.False(values.Ensure(mixed, WineRegistryValueService.SystemHive, LayerKey, LayerName, "dword:00000000", rhiNames).SectionCreatedByRhi);
+
+        // Without the RHI name rule an existing section is never RHI's.
+        var plain = PrefixWith("hklm-plain-section", SystemRegText + section);
+        Assert.False(values.Ensure(plain, WineRegistryValueService.SystemHive, LayerKey, LayerName, "dword:00000000").SectionCreatedByRhi);
+    }
+
+    [Fact]
     public void RegistryValueCompensator_UndoesRhisValue_DefersWhileWineRuns_AndKeepsALaterOne()
     {
         var prefix = NewPrefix("hklm-compensator");
@@ -203,6 +227,76 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(userBefore, File.ReadAllBytes(Path.Combine(game.PrefixPath!, "user.reg")));
         Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "vulkan-1.dll")));
         Assert.False(File.Exists(Path.Combine(LayerFolder(game), "ReShade64.dll")));
+        // The folders the install made in the prefix are journaled too (review finding 3a): none is left behind.
+        Assert.False(Directory.Exists(Path.Combine(game.PrefixPath!, "drive_c")));
+    }
+
+    [Fact]
+    public void CreatedDirectoryCompensator_RemovesOnlyAnEmptyFolder_AndNeverALink()
+    {
+        var root = Path.Combine(_root, "created-dir");
+        var empty = Path.Combine(root, "empty");
+        var used = Path.Combine(root, "used");
+        var target = Path.Combine(root, "target");
+        var link = Path.Combine(root, "link");
+        Directory.CreateDirectory(empty);
+        Directory.CreateDirectory(used);
+        File.WriteAllText(Path.Combine(used, "mine.txt"), "x");
+        Directory.CreateDirectory(target);
+        Directory.CreateSymbolicLink(link, target);
+        var compensator = new CreatedDirectoryCompensator();
+
+        foreach (var path in new[] { empty, used, link, Path.Combine(root, "gone") })
+            Assert.Equal(CompensationStatus.Done, compensator.Compensate(CreatedDirectoryCompensator.Describe(path)).Status);
+
+        Assert.False(Directory.Exists(empty));
+        Assert.True(File.Exists(Path.Combine(used, "mine.txt")));
+        Assert.True(Directory.Exists(link));
+        Assert.True(Directory.Exists(target));
+        Assert.Throws<InvalidDataException>(() => compensator.Compensate("{\"Path\":\"relative/dir\"}"));
+    }
+
+    [Fact]
+    public async Task VulkanLayer_TwoGamesInASharedPrefix_TheLastRemovalTakesTheSharedRhiFoldersAway()
+    {
+        // Review finding 3b: game A creates ProgramData\RHI-Linux\ReShadeVulkan, game B only its own folder inside it.
+        var (a, store) = CreateVulkanGame("vk-shared-a");
+        var (b, _) = CreateVulkanGame("vk-shared-b");
+        b.PrefixPath = a.PrefixPath;
+        b.SteamAppId = 4343;
+        var otherExe = Path.Combine(b.BinaryDirectory!, "Other.exe");
+        File.Move(b.ExecutablePath!, otherExe);
+        b.ExecutablePath = otherExe;
+        var programData = Path.Combine(a.PrefixPath!, "drive_c", "ProgramData");
+        Directory.CreateDirectory(programData);
+        var service = NewVulkanService(store, new LunarGHandler(), Path.Combine(_root, "vk-shared-cache"));
+        var systemBefore = File.ReadAllBytes(Path.Combine(a.PrefixPath!, "system.reg"));
+        Assert.True((await service.InstallAsync(a, LayerOptions())).Success);
+        var installedB = await service.InstallAsync(b, LayerOptions());
+        Assert.True(installedB.Success, installedB.Message);
+
+        Assert.True((await service.RemoveAsync(a)).Success);
+        Assert.True(Directory.Exists(LayerFolder(b)));
+        Assert.True((await service.RemoveAsync(b)).Success);
+
+        Assert.False(Directory.Exists(Path.Combine(programData, "RHI-Linux")));
+        Assert.True(Directory.Exists(programData));
+        Assert.Equal(systemBefore, File.ReadAllBytes(Path.Combine(a.PrefixPath!, "system.reg")));
+    }
+
+    [Fact]
+    public async Task VulkanLayer_Removal_KeepsTheSharedRhiFolders_WhileSomethingElseIsInThem()
+    {
+        var (game, store) = CreateVulkanGame("vk-shared-kept");
+        var service = NewVulkanService(store, new LunarGHandler(), Path.Combine(_root, "vk-shared-kept-cache"));
+        Assert.True((await service.InstallAsync(game, LayerOptions())).Success);
+        var root = Path.GetDirectoryName(LayerFolder(game))!;
+        File.WriteAllText(Path.Combine(root, "notes.txt"), "user's");
+
+        Assert.True((await service.RemoveAsync(game)).Success);
+
+        Assert.False(Directory.Exists(LayerFolder(game)));
+        Assert.True(File.Exists(Path.Combine(root, "notes.txt")));
     }
 
     [Fact]

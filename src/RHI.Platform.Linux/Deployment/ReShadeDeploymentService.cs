@@ -848,7 +848,11 @@ public sealed partial class ReShadeDeploymentService
         }
         // The record is gone: the commit point.
         await scope.CommitAsync().ConfigureAwait(false);
-        RemoveEmptyDirectories(record.DirectoriesCreatedByRhi);
+        // #92: the layer's shared ProgramData\RHI-Linux\ReShadeVulkan folders go with the prefix's last layer (another
+        // game's layer folder, or anything else in them, keeps them).
+        RemoveEmptyDirectories(ReShadeVulkanLayer.IsLayerRecord(record) && !string.IsNullOrWhiteSpace(game.PrefixPath)
+            ? [.. record.DirectoriesCreatedByRhi, .. ReShadeVulkanLayer.SharedFolders(game.PrefixPath)]
+            : record.DirectoriesCreatedByRhi);
         if (ReShadeVulkanLayer.IsLayerRecord(record))
             return ComponentOperationResult.Ok(ReShadeVulkanLayer.RemovedMessage
                 + WineDllOverrideService.KeptValueNotes([.. overrideRestores.Select(item => item.Result), .. valueRestores.Select(item => item.Result)]));

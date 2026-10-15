@@ -161,6 +161,9 @@ public sealed partial class ReShadeDeploymentService
 
             foreach (var directory in MissingDirectories(Path.GetDirectoryName(layerDll)!, prefix))
             {
+                // Journaled first: a crash before the record removes the empty folders with the files.
+                if (scope.Operation is { } operation)
+                    await operation.AddCompensationAsync(CreatedDirectoryCompensator.KindName, CreatedDirectoryCompensator.Describe(directory), cancellationToken).ConfigureAwait(false);
                 AtomicFile.CreateDirectoryDurable(directory);
                 createdDirectories.Add(directory);
             }
@@ -181,7 +184,7 @@ public sealed partial class ReShadeDeploymentService
             {
                 layerValue = await RegistryValues.EnsureAsync(scope.Operation, prefix, WineRegistryValueService.SystemHive,
                     ReShadeVulkanLayer.RegistryKey(is32), windowsFolder + @"\" + ReShadeVulkanLayer.ManifestName(is32),
-                    WineRegistryValueService.Dword(0), cancellationToken).ConfigureAwait(false);
+                    WineRegistryValueService.Dword(0), cancellationToken, rhiNamePrefix: ReShadeVulkanLayerFolder.WindowsRoot + @"\").ConfigureAwait(false);
                 valueCreated = true;
             }
 

@@ -15,6 +15,9 @@ public static class ReShadeVulkanLayerFolder
     /// <summary>The folders below <c>drive_c</c>, outermost first; the last one holds one folder per game.</summary>
     public static readonly IReadOnlyList<string> RootParts = ["ProgramData", "RHI-Linux", "ReShadeVulkan"];
 
+    /// <summary>The same folder as Windows sees it (<c>C:\ProgramData\RHI-Linux\ReShadeVulkan</c>).</summary>
+    public static string WindowsRoot => @"C:\" + string.Join('\\', RootParts);
+
     /// <summary>The prefix folder that holds every game's layer folder (<c>…/drive_c/ProgramData/RHI-Linux/ReShadeVulkan</c>).</summary>
     public static string Root(string prefixPath) => Path.Combine([prefixPath, "drive_c", .. RootParts]);
 
@@ -23,7 +26,7 @@ public static class ReShadeVulkanLayerFolder
     {
         ArgumentNullException.ThrowIfNull(game);
         var id = Id(game);
-        return (Path.Combine(Root(game.PrefixPath!), id), @"C:\" + string.Join('\\', RootParts) + @"\" + id);
+        return (Path.Combine(Root(game.PrefixPath!), id), WindowsRoot + @"\" + id);
     }
 
     /// <summary><c>&lt;exe stem&gt;-&lt;8 hex of the game key&gt;</c>: readable, and distinct per game in a shared prefix.</summary>

@@ -296,7 +296,9 @@ public static class LinuxDeploymentRecovery
             [new WineOverrideCompensator(overrides, isPrefixInUse, records), new WineOverrideReapplyCompensator(overrides, isPrefixInUse),
              // w5/reshade-core (#92): registry values (the Vulkan implicit layer in system.reg)
              new WineRegistryValueCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse, records),
-             new WineRegistryValueReapplyCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse)]);
+             new WineRegistryValueReapplyCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse),
+             // w5/reshade-core (#92 review finding 3): folders an operation created (the layer's ProgramData folders)
+             new CreatedDirectoryCompensator()]);
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)

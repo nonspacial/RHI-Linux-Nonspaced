@@ -153,6 +153,13 @@ public static partial class ReShadeVulkanLayer
     /// <summary>The game's folder for the layer inside its prefix, and the same folder as Windows sees it (<c>C:\…</c>).</summary>
     public static (string LinuxPath, string WindowsPath) LayerFolder(DetectedGame game) => ReShadeVulkanLayerFolder.For(game);
 
+    /// <summary>The prefix folders every game's layer shares (<c>ProgramData\RHI-Linux\ReShadeVulkan</c> and <c>ProgramData\RHI-Linux</c>).</summary>
+    public static IReadOnlyList<string> SharedFolders(string prefixPath)
+    {
+        var root = ReShadeVulkanLayerFolder.Root(prefixPath);
+        return [root, Path.GetDirectoryName(root)!];
+    }
+
     public static string LayerDllName(bool is32) => is32 ? "ReShade32.dll" : "ReShade64.dll";
     public static string ManifestName(bool is32) => ReShadeVulkanLayerFolder.ManifestName(is32);
     internal static string RegistryKey(bool is32) => is32 ? ImplicitLayersKey32 : ImplicitLayersKey;
