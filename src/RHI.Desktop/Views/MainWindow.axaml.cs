@@ -230,7 +230,7 @@ public sealed partial class MainWindow : Window
         ShaderAddonManagerUiSnapshot? snapshot;
         try
         {
-            snapshot = await vm.GetShaderAddonManagerSnapshotAsync();
+            snapshot = await vm.ReShadeProfile.GetShaderAddonManagerSnapshotAsync();
         }
         catch (Exception ex)
         {
@@ -262,33 +262,33 @@ public sealed partial class MainWindow : Window
     {
         var path = await PickDllAsync(T("Win.PickD3DCompiler47"));
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
-            vm.ReShadeD3DCompiler47Path = path;
+            vm.ReShadeProfile.ReShadeD3DCompiler47Path = path;
     });
 
     private void BrowseReShadeCustomDll_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {
         var path = await PickDllAsync(T("Win.PickReShadeCustomDll"));
         if (!string.IsNullOrWhiteSpace(path) && DataContext is MainWindowViewModel vm)
-            vm.ReShadeCustomDllPath = path;
+            vm.ReShadeProfile.ReShadeCustomDllPath = path;
     });
 
     private void ClearD3DCompiler47_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainWindowViewModel vm)
-            vm.ReShadeD3DCompiler47Path = string.Empty;
+            vm.ReShadeProfile.ReShadeD3DCompiler47Path = string.Empty;
     }
 
     private void ClearReShadeCustomDll_Click(object? sender, RoutedEventArgs e)
     {
         if (DataContext is MainWindowViewModel vm)
-            vm.ReShadeCustomDllPath = string.Empty;
+            vm.ReShadeProfile.ReShadeCustomDllPath = string.Empty;
     }
 
     private async Task ShowShaderPackFilesDialogAsync(MainWindowViewModel vm, ReShadeShaderPackInfo pack)
     {
-        var files = await vm.GetShaderPackFilesAsync(pack.Id);
+        var files = await vm.ReShadeProfile.GetShaderPackFilesAsync(pack.Id);
         // The layout is the view model's data template (Views/Dialogs/ShaderPackFilesDialogView.axaml; epic #89).
-        var model = new ShaderPackFilesDialogViewModel(pack, files, vm.SetShaderPackExcludedFiles);
+        var model = new ShaderPackFilesDialogViewModel(pack, files, vm.ReShadeProfile.SetShaderPackExcludedFiles);
         var dialog = new Window
         {
             Title = model.WindowTitle,

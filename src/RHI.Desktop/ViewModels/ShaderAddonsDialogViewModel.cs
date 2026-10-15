@@ -65,7 +65,7 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
 
     internal static ShaderAddonsDialogViewModel For(MainWindowViewModel shell, ShaderAddonManagerUiSnapshot snapshot,
         Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles)
-        => new(snapshot, shell.SelectedGame?.Name ?? "", (shaders, addons) => shell.ApplyShaderAddonManagerAsync(shaders, addons),
+        => new(snapshot, shell.SelectedGame?.Name ?? "", (shaders, addons) => shell.ReShadeProfile.ApplyShaderAddonManagerAsync(shaders, addons),
             openFolder, showFiles, line => shell.StatusText = line, shell.Parity);
 
     /// <param name="openFolder">Opens (creating) a folder; says whether it opened, and why not.</param>

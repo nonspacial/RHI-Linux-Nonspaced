@@ -72,8 +72,8 @@ public sealed class RuntimeUnknownPrefixTests : IDisposable
             Assert.False(fx.Vm.CanLaunch);
             Assert.False(fx.Vm.LaunchCommand.CanExecute(null));
             Assert.Equal(UiLocalizationService.Text("Vm.LaunchRuntimeUnknownSetCommandInEdit"), fx.Vm.LaunchToolTip);
-            Assert.False(fx.Vm.CanInstallD3DCompilerWithWinetricks);
-            Assert.Equal(UiLocalizationService.Text("Vm.WinetricksUnavailableRuntimeUnknown"), fx.Vm.D3DCompilerToolHint);
+            Assert.False(fx.Vm.ReShadeProfile.CanInstallD3DCompilerWithWinetricks);
+            Assert.Equal(UiLocalizationService.Text("Vm.WinetricksUnavailableRuntimeUnknown"), fx.Vm.ReShadeProfile.D3DCompilerToolHint);
 
             await SelectAsync(fx, plain.Name);
             Assert.False(fx.Vm.CanLaunch);

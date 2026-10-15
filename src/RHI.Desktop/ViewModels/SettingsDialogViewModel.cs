@@ -204,7 +204,7 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
             var current = Read();
             _shell.Settings.SaveLinuxSettings(current);
             Applied?.Invoke();
-            Status = _shell.ApplyGlobalReShadeSettingsToSelectedGame(current);
+            Status = _shell.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGame(current);
         }
         catch (Exception ex) { Status = TF("Win.CouldNotApplyReShadeDefaults", UiLocalizationService.Present(ex.Message)); }
     }

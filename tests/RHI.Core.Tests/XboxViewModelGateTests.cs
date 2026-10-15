@@ -33,7 +33,7 @@ public sealed class XboxViewModelGateTests
             using var fx = await ViewModelFixture.StartAsync([game], language);
             fx.Vm.SelectedGame = Assert.Single(fx.Vm.Games, g => g.Game.Name == "Xbox VM").Game;
 
-            var status = fx.Vm.ApplyGlobalReShadeSettingsToSelectedGame(new());
+            var status = fx.Vm.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGame(new());
 
             Assert.Equal(UiLocalizationService.Present(XboxWriteGate.BusyMessage), status);
             if (language == "pt-BR") Assert.StartsWith("O app que instalou este jogo está trabalhando nele", status);

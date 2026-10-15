@@ -48,6 +48,8 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
         _shell.PropertyChanged += OnShellChanged;
         // The graphics API override lives in the Runtime panel since the #89 split (w3 integration).
         _shell.Runtime.PropertyChanged += OnShellChanged;
+        // The ReShade channel lives in the ReShade profile panel since the #89 split (w6).
+        _shell.ReShadeProfile.PropertyChanged += OnShellChanged;
         Refresh();
     }
 
@@ -75,7 +77,7 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
         // Selection, analysis (an install/removal re-analyses), busy state, the graphics API override (changes what
         // Automatic stands for) and the UI language (relabels the channel).
         if (e.PropertyName is nameof(MainWindowViewModel.SelectedGame) or nameof(MainWindowViewModel.IsSelectionProbeBusy)
-            or nameof(MainWindowViewModel.IsBusy) or nameof(MainWindowViewModel.SelectedReShadeChannel)
+            or nameof(MainWindowViewModel.IsBusy) or nameof(ReShadeProfileViewModel.SelectedReShadeChannel)
             or nameof(RuntimePanelViewModel.SelectedGraphicsApiOverride))
             Refresh();
     }

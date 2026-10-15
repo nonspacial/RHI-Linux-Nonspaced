@@ -47,6 +47,8 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(ShaderPackRow), nameof(ShaderPackRow.IsChecked))]
     [InlineData(typeof(ShaderPackFilesDialogViewModel), nameof(ShaderPackFilesDialogViewModel.Status))]
     [InlineData(typeof(SettingsDialogViewModel), nameof(SettingsDialogViewModel.CloseToTrayEnabled))]
+    // The ReShade profile section binds its panel (concern 12).
+    [InlineData(typeof(ReShadeProfileViewModel), nameof(ReShadeProfileViewModel.ReShadeUpdateText))]
     public void MainWindow_BindingPaths_AreCompiledAgainstTheirDataType(Type dataType, string property)
         => Assert.Contains($"{dataType.FullName},{dataType.Assembly.GetName().Name}.{property}!Getter", CompiledAccessors);
 }
