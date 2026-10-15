@@ -74,6 +74,38 @@ public sealed class LumaCatalogServiceTests
         Assert.Equal("Batman Arkham Knight", resolved!.Name);
     }
 
+    // w5 leftover (#190 × Luma): the Edit-game wiki name finds the Luma mod, as it does RenoDX's (upstream MatchLumaGame
+    // step 1), and a changed wiki name is looked up again.
+    [Fact]
+    public async Task ResolveAsync_UsesTheEditGameWikiName_AndLooksAgainWhenItChanges()
+    {
+        const string wikiUrl = "https://example.test/luma-wiki";
+        using var http = new HttpClient(new FakeHandler(_ => Text(
+            WikiRow("Batman Arkham Knight", "Luma-Batman_Arkham_Knight.zip"), "text/html")));
+        var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
+        var game = new DetectedGame { Name = "BatmanAK", InstallPath = "/games/batman" };
+        Assert.Null(await catalog.ResolveAsync(game));
+
+        game.WikiNameOverride = "Batman: Arkham Knight";
+        var resolved = await catalog.ResolveAsync(game);
+
+        Assert.Equal("Batman Arkham Knight", resolved?.Name);
+        Assert.True(catalog.TryGetCached(game, out var cached));
+        Assert.Equal("Batman Arkham Knight", cached?.Name);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_AWikiNameThatNamesNoMod_FallsBackToTheDetectedName()
+    {
+        const string wikiUrl = "https://example.test/luma-wiki";
+        using var http = new HttpClient(new FakeHandler(_ => Text(
+            WikiRow("Nioh", "Luma-Nioh.zip"), "text/html")));
+        var catalog = new LumaCatalogService(http, wikiUrl: wikiUrl);
+        var game = new DetectedGame { Name = "Nioh", InstallPath = "/games/nioh", WikiNameOverride = "Nioh Complete Edition" };
+
+        Assert.Equal("Nioh", (await catalog.ResolveAsync(game))?.Name);
+    }
+
     [Fact]
     public async Task ResolveAsync_DirectNormalizedMatchHandlesTrademarkAndPunctuation()
     {
