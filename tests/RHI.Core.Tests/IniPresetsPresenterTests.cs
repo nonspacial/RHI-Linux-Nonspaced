@@ -90,6 +90,9 @@ public sealed class IniPresetsPresenterTests
         using var fx = await ViewModelFixture.StartAsync([game]);
         fx.Records.Manage(fx.Vm.AllLibraryGames.Single(), ManagedComponentKind.ReLimiter);
         File.SetUnixFileMode(ini, UnixFileMode.None);
+        // The selection analysis' "Ready —" line can replace ours at any moment: collect every line written instead.
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
         try
         {
             var question = await fx.Vm.IniPresets.DeployQuestionAsync(ManagedComponentKind.ReLimiter);
@@ -97,7 +100,7 @@ public sealed class IniPresetsPresenterTests
             Assert.Equal(0, question.Count);
             Assert.NotNull(question.Error);
             Assert.StartsWith(UiLocalizationService.Format("Ini.DeployFailed", "relimiter.ini", ""), question.Error, StringComparison.Ordinal);
-            Assert.Contains(question.Error, fx.Vm.StatusText); // a pending one-shot notice may ride on the line
+            Assert.Contains(lines, line => line.Contains(question.Error, StringComparison.Ordinal)); // a pending one-shot notice may ride on it
         }
         finally { File.SetUnixFileMode(ini, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
     }
