@@ -48,8 +48,8 @@ public sealed class NexusGameCatalogueTests : IDisposable
     [InlineData("DARK SOULS™ III", null, "darksouls3")]
     public void BuiltInTable_AnswersWithoutTheList_ForStoreNamesNexusSpellsDifferently(string name, int? appId, string domain)
     {
-        Assert.Equal("https://www.nexusmods.com/" + domain, NexusLinkPresenter.PageFor(Named(name, appId)));
-        Assert.Equal("https://www.nexusmods.com/" + domain, NexusLinkPresenter.PageFor(Named(name, appId), new NexusGameCatalogue(new HttpClient(Serving("[]")), CachePath)));
+        Assert.Equal("https://www.nexusmods.com/" + domain, GameLinksPresenter.PageFor(Named(name, appId)));
+        Assert.Equal("https://www.nexusmods.com/" + domain, GameLinksPresenter.PageFor(Named(name, appId), new NexusGameCatalogue(new HttpClient(Serving("[]")), CachePath)));
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class NexusGameCatalogueTests : IDisposable
     {
         var game = Named("The Elder Scrolls V: Skyrim Special Edition", 489830);
         game.NexusUrlOverride = "https://www.nexusmods.com/games/override";
-        Assert.Equal("https://www.nexusmods.com/games/override", NexusLinkPresenter.PageFor(game));
+        Assert.Equal("https://www.nexusmods.com/games/override", GameLinksPresenter.PageFor(game));
     }
 
     [Fact]
@@ -65,21 +65,21 @@ public sealed class NexusGameCatalogueTests : IDisposable
     {
         var fake = Serving(List);
         var games = new NexusGameCatalogue(new HttpClient(fake), CachePath);
-        Assert.Null(NexusLinkPresenter.PageFor(Named("Cyberpunk 2077"), games)); // not loaded yet: never blocks
+        Assert.Null(GameLinksPresenter.PageFor(Named("Cyberpunk 2077"), games)); // not loaded yet: never blocks
 
         await games.LoadAsync();
 
         Assert.True(games.IsLoaded);
         var request = Assert.Single(fake.Requests);
         Assert.Equal("https://data.nexusmods.com/file/nexus-data/games.json", request.RequestUri!.AbsoluteUri);
-        Assert.Equal("https://www.nexusmods.com/cyberpunk2077", NexusLinkPresenter.PageFor(Named("Cyberpunk 2077™"), games)); // first entry wins
+        Assert.Equal("https://www.nexusmods.com/cyberpunk2077", GameLinksPresenter.PageFor(Named("Cyberpunk 2077™"), games)); // first entry wins
         Assert.Equal("https://www.nexusmods.com/brokensword3thesleepingdragon",
-            NexusLinkPresenter.PageFor(Named("Broken Sword 3 - the Sleeping Dragon (2003)"), games)); // Steam's trailing year
-        Assert.Null(NexusLinkPresenter.PageFor(Named("Plain Http"), games));
-        Assert.Null(NexusLinkPresenter.PageFor(Named("Other Host"), games));
-        Assert.Null(NexusLinkPresenter.PageFor(Named("Deep Link"), games));
-        Assert.Null(NexusLinkPresenter.PageFor(Named("Not On Nexus"), games));
-        Assert.Equal("cyberpunk2077", NexusLinkPresenter.GameDomainOf(NexusLinkPresenter.PageFor(Named("Cyberpunk 2077"), games))); // nxm matching
+            GameLinksPresenter.PageFor(Named("Broken Sword 3 - the Sleeping Dragon (2003)"), games)); // Steam's trailing year
+        Assert.Null(GameLinksPresenter.PageFor(Named("Plain Http"), games));
+        Assert.Null(GameLinksPresenter.PageFor(Named("Other Host"), games));
+        Assert.Null(GameLinksPresenter.PageFor(Named("Deep Link"), games));
+        Assert.Null(GameLinksPresenter.PageFor(Named("Not On Nexus"), games));
+        Assert.Equal("cyberpunk2077", GameLinksPresenter.GameDomainOf(GameLinksPresenter.PageFor(Named("Cyberpunk 2077"), games))); // nxm matching
     }
 
     [Fact]

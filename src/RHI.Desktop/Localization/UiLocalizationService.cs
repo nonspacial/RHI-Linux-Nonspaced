@@ -1209,6 +1209,15 @@ public static class UiLocalizationService
             " Não foi possível preparar o modelo de INI do OptiScaler, então foi usado o OptiScaler.ini do pacote: "),
         // w5/update-policy rows
         // w5/catalogue-info rows
+        // #183 card links: one row per download source's refusal text.
+        (RHI.Platform.Linux.Deployment.DownloadSources.UltraPlusGameList.RefusalPrefix,
+            "Download recusado: links da lista de jogos do Ultra+ devem ser HTTPS em um host confiável (theultraplace.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.UltrawideFixList.RefusalPrefix,
+            "Download recusado: links da lista de correções ultrawide devem ser HTTPS em um host confiável (codeberg.org). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.CommunityGameList.RefusalPrefix,
+            "Download recusado: links da lista de jogos da comunidade devem ser HTTPS em um host confiável (raw.githubusercontent.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.SteamStoreSearch.RefusalPrefix,
+            "Download recusado: links da busca da loja Steam devem ser HTTPS em um host confiável (store.steampowered.com). Link recusado: "),
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

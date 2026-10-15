@@ -225,7 +225,7 @@ internal sealed class AppComposition
             NexusAccount = nexusAccount,
             ShaderProfiles = new ShaderProfilePresenter(new ShaderSelectionProfileStore(), shaderPacks),
             NrCostScaler = new NrCostScalerPresenter(managedComponents),
-            NexusLinks = new NexusLinkPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
+            GameLinks = new GameLinksPresenter(nexusAccount, nexusApi, new NexusDownloadService(http, nexusApi), new NexusGameCatalogue(http)),
             AppUpdate = new AppUpdatePresenter(new AppUpdateCheckService(http), accounts),
             Shortcuts = new GameShortcutPresenter(new DesktopShortcutService()),
             GitHubToken = new GitHubTokenPresenter(new GitHubTokenSettingsService(
@@ -235,6 +235,10 @@ internal sealed class AppComposition
         // w3/dllnames rows
         // w5/update-policy rows
         // w5/catalogue-info rows
+        // #183: the card menu's web pages (PCGamingWiki shares the graphics-API lookup's request gate).
+        parity.GameLinks.Links = new GameLinkCatalogue(http, pcgwData: pcgwData, pcgwSearch: pcgwGraphics,
+            policy: async ct => await upstreamManifest.FetchLibraryPolicyAsync(ct).ConfigureAwait(false));
+        parity.GameLinks.RenoDx = renodxCatalog;
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

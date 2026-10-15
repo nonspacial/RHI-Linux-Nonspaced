@@ -14,7 +14,7 @@ public sealed class ParityFeatures
     public required AppUpdatePresenter AppUpdate { get; init; }
     public required GameShortcutPresenter Shortcuts { get; init; }
     public required NexusAccountPresenter NexusAccount { get; init; }
-    public required NexusLinkPresenter NexusLinks { get; init; }
+    public required GameLinksPresenter GameLinks { get; init; }
     public required ShaderProfilePresenter ShaderProfiles { get; init; }
     public required NrCostScalerPresenter NrCostScaler { get; init; }
 
@@ -22,6 +22,6 @@ public sealed class ParityFeatures
     public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch
     {
         HandoffKind.Launch => Shortcuts.LaunchByKeyAsync(vm, request.Value),
-        _ => NexusLinks.HandleAsync(vm, request.Value)
+        _ => GameLinks.HandleAsync(vm, request.Value)
     };
 }

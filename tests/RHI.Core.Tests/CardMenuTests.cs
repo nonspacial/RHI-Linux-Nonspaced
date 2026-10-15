@@ -193,7 +193,7 @@ public sealed class CardMenuTests : IDisposable
             new RHI.Platform.Linux.Deployment.LinuxDeploymentRecordStore(Path.Combine(_root, "app-records.json")), wine,
             RHI.Platform.Linux.Deployment.LinuxDeploymentRecovery.CreateJournal(wine, Path.Combine(_root, "journal")));
         fx.Vm.Parity = services.Parity;
-        Assert.NotNull(services.Parity!.NexusLinks.Games); // the app wires Nexus's game list
+        Assert.NotNull(services.Parity!.GameLinks.Games); // the app wires Nexus's game list
 
         var page = Assert.Single(fx.Vm.CardMenuFor(Row(fx, "The Elder Scrolls V: Skyrim Special Edition")), i => i.Id == "nexus-page");
         Assert.Equal("https://www.nexusmods.com/skyrimspecialedition", page.Tip);

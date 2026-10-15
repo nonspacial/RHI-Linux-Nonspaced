@@ -202,6 +202,17 @@ public sealed partial class PcGamingWikiGraphicsApiService
     private enum FetchOutcome { Ok, Missing, Unavailable }
 
     /// <summary>
+    /// #183 card links: the PCGamingWiki page PCGW's own search finds for a game name, through the same request gate,
+    /// pause and minimum gap as every other PCGW request here (PCGW allows 60 requests a minute).
+    /// <c>DefinitelyMissing</c> is true only when PCGW answered and found no page; a pause, timeout or error is false.
+    /// </summary>
+    public async Task<(string? PageUrl, bool DefinitelyMissing)> SearchPageAsync(string gameName, CancellationToken cancellationToken = default)
+    {
+        var (url, outcome) = await ResolveByOpenSearchAsync(gameName, cancellationToken).ConfigureAwait(false);
+        return (url, url is null && outcome == FetchOutcome.Missing);
+    }
+
+    /// <summary>
     /// Sends one PCGW request through the shared gate (serialised, minimum gap between requests).
     /// Returns null when paused, on a non-success status, or on a timeout/network failure. 429 and
     /// 503 pause all PCGW traffic for the server's Retry-After (clamped); timeouts and network

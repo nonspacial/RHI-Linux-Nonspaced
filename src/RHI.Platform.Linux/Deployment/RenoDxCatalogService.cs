@@ -14,7 +14,9 @@ public sealed record RenoDxModEntry(
     string? Notes,
     bool IsGeneric = false,
     bool IsWorkInProgress = false,
-    string? Author = null)
+    string? Author = null,
+    // #183: the mod's discussion / instructions page (RHI database discussionUrl, the wiki's name link), https only.
+    string? DiscussionUrl = null)
 {
     public string? UrlFor(PeArchitecture architecture)
         => RenoDxCatalogService.ResolveAddonUrl(
@@ -185,19 +187,19 @@ public sealed class RenoDxCatalogService
             // card's mod and keeps its maintainer: the database author of the named match — also an entry that has
             // no download of its own — else the generic engine fallback's maintainer.
             var credited = named ?? MatchNamed(_authorEntries, gameNorm) ?? GenericFallback(indexedFiles);
-            return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author);
+            return SnapshotOverrideEntry(game, overrideUrl, overrideEngineHint, credited?.Author, credited?.DiscussionUrl);
         }
 
         return named ?? GenericFallback(indexedFiles);
     }
 
-    private static RenoDxModEntry SnapshotOverrideEntry(DetectedGame game, string url, string? engineHint, string? author)
+    private static RenoDxModEntry SnapshotOverrideEntry(DetectedGame game, string url, string? engineHint, string? author, string? discussionUrl = null)
     {
         var is32 = url.EndsWith(".addon32", StringComparison.OrdinalIgnoreCase);
         var notes = string.IsNullOrWhiteSpace(engineHint)
             ? "Upstream RHI manifest snapshot override"
             : $"Upstream RHI manifest snapshot override · {engineHint}";
-        return new RenoDxModEntry(game.Name, is32 ? null : url, is32 ? url : null, notes, Author: author);
+        return new RenoDxModEntry(game.Name, is32 ? null : url, is32 ? url : null, notes, Author: author, DiscussionUrl: discussionUrl);
     }
 
     private static RenoDxModEntry? MatchNamed(IReadOnlyList<RenoDxModEntry> mods, string gameNorm)
@@ -256,7 +258,8 @@ public sealed class RenoDxCatalogService
                 prior.Notes ?? entry.Notes,
                 entry.IsGeneric || prior.IsGeneric,
                 prior.IsWorkInProgress,
-                prior.Author ?? entry.Author);
+                prior.Author ?? entry.Author,
+                prior.DiscussionUrl ?? entry.DiscussionUrl);
         }
 
         return merged.Values.ToArray();
@@ -274,7 +277,7 @@ public sealed class RenoDxCatalogService
             var name = item.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String ? nameEl.GetString()?.Trim() : null;
             var author = item.TryGetProperty("author", out var authorEl) && authorEl.ValueKind == JsonValueKind.String ? authorEl.GetString()?.Trim() : null;
             if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(author)) continue;
-            result.Add(new RenoDxModEntry(name!, null, null, null, Author: author));
+            result.Add(new RenoDxModEntry(name!, null, null, null, Author: author, DiscussionUrl: DiscussionUrlOf(item)));
         }
         return result
             .GroupBy(entry => NormalizeName(entry.Name), StringComparer.Ordinal)
@@ -307,7 +310,7 @@ public sealed class RenoDxCatalogService
                 ? authorEl.GetString()?.Trim()
                 : null;
             result.Add(new RenoDxModEntry(name!, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, IsWorkInProgress: wip,
-                Author: string.IsNullOrWhiteSpace(author) ? null : author));
+                Author: string.IsNullOrWhiteSpace(author) ? null : author, DiscussionUrl: DiscussionUrlOf(item)));
         }
 
         return result
@@ -342,7 +345,11 @@ public sealed class RenoDxCatalogService
             }
             if (url64 is null && url32 is null) continue;
             var notes = cells.Count > 3 ? Clean(cells[cells.Count - 1].InnerText) : null;
-            result.Add(new RenoDxModEntry(name, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes));
+            // #183: the name cell's own link is the mod's discussion / instructions page (upstream WikiService NameUrl).
+            var nameLink = cells[0].SelectSingleNode(".//a[@href]") is { } a
+                ? HttpsLink(MakeAbsolute(HtmlEntity.DeEntitize(a.GetAttributeValue("href", "")).Trim()))
+                : null;
+            result.Add(new RenoDxModEntry(name, url64, url32, string.IsNullOrWhiteSpace(notes) ? null : notes, DiscussionUrl: nameLink));
         }
         return result
             .GroupBy(x => NormalizeName(x.Name), StringComparer.Ordinal)
@@ -383,6 +390,17 @@ public sealed class RenoDxCatalogService
                    normalized.Contains("/Binaries/Win64/", StringComparison.OrdinalIgnoreCase) &&
                    Path.GetFileName(f).Contains("Shipping", StringComparison.OrdinalIgnoreCase);
         });
+
+    /// <summary>#183: the entry's <c>discussionUrl</c> when it is an https link, else null.</summary>
+    private static string? DiscussionUrlOf(JsonElement item)
+        => item.TryGetProperty("discussionUrl", out var value) && value.ValueKind == JsonValueKind.String ? HttpsLink(value.GetString()) : null;
+
+    /// <summary>An https link with a host and no credentials (the desktop opener receives it), else null.</summary>
+    internal static string? HttpsLink(string? url)
+        => Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && uri.Host.Length > 0
+           && string.IsNullOrEmpty(uri.UserInfo) && uri.IsDefaultPort
+            ? uri.AbsoluteUri
+            : null;
 
     private static bool LooksLikeAddonUrl(string href)
         => href.EndsWith(".addon64", StringComparison.OrdinalIgnoreCase) ||

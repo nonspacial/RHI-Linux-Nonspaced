@@ -58,6 +58,10 @@ public sealed class UpstreamLibraryPolicySnapshot
         = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
     // w5/update-policy rows
     // w5/catalogue-info rows
+    /// <summary>#183: PCGamingWiki's AppID redirect (<c>api/appid.php</c>) is usable again (manifest <c>pcgwUseAppId</c>).</summary>
+    public bool PcgwUseAppId { get; init; }
+    /// <summary>#183: a higher value than the one stored wipes RHI's PCGamingWiki link cache (manifest <c>pcgwUrlCacheVersion</c>).</summary>
+    public int PcgwUrlCacheVersion { get; init; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -152,6 +156,11 @@ internal sealed partial class UpstreamManifestDocument
     public Dictionary<string, UpstreamManifestGameNote>? GameNotes { get; set; }
     // w5/update-policy rows
     // w5/catalogue-info rows
+    [JsonPropertyName("pcgwUseAppId")]
+    public bool? PcgwUseAppId { get; set; }
+
+    [JsonPropertyName("pcgwUrlCacheVersion")]
+    public int? PcgwUrlCacheVersion { get; set; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -246,6 +255,8 @@ public sealed partial class UpstreamRhiManifestService
             GameNotes = NormalizeGameNotes(manifest.GameNotes),
             // w5/update-policy rows
             // w5/catalogue-info rows
+            PcgwUseAppId = manifest.PcgwUseAppId == true,
+            PcgwUrlCacheVersion = Math.Max(0, manifest.PcgwUrlCacheVersion ?? 0),
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows

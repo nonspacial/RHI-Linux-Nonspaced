@@ -879,6 +879,14 @@ internal static class UiStrings
         ("Ui.RtxEncoreFooter", "Ainda não confirmado no Linux: geração de quadros ×3–×6 e Neural Rendering podem funcionar pelo DLSS do Proton; Smooth Motion não (precisa do driver do Windows). Use só em jogos offline: o mod roda dentro do jogo.", "Not yet confirmed on Linux: frame generation ×3–×6 and Neural Rendering may work through Proton's DLSS; Smooth Motion cannot (it needs the Windows driver). Offline games only: the mod runs inside the game."),
         // w5/update-policy rows
         // w5/catalogue-info rows
+        // #183 card links (card menu).
+        ("Cat.DiscussionPage", "Discussão / instruções", "Discussion / instructions"),
+        ("Cat.WebPages", "Páginas na web", "Web pages"),
+        ("Cat.WebPagesTip", "Páginas sobre este jogo em outros sites; abrem no navegador.", "Pages about this game on other sites; they open in your browser."),
+        ("Cat.PcgwPage", "Página no PCGamingWiki", "PCGamingWiki page"),
+        ("Cat.UltraPlusPage", "Página no Ultra+", "Ultra+ page"),
+        ("Cat.UltrawideFixPage", "Correção ultrawide", "Ultrawide fix"),
+        ("Cat.HdrDatabasePage", "Página no HDR Gaming Database", "HDR Gaming Database page"),
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
