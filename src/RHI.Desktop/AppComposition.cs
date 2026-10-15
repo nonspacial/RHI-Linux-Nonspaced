@@ -52,6 +52,8 @@ internal sealed class AppComposition
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
+    /// <summary>#191: switches the display around a direct launch (kscreen-doctor / wlr-randr); null in tests, never switching.</summary>
+    public RHI.Platform.Linux.Hdr.DisplayModeSwitcher? DisplayModes { get; init; }
     // w5/reshade-core rows
 
     public MainWindowViewModel CreateViewModel()
@@ -59,6 +61,7 @@ internal sealed class AppComposition
         var vm = new MainWindowViewModel(Scanner, Launcher, RuntimeProbe, Dlss, ManagedComponents, ApiOverrideStore, OptiScalerVariantStore, SettingsStore,
             UpdateAll, DlssDefaults, LibraryStore, Records, operations: new OperationCoordinator());
         vm.Settings.UseXboxFolders(XboxFolders); // w3/scan Settings row (#90): the one store the detectors read
+        vm.Resolution.Switcher = DisplayModes; // #191: also puts back a display switch an earlier run left behind
         return vm;
     }
 
@@ -270,6 +273,7 @@ internal sealed class AppComposition
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            DisplayModes = new RHI.Platform.Linux.Hdr.DisplayModeSwitcher(),
             // w5/reshade-core rows
         };
     }

@@ -39,6 +39,7 @@ public sealed class OptionListsTests
             // w5/shell-launch rows
             AssertRoundTrips(OptionLists.Bitness);
             AssertRoundTrips(OptionLists.OptiScalerMenuKey);
+            AssertRoundTrips(OptionLists.GameResolution);
             // w5/reshade-core rows
         }
         finally

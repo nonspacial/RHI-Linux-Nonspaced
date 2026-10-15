@@ -233,6 +233,12 @@ public static class OptionLists
         new(PeArchitecture.X86, "Shell.Bitness32"),
         new(PeArchitecture.X64, "Shell.Bitness64"));
 
+    /// <summary>#191: the game resolutions offered for the resolution auto-toggle (common 16:9, 16:10 and 21:9 sizes).</summary>
+    public static readonly OptionList<string> GameResolution = new("1920x1080", StringComparer.OrdinalIgnoreCase,
+        new[] { "1280x720", "1280x800", "1366x768", "1600x900", "1680x1050", "1920x1080", "1920x1200", "2560x1080",
+                "2560x1440", "2560x1600", "3440x1440", "3840x1600", "3840x2160", "5120x1440" }
+            .Select(size => new OptionEntry<string>(size, null, size.Replace("x", " × ", StringComparison.Ordinal))).ToArray());
+
     /// <summary>
     /// #187: the global OptiScaler overlay key: "" keeps each INI template's own key (default), then OptiScaler's Auto,
     /// upstream's keys (virtual-key codes) and Disabled.

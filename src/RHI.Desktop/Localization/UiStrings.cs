@@ -978,6 +978,20 @@ internal static class UiStrings
         ("Shell.MenuKeyApplied", "Tecla do menu do OptiScaler gravada em {0} jogo(s) e {1} modelo(s) de INI.", "OptiScaler menu key written to {0} game(s) and {1} INI template(s)."),
         ("Shell.MenuKeyFailed", " {0} mantiveram o arquivo; primeiro: {1} — {2}", " {0} kept their file; first: {1} — {2}"),
         ("Shell.MenuKeyCancelled", "Cancelado; os jogos já alterados mantêm a nova tecla.", "Cancelled; the games already changed keep the new key."),
+        // #191 resolution auto-toggle.
+        ("Shell.ResToggle", "Mudar a resolução durante o jogo", "Change resolution while playing"),
+        ("Shell.ResToggleTip", "Quando Jogar inicia o jogo, a tela muda para esta resolução e volta quando o jogo fecha. Com o Gamescope no HDR, a resolução vai para o Gamescope e a área de trabalho não muda.", "When Play starts the game, the display switches to this resolution and back when the game closes. With Gamescope in HDR, the resolution goes to Gamescope and the desktop does not change."),
+        ("Shell.ResGamescope", "O Gamescope roda o jogo em {0}; a resolução da área de trabalho não muda.", "Gamescope runs the game at {0}; the desktop resolution does not change."),
+        ("Shell.ResSwitches", "A tela muda para {0} quando Jogar inicia o jogo e volta quando ele fecha.", "The display switches to {0} when Play starts the game and back when it closes."),
+        ("Shell.ResHandoff", "Iniciado pela loja: o RHI não vê o jogo fechar, então não muda a tela. Escolha Gamescope no HDR para levar a resolução nas opções de execução que você copia para o launcher.", "Started by its store: RHI does not see the game close, so it does not switch the display. Choose Gamescope in HDR to carry the resolution in the launch options you copy into the launcher."),
+        ("Shell.ResDesktopUnsupported", "Esta área de trabalho não tem uma ferramenta de tela que o RHI use (kscreen-doctor do KDE Plasma ou wlr-randr de compositores wlroots como sway ou Hyprland).", "This desktop has no display tool RHI can use (KDE Plasma's kscreen-doctor, or wlr-randr for wlroots compositors such as sway or Hyprland)."),
+        ("Shell.ResToolMissing", "Instale o {0} para o RHI poder mudar a resolução.", "Install {0} so RHI can switch the resolution."),
+        ("Shell.ResHostNotProbed", "Verificando a área de trabalho…", "Checking the desktop…"),
+        ("Shell.ResSwitched", "Tela em {0}; ela volta quando o jogo fechar.", "Display switched to {0}; it goes back when the game closes."),
+        ("Shell.ResEarlierPending", "A tela não foi mudada: uma mudança anterior ainda não foi desfeita.", "The display was not switched: an earlier switch has not been put back yet."),
+        ("Shell.ResSwitchFailed", "A tela não foi mudada ({0}); o jogo começa na resolução atual.", "The display was not switched ({0}); the game starts at the current resolution."),
+        ("Shell.ResRestored", "A resolução da tela voltou à anterior.", "The display resolution is back to what it was."),
+        ("Shell.ResRestoreFailed", "Não foi possível voltar a resolução da tela ({0}). O RHI tenta de novo na próxima abertura; você também pode ajustá-la nas configurações de tela.", "Could not put the display resolution back ({0}). RHI tries again at its next start; you can also set it in the display settings."),
         ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
     ];

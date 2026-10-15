@@ -142,6 +142,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
+    public ResolutionLaunchPresenter Resolution => ResolutionLaunchPresenter.For(this); // #191 resolution auto-toggle
     // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
@@ -987,12 +988,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             return;
         }
 
+        var resolutionPlan = Runtime.SelectedResolutionPlan; // #191: switch the display around a direct launch
         if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
             var hdrGame = SelectedGame;
             StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
-            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, new GameLaunchOptions(plan.Environment, plan.CommandPrefix))))
-                StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
+            var (hdrOptions, hdrNotice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
+            var hdrLine = hdrNotice is null ? TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display)
+                : TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display) + " " + hdrNotice;
+            StatusText = hdrLine;
+            if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, hdrOptions)))
+                StatusText = hdrLine;
+            else
+                await Resolution.RestoreAsync();
             return;
         }
 
@@ -1002,6 +1010,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             : TF("Vm.Launching", game.Name);
         // A store hand-off starts unwrapped; its launcher applies the HDR profile, so say where to enter it (#46).
         if (HdrLaunchText.HandoffNotice(plan, game) is { } handoff) started += " " + handoff;
+        if (resolutionPlan.SwitchesAroundLaunch && _launcher is IGameLaunchOptionsLauncher resolutionLauncher) // #191
+        {
+            StatusText = started;
+            var (options, notice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions());
+            if (notice is not null) started += " " + notice;
+            StatusText = started;
+            if (await TryLaunchAsync(game, () => resolutionLauncher.LaunchAsync(game, options)))
+                StatusText = started;
+            else
+                await Resolution.RestoreAsync();
+            return;
+        }
         StatusText = started;
         if (await TryLaunchAsync(game, () => _launcher.LaunchAsync(game)))
             StatusText = started;

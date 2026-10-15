@@ -1213,6 +1213,11 @@ public static class UiLocalizationService
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        // #191 display switch (platform messages; the tool's own text or the size follows).
+        (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolFailedPrefix, "A ferramenta de tela informou um erro: "),
+        (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.NoModePrefix, "A tela não oferece esta resolução: "),
+        (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix, "A ferramenta de tela não está instalada: "),
+        (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix, "O RHI não conseguiu registrar o modo de tela atual, então não o mudou: "),
         // w5/reshade-core rows
     ];
 

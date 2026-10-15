@@ -58,7 +58,8 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
         // Wrapping a store client (xdg-open heroic://…, steam -applaunch) never reaches the game it starts later,
-        // so a launch profile on a hand-off would be reported as applied without effect (#46).
+        // so a launch profile on a hand-off would be reported as applied without effect (#46). Started/Exited listeners
+        // (#191) are not a profile.
         if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix)) &&
             LaunchHandoffClassifier.IsHandoff(game))
             throw new InvalidOperationException(HandoffProfileRefused);
@@ -66,7 +67,7 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         // The installer app's own Play entry point runs as an argument vector with no shell, so there is no stderr redirection to a
         // per-launch log: the installer app keeps its own logs, and an early failure is still reported by its exit code.
         var stderrLog = XboxEntryPoint(game) is null ? CreateLaunchLog(game) : null;
-        await RunAndWatchAsync(BuildStartInfo(game, options, stderrLog), stderrLog).ConfigureAwait(false);
+        await RunAndWatchAsync(BuildStartInfo(game, options, stderrLog), stderrLog, options.Started, options.Exited).ConfigureAwait(false);
     }
 
     /// <summary>True when the card can open its title in the owning app (the installer app's <c>--show</c> entry point, Refs #90).</summary>
@@ -106,7 +107,9 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         return psi;
     }
 
-    private async Task RunAndWatchAsync(ProcessStartInfo startInfo, string? stderrLog)
+    /// <param name="started">#191: told the process id once the command started.</param>
+    /// <param name="ended">#191: told once the command has ended (the resolution switch is put back then).</param>
+    private async Task RunAndWatchAsync(ProcessStartInfo startInfo, string? stderrLog, Action<int>? started = null, Action? ended = null)
     {
         var process = new Process { StartInfo = startInfo };
         try
@@ -120,6 +123,9 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         }
 
         var exited = process.WaitForExitAsync(CancellationToken.None);
+        if (started is not null) Notify(() => started(process.Id));
+        if (ended is not null)
+            _ = exited.ContinueWith(_ => Notify(ended), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         if (await Task.WhenAny(exited, Task.Delay(_earlyExitWindow, CancellationToken.None)).ConfigureAwait(false) != exited)
         {
             _ = exited.ContinueWith(_ => process.Dispose(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
@@ -133,6 +139,13 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
             exitCode = process.ExitCode;
         }
         if (exitCode != 0) throw new GameLaunchFailedException(exitCode, LastLine(stderrLog));
+    }
+
+    // A listener's failure never turns a launch into a failure (the game is running).
+    private static void Notify(Action listener)
+    {
+        try { listener(); }
+        catch (Exception ex) { AppLog.Warn("launch", "a launch listener failed", ex); }
     }
 
     internal static ProcessStartInfo BuildStartInfo(DetectedGame game, GameLaunchOptions options, string? stderrLog = null)
