@@ -232,6 +232,21 @@ public static class OptionLists
         new(null, "Ui.OptionAutomatic"),
         new(PeArchitecture.X86, "Shell.Bitness32"),
         new(PeArchitecture.X64, "Shell.Bitness64"));
+
+    /// <summary>
+    /// #187: the global OptiScaler overlay key: "" keeps each INI template's own key (default), then OptiScaler's Auto,
+    /// upstream's keys (virtual-key codes) and Disabled.
+    /// </summary>
+    public static readonly OptionList<string> OptiScalerMenuKey = new("", StringComparer.OrdinalIgnoreCase,
+        [
+            new("", "Shell.MenuKeyTemplate"),
+            .. OptiScalerDeploymentService.MenuKeyOptions.Select(option => option.Value switch
+            {
+                "auto" => new OptionEntry<string>("auto", "Shell.MenuKeyAuto"),
+                "-1" => new OptionEntry<string>("-1", "Ui.OptionDisabled"),
+                _ => new OptionEntry<string>(option.Value, null, option.Name)
+            })
+        ]);
     // w5/reshade-core rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>

@@ -12,8 +12,12 @@ public enum OptiScalerGpuType
     Intel
 }
 
-/// <summary>The template a new OptiScaler install starts from: GPU type and, for AMD/Intel, whether the game feeds DLSS inputs.</summary>
-public sealed record OptiScalerTemplateChoice(OptiScalerGpuType Gpu, bool DlssInputs);
+/// <summary>
+/// The template a new OptiScaler install starts from: GPU type and, for AMD/Intel, whether the game feeds DLSS inputs; and
+/// the global overlay key (Refs #187: <c>[Menu] ShortcutKey</c>, a virtual-key code) the template carries, or null to keep
+/// the template's own. The key is not part of the file name.
+/// </summary>
+public sealed record OptiScalerTemplateChoice(OptiScalerGpuType Gpu, bool DlssInputs, string? MenuKey = null);
 
 /// <summary>
 /// Per-GPU OptiScaler INI templates (#97; upstream 2.8.7 <c>OptiScalerService.GetUserIniPath</c>/<c>SeedUserInis</c>): one
@@ -42,7 +46,8 @@ public sealed class OptiScalerIniTemplates
 
     /// <summary>The settings' GPU type and DLSS inputs (unknown values read as upstream's defaults: NVIDIA, DLSS inputs on).</summary>
     public static OptiScalerTemplateChoice ChoiceFrom(LinuxAppSettings settings)
-        => new(ParseGpuType(settings.OptiScalerGpuType), settings.OptiScalerDlssInputs);
+        => new(ParseGpuType(settings.OptiScalerGpuType), settings.OptiScalerDlssInputs,
+            string.IsNullOrWhiteSpace(settings.OptiScalerMenuKey) ? null : settings.OptiScalerMenuKey);
 
     public static OptiScalerGpuType ParseGpuType(string? value) => value?.Trim().ToUpperInvariant() switch
     {
@@ -57,7 +62,9 @@ public sealed class OptiScalerIniTemplates
 
     /// <summary>
     /// The user template for <paramref name="variant"/> under the current choice, seeded from RHI's copy when it does
-    /// not exist yet (never overwritten). Throws when the folder or file cannot be written.
+    /// not exist yet (never overwritten otherwise). With a global overlay key chosen (#187) the template carries it: its
+    /// <c>[Menu] ShortcutKey</c> alone is set to that key (upstream writes the key into the template and every install).
+    /// Throws when the folder or file cannot be written.
     /// </summary>
     public string EnsureSeeded(OptiScalerVariant variant) => EnsureSeeded(variant, CurrentChoice);
 
@@ -65,19 +72,46 @@ public sealed class OptiScalerIniTemplates
     {
         System.IO.Directory.CreateDirectory(Directory);
         var path = Path.Combine(Directory, FileName(variant, choice));
-        if (File.Exists(path)) return path;
-        var bytes = Shipped(variant, choice);
-        try { AtomicFile.WriteNew(path, bytes); }
-        catch (IOException) when (File.Exists(path)) { } // seeded meanwhile by another instance: theirs stays
+        if (!File.Exists(path))
+        {
+            var bytes = Shipped(variant, choice);
+            try { AtomicFile.WriteNew(path, bytes); }
+            catch (IOException) when (File.Exists(path)) { } // seeded meanwhile by another instance: theirs stays
+        }
+        if (choice.MenuKey is { } key) SetMenuKey(path, key);
         return path;
+    }
+
+    /// <summary>
+    /// Sets the global overlay key (#187, upstream's hotkey row) in every template that exists in the INIs folder; returns
+    /// how many files hold it now. Only <c>[Menu] ShortcutKey</c> changes; a template the user locked read-only is written
+    /// and stays locked (the user-locked INI rule).
+    /// </summary>
+    public int ApplyMenuKey(string key)
+    {
+        if (!System.IO.Directory.Exists(Directory)) return 0;
+        var count = 0;
+        foreach (var path in System.IO.Directory.EnumerateFiles(Directory, "OptiScaler*.ini", SearchOption.TopDirectoryOnly))
+        {
+            SetMenuKey(path, key);
+            count++;
+        }
+        return count;
+    }
+
+    private static void SetMenuKey(string path, string key)
+    {
+        if (string.Equals(OptiScalerIniEditor.GetValueInFile(path, "Menu", "ShortcutKey"), key, StringComparison.OrdinalIgnoreCase)) return;
+        OptiScalerIniEditor.SetValuesInFile(path, [("Menu", "ShortcutKey", key)], ReadOnlyUserFile.WriteKeepingLock);
     }
 
     /// <summary>Seeds every template that is missing (upstream does this at start-up; RHI when the folder is opened).</summary>
     public IReadOnlyList<string> SeedAll()
     {
         var seeded = new List<string>();
+        var key = CurrentChoice.MenuKey;
         foreach (var variant in Enum.GetValues<OptiScalerVariant>())
-            foreach (var choice in new[] { new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true), new(OptiScalerGpuType.Amd, true), new(OptiScalerGpuType.Amd, false) })
+            foreach (var choice in new[] { new OptiScalerTemplateChoice(OptiScalerGpuType.Nvidia, true, key), new(OptiScalerGpuType.Amd, true, key), new(OptiScalerGpuType.Amd, false, key) })
                 seeded.Add(EnsureSeeded(variant, choice));
         return seeded.Distinct(StringComparer.Ordinal).ToList();
     }

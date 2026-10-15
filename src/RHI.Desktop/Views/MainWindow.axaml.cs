@@ -543,6 +543,8 @@ public sealed partial class MainWindow : Window
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        var optiScalerMenuKey = new OptiScalerMenuKeyRow(settings, vm.OptiScalerPresets, vm.Settings, line => status.Text = line); // #187
+        dlssTab.Children.Add(optiScalerMenuKey.Control);
         // w5/reshade-core rows
 
         var pathGrid = new Grid { RowDefinitions = new RowDefinitions("Auto,Auto,Auto,Auto"), ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 14, RowSpacing = 8 };
@@ -607,6 +609,7 @@ public sealed partial class MainWindow : Window
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            optiScalerMenuKey.Reset(defaults); // #187
             // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
             ApplyViewMode();
@@ -684,6 +687,7 @@ public sealed partial class MainWindow : Window
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
+            OptiScalerMenuKey = optiScalerMenuKey.Key, // #187
             // w5/reshade-core rows
         };
 
@@ -1551,6 +1555,10 @@ public sealed partial class MainWindow : Window
                 settingRow.Children.Add(combo);
                 panel.Children.Add(settingRow);
             }
+            // #187: the four global presets (upstream shows them for the Nightly, DLSS NR and F5 channels).
+            if (OptiScalerPresetsPresenter.AppliesTo(snapshot))
+                panel.Children.Add(OptiScalerPresetsRow.Create(vm.OptiScalerPresets, snapshot, message,
+                    reopen: () => { (TopLevel.GetTopLevel(panel) as Window)?.Close(); OptiScalerSettings_Click(sender, e); }));
             panel.Children.Add(cancel);
             panel.Children.Add(message);
         }

@@ -1988,6 +1988,42 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return guard ?? await _optiscaler.SetAdvancedSettingAsync(game, id, value, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// The global OptiScaler overlay key (Refs #187, upstream <c>ApplyOsHotkey_Click</c>): sets <c>[Menu] ShortcutKey</c>
+    /// in every INI template and in the RHI-managed <c>OptiScaler.ini</c> of every game in <paramref name="games"/>. One game
+    /// is one unit (Cancel stops between games); a game whose patch target or Xbox job refuses writes, or whose file
+    /// cannot be written, keeps its file and is counted as failed; games without RHI's OptiScaler are not counted.
+    /// </summary>
+    public OptiScalerMenuKeyResult ApplyOptiScalerMenuKeyToAll(IReadOnlyList<DetectedGame> games, string key, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(games);
+        var updated = 0;
+        var failures = new List<(string Game, string Reason)>();
+        var templates = 0;
+        try { templates = _optiscaler.IniTemplates?.ApplyMenuKey(key) ?? 0; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            failures.Add((_optiscaler.IniTemplates!.Directory, ex.Message));
+        }
+        foreach (var game in games)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var unit = new OperationCancellation(cancellationToken);
+            if (_optiscaler.GetRecord(game) is null) continue;
+            if (PatchTargetGuard(game) is { } refused)
+            {
+                failures.Add((game.Name, refused.Message));
+                continue;
+            }
+            OperationCancellation.BeginWrites(unit.Token);
+            var result = _optiscaler.SetMenuKey(game, key);
+            if (result is null) continue;
+            if (result.Success) updated++;
+            else failures.Add((game.Name, result.Message));
+        }
+        return new OptiScalerMenuKeyResult(templates, updated, failures);
+    }
+
     public IReadOnlyList<string> GetUltimateAsiLoaderProxyNames(DetectedGame game)
         => UltimateAsiLoaderDeploymentService.SupportedNamesFor(game);
 
@@ -2457,3 +2493,6 @@ public enum NeuralPinChange
     /// <summary>Installed as a legacy add-on-only DLSS5 Feeder: the pin applies once it is removed and installed again.</summary>
     ReinstallNeeded
 }
+
+/// <summary>What setting the global OptiScaler overlay key changed (Refs #187): templates and games updated, games that kept their file.</summary>
+public sealed record OptiScalerMenuKeyResult(int Templates, int Games, IReadOnlyList<(string Game, string Reason)> Failures);

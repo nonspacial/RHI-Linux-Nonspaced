@@ -587,6 +587,8 @@ public static class UiLocalizationService
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        // #187: OptiScaler menu keys keep the keyboard's own names in PT-BR.
+        ("Delete", "Delete"), ("End", "End"), ("Page Up", "Page Up"), ("Page Down", "Page Down"),
         // w5/reshade-core rows
     ];
 

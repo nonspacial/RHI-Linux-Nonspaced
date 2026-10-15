@@ -86,8 +86,27 @@ public sealed partial class OptiScalerDeploymentService
         ("144.000000", "144 FPS"), ("165.000000", "165 FPS"), ("180.000000", "180 FPS"),
         ("240.000000", "240 FPS"));
 
-    private static readonly OptiScalerAdvancedOption[] ShortcutOptions = Options(
-        ("auto", "Auto / Insert"), ("0x2D", "Insert"), ("0x24", "Home"), ("-1", "Disabled"));
+    /// <summary>Advanced-setting id for <c>[Menu] ShortcutKey</c> (the OptiScaler overlay key).</summary>
+    public const string MenuShortcutKeySettingId = "MenuShortcutKey";
+
+    /// <summary>
+    /// The overlay keys upstream's global hotkey row offers (<c>OptiScalerService.HotkeyNameToVkCode</c>: Insert, Delete,
+    /// Home, End, Page Up/Down, F1–F12, written as Windows virtual-key codes), after OptiScaler's own Auto and Disabled.
+    /// </summary>
+    public static readonly IReadOnlyList<OptiScalerAdvancedOption> MenuKeyOptions = Options(
+        [("auto", "Auto / Insert"), ("0x2D", "Insert"), ("0x2E", "Delete"), ("0x24", "Home"), ("0x23", "End"),
+         ("0x21", "Page Up"), ("0x22", "Page Down"),
+         .. Enumerable.Range(1, 12).Select(n => ($"0x{0x6F + n:X2}", $"F{n}")),
+         ("-1", "Disabled")]);
+
+    private static readonly OptiScalerAdvancedOption[] ShortcutOptions = MenuKeyOptions.ToArray();
+
+    /// <summary>
+    /// Sets <c>[Menu] ShortcutKey</c> in the game's RHI-managed <c>OptiScaler.ini</c> (the global overlay key, Refs #187),
+    /// through the same user-file write as the ⚙ setting. Null when the game has no RHI OptiScaler (nothing to change).
+    /// </summary>
+    public ComponentOperationResult? SetMenuKey(DetectedGame game, string value)
+        => GetRecord(game) is null ? null : SetAdvancedSetting(game, MenuShortcutKeySettingId, value);
 
     public OptiScalerAdvancedSnapshot GetAdvancedSettings(DetectedGame game)
     {
@@ -140,7 +159,7 @@ public sealed partial class OptiScalerDeploymentService
                 "OptiScaler documents this primarily for Fakenvapi/NukemFG compatibility."),
             new("FramerateLimit", "Compatibility", "Framerate limit", Read("Framerate", "FramerateLimit"), EnsureCurrent(FramerateOptions, Read("Framerate", "FramerateLimit")),
                 "OptiScaler's Reflex-based limiter. Auto/Off leaves the limiter disabled by default."),
-            new("MenuShortcutKey", "Menu", "OptiScaler menu shortcut", Read("Menu", "ShortcutKey"), EnsureCurrent(ShortcutOptions, Read("Menu", "ShortcutKey")))
+            new(MenuShortcutKeySettingId, "Menu", "OptiScaler menu shortcut", Read("Menu", "ShortcutKey"), EnsureCurrent(ShortcutOptions, Read("Menu", "ShortcutKey")))
         };
 
         if (variant is OptiScalerVariant.Nightly or OptiScalerVariant.DlssNr or OptiScalerVariant.F5)
@@ -232,7 +251,7 @@ public sealed partial class OptiScalerDeploymentService
                     WriteChoice(binaryDirectory, "fakenvapi", "ForceReflex", value, ForceReflexOptions); break;
                 case UseGamesReflexMarkersSettingId:
                     WriteChoice(binaryDirectory, "DLSSG", "UseGamesReflexMarkers", value, AutoBoolOptions); break;
-                case "MenuShortcutKey":
+                case MenuShortcutKeySettingId:
                     WriteChoice(binaryDirectory, "Menu", "ShortcutKey", value, ShortcutOptions); break;
                 case "SrPreset":
                     WritePreset(binaryDirectory, "DLSS", value, SrPresetOptions); break;

@@ -141,6 +141,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/shell-launch rows
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
     public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
+    public OptiScalerPresetsPresenter OptiScalerPresets => OptiScalerPresetsPresenter.For(this, _managedComponents); // #187
     // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
