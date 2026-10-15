@@ -634,6 +634,26 @@ public sealed class GameLinkCatalogueTests : IDisposable
             return Task.FromResult(response);
         }
     }
+
+    /// <summary>A fake server that holds every answer until <see cref="Release"/>; <see cref="Asked"/> completes once a URL was requested.</summary>
+    internal sealed class HeldFake(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource> _asked = new(StringComparer.Ordinal);
+
+        public void Release() => _gate.TrySetResult();
+
+        public Task Asked(string url) => _asked.GetOrAdd(url, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _asked.GetOrAdd(request.RequestUri!.AbsoluteUri, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+            await _gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var response = respond(request);
+            response.RequestMessage ??= request;
+            return response;
+        }
+    }
 }
 
 /// <summary>#183 in the app: the card menu offers the web pages the app's catalogue knows, and none for a game without any.</summary>

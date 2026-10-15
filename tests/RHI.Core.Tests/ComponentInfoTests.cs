@@ -293,6 +293,98 @@ public sealed class ComponentInfoTests : IDisposable
         Assert.Same(LinkHosts.ManifestNote, ComponentInfoCatalogue.HostsFor(ComponentInfoLinkKind.Notes));
     }
 
+    /// <summary>An ⓘ dialog stand-in: records what it shows and how often it is brought forward; closed by the test.</summary>
+    private sealed class FakeDialog : IComponentInfoDialog
+    {
+        private readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public List<ComponentInfoView> Shown { get; } = [];
+        public int Activated { get; private set; }
+        public Task Closed => _closed.Task;
+        public void Show(ComponentInfoView view) { lock (Shown) Shown.Add(view); }
+        public void Activate() => Activated++;
+        public void Close() => _closed.TrySetResult();
+    }
+
+    private static (ComponentInfoPresenter Presenter, List<FakeDialog> Opened, GameLinkCatalogueTests.HeldFake Server) HeldPresenter()
+    {
+        var server = new GameLinkCatalogueTests.HeldFake(request => request.RequestUri!.AbsoluteUri == RenoDxCatalogService.StructuredDbUrl
+            ? Text(RenoDxDb)
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+        var client = new HttpClient(server);
+        var presenter = new ComponentInfoPresenter(new ComponentInfoCatalogue(client, renoDx: new RenoDxCatalogService(client)));
+        var opened = new List<FakeDialog>();
+        presenter.Open = view =>
+        {
+            var dialog = new FakeDialog();
+            dialog.Show(view);
+            opened.Add(dialog);
+            return dialog;
+        };
+        return (presenter, opened, server);
+    }
+
+    [Fact]
+    public async Task Dialog_OpensAtOnceWithALoadingLine_AndASecondClickBringsItForward()
+    {
+        var (presenter, opened, server) = HeldPresenter();
+        var game = Game("Wiki Game");
+        Task first;
+        try
+        {
+            first = presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null);
+            var dialog = Assert.Single(opened); // before any source answered
+            var loading = Assert.Single(dialog.Shown);
+            Assert.Equal("RenoDX for Wiki Game", loading.Title);
+            Assert.Equal([UiLocalizationService.Text("Cat.InfoLoading")], loading.Blocks.Select(b => b.Text));
+            Assert.Equal("Loading notes…", UiLocalizationService.Text("Cat.InfoLoading"));
+            Assert.True(presenter.IsOpen);
+
+            await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null); // clicked again while loading
+            await presenter.OpenAsync(game, ManagedComponentKind.OptiScaler, "OptiScaler", null); // or another row's ⓘ
+            Assert.Single(opened);
+            Assert.Equal(2, dialog.Activated);
+        }
+        finally { server.Release(); }
+
+        var only = Assert.Single(opened);
+        for (var i = 0; i < 400 && only.Shown.Count < 2; i++) await Task.Delay(25);
+        Assert.Equal(2, only.Shown.Count); // filled in once the sources answered
+        Assert.Contains("Turn off in-game sharpening.", only.Shown[1].Blocks.Select(b => b.Text));
+        await presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null); // open with its notes: brought forward again
+        Assert.Single(opened);
+        Assert.Equal(3, only.Activated);
+        Assert.False(first.IsCompleted);
+
+        only.Close();
+        await first.WaitAsync(TimeSpan.FromSeconds(20));
+        Assert.False(presenter.IsOpen);
+        var again = presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null); // closed: the next click opens a new one
+        Assert.Equal(2, opened.Count);
+        opened[1].Close();
+        await again.WaitAsync(TimeSpan.FromSeconds(20));
+    }
+
+    [Fact]
+    public async Task Dialog_ClosedWhileLoading_IsNeverFilledIn_AndTheNextClickOpensANewOne()
+    {
+        var (presenter, opened, server) = HeldPresenter();
+        var game = Game("Wiki Game");
+        try
+        {
+            var first = presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null);
+            opened[0].Close();
+            await first.WaitAsync(TimeSpan.FromSeconds(20)); // does not wait for the sources
+            Assert.False(presenter.IsOpen);
+        }
+        finally { server.Release(); }
+        await Task.Delay(200);
+        Assert.Single(opened[0].Shown); // only the loading line
+        var second = presenter.OpenAsync(game, ManagedComponentKind.RenoDX, "RenoDX", null);
+        Assert.Equal(2, opened.Count);
+        opened[1].Close();
+        await second.WaitAsync(TimeSpan.FromSeconds(20));
+    }
+
     [Fact]
     public async Task RenoDxAndLuma_LinkTheHdrGamingDatabase_WhichMakesGeneralTextCountAsGameContent()
     {

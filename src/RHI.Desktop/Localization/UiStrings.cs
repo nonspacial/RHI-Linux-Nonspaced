@@ -890,6 +890,7 @@ internal static class UiStrings
         // #184 component ⓘ dialogs.
         ("Cat.InfoTip", "Sobre o {0} neste jogo: notas, compatibilidade e links", "About {0} for this game: notes, compatibility and links"),
         ("Cat.InfoTitle", "{0} em {1}", "{0} for {1}"),
+        ("Cat.InfoLoading", "Carregando as notas…", "Loading notes…"),
         ("Cat.InfoNativeHdr", "Este jogo usa o UE-Extended. Ele é configurado automaticamente para usar HDR nativo e um Engine.ini é instalado junto. Se o jogo tiver uma opção de HDR, ative-a também.", "This game uses UE-Extended. It is set up automatically for native HDR and an Engine.ini is installed with it. If the game has an HDR option, turn that on too."),
         ("Cat.InfoOptiScalerCompat", "Compatibilidade com o OptiScaler: {0}", "OptiScaler compatibility: {0}"),
         ("Cat.InfoFsr4Compat", "Compatibilidade com FSR4: {0}", "FSR4 compatibility: {0}"),

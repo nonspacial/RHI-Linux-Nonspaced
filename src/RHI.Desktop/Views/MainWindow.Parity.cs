@@ -15,7 +15,7 @@ public partial class MainWindow
     {
         parity.GameLinks.Confirm = ConfirmNxmAsync;
         parity.GameLinks.OfferFile = OfferDownloadedFileAsync;
-        if (parity.ComponentInfo is { } info) info.Show = ShowComponentInfoAsync; // w5/catalogue-info (#184)
+        if (parity.ComponentInfo is { } info) info.Open = CreateComponentInfoDialog; // w5/catalogue-info (#184)
     }
 
     private async Task<bool> ConfirmNxmAsync(NxmConfirmation confirmation)
