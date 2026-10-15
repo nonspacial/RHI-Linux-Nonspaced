@@ -50,6 +50,10 @@ internal sealed class AppComposition
     public required DllNamePreferenceStore DllNames { get; init; }
     // w5/update-policy rows
     // w5/catalogue-info rows
+    /// <summary>#184/#197: RHI's UE-Extended database (ⓘ notes, Available HDR mods rows); one instance, one 1 h cache.</summary>
+    public RenoDxUnrealDatabaseService? RenoDxUnrealDatabase { get; init; }
+    /// <summary>#197: the Available HDR mods list (RenoDX database incl. Nexus/Discord-only mods, UE-Extended, Unity, Luma).</summary>
+    public AvailableHdrModsCatalog? HdrModsCatalog { get; init; }
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
@@ -240,8 +244,9 @@ internal sealed class AppComposition
             policy: async ct => await upstreamManifest.FetchLibraryPolicyAsync(ct).ConfigureAwait(false));
         parity.GameLinks.RenoDx = renodxCatalog;
         // #184: the component rows' ⓘ dialogs.
+        var renodxUnrealDatabase = new RenoDxUnrealDatabaseService(http);
         parity.ComponentInfo = new ComponentInfoPresenter(new ComponentInfoCatalogue(http, upstreamManifest, renodxCatalog, lumaCatalog,
-            new OptiScalerWikiCatalogue(http), new RenoDxUnrealDatabaseService(http), renodxUnityDatabase, parity.GameLinks.Links));
+            new OptiScalerWikiCatalogue(http), renodxUnrealDatabase, renodxUnityDatabase, parity.GameLinks.Links));
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
@@ -275,6 +280,8 @@ internal sealed class AppComposition
             DllNames = reshade.DllNames,
             // w5/update-policy rows
             // w5/catalogue-info rows
+            RenoDxUnrealDatabase = renodxUnrealDatabase,
+            HdrModsCatalog = new AvailableHdrModsCatalog(renodxCatalog, lumaCatalog, renodxUnityDatabase, renodxUnrealDatabase),
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows

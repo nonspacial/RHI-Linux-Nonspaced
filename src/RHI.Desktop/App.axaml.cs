@@ -67,7 +67,7 @@ public sealed class App : Application
             {
                 DataContext = vm,
                 UpdateLogStore = services.UpdateLog,
-                HdrModsCatalog = new AvailableHdrModsCatalog(services.RenoDxCatalog, services.LumaCatalog, services.RenoDxUnityDatabase), // w3/sync #126 hook
+                HdrModsCatalog = services.HdrModsCatalog, // w3/sync #126 hook; #197: built by AppComposition
                 UpstreamManifest = services.UpstreamManifest
             };
             if (services.Parity is { } windowParity) ((MainWindow)desktop.MainWindow).AttachParity(windowParity); // w3/parity hook (#99)
