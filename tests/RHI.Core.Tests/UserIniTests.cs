@@ -607,6 +607,33 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadOnlyInis_AreWrittenAndStayLocked_ThroughApplyToAllAndDeploy()
+    {
+        // Review finding 7 (owner rule): a user's read-only lock never blocks RHI's INI writes and is kept.
+        var game = Game();
+        File.WriteAllText(Ini(game), "[OVERLAY]\nVariableListUseTabs=1\n");
+        File.SetUnixFileMode(Ini(game), UnixFileMode.UserRead);
+        var relimiter = Path.Combine(game.BinaryDirectory!, "relimiter.ini");
+        File.WriteAllText(relimiter, "[FrameLimiter]\nmine=1\n");
+        File.SetUnixFileMode(relimiter, UnixFileMode.UserRead);
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=117\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(game, ManagedComponentKind.ReShade, ManagedComponentKind.ReLimiter);
+        var service = Service(records: records);
+
+        Assert.Equal(new IniBatchResult(1, 0, 0), await service.ApplyReShadeSettingsToAllAsync([game], new LinuxAppSettings { ReShadeVariableListUseTabs = false }));
+        Assert.Contains("VariableListUseTabs=0", File.ReadAllText(Ini(game)));
+        Assert.False(File.GetUnixFileMode(Ini(game)).HasFlag(UnixFileMode.UserWrite));
+
+        Assert.Equal(new IniBatchResult(1, 0, 0), await service.ApplyReLimiterSettingsToAllAsync([game], new ReLimiterGlobals("F11", false, false, 0)));
+        Assert.Contains("osd_toggle_key=F11", File.ReadAllText(relimiter));
+        Assert.False(File.GetUnixFileMode(relimiter).HasFlag(UnixFileMode.UserWrite));
+
+        Assert.True((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
+        Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(relimiter));
+        Assert.False(File.GetUnixFileMode(relimiter).HasFlag(UnixFileMode.UserWrite));
+    }
+
+    [Fact]
     public void Deploy_EntersTheWritePhaseBeforeItWrites()
     {
         var game = Game();
