@@ -882,7 +882,7 @@ internal static class UiStrings
         // w5/ini-presets rows
         // w5/shell-launch rows
         // #190 Edit game: name, wiki mod name, bitness.
-        ("Shell.IdentityHeading", "Nome e arquitetura", "Name and bitness"),
+        ("Shell.IdentityHeading", "NOME E ARQUITETURA", "NAME AND BITNESS"),
         ("Shell.DisplayNameTip", "O nome que o cartão, o cabeçalho, a busca e a ordenação mostram. Vazio = o nome detectado. Favoritos, atalhos e o que o RHI instalou continuam ligados ao jogo.", "The name the card, the header, search and sorting show. Empty = the detected name. Favourites, shortcuts and what RHI installed stay with the game."),
         ("Shell.WikiName", "Nome do mod na wiki", "Wiki mod name"),
         ("Shell.WikiNameTip", "O nome usado para procurar este jogo na wiki do RenoDX. Vazio = o nome do jogo (ou o mapeamento do manifesto do RHI, se houver).", "The name used to look this game up on the RenoDX wiki. Empty = the game's name (or the RHI manifest's mapping, if there is one)."),
