@@ -129,7 +129,7 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Equal(launcher, game.LaunchExecutablePath);
         Assert.Equal($"WINEPREFIX='{prefix}' wine '{launcher}' 'uplay://launch/7014'", game.LaunchCommand);
         Assert.Null(game.ParentLauncherName); // the launch argument starts the game itself
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(game));
         // The launcher is what runs; the game exe stays the confirmed patch target.
         LinuxGameIdentityService.ApplyDetectedIdentity(game);
         Assert.Equal("Ubisoft", game.LaunchProvider);
@@ -163,7 +163,7 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Equal("Overwatch 2", game.Name);
         Assert.Equal(exe, game.ExecutablePath);
         Assert.Equal($"WINEPREFIX='{prefix}' wine '{launcher}' '--exec=launch pro'", game.LaunchCommand);
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(game));
         Assert.DoesNotContain(games, g => g.InstallPath.EndsWith("d4", StringComparison.Ordinal));
         // Battle.net's own client is no recorded game (its folder stays the layout card it was).
         Assert.DoesNotContain(games, g => g.LaunchCommand?.Contains("launch bna", StringComparison.Ordinal) == true);
@@ -218,7 +218,7 @@ public sealed class StoreLauncherRecordsTests : IDisposable
         Assert.Equal("Grand Theft Auto V", game.Name);
         Assert.Equal(exe, game.ExecutablePath);
         Assert.Equal($"WINEPREFIX='{prefix}' wine '{launcher}' '-launchTitleInFolder' 'C:\\Rockstar\\Grand Theft Auto V'", game.LaunchCommand);
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(game));
         // The launcher's own folder is not turned into a record game (it stays the layout card it always was).
         Assert.DoesNotContain(games, g => g.InstallPath != gameDir && g.LaunchCommand?.Contains("-launchTitleInFolder", StringComparison.Ordinal) == true);
     }
@@ -477,12 +477,12 @@ public sealed class StoreLauncherRecordsTests : IDisposable
     // ── hand-off ────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/UbisoftConnect.exe' 'uplay://launch/5266'", LaunchHandoff.Other)]
-    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/Battle.net.exe' '--exec=launch pro'", LaunchHandoff.Other)]
-    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/Battle.net.exe' --exec=\"launch pro\"", LaunchHandoff.Other)]
-    [InlineData("WINEPREFIX='/p' '/opt/proton/files/bin/wine' '/p/x/EADesktop.exe' 'origin2://game/launch?offerIds=O.1&autoDownload=1'", LaunchHandoff.Other)]
-    [InlineData("WINEPREFIX='/p' wine '/p/x/Launcher.exe' -launchTitleInFolder 'C:\\Rockstar\\GTA'", LaunchHandoff.Other)]
-    [InlineData("WINEPREFIX='/p' wine '/p/x/itch.exe' 'itch://games/1001'", LaunchHandoff.Other)]
+    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/UbisoftConnect.exe' 'uplay://launch/5266'", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/Battle.net.exe' '--exec=launch pro'", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' wine '/p/drive_c/x/Battle.net.exe' --exec=\"launch pro\"", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' '/opt/proton/files/bin/wine' '/p/x/EADesktop.exe' 'origin2://game/launch?offerIds=O.1&autoDownload=1'", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' wine '/p/x/Launcher.exe' -launchTitleInFolder 'C:\\Rockstar\\GTA'", LaunchHandoff.StoreClient)]
+    [InlineData("WINEPREFIX='/p' wine '/p/x/itch.exe' 'itch://games/1001'", LaunchHandoff.StoreClient)]
     [InlineData("WINEPREFIX='/p' wine '/p/drive_c/Games/X/X.exe' --exec=fast", LaunchHandoff.None)]
     [InlineData("WINEPREFIX='/p' wine '/p/drive_c/Games/X/X.exe'", LaunchHandoff.None)]
     public void StoreClientGameArguments_AreHandOffs(string command, LaunchHandoff expected)

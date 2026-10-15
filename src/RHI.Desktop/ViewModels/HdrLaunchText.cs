@@ -100,7 +100,7 @@ public static class HdrLaunchText
             ? ApplyInLauncher(plan, game)
             : T("Win.HDRLaunchProfileCopiedSteamCan");
 
-    /// <summary>The launcher that starts the game, and where in it the profile goes.</summary>
+    /// <summary>The launcher that starts the game, and where in it the profile goes (or that it cannot take one).</summary>
     public static string ApplyInLauncher(LinuxHdrLaunchPlan plan, DetectedGame game)
     {
         var entry = string.IsNullOrWhiteSpace(game.ParentLauncherName) ? game.Name : XboxCardText.AppName(game.ParentLauncherName)!;
@@ -110,6 +110,8 @@ public static class HdrLaunchText
             LaunchHandoff.Heroic => TF("Hdr.ApplyInHeroic", entry, Settings(plan, "Hdr.WrapperCommand")),
             LaunchHandoff.Lutris => TF("Hdr.ApplyInLutris", entry, Settings(plan, "Hdr.CommandPrefix")),
             LaunchHandoff.Xbox => TF("Scan.HdrApplyInOwningApp", XboxCardText.AppName(game.XboxPackage?.OwningApp) ?? entry), // w3/scan hook (Refs #90)
+            // Ubisoft Connect, the EA app, Battle.net, Rockstar and itch take no launch options or wrapper (Refs #90).
+            LaunchHandoff.StoreClient => T("Hdr.StoreClientCannotApply"),
             _ => TF("Hdr.ApplyInOtherLauncher", Settings(plan, "Hdr.WrapperCommand"))
         };
     }

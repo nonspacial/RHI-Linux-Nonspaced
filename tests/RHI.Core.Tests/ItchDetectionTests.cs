@@ -92,12 +92,12 @@ public sealed class ItchDetectionTests : IDisposable
         Assert.Equal(windowsGame, sky.ExecutablePath);
         Assert.Equal("xdg-open 'itch://games/2002'", sky.LaunchCommand);
         Assert.Equal("itch", sky.ParentLauncherName); // Play opens the game in itch; the user starts it there
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(sky));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(sky));
         Assert.Null(sky.Runner);
         Assert.Equal("Native Linux", games["Moss Garden"].Runner);
         Assert.Equal(nativeGame, games["Moss Garden"].ExecutablePath);
         Assert.Equal("flatpak run io.itch.itch 'itch://games/1001'", games["Lantern Keeper"].LaunchCommand);
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(games["Lantern Keeper"]));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(games["Lantern Keeper"]));
         LinuxGameIdentityService.ApplyDetectedIdentity(sky);
         Assert.True(sky.HasConfirmedPatchTarget);
     }
@@ -120,7 +120,7 @@ public sealed class ItchDetectionTests : IDisposable
         Assert.Equal("Sky Runner", game.Name);
         Assert.Equal(exe, game.ExecutablePath);
         Assert.Equal($"WINEPREFIX='{prefix}' wine '{client}' 'itch://games/2002'", game.LaunchCommand);
-        Assert.Equal(LaunchHandoff.Other, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal(LaunchHandoff.StoreClient, LaunchHandoffClassifier.Classify(game));
     }
 
     [Theory]

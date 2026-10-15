@@ -18,7 +18,13 @@ public enum LaunchHandoff
     /// </summary>
     Xbox,
     /// <summary>Another opener or launcher (a URI handler, a launcher's Flatpak) that starts the game on its own.</summary>
-    Other
+    Other,
+    /// <summary>
+    /// A game store's own client (Ubisoft Connect, the EA app, Battle.net, the Rockstar Games Launcher, itch) given its
+    /// "start this game" argument (Refs #90): the client starts the game itself, and none of them has a setting for launch
+    /// options or a wrapper, so no HDR profile can reach the game through it.
+    /// </summary>
+    StoreClient
 }
 
 /// <summary>
@@ -44,7 +50,7 @@ public static class LaunchHandoffClassifier
     private static readonly string[] SetupCommands = ["cd", "pushd", "popd", "export", "unset", "set", "umask", "ulimit", "source", ".", ":", "true", "trap", "shopt", "alias"];
 
     // Launchers distributed as Flatpaks that start the game themselves; any other Flatpak app is the game.
-    private static readonly string[] LauncherFlatpaks = ["com.usebottles.bottles", "io.itch.itch", "com.playonlinux.PlayOnLinux4"];
+    private static readonly string[] LauncherFlatpaks = ["com.usebottles.bottles", "com.playonlinux.PlayOnLinux4"];
 
     // flatpak run options that take their value as the next word (`--branch stable`); `--opt=value` is one word.
     private static readonly string[] FlatpakValueOptions =
@@ -316,20 +322,21 @@ public static class LaunchHandoffClassifier
         if (app.Equals("net.lutris.Lutris", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
         if (app.Equals("com.heroicgameslauncher.hgl", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Heroic;
         if (app.Equals("io.github.xodus-gaming.xodus", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Xbox;
+        if (app.Equals("io.itch.itch", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.StoreClient;
         if (LauncherFlatpaks.Contains(app, StringComparer.OrdinalIgnoreCase)) return LaunchHandoff.Other;
         return LaunchHandoff.None;
     }
 
     private static LaunchHandoff ByUri(string uri) => StoreUri(uri) ?? LaunchHandoff.Other;
 
-    // The Windows store clients' own "start this game" arguments (Lutris' store services, Rockstar's launcher, Refs #90):
-    // the client inside the prefix starts the game, so the command is that client's hand-off.
+    // The store clients' own "start this game" arguments (Lutris' store services, Rockstar's launcher, the itch app, Refs #90):
+    // the client starts the game, so the command is that client's hand-off.
     private static readonly string[] StoreClientUriSchemes = ["uplay:", "origin2:", "origin:", "link2ea:", "battlenet:", "itch:"];
 
     /// <summary>
     /// The store a <c>steam:</c>/<c>heroic:</c>/<c>lutris:</c> URL (or <c>--option=URL</c>) names, else null. A Windows store
     /// client's game-start argument (<c>uplay://launch/…</c>, Battle.net's <c>--exec="launch …"</c>, Rockstar's
-    /// <c>-launchTitleInFolder</c>) is an Other hand-off.
+    /// <c>-launchTitleInFolder</c>, <c>itch://</c>) is a <see cref="LaunchHandoff.StoreClient"/> hand-off.
     /// </summary>
     private static LaunchHandoff? StoreUri(string word)
     {
@@ -341,10 +348,10 @@ public static class LaunchHandoffClassifier
         if (value.StartsWith(RHI.Core.Services.XboxInstallerApp.UriScheme, StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
             return LaunchHandoff.Xbox;
         if (StoreClientUriSchemes.Any(scheme => value.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)))
-            return LaunchHandoff.Other;
+            return LaunchHandoff.StoreClient;
         if (word.StartsWith("--exec=", StringComparison.OrdinalIgnoreCase) && value.TrimStart('"').StartsWith("launch ", StringComparison.OrdinalIgnoreCase))
-            return LaunchHandoff.Other;
-        if (word.Equals("-launchTitleInFolder", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Other;
+            return LaunchHandoff.StoreClient;
+        if (word.Equals("-launchTitleInFolder", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.StoreClient;
         return null;
     }
 
