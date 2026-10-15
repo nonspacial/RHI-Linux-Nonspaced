@@ -99,6 +99,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w5 lane rows: component-row members (one member each)
     // w5/update-policy rows
     // w5/catalogue-info rows
+    public bool HasInfo => ComponentInfoPresenter.HasInfo(component.Kind, component.Availability); // #184: ⓘ dialog
+    public string InfoTip => ComponentInfoPresenter.TipFor(Name); // #184
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows

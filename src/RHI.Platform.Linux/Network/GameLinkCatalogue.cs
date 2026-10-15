@@ -48,11 +48,11 @@ public sealed partial class GameLinkCatalogue
     private readonly PcgwCentralDataService? _pcgwData;
     private readonly PcGamingWikiGraphicsApiService? _pcgwSearch;
     private readonly Func<CancellationToken, Task<UpstreamLibraryPolicySnapshot?>>? _policy;
-    private readonly GameLinkList _ultraPlus;
-    private readonly GameLinkList _lyall;
-    private readonly GameLinkList _rose;
-    private readonly GameLinkList _p1xel;
-    private readonly GameLinkList _hdrDatabase;
+    private readonly CachedRemoteList<GameLinkEntry> _ultraPlus;
+    private readonly CachedRemoteList<GameLinkEntry> _lyall;
+    private readonly CachedRemoteList<GameLinkEntry> _rose;
+    private readonly CachedRemoteList<GameLinkEntry> _p1xel;
+    private readonly CachedRemoteList<GameLinkEntry> _hdrDatabase;
     private readonly JsonFileStore<PcgwLinkCache> _pcgwStore;
     private readonly object _pcgwSync = new();
     private PcgwLinkCache? _pcgwCache;
@@ -76,11 +76,11 @@ public sealed partial class GameLinkCatalogue
         _policy = policy;
         var directory = cacheDirectory ?? Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "links");
         var fresh = freshness ?? DefaultFreshness;
-        _ultraPlus = new("Ultra+", UltraPlusGamesUrl, DownloadSources.UltraPlusGameList, ParseUltraPlus, Path.Combine(directory, "ultraplus-games.json"), fresh, _time, http);
-        _lyall = new("Lyall ultrawide fixes", LyallReposUrl, DownloadSources.UltrawideFixList, ParseLyall, Path.Combine(directory, "uwfix-lyall.json"), fresh, _time, http);
-        _rose = new("RoseTheFlower ultrawide fixes", RoseReadmeUrl, DownloadSources.CommunityGameList, ParseRose, Path.Combine(directory, "uwfix-rose.json"), fresh, _time, http);
-        _p1xel = new("p1xel8ted ultrawide fixes", P1xelReadmeUrl, DownloadSources.CommunityGameList, ParseP1xel, Path.Combine(directory, "uwfix-p1xel8ted.json"), fresh, _time, http);
-        _hdrDatabase = new("HDR Gaming Database", HdrDatabaseReadmeUrl, DownloadSources.CommunityGameList, ParseHdrDatabase, Path.Combine(directory, "hdr-gaming-database.json"), fresh, _time, http,
+        _ultraPlus = Links("Ultra+", UltraPlusGamesUrl, DownloadSources.UltraPlusGameList, ParseUltraPlus, Path.Combine(directory, "ultraplus-games.json"), fresh);
+        _lyall = Links("Lyall ultrawide fixes", LyallReposUrl, DownloadSources.UltrawideFixList, ParseLyall, Path.Combine(directory, "uwfix-lyall.json"), fresh);
+        _rose = Links("RoseTheFlower ultrawide fixes", RoseReadmeUrl, DownloadSources.CommunityGameList, ParseRose, Path.Combine(directory, "uwfix-rose.json"), fresh);
+        _p1xel = Links("p1xel8ted ultrawide fixes", P1xelReadmeUrl, DownloadSources.CommunityGameList, ParseP1xel, Path.Combine(directory, "uwfix-p1xel8ted.json"), fresh);
+        _hdrDatabase = Links("HDR Gaming Database", HdrDatabaseReadmeUrl, DownloadSources.CommunityGameList, ParseHdrDatabase, Path.Combine(directory, "hdr-gaming-database.json"), fresh,
             HdrDatabaseKey);
         _pcgwStore = new JsonFileStore<PcgwLinkCache>(Path.Combine(directory, "pcgw-links.json"), new JsonSerializerOptions { WriteIndented = false },
             JsonStoreKind.Cache, parse: text => JsonSerializer.Deserialize<PcgwLinkCache>(text) is { } parsed
@@ -94,6 +94,10 @@ public sealed partial class GameLinkCatalogue
                 : null);
     }
 
+    private CachedRemoteList<GameLinkEntry> Links(string name, string url, TrustedDownloadPolicy policy, Func<string, IReadOnlyList<GameLinkEntry>> parse,
+        string cachePath, TimeSpan freshness, Func<string?, string>? key = null)
+        => new(name, url, policy, parse, entry => entry.Name, entry => SafePage(entry.Url) is not null, cachePath, freshness, _time, _http, key);
+
     /// <summary>Starts (or joins) every list's background load. Never blocks, never faults.</summary>
     public void Prefetch()
     {
@@ -103,7 +107,7 @@ public sealed partial class GameLinkCatalogue
     /// <summary>Every list's load (never faults). Tests await it; the app calls <see cref="Prefetch"/>.</summary>
     public Task LoadAsync() => Task.WhenAll(Lists.Select(list => list.LoadAsync()));
 
-    private IEnumerable<GameLinkList> Lists => [_ultraPlus, _lyall, _rose, _p1xel, _hdrDatabase];
+    private IEnumerable<CachedRemoteList<GameLinkEntry>> Lists => [_ultraPlus, _lyall, _rose, _p1xel, _hdrDatabase];
 
     /// <summary>True once the Ultra+ list (live or the last good copy) is loaded for this session.</summary>
     public bool UltraPlusLoaded => _ultraPlus.IsLoaded;
@@ -113,7 +117,7 @@ public sealed partial class GameLinkCatalogue
 
     /// <summary>The game's Ultra+ page: the manifest's, else the Ultra+ list's, else null.</summary>
     public string? UltraPlusPageFor(DetectedGame? game)
-        => game is null ? null : SafePage(game.UltraPlusUrlOverride) ?? _ultraPlus.Find(NexusGameCatalogue.NormalizeName(game.Name));
+        => game is null ? null : SafePage(game.UltraPlusUrlOverride) ?? _ultraPlus.Find(NexusGameCatalogue.NormalizeName(game.Name))?.Url;
 
     /// <summary>The game's ultrawide fix: the manifest's, then Lyall's, RoseTheFlower's, p1xel8ted's (upstream's order).</summary>
     public string? UltrawideFixPageFor(DetectedGame? game)
@@ -121,11 +125,11 @@ public sealed partial class GameLinkCatalogue
         if (game is null) return null;
         if (SafePage(game.UwFixUrlOverride) is { } manifest) return manifest;
         var key = NexusGameCatalogue.NormalizeName(game.Name);
-        return _lyall.Find(key) ?? _rose.Find(key) ?? _p1xel.Find(key);
+        return _lyall.Find(key)?.Url ?? _rose.Find(key)?.Url ?? _p1xel.Find(key)?.Url;
     }
 
     /// <summary>The game's HDR analysis thread on the HDR Gaming Database, else null.</summary>
-    public string? HdrDatabasePageFor(DetectedGame? game) => game is null ? null : _hdrDatabase.Find(HdrDatabaseKey(game.Name));
+    public string? HdrDatabasePageFor(DetectedGame? game) => game is null ? null : _hdrDatabase.Find(HdrDatabaseKey(game.Name))?.Url;
 
     /// <summary>
     /// The game's PCGamingWiki page from what is known now (manifest, <c>pcgw_data.json</c>, pages found earlier), else
@@ -541,154 +545,4 @@ public sealed partial class GameLinkCatalogue
 
     [GeneratedRegex(@"^\s*\*\s*\[([^\]]+)\]\((https://github\.com/KoKlusz/HDR-Gaming-Database/discussions/\d+)\)", RegexOptions.None, PatternTimeoutMs)]
     private static partial Regex HdrDatabaseEntry();
-}
-
-/// <summary>
-/// One web list behind a card link (#183): downloaded under its own policy, parsed, kept 24 h in a cache file
-/// (<see cref="JsonStoreKind.Cache"/>; the time of the download is recorded inside it), the last good copy reused when
-/// the list cannot be fetched, retried after a pause when nothing is available. Lookups never wait for it.
-/// </summary>
-internal sealed class GameLinkList
-{
-    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan LoadTimeout = TimeSpan.FromMinutes(2);
-
-    private readonly string _name;
-    private readonly string _url;
-    private readonly TrustedDownloadPolicy _policy;
-    private readonly Func<string, IReadOnlyList<GameLinkEntry>> _parse;
-    private readonly Func<string?, string> _key;
-    private readonly JsonFileStore<CacheFile> _store;
-    private readonly TimeSpan _freshness;
-    private readonly TimeProvider _time;
-    private readonly HttpClient _http;
-    private readonly object _sync = new();
-    private Task? _load;
-    private DateTimeOffset _retryAfter = DateTimeOffset.MinValue;
-    private volatile Loaded? _loaded;
-
-    private sealed record Loaded(IReadOnlyList<GameLinkEntry> Entries, IReadOnlyDictionary<string, string> ByKey);
-
-    public GameLinkList(string name, string url, TrustedDownloadPolicy policy, Func<string, IReadOnlyList<GameLinkEntry>> parse,
-        string cachePath, TimeSpan freshness, TimeProvider time, HttpClient http, Func<string?, string>? key = null)
-    {
-        _name = name;
-        _url = url;
-        _policy = policy;
-        _parse = parse;
-        _key = key ?? NexusGameCatalogue.NormalizeName;
-        _freshness = freshness;
-        _time = time;
-        _http = http;
-        _store = new JsonFileStore<CacheFile>(cachePath, new JsonSerializerOptions { WriteIndented = false }, JsonStoreKind.Cache,
-            parse: text => JsonSerializer.Deserialize<CacheFile>(text) is { Entries: not null } parsed ? parsed : null);
-    }
-
-    public bool IsLoaded => _loaded is not null;
-
-    public IReadOnlyList<GameLinkEntry> Entries => _loaded?.Entries ?? [];
-
-    /// <summary>The page for a key (as <c>key</c> computes it from a name; first entry wins, as upstream); null until loaded.</summary>
-    public string? Find(string key)
-        => key.Length > 0 && _loaded is { } loaded && loaded.ByKey.TryGetValue(key, out var url) ? url : null;
-
-    public void Prefetch() => _ = LoadAsync();
-
-    public Task LoadAsync()
-    {
-        lock (_sync)
-        {
-            if (_loaded is not null) return Task.CompletedTask;
-            if (_load is null)
-            {
-                if (_time.GetUtcNow() < _retryAfter) return Task.CompletedTask;
-                _load = Task.Run(LoadSharedAsync, CancellationToken.None);
-            }
-            return _load;
-        }
-    }
-
-    private async Task LoadSharedAsync()
-    {
-        Loaded? loaded = null;
-        try
-        {
-            using var timeout = new CancellationTokenSource(LoadTimeout);
-            loaded = await LoadCoreAsync(timeout.Token).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            AppLog.Warn("game-links", $"{_name} list load failed", ex);
-        }
-        lock (_sync)
-        {
-            _load = null;
-            if (loaded is not null) _loaded = loaded;
-            else _retryAfter = _time.GetUtcNow() + FailureRetryDelay;
-        }
-    }
-
-    private async Task<Loaded?> LoadCoreAsync(CancellationToken cancellationToken)
-    {
-        var cached = ReadCache();
-        if (cached is not null && _time.GetUtcNow() - cached.FetchedAtUtc < _freshness && Index(cached.Entries!) is { } fresh) return fresh;
-        try
-        {
-            var text = await TrustedDownload.GetStringAsync(_http, _url, _policy, cancellationToken: cancellationToken).ConfigureAwait(false);
-            var entries = _parse(text);
-            if (entries.Count > 0)
-            {
-                Persist(new CacheFile { FetchedAtUtc = _time.GetUtcNow(), Entries = [.. entries] });
-                return Index(entries);
-            }
-            AppLog.Warn("game-links", $"{_name} list had no games; keeping the last good copy");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or UntrustedDownloadException
-                                       or TaskCanceledException or InvalidDataException or RegexMatchTimeoutException)
-        {
-            AppLog.Warn("game-links", $"{_name} list download failed; using the last good copy if there is one", ex);
-        }
-        return cached?.Entries is { Count: > 0 } stale ? Index(stale) : null;
-    }
-
-    private Loaded? Index(IReadOnlyList<GameLinkEntry> entries)
-    {
-        var byKey = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var entry in entries)
-        {
-            if (entry is null || GameLinkCatalogue.SafePage(entry.Url) is not { } url) continue;
-            var key = _key(entry.Name);
-            if (key.Length > 0) byKey.TryAdd(key, url);
-        }
-        return byKey.Count == 0 ? null : new Loaded(entries.Where(e => e is not null).ToArray(), byKey);
-    }
-
-    private CacheFile? ReadCache()
-    {
-        try { return _store.Load().Value; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            AppLog.Warn("game-links", $"Cached {_name} list unreadable: {_store.FilePath}", ex);
-            return null;
-        }
-    }
-
-    private void Persist(CacheFile file)
-    {
-        try
-        {
-            if (Path.GetDirectoryName(_store.FilePath) is { Length: > 0 } directory) AtomicFile.CreateDirectoryDurable(directory);
-            _store.Save(file);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            AppLog.Warn("game-links", $"{_name} list not cached: {_store.FilePath}", ex);
-        }
-    }
-
-    private sealed class CacheFile
-    {
-        [JsonPropertyName("fetchedAtUtc")] public DateTimeOffset FetchedAtUtc { get; set; }
-        [JsonPropertyName("entries")] public List<GameLinkEntry>? Entries { get; set; }
-    }
 }

@@ -239,6 +239,9 @@ internal sealed class AppComposition
         parity.GameLinks.Links = new GameLinkCatalogue(http, pcgwData: pcgwData, pcgwSearch: pcgwGraphics,
             policy: async ct => await upstreamManifest.FetchLibraryPolicyAsync(ct).ConfigureAwait(false));
         parity.GameLinks.RenoDx = renodxCatalog;
+        // #184: the component rows' ⓘ dialogs.
+        parity.ComponentInfo = new ComponentInfoPresenter(new ComponentInfoCatalogue(http, upstreamManifest, renodxCatalog, lumaCatalog,
+            new OptiScalerWikiCatalogue(http), new RenoDxUnrealDatabaseService(http), renodxUnityDatabase, parity.GameLinks.Links));
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows

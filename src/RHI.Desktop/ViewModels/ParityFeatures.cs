@@ -17,6 +17,8 @@ public sealed class ParityFeatures
     public required GameLinksPresenter GameLinks { get; init; }
     public required ShaderProfilePresenter ShaderProfiles { get; init; }
     public required NrCostScalerPresenter NrCostScaler { get; init; }
+    /// <summary>w5/catalogue-info (#184): the component rows' ⓘ dialogs; null = no ⓘ dialog wired.</summary>
+    public ComponentInfoPresenter? ComponentInfo { get; set; }
 
     /// <summary>A request a shortcut or link brought to this RHI (its own command line or the hand-off). UI thread.</summary>
     public Task HandleHandoffAsync(MainWindowViewModel vm, HandoffRequest request) => request.Kind switch

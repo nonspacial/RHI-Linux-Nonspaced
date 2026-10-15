@@ -1218,6 +1218,11 @@ public static class UiLocalizationService
             "Download recusado: links da lista de jogos da comunidade devem ser HTTPS em um host confiável (raw.githubusercontent.com). Link recusado: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.SteamStoreSearch.RefusalPrefix,
             "Download recusado: links da busca da loja Steam devem ser HTTPS em um host confiável (store.steampowered.com). Link recusado: "),
+        // #184 info dialogs.
+        (RHI.Platform.Linux.Deployment.DownloadSources.OptiScalerWiki.RefusalPrefix,
+            "Download recusado: links do wiki do OptiScaler devem ser HTTPS em um host confiável (github.com). Link recusado: "),
+        (RHI.Platform.Linux.Deployment.DownloadSources.ComponentNotes.RefusalPrefix,
+            "Download recusado: links de notas dos componentes devem ser HTTPS em um host confiável (raw.githubusercontent.com). Link recusado: "),
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
