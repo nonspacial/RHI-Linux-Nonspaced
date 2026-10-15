@@ -260,6 +260,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeAddonSwitch.OffNote;
         yield return ReShadeAddonSwitch.HeldPrefix + "ReLimiter";
         yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + ReShadeAddonSwitch.ManagerUnreadableNote;
+        // #172
+        yield return P + LinuxManagedComponentService.OptiScalerSavedNameSkippedPrefix + "winmm.dll (Ultimate ASI Loader)";
         yield return ControlUeFrameGenerationService.NotSetUpPrefix + OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix + "dxgi.dll"
             + ControlUeFrameGenerationService.HdrSetPrefix + "0";
     }

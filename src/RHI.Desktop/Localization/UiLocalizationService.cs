@@ -1110,6 +1110,9 @@ public static class UiLocalizationService
             "O OptiScaler não pode ser instalado com este nome de DLL; escolha dxgi.dll, winmm.dll, d3d11.dll, d3d12.dll, dbghelp.dll, version.dll, wininet.dll ou winhttp.dll: "),
         ("Another component RHI installed on this game already uses this DLL name, so OptiScaler cannot be installed under it. Name and component: ",
             "Outro componente que o RHI instalou neste jogo já usa este nome de DLL, então o OptiScaler não pode ser instalado com ele. Nome e componente: "),
+        // #172: the saved DLL name was skipped because another RHI component holds it.
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.OptiScalerSavedNameSkippedPrefix,
+            " O nome de DLL salvo para o OptiScaler é usado por outro componente que o RHI instalou neste jogo, então o OptiScaler foi instalado com o nome automático. Nome salvo e componente: "),
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.OptiScalerAlreadyPresentPrefix,
             "Já existe na pasta deste jogo um OptiScaler que o RHI não instalou, então o RHI não instala um segundo (os dois seriam carregados); nada foi alterado. Remova esse OptiScaler primeiro e tente de novo. Arquivo: "),
         // #173 (w3 final review nits 2 and 4).

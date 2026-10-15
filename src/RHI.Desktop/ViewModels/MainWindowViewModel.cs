@@ -1057,8 +1057,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>Saves OptiScaler's DLL name for the selected game (#172; null = Automatic). False when not saved (status says why).</summary>
     public bool SaveOptiScalerDllName(string? name)
-        => SelectedGame is { } game && _managedComponents.GetInstalledOptiScalerVariant(game) is null
-           && TryPersist(() => _managedComponents.ReShadeDllNames.SetOptiScaler(game, name), "Ui.WhatGamePreferences", false, true) is null;
+    {
+        if (SelectedGame is not { } game) return false;
+        // The installed name stays until removal (the dropdown is locked then; this holds for any other caller too).
+        if (_managedComponents.GetInstalledOptiScalerVariant(game) is not null)
+        {
+            ShowStatus(TF("Names.OptiScalerDllNameTipInstalled", _managedComponents.OptiScalerProxyNameFor(game)));
+            return false;
+        }
+        return TryPersist(() => _managedComponents.ReShadeDllNames.SetOptiScaler(game, name), "Ui.WhatGamePreferences", false, true) is null;
+    }
 
     public OptiScalerAdvancedSnapshot GetOptiScalerAdvancedSettings()
     {

@@ -154,6 +154,44 @@ public sealed class DllNamePickerTests
         Assert.All(threads, id => Assert.Equal(ui.ThreadId, id));
     }
 
+    // #172 review minor 8b: OptiScaler's name is saved before install only; while RHI's OptiScaler is installed the shell
+    // refuses a save from any caller (not only through the locked dropdown) and says why.
+    [Fact]
+    public async Task OptiScalerDllName_SavedBeforeInstall_RefusedWhileInstalled()
+    {
+        var (fx, game) = await StartAsync("OptiScaler Name Game");
+        using var _ = fx;
+
+        Assert.True(fx.Vm.SaveOptiScalerDllName("winmm.dll"));
+        Assert.Equal("winmm.dll", fx.Managed.ReShadeDllNames.GetOptiScaler(game));
+
+        var proxy = Path.Combine(game.BinaryDirectory!, "winmm.dll");
+        File.WriteAllBytes(proxy, [0x4D, 0x5A]);
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.OptiScaler,
+            BinaryDirectory = game.BinaryDirectory!, Version = "0.9.4", Files = [new LinuxDeployedFile { Path = proxy }],
+            Metadata = { ["OptiScaler.ProxyName"] = "winmm.dll" }
+        });
+
+        // The lines this call writes (read as they are set: the selection analysis may write "Ready —" afterwards).
+        var lines = new List<string>();
+        void Collect(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Add(fx.Vm.StatusText);
+        }
+        fx.Vm.PropertyChanged += Collect;
+        bool saved;
+        try { saved = fx.Vm.SaveOptiScalerDllName("version.dll"); }
+        finally { fx.Vm.PropertyChanged -= Collect; }
+
+        Assert.False(saved);
+        Assert.Equal("winmm.dll", fx.Managed.ReShadeDllNames.GetOptiScaler(game));
+        Assert.Contains(lines, line => line.Contains(UiLocalizationService.Format("Names.OptiScalerDllNameTipInstalled", "winmm.dll"), StringComparison.Ordinal));
+        Assert.False(fx.Vm.SaveOptiScalerDllName(null));
+        Assert.Equal("winmm.dll", fx.Managed.ReShadeDllNames.GetOptiScaler(game));
+    }
+
     private static async Task<(ViewModelFixture Fixture, DetectedGame Game)> StartAsync(string name, string language = "en-US", string runner = "Proton")
     {
         var root = Path.Combine(Path.GetTempPath(), $"rhi-dll-picker-{Guid.NewGuid():N}");

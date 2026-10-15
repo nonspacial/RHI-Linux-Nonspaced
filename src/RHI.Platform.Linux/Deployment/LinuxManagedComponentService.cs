@@ -1430,20 +1430,21 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// </summary>
     public IReadOnlyList<string> OptiScalerProxyNamesFor(DetectedGame game)
     {
-        if (string.IsNullOrWhiteSpace(game.BinaryDirectory)) return OptiScalerDeploymentService.ProxyNames;
-        var held = _records.FindAll(game)
-            .Where(record => record.Component is not (ManagedComponentKind.OptiScaler or ManagedComponentKind.ReShade))
-            .SelectMany(record => record.Files)
-            .Where(file => !string.IsNullOrWhiteSpace(file.Path))
-            .Select(file => Path.GetFullPath(file.Path))
-            .ToHashSet(StringComparer.Ordinal);
-        var directory = Path.GetFullPath(game.BinaryDirectory);
-        return OptiScalerDeploymentService.ProxyNames.Where(name => !held.Contains(Path.Combine(directory, name))).ToArray();
+        var held = OptiScalerNamesHeld(game);
+        return OptiScalerDeploymentService.ProxyNames.Where(name => !held.ContainsKey(name)).ToArray();
     }
 
     /// <summary>
+    /// The name "Automatic" stands for on <paramref name="game"/> (#172): <see cref="OptiScalerDeploymentService.DefaultProxyName"/>,
+    /// or the first of OptiScaler's names no other RHI component holds when that one is held (dxgi.dll again when every
+    /// name is held; the install then refuses with the holder's name).
+    /// </summary>
+    public string OptiScalerAutomaticProxyName(DetectedGame game)
+        => OptiScalerProxyNamesFor(game).FirstOrDefault() ?? OptiScalerDeploymentService.DefaultProxyName;
+
+    /// <summary>
     /// The name OptiScaler is (or will be) installed under on <paramref name="game"/> (#172): the recorded one while it is
-    /// installed, else the saved choice while it is still offered, else <see cref="OptiScalerDeploymentService.DefaultProxyName"/>.
+    /// installed, else the saved choice while it is still offered, else <see cref="OptiScalerAutomaticProxyName"/>.
     /// </summary>
     public string OptiScalerProxyNameFor(DetectedGame game)
     {
@@ -1451,7 +1452,51 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         // No ReShade service (a test wiring OptiScaler alone) = no saved choice.
         return _reshade?.DllNames.GetOptiScaler(game) is { } chosen && OptiScalerProxyNamesFor(game).Contains(chosen, StringComparer.OrdinalIgnoreCase)
             ? chosen
-            : OptiScalerDeploymentService.DefaultProxyName;
+            : OptiScalerAutomaticProxyName(game);
+    }
+
+    /// <summary>
+    /// The saved OptiScaler name the next install skips because another RHI component holds it, with that component's
+    /// name ("winmm.dll (Ultimate ASI Loader)"); null when OptiScaler is installed, nothing is saved or the name is free.
+    /// </summary>
+    public string? OptiScalerSkippedChoice(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.OptiScaler) is null
+           && _reshade?.DllNames.GetOptiScaler(game) is { } chosen
+           && OptiScalerNamesHeld(game).TryGetValue(chosen, out var holder)
+            ? $"{chosen} ({DisplayDependencyName(holder)})"
+            : null;
+
+    /// <summary>Appended to an OptiScaler install that skipped the saved DLL name (#172); saved name and component follow.</summary>
+    public const string OptiScalerSavedNameSkippedPrefix =
+        " The DLL name saved for OptiScaler is used by another component RHI installed on this game, so OptiScaler was installed under the automatic name instead. Saved name and component: ";
+
+    // OptiScaler's names that a file of another RHI component sits under in the game folder, with that component.
+    private Dictionary<string, ManagedComponentKind> OptiScalerNamesHeld(DetectedGame game)
+    {
+        var held = new Dictionary<string, ManagedComponentKind>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory)) return held;
+        var directory = Path.GetFullPath(game.BinaryDirectory);
+        foreach (var record in _records.FindAll(game).Where(record => record.Component is not (ManagedComponentKind.OptiScaler or ManagedComponentKind.ReShade)))
+            foreach (var file in record.Files.Where(file => !string.IsNullOrWhiteSpace(file.Path)))
+            {
+                var full = Path.GetFullPath(file.Path);
+                if (string.Equals(Path.GetDirectoryName(full), directory, StringComparison.Ordinal)
+                    && OptiScalerDeploymentService.ProxyNames.Contains(Path.GetFileName(full), StringComparer.OrdinalIgnoreCase))
+                    held.TryAdd(Path.GetFileName(full), record.Component);
+            }
+        return held;
+    }
+
+    // Every OptiScaler install path (#172): the name OptiScalerProxyNameFor decides, and a plain sentence when the saved
+    // choice was skipped because another RHI component holds it.
+    private async Task<ComponentOperationResult> InstallOptiScalerUnderChosenNameAsync(
+        DetectedGame game, OptiScalerVariant variant, string? nightlyBuild, CancellationToken cancellationToken)
+    {
+        var skipped = OptiScalerSkippedChoice(game);
+        var result = await _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), cancellationToken).ConfigureAwait(false);
+        return result.Success && skipped is not null
+            ? result with { Message = result.Message + OptiScalerSavedNameSkippedPrefix + skipped }
+            : result;
     }
 
     /// <summary>The name the next ReShade install on <paramref name="game"/> uses, and why; null when its API has no proxy.</summary>
@@ -1987,7 +2032,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return guard is not null
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.OptiScaler, ComponentUpdateAction.Install,
-                () => _optiscaler.InstallAsync(game, variant, nightlyBuild, OptiScalerProxyNameFor(game), cancellationToken)); // #172
+                () => InstallOptiScalerUnderChosenNameAsync(game, variant, nightlyBuild, cancellationToken)); // #172
     }
 
     /// <summary>
@@ -2055,7 +2100,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.ReShade => _reshade.InstallAsync(game, cancellationToken),
             ManagedComponentKind.RenoDX => _renodx.InstallAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.InstallAsync(game, cancellationToken),
-            ManagedComponentKind.OptiScaler => _optiscaler.InstallAsync(game, OptiScalerVariant.Stable, null, OptiScalerProxyNameFor(game), cancellationToken), // #172
+            ManagedComponentKind.OptiScaler => InstallOptiScalerUnderChosenNameAsync(game, OptiScalerVariant.Stable, null, cancellationToken), // #172
             ManagedComponentKind.ReLimiter => _relimiter.InstallAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.InstallAsync(game, cancellationToken),
             ManagedComponentKind.MfgAdaUnlock => InstallMfgAdaUnlockAsync(game, cancellationToken),

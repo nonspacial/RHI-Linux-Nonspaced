@@ -7,9 +7,16 @@ using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Paths;
 
-/// <summary>A game's chosen proxy DLL names (#120). Null = automatic (RHI manifest name, else by graphics API).</summary>
-public sealed class DllNameChoices
+/// <summary>
+/// A game's chosen proxy DLL names (#120). Null = automatic (RHI manifest name, else by graphics API). A record so the
+/// store copies every choice with <c>with</c> and tells "all automatic" by value equality: a choice added later is kept
+/// and compared without touching <see cref="DllNamePreferenceStore"/>'s update code.
+/// </summary>
+public sealed record DllNameChoices
 {
+    /// <summary>Every choice automatic (the store then drops the game's entry).</summary>
+    public static DllNameChoices Automatic => new();
+
     [JsonPropertyName("reshade")]
     public string? ReShade { get; set; }
 
@@ -91,17 +98,17 @@ public sealed class DllNamePreferenceStore : IGameStateStore
     private static string? OptiScalerCanonical(string name)
         => Deployment.OptiScalerDeploymentService.ProxyNames.FirstOrDefault(known => known.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    // One component's choice changes; the other's is kept (the entry goes only when both are automatic).
+    // One component's choice changes; every other choice is copied as it is (the entry goes only when all are automatic).
     private void Update(DetectedGame game, Action<DllNameChoices> change)
     {
         lock (_gate)
         {
             var entries = LoadUnsafe();
             var choices = GameRecordIdentity.TryGet(entries, game, out var existing) && existing is not null
-                ? new DllNameChoices { ReShade = existing.ReShade, OptiScaler = existing.OptiScaler }
-                : new DllNameChoices();
+                ? existing with { }
+                : DllNameChoices.Automatic;
             change(choices);
-            if (choices.ReShade is null && choices.OptiScaler is null) GameRecordIdentity.Remove(entries, game);
+            if (choices == DllNameChoices.Automatic) GameRecordIdentity.Remove(entries, game);
             else GameRecordIdentity.Set(entries, game, choices);
             _file.Save(entries);
         }

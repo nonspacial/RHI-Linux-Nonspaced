@@ -10,7 +10,8 @@ namespace RHI.Desktop.ViewModels;
 public sealed record OptiScalerDllNameState(IReadOnlyList<DllNameOption> Options, DllNameOption Selected, bool CanChoose, string Hint);
 
 /// <summary>
-/// OptiScaler's "DLL name" dropdown in its settings (#172), like ReShade's (#120): Automatic (dxgi.dll) by default, any of
+/// OptiScaler's "DLL name" dropdown in its settings (#172), like ReShade's (#120): Automatic (dxgi.dll, or the next free name
+/// while another RHI component holds dxgi.dll) by default, any of
 /// OptiScaler's names before it is installed, only the installed name (locked) while it is, and no name another RHI
 /// component already uses on the game. The install takes the same answer
 /// (<see cref="LinuxManagedComponentService.OptiScalerProxyNameFor"/>).
@@ -27,7 +28,8 @@ public static class OptiScalerDllNamePresenter
         }
 
         var offered = components.OptiScalerProxyNamesFor(game);
-        var automatic = new DllNameOption(null, UiLocalizationService.Format("Names.DllNameAutomatic", OptiScalerDeploymentService.DefaultProxyName));
+        // "Automatic" names the name the install would take: dxgi.dll, or the next free one while another RHI component holds it.
+        var automatic = new DllNameOption(null, UiLocalizationService.Format("Names.DllNameAutomatic", components.OptiScalerAutomaticProxyName(game)));
         var options = new List<DllNameOption> { automatic };
         options.AddRange(offered.Select(name => new DllNameOption(name, name)));
         var chosen = components.ReShadeDllNames.GetOptiScaler(game);
