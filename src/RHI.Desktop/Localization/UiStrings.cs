@@ -886,6 +886,7 @@ internal static class UiStrings
         ("Ini.EffectListTree", "Árvore", "Tree"),
         ("Ini.ApplyToAllGames", "Aplicar a todos os jogos", "Apply to all games"),
         ("Ini.ApplyToAllGamesTip", "Grava a pasta de capturas, os dois atalhos e o estilo da lista de efeitos no ReShade.ini de cada jogo em que o RHI instalou o ReShade (e nos ReShade2.ini, ReShade3.ini… ao lado). Red Dead Redemption 2 e Max Payne 3 mantêm a tecla End do modelo deles.", "Writes the screenshot folder, both hotkeys and the effect list style into the ReShade.ini of every game where RHI installed ReShade (and the ReShade2.ini, ReShade3.ini… beside it). Red Dead Redemption 2 and Max Payne 3 keep their template's End key."),
+        ("Ini.ApplyAllAsk", "{0}: gravar em {1} jogos?", "{0}: write into {1} games?"),
         ("Ini.ApplyToAllGamesNote", "Salva estas configurações do ReShade e as grava em todos os jogos em que o RHI instalou o ReShade; um ReShade que você mesmo instalou fica como está. Novas instalações já as recebem.", "Saves these ReShade settings and writes them to every game where RHI installed ReShade; a ReShade you installed yourself stays as it is. New installs get them anyway."),
         ("Ini.ReShadeSettingsWhat", "Configurações do ReShade", "ReShade settings"),
         ("Ini.TemplateSection", "Modelos de INI", "INI templates"),

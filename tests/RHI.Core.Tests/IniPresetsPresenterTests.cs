@@ -111,6 +111,44 @@ public sealed class IniPresetsPresenterTests
         Assert.False(fx.Vm.IsBusy);
     }
 
+    // Review finding 5: each "Apply to all games" names how many games it writes into before it writes.
+    [Fact]
+    public async Task ApplyToAllQuestion_CountsTheGamesEachButtonWritesInto()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-ini-ask-" + Guid.NewGuid().ToString("N"));
+        DetectedGame Game(string name, int appId)
+        {
+            var bin = Path.Combine(root, name, "bin");
+            Directory.CreateDirectory(bin);
+            File.WriteAllText(Path.Combine(bin, "ReShade.ini"), "[OVERLAY]\n");
+            File.WriteAllText(Path.Combine(bin, "relimiter.ini"), "[FrameLimiter]\n");
+            var exe = Path.Combine(bin, "Game.exe");
+            PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+            return new DetectedGame { Name = name, InstallPath = Path.Combine(root, name), BinaryDirectory = bin, ExecutablePath = exe, Runner = "Proton", SteamAppId = appId, Source = "Steam" };
+        }
+        using var fx = await ViewModelFixture.StartAsync([Game("Ask One", 77011), Game("Ask Two", 77012), Game("Ask Three", 77013)]);
+        var cards = fx.Vm.AllLibraryGames.OrderBy(game => game.Name, StringComparer.Ordinal).ToList(); // One, Three, Two
+        fx.Records.Manage(cards[0], ManagedComponentKind.ReShade, ManagedComponentKind.ReLimiter, ManagedComponentKind.RenoDX)
+            .Manage(cards[1], ManagedComponentKind.ReShade)
+            .Manage(cards[2], ManagedComponentKind.ReShade);
+        var presenter = fx.Vm.IniPresets;
+        var settings = presenter.SavedSettings();
+
+        Assert.Equal(UiLocalizationService.Format("Ini.ApplyAllAsk", UiLocalizationService.Text("Ini.ReShadeSettingsWhat"), 3),
+            presenter.ApplyToAllQuestion(IniApplyAll.ReShadeSettings, settings));
+        Assert.Equal(UiLocalizationService.Format("Ini.ApplyAllAsk", UiLocalizationService.Text("Ini.ReLimiterSettingsWhat"), 1),
+            presenter.ApplyToAllQuestion(IniApplyAll.ReLimiterSettings, settings));
+        settings.PeakNits = 0;
+        Assert.Null(presenter.ApplyToAllQuestion(IniApplyAll.PeakNits, settings)); // not set: runs at once and says so
+        settings.PeakNits = 1180;
+        settings.PeakNitsEnabled = true;
+        settings.PeakNitsPresets = [1];
+        Assert.Equal(UiLocalizationService.Format("Ini.ApplyAllAsk", UiLocalizationService.Format("Ini.PeakWhat", 1180), 1),
+            presenter.ApplyToAllQuestion(IniApplyAll.PeakNits, settings));
+        fx.Records.Remove(cards[0], ManagedComponentKind.ReLimiter);
+        Assert.Null(presenter.ApplyToAllQuestion(IniApplyAll.ReLimiterSettings, settings));
+    }
+
     [Fact]
     public void BatchSummary_SaysWhatHappened()
     {

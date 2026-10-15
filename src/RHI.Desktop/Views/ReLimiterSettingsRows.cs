@@ -53,7 +53,7 @@ internal sealed class ReLimiterSettingsRows
         };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Ini.ReLimiterApplyTip"));
         ToolTip.SetShowDelay(apply, 2000);
-        apply.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        async Task ApplyAll()
         {
             apply.IsEnabled = false;
             try
@@ -64,6 +64,15 @@ internal sealed class ReLimiterSettingsRows
                 showStatus(await presenter.ApplyReLimiterSettingsToAllAsync(current));
             }
             finally { apply.IsEnabled = true; }
+        }
+        // Review finding 5: asks inline with the count before writing into every game.
+        var confirm = new InlineConfirmation("ReLimiterApplyAll", nameof(ReLimiterSettingsRows));
+        apply.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            var current = presenter.SavedSettings();
+            ReadInto(current);
+            if (presenter.ApplyToAllQuestion(IniApplyAll.ReLimiterSettings, current) is { } question) confirm.Ask(question, ApplyAll);
+            else await ApplyAll();
         }, nameof(ReLimiterSettingsRows));
 
         var choices = new WrapPanel { Orientation = Orientation.Horizontal };
@@ -88,6 +97,7 @@ internal sealed class ReLimiterSettingsRows
         panel.Children.Add(choices);
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.ReLimiterTargetFps"), fpsRow));
         panel.Children.Add(apply);
+        panel.Children.Add(confirm.Control);
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.ReLimiterApplyNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
         Control = panel;
     }

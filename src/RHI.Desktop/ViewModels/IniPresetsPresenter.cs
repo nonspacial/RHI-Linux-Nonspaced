@@ -11,6 +11,9 @@ namespace RHI.Desktop.ViewModels;
 /// (a batch is cancellable between games) and reports one line on the status bar; the logic lives in
 /// <see cref="UserIniService"/>.
 /// </summary>
+/// <summary>The three "Apply to all games" buttons (review finding 5).</summary>
+public enum IniApplyAll { ReShadeSettings, ReLimiterSettings, PeakNits }
+
 public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComponentService managed, LinuxDeploymentRecordStore records, string configRoot)
 {
     /// <summary>The INIs folder (shared with the OptiScaler templates).</summary>
@@ -486,6 +489,24 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
             return result;
         });
         return shown;
+    }
+
+    /// <summary>
+    /// The inline question an "Apply to all games" button asks first (review finding 5), with the number of games it
+    /// writes into; null when it writes into none (or peak brightness is not set): it then runs at once and says so.
+    /// </summary>
+    public string? ApplyToAllQuestion(IniApplyAll what, LinuxAppSettings settings)
+    {
+        var games = vm.AllLibraryGames.ToList();
+        var (label, count) = what switch
+        {
+            IniApplyAll.ReShadeSettings => (UiLocalizationService.Text("Ini.ReShadeSettingsWhat"), Service.ReShadeSettingsTargets(games).Count),
+            IniApplyAll.ReLimiterSettings => (UiLocalizationService.Text("Ini.ReLimiterSettingsWhat"), Service.ReLimiterSettingsTargets(games).Count),
+            _ => PeakNitsSettings.From(settings) is { Applies: true } peak
+                ? (UiLocalizationService.Format("Ini.PeakWhat", peak.Nits), PeakNits.Targets(games).Count)
+                : ("", 0)
+        };
+        return count == 0 ? null : UiLocalizationService.Format("Ini.ApplyAllAsk", label, count);
     }
 
     /// <summary>The status line for a batch, from its counts.</summary>

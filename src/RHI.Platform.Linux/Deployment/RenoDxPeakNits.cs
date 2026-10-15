@@ -120,9 +120,13 @@ public sealed class RenoDxPeakNits(LinuxDeploymentRecordStore records, Deploymen
     /// <summary>"Apply to all games": the global value into every game whose RenoDX RHI installed (one game per unit).</summary>
     public Task<IniBatchResult> ApplyToAllAsync(IReadOnlyList<DetectedGame> games, PeakNitsSettings settings, CancellationToken cancellationToken = default)
         => UserIniService.RunBatchAsync(
-            games.Where(game => records.Find(game, ManagedComponentKind.RenoDX) is not null).ToList(),
+            Targets(games),
             (game, token) => ChangeAsync(game, settings.Nits, _ => GlobalSections(settings.Presets), token),
             "renodx-peak-nits", cancellationToken);
+
+    /// <summary>The games "Apply to all games" writes into: where RHI installed RenoDX.</summary>
+    public IReadOnlyList<DetectedGame> Targets(IReadOnlyList<DetectedGame> games)
+        => games.Where(game => records.Find(game, ManagedComponentKind.RenoDX) is not null).ToList();
 
     /// <summary>The RenoDX ⚙ "Set maximum nits" for one game: every preset in its ReShade.ini, or preset 1.</summary>
     public Task<ComponentOperationResult> SetForGameAsync(DetectedGame game, int nits, CancellationToken cancellationToken = default)

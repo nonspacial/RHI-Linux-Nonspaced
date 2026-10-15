@@ -75,7 +75,7 @@ internal sealed class PeakBrightnessSettingsRows
         var apply = new Button { Name = "PeakNitsApplyAll", Content = UiLocalizationService.Text("Ini.ApplyToAllGames"), Padding = new Thickness(12, 6), HorizontalAlignment = HorizontalAlignment.Left };
         ToolTip.SetTip(apply, UiLocalizationService.Text("Ini.PeakApplyTip"));
         ToolTip.SetShowDelay(apply, 2000);
-        apply.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        async Task ApplyAll()
         {
             apply.IsEnabled = false;
             try
@@ -86,6 +86,15 @@ internal sealed class PeakBrightnessSettingsRows
                 showStatus(await presenter.ApplyPeakNitsToAllAsync(current));
             }
             finally { apply.IsEnabled = true; }
+        }
+        // Review finding 5: asks inline with the count before writing into every game.
+        var confirm = new InlineConfirmation("PeakNitsApplyAll", nameof(PeakBrightnessSettingsRows));
+        apply.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            var current = presenter.SavedSettings();
+            ReadInto(current);
+            if (presenter.ApplyToAllQuestion(IniApplyAll.PeakNits, current) is { } question) confirm.Ask(question, ApplyAll);
+            else await ApplyAll();
         }, nameof(PeakBrightnessSettingsRows));
 
         var nitsRow = new WrapPanel { Orientation = Orientation.Horizontal };
@@ -99,6 +108,7 @@ internal sealed class PeakBrightnessSettingsRows
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.PeakEnabled"), _enabled));
         panel.Children.Add(_presetRow);
         panel.Children.Add(apply);
+        panel.Children.Add(confirm.Control);
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.PeakNote"), FontSize = 11, Opacity = 0.65, TextWrapping = TextWrapping.Wrap });
         Control = panel;
     }

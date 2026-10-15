@@ -43,7 +43,7 @@ internal sealed class ReShadeIniSettingsRows
         };
 
         var applyAll = Button("ReShadeApplyAll", UiLocalizationService.Text("Ini.ApplyToAllGames"), UiLocalizationService.Text("Ini.ApplyToAllGamesTip"));
-        applyAll.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        async Task ApplyAll()
         {
             applyAll.IsEnabled = false;
             try
@@ -53,6 +53,13 @@ internal sealed class ReShadeIniSettingsRows
                 showStatus(await presenter.ApplyReShadeSettingsToAllAsync(current));
             }
             finally { applyAll.IsEnabled = true; }
+        }
+        // Review finding 5: asks inline with the count before writing into every game.
+        var applyAllConfirm = new InlineConfirmation("ReShadeApplyAll", nameof(ReShadeIniSettingsRows));
+        applyAll.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (presenter.ApplyToAllQuestion(IniApplyAll.ReShadeSettings, Current()) is { } question) applyAllConfirm.Ask(question, ApplyAll);
+            else await ApplyAll();
         }, nameof(ReShadeIniSettingsRows));
 
         var open = Button("IniTemplatesFolder", UiLocalizationService.Text("Names.OpenOptiScalerTemplates"),
@@ -126,6 +133,7 @@ internal sealed class ReShadeIniSettingsRows
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(Labeled(UiLocalizationService.Text("Ini.EffectListStyle"), _effectList));
         panel.Children.Add(applyAll);
+        panel.Children.Add(applyAllConfirm.Control);
         panel.Children.Add(Note(UiLocalizationService.Text("Ini.ApplyToAllGamesNote")));
         panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
         panel.Children.Add(open);
