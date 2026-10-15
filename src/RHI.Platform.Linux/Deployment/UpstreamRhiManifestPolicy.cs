@@ -61,6 +61,11 @@ public sealed class UpstreamLibraryPolicySnapshot
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    /// <summary>#186: manifest <c>legacyReShadeVersions</c>: the ReShade version a fresh install of these games uses (Max Payne 3 → 6.4.1).</summary>
+    public IReadOnlyDictionary<string, string> LegacyReShadeVersions { get; init; } = EmptyStrings();
+    /// <summary>#186: manifest <c>reshadeGameInfo</c>: a per-game note shown with ReShade (same shape as <c>gameNotes</c>).</summary>
+    public IReadOnlyDictionary<string, UpstreamGameNoteDefinition> ReShadeGameInfo { get; init; }
+        = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -155,6 +160,12 @@ internal sealed partial class UpstreamManifestDocument
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    [JsonPropertyName("legacyReShadeAvailable")]
+    public List<string>? LegacyReShadeAvailable { get; set; }
+    [JsonPropertyName("legacyReShadeVersions")]
+    public Dictionary<string, string>? LegacyReShadeVersions { get; set; }
+    [JsonPropertyName("reshadeGameInfo")]
+    public Dictionary<string, UpstreamManifestGameNote>? ReShadeGameInfo { get; set; }
 }
 
 internal sealed class UpstreamManifestSplitGame
@@ -249,6 +260,8 @@ public sealed partial class UpstreamRhiManifestService
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            LegacyReShadeVersions = NormalizeLegacyReShadeVersions(manifest.LegacyReShadeVersions),
+            ReShadeGameInfo = NormalizeGameNotes(manifest.ReShadeGameInfo),
         };
     }
 
@@ -314,6 +327,8 @@ public sealed partial class UpstreamRhiManifestService
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        Add(result, manifest.LegacyReShadeVersions?.Keys);
+        Add(result, manifest.ReShadeGameInfo?.Keys);
         return result;
     }
 

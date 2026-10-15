@@ -882,5 +882,6 @@ internal static class UiStrings
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        ("Rs.LegacyVersionTip", "Versões antigas do ReShade publicadas pelo RHI. Uma versão antiga pode não suportar add-ons recentes e fica fora das atualizações automáticas.", "Older ReShade versions listed by RHI. An older version may not support newer add-ons and is left out of automatic updates."),
     ];
 }

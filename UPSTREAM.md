@@ -373,3 +373,16 @@ build.
   component the user did not ask to remove). Changes within DirectX are not affected.
 - Not ported: upstream's global layer for every game and its footprint marker (`RDXC_VULKAN_FOOTPRINT`; the record owns
   the files). Native Linux Vulkan games are out of scope (vkBasalt is a different tool).
+
+### #186 — Legacy ReShade version list and manifest pins
+
+- Ported: the ReShade profile's Legacy version is a dropdown of the RHI manifest's `legacyReShadeAvailable` (newest
+  first, as upstream's "Legacy..." picker; 6.4.1 alone while the manifest is unread or lists none) instead of a free-text
+  box. A version the profile shows that the list lacks (an installed legacy ReShade, a pin) stays offered.
+- Ported: `legacyReShadeVersions` (Max Payne 3 → 6.4.1): a fresh ReShade install on that game, from its row, from a
+  component that needs ReShade (RenoDX) or from the profile, uses that version; the profile starts on Legacy at it and
+  the user may choose another channel. An installed ReShade is never changed by a pin (its own profile is re-applied).
+- Ported: `reshadeGameInfo`: the manifest's ReShade note for the game is shown in the ReShade profile, with its link
+  (https only) when the manifest gives one.
+- Changed from upstream: upstream stores the pin as a per-game channel override when it first sees the game; RHI Linux
+  has no per-game channel setting outside the installed profile, so the pin applies to each fresh install instead.

@@ -207,6 +207,8 @@ public sealed class SelectedGameSessionTests
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            nameof(DetectedGame.ManifestLegacyReShadeVersion), nameof(DetectedGame.ManifestReShadeNote),
+            nameof(DetectedGame.ManifestReShadeNoteUrl), nameof(DetectedGame.ManifestReShadeNoteUrlLabel),
         ];
         var writable = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite).Select(p => p.Name).ToHashSet();
         Assert.Empty(writable.Except(GameRuntimeFacts.OwnedProperties).Except(notProbeOwned));

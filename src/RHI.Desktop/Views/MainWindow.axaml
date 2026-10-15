@@ -385,8 +385,11 @@
                     <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding ReShadeUpdateText}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap"/>
 
                     <TextBlock Grid.Row="1" Text="{DynamicResource Ui.LegacyVersion}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeLegacy}"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ReShadeLegacyVersion}" PlaceholderText="6.4.1" IsVisible="{Binding IsReShadeLegacy}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeLegacy}"/>
+                    <!-- w5/reshade-core (#186): the RHI manifest's legacy versions (ReShadeLegacyPresenter). -->
+                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding ReShadeLegacy.Versions}"
+                              SelectedItem="{Binding ReShadeLegacyVersion, Mode=TwoWay}" IsVisible="{Binding IsReShadeLegacy}"
+                              ToolTip.Tip="{Binding ReShadeLegacy.VersionTip}" ToolTip.ShowDelay="2000"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource Ui.LegacyVersionNote}" Classes="muted" VerticalAlignment="Center" TextWrapping="Wrap" IsVisible="{Binding IsReShadeLegacy}"/>
 
                     <TextBlock Grid.Row="2" Text="{DynamicResource Ui.CustomDll}" Classes="muted" VerticalAlignment="Center" IsVisible="{Binding IsReShadeCustom}"/>
                     <Grid Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding IsReShadeCustom}">
@@ -394,6 +397,14 @@
                       <Button Grid.Column="1" Content="{DynamicResource Ui.Browse}" Click="BrowseReShadeCustomDll_Click" Padding="12,6"/>
                       <Button Grid.Column="2" Content="{DynamicResource Ui.Clear}" Click="ClearReShadeCustomDll_Click" Padding="12,6"/>
                     </Grid>
+                  </Grid>
+
+                  <!-- w5/reshade-core (#186): the RHI manifest's ReShade note for this game (reshadeGameInfo). -->
+                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding ReShadeLegacy.HasNote}">
+                    <TextBlock Text="{Binding ReShadeLegacy.Note}" Classes="muted" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="{Binding ReShadeLegacy.NoteLinkLabel}" Command="{Binding ReShadeLegacy.OpenNoteLinkCommand}"
+                            IsVisible="{Binding ReShadeLegacy.HasNoteLink}" Padding="12,6" VerticalAlignment="Top"
+                            ToolTip.Tip="{Binding ReShadeLegacy.NoteUrl}" ToolTip.ShowDelay="2000"/>
                   </Grid>
 
                   <!-- w3/dllnames (#120): ReShade's proxy DLL name; DllNamePickerViewModel. -->

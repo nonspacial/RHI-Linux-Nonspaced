@@ -81,6 +81,7 @@ public sealed partial class ReShadeDeploymentService
     private readonly string _cacheDir;
     private readonly DeploymentJournal? _journal;
     private readonly DllNamePreferenceStore _dllNames;
+    private readonly UpstreamRhiManifestService? _upstreamManifest;
 
     public ReShadeDeploymentService(
         HttpClient http,
@@ -95,6 +96,7 @@ public sealed partial class ReShadeDeploymentService
         DllNamePreferenceStore? dllNames = null)
     {
         _journal = journal;
+        _upstreamManifest = upstreamManifest;
         _dllNames = dllNames ?? new DllNamePreferenceStore();
         _http = http;
         _files = files;
@@ -166,7 +168,36 @@ public sealed partial class ReShadeDeploymentService
     }
 
     public Task<ComponentOperationResult> InstallAsync(DetectedGame game, CancellationToken cancellationToken = default)
-        => InstallAsync(game, new ReShadeInstallOptions(), cancellationToken);
+        => InstallAsync(game, DefaultOptionsFor(game), cancellationToken);
+
+    /// <summary>
+    /// The options of an install nobody chose a profile for (the ReShade row, a component that needs ReShade): Stable,
+    /// or the RHI manifest's legacy version for the game (#186, upstream <c>legacyReShadeVersions</c>: Max Payne 3 → 6.4.1).
+    /// An installed ReShade keeps its own profile on update (<see cref="GetInstalledOptions"/>).
+    /// </summary>
+    public static ReShadeInstallOptions DefaultOptionsFor(DetectedGame game)
+        => UpstreamRhiManifestService.IsReShadeVersion(game.ManifestLegacyReShadeVersion)
+            ? new ReShadeInstallOptions { Channel = ReShadeChannel.Legacy, LegacyVersion = game.ManifestLegacyReShadeVersion!.Trim() }
+            : new ReShadeInstallOptions();
+
+    /// <summary>
+    /// The versions the Legacy channel offers (#186): the RHI manifest's <c>legacyReShadeAvailable</c>, else
+    /// <see cref="UpstreamRhiManifestService.DefaultLegacyReShadeVersion"/> alone (offline, or a manifest without the key).
+    /// </summary>
+    public async Task<IReadOnlyList<string>> LegacyVersionsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_upstreamManifest is null) return [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        try
+        {
+            var listed = await _upstreamManifest.FetchLegacyReShadeAvailableAsync(cancellationToken).ConfigureAwait(false);
+            return listed.Count > 0 ? listed : [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("reshade", "The legacy ReShade version list could not be read from the RHI manifest; offering the default", ex);
+            return [UpstreamRhiManifestService.DefaultLegacyReShadeVersion];
+        }
+    }
 
     public Task<ComponentOperationResult> InstallAsync(
         DetectedGame game,

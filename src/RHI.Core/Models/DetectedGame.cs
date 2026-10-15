@@ -203,6 +203,15 @@ public sealed class DetectedGame
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    /// <summary>
+    /// #186: manifest <c>legacyReShadeVersions</c>: the ReShade version a fresh install on this game uses (Max Payne 3 →
+    /// 6.4.1, for RenoDX). Never changes an installed ReShade; the ReShade profile preselects it and the user may change it.
+    /// </summary>
+    public string? ManifestLegacyReShadeVersion { get; set; }
+    /// <summary>#186: manifest <c>reshadeGameInfo</c> note, shown in the ReShade profile, with its optional link.</summary>
+    public string? ManifestReShadeNote { get; set; }
+    public string? ManifestReShadeNoteUrl { get; set; }
+    public string? ManifestReShadeNoteUrlLabel { get; set; }
 
     /// <summary>
     /// Game-local patch target is ready when no explicit split is required or when a real game executable has been

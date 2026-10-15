@@ -977,11 +977,15 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private ReShadeInstallOptions ReShadeRowOptions(DetectedGame game)
     {
         var record = _records.Find(game, ManagedComponentKind.ReShade);
-        return new ReShadeInstallOptions
-        {
-            VulkanLayer = ReShadeVulkanLayer.IsLayerRecord(record) || (record is null && ReShadeVulkanLayer.IsVulkanTarget(game))
-        };
+        // #186: a new install takes the manifest's legacy version for the game; an installed ReShade keeps its own profile.
+        var options = record is null ? ReShadeDeploymentService.DefaultOptionsFor(game) : _reshade.GetInstalledOptions(game);
+        options.VulkanLayer = ReShadeVulkanLayer.IsLayerRecord(record) || (record is null && ReShadeVulkanLayer.IsVulkanTarget(game));
+        return options;
     }
+
+    /// <summary>#186: the versions the ReShade profile's Legacy channel offers (the RHI manifest's list, else 6.4.1).</summary>
+    public Task<IReadOnlyList<string>> LegacyReShadeVersionsAsync(CancellationToken cancellationToken = default)
+        => _reshade.LegacyVersionsAsync(cancellationToken);
 
     /// <summary>
     /// #92 (upstream PAR-D07): why a graphics-API override change must wait while ReShade is installed, or null. A

@@ -140,6 +140,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/ini-presets rows
     // w5/shell-launch rows
     // w5/reshade-core rows
+    public ReShadeLegacyPresenter ReShadeLegacy => ReShadeLegacyPresenter.For(this, _managedComponents); // #186
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1745,8 +1746,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     {
         var managed = _managedComponents.IsReShadeManaged(game);
         var profile = _managedComponents.GetReShadeOptions(game);
-        SelectedReShadeChannel = ReShadeChannelDisplay(managed ? profile.Channel.ToString() : _settings.ReShadeChannel);
-        ReShadeLegacyVersion = string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "6.4.1" : profile.LegacyVersion;
+        // #186: a game the RHI manifest pins to a legacy ReShade (Max Payne 3 → 6.4.1) starts on that version until ReShade
+        // is installed; an installed ReShade always shows its own profile.
+        var pin = managed ? null : ReShadeDeploymentService.DefaultOptionsFor(game) is { Channel: ReShadeChannel.Legacy } pinned ? pinned.LegacyVersion : null;
+        var legacyVersion = pin ?? (string.IsNullOrWhiteSpace(profile.LegacyVersion) ? UpstreamRhiManifestService.DefaultLegacyReShadeVersion : profile.LegacyVersion);
+        ReShadeLegacy.Offer(legacyVersion); // the dropdown's option exists before it is selected
+        SelectedReShadeChannel = ReShadeChannelDisplay(managed ? profile.Channel.ToString() : pin is not null ? nameof(ReShadeChannel.Legacy) : _settings.ReShadeChannel);
+        ReShadeLegacyVersion = legacyVersion;
         ReShadeCustomDllPath = profile.CustomDllPath ?? "";
         ReShadeD3DCompiler47Path = profile.D3DCompiler47Path ?? "";
         ReShadeManageIni = managed ? profile.ManageIni : _settings.ReShadeManageIni;
@@ -1757,13 +1763,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         ShaderCrosireLegacy = packs.Contains("CrosireLegacy");
         ShaderClshortfuse = packs.Contains("ClshortfuseShaders");
         ShaderMaxG2D = packs.Contains("MaxG2DSimpleHDR");
-        ReShadeUpdateText = TF("Vm.Profile", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
+        ReShadeUpdateText = pin is not null // #186: the version a fresh install will use
+            ? TF("Vm.Profile", ReShadeChannelDisplay(nameof(ReShadeChannel.Legacy)), $" {pin}")
+            : TF("Vm.Profile", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
     }
 
     private void ResetReShadeProfile()
     {
         SelectedReShadeChannel = ReShadeChannelDisplay(_settings.ReShadeChannel);
-        ReShadeLegacyVersion = "6.4.1";
+        ReShadeLegacy.Offer(UpstreamRhiManifestService.DefaultLegacyReShadeVersion);
+        ReShadeLegacyVersion = UpstreamRhiManifestService.DefaultLegacyReShadeVersion;
         ReShadeCustomDllPath = "";
         ReShadeD3DCompiler47Path = "";
         ReShadeManageIni = _settings.ReShadeManageIni;

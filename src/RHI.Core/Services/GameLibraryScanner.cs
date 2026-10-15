@@ -284,6 +284,10 @@ public sealed class GameLibraryScanner
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            first.ManifestLegacyReShadeVersion ??= candidate.ManifestLegacyReShadeVersion;
+            first.ManifestReShadeNote ??= candidate.ManifestReShadeNote;
+            first.ManifestReShadeNoteUrl ??= candidate.ManifestReShadeNoteUrl;
+            first.ManifestReShadeNoteUrlLabel ??= candidate.ManifestReShadeNoteUrlLabel;
         }
         return first;
     }
