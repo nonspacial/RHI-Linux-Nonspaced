@@ -232,6 +232,203 @@ public sealed class SteamShortcutTests : IDisposable
         Assert.Contains(warnings, w => w.Contains("shortcuts.vdf", StringComparison.Ordinal));
     }
 
+    // ---- w6 review: hostile and odd shortcuts files ---------------------------------------------------------------
+
+    private string ShortcutsFile(string user) => _tree.Path_("steam", "userdata", user, "config", "shortcuts.vdf");
+
+    private string KeptUser()
+    {
+        var exe = _tree.Exe("games", "Kept", "Kept.exe");
+        Shortcuts("2", new Shortcut("Kept", exe, AppId: 11));
+        return exe;
+    }
+
+    [Fact]
+    public async Task AFifoNamedShortcutsVdf_IsSkippedWithoutBlockingTheScan()
+    {
+        // w6 review 2 (reviewer's probe): opening a FIFO for reading blocks until a writer comes; the scan has no timeout.
+        KeptUser();
+        var fifo = ShortcutsFile("1");
+        Directory.CreateDirectory(Path.GetDirectoryName(fifo)!);
+        using (var mkfifo = System.Diagnostics.Process.Start("mkfifo", [fifo])) mkfifo.WaitForExit();
+        Assert.True(File.Exists(fifo));
+
+        var read = Task.Run(() => DetectorDiagnostics.CollectAsync(() => Task.FromResult(Detect())));
+        var finished = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(10))) == read;
+        if (!finished) { using var unblock = new FileStream(fifo, FileMode.Open, FileAccess.Write); }
+
+        Assert.True(finished, "the scan blocked on a FIFO named shortcuts.vdf");
+        var (games, warnings) = await read;
+        Assert.Equal("Kept", Assert.Single(games).Name);
+        Assert.Contains(warnings, w => w.Contains(fifo + " is not a regular file", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ALinkToDevZero_IsSkippedBounded_AndTheSteamDetectorStillListsTheOtherUsers()
+    {
+        // w6 review 2 (reviewer's probe): a device reports size 0 and never ends; reading it whole ran out of memory and the
+        // whole Steam detector failed. A link is judged by what it leads to.
+        KeptUser();
+        var link = ShortcutsFile("1");
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        File.CreateSymbolicLink(link, "/dev/zero");
+        var before = GC.GetTotalAllocatedBytes();
+
+        var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(Detect()));
+
+        Assert.True(GC.GetTotalAllocatedBytes() - before < 64L * 1024 * 1024);
+        Assert.Equal("Kept", Assert.Single(games).Name);
+        Assert.Contains(warnings, w => w.Contains(link + " is not a regular file", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnEmptyShortcutsFile_IsSkippedAsEmpty()
+    {
+        KeptUser();
+        _tree.Bytes([], "steam", "userdata", "1", "config", "shortcuts.vdf");
+
+        var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(Detect()));
+
+        Assert.Equal("Kept", Assert.Single(games).Name);
+        Assert.Contains(warnings, w => w.Contains(ShortcutsFile("1") + " is empty", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnyFailureReadingOneFile_IsAWarning_NeverTheWholeSteamDetector()
+    {
+        // w6 review 2: an unexpected exception (out of memory, a parser bug) from one user's file is caught there.
+        KeptUser();
+        Shortcuts("1", new Shortcut("Other", _tree.Exe("games", "Other", "Other.exe"), AppId: 12));
+        var bad = ShortcutsFile("1");
+        SteamShortcuts.ReadFaultForTesting.Value = file => file == bad ? new InsufficientMemoryException("simulated") : null;
+        try
+        {
+            var (games, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(Detect()));
+
+            Assert.Equal("Kept", Assert.Single(games).Name);
+            Assert.Contains(warnings, w => w.Contains(bad, StringComparison.Ordinal) && w.Contains("simulated", StringComparison.Ordinal));
+        }
+        finally { SteamShortcuts.ReadFaultForTesting.Value = null; }
+    }
+
+    // A valid file of exactly `size` bytes: one shortcut, padded with a text value in the root map.
+    private static byte[] VdfOfSize(int size, Shortcut shortcut)
+    {
+        var body = Vdf(shortcut);
+        var head = body[..^1]; // without the root map's end
+        var padding = size - head.Length - 1 /*type*/ - 4 /*"pad\0"*/ - 1 /*value's NUL*/ - 1 /*root end*/;
+        return [.. head, 0x01, (byte)'p', (byte)'a', (byte)'d', 0x00, .. Enumerable.Repeat((byte)'x', padding), 0x00, 0x08];
+    }
+
+    [Fact]
+    public async Task AFileOfEightMiB_IsRead_OneByteMore_IsSkippedBeforeOpening()
+    {
+        const int cap = 8 * 1024 * 1024; // literal: a lifted cap fails here
+        var exe = _tree.Exe("games", "Big", "Big.exe");
+        _tree.Bytes(VdfOfSize(cap, new Shortcut("Big", exe, AppId: 21)), "steam", "userdata", "1", "config", "shortcuts.vdf");
+        Assert.Equal("Big", Assert.Single(SteamShortcuts.ReadAll(SteamRoot)).Name);
+
+        _tree.Bytes(VdfOfSize(cap + 1, new Shortcut("Big", exe, AppId: 21)), "steam", "userdata", "1", "config", "shortcuts.vdf");
+        var (shortcuts, warnings) = await DetectorDiagnostics.CollectAsync(() => Task.FromResult(SteamShortcuts.ReadAll(SteamRoot)));
+
+        Assert.Empty(shortcuts);
+        Assert.Contains(warnings, w => w.Contains("is larger than 8388608 bytes", StringComparison.Ordinal));
+    }
+
+    private sealed class EndlessStream(long length) : Stream
+    {
+        private readonly long _length = length;
+        private long _left = length;
+        public long Served => _length - _left;
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = (int)Math.Min(count, _left);
+            Array.Clear(buffer, offset, n);
+            _left -= n;
+            return n;
+        }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public void TheRead_StopsOneBytePastTheLimit()
+    {
+        // A file that grows after the size check (or reports a wrong size) is still read only up to the limit + 1.
+        Assert.Equal(1000, SteamShortcuts.ReadAtMost(new EndlessStream(1000), 1000)!.Length);
+        var endless = new EndlessStream(long.MaxValue);
+        Assert.Null(SteamShortcuts.ReadAtMost(endless, 1000));
+        Assert.Equal(1001, endless.Served);
+    }
+
+    private static byte[] Nested(int maps)
+    {
+        var data = new List<byte>();
+        for (var i = 0; i < maps; i++) data.AddRange([0x00, (byte)'k', 0x00]);
+        data.AddRange(Enumerable.Repeat((byte)0x08, maps + 1));
+        return [.. data];
+    }
+
+    [Fact]
+    public void Nesting_SixteenMapsDeepIsRead_SeventeenIsRefused()
+    {
+        Assert.Empty(SteamShortcuts.Parse(Nested(16)));
+        Assert.Throws<InvalidDataException>(() => SteamShortcuts.Parse(Nested(17)));
+    }
+
+    [Fact]
+    public void DeepNesting_IsRefused_NotAStackOverflow()
+    {
+        // Reviewer's probe: without the depth guard this overflows the stack and kills the process.
+        var data = new List<byte>();
+        for (var i = 0; i < 200_000; i++) { data.Add(0x00); data.Add((byte)'k'); data.Add(0x00); }
+        Assert.Throws<InvalidDataException>(() => SteamShortcuts.Parse(data.ToArray()));
+    }
+
+    [Fact]
+    public void MapsEndingWith0x0B_AreRead()
+    {
+        // Some writers end a map with 0x0B instead of 0x08.
+        var data = Vdf(new Shortcut("Eleven", "/g/Eleven.exe", AppId: 11));
+        for (var i = 0; i < data.Length; i++) if (data[i] == 0x08 && (i == data.Length - 1 || data[i + 1] is 0x08 or 0x00)) data[i] = 0x0B;
+        Assert.Contains((byte)0x0B, data);
+
+        Assert.Equal("Eleven", Assert.Single(SteamShortcuts.Parse(data)).Name);
+    }
+
+    [Fact]
+    public void AtMostSixtyFourUsers_AreRead()
+    {
+        for (var i = 0; i < 65; i++)
+            Shortcuts($"u{i:D2}", new Shortcut($"Game {i:D2}", $"/g/{i}/Game.exe", AppId: (uint)(100 + i)));
+
+        var names = SteamShortcuts.ReadAll(SteamRoot).Select(s => s.Name).ToArray();
+
+        Assert.Equal(64, names.Length);
+        Assert.Equal("Game 00", names[0]);
+        Assert.DoesNotContain("Game 64", names); // the 65th folder in ordinal order
+    }
+
+    [Fact]
+    public void ARelativeProgramPath_IsNoCard()
+    {
+        // w6 review 5: a relative Exe would be resolved against RHI's own working folder.
+        var exe = _tree.Exe("games", "Rel", "Rel.exe");
+        var relative = Path.GetRelativePath(Environment.CurrentDirectory, exe);
+        Assert.False(Path.IsPathRooted(relative));
+        Assert.True(File.Exists(relative));
+        Shortcuts("1", new Shortcut("Rel", relative, AppId: 31));
+
+        Assert.Empty(Detect());
+    }
+
     private static void Registry(string prefix, params (string Key, (string Name, string Value)[] Values)[] keys)
     {
         var text = new StringBuilder("WINE REGISTRY Version 2\n;; All keys relative to \\\\Machine\n\n#arch=win64\n\n");

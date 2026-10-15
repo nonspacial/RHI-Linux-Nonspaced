@@ -1,4 +1,5 @@
 using System.Text;
+using RHI.Core.Deployment;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Deployment;
 
@@ -43,22 +44,68 @@ internal static class SteamShortcuts
         {
             var file = Path.Combine(user, "config", "shortcuts.vdf");
             if (!File.Exists(file)) continue;
+            // One bad file is a warning and never fails the Steam detector (w6 review 2): whatever reading or parsing it
+            // throws, the other users' shortcuts and every Steam app are still listed.
             try
             {
-                var length = new FileInfo(file).Length;
-                if (length > MaxFileBytes)
-                {
-                    DetectorDiagnostics.Warn($"Steam shortcuts file {file} is larger than {MaxFileBytes} bytes; not read");
-                    continue;
-                }
-                shortcuts.AddRange(Parse(File.ReadAllBytes(file)));
+                if (ReadFaultForTesting.Value?.Invoke(file) is { } fault) throw fault;
+                if (ReadBounded(file) is { } data) shortcuts.AddRange(Parse(data));
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+            catch (Exception ex)
             {
                 DetectorDiagnostics.Warn($"Steam shortcuts file {file} skipped", ex);
             }
         }
         return shortcuts;
+    }
+
+    /// <summary>Test seam: throws the exception it returns while one user's file is read (null = read it).</summary>
+    internal static readonly AsyncLocal<Func<string, Exception?>?> ReadFaultForTesting = new();
+
+    /// <summary>
+    /// The file's bytes, or null (with a scan warning) when it is not a regular file (a FIFO would block the scan, a
+    /// device never ends; a link is judged by what it leads to), is empty, or is larger than <see cref="MaxFileBytes"/>.
+    /// Read through a stream that stops one byte past the limit, so a file that grows after the size check is still
+    /// bounded.
+    /// </summary>
+    internal static byte[]? ReadBounded(string file)
+    {
+        if (FileKind.IsRegularFile(file) == false)
+        {
+            DetectorDiagnostics.Warn($"Steam shortcuts file {file} is not a regular file; not read");
+            return null;
+        }
+        FileSystemInfo info = new FileInfo(file);
+        if (info.LinkTarget is not null) info = info.ResolveLinkTarget(returnFinalTarget: true) ?? info;
+        if (info is not FileInfo { Exists: true } target) return null;
+        if (target.Length == 0)
+        {
+            DetectorDiagnostics.Warn($"Steam shortcuts file {file} is empty; not read");
+            return null;
+        }
+        if (target.Length > MaxFileBytes)
+        {
+            DetectorDiagnostics.Warn($"Steam shortcuts file {file} is larger than {MaxFileBytes} bytes; not read");
+            return null;
+        }
+        using var stream = new FileStream(target.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (ReadAtMost(stream, MaxFileBytes) is { } data) return data;
+        DetectorDiagnostics.Warn($"Steam shortcuts file {file} grew past {MaxFileBytes} bytes while it was read; not read");
+        return null;
+    }
+
+    /// <summary>At most <paramref name="limit"/> bytes of <paramref name="stream"/>; null when it holds more (reads limit + 1 at most).</summary>
+    internal static byte[]? ReadAtMost(Stream stream, long limit)
+    {
+        using var data = new MemoryStream();
+        var buffer = new byte[81920];
+        while (data.Length <= limit)
+        {
+            var read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, limit + 1 - data.Length));
+            if (read == 0) return data.ToArray();
+            data.Write(buffer, 0, read);
+        }
+        return null;
     }
 
     /// <summary>The shortcuts in one file's bytes; throws <see cref="InvalidDataException"/> on a malformed file.</summary>

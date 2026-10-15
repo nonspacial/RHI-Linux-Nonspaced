@@ -34,7 +34,8 @@ public sealed partial class SteamGameDetector
             ct.ThrowIfCancellationRequested();
             try
             {
-                if (!shortcut.Exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(shortcut.Exe)) continue;
+                // Only an absolute program path: a relative one would be looked up in RHI's own working folder (w6 review 5).
+                if (!Path.IsPathRooted(shortcut.Exe) || !shortcut.Exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || !File.Exists(shortcut.Exe)) continue;
                 if (DetectionHelpers.IsSupportExecutableName(Path.GetFileNameWithoutExtension(shortcut.Exe))) continue;
                 var command = ShortcutLaunchCommandFor(shortcut.GameId, steamRoot, hostSteam);
                 var tool = classifier.ShortcutCompatTool(shortcut.AppId);
