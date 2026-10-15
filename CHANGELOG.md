@@ -23,9 +23,9 @@ Not on `main` yet (upstream features still to port):
 > [!NOTE]
 > A build older than this one does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No
 > Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering
-> choice, and the saved OptiScaler DLL name, for every game where that component is not installed. It cannot update or
-> remove RTX Encore: remove RTX Encore and switch No Addons games back to Stable or Nightly first if you want them
-> handled on the older build.
+> choice, and the saved OptiScaler DLL name, for every game where that component is not installed. Remove RTX Encore
+> from every game first: an older build cannot update or remove it and drops its install record the first time it saves
+> any record, after which even this build cannot remove it. Switch No Addons games back to Stable or Nightly first too.
 
 Platforms & launchers
 
