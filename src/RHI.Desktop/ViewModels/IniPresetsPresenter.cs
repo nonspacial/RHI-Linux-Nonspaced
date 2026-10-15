@@ -82,19 +82,45 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         => RunBatchAsync("reshade-settings-all", UiLocalizationService.Text("Ini.ReShadeSettingsWhat"),
             (service, games, token) => service.ApplyReShadeSettingsToAllAsync(games, settings, token));
 
+    /// <summary>
+    /// ReLimiter "Apply to all games" (#188): the four globals into every relimiter.ini, then into the user's template so
+    /// later installs inherit them (a template that cannot be written is said on the same line).
+    /// </summary>
+    public async Task<string> ApplyReLimiterSettingsToAllAsync(LinuxAppSettings settings)
+    {
+        var globals = ReLimiterGlobals.From(settings);
+        var (line, ran) = await RunBatchCoreAsync("relimiter-settings-all", UiLocalizationService.Text("Ini.ReLimiterSettingsWhat"),
+            (service, games, token) => service.ApplyReLimiterSettingsToAllAsync(games, globals, token));
+        if (!ran) return line;
+        try
+        {
+            Service.ApplyReLimiterSettingsToTemplate(globals);
+            return line;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return Report(line + " " + UiLocalizationService.Format("Ini.TemplateNotUpdated", UiLocalizationService.Present(ex.Message)));
+        }
+    }
+
     private async Task<string> RunBatchAsync(string kind, string what,
+        Func<UserIniService, IReadOnlyList<DetectedGame>, CancellationToken, Task<IniBatchResult>> run)
+        => (await RunBatchCoreAsync(kind, what, run)).Line;
+
+    // Ran = the batch went through (not refused by the busy gate, not cancelled).
+    private async Task<(string Line, bool Ran)> RunBatchCoreAsync(string kind, string what,
         Func<UserIniService, IReadOnlyList<DetectedGame>, CancellationToken, Task<IniBatchResult>> run)
     {
         using var op = vm.Operations.TryBegin(kind);
-        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        if (op is null) return (Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning")), false);
         try
         {
             var result = await run(Service, vm.AllLibraryGames.ToList(), op.Token);
-            return Report(BatchSummary(what, result));
+            return (Report(BatchSummary(what, result)), true);
         }
         catch (OperationCanceledException)
         {
-            return Report(MainWindowViewModel.OperationCancelledText());
+            return (Report(MainWindowViewModel.OperationCancelledText()), false);
         }
     }
 

@@ -904,6 +904,20 @@ internal static class UiStrings
         ("Ini.BatchNone", "{0}: nenhum jogo para atualizar.", "{0}: no games to update."),
         ("Ini.BatchDone", "{0}: {1} jogos atualizados.", "{0}: {1} games updated."),
         ("Ini.BatchPartial", "{0}: {1} jogos atualizados, {2} ignorados, {3} com falha (detalhes no rhi.log).", "{0}: {1} games updated, {2} skipped, {3} failed (details in rhi.log)."),
+        // #188 ReLimiter global settings.
+        ("Ini.Off", "Desligado", "Off"),
+        ("Ini.On", "Ligado", "On"),
+        ("Ini.ReLimiterSettingsWhat", "Configurações do ReLimiter", "ReLimiter settings"),
+        ("Ini.ReLimiterOsdKey", "Tecla do painel na tela", "On-screen display key"),
+        ("Ini.ReLimiterSharedPresets", "Predefinições compartilhadas", "Shared presets"),
+        ("Ini.ReLimiterSharedPresetsTip", "Ligado: todos os jogos usam o mesmo arquivo de predefinições do painel. Desligado: cada jogo tem as suas.", "On: every game uses the same display presets file. Off: each game has its own."),
+        ("Ini.ReLimiterDlssHooks", "Informações do DLSS no painel", "DLSS info on the display"),
+        ("Ini.ReLimiterDlssHooksTip", "Mostra o modo de qualidade do DLSS, a resolução de renderização e os recursos ativos no painel do ReLimiter. Desligue se um jogo travar.", "Shows the DLSS quality mode, render resolution and active features on ReLimiter's display. Turn it off if a game crashes."),
+        ("Ini.ReLimiterTargetFps", "Limite de FPS", "FPS cap"),
+        ("Ini.ReLimiterTargetFpsTip", "Limite global gravado em todos os relimiter.ini. Os valores VRR ficam um pouco abaixo da taxa de atualização do monitor; Personalizado aceita de 20 a 1000.", "Global cap written to every relimiter.ini. The VRR values sit just below the monitor's refresh rate; Custom takes 20 to 1000."),
+        ("Ini.ReLimiterApplyTip", "Grava a tecla, as predefinições, as informações do DLSS e o limite de FPS no relimiter.ini de cada jogo com ReLimiter; só essas chaves mudam.", "Writes the key, presets, DLSS info and FPS cap into the relimiter.ini of every game with ReLimiter; only those keys change."),
+        ("Ini.ReLimiterApplyNote", "Salva estas configurações e as grava em todos os jogos com ReLimiter e no seu modelo relimiter.ini, para que novas instalações já as recebam.", "Saves these settings and writes them into every game with ReLimiter and into your relimiter.ini template, so new installs get them too."),
+        ("Ini.TemplateNotUpdated", "O modelo relimiter.ini não foi atualizado: {0}", "The relimiter.ini template was not updated: {0}"),
         // w5/shell-launch rows
         // w5/reshade-core rows
     ];

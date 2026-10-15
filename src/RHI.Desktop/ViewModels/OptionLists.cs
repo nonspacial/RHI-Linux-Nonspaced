@@ -230,6 +230,17 @@ public static class OptionLists
     public static readonly OptionList<bool> ReShadeEffectListStyle = new(true, null,
         new(true, "Ini.EffectListTabs"),
         new(false, "Ini.EffectListTree"));
+    /// <summary>#188: Off / On (ReLimiter's shared presets and DLSS info on the display).</summary>
+    public static readonly OptionList<bool> OffOn = new(false, null,
+        new(false, "Ini.Off"),
+        new(true, "Ini.On"));
+    /// <summary>#188: the Custom entry of <see cref="ReLimiterTargetFps"/> (its value comes from the box beside it).</summary>
+    public const int CustomTargetFps = -1;
+    /// <summary>#188: ReLimiter's global FPS cap: Off, upstream's VRR presets, Custom.</summary>
+    public static readonly OptionList<int> ReLimiterTargetFps = new(0, null,
+        [new OptionEntry<int>(0, "Ini.Off"),
+         .. ReLimiterIniEditor.TargetFpsPresets.Select(p => new OptionEntry<int>(p.Fps, null, $"{p.Fps} FPS · {p.Hz} Hz VRR")),
+         new OptionEntry<int>(CustomTargetFps, "Win.Custom")]);
     // w5/shell-launch rows
     // w5/reshade-core rows
 

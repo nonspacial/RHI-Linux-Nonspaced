@@ -79,6 +79,10 @@ public sealed class SettingsViewModel : PanelViewModel
             // w5/catalogue-info rows
             // w5/ini-presets rows
             ReShadeVariableListUseTabs = Host.Settings.ReShadeVariableListUseTabs, // #181
+            ReLimiterOsdHotkey = Host.Settings.ReLimiterOsdHotkey, // #188
+            ReLimiterSharedPresets = Host.Settings.ReLimiterSharedPresets, // #188
+            ReLimiterDlssHooks = Host.Settings.ReLimiterDlssHooks, // #188
+            ReLimiterTargetFps = Host.Settings.ReLimiterTargetFps, // #188
             // w5/shell-launch rows
             // w5/reshade-core rows
         };

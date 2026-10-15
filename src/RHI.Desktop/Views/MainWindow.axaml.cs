@@ -550,6 +550,8 @@ public sealed partial class MainWindow : Window
             current.ScreenshotHotkey = screenshotHotkey.Value;
         }, folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), line => status.Text = line);
         reshadeTab.Children.Add(iniRows.Control); // #181
+        var relimiterRows = new ReLimiterSettingsRows(settings, vm.IniPresets, line => status.Text = line); // #188
+        managerTab.Children.Add(relimiterRows.Control); // #188
         // w5/shell-launch rows
         // w5/reshade-core rows
 
@@ -615,6 +617,7 @@ public sealed partial class MainWindow : Window
             // w5/catalogue-info rows
             // w5/ini-presets rows
             iniRows.Reset(defaults); // #181
+            relimiterRows.Reset(defaults); // #188
             // w5/shell-launch rows
             // w5/reshade-core rows
             status.Text = vm.Settings.ResetLinuxSettings();
@@ -693,6 +696,10 @@ public sealed partial class MainWindow : Window
             // w5/catalogue-info rows
             // w5/ini-presets rows
             ReShadeVariableListUseTabs = iniRows.UseTabs, // #181
+            ReLimiterOsdHotkey = relimiterRows.OsdHotkey, // #188
+            ReLimiterSharedPresets = relimiterRows.SharedPresets, // #188
+            ReLimiterDlssHooks = relimiterRows.DlssHooks, // #188
+            ReLimiterTargetFps = relimiterRows.TargetFps, // #188
             // w5/shell-launch rows
             // w5/reshade-core rows
         };

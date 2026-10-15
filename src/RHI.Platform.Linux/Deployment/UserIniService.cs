@@ -94,6 +94,58 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
             },
             "reshade-settings", cancellationToken);
 
+    /// <summary>
+    /// ReLimiter "Apply to all games" (#188; upstream <c>ApplyUlOsdHotkey_Click</c>): the four globals go into every game's
+    /// relimiter.ini (beside the add-on, and RE Framework's <c>_storage_/relimiter.ini</c>); only those keys change.
+    /// </summary>
+    public Task<IniBatchResult> ApplyReLimiterSettingsToAllAsync(IReadOnlyList<DetectedGame> games, ReLimiterGlobals globals, CancellationToken cancellationToken = default)
+        => RunBatchAsync(
+            games.Where(game => ReLimiterInis(game).Count > 0).ToList(),
+            (game, token) =>
+            {
+                if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+                var inis = ReLimiterInis(game);
+                var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
+                // Every file is checked before the first is written: a game is updated whole or not at all.
+                foreach (var ini in inis)
+                {
+                    XboxWriteGate.ThrowIfRefused(ini);
+                    IniLines.CheckLinks(ini, roots);
+                }
+                _ = OperationCancellation.BeginWrites(token);
+                foreach (var ini in inis)
+                {
+                    var lines = IniLines.Read(ini);
+                    if (ReLimiterIniEditor.Apply(lines, globals)) IniLines.Write(ini, lines, roots);
+                }
+                return ComponentOperationResult.Ok(string.Join(", ", inis));
+            },
+            "relimiter-settings", cancellationToken);
+
+    /// <summary>
+    /// The globals also go into the user's relimiter.ini template (upstream updates its template), so every later
+    /// ReLimiter install starts with them. Returns the template's path; throws when it cannot be written.
+    /// </summary>
+    public string ApplyReLimiterSettingsToTemplate(ReLimiterGlobals globals)
+    {
+        var path = templates.EnsureSeeded(UserIniTemplate.ReLimiter);
+        var lines = IniLines.Read(path);
+        if (ReLimiterIniEditor.Apply(lines, globals)) IniLines.Write(path, lines, [templates.Directory]);
+        return path;
+    }
+
+    /// <summary>The game's relimiter.ini files: beside the ReShade add-ons, and in RE Framework's <c>_storage_</c> folder.</summary>
+    public static IReadOnlyList<string> ReLimiterInis(DetectedGame game)
+    {
+        if (game.BinaryDirectory is not { } bin || !Directory.Exists(bin)) return [];
+        var found = new List<string>();
+        var name = UserIniTemplates.FileName(UserIniTemplate.ReLimiter);
+        if (ExistingCaseInsensitive(RenoDxDeploymentService.ResolveAddonDeployPath(bin), name) is { } beside) found.Add(beside);
+        if (REFrameworkDeploymentService.FindStorageFolder(game) is { } storage && ExistingCaseInsensitive(storage, name) is { } stored)
+            found.Add(stored);
+        return found.Distinct(StringComparer.Ordinal).ToList();
+    }
+
     /// <summary>Whether the game's binary folder holds a ReShade.ini (any case).</summary>
     public static bool HasReShadeIni(DetectedGame game)
         => game.BinaryDirectory is { } dir && Directory.Exists(dir) && ExistingCaseInsensitive(dir, "ReShade.ini") is not null;

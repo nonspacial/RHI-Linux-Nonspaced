@@ -44,6 +44,11 @@ public sealed class LinuxAppSettings
     // w5/ini-presets rows
     // #181: ReShade's effect list as Tabs (true, upstream default) or a Tree ([OVERLAY] VariableListUseTabs).
     public bool ReShadeVariableListUseTabs { get; set; } = true;
+    // #188: ReLimiter settings "Apply to all games" writes into every relimiter.ini and the template (upstream defaults).
+    public string ReLimiterOsdHotkey { get; set; } = RHI.Platform.Linux.Deployment.ReLimiterIniEditor.DefaultOsdHotkey;
+    public bool ReLimiterSharedPresets { get; set; }
+    public bool ReLimiterDlssHooks { get; set; }
+    public int ReLimiterTargetFps { get; set; }
     // w5/shell-launch rows
     // w5/reshade-core rows
 
@@ -84,6 +89,8 @@ public sealed class LinuxAppSettings
         // w5/update-policy rows
         // w5/catalogue-info rows
         // w5/ini-presets rows
+        ReLimiterOsdHotkey = RHI.Platform.Linux.Deployment.ReLimiterIniEditor.NormalizeHotkey(ReLimiterOsdHotkey); // #188
+        ReLimiterTargetFps = RHI.Platform.Linux.Deployment.ReLimiterIniEditor.NormalizeTargetFps(ReLimiterTargetFps); // #188
         // w5/shell-launch rows
         // w5/reshade-core rows
         return this;
