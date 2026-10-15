@@ -56,7 +56,8 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
     // Journaled, as the app builds it (Wine never running): installs and removals run through DeploymentScope operations.
     private RtxEncoreDeploymentService Service(EncoreHandler handler, string? requiredNrSha = null) => Service(handler, out _, requiredNrSha);
 
-    private RtxEncoreDeploymentService Service(EncoreHandler handler, out DeploymentJournal journal, string? requiredNrSha = null)
+    private RtxEncoreDeploymentService Service(EncoreHandler handler, out DeploymentJournal journal, string? requiredNrSha = null,
+        Action<string>? beforeStaging = null)
     {
         var (created, overrides) = SimulatedDeath.NewJournal(JournalDir, _records);
         journal = created;
@@ -64,7 +65,8 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
             new DlssManagerService(new HttpClient(handler), new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss")),
             Path.Combine(_root, "cache"), journal)
         {
-            RequiredNeuralRenderingSha256 = requiredNrSha ?? FileHash.Sha256HexOf(NrAccepted)
+            RequiredNeuralRenderingSha256 = requiredNrSha ?? FileHash.Sha256HexOf(NrAccepted),
+            BeforeStagingForTesting = beforeStaging
         };
     }
 
@@ -397,6 +399,66 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         Assert.False(File.Exists(Path.Combine(_bin, "version.dll")));
     }
 
+    // Review minor 2: GitHub's digest is checked on its own (a release without SHA256SUMS).
+    [Fact]
+    public async Task ZipNotMatchingGitHubsDigest_WithoutSha256Sums_IsRefused_AndNothingIsPlaced()
+    {
+        var handler = new EncoreHandler { NoSums = true, WrongDigest = true };
+
+        var result = await Service(handler).InstallAsync(_game);
+
+        Assert.StartsWith(RtxEncoreDeploymentService.DownloadFailedPrefix, result.Message);
+        Assert.Contains(RHI.Core.Deployment.AtomicFile.ShaMismatchPrefix, result.Message);
+        Assert.False(File.Exists(Path.Combine(_bin, "version.dll")));
+        Assert.Null(_records.Find(_game, ManagedComponentKind.RtxEncore));
+    }
+
+    [Fact]
+    public async Task GitHubsDigestAlone_IsEnough()
+    {
+        var result = await Service(new EncoreHandler { NoSums = true }).InstallAsync(_game);
+
+        Assert.True(result.Success, result.Message);
+    }
+
+    // Review minor 2: unticking the Neural Rendering file never deletes a runtime the user changed since.
+    [Fact]
+    public async Task UntickingNeuralRendering_RefusesWhenTheFileChanged_AndLeavesItAsItIs()
+    {
+        _names.SetRtxEncoreNeuralRendering(_game, true);
+        var service = Service(new EncoreHandler());
+        Assert.True((await service.InstallAsync(_game)).Success);
+        var nr = Path.Combine(_bin, "nvngx_dlssnr.dll");
+        File.WriteAllText(nr, "the user's own runtime");
+
+        var off = await service.SetNeuralRenderingAsync(_game, false);
+
+        Assert.False(off.Success);
+        Assert.Equal(RtxEncoreDeploymentService.ModifiedPrefix + nr, off.Message);
+        Assert.Equal("the user's own runtime", File.ReadAllText(nr));
+        Assert.True(NeuralRenderingRuntimeOwnership.ListsRuntime(_records.Find(_game, ManagedComponentKind.RtxEncore)!));
+        Assert.True(_names.GetRtxEncoreNeuralRendering(_game));
+    }
+
+    // Review minor 2: the update checks the bytes it is about to place, not only the cache entry it resolved.
+    [Fact]
+    public async Task Update_RefusesAPayloadThatIsNotRtxEncore_AtStaging_AndKeepsTheInstalledOne()
+    {
+        var handler = new EncoreHandler();
+        Assert.True((await Service(handler).InstallAsync(_game)).Success);
+        handler.Latest = Rc4;
+        var swapped = 0;
+        var service = Service(handler, out _, beforeStaging: cached => { swapped++; File.WriteAllBytes(cached, Pe(0x44, 400 * 1024)); });
+
+        var result = await service.UpdateAsync(_game);
+
+        Assert.Equal(1, swapped);
+        Assert.StartsWith(RtxEncoreDeploymentService.FailedRolledBackPrefix, result.Message);
+        Assert.Contains(RtxEncoreDeploymentService.NoVersionResourceMessage, result.Message);
+        Assert.Equal(handler.Payload(Rc3), File.ReadAllBytes(Path.Combine(_bin, "version.dll")));
+        Assert.Equal(Rc3, _records.Find(_game, ManagedComponentKind.RtxEncore)!.Version);
+    }
+
     [Fact]
     public async Task PayloadWithoutRtxEncoresVersionResource_IsRefused()
     {
@@ -580,6 +642,10 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
         public string Latest { get; set; } = Rc3;
         public bool Offline { get; set; }
         public bool CorruptSums { get; set; }
+        /// <summary>The release lists no SHA256SUMS: GitHub's digest is the only check.</summary>
+        public bool NoSums { get; set; }
+        /// <summary>GitHub's digest names other bytes than the zip served.</summary>
+        public bool WrongDigest { get; set; }
         public bool OfferAccepted { get; set; } = true;
         public byte[]? PayloadOverride { get; set; }
         public int Requests { get; private set; }
@@ -598,14 +664,15 @@ public sealed partial class RtxEncoreDeploymentServiceTests : IDisposable
             if (url == RtxEncoreDeploymentService.ReleasesApiUrl)
             {
                 var zip = ZipFor(Latest);
+                var digest = WrongDigest ? new string('a', 64) : Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant();
+                var sums = NoSums ? "" : $$""",{"name":"SHA256SUMS","browser_download_url":"{{SumsUrl(Latest)}}"}""";
                 body = Encoding.UTF8.GetBytes($$"""
                 [{"tag_name":"v{{Latest}}","draft":false,"prerelease":true,"assets":[
-                  {"name":"RTX-Encore-v{{Latest}}.zip","browser_download_url":"{{ZipUrl(Latest)}}","digest":"sha256:{{Convert.ToHexString(SHA256.HashData(zip)).ToLowerInvariant()}}"},
-                  {"name":"SHA256SUMS","browser_download_url":"{{SumsUrl(Latest)}}"}]}]
+                  {"name":"RTX-Encore-v{{Latest}}.zip","browser_download_url":"{{ZipUrl(Latest)}}","digest":"sha256:{{digest}}"}{{sums}}]}]
                 """);
             }
             else if (url == ZipUrl(Latest)) body = ZipFor(Latest);
-            else if (url == SumsUrl(Latest))
+            else if (url == SumsUrl(Latest) && !NoSums)
                 body = Encoding.ASCII.GetBytes((CorruptSums ? new string('0', 64) : Convert.ToHexString(SHA256.HashData(ZipFor(Latest))).ToLowerInvariant())
                                                + "  RTX-Encore-v" + Latest + ".zip\n");
             else if (url == DlssManagerService.ManifestUrl)

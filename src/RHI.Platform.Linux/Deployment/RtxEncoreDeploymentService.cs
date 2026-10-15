@@ -122,6 +122,9 @@ public sealed class RtxEncoreDeploymentService
 
     /// <summary>The SHA-256 the Neural Rendering file must have (tests substitute their own runtime).</summary>
     internal string RequiredNeuralRenderingSha256 { get; init; } = NeuralRenderingSha256;
+
+    /// <summary>Test seam: runs on the cached payload's path right before it is staged into the game folder.</summary>
+    internal Action<string>? BeforeStagingForTesting { get; init; }
     public LinuxDeploymentRecord? GetRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RtxEncore);
 
     /// <summary>The installed name, else the saved choice, else <see cref="DefaultName"/>.</summary>
@@ -240,6 +243,7 @@ public sealed class RtxEncoreDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
+            BeforeStagingForTesting?.Invoke(payload);
             var stagedCopy = await AtomicFile.StageCopyAsync(payload, target, null, null, cancellationToken).ConfigureAwait(false);
             staged = stagedCopy.Path;
             ValidatePayload(staged);
@@ -476,6 +480,7 @@ public sealed class RtxEncoreDeploymentService
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         try
         {
+            BeforeStagingForTesting?.Invoke(payload);
             var stagedCopy = await AtomicFile.StageCopyAsync(payload, file.Path, null, null, cancellationToken).ConfigureAwait(false);
             staged = stagedCopy.Path;
             ValidatePayload(staged);
