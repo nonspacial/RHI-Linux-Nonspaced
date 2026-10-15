@@ -673,7 +673,9 @@
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
         <TextBlock Text="{Binding StatusText}" Foreground="#6B7A8E" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
         <!-- Hidden below 700 px of window width (MainWindow.Responsive.cs). -->
-        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"/>
+        <!-- #192: clicking the version opens What's new (the fork's CHANGELOG.md), as upstream's status-bar version does. -->
+        <TextBlock x:Name="ProductVersionText" Grid.Column="1" Text="{Binding ProductVersionText}" Foreground="#404858" FontSize="10"
+                   Cursor="Hand" Tapped="ProductVersion_Tapped"/>
       </Grid>
     </Border>
   </Grid>

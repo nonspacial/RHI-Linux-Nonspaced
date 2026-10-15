@@ -66,6 +66,7 @@ public sealed partial class MainWindow
                 confirmVm.ConfirmControlUeAsync = ShowControlUeConfirmationAsync; // w3/dllnames hook (#136)
                 confirmVm.ConfirmInstallWarningAsync = (title, sections, accept) => ShowConfirmationAsync(title, "", accept, height: double.NaN, sections: sections);
                 confirmVm.ShowNotesAsync = ShowGameNotesAsync;
+                confirmVm.Support.ShowReportDialogAsync = ShowGameReportDialogAsync; // #192 Copy game report
             }
             ApplyViewMode();
             SyncAddonWatcherFromSettings();
@@ -707,12 +708,8 @@ public sealed partial class MainWindow
         return await ShowFittedDialogAsync<bool>(dialog);
     }
 
-    private void QuickStart_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
-    {
-        await ShowSimpleMessageAsync(
-            T("Win.RHILinuxQuickStart"),
-            T("Win.N1UseRefreshDetectSteamHeroic"));
-    });
+    // #192: Quick start opens Help (upstream's FAQ / Quick Start page): getting started, questions, credits, What's new.
+    private void QuickStart_Click(object? sender, RoutedEventArgs e) => RunUiSafe(ShowHelpAsync);
 
     private void Links_Click(object? sender, RoutedEventArgs e) => RunUiSafe(async () =>
     {

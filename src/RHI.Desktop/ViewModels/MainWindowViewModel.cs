@@ -140,6 +140,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w5/ini-presets rows
     // w5/shell-launch rows
     public CustomFiltersPresenter CustomFilters => CustomFiltersPresenter.For(this, ApplyFilter); // #193 saved custom filters
+    public SupportPresenter Support => SupportPresenter.For(this); // #192 logs, game report, game data
     // w5/reshade-core rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
@@ -1719,6 +1720,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // w5/catalogue-info rows
         // w5/ini-presets rows
         // w5/shell-launch rows
+        // #192: a support report for this game (dialog with an optional note; saved and copied).
+        items.Add(new("game-report", T("Shell.CopyReport"), new AsyncRelayCommand(() => Support.ReportCommand.ExecuteAsync(game)),
+            SeparatorBefore: true, Tip: T("Shell.CopyReportTip")));
         // w5/reshade-core rows
         return items;
     }

@@ -18,6 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <AvaloniaResource Include="Assets/**" />
+    <!-- #192: What's new shows the fork's own changelog. -->
+    <EmbeddedResource Include="../../CHANGELOG.md" LogicalName="RHI.Desktop.CHANGELOG.md" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../RHI.Core/RHI.Core.csproj" />

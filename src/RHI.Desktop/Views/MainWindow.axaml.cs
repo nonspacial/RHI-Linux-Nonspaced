@@ -743,6 +743,8 @@ public sealed partial class MainWindow : Window
                 // w5/catalogue-info rows
                 // w5/ini-presets rows
                 // w5/shell-launch rows
+                SupportSettingsTab.Create(vm.Support, status, // #192 Copy logs, Open logs folder, Export game data
+                    folder => TryOpenFolder(folder, out var error) ? null : ErrorLineText.FolderNotOpened(error), CopyTextToClipboardAsync),
                 // w5/reshade-core rows
             }
         };
