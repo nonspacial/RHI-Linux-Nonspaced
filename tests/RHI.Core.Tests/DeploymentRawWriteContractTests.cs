@@ -27,12 +27,8 @@ public sealed class DeploymentRawWriteContractTests
     private static readonly Regex HiddenFile = new(@"using\s+(?:static\s+(?:global::)?System\.IO\.File|\w+\s*=\s*(?:global::)?System\.IO\.File(?:Info)?)\s*;", RegexOptions.Compiled);
 
     // Not yet converted (owner in brackets). Remove a file once its raw calls are gone.
-    private static readonly HashSet<string> NotYetConverted = new(StringComparer.Ordinal)
-    {
-        "ComponentUpdateLog.cs",                       // update-history store, DEP-01 handling
-        "RenoDxUnityDatabaseService.cs",               // catalogue cache
-        "ReShadeDeploymentService.cs",                 // w3/dllnames
-    };
+    // w6/crash (#169): empty — ComponentUpdateLog, RenoDxUnityDatabaseService and ReShadeDeploymentService converted.
+    private static readonly HashSet<string> NotYetConverted = new(StringComparer.Ordinal);
 
     private static IEnumerable<(string File, int Line, string Text)> RawCalls()
         => RawCallsUnder(Path.Combine(LocalizationKeyUsageTests.RepoRoot(), "src", "RHI.Platform.Linux", "Deployment"));

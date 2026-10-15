@@ -156,7 +156,9 @@ public sealed class LinuxUpdateAllService
         // Only the add-on file is replaced in place; DLSS DLLs and configs are left alone.
         ManagedComponentKind.Dlss5Feeder,
         ManagedComponentKind.Dlss5Dx11Bridge,
-        ManagedComponentKind.ShortFuse
+        ManagedComponentKind.ShortFuse,
+        // #194 (upstream AddonPackService.CheckAndUpdateAllAsync): the Addon Manager's add-ons, after ReShade.
+        ManagedComponentKind.ReShadeAddonManager
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);
@@ -317,6 +319,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.Dlss5Dx11Bridge => 11,
         ManagedComponentKind.ShortFuse => 12,
         ManagedComponentKind.RtxEncore => 13,
+        ManagedComponentKind.ReShadeAddonManager => 14, // #194
         _ => 99
     };
 }

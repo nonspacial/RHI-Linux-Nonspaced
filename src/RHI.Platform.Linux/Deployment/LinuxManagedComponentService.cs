@@ -71,7 +71,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         _relocation = new DeploymentRelocation(records);
         _reshade = reshade;
         _addonManager = addonManager;
-        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.OwnedAddonFiles; // #170: No Addons turns these off too
+        if (reshade is not null && addonManager is not null) reshade.AddonManagerFiles ??= addonManager.ReconcileForReShade; // #170/#168: No Addons turns these off too (through their record)
         _renodx = renodx;
         _renodxUpgrade = renodxUpgrade;
         _optiscaler = optiscaler;
@@ -1544,6 +1544,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.Rtx40MfgStandalone => "Universal MFG",
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         ManagedComponentKind.RtxEncore => RtxEncoreDeploymentService.DisplayName, // w4/encore (#158)
+        ManagedComponentKind.ReShadeAddonManager => ReShadeAddonManagerService.DisplayName, // #194
         _ => kind.ToString()
     };
 
@@ -1569,6 +1570,8 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     }
 
     public IReadOnlyList<ReShadeShaderPackInfo> AvailableReShadeShaderPacks => _reshade.AvailableShaderPacks;
+    /// <summary>#194 (upstream CacheAllShaders): stages every shader pack not in the cache yet; cache only.</summary>
+    public Task<int> PrefetchShaderPacksAsync(CancellationToken cancellationToken = default) => _reshade.PrefetchShaderPacksAsync(cancellationToken);
     public string CustomShaderRoot => _reshade.CustomShaderRoot;
     public string CustomAddonRoot => _addonManager.CustomRoot;
 
@@ -1794,13 +1797,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (guard is not null) return guard;
         if (NrCostScalerService.OwnerChangeRefusal(_records, game, ManagedComponentKind.Dlss5Feeder) is { } layered) return ComponentOperationResult.Fail(layered); // w3/parity (#96)
 
-        var preflight = Dlss5FeederFullDeploymentService.ValidateTarget(game, consumer, requireReShade: false);
+        var preflight = FeederLayoutPlanner.ValidateTarget(game, consumer, requireReShade: false);
         if (preflight is not null) return preflight;
         if (consumer == Dlss5FeederConsumer.DeepFriedChicken &&
             (string.IsNullOrWhiteSpace(deepFriedChickenPackagePath) || !File.Exists(deepFriedChickenPackagePath)))
             return ComponentOperationResult.Fail("DLSS5 Feeder Full com Deep Fried Chicken exige o pacote oficial .zip ou .7z antes que dependências sejam alteradas.");
         if (consumer == Dlss5FeederConsumer.DeepFriedChicken &&
-            !Dlss5FeederFullDeploymentService.IsSupportedDeepFriedChickenArchive(deepFriedChickenPackagePath!))
+            !DeepFriedChickenPackageVerifier.IsSupportedDeepFriedChickenArchive(deepFriedChickenPackagePath!))
             return ComponentOperationResult.Fail("O pacote consumidor do Deep Fried Chicken deve ser um arquivo oficial .zip ou .7z.");
 
         return await Track(game, ManagedComponentKind.Dlss5Feeder, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2213,6 +2216,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlss5Dx11Bridge => await _dlss5Bridge.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Dx11Bridge), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.ReShadeAddonManager => await _addonManager.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #194
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -2261,6 +2265,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.RtxEncore when _rtxEncore is not null => _rtxEncore.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse
                 => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
+            ManagedComponentKind.ReShadeAddonManager => _addonManager.UpdateAsync(game, cancellationToken), // #194
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }

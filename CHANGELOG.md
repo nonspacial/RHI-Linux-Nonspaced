@@ -15,6 +15,15 @@ Not on `main` yet (upstream features still to port):
 - Installing a dropped or downloaded RenoDX add-on straight into the matching game.
 - Renaming an installed ReShade or OptiScaler DLL in place.
 
+## Wave 6 — not on `main` yet
+
+> [!NOTE]
+> **Repair after move** now treats ReShade Addon Manager add-ons like every other component. If an add-on RHI placed
+> is missing from the game's new folder (deleted by hand, say), the repair changes nothing and says which file is
+> missing, and the moved game's installs, updates and removals stay blocked until the repair succeeds. Before, the
+> repair skipped missing add-ons. Put the file back at the new location (or move the game back and remove that add-on
+> there first), then run the repair again.
+
 ## Wave 5 — 2026-10-15: Vulkan ReShade, Follow newest DLSS, update inclusion, INI templates and presets, info dialogs
 
 > [!NOTE]

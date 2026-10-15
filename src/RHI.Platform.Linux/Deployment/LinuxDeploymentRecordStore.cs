@@ -224,6 +224,30 @@ public sealed class LinuxDeploymentRecordStore
         }
     }
 
+    /// <summary>
+    /// Replaces every record of <paramref name="component"/> (all games) with <paramref name="records"/> in one ledger
+    /// write, each stamped like <see cref="Upsert"/>: the Addon Manager's import of the copy an older build changed (#168).
+    /// </summary>
+    internal void ReplaceComponent(ManagedComponentKind component, IEnumerable<LinuxDeploymentRecord> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        lock (_gate)
+        {
+            var all = new List<LinuxDeploymentRecord>(ReadUnsafe());
+            EnsureWritable();
+            all.RemoveAll(r => r.Component == component);
+            var now = DateTime.UtcNow;
+            foreach (var record in records)
+            {
+                if (record.Component != component) throw new ArgumentException($"Record of {record.Component}, not {component}.", nameof(records));
+                var copy = Clone(record);
+                copy.SavedAtUtc = now;
+                all.Add(copy);
+            }
+            SaveUnsafe(all);
+        }
+    }
+
     public void Remove(DetectedGame game, ManagedComponentKind component)
     {
         lock (_gate)

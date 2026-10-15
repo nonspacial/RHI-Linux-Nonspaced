@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Platform.Linux.Paths;
@@ -273,13 +274,13 @@ public sealed class RenoDxUnityDatabaseService
         {
             var directory = Path.GetDirectoryName(_cachePath);
             if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
-            var temp = _cachePath + ".tmp-" + Guid.NewGuid().ToString("N");
-            await File.WriteAllBytesAsync(temp, raw, cancellationToken).ConfigureAwait(false);
-            File.Move(temp, _cachePath, true);
+            // Verified, durable writes (#31): unique temp, fsync, full verify, rename.
+            await AtomicFile.WriteAllBytesAsync(_cachePath, raw, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(etag)) File.Delete(_etagPath);
-            else await File.WriteAllTextAsync(_etagPath, etag, cancellationToken).ConfigureAwait(false);
+            else await AtomicFile.WriteAllTextAsync(_etagPath, etag, cancellationToken).ConfigureAwait(false);
         }
         catch (IOException) { /* Persistence is optional; the loaded data stays usable. */ }
         catch (UnauthorizedAccessException) { }
+        catch (InvalidDataException) { }
     }
 }

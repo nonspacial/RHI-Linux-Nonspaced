@@ -45,7 +45,7 @@ internal sealed record ReShadeAddonDefinition(
 /// It consumes crosire's Addons.ini plus upstream RHI manifest overrides and supports local custom addons.
 /// First-class RHI components remain protected from duplicate management.
 /// </summary>
-public sealed class ReShadeAddonManagerService : IGameStateStore
+public sealed partial class ReShadeAddonManagerService : IGameStateStore
 {
     public const string AddonsIniUrl = "https://raw.githubusercontent.com/crosire/reshade-shaders/list/Addons.ini";
     private static readonly HashSet<string> ExcludedSections = new(StringComparer.OrdinalIgnoreCase) { "00", "21", "26" };
@@ -70,32 +70,44 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
     private readonly JsonFileStore<StateDocument> _stateFile;
     private readonly string _customRoot;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly LinuxDeploymentRecordStore _records;
+    private readonly DeploymentJournal? _journal;
 
-    private sealed class StateDocument
+    /// <summary>
+    /// <c>addon-manager.json</c>: the copy of the ledger's Addon Manager records older builds read (#168). Its shape is
+    /// the one they write; <see cref="LedgerCopySha256"/> is this build's stamp.
+    /// </summary>
+    internal sealed class StateDocument
     {
         public int Schema { get; set; } = 1;
         public Dictionary<string, GameState> Games { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        /// <summary>SHA-256 of <see cref="Games"/> (canonical) as this build wrote them; older builds drop it.</summary>
+        public string? LedgerCopySha256 { get; set; }
     }
 
-    private sealed class GameState
+    internal sealed class GameState
     {
         public List<string> SelectedIds { get; set; } = [];
         public List<StateFile> Files { get; set; } = [];
     }
 
-    private sealed class StateFile
+    internal sealed class StateFile
     {
         public string AddonId { get; set; } = "";
         public string Path { get; set; } = "";
         public string Sha256 { get; set; } = "";
     }
 
+    /// <param name="records">The deployment ledger (#168); null (tests) = a ledger beside <paramref name="statePath"/>.</param>
+    /// <param name="journal">The deployment journal; null (tests) = in-process rollback only.</param>
     public ReShadeAddonManagerService(
         HttpClient http,
         UpstreamRhiManifestService manifest,
         string? cacheDir = null,
         string? customRoot = null,
-        string? statePath = null)
+        string? statePath = null,
+        LinuxDeploymentRecordStore? records = null,
+        DeploymentJournal? journal = null)
     {
         _http = http;
         _manifest = manifest;
@@ -104,6 +116,10 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         _customRoot = customRoot ?? Path.Combine(LinuxPaths.DataHome, "rhi-linux", "Custom", "Addons");
         _statePath = statePath ?? Path.Combine(LinuxPaths.ConfigHome, "rhi-linux", "addon-manager.json");
         _stateFile = new JsonFileStore<StateDocument>(_statePath);
+        _records = records ?? (statePath is null
+            ? new LinuxDeploymentRecordStore()
+            : new LinuxDeploymentRecordStore(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(statePath))!, "deployments.json")));
+        _journal = journal;
         Directory.CreateDirectory(_customRoot);
     }
 
@@ -177,11 +193,18 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         CancellationToken cancellationToken = default)
     {
         var catalog = await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
-        var state = LoadState();
-        var selected = GameRecordIdentity.TryGet(state.Games, game, out var gs)
-            ? gs.SelectedIds.ToArray()
-            : Array.Empty<string>();
-        return new(catalog.Select(ToCatalogItem).ToArray(), selected, _customRoot);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> selected;
+        try
+        {
+            TryReconcile(out _);
+            selected = SelectedIdsOf(_records.Find(game, RecordKind));
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        return new(catalog.Select(ToCatalogItem).ToArray(), selected.ToArray(), _customRoot);
     }
 
     /// <summary>
@@ -190,10 +213,16 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
     /// </summary>
     public IReadOnlyList<string>? OwnedAddonFiles(DetectedGame game)
     {
-        var load = _stateFile.Load();
-        if (load.IsUnreadable) return null;
-        var games = JsonStoreMaps.CaseInsensitive((load.Value ?? new StateDocument()).Games);
-        return GameRecordIdentity.TryGet(games, game, out var gs) ? gs.Files.Select(file => file.Path).ToArray() : [];
+        _gate.Wait();
+        try
+        {
+            if (TryReconcile(out _) is ReconcileOutcome.LedgerUnreadable or ReconcileOutcome.CopyUnreadable or null) return null;
+            return _records.Find(game, RecordKind)?.Files.Select(file => WithoutOffSuffix(file.Path)).ToArray() ?? [];
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<ReShadeAddonCatalogItem>> RefreshCatalogItemsAsync(
@@ -240,36 +269,43 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             if (blocked.Length > 0)
                 return ComponentOperationResult.Fail($"These addons are managed by dedicated RHI component rows and cannot be duplicated here: {string.Join(", ", blocked)}");
 
-            // Refuse before touching the game: the final ledger save would be refused anyway.
+            // Refuse before touching the game: the copy older builds read is user data RHI never writes over while it
+            // cannot be read, and the ledger is the commit point (#168).
             _stateFile.EnsureWritable();
-            var state = LoadState();
-            var old = GameRecordIdentity.TryGet(state.Games, game, out var existing) ? existing : new GameState();
+            if (_records.CorruptLedgerPath is not null)
+                return ComponentOperationResult.Fail($"{ReconcileFailedPrefix}{_records.CorruptLedgerPath}");
+            if (TryReconcile(out var reconcileError) is null)
+                return ComponentOperationResult.Fail($"{ReconcileFailedPrefix}{reconcileError}");
+            var existing = _records.Find(game, RecordKind);
+            var oldFiles = existing?.Files.Where(file => !string.IsNullOrWhiteSpace(file.Path)).ToList() ?? [];
 
             // #170: an add-on turned off for ReShade's No Addons build sits under its name + ReShadeAddonSwitch.OffSuffix.
-            foreach (var path in old.Files.SelectMany(file => new[] { (file, file.Path), (file, file.Path + ReShadeAddonSwitch.OffSuffix) }))
+            foreach (var file in oldFiles)
             {
-                if (!File.Exists(path.Item2)) continue;
-                var current = FileHash.Sha256Hex(path.Item2);
-                if (!string.Equals(current, path.file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    return ComponentOperationResult.Fail($"Managed addon was modified outside RHI and the selection cannot be changed safely: {path.Item2}");
+                foreach (var path in Forms(file.Path))
+                {
+                    if (!File.Exists(path)) continue;
+                    var current = FileHash.Sha256Hex(path);
+                    if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
+                        return ComponentOperationResult.Fail($"Managed addon was modified outside RHI and the selection cannot be changed safely: {path}");
+                }
             }
 
             // Prepare all payloads before touching the game.
-            var prepared = new List<(ReShadeAddonDefinition Definition, string Source, string DeployName)>();
+            var prepared = new List<(ReShadeAddonDefinition Definition, string Source, string DeployName, string? Version)>();
             foreach (var id in normalized)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var definition = byId[id];
                 var payload = await PreparePayloadAsync(definition, architecture, cancellationToken).ConfigureAwait(false);
-                prepared.Add((definition, payload.Path, payload.DeployName));
+                prepared.Add((definition, payload.Path, payload.DeployName, payload.Version));
             }
 
-            // Every payload is prepared: from the first change in the game folder on, Cancel is refused and the
-            // selection change runs to completion or full rollback.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            if (normalized.Length == 0 && existing is null)
+                return ComponentOperationResult.Ok("RHI-managed generic ReShade addons removed.");
+
             var deployDir = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory);
-            Directory.CreateDirectory(deployDir);
-            var oldByPath = old.Files.ToDictionary(x => Path.GetFullPath(x.Path), StringComparer.OrdinalIgnoreCase);
+            var oldByPath = oldFiles.Select(file => Path.GetFullPath(WithoutOffSuffix(file.Path))).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             foreach (var item in prepared)
             {
@@ -278,44 +314,56 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                 if (!target.StartsWith(allowed, StringComparison.Ordinal))
                     return ComponentOperationResult.Fail($"Addon deploy filename escapes the ReShade addon directory: {item.DeployName}");
 
-                if (File.Exists(target) && !oldByPath.ContainsKey(target))
+                if (File.Exists(target) && !oldByPath.Contains(target))
                     return ComponentOperationResult.Fail($"External addon already exists at {target}. RHI will not overwrite or adopt it.");
             }
 
-            // DEP-09 (#28): every previously owned add-on and every target is tracked with a verified copy before anything
-            // changes, new add-ons are placed through verified, durable copies, and a failure (a payload, or the state
-            // save) puts every file back from those copies. A copy that cannot be put back is kept beside its file and
-            // named in the result; nothing is deleted before the restore it may be needed for has succeeded (it used to
-            // stop at the first failed copy and then delete the rollback folder with the only copies).
-            await using var scope = DeploymentScope.Unjournaled();
-            var newState = new GameState { SelectedIds = normalized.ToList() };
+            // DEP-09 (#28), #168: one journaled operation whose commit point is the game's Addon Manager record (saved, or
+            // taken out of the ledger when the selection is emptied). Every previously owned add-on and every target is
+            // tracked with a verified copy before anything changes, new add-ons are placed through verified, durable
+            // copies, the older-build copy (addon-manager.json) is written inside the operation before the commit point,
+            // and a failure — or a crash, at the next start — puts every file back.
+            var removal = normalized.Length == 0;
+            var (opened, refusal) = removal
+                ? await DeploymentScope.BeginRemovalAsync(_journal, _records, $"ReShade Addon Manager removal: {game.Name}", game, RecordKind, cancellationToken).ConfigureAwait(false)
+                : await DeploymentScope.BeginAsync(_journal, $"ReShade Addon Manager: {game.Name}", game, RecordKind, cancellationToken).ConfigureAwait(false);
+            if (refusal is not null) return ComponentOperationResult.Fail(refusal);
+            await using var scope = opened!;
+
+            // Every payload is prepared: from the first change in the game folder on, Cancel is refused and the
+            // selection change runs to completion or full rollback.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var changed = new List<string>();
             try
             {
-                foreach (var file in old.Files)
-                {
-                    await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
-                    if (File.Exists(file.Path + ReShadeAddonSwitch.OffSuffix)) // #170: its turned-off copy goes too
-                        await scope.DeleteAsync(file.Path + ReShadeAddonSwitch.OffSuffix, cancellationToken).ConfigureAwait(false);
-                }
+                Directory.CreateDirectory(deployDir);
+                foreach (var file in oldFiles)
+                    foreach (var path in Forms(file.Path))
+                        if (File.Exists(path)) // #170: its turned-off copy goes too
+                            await scope.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
 
+                var placed = new List<(string AddonId, string Path, string Sha256)>();
+                var versions = new List<(string Path, string? Version, string DisplayName)>();
                 foreach (var item in prepared)
                 {
                     var target = Path.Combine(deployDir, item.DeployName);
                     var hash = await scope.PlaceCopyAsync(item.Source, target, cancellationToken).ConfigureAwait(false);
                     changed.Add(target);
-                    newState.Files.Add(new StateFile { AddonId = item.Definition.Id, Path = target, Sha256 = hash });
+                    placed.Add((item.Definition.Id, target, hash));
+                    versions.Add((target, item.Version, item.Definition.DisplayName));
                 }
 
-                if (normalized.Length == 0)
-                    GameRecordIdentity.Remove(state.Games, game);
-                else
-                    GameRecordIdentity.Set(state.Games, game, newState);
-                SaveState(state);
+                var record = removal ? null : BuildRecord(game, normalized, placed, existing);
+                if (record is not null) SetVersions(record, versions);
+                await WriteCopyInsideAsync(scope, game, record).ConfigureAwait(false);
+                if (record is null) _records.Remove(game, RecordKind);     // the commit point (removal)
+                else _records.Upsert(scope.Stamp(record));               // the commit point (install / change)
             }
             catch (Exception ex)
             {
-                var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+                var rollback = removal
+                    ? await scope.RollbackRemovalAsync(_records, game, existing!, "addon-manager").ConfigureAwait(false)
+                    : await scope.RollbackAsync().ConfigureAwait(false);
                 if (!rollback.Success)
                     AppLog.Warn("addon-manager", $"Selection rollback did not complete: {string.Join("; ", rollback.Failures)}");
                 return ComponentOperationResult.Fail($"ReShade Addon Manager failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
@@ -349,10 +397,13 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         _gate.Wait();
         try
         {
+            // #168: the ledger's Addon Manager record moves with the other records; this re-points the older-build copy. A
+            // copy this build stamped is stamped again; one an older build wrote stays unstamped, so it is still imported.
             return _stateFile.Stage(state =>
             {
                 if (state is null) return null;
                 state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
+                var wasStamped = string.Equals(state.LedgerCopySha256, CopySha256(state.Games), StringComparison.OrdinalIgnoreCase);
                 var game = move.Game;
                 var entryKey = state.Games.Keys.FirstOrDefault(k => GameRecordIdentity.Matches(k, game))
                                ?? state.Games.Keys.FirstOrDefault(k => move.MovedRecordKey(k) is not null);
@@ -367,8 +418,10 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                     var targets = new[] { move.MapPath(file.Path), deployDir is null ? null : Path.Combine(deployDir, Path.GetFileName(file.Path)) };
                     foreach (var target in targets.OfType<string>().Distinct(StringComparer.Ordinal))
                     {
-                        if (string.Equals(target, file.Path, StringComparison.Ordinal) || !File.Exists(target)
-                            || !string.Equals(FileHash.Sha256Hex(target), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                        // #170: a turned-off add-on is found under its .rhi-off name; the copy keeps the add-on's own name.
+                        var onDisk = Forms(target).FirstOrDefault(File.Exists);
+                        if (string.Equals(target, file.Path, StringComparison.Ordinal) || onDisk is null
+                            || !string.Equals(FileHash.Sha256Hex(onDisk), file.Sha256, StringComparison.OrdinalIgnoreCase))
                             continue;
                         file.Path = target;
                         changed = true;
@@ -381,7 +434,9 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                     state.Games.TryAdd(move.NewRecordKey, entry);
                     changed = true;
                 }
-                return changed ? state : null;
+                if (!changed) return null;
+                state.LedgerCopySha256 = wasStamped ? CopySha256(state.Games) : null;
+                return state;
             });
         }
         finally
@@ -462,12 +517,19 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
 
     private async Task<List<ReShadeAddonDefinition>> RefreshCatalogAsync(
         CancellationToken cancellationToken)
+        => (await LoadCatalogAsync(cancellationToken).ConfigureAwait(false)).Catalog;
+
+    // Live = crosire's Addons.ini was fetched now (not the cached copy): the update check needs the current list.
+    private async Task<(List<ReShadeAddonDefinition> Catalog, bool Live)> LoadCatalogAsync(
+        CancellationToken cancellationToken)
     {
         List<ReShadeAddonDefinition> catalog;
+        var live = false;
         try
         {
             var text = await TrustedDownload.GetStringAsync(_http, AddonsIniUrl, TrustedDownloadPolicy.ReShadeAddons, cancellationToken: cancellationToken).ConfigureAwait(false);
             catalog = ParseAddonsIni(text);
+            live = true;
             Directory.CreateDirectory(_cacheDir);
             await AtomicFile.WriteAllTextAsync(_addonsIniCache, text, cancellationToken).ConfigureAwait(false);
         }
@@ -490,10 +552,10 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         }
 
         MergeCustom(catalog);
-        return catalog
+        return (catalog
             .OrderBy(x => IsComponentManaged(x))
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+            .ToList(), live);
     }
 
     internal static void MergeManifest(
@@ -570,7 +632,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         }
     }
 
-    private async Task<(string Path, string DeployName)> PreparePayloadAsync(
+    private async Task<(string Path, string DeployName, string? Version)> PreparePayloadAsync(
         ReShadeAddonDefinition definition,
         PeArchitecture architecture,
         CancellationToken cancellationToken)
@@ -583,19 +645,26 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             if (string.IsNullOrWhiteSpace(custom) || !File.Exists(custom))
                 throw new InvalidOperationException($"{definition.DisplayName} does not provide a {ext} custom payload.");
             ValidateAddonPayload(custom, ext, architecture);
-            return (custom, EnsureAddonExtension(definition.DeployFileName ?? Path.GetFileNameWithoutExtension(custom), ext));
+            return (custom, EnsureAddonExtension(definition.DeployFileName ?? Path.GetFileNameWithoutExtension(custom), ext), CustomVersion(custom));
         }
 
         var sourceUrl = architecture == PeArchitecture.X86 ? definition.DownloadUrl32 : definition.DownloadUrl64;
         sourceUrl ??= definition.DownloadUrl;
 
+        string? version = null;
         if (!string.IsNullOrWhiteSpace(definition.ReleaseApiUrl))
-            sourceUrl = await ResolveReleaseAssetAsync(definition.ReleaseApiUrl!, ext, cancellationToken).ConfigureAwait(false);
+        {
+            string? tag;
+            (sourceUrl, tag) = await ResolveReleaseAssetAsync(definition.ReleaseApiUrl!, ext, cancellationToken).ConfigureAwait(false);
+            version = TagVersion(tag);
+        }
 
         if (string.IsNullOrWhiteSpace(sourceUrl))
             throw new InvalidOperationException($"{definition.DisplayName} has no {ext} download authority.");
 
         ValidateDirectUrlArchitecture(sourceUrl, ext);
+        // #194: what this download is, for the update check (the release tag, else the server's validators).
+        version ??= await UrlVersionAsync(sourceUrl, cancellationToken).ConfigureAwait(false);
 
         Directory.CreateDirectory(_cacheDir);
         var safeId = Sanitize(definition.Id);
@@ -625,7 +694,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
                 var deploy = EnsureAddonExtension(
                     definition.DeployFileName ?? Path.GetFileNameWithoutExtension(entry.Name),
                     ext);
-                return (cachePath, deploy);
+                return (cachePath, deploy, version);
             }
             finally
             {
@@ -642,11 +711,11 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             var deploy = EnsureAddonExtension(
                 definition.DeployFileName ?? Path.GetFileNameWithoutExtension(fromUrl),
                 ext);
-            return (cachePath, deploy);
+            return (cachePath, deploy, version);
         }
     }
 
-    private async Task<string> ResolveReleaseAssetAsync(
+    private async Task<(string Url, string? Tag)> ResolveReleaseAssetAsync(
         string apiUrl,
         string architectureExtension,
         CancellationToken cancellationToken)
@@ -663,6 +732,7 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
         }
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("assets", out var assets))
             throw new InvalidDataException($"GitHub release has no assets: {apiUrl}");
+        var tag = root.TryGetProperty("tag_name", out var tagName) && tagName.ValueKind == JsonValueKind.String ? tagName.GetString() : null;
 
         string? zip = null;
         foreach (var asset in assets.EnumerateArray())
@@ -671,11 +741,11 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             var url = asset.TryGetProperty("browser_download_url", out var u) ? u.GetString() : null;
             if (string.IsNullOrWhiteSpace(url)) continue;
             if (name.EndsWith(architectureExtension, StringComparison.OrdinalIgnoreCase))
-                return url!;
+                return (url!, tag);
             if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
                 zip ??= url;
         }
-        return zip ?? throw new InvalidDataException($"GitHub release has no {architectureExtension} or .zip asset: {apiUrl}");
+        return (zip ?? throw new InvalidDataException($"GitHub release has no {architectureExtension} or .zip asset: {apiUrl}"), tag);
     }
 
     private async Task DownloadAsync(string url, string destination, CancellationToken cancellationToken)
@@ -768,15 +838,11 @@ public sealed class ReShadeAddonManagerService : IGameStateStore
             definition.IsCustom ? !string.IsNullOrWhiteSpace(definition.CustomPath64) :
                 !string.IsNullOrWhiteSpace(definition.DownloadUrl64) || !string.IsNullOrWhiteSpace(definition.DownloadUrl) || !string.IsNullOrWhiteSpace(definition.ReleaseApiUrl));
 
-    // An unreadable ledger is copied aside and never replaced: losing it would orphan every
-    // game's owned add-on files (they could no longer be told apart from the user's own).
-    private StateDocument LoadState()
+    // A recorded add-on path in both its forms: its own name and the No Addons name (#170).
+    private static string[] Forms(string path)
     {
-        var state = _stateFile.Load().Value ?? new StateDocument();
-        state.Games = JsonStoreMaps.CaseInsensitive(state.Games);
-        return state;
+        var own = WithoutOffSuffix(path);
+        return [own, own + ReShadeAddonSwitch.OffSuffix];
     }
-
-    private void SaveState(StateDocument state) => _stateFile.Save(state);
 
 }

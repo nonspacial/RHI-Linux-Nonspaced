@@ -45,12 +45,17 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // w6/crash rows
+        , bool cacheAllShaders = false
+        , Func<HttpRequestMessage, bool>? hangWhen = null
         )
     {
+        _hang.When = hangWhen;
         Directory.CreateDirectory(ConfigDir);
         Directory.CreateDirectory(DataDir);
         Settings = new LinuxSettingsStore(Path.Combine(ConfigDir, "settings.json"), Path.Combine(Root, "cache"), DataDir);
-        Settings.Save(new LinuxAppSettings { UiLanguage = uiLanguage, AutoUpdateComponents = false });
+        // #194: no start-up shader-pack prefetch unless a test asks for it (it would add requests to every VM test).
+        Settings.Save(new LinuxAppSettings { UiLanguage = uiLanguage, AutoUpdateComponents = false, CacheAllShaders = cacheAllShaders });
         Library = new LinuxGameLibraryStore(Path.Combine(DataDir, "game-library.json"));
         seed?.Invoke(Library);
         Records = new LinuxDeploymentRecordStore(Path.Combine(DataDir, "deployments.json"));
@@ -103,6 +108,9 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // w6/crash rows
+        , bool cacheAllShaders = false
+        , Func<HttpRequestMessage, bool>? hangWhen = null
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -117,6 +125,9 @@ internal sealed class ViewModelFixture : IDisposable
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            // w6/crash rows
+            , cacheAllShaders
+            , hangWhen
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -216,7 +227,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/shell-launch rows
         // w5/reshade-core rows
         var managed = new LinuxManagedComponentService(
-            records, reshade, new ReShadeAddonManagerService(http, upstreamManifest), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
+            records, reshade, new ReShadeAddonManagerService(http, upstreamManifest, Path.Combine(cacheDir, "addons"), Path.Combine(prefs, "custom-addons"), Path.Combine(prefs, "addon-manager.json"), records), renodx, new RenoDxUpgradeDeploymentService(http, records, upstreamManifest),
             optiscaler, relimiter, displayCommander, mfgAdaUnlock, dlssg2030, dlssEnabler, rtx40Mfg, feeder, dlss5Bridge,
             new D3DCompilerToolInstaller(wineOverrides), ual, shortFuse, new DofFixDeploymentService(http, records, upstreamManifest),
             new REFrameworkDeploymentService(http, records, wineOverrides), luma, lumaPolicy,

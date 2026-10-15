@@ -191,6 +191,58 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
         Assert.False(File.Exists(managerAddon + ReShadeAddonSwitch.OffSuffix), cleared.Message);
     }
 
+    // #168: the Addon Manager's add-ons live in its ledger record; No Addons renames them through that record in ReShade's
+    // commit (so Repair after move finds them under their .rhi-off name), each counts on its own, and the copy older builds
+    // read keeps the add-on's own name.
+    [Fact]
+    public async Task NoAddons_RenamesTheAddonManagerRecordsFiles_InReShadesCommit()
+    {
+        var (game, store) = CreateGame("manager-record");
+        var service = NewService(store, new Handler());
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var first = Path.Combine(game.BinaryDirectory!, "manager-one.addon64");
+        var second = Path.Combine(game.BinaryDirectory!, "manager-two.addon64");
+        File.WriteAllText(first, "MZ one");
+        File.WriteAllText(second, "MZ two");
+        var statePath = Path.Combine(game.InstallPath, "addon-manager.json");
+        File.WriteAllText(statePath, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Schema = 1,
+            Games = new Dictionary<string, object>
+            {
+                [RHI.Platform.Linux.Settings.GameRecordIdentity.Key(game)] = new
+                {
+                    SelectedIds = new[] { "one", "two" },
+                    Files = new[]
+                    {
+                        new { AddonId = "one", Path = first, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(first) },
+                        new { AddonId = "two", Path = second, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(second) },
+                    }
+                }
+            }
+        }));
+        var http = new HttpClient(new Handler { HomeUnreachable = true });
+        var manager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http), Path.Combine(game.InstallPath, "addon-cache"),
+            Path.Combine(game.InstallPath, "custom-addons"), statePath, store);
+        service.AddonManagerFiles = manager.ReconcileForReShade;
+
+        var off = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.NoAddons, ManageIni = false });
+
+        Assert.True(off.Success, off.Message);
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOffPrefix + "2.", off.Message, StringComparison.Ordinal);
+        Assert.Equal([first + ReShadeAddonSwitch.OffSuffix, second + ReShadeAddonSwitch.OffSuffix],
+            store.Find(game, ManagedComponentKind.ReShadeAddonManager)!.Files.Select(f => f.Path));
+        Assert.False(File.Exists(first));
+        Assert.Equal([first, second], manager.OwnedAddonFiles(game));
+        Assert.DoesNotContain(ReShadeAddonSwitch.OffSuffix, File.ReadAllText(statePath), StringComparison.Ordinal);
+
+        var on = await service.InstallAsync(game, new ReShadeInstallOptions { Channel = ReShadeChannel.Stable, ManageIni = false });
+
+        Assert.EndsWith(ReShadeAddonSwitch.TurnedOnPrefix + "2.", on.Message, StringComparison.Ordinal);
+        Assert.Equal([first, second], store.Find(game, ManagedComponentKind.ReShadeAddonManager)!.Files.Select(f => f.Path));
+        Assert.Equal("MZ one", File.ReadAllText(first));
+    }
+
     // Review minor 4: when the Addon Manager's saved list cannot be read, nobody can tell its add-ons apart; they are left as
     // they are and the status line says so on a switch to No Addons and back (not on an unrelated Stable update).
     [Fact]
@@ -459,7 +511,7 @@ public sealed class ReShadeNoAddonsChannelTests : IDisposable
     {
         var http = new HttpClient(new Handler { HomeUnreachable = true });
         var addonManager = new ReShadeAddonManagerService(http, new UpstreamRhiManifestService(http), Path.Combine(root, "addon-cache"),
-            Path.Combine(root, "custom-addons"), Path.Combine(root, "addon-manager.json"));
+            Path.Combine(root, "custom-addons"), Path.Combine(root, "addon-manager.json"), records);
         return Managed(records, addonManager, relimiter);
     }
 

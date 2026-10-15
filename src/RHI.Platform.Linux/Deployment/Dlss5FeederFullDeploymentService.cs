@@ -6,6 +6,9 @@ using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
+using static RHI.Platform.Linux.Deployment.DeepFriedChickenPackageVerifier;
+using static RHI.Platform.Linux.Deployment.FeederLayoutPlanner;
+using static RHI.Platform.Linux.Deployment.ReShadeIniTokenEditor;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -29,26 +32,26 @@ public sealed class Dlss5FeederFullDeploymentService
     private const string FeederArchiveAssetPattern = @"^DLSS5-Feeder-.*\.zip$";
     private const string RhiRepoReleasesApi = "https://api.github.com/repos/RankFTW/rhi-repo/releases?per_page=100";
     private const string RenoDx5AssetPattern = @"^renodx-dlss5_.*\.zip$";
-    private const string FeederFxName = "DLSS5_Feed.fx";
+    internal const string FeederFxName = "DLSS5_Feed.fx";
     private const string LumeniteUrl = "https://codeload.github.com/umar-afzaal/LumeniteFX/zip/refs/heads/mainline";
     private const string ReShadeHeadersUrl = "https://github.com/crosire/reshade-shaders/archive/refs/heads/slim.zip";
 
-    private const string FeederAddonName = "dlss5-feed.addon64";
-    private const string FeederAddon32Name = "dlss5-feed.addon32";
-    private const string Host64DirectoryName = "host64";
-    private const string Host64ExecutableName = "dlss5-feed-host64.exe";
-    private const string DeepFriedAddonName = "deep-fried-chicken.addon64";
-    private const string DeepFriedBridgeName = "deep-fried-chicken-nvngx.dll";
-    private const string DeepFriedConfigName = "deep-fried-chicken.cfg";
-    private const string RenoDx5AddonName = "renodx-dlss5.addon64";
-    private const string RenoDxLegacyAddonName = "renodx-dlss.addon64";
-    private const string AlexToolkitAddonName = "alexs-toolkit.addon64";
-    private const string Dlss5BridgeAddonName = "dlss5-bridge.addon64";
-    private const string Dlss5Dx11BridgeAddonName = "dlss5-dx11-bridge.addon64";
-    private const string DlssName = "nvngx_dlss.dll";
-    private const string NrName = "nvngx_dlssnr.dll";
-    private const string PresetName = "RHI-DLSS5-Feeder.ini";
-    private const string IntegrationRootName = "DLSS5FeederFull";
+    internal const string FeederAddonName = "dlss5-feed.addon64";
+    internal const string FeederAddon32Name = "dlss5-feed.addon32";
+    internal const string Host64DirectoryName = "host64";
+    internal const string Host64ExecutableName = "dlss5-feed-host64.exe";
+    internal const string DeepFriedAddonName = "deep-fried-chicken.addon64";
+    internal const string DeepFriedBridgeName = "deep-fried-chicken-nvngx.dll";
+    internal const string DeepFriedConfigName = "deep-fried-chicken.cfg";
+    internal const string RenoDx5AddonName = "renodx-dlss5.addon64";
+    internal const string RenoDxLegacyAddonName = "renodx-dlss.addon64";
+    internal const string AlexToolkitAddonName = "alexs-toolkit.addon64";
+    internal const string Dlss5BridgeAddonName = "dlss5-bridge.addon64";
+    internal const string Dlss5Dx11BridgeAddonName = "dlss5-dx11-bridge.addon64";
+    internal const string DlssName = "nvngx_dlss.dll";
+    internal const string NrName = "nvngx_dlssnr.dll";
+    internal const string PresetName = "RHI-DLSS5-Feeder.ini";
+    internal const string IntegrationRootName = "DLSS5FeederFull";
     private const string FullStackMetadata = "Feeder.FullStack";
 
     // Record metadata parts of the downloads besides the Feeder release (Download.<part>.Sha256/Integrity, #26).
@@ -80,8 +83,8 @@ public sealed class Dlss5FeederFullDeploymentService
     internal const string MetaDx9Migration = "Feeder.Dx9ReShadeMigration";
     internal const string MetaDgVoodooVersion = "Feeder.DgVoodooVersion";
 
-    private static readonly string[] RequiredHeaderNames = ["ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh"];
-    private static readonly TimeSpan DeepFriedChickenExtractionTimeout = TimeSpan.FromMinutes(2);
+    internal static readonly string[] RequiredHeaderNames = ["ReShade.fxh", "ReShadeUI.fxh", "DrawText.fxh"];
+    internal static readonly TimeSpan DeepFriedChickenExtractionTimeout = TimeSpan.FromMinutes(2);
 
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
@@ -341,440 +344,350 @@ public sealed class Dlss5FeederFullDeploymentService
                 return ComponentOperationResult.Fail("O pacote consumidor do Deep Fried Chicken deve ser um arquivo oficial .zip ou .7z.");
         }
 
-        var binaryDir = Path.GetFullPath(game.BinaryDirectory!);
-        var addonDir = RenoDxDeploymentService.ResolveAddonDeployPath(binaryDir);
-        FeederDeploymentLayout layout;
-        try { layout = ResolveFeederLayout(binaryDir, addonDir, gameArchitecture, consumer); }
-        catch (NotSupportedException ex) { return ComponentOperationResult.Fail(ex.Message); }
-        var feederTarget = layout.FeederTarget;
-        var deepFriedAddonTarget = Path.Combine(binaryDir, DeepFriedAddonName);
-        var deepFriedBridgeTarget = Path.Combine(binaryDir, DeepFriedBridgeName);
-        var deepFriedConfigTarget = (consumer == Dlss5FeederConsumer.DeepFriedChicken
-            ? ReShadeDeploymentService.FindFileCaseInsensitive(binaryDir, DeepFriedConfigName)
-            : null) ?? Path.Combine(binaryDir, DeepFriedConfigName);
-        var renoDx5Target = layout.ConsumerTarget;
-        var deepFriedConfigPreexisting = consumer == Dlss5FeederConsumer.DeepFriedChicken && File.Exists(deepFriedConfigTarget);
-        var dlssTarget = layout.DlssTarget;
-        var nrTarget = layout.NrTarget;
-        var integrationRoot = Path.Combine(binaryDir, "reshade-shaders", "RHI", IntegrationRootName);
-        var shaderRoot = Path.Combine(integrationRoot, "Shaders");
-        var textureRoot = Path.Combine(integrationRoot, "Textures");
-        var presetTarget = Path.Combine(binaryDir, PresetName);
-
-        var protectedTargets = consumer == Dlss5FeederConsumer.DeepFriedChicken
-            ? new[] { feederTarget, deepFriedAddonTarget, deepFriedBridgeTarget, deepFriedConfigTarget, dlssTarget, nrTarget, presetTarget }
-            : new[] { feederTarget, renoDx5Target, dlssTarget, nrTarget, presetTarget };
-        foreach (var path in protectedTargets)
-            if (IsBlockingPreexistingFullStackTarget(path) &&
-                ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(path)!, Path.GetFileName(path)) is { } existingTarget)
-                return ComponentOperationResult.Fail($"External or pre-existing DLSS5 Feeder Full target detected: {existingTarget}. RHI Linux will not overwrite it automatically.");
-
-        var conflictPaths = (consumer == Dlss5FeederConsumer.DeepFriedChicken
-            ? new[]
-            {
-                Path.Combine(binaryDir, RenoDx5AddonName),
-                Path.Combine(binaryDir, RenoDxLegacyAddonName),
-                Path.Combine(binaryDir, AlexToolkitAddonName),
-                Path.Combine(binaryDir, Dlss5BridgeAddonName),
-                Path.Combine(binaryDir, Dlss5Dx11BridgeAddonName),
-                Path.Combine(addonDir, RenoDx5AddonName),
-                Path.Combine(addonDir, RenoDxLegacyAddonName),
-                Path.Combine(addonDir, AlexToolkitAddonName),
-                Path.Combine(addonDir, Dlss5BridgeAddonName),
-                Path.Combine(addonDir, Dlss5Dx11BridgeAddonName)
-            }
-            : new[]
-            {
-                Path.Combine(binaryDir, DeepFriedAddonName),
-                Path.Combine(binaryDir, DeepFriedBridgeName),
-                Path.Combine(addonDir, DeepFriedAddonName),
-                Path.Combine(binaryDir, RenoDxLegacyAddonName),
-                Path.Combine(binaryDir, AlexToolkitAddonName),
-                Path.Combine(binaryDir, Dlss5BridgeAddonName),
-                Path.Combine(binaryDir, Dlss5Dx11BridgeAddonName),
-                Path.Combine(addonDir, RenoDxLegacyAddonName),
-                Path.Combine(addonDir, AlexToolkitAddonName),
-                Path.Combine(addonDir, Dlss5BridgeAddonName),
-                Path.Combine(addonDir, Dlss5Dx11BridgeAddonName)
-            }).Concat(new[]
-            {
-                // ShortFuse deployed under the upstream ZZZ load-order name is the same consumer.
-                Path.Combine(binaryDir, ShortFuseDeploymentService.ZzzAddonFileName),
-                Path.Combine(addonDir, ShortFuseDeploymentService.ZzzAddonFileName)
-            }).Distinct(StringComparer.Ordinal);
-        foreach (var conflict in conflictPaths)
-            if (ReShadeDeploymentService.FindFileCaseInsensitive(Path.GetDirectoryName(conflict)!, Path.GetFileName(conflict)) is { } existingConflict)
-                return ComponentOperationResult.Fail($"Consumidor neural conflitante detectado: {existingConflict}. Apenas um consumidor neural pode controlar o processo. Remova explicitamente o add-on conflitante primeiro.");
-
-
-        if (layout.RequiresHost64 && Directory.Exists(layout.Host64Directory!) && Directory.EnumerateFileSystemEntries(layout.Host64Directory!).Any())
-            return ComponentOperationResult.Fail($"External or previous host64 tree detected at {layout.Host64Directory}. RHI Linux will not overwrite it automatically.");
-        if (Directory.Exists(integrationRoot) && Directory.EnumerateFileSystemEntries(integrationRoot).Any())
-            return ComponentOperationResult.Fail($"External or previous shader tree detected at {integrationRoot}. RHI Linux will not overwrite it automatically.");
+        var (targets, targetRefusal) = PlanInstall(game, gameArchitecture, consumer);
+        if (targetRefusal is not null) return ComponentOperationResult.Fail(targetRefusal);
 
         Directory.CreateDirectory(_cacheDir);
-        // The Wine override is journaled before it is written (#23): a crash before the record is saved
-        // leaves an entry start-up recovery rolls back, never an override nothing owns.
-        var (operation, journalRefusal) = await LinuxDeploymentRecovery.BeginRecordOperationAsync(
+        // #23/#169: one journaled operation for every game file, ReShade.ini edit and Wine override of the install; the
+        // Feeder record carrying its id is the commit point, so a crash before it is rolled back at the next start.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "DLSS5 Feeder install: " + game.Name, game, ManagedComponentKind.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
-        await using var journaled = operation;
+        await using var scope = opened!;
         var stageRoot = Path.Combine(_cacheDir, $"stage-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stageRoot);
-
-        var copied = new List<string>();
-        var createdDirs = new List<string>();
-        ReShadeIniApplyResult? iniResult = null;
-        PresetPathMutation? presetMutation = null;
-        IniListTokenMutation? earlyLoadMutation = null;
-        WineOverrideRecord? compilerOverride = null;
-        ReShadeDx9MigrationState? dx9Migration = null;
-        DgVoodooPreparedPayload? dgVoodooPayload = null;
-        LinuxDeploymentRecord? sharedDx9Record = null;
-        var dx9TranslationCreatedThisAttempt = false;
         try
         {
-            DeepFriedChickenBundle? dfc = null;
-            GitHubResolvedReleaseAsset? renoDxRelease = null;
-            string? renoDxAddon = null;
-            string? renoDxPackageSha256 = null;
-            // Every download this record deploys, by record metadata part (#26): null = the Feeder release itself.
-            var downloads = new List<(string? Part, string Sha256, bool DigestVerified)>();
-
-            if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
-            {
-                // Manual consumer path: validate the user-supplied package before any registry mutation.
-                dfc = await ExtractDeepFriedChickenBundleAsync(
-                    consumerPackage!,
-                    Path.Combine(stageRoot, "deep-fried-chicken"),
-                    cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                // Experimental consumer path restored for controlled A/B testing. Resolve only the
-                // dedicated RenoDX DLSS5 neural consumer; ordinary game-specific RenoDX HDR add-ons
-                // remain independent and may coexist because they are not classified as this consumer.
-                renoDxRelease = await _releaseResolver.ResolveAsync(
-                    CreateRenoDxDlss5ReleaseQuery(),
-                    cancellationToken).ConfigureAwait(false);
-                var consumerDownload = await EnsureCachedReleaseAssetAsync(renoDxRelease, DownloadSources.RhiRepository, cancellationToken).ConfigureAwait(false);
-                var consumerAsset = consumerDownload.Path;
-                renoDxPackageSha256 = consumerDownload.Sha256;
-                downloads.Add((ConsumerDownloadPart, consumerDownload.Sha256, consumerDownload.DigestVerified));
-                renoDxAddon = renoDxRelease.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
-                    ? await ExtractReleasePayloadByNameAsync(consumerAsset, RenoDx5AddonName, Path.Combine(stageRoot, RenoDx5AddonName), minimumSize: 32 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)
-                    : ValidateDownloadedPayload(consumerAsset, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
-            }
-
-            // Current upstream publishes a single DLSS5-Feeder-*.zip release asset.
-            // The archive is produced by Windows tooling, so entries may carry either '/' or '\\'
-            // separators. Linux must normalize both before matching leaf names. The tagged raw
-            // shader is a conservative fallback only when an archive genuinely omits DLSS5_Feed.fx.
-            var feederRelease = await _releaseResolver.ResolveAsync(
-                CreateFeederArchiveReleaseQuery(),
-                releaseTag,
-                cancellationToken).ConfigureAwait(false);
-            var feederDownload = await EnsureCachedReleaseAssetAsync(feederRelease, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
-            var feederZip = feederDownload.Path;
-            downloads.Add((null, feederDownload.Sha256, feederDownload.DigestVerified));
-            var feederAssetName = gameArchitecture == PeArchitecture.X86 ? FeederAddon32Name : FeederAddonName;
-            var feederAddon = await ExtractReleasePayloadByNameAsync(
-                feederZip,
-                feederAssetName,
-                Path.Combine(stageRoot, feederAssetName),
-                minimumSize: 64 * 1024,
-                requirePe: true,
-                cancellationToken).ConfigureAwait(false);
-            string? host64Executable = null;
-            if (layout.RequiresHost64)
-            {
-                host64Executable = await ExtractReleasePayloadByNameAsync(
-                    feederZip,
-                    Host64ExecutableName,
-                    Path.Combine(stageRoot, Host64ExecutableName),
-                    minimumSize: 64 * 1024,
-                    requirePe: true,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            string feederFx;
+            FeederStaged staged;
             try
             {
-                feederFx = await ExtractReleasePayloadByNameAsync(
-                    feederZip,
-                    FeederFxName,
-                    Path.Combine(stageRoot, FeederFxName),
-                    minimumSize: 256,
-                    requirePe: false,
-                    cancellationToken).ConfigureAwait(false);
+                staged = await StageAsync(game, consumer, consumerPackage, releaseTag, neuralRenderingDllVersion, targets!, gameArchitecture, stageRoot, cancellationToken).ConfigureAwait(false);
             }
-            catch (InvalidDataException ex) when (ex.Message.Contains(FeederFxName, StringComparison.OrdinalIgnoreCase))
+            catch (Exception ex)
             {
-                feederFx = await DownloadFeederShaderFromResolvedVersionAsync(
-                    feederRelease.Version,
-                    Path.Combine(stageRoot, FeederFxName),
-                    cancellationToken).ConfigureAwait(false);
-                downloads.Add((FeederShaderDownloadPart, FileHash.Sha256Hex(feederFx), false));
+                return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}"); // nothing in the game changed yet
             }
-
-            var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Super Resolution runtime.");
-            var cachedNr = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Neural Rendering runtime.");
-            ValidateCachedRuntime(cachedSr, DlssName);
-            ValidateCachedRuntime(cachedNr, NrName);
-
-            var lumeniteStage = Path.Combine(stageRoot, "lumenite");
-            downloads.Add((LumeniteDownloadPart,
-                await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false),
-                false));
-            EnsureLumeniteLayout(lumeniteStage);
-
-            var headersStage = Path.Combine(stageRoot, "headers");
-            downloads.Add((HeadersDownloadPart,
-                await DownloadAndExtractShaderArchiveAsync(ReShadeHeadersUrl, Path.Combine(stageRoot, "headers.zip"), headersStage, cancellationToken).ConfigureAwait(false),
-                false));
-            EnsureHeaderLayout(headersStage);
-
-            if (game.EffectiveGraphicsApi == GraphicsApi.DirectX9)
-            {
-                var lumaRecord = _records.Find(game, ManagedComponentKind.LumaFramework);
-                dx9Migration = ReadDx9Migration(lumaRecord, LumaFrameworkDeploymentService.MetaDx9Migration);
-                if (dx9Migration is not null)
-                {
-                    var sharedError = await ValidateSharedDx9TranslationAsync(lumaRecord!, cancellationToken).ConfigureAwait(false);
-                    if (sharedError is not null)
-                        throw new InvalidOperationException($"Existing Luma DX9 translation ownership is inconsistent: {sharedError}");
-                    sharedDx9Record = lumaRecord;
-                }
-                else
-                {
-                    if (_dgVoodoo is null || _dx9ReShade is null)
-                        throw new InvalidOperationException("DX9 DLSS5 Feeder requires dgVoodoo2 staging and the managed ReShade DX9 migration coordinator.");
-                    dgVoodooPayload = await _dgVoodoo.PrepareLatestAsync(gameArchitecture, cancellationToken).ConfigureAwait(false);
-                    var dgConfigTarget = Path.Combine(binaryDir, "dgVoodoo.conf");
-                    if (File.Exists(dgConfigTarget))
-                        throw new IOException($"External dgVoodoo.conf already exists: {dgConfigTarget}. RHI Linux will not overwrite it automatically.");
-                }
-            }
-
-            // A 32-bit game's host64 helper runs a 64-bit ReShade: staged (possibly downloaded from reshade.me) here with
-            // the other downloads, before the gate (w2 merge review, minor 1: it used to download after the first change).
-            ReShadeStagedDll? hostReShade = null;
-            if (layout.RequiresHost64)
-            {
-                if (_reShade is null)
-                    throw new InvalidOperationException("32-bit DLSS5 Feeder needs the ReShade service to stage a 64-bit host64 ReShade runtime.");
-                hostReShade = await _reShade.EnsureLatestStagedAsync(PeArchitecture.X64, cancellationToken).ConfigureAwait(false);
-            }
-
-            // Every download and extraction above is done: from the first game file on, the install runs to completion
-            // or full rollback (Cancel is refused). The compiler copy and its override used to run before the downloads.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            if (compilerPlan.DeploySourcePath is not null)
-                await CopyOwnedAsync(compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied, cancellationToken).ConfigureAwait(false);
-
-            if (_overrides is not null)
-                compilerOverride = await _overrides.EnsureNativeBuiltinAsync(operation, prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
-
-            if (dgVoodooPayload is not null)
-            {
-                dx9Migration = await _dx9ReShade!.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
-                dx9TranslationCreatedThisAttempt = true;
-            }
-
-            Directory.CreateDirectory(addonDir);
-            Directory.CreateDirectory(shaderRoot);
-            Directory.CreateDirectory(textureRoot);
-            createdDirs.Add(integrationRoot);
-            var host64CacheNote = "";
-            if (hostReShade is not null)
-            {
-                Directory.CreateDirectory(layout.Host64Directory!);
-                createdDirs.Add(layout.Host64Directory!);
-                host64CacheNote = Host64CacheNote(hostReShade.FromCache);
-                await CopyOwnedAsync(host64Executable!, layout.Host64ExecutableTarget!, copied, cancellationToken).ConfigureAwait(false);
-                await CopyOwnedAsync(hostReShade.DllPath, Path.Combine(layout.Host64Directory!, "dxgi.dll"), copied, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (dgVoodooPayload is not null)
-            {
-                await CopyOwnedAsync(dgVoodooPayload.D3D9Path, Path.Combine(binaryDir, "D3D9.dll"), copied, cancellationToken).ConfigureAwait(false);
-                await CopyOwnedAsync(dgVoodooPayload.ConfigPath, Path.Combine(binaryDir, "dgVoodoo.conf"), copied, cancellationToken).ConfigureAwait(false);
-            }
-
-            await CopyOwnedAsync(feederAddon, feederTarget, copied, cancellationToken).ConfigureAwait(false);
-            if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
-            {
-                await CopyOwnedAsync(dfc!.AddonPath, deepFriedAddonTarget, copied, cancellationToken).ConfigureAwait(false);
-                await CopyOwnedAsync(dfc.BridgePath, deepFriedBridgeTarget, copied, cancellationToken).ConfigureAwait(false);
-                if (!deepFriedConfigPreexisting)
-                    await CopyOwnedAsync(dfc.ConfigPath, deepFriedConfigTarget, copied, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                await CopyOwnedAsync(renoDxAddon!, renoDx5Target, copied, cancellationToken).ConfigureAwait(false);
-            }
-            await CopyOwnedAsync(cachedSr, dlssTarget, copied, cancellationToken).ConfigureAwait(false);
-            await CopyOwnedAsync(cachedNr, nrTarget, copied, cancellationToken).ConfigureAwait(false);
-
-            var feederFxTarget = Path.Combine(shaderRoot, "DLSS5_Feed.fx");
-            await CopyOwnedAsync(feederFx, feederFxTarget, copied, cancellationToken).ConfigureAwait(false);
-
-            // Match the upstream Feeder refresh invariant: deploy the Lumenite Kernel
-            // and its dependencies, not every optional LumeniteFX effect. This avoids the
-            // pack-refresh class of bug fixed upstream on Windows.
-            CopyLumeniteKernel(Path.Combine(lumeniteStage, "Shaders"), shaderRoot, copied, cancellationToken);
-            CopyLumeniteTextures(Path.Combine(lumeniteStage, "Textures"), textureRoot, copied, cancellationToken);
-            foreach (var headerName in RequiredHeaderNames)
-            {
-                var source = Path.Combine(headersStage, "Shaders", headerName);
-                var destination = Path.Combine(shaderRoot, headerName);
-                if (!File.Exists(destination))
-                    CopyShaderFile(source, destination, copied);
-            }
-
-            var presetText = BuildPresetText();
-            AtomicFile.WriteAllText(presetTarget, presetText, new UTF8Encoding(false));
-            copied.Add(presetTarget);
-
-            var effectPath = @".\reshade-shaders\RHI\DLSS5FeederFull\Shaders\**";
-            var texturePath = @".\reshade-shaders\RHI\DLSS5FeederFull\Textures\**";
-            iniResult = ReShadeIniManager.Apply(binaryDir, [effectPath], [texturePath]);
-            presetMutation = SetPresetPath(iniResult.Path, @".\RHI-DLSS5-Feeder.ini");
-            if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
-                earlyLoadMutation = EnsureLoadFromDllMainToken(iniResult.Path, DeepFriedAddonName);
-
-            var files = new List<LinuxDeployedFile>();
-            foreach (var path in copied.Distinct(StringComparer.Ordinal))
-            {
-                files.Add(new LinuxDeployedFile
-                {
-                    Path = path,
-                    ExistedBeforeInstall = false,
-                    Sha256 = FileHash.Sha256Hex(path),
-                    AllowUserChanges = Path.GetFileName(path).Equals(PresetName, StringComparison.OrdinalIgnoreCase)
-                                       || Path.GetFileName(path).Equals(DeepFriedConfigName, StringComparison.OrdinalIgnoreCase)
-                });
-            }
-
-            if (sharedDx9Record is not null)
-            {
-                foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
-                {
-                    var shared = sharedDx9Record.Files.First(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
-                    files.Add(new LinuxDeployedFile
-                    {
-                        Path = shared.Path,
-                        ExistedBeforeInstall = false,
-                        Sha256 = await FileHash.Sha256HexAsync(shared.Path, cancellationToken).ConfigureAwait(false)
-                    });
-                }
-            }
-
-            if (deepFriedConfigPreexisting)
-            {
-                files.Add(new LinuxDeployedFile
-                {
-                    Path = deepFriedConfigTarget,
-                    ExistedBeforeInstall = true,
-                    Sha256 = FileHash.Sha256Hex(deepFriedConfigTarget),
-                    AllowUserChanges = true
-                });
-            }
-
-            var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                [FullStackMetadata] = "1",
-                [MetaFeederVersion] = feederRelease.Version,
-                ["GitHub.ReleaseTagPin"] = releaseTag ?? "",
-                ["Feeder.Architecture"] = gameArchitecture.ToString(),
-                ["Feeder.Host64"] = layout.RequiresHost64 ? "1" : "0",
-                [MetaDx9Migration] = dx9Migration is null ? "" : JsonSerializer.Serialize(dx9Migration),
-                [MetaDgVoodooVersion] = dgVoodooPayload?.Version ?? ReadDgVoodooVersion(sharedDx9Record),
-                [MetaConsumer] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? "Deep Fried Chicken" : "RenoDX DLSS5",
-                [MetaConsumerVersion] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? dfc!.Version : renoDxRelease!.Version,
-                [MetaConsumerPackageSha256] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? FileHash.Sha256Hex(consumerPackage!) : renoDxPackageSha256!,
-                ["Feeder.ConsumerConfigPreexisting"] = deepFriedConfigPreexisting ? "1" : "0",
-                ["Feeder.D3DCompilerSource"] = compilerPlan.Description,
-                ["Feeder.D3DCompilerOwned"] = compilerPlan.DeploySourcePath is null ? "0" : "1",
-                [MetaLoadFromDllMainAdded] = earlyLoadMutation?.AddedByRhi == true ? "1" : "0",
-                [MetaIniPath] = iniResult.Path,
-                [MetaIniCreated] = iniResult.CreatedByRhi ? "1" : "0",
-                [MetaIniEffectKeyCreated] = iniResult.EffectKeyCreated ? "1" : "0",
-                [MetaIniTextureKeyCreated] = iniResult.TextureKeyCreated ? "1" : "0",
-                [MetaIniEffectAdded] = JsonSerializer.Serialize(iniResult.AddedEffectPaths),
-                [MetaIniTextureAdded] = JsonSerializer.Serialize(iniResult.AddedTexturePaths),
-                [MetaIniHash] = FileHash.Sha256Hex(iniResult.Path),
-                [MetaPresetPreviousExists] = presetMutation.PreviousKeyExisted ? "1" : "0",
-                [MetaPresetPreviousValue] = presetMutation.PreviousValue ?? "",
-                [MetaPresetSetValue] = presetMutation.SetValue
-            };
-            foreach (var (part, sha256, verified) in downloads)
-                VerifiedDownload.Record(metadata, sha256, verified, part);
-            if (dgVoodooPayload?.Download is { } dgVoodooDownload)
-                dgVoodooDownload.RecordIn(metadata, DgVoodooPreparedPayload.DownloadPart);
-
-            _records.Upsert(LinuxDeploymentRecovery.StampOperation(operation, new LinuxDeploymentRecord
-            {
-                GameKey = LinuxDeploymentRecordStore.GameKey(game),
-                GameName = game.Name,
-                Component = ManagedComponentKind.Dlss5Feeder,
-                BinaryDirectory = binaryDir,
-                SourceUrl = feederRelease.AssetUrl,
-                Version = feederRelease.Version,
-                InstalledAtUtc = DateTime.UtcNow,
-                Files = files,
-                DirectoriesCreatedByRhi = createdDirs,
-                AdditionalWineOverrides = compilerOverride is null ? [] : [compilerOverride],
-                Metadata = metadata
-            }));
-            // The record carries the operation id: it is the commit point.
-            if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
-
-            var configNote = deepFriedConfigPreexisting
-                ? $" Existing {DeepFriedConfigName} was preserved as user-owned configuration."
-                : "";
-            var consumerMessage = consumer == Dlss5FeederConsumer.DeepFriedChicken
-                ? $"Deep Fried Chicken {dfc!.Version}. The consumer binaries matched SHA256SUMS.txt and early ReShade loading was configured for {DeepFriedAddonName}.{configNote}"
-                : $"RenoDX DLSS5 {renoDxRelease!.Version}. No Deep Fried Chicken files or LoadFromDllMain token were installed.";
-            return ComponentOperationResult.Ok(
-                $"DLSS5 Feeder Full {feederRelease.Version} installed with {consumerMessage}{host64CacheNote}",
-                copied.ToArray());
-        }
-        catch (Exception ex)
-        {
-            // Best-effort rollback. Only paths actually copied by this install are removed; a pre-existing user-owned DFC cfg is never added to this list.
-            foreach (var leftover in FileCleanup.TryDeleteAll(copied.AsEnumerable().Reverse()))
-                AppLog.Warn("dlss5-feeder", $"Rollback could not remove a file this install copied: {leftover}");
-            if (iniResult is not null)
-                RollbackStep("ReShade.ini cleanup", () => ReShadeIniManager.Cleanup(
-                    iniResult.Path,
-                    iniResult.CreatedByRhi,
-                    File.Exists(iniResult.Path) ? FileHash.Sha256Hex(iniResult.Path) : null,
-                    iniResult.AddedEffectPaths,
-                    iniResult.AddedTexturePaths,
-                    iniResult.EffectKeyCreated,
-                    iniResult.TextureKeyCreated));
-            if (presetMutation is not null && iniResult is not null)
-                RollbackStep("PresetPath restore", () => RestorePresetPath(iniResult.Path, presetMutation));
-            if (earlyLoadMutation is not null && iniResult is not null)
-                RollbackStep("LoadFromDllMain restore", () => RemoveLoadFromDllMainToken(iniResult.Path, earlyLoadMutation));
-            if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
-            {
-                // Rollback runs to completion even when the install itself was cancelled.
-                try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
-                catch (Exception restoreError) { AppLog.Warn("dlss5-feeder", "Rollback could not restore the DX9 ReShade translation", restoreError); }
-            }
-            FileCleanup.TryDeleteEmptyTree(integrationRoot);
-            if (compilerOverride is not null && _overrides is not null)
-                RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
-            return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}");
+            return await PlaceAsync(scope, game, prefix, consumer, compilerPlan, targets!, staged, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             DeleteStage(stageRoot);
         }
+    }
+
+    /// <summary>Everything an install deploys, downloaded, extracted and checked in the stage folder (nothing in the game yet).</summary>
+    private sealed record FeederStaged(
+        GitHubResolvedReleaseAsset FeederRelease,
+        string FeederAddon,
+        string? Host64Executable,
+        string FeederFx,
+        DeepFriedChickenBundle? Dfc,
+        GitHubResolvedReleaseAsset? RenoDxRelease,
+        string? RenoDxAddon,
+        string? RenoDxPackageSha256,
+        string CachedSr,
+        string CachedNr,
+        string LumeniteStage,
+        string HeadersStage,
+        ReShadeDx9MigrationState? SharedDx9State,
+        LinuxDeploymentRecord? SharedDx9Record,
+        DgVoodooPreparedPayload? DgVoodoo,
+        ReShadeStagedDll? HostReShade,
+        IReadOnlyList<(string? Part, string Sha256, bool DigestVerified)> Downloads,
+        string? ReleaseTag,
+        string? ConsumerPackage);
+
+    // The network half of an install (before the write gate): every download and extraction.
+    private async Task<FeederStaged> StageAsync(
+        DetectedGame game, Dlss5FeederConsumer consumer, string? consumerPackage, string? releaseTag, string? neuralRenderingDllVersion,
+        FeederInstallTargets targets, PeArchitecture gameArchitecture, string stageRoot, CancellationToken cancellationToken)
+    {
+        DeepFriedChickenBundle? dfc = null;
+        GitHubResolvedReleaseAsset? renoDxRelease = null;
+        string? renoDxAddon = null;
+        string? renoDxPackageSha256 = null;
+        // Every download this record deploys, by record metadata part (#26): null = the Feeder release itself.
+        var downloads = new List<(string? Part, string Sha256, bool DigestVerified)>();
+
+        if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
+        {
+            // Manual consumer path: validate the user-supplied package before any registry mutation.
+            dfc = await ExtractDeepFriedChickenBundleAsync(consumerPackage!, Path.Combine(stageRoot, "deep-fried-chicken"), cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Experimental consumer path restored for controlled A/B testing. Resolve only the
+            // dedicated RenoDX DLSS5 neural consumer; ordinary game-specific RenoDX HDR add-ons
+            // remain independent and may coexist because they are not classified as this consumer.
+            renoDxRelease = await _releaseResolver.ResolveAsync(CreateRenoDxDlss5ReleaseQuery(), cancellationToken).ConfigureAwait(false);
+            var consumerDownload = await EnsureCachedReleaseAssetAsync(renoDxRelease, DownloadSources.RhiRepository, cancellationToken).ConfigureAwait(false);
+            renoDxPackageSha256 = consumerDownload.Sha256;
+            downloads.Add((ConsumerDownloadPart, consumerDownload.Sha256, consumerDownload.DigestVerified));
+            renoDxAddon = renoDxRelease.AssetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                ? await ExtractReleasePayloadByNameAsync(consumerDownload.Path, RenoDx5AddonName, Path.Combine(stageRoot, RenoDx5AddonName), minimumSize: 32 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false)
+                : ValidateDownloadedPayload(consumerDownload.Path, RenoDx5AddonName, minimumSize: 32 * 1024, requirePe: true);
+        }
+
+        // Current upstream publishes a single DLSS5-Feeder-*.zip release asset.
+        // The archive is produced by Windows tooling, so entries may carry either '/' or '\\'
+        // separators. Linux must normalize both before matching leaf names. The tagged raw
+        // shader is a conservative fallback only when an archive genuinely omits DLSS5_Feed.fx.
+        var feederRelease = await _releaseResolver.ResolveAsync(CreateFeederArchiveReleaseQuery(), releaseTag, cancellationToken).ConfigureAwait(false);
+        var feederDownload = await EnsureCachedReleaseAssetAsync(feederRelease, DownloadSources.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
+        var feederZip = feederDownload.Path;
+        downloads.Add((null, feederDownload.Sha256, feederDownload.DigestVerified));
+        var feederAssetName = gameArchitecture == PeArchitecture.X86 ? FeederAddon32Name : FeederAddonName;
+        var feederAddon = await ExtractReleasePayloadByNameAsync(
+            feederZip, feederAssetName, Path.Combine(stageRoot, feederAssetName), minimumSize: 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
+        string? host64Executable = null;
+        if (targets.Layout.RequiresHost64)
+            host64Executable = await ExtractReleasePayloadByNameAsync(
+                feederZip, Host64ExecutableName, Path.Combine(stageRoot, Host64ExecutableName), minimumSize: 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
+
+        string feederFx;
+        try
+        {
+            feederFx = await ExtractReleasePayloadByNameAsync(
+                feederZip, FeederFxName, Path.Combine(stageRoot, FeederFxName), minimumSize: 256, requirePe: false, cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidDataException ex) when (ex.Message.Contains(FeederFxName, StringComparison.OrdinalIgnoreCase))
+        {
+            feederFx = await DownloadFeederShaderFromResolvedVersionAsync(feederRelease.Version, Path.Combine(stageRoot, FeederFxName), cancellationToken).ConfigureAwait(false);
+            downloads.Add((FeederShaderDownloadPart, FileHash.Sha256Hex(feederFx), false));
+        }
+
+        var cachedSr = await _dlss.EnsureNewestCachedAsync(DlssComponentKind.SuperResolution, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Super Resolution runtime.");
+        var cachedNr = await _dlss.EnsureCachedAsync(DlssComponentKind.NeuralRendering, neuralRenderingDllVersion, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidDataException("The current RHI DLSS manifest does not provide a Neural Rendering runtime.");
+        ValidateCachedRuntime(cachedSr, DlssName);
+        ValidateCachedRuntime(cachedNr, NrName);
+
+        var lumeniteStage = Path.Combine(stageRoot, "lumenite");
+        downloads.Add((LumeniteDownloadPart,
+            await DownloadAndExtractShaderArchiveAsync(LumeniteUrl, Path.Combine(stageRoot, "lumenite.zip"), lumeniteStage, cancellationToken).ConfigureAwait(false),
+            false));
+        FeederShaderStackInstaller.EnsureLumeniteLayout(lumeniteStage);
+
+        var headersStage = Path.Combine(stageRoot, "headers");
+        downloads.Add((HeadersDownloadPart,
+            await DownloadAndExtractShaderArchiveAsync(ReShadeHeadersUrl, Path.Combine(stageRoot, "headers.zip"), headersStage, cancellationToken).ConfigureAwait(false),
+            false));
+        FeederShaderStackInstaller.EnsureHeaderLayout(headersStage);
+
+        ReShadeDx9MigrationState? sharedDx9 = null;
+        LinuxDeploymentRecord? sharedDx9Record = null;
+        DgVoodooPreparedPayload? dgVoodooPayload = null;
+        if (game.EffectiveGraphicsApi == GraphicsApi.DirectX9)
+        {
+            var lumaRecord = _records.Find(game, ManagedComponentKind.LumaFramework);
+            sharedDx9 = ReadDx9Migration(lumaRecord, LumaFrameworkDeploymentService.MetaDx9Migration);
+            if (sharedDx9 is not null)
+            {
+                var sharedError = await ValidateSharedDx9TranslationAsync(lumaRecord!, cancellationToken).ConfigureAwait(false);
+                if (sharedError is not null)
+                    throw new InvalidOperationException($"Existing Luma DX9 translation ownership is inconsistent: {sharedError}");
+                sharedDx9Record = lumaRecord;
+            }
+            else
+            {
+                if (_dgVoodoo is null || _dx9ReShade is null)
+                    throw new InvalidOperationException("DX9 DLSS5 Feeder requires dgVoodoo2 staging and the managed ReShade DX9 migration coordinator.");
+                dgVoodooPayload = await _dgVoodoo.PrepareLatestAsync(gameArchitecture, cancellationToken).ConfigureAwait(false);
+                var dgConfigTarget = Path.Combine(targets.BinaryDirectory, "dgVoodoo.conf");
+                if (File.Exists(dgConfigTarget))
+                    throw new IOException($"External dgVoodoo.conf already exists: {dgConfigTarget}. RHI Linux will not overwrite it automatically.");
+            }
+        }
+
+        // A 32-bit game's host64 helper runs a 64-bit ReShade: staged (possibly downloaded from reshade.me) here with
+        // the other downloads, before the gate (w2 merge review, minor 1: it used to download after the first change).
+        ReShadeStagedDll? hostReShade = null;
+        if (targets.Layout.RequiresHost64)
+        {
+            if (_reShade is null)
+                throw new InvalidOperationException("32-bit DLSS5 Feeder needs the ReShade service to stage a 64-bit host64 ReShade runtime.");
+            hostReShade = await _reShade.EnsureLatestStagedAsync(PeArchitecture.X64, cancellationToken).ConfigureAwait(false);
+        }
+
+        return new FeederStaged(feederRelease, feederAddon, host64Executable, feederFx, dfc, renoDxRelease, renoDxAddon, renoDxPackageSha256,
+            cachedSr, cachedNr, lumeniteStage, headersStage, sharedDx9, sharedDx9Record, dgVoodooPayload, hostReShade, downloads, releaseTag, consumerPackage);
+    }
+
+    // The file half of an install (after the write gate): every change goes through the scope; the Feeder record (and,
+    // after a DX9 translation, ReShade's) saved in one ledger write is the commit point.
+    private async Task<ComponentOperationResult> PlaceAsync(
+        DeploymentScope scope, DetectedGame game, string prefix, Dlss5FeederConsumer consumer, FeederCompilerPlan compilerPlan,
+        FeederInstallTargets t, FeederStaged staged, CancellationToken cancellationToken)
+    {
+        // Every download and extraction is done: from the first game file on, the install runs to completion or full
+        // rollback (Cancel is refused).
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var copied = new List<string>();
+        var createdDirs = new List<string>();
+        WineOverrideRecord? compilerOverride = null;
+        Dx9MigrationInside? dx9 = null;
+        string host64CacheNote;
+        LinuxDeploymentRecord record;
+        try
+        {
+            if (compilerPlan.DeploySourcePath is not null)
+                await FeederShaderStackInstaller.PlaceAsync(scope, compilerPlan.DeploySourcePath, compilerPlan.UsablePath, copied).ConfigureAwait(false);
+            if (_overrides is not null)
+                compilerOverride = await _overrides.EnsureNativeBuiltinAsync(scope.Operation, prefix, "d3dcompiler_47", Path.GetFileName(game.ExecutablePath), cancellationToken).ConfigureAwait(false);
+            if (staged.DgVoodoo is not null)
+                dx9 = await _dx9ReShade!.MigrateInsideAsync(game, scope, cancellationToken).ConfigureAwait(false);
+
+            Directory.CreateDirectory(t.AddonDirectory);
+            Directory.CreateDirectory(t.ShaderRoot);
+            Directory.CreateDirectory(t.TextureRoot);
+            createdDirs.Add(t.IntegrationRoot);
+            host64CacheNote = "";
+            if (staged.HostReShade is not null)
+            {
+                Directory.CreateDirectory(t.Layout.Host64Directory!);
+                createdDirs.Add(t.Layout.Host64Directory!);
+                host64CacheNote = Host64CacheNote(staged.HostReShade.FromCache);
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.Host64Executable!, t.Layout.Host64ExecutableTarget!, copied).ConfigureAwait(false);
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.HostReShade.DllPath, Path.Combine(t.Layout.Host64Directory!, "dxgi.dll"), copied).ConfigureAwait(false);
+            }
+            if (staged.DgVoodoo is not null)
+            {
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.DgVoodoo.D3D9Path, Path.Combine(t.BinaryDirectory, "D3D9.dll"), copied).ConfigureAwait(false);
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.DgVoodoo.ConfigPath, Path.Combine(t.BinaryDirectory, "dgVoodoo.conf"), copied).ConfigureAwait(false);
+            }
+
+            await FeederShaderStackInstaller.PlaceAsync(scope, staged.FeederAddon, t.Layout.FeederTarget, copied).ConfigureAwait(false);
+            if (consumer == Dlss5FeederConsumer.DeepFriedChicken)
+            {
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.Dfc!.AddonPath, t.DeepFriedAddon, copied).ConfigureAwait(false);
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.Dfc.BridgePath, t.DeepFriedBridge, copied).ConfigureAwait(false);
+                if (!t.DeepFriedConfigPreexisting)
+                    await FeederShaderStackInstaller.PlaceAsync(scope, staged.Dfc.ConfigPath, t.DeepFriedConfig, copied).ConfigureAwait(false);
+            }
+            else
+            {
+                await FeederShaderStackInstaller.PlaceAsync(scope, staged.RenoDxAddon!, t.Layout.ConsumerTarget, copied).ConfigureAwait(false);
+            }
+            await FeederShaderStackInstaller.PlaceAsync(scope, staged.CachedSr, t.Layout.DlssTarget, copied).ConfigureAwait(false);
+            await FeederShaderStackInstaller.PlaceAsync(scope, staged.CachedNr, t.Layout.NrTarget, copied).ConfigureAwait(false);
+            await FeederShaderStackInstaller.InstallAsync(scope, staged.FeederFx, staged.LumeniteStage, staged.HeadersStage, t.ShaderRoot, t.TextureRoot, copied).ConfigureAwait(false);
+
+            if (File.Exists(t.Preset)) throw new IOException($"Protected target already exists: {t.Preset}");
+            await scope.PlaceBytesAsync(t.Preset, new UTF8Encoding(false).GetBytes(BuildPresetText()), CancellationToken.None).ConfigureAwait(false);
+            copied.Add(t.Preset);
+
+            // ReShade.ini: tracked before its three edits and declared after them, so a rollback (or the next start after a
+            // crash) puts back exactly the file as it was.
+            await scope.TrackAsync(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), CancellationToken.None).ConfigureAwait(false);
+            var iniResult = ReShadeIniManager.Apply(t.BinaryDirectory, [EffectSearchPath], [TextureSearchPath]);
+            var presetMutation = SetPresetPath(iniResult.Path, @".\RHI-DLSS5-Feeder.ini");
+            var earlyLoadMutation = consumer == Dlss5FeederConsumer.DeepFriedChicken ? EnsureLoadFromDllMainToken(iniResult.Path, DeepFriedAddonName) : null;
+            await scope.DeclareWrittenContentAsync(iniResult.Path, CancellationToken.None).ConfigureAwait(false);
+
+            record = BuildRecord(game, consumer, compilerPlan, t, staged, dx9?.State ?? staged.SharedDx9State, copied, createdDirs, compilerOverride,
+                iniResult, presetMutation, earlyLoadMutation);
+            // The record carries the operation id: it is the commit point (with ReShade's, after a DX9 translation, in the same write).
+            _records.Commit(dx9 is null ? [scope.Stamp(record)] : [scope.Stamp(record), dx9.ReShadeRecord]);
+        }
+        catch (Exception ex)
+        {
+            // Every file, ReShade.ini and (journaled) every Wine override back from the scope; the overrides once more
+            // for an unjournaled run (a no-op where the rollback already put the value back).
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (compilerOverride is not null && _overrides is not null)
+                RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
+            if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
+            FileCleanup.TryDeleteEmptyTree(t.IntegrationRoot);
+            if (t.Layout.Host64Directory is { } host64) FileCleanup.TryDeleteEmptyTree(host64);
+            return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        var configNote = t.DeepFriedConfigPreexisting
+            ? $" Existing {DeepFriedConfigName} was preserved as user-owned configuration."
+            : "";
+        var consumerMessage = consumer == Dlss5FeederConsumer.DeepFriedChicken
+            ? $"Deep Fried Chicken {staged.Dfc!.Version}. The consumer binaries matched SHA256SUMS.txt and early ReShade loading was configured for {DeepFriedAddonName}.{configNote}"
+            : $"RenoDX DLSS5 {staged.RenoDxRelease!.Version}. No Deep Fried Chicken files or LoadFromDllMain token were installed.";
+        return ComponentOperationResult.Ok(
+            $"DLSS5 Feeder Full {staged.FeederRelease.Version} installed with {consumerMessage}{host64CacheNote}",
+            copied.ToArray());
+    }
+
+    private const string EffectSearchPath = @".\reshade-shaders\RHI\DLSS5FeederFull\Shaders\**";
+    private const string TextureSearchPath = @".\reshade-shaders\RHI\DLSS5FeederFull\Textures\**";
+
+    private static LinuxDeploymentRecord BuildRecord(
+        DetectedGame game, Dlss5FeederConsumer consumer, FeederCompilerPlan compilerPlan, FeederInstallTargets t, FeederStaged staged,
+        ReShadeDx9MigrationState? dx9Migration, List<string> copied, List<string> createdDirs, WineOverrideRecord? compilerOverride,
+        ReShadeIniApplyResult iniResult, PresetPathMutation presetMutation, IniListTokenMutation? earlyLoadMutation)
+    {
+        var files = copied.Distinct(StringComparer.Ordinal).Select(path => new LinuxDeployedFile
+        {
+            Path = path,
+            ExistedBeforeInstall = false,
+            Sha256 = FileHash.Sha256Hex(path),
+            AllowUserChanges = Path.GetFileName(path).Equals(PresetName, StringComparison.OrdinalIgnoreCase)
+                               || Path.GetFileName(path).Equals(DeepFriedConfigName, StringComparison.OrdinalIgnoreCase)
+        }).ToList();
+        if (staged.SharedDx9Record is not null)
+        {
+            foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
+            {
+                var shared = staged.SharedDx9Record.Files.First(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
+                files.Add(new LinuxDeployedFile { Path = shared.Path, ExistedBeforeInstall = false, Sha256 = FileHash.Sha256Hex(shared.Path) });
+            }
+        }
+        if (t.DeepFriedConfigPreexisting)
+            files.Add(new LinuxDeployedFile { Path = t.DeepFriedConfig, ExistedBeforeInstall = true, Sha256 = FileHash.Sha256Hex(t.DeepFriedConfig), AllowUserChanges = true });
+
+        var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [FullStackMetadata] = "1",
+            [MetaFeederVersion] = staged.FeederRelease.Version,
+            ["GitHub.ReleaseTagPin"] = staged.ReleaseTag ?? "",
+            ["Feeder.Architecture"] = GameArchitecture.Of(game).ToString(),
+            ["Feeder.Host64"] = t.Layout.RequiresHost64 ? "1" : "0",
+            [MetaDx9Migration] = dx9Migration is null ? "" : JsonSerializer.Serialize(dx9Migration),
+            [MetaDgVoodooVersion] = staged.DgVoodoo?.Version ?? ReadDgVoodooVersion(staged.SharedDx9Record),
+            [MetaConsumer] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? "Deep Fried Chicken" : "RenoDX DLSS5",
+            [MetaConsumerVersion] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? staged.Dfc!.Version : staged.RenoDxRelease!.Version,
+            [MetaConsumerPackageSha256] = consumer == Dlss5FeederConsumer.DeepFriedChicken ? FileHash.Sha256Hex(staged.ConsumerPackage!) : staged.RenoDxPackageSha256!,
+            ["Feeder.ConsumerConfigPreexisting"] = t.DeepFriedConfigPreexisting ? "1" : "0",
+            ["Feeder.D3DCompilerSource"] = compilerPlan.Description,
+            ["Feeder.D3DCompilerOwned"] = compilerPlan.DeploySourcePath is null ? "0" : "1",
+            [MetaLoadFromDllMainAdded] = earlyLoadMutation?.AddedByRhi == true ? "1" : "0",
+            [MetaIniPath] = iniResult.Path,
+            [MetaIniCreated] = iniResult.CreatedByRhi ? "1" : "0",
+            [MetaIniEffectKeyCreated] = iniResult.EffectKeyCreated ? "1" : "0",
+            [MetaIniTextureKeyCreated] = iniResult.TextureKeyCreated ? "1" : "0",
+            [MetaIniEffectAdded] = JsonSerializer.Serialize(iniResult.AddedEffectPaths),
+            [MetaIniTextureAdded] = JsonSerializer.Serialize(iniResult.AddedTexturePaths),
+            [MetaIniHash] = FileHash.Sha256Hex(iniResult.Path),
+            [MetaPresetPreviousExists] = presetMutation.PreviousKeyExisted ? "1" : "0",
+            [MetaPresetPreviousValue] = presetMutation.PreviousValue ?? "",
+            [MetaPresetSetValue] = presetMutation.SetValue
+        };
+        foreach (var (part, sha256, verified) in staged.Downloads)
+            VerifiedDownload.Record(metadata, sha256, verified, part);
+        if (staged.DgVoodoo?.Download is { } dgVoodooDownload)
+            dgVoodooDownload.RecordIn(metadata, DgVoodooPreparedPayload.DownloadPart);
+
+        return new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game),
+            GameName = game.Name,
+            Component = ManagedComponentKind.Dlss5Feeder,
+            BinaryDirectory = t.BinaryDirectory,
+            SourceUrl = staged.FeederRelease.AssetUrl,
+            Version = staged.FeederRelease.Version,
+            InstalledAtUtc = DateTime.UtcNow,
+            Files = files,
+            DirectoriesCreatedByRhi = createdDirs,
+            AdditionalWineOverrides = compilerOverride is null ? [] : [compilerOverride],
+            Metadata = metadata
+        };
     }
 
     /// <summary>One best-effort rollback step: a failure is logged (rhi.log) and the remaining steps still run.</summary>
@@ -807,7 +720,7 @@ public sealed class Dlss5FeederFullDeploymentService
         if (_overrides?.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
 
-        var preserved = new List<string>();
+        ReShadeDx9MigrationState? dx9State;
         try
         {
             // Preflight destructive removals first. User-editable preset is preserved instead of blocking teardown.
@@ -820,27 +733,39 @@ public sealed class Dlss5FeederFullDeploymentService
                 if (!string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so the full Feeder teardown was not started.");
             }
-
-            var dx9State = record.Metadata.TryGetValue(MetaDx9Migration, out var dx9Json) && !string.IsNullOrWhiteSpace(dx9Json)
+            dx9State = record.Metadata.TryGetValue(MetaDx9Migration, out var dx9Json) && !string.IsNullOrWhiteSpace(dx9Json)
                 ? JsonSerializer.Deserialize<ReShadeDx9MigrationState>(dx9Json)
                 : null;
-            var lumaRecord = dx9State is null ? null : _records.Find(game, ManagedComponentKind.LumaFramework);
-            var lumaStillUsesDx9 = dx9State is not null && ReadDx9Migration(lumaRecord, LumaFrameworkDeploymentService.MetaDx9Migration) is not null;
-            var dx9ReShade = _dx9ReShade;
-            Dx9TranslationReShadeCoordinator? dx9RestoreCoordinator = null;
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"DLSS5 Feeder Full removal failed: {ex.Message}");
+        }
 
-            // Preflight the DX9 coordinator before touching ReShade.ini or any managed files.
-            // Removal must be atomic from the user's perspective: if DX9 migration cannot be
-            // restored safely, leave the existing Feeder configuration untouched.
-            if (dx9State is not null && !lumaStillUsesDx9)
-            {
-                if (dx9ReShade is null)
-                    return ComponentOperationResult.Fail("DX9 Feeder removal needs the ReShade migration coordinator, but it is unavailable.");
-                dx9RestoreCoordinator = dx9ReShade;
-            }
+        var lumaRecord = dx9State is null ? null : _records.Find(game, ManagedComponentKind.LumaFramework);
+        var lumaStillUsesDx9 = dx9State is not null && ReadDx9Migration(lumaRecord, LumaFrameworkDeploymentService.MetaDx9Migration) is not null;
+        // Preflight the DX9 coordinator before touching ReShade.ini or any managed files: if the DX9 migration cannot be
+        // restored safely, the Feeder configuration stays untouched.
+        var restoreDx9 = dx9State is not null && !lumaStillUsesDx9;
+        if (restoreDx9 && _dx9ReShade is null)
+            return ComponentOperationResult.Fail("DX9 Feeder removal needs the ReShade migration coordinator, but it is unavailable.");
 
-            // Cancel is honoured only up to here: the teardown never stops half-way.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        // #23/#169: one journaled removal (files, ReShade.ini, the DX9 translation and the overrides); taking the record
+        // out of the ledger (with ReShade's restored record in the same write) is the commit point.
+        var (opened, refusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "DLSS5 Feeder removal: " + game.Name, game, ManagedComponentKind.Dlss5Feeder, cancellationToken).ConfigureAwait(false);
+        if (refusal is not null) return ComponentOperationResult.Fail(refusal);
+        await using var scope = opened!;
+
+        // Cancel is honoured only up to here: the teardown never stops half-way.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var preserved = new List<string>();
+        var overrideRestores = new List<(WineOverrideRecord Override, WineOverrideRestoreResult Result)>();
+        LinuxDeploymentRecord? reShadeBefore = null;
+        LinuxDeploymentRecord? reShadeAfter = null;
+        WineOverrideRestoreResult? dx9OverrideRestore = null;
+        try
+        {
             if (record.Metadata.TryGetValue(MetaIniPath, out var iniPath) && !string.IsNullOrWhiteSpace(iniPath))
             {
                 var mutation = new PresetPathMutation(
@@ -851,6 +776,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 // Cleanup search-path tokens first. If Feeder had to create ReShade.ini and the
                 // file stayed untouched, this can remove it entirely. Otherwise restore only the
                 // PresetPath value we changed, and only while it still points at our preset.
+                await scope.TrackAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
                 ReShadeIniManager.Cleanup(
                     iniPath,
                     record.Metadata.GetValueOrDefault(MetaIniCreated) == "1",
@@ -862,16 +788,18 @@ public sealed class Dlss5FeederFullDeploymentService
                 RestorePresetPath(iniPath, mutation);
                 if (record.Metadata.GetValueOrDefault(MetaLoadFromDllMainAdded) == "1")
                     RemoveLoadFromDllMainToken(iniPath, new IniListTokenMutation(true, DeepFriedAddonName));
+                if (File.Exists(iniPath)) await scope.DeclareWrittenContentAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
             }
 
-            if (dx9State is not null && !lumaStillUsesDx9 && dx9RestoreCoordinator is { } coordinator)
+            if (restoreDx9)
             {
                 foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
                 {
                     var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
-                    if (managed is not null && File.Exists(managed.Path)) File.Delete(managed.Path);
+                    if (managed is not null && File.Exists(managed.Path)) await scope.DeleteAsync(managed.Path, CancellationToken.None).ConfigureAwait(false);
                 }
-                await coordinator.RestoreAsync(game, dx9State, cancellationToken).ConfigureAwait(false);
+                reShadeBefore = _records.Find(game, ManagedComponentKind.ReShade);
+                (reShadeAfter, dx9OverrideRestore) = await _dx9ReShade!.RestoreInsideAsync(game, dx9State!, scope, cancellationToken).ConfigureAwait(false);
             }
 
             foreach (var file in record.Files.AsEnumerable().Reverse())
@@ -881,34 +809,44 @@ public sealed class Dlss5FeederFullDeploymentService
                     continue;
                 if (!File.Exists(file.Path)) continue;
                 var currentHash = file.AllowUserChanges || file.ExistedBeforeInstall
-                    ? await FileHash.Sha256HexAsync(file.Path, cancellationToken).ConfigureAwait(false)
+                    ? await FileHash.Sha256HexAsync(file.Path, CancellationToken.None).ConfigureAwait(false)
                     : null;
                 if (ShouldPreserveOnRemove(file, currentHash))
                 {
                     preserved.Add(file.Path);
                     continue;
                 }
-                File.Delete(file.Path);
+                await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
             }
 
-            foreach (var directory in record.DirectoriesCreatedByRhi.OrderByDescending(x => x.Length))
-                FileCleanup.TryDeleteEmptyTree(directory);
-            var overrideRestores = new List<WineOverrideRestoreResult>();
             if (_overrides is not null && game.PrefixPath is { } removePrefix && Directory.Exists(removePrefix))
                 foreach (var wineOverride in record.AdditionalWineOverrides)
-                    overrideRestores.Add(_overrides.Restore(removePrefix, wineOverride));
-            _records.Remove(game, ManagedComponentKind.Dlss5Feeder);
-
-            var suffix = preserved.Count == 0
-                ? ""
-                : $" Preserved {preserved.Count} user-modified file(s): {string.Join(", ", preserved.Select(Path.GetFileName))}.";
-            return ComponentOperationResult.Ok("RHI-managed DLSS5 Feeder Full removed; ReShade itself was left installed." + suffix
-                + WineDllOverrideService.KeptValueNotes([.. overrideRestores]));
+                    overrideRestores.Add((wineOverride, await _overrides.RestoreAsync(scope.Operation, removePrefix, wineOverride, CancellationToken.None).ConfigureAwait(false)));
+            _records.Commit(reShadeAfter is null ? [] : [reShadeAfter], [(game, ManagedComponentKind.Dlss5Feeder)]); // the commit point
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"DLSS5 Feeder Full removal failed: {ex.Message}");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss5-feeder", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
+            // The record keeps its overrides: put RHI's value back where this removal took it away (#30).
+            if (game.PrefixPath is { } prefix)
+            {
+                foreach (var (wineOverride, result) in overrideRestores.Where(o => o.Result.Outcome == WineOverrideRestoreOutcome.Restored))
+                    _overrides?.TryReapply(prefix, wineOverride);
+                if (dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated)
+                    _overrides?.TryReapply(prefix, translated);
+            }
+            return ComponentOperationResult.Fail($"DLSS5 Feeder Full removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        // Past the commit point: emptied folders RHI created go (best effort; never rolled back).
+        foreach (var directory in record.DirectoriesCreatedByRhi.OrderByDescending(x => x.Length))
+            FileCleanup.TryDeleteEmptyTree(directory);
+        var suffix = preserved.Count == 0
+            ? ""
+            : $" Preserved {preserved.Count} user-modified file(s): {string.Join(", ", preserved.Select(Path.GetFileName))}.";
+        return ComponentOperationResult.Ok("RHI-managed DLSS5 Feeder Full removed; ReShade itself was left installed." + suffix
+            + WineDllOverrideService.KeptValueNotes([.. overrideRestores.Select(o => o.Result)]));
     }
 
     private static ReShadeDx9MigrationState? ReadDx9Migration(LinuxDeploymentRecord? record, string key)
@@ -956,126 +894,6 @@ public sealed class Dlss5FeederFullDeploymentService
             throw new InvalidDataException($"Cached {displayName} runtime is unexpectedly small ({length} bytes).");
     }
 
-    internal static bool IsBlockingPreexistingFullStackTarget(string path)
-        => !Path.GetFileName(path).Equals(DeepFriedConfigName, StringComparison.OrdinalIgnoreCase);
-
-    internal static bool ShouldPreserveOnRemove(LinuxDeployedFile file, string? currentHash)
-        => file.ExistedBeforeInstall ||
-           (file.AllowUserChanges &&
-            !string.Equals(currentHash, file.Sha256, StringComparison.OrdinalIgnoreCase));
-
-    internal static FeederCompilerPlan ResolveCompilerPlan(
-        DetectedGame game,
-        PeArchitecture architecture,
-        string? selectedExternalPath)
-    {
-        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
-            throw new InvalidOperationException("Game binary directory is not available.");
-
-        var existing = ReShadeDeploymentService.FindNativeD3DCompilerForGame(game, architecture);
-        if (existing is not null)
-        {
-            var inPrefix = !string.IsNullOrWhiteSpace(game.PrefixPath) &&
-                           Path.GetFullPath(existing).StartsWith(Path.GetFullPath(game.PrefixPath), StringComparison.Ordinal);
-            return new FeederCompilerPlan(existing, null, inPrefix ? $"prefix:{existing}" : $"app-local:{existing}");
-        }
-
-        var selected = ExpandUserPath(selectedExternalPath);
-        if (!string.IsNullOrWhiteSpace(selected))
-        {
-            if (!ReShadeDeploymentService.LooksLikeNativeD3DCompiler(selected, architecture))
-                throw new InvalidOperationException($"The selected D3DCompiler_47.dll is missing, has the wrong PE architecture, or is not recognized as Microsoft's native HLSL compiler: {selected}");
-
-            var target = Path.Combine(game.BinaryDirectory, "D3DCompiler_47.dll");
-            var occupied = ReShadeDeploymentService.FindFileCaseInsensitive(game.BinaryDirectory, "D3DCompiler_47.dll");
-            if (occupied is not null)
-                throw new InvalidOperationException($"An app-local D3DCompiler_47.dll already exists but was not recognized as a usable native Microsoft compiler: {occupied}");
-
-            return new FeederCompilerPlan(target, selected, $"selected:{selected}");
-        }
-
-        throw new InvalidOperationException("No valid compiler was found app-local or in the selected Wine/Proton prefix.");
-    }
-
-    private static string? ExpandUserPath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-        var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (expanded == "~") expanded = home;
-        else if (expanded.StartsWith("~/", StringComparison.Ordinal))
-            expanded = Path.Combine(home, expanded[2..]);
-        return Path.GetFullPath(expanded);
-    }
-
-    internal static ComponentOperationResult? ValidateTarget(DetectedGame game, Dlss5FeederConsumer consumer, bool requireReShade = true)
-    {
-        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail("DLSS5 Feeder Full currently targets Windows games running through Wine/Proton.");
-        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
-            return ComponentOperationResult.Fail("Game binary directory is not known yet.");
-        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
-            return ComponentOperationResult.Fail("Game executable was not detected.");
-
-        var architecture = GameArchitecture.Of(game);
-        if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
-            return ComponentOperationResult.Fail("DLSS5 Feeder Full requires a recognized x86/x64 Windows executable.");
-        if (architecture == PeArchitecture.X86 && consumer != Dlss5FeederConsumer.RenoDxDlss5)
-            return ComponentOperationResult.Fail("32-bit DLSS5 Feeder uses the documented RenoDX host64 consumer path. Deep Fried Chicken remains limited to the proven 64-bit layout.");
-
-        var api = game.EffectiveGraphicsApi;
-        var supported = architecture == PeArchitecture.X86
-            ? api is GraphicsApi.DirectX9 or GraphicsApi.DirectX10 or GraphicsApi.DirectX11
-            : api is GraphicsApi.DirectX9 or GraphicsApi.DirectX11 or GraphicsApi.DirectX12;
-        if (!supported)
-            return ComponentOperationResult.Fail($"DLSS5 Feeder Full does not have a verified local orchestration path for {architecture} {api} yet.");
-        if (requireReShade && !GitHubReShadeAddonDeploymentService.HasReShade(game.BinaryDirectory))
-            return ComponentOperationResult.Fail("Install ReShade with full add-on support first.");
-
-        // Feeder is the no-native-DLSS workflow. Reuse the bounded file index instead of
-        // doing an unbounded recursive walk through large game trees.
-        var scanRoot = Directory.Exists(game.InstallPath) ? game.InstallPath : game.BinaryDirectory;
-        if (GameFileIndexer.Build(scanRoot!, 8).Any(path => Path.GetFileName(path).Equals(DlssName, StringComparison.OrdinalIgnoreCase)))
-            return ComponentOperationResult.Fail("A native nvngx_dlss.dll already exists in this game. Use the native-DLSS workflow instead of Feeder.");
-        return null;
-    }
-
-    internal static FeederDeploymentLayout ResolveFeederLayout(
-        string binaryDirectory,
-        string addonDirectory,
-        PeArchitecture architecture,
-        Dlss5FeederConsumer consumer)
-    {
-        if (architecture == PeArchitecture.X86)
-        {
-            if (consumer != Dlss5FeederConsumer.RenoDxDlss5)
-                throw new NotSupportedException("Deep Fried Chicken does not have a verified 32-bit host64 deployment contract in RHI Linux.");
-            var host64 = Path.Combine(binaryDirectory, Host64DirectoryName);
-            return new FeederDeploymentLayout(
-                Path.Combine(addonDirectory, FeederAddon32Name),
-                Path.Combine(host64, RenoDx5AddonName),
-                Path.Combine(host64, DlssName),
-                Path.Combine(host64, NrName),
-                true,
-                host64,
-                Path.Combine(host64, Host64ExecutableName));
-        }
-
-        if (architecture != PeArchitecture.X64)
-            throw new NotSupportedException($"DLSS5 Feeder requires x86 or x64, not {architecture}.");
-
-        return new FeederDeploymentLayout(
-            Path.Combine(addonDirectory, FeederAddonName),
-            consumer == Dlss5FeederConsumer.RenoDxDlss5
-                ? Path.Combine(addonDirectory, RenoDx5AddonName)
-                : Path.Combine(binaryDirectory, DeepFriedAddonName),
-            Path.Combine(binaryDirectory, DlssName),
-            Path.Combine(binaryDirectory, NrName),
-            false,
-            null,
-            null);
-    }
-
     internal static string BuildPresetText()
         => "Techniques=Lumenite_Kernel@lumenite_Kernel.fx,DLSS5_Feed@DLSS5_Feed.fx\r\n" +
            "TechniqueSorting=Lumenite_Kernel@lumenite_Kernel.fx,DLSS5_Feed@DLSS5_Feed.fx\r\n" +
@@ -1085,56 +903,6 @@ public sealed class Dlss5FeederFullDeploymentService
            "MV_SCALE=1.000000\r\n" +
            "MV_SIGN=1.000000,1.000000\r\n" +
            "PreprocessorDefinitions=DLSS5_MV_PROVIDER=3\r\n";
-
-    internal sealed record PresetPathMutation(bool PreviousKeyExisted, string? PreviousValue, string SetValue);
-
-    internal static PresetPathMutation SetPresetPath(string iniPath, string value)
-    {
-        var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string>();
-        var (sectionStart, sectionEnd) = FindSection(lines, "GENERAL");
-        if (sectionStart < 0)
-        {
-            if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
-            lines.Add("[GENERAL]");
-            lines.Add($"PresetPath={value}");
-            AtomicFile.ReplaceUserFileLines(iniPath, lines);
-            return new(false, null, value);
-        }
-
-        var keyIndex = FindKey(lines, sectionStart + 1, sectionEnd, "PresetPath");
-        if (keyIndex < 0)
-        {
-            lines.Insert(sectionEnd, $"PresetPath={value}");
-            AtomicFile.ReplaceUserFileLines(iniPath, lines);
-            return new(false, null, value);
-        }
-
-        var eq = lines[keyIndex].IndexOf('=');
-        var previous = eq >= 0 ? lines[keyIndex][(eq + 1)..].Trim() : "";
-        lines[keyIndex] = $"PresetPath={value}";
-        AtomicFile.ReplaceUserFileLines(iniPath, lines);
-        return new(true, previous, value);
-    }
-
-    internal static void RestorePresetPath(string iniPath, PresetPathMutation mutation)
-    {
-        if (!File.Exists(iniPath)) return;
-        var lines = File.ReadAllLines(iniPath).ToList();
-        var (sectionStart, sectionEnd) = FindSection(lines, "GENERAL");
-        if (sectionStart < 0) return;
-        var keyIndex = FindKey(lines, sectionStart + 1, sectionEnd, "PresetPath");
-        if (keyIndex < 0) return;
-        var eq = lines[keyIndex].IndexOf('=');
-        var current = eq >= 0 ? lines[keyIndex][(eq + 1)..].Trim() : "";
-        if (!current.Equals(mutation.SetValue, StringComparison.OrdinalIgnoreCase))
-            return; // User changed the active preset after install. Preserve that choice.
-
-        if (mutation.PreviousKeyExisted)
-            lines[keyIndex] = $"PresetPath={mutation.PreviousValue ?? ""}";
-        else
-            lines.RemoveAt(keyIndex);
-        AtomicFile.ReplaceUserFileLines(iniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
-    }
 
     /// <summary>
     /// A release asset from the stamped download cache (<c>releases/&lt;version&gt;/&lt;asset&gt;</c>): reused while its
@@ -1290,363 +1058,8 @@ public sealed class Dlss5FeederFullDeploymentService
         return slash >= 0 ? normalized[(slash + 1)..] : normalized;
     }
 
-    internal sealed record FeederDeploymentLayout(
-        string FeederTarget,
-        string ConsumerTarget,
-        string DlssTarget,
-        string NrTarget,
-        bool RequiresHost64,
-        string? Host64Directory,
-        string? Host64ExecutableTarget);
 
-    internal sealed record FeederCompilerPlan(string UsablePath, string? DeploySourcePath, string Description);
-    internal sealed record DeepFriedChickenBundle(string AddonPath, string BridgePath, string ConfigPath, string Version);
-
-    internal static bool IsSupportedDeepFriedChickenArchive(string path)
-    {
-        var extension = Path.GetExtension(path);
-        return extension.Equals(".zip", StringComparison.OrdinalIgnoreCase)
-               || extension.Equals(".7z", StringComparison.OrdinalIgnoreCase);
-    }
-
-    internal static bool IsAesEncryptedZipArchive(string path)
-    {
-        try
-        {
-            using var stream = File.OpenRead(path);
-            Span<byte> header = stackalloc byte[10];
-            if (stream.Read(header) < header.Length) return false;
-
-            // ZIP local-file header: PK\x03\x04, general-purpose flags at 6..7 and
-            // compression method at 8..9. WinZip AES uses method 99 and sets encryption bit 0.
-            if (header[0] != (byte)'P' || header[1] != (byte)'K' || header[2] != 0x03 || header[3] != 0x04)
-                return false;
-
-            var flags = header[6] | (header[7] << 8);
-            var method = header[8] | (header[9] << 8);
-            return (flags & 0x0001) != 0 && method == 99;
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    internal static DeepFriedChickenBundle ExtractDeepFriedChickenBundle(string archivePath, string destination)
-        => ExtractDeepFriedChickenBundleAsync(archivePath, destination, CancellationToken.None)
-            .GetAwaiter().GetResult();
-
-    internal static async Task<DeepFriedChickenBundle> ExtractDeepFriedChickenBundleAsync(
-        string archivePath,
-        string destination,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!File.Exists(archivePath))
-            throw new InvalidDataException("Deep Fried Chicken package does not exist.");
-        if (!IsSupportedDeepFriedChickenArchive(archivePath))
-            throw new InvalidDataException("O pacote do Deep Fried Chicken deve usar o formato oficial .zip ou .7z.");
-
-        var extension = Path.GetExtension(archivePath);
-        // Some upstream releases use a .7z filename while the payload is actually
-        // an AES-encrypted ZIP. Ordinary unencrypted ZIPs stay on the native ZipArchive path;
-        // encrypted ZIPs and .7z-labelled packages go through 7-Zip so AES can be handled.
-        if (extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) && !IsAesEncryptedZipArchive(archivePath))
-            return await ExtractDeepFriedChickenZipBundleAsync(archivePath, destination, cancellationToken).ConfigureAwait(false);
-
-        return await ExtractDeepFriedChicken7zBundleAsync(archivePath, destination, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task<DeepFriedChickenBundle> ExtractDeepFriedChickenZipBundleAsync(string zipPath, string destination, CancellationToken cancellationToken)
-    {
-        // Do not reject the outer ZIP by compressed file size. Highly compressible but
-        // structurally valid packages (including deterministic test fixtures) can be
-        // smaller than an arbitrary archive-size threshold. The required contents are
-        // validated below, and both binaries are still subject to minimum extracted-size,
-        // PE-signature and SHA-256 checks before deployment.
-        Directory.CreateDirectory(destination);
-        using var archive = ZipFile.OpenRead(zipPath);
-        var sumsEntry = FindArchiveEntryByLeaf(archive, "SHA256SUMS.txt")
-            ?? throw new InvalidDataException("Deep Fried Chicken package does not contain SHA256SUMS.txt. Use the official release archive.");
-        var sumsText = ReadArchiveEntryText(sumsEntry);
-        var expected = ParseDeepFriedChickenManifest(sumsText, out var version);
-
-        var addon = await ExtractVerifiedDfcEntryAsync(archive, expected, DeepFriedAddonName, Path.Combine(destination, DeepFriedAddonName), 64 * 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
-        var bridge = await ExtractVerifiedDfcEntryAsync(archive, expected, DeepFriedBridgeName, Path.Combine(destination, DeepFriedBridgeName), 1024, requirePe: true, cancellationToken).ConfigureAwait(false);
-
-        var configEntry = FindArchiveEntryByLeaf(archive, DeepFriedConfigName)
-            ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {DeepFriedConfigName}.");
-        var config = Path.Combine(destination, DeepFriedConfigName);
-        await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(configEntry, config, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
-        ValidateDeepFriedChickenConfig(config);
-
-        return new(addon, bridge, config, version);
-    }
-
-    private static async Task<DeepFriedChickenBundle> ExtractDeepFriedChicken7zBundleAsync(
-        string archivePath,
-        string destination,
-        CancellationToken cancellationToken)
-    {
-        Directory.CreateDirectory(destination);
-        var extractedRoot = Path.Combine(destination, "_archive");
-        Directory.CreateDirectory(extractedRoot);
-        await ExtractExternalArchiveAsync(archivePath, extractedRoot, cancellationToken).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-        return ValidateExtractedDeepFriedChickenDirectory(extractedRoot, destination);
-    }
-
-    internal static DeepFriedChickenBundle ValidateExtractedDeepFriedChickenDirectory(string extractedRoot, string destination)
-    {
-        if (!Directory.Exists(extractedRoot))
-            throw new InvalidDataException("Deep Fried Chicken extracted package directory does not exist.");
-
-        var sumsPath = FindExtractedFileByLeaf(extractedRoot, "SHA256SUMS.txt")
-            ?? throw new InvalidDataException("Deep Fried Chicken package does not contain SHA256SUMS.txt. Use the official release archive.");
-        var sumsText = File.ReadAllText(sumsPath);
-        var expected = ParseDeepFriedChickenManifest(sumsText, out var version);
-
-        Directory.CreateDirectory(destination);
-        var addonSource = FindExtractedFileByLeaf(extractedRoot, DeepFriedAddonName)
-            ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {DeepFriedAddonName}.");
-        var bridgeSource = FindExtractedFileByLeaf(extractedRoot, DeepFriedBridgeName)
-            ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {DeepFriedBridgeName}.");
-        var configSource = FindExtractedFileByLeaf(extractedRoot, DeepFriedConfigName)
-            ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {DeepFriedConfigName}.");
-
-        var addon = CopyVerifiedDfcFile(addonSource, expected, DeepFriedAddonName, Path.Combine(destination, DeepFriedAddonName), 64 * 1024, requirePe: true);
-        var bridge = CopyVerifiedDfcFile(bridgeSource, expected, DeepFriedBridgeName, Path.Combine(destination, DeepFriedBridgeName), 1024, requirePe: true);
-        var config = Path.Combine(destination, DeepFriedConfigName);
-        AtomicFile.Copy(configSource, config);
-        NormalizeReadableFile(config);
-        ValidateDeepFriedChickenConfig(config);
-
-        return new(addon, bridge, config, version);
-    }
-
-    private static IReadOnlyDictionary<string, string> ParseDeepFriedChickenManifest(string sumsText, out string version)
-    {
-        var versionMatch = Regex.Match(sumsText, @"(?im)^\s*Deep\s+Fried\s+Chicken\s+([^\r\n]+?)\s*$");
-        if (!versionMatch.Success)
-            throw new InvalidDataException("Deep Fried Chicken SHA256SUMS.txt does not contain a recognizable release version.");
-        version = versionMatch.Groups[1].Value.Trim();
-
-        var expected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (Match match in Regex.Matches(sumsText, @"(?im)^\s*([0-9A-F]{64})\s+([^\s]+)\s*$"))
-            expected[ArchiveLeafName(match.Groups[2].Value)] = match.Groups[1].Value.ToUpperInvariant();
-
-        if (!expected.ContainsKey(DeepFriedAddonName) || !expected.ContainsKey(DeepFriedBridgeName))
-            throw new InvalidDataException("Deep Fried Chicken SHA256SUMS.txt does not authenticate the required add-on and NGX bridge.");
-        return expected;
-    }
-
-    private static void ValidateDeepFriedChickenConfig(string configPath)
-    {
-        var configText = File.ReadAllText(configPath);
-        if (!Regex.IsMatch(configText, @"(?im)^\s*arm\s*=\s*1\s*$"))
-            throw new InvalidDataException("Deep Fried Chicken config is not armed (expected arm=1 in the official package).");
-    }
-
-    private static string CopyVerifiedDfcFile(
-        string source,
-        IReadOnlyDictionary<string, string> expected,
-        string name,
-        string destination,
-        long minimumSize,
-        bool requirePe)
-    {
-        var actual = AtomicFile.Copy(source, destination);
-        NormalizeReadableFile(destination);
-        ValidateDownloadedPayload(destination, name, minimumSize, requirePe);
-        if (!actual.Equals(expected[name], StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Deep Fried Chicken package failed SHA-256 verification for {name}.");
-        return destination;
-    }
-
-    private static string? FindExtractedFileByLeaf(string root, string name)
-        => SafeFileEnumeration.Files(root)
-            .FirstOrDefault(path => Path.GetFileName(path).Equals(name, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>
-    /// A .7z (or AES-encrypted ZIP) Deep Fried Chicken package through the shared host-tool runner (time limit,
-    /// process-tree kill, link check; #37). An AES package gets its public upstream password on stdin, never on
-    /// the command line (visible to other local processes through /proc), and therefore needs 7-Zip.
-    /// </summary>
-    private static Task ExtractExternalArchiveAsync(
-        string archivePath,
-        string outputDirectory,
-        CancellationToken cancellationToken)
-        => ExternalArchiveRunner.ExtractAsync(
-            archivePath, outputDirectory, cancellationToken,
-            password: IsAesEncryptedZipArchive(archivePath) ? DeepFriedChickenArchivePassword : null,
-            timeout: DeepFriedChickenExtractionTimeout);
-
-    private static async Task<string> ExtractVerifiedDfcEntryAsync(
-        ZipArchive archive,
-        IReadOnlyDictionary<string, string> expected,
-        string name,
-        string destination,
-        long minimumSize,
-        bool requirePe,
-        CancellationToken cancellationToken)
-    {
-        var entry = FindArchiveEntryByLeaf(archive, name)
-            ?? throw new InvalidDataException($"Deep Fried Chicken package does not contain {name}.");
-        await ReShadeArchiveExtractor.ExtractEntryOrThrowAsync(entry, destination, TrustedDownloadPolicy.AddonMaxBytes, cancellationToken).ConfigureAwait(false);
-        ValidateDownloadedPayload(destination, name, minimumSize, requirePe);
-        var actual = await FileHash.Sha256HexAsync(destination, cancellationToken).ConfigureAwait(false);
-        if (!actual.Equals(expected[name], StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Deep Fried Chicken package failed SHA-256 verification for {name}.");
-        return destination;
-    }
-
-    private static ZipArchiveEntry? FindArchiveEntryByLeaf(ZipArchive archive, string name)
-        => archive.Entries.FirstOrDefault(entry =>
-            !string.IsNullOrWhiteSpace(entry.FullName) &&
-            ArchiveLeafName(entry.FullName).Equals(name, StringComparison.OrdinalIgnoreCase));
-
-    private static string ReadArchiveEntryText(ZipArchiveEntry entry)
-    {
-        using var stream = entry.Open();
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
-    }
-
-    internal sealed record IniListTokenMutation(bool AddedByRhi, string Token);
-
-    internal static IniListTokenMutation EnsureLoadFromDllMainToken(string iniPath, string token)
-    {
-        var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string>();
-        var (sectionStart, sectionEnd) = FindSection(lines, "ADDON");
-        if (sectionStart < 0)
-        {
-            if (lines.Count > 0 && !string.IsNullOrWhiteSpace(lines[^1])) lines.Add("");
-            lines.Add("[ADDON]");
-            lines.Add($"LoadFromDllMain={token}");
-            AtomicFile.ReplaceUserFileLines(iniPath, lines);
-            return new(true, token);
-        }
-
-        var keyIndex = FindKey(lines, sectionStart + 1, sectionEnd, "LoadFromDllMain");
-        if (keyIndex < 0)
-        {
-            lines.Insert(sectionEnd, $"LoadFromDllMain={token}");
-            AtomicFile.ReplaceUserFileLines(iniPath, lines);
-            return new(true, token);
-        }
-
-        var eq = lines[keyIndex].IndexOf('=');
-        var values = SplitIniList(eq >= 0 ? lines[keyIndex][(eq + 1)..] : "");
-        if (values.Any(value => value.Equals(token, StringComparison.OrdinalIgnoreCase)))
-            return new(false, token);
-        values.Add(token);
-        lines[keyIndex] = $"LoadFromDllMain={string.Join(',', values)}";
-        AtomicFile.ReplaceUserFileLines(iniPath, lines);
-        return new(true, token);
-    }
-
-    internal static void RemoveLoadFromDllMainToken(string iniPath, IniListTokenMutation mutation)
-    {
-        if (!mutation.AddedByRhi || !File.Exists(iniPath)) return;
-        var lines = File.ReadAllLines(iniPath).ToList();
-        var (sectionStart, sectionEnd) = FindSection(lines, "ADDON");
-        if (sectionStart < 0) return;
-        var keyIndex = FindKey(lines, sectionStart + 1, sectionEnd, "LoadFromDllMain");
-        if (keyIndex < 0) return;
-        var eq = lines[keyIndex].IndexOf('=');
-        var values = SplitIniList(eq >= 0 ? lines[keyIndex][(eq + 1)..] : "");
-        var removed = values.RemoveAll(value => value.Equals(mutation.Token, StringComparison.OrdinalIgnoreCase));
-        if (removed == 0) return;
-        if (values.Count == 0)
-            lines.RemoveAt(keyIndex);
-        else
-            lines[keyIndex] = $"LoadFromDllMain={string.Join(',', values)}";
-        AtomicFile.ReplaceUserFileLines(iniPath, lines, readOnly: ReadOnlyUserFile.WriteKeepingLock); // removal: a lock never blocks it
-    }
-
-    private static List<string> SplitIniList(string raw)
-        => raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-
-    private static void EnsureLumeniteLayout(string stage)
-    {
-        var shaderRoot = Path.Combine(stage, "Shaders");
-        if (!Directory.Exists(shaderRoot) || !SafeFileEnumeration.Files(shaderRoot, "lumenite_Kernel.fx").Any())
-            throw new InvalidDataException("LumeniteFX mainline archive does not contain lumenite_Kernel.fx.");
-    }
-
-    private static void EnsureHeaderLayout(string stage)
-    {
-        foreach (var name in RequiredHeaderNames)
-        {
-            var direct = Path.Combine(stage, "Shaders", name);
-            if (!File.Exists(direct))
-            {
-                var found = Directory.Exists(stage)
-                    ? SafeFileEnumeration.Files(stage, name).FirstOrDefault()
-                    : null;
-                if (found is null) throw new InvalidDataException($"ReShade shader framework header is missing: {name}");
-                Directory.CreateDirectory(Path.Combine(stage, "Shaders"));
-                AtomicFile.Copy(found, direct);
-            }
-        }
-    }
-
-    private static async Task CopyOwnedAsync(string source, string target, List<string> copied, CancellationToken cancellationToken)
-    {
-        if (File.Exists(target)) throw new IOException($"Protected target already exists: {target}");
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        // Verified durable copy (full re-read hash, never length only); never replaces a file that appeared meanwhile.
-        await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken, overwrite: false).ConfigureAwait(false);
-        NormalizeReadableFile(target);
-        copied.Add(target);
-    }
-
-    private static void CopyLumeniteKernel(string sourceRoot, string targetRoot, List<string> copied, CancellationToken cancellationToken)
-    {
-        if (!Directory.Exists(sourceRoot))
-            throw new InvalidDataException("LumeniteFX shader directory is missing.");
-
-        var kernel = SafeFileEnumeration.Files(sourceRoot, "lumenite_Kernel.fx").FirstOrDefault()
-            ?? throw new InvalidDataException("LumeniteFX kernel shader is missing.");
-        CopyShaderFile(kernel, Path.Combine(targetRoot, "lumenite_Kernel.fx"), copied);
-
-        var includeRoot = Path.Combine(sourceRoot, "include");
-        if (!Directory.Exists(includeRoot))
-            throw new InvalidDataException("LumeniteFX include directory is missing.");
-        foreach (var source in SafeFileEnumeration.Files(includeRoot, "*.fxh"))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(sourceRoot, source);
-            CopyShaderFile(source, Path.Combine(targetRoot, relative), copied);
-        }
-    }
-
-    private static void CopyLumeniteTextures(string sourceRoot, string targetRoot, List<string> copied, CancellationToken cancellationToken)
-    {
-        if (!Directory.Exists(sourceRoot)) return;
-        foreach (var source in SafeFileEnumeration.Files(sourceRoot, "lumenite_*"))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(sourceRoot, source);
-            CopyShaderFile(source, Path.Combine(targetRoot, relative), copied);
-        }
-    }
-
-    private static void CopyShaderFile(string source, string target, List<string> copied)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        if (File.Exists(target)) throw new IOException($"Protected target already exists: {target}");
-        AtomicFile.Copy(source, target);
-        NormalizeReadableFile(target);
-        copied.Add(target);
-    }
-
-    private static void NormalizeReadableFile(string path)
+    internal static void NormalizeReadableFile(string path)
     {
         if (OperatingSystem.IsWindows() || !File.Exists(path)) return;
         try
@@ -1672,30 +1085,4 @@ public sealed class Dlss5FeederFullDeploymentService
         }
     }
 
-    private static (int Start, int End) FindSection(IReadOnlyList<string> lines, string section)
-    {
-        var target = $"[{section}]";
-        for (var i = 0; i < lines.Count; i++)
-        {
-            if (!lines[i].Trim().Equals(target, StringComparison.OrdinalIgnoreCase)) continue;
-            var end = lines.Count;
-            for (var j = i + 1; j < lines.Count; j++)
-                if (lines[j].TrimStart().StartsWith("[", StringComparison.Ordinal)) { end = j; break; }
-            return (i, end);
-        }
-        return (-1, -1);
-    }
-
-    private static int FindKey(IReadOnlyList<string> lines, int start, int end, string key)
-    {
-        for (var i = start; i < end; i++)
-        {
-            var trimmed = lines[i].TrimStart();
-            if (trimmed.StartsWith(";", StringComparison.Ordinal) || trimmed.StartsWith("#", StringComparison.Ordinal)) continue;
-            var eq = trimmed.IndexOf('=');
-            if (eq <= 0) continue;
-            if (trimmed[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase)) return i;
-        }
-        return -1;
-    }
 }

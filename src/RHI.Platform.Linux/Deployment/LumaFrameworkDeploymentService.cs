@@ -61,6 +61,7 @@ public sealed class LumaFrameworkDeploymentService
     private readonly UpstreamRhiManifestService? _manifest;
     private readonly DgVoodooDeploymentService? _dgVoodoo;
     private readonly Dx9TranslationReShadeCoordinator? _dx9ReShade;
+    private readonly DeploymentJournal? _journal;
     private readonly string _cacheDir;
 
     public LumaFrameworkDeploymentService(
@@ -71,8 +72,10 @@ public sealed class LumaFrameworkDeploymentService
         LumaPolicyService? policy = null,
         UpstreamRhiManifestService? manifest = null,
         DgVoodooDeploymentService? dgVoodoo = null,
-        Dx9TranslationReShadeCoordinator? dx9ReShade = null)
+        Dx9TranslationReShadeCoordinator? dx9ReShade = null,
+        DeploymentJournal? journal = null)
     {
+        _journal = journal;
         _http = http;
         _records = records;
         _resolver = new GitHubReleaseAssetResolver(http);
@@ -450,11 +453,10 @@ public sealed class LumaFrameworkDeploymentService
 
         var stagingRoot = Path.Combine(Path.GetTempPath(), $"rhi-luma-{Guid.NewGuid():N}");
         Directory.CreateDirectory(stagingRoot);
-        var keepStaging = false;
         DgVoodooPreparedPayload? preparedDgVoodoo = null;
-        var dx9TranslationCreatedThisAttempt = false;
         var sharedDx9Targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var dgVoodooVersion = sharedDx9Record is null ? "" : ReadDgVoodooVersion(sharedDx9Record);
+        (LinuxDeploymentRecord Record, LumaEngineIniOverrideState? EngineIni, string[] Changed)? lumaInstalled = null;
         try
         {
             if (requiresDgVoodoo && sharedDx9Record is null)
@@ -501,25 +503,10 @@ public sealed class LumaFrameworkDeploymentService
                     return ComponentOperationResult.Fail($"Foreign Luma protection: package target already exists and is not RHI-owned: {existingPath}");
             }
 
-            var backupRoot = Path.Combine(stagingRoot, "rollback");
-            Directory.CreateDirectory(backupRoot);
             var installedTargets = new List<string>();
-            var overwrittenBackups = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var allOldBackups = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var createdDirectories = new HashSet<string>(
                 existingRecord?.DirectoriesCreatedByRhi ?? new List<string>(),
                 StringComparer.OrdinalIgnoreCase);
-            if (existingRecord is not null)
-            {
-                foreach (var old in existingRecord.Files)
-                {
-                    if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
-                    var full = Path.GetFullPath(old.Path);
-                    var backup = Path.Combine(backupRoot, $"old-{allOldBackups.Count:D4}.bak");
-                    AtomicFile.Copy(old.Path, backup, overwrite: false); // verified, durable (#31)
-                    allOldBackups[full] = backup;
-                }
-            }
             var iniPath = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory)!;
             var iniBefore = await File.ReadAllBytesAsync(iniPath, cancellationToken).ConfigureAwait(false);
             var previousIniState = existingRecord is not null &&
@@ -542,49 +529,52 @@ public sealed class LumaFrameworkDeploymentService
             var engineIniBefore = engineIniBeforeExisted
                 ? await File.ReadAllBytesAsync(engineIniSnapshotPath!, cancellationToken).ConfigureAwait(false)
                 : null;
+            // Every Engine.ini the reconcile may write: the one the record names and, with keys to set, the game's current one.
+            var engineIniTargets = new[]
+                {
+                    previousEngineIniState?.IniPath,
+                    shouldReconcileEngineIni && requestedEngineIni.Count > 0 ? LumaEngineIniOverrideManager.ResolveEngineIniPath(game) : null
+                }
+                .OfType<string>().Select(Path.GetFullPath).Distinct(StringComparer.Ordinal).ToArray();
+
+            // #23/#169: one journaled operation for every game file, ReShade.ini, Engine.ini and the DX9 translation; the
+            // Luma record carrying its id (with ReShade's, after a DX9 translation, in the same write) is the commit point.
+            var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+                _journal, "Luma Framework install: " + game.Name, game, ManagedComponentKind.LumaFramework, cancellationToken).ConfigureAwait(false);
+            if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+            await using var scope = opened!;
 
             // Downloads, staging and snapshots are done: from the first game file on, the install runs to completion
             // or full rollback (Cancel is refused).
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            Dx9MigrationInside? dx9 = null;
             try
             {
                 if (requiresDgVoodoo && sharedDx9Record is null)
                 {
-                    dx9Migration = await _dx9ReShade!.MigrateAsync(game, cancellationToken).ConfigureAwait(false);
-                    dx9TranslationCreatedThisAttempt = true;
+                    dx9 = await _dx9ReShade!.MigrateInsideAsync(game, scope, cancellationToken).ConfigureAwait(false);
+                    dx9Migration = dx9.State;
                     var d3d9Target = Path.Combine(game.BinaryDirectory, "D3D9.dll");
                     var configTarget = Path.Combine(game.BinaryDirectory, "dgVoodoo.conf");
                     if (File.Exists(configTarget))
                         throw new IOException($"External dgVoodoo.conf already exists: {configTarget}. RHI Linux will not overwrite it automatically.");
-                    await CopyIntoGameAsync(preparedDgVoodoo!.D3D9Path, d3d9Target, cancellationToken).ConfigureAwait(false);
+                    await CopyIntoGameAsync(scope, preparedDgVoodoo!.D3D9Path, d3d9Target).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(d3d9Target));
-                    await CopyIntoGameAsync(preparedDgVoodoo.ConfigPath, configTarget, cancellationToken).ConfigureAwait(false);
+                    await CopyIntoGameAsync(scope, preparedDgVoodoo.ConfigPath, configTarget).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(configTarget));
                 }
 
                 foreach (var item in plan)
                 {
                     EnsureParentDirectories(item.TargetPath, game.BinaryDirectory, createdDirectories);
-                    var existingPath = FindCaseInsensitiveExistingPath(item.TargetPath);
-                    var effectiveTarget = existingPath ?? item.TargetPath;
-                    if (existingPath is not null)
-                    {
-                        var fullExisting = Path.GetFullPath(existingPath);
-                        if (allOldBackups.TryGetValue(fullExisting, out var oldBackup))
-                        {
-                            overwrittenBackups[fullExisting] = oldBackup;
-                        }
-                        else
-                        {
-                            var backup = Path.Combine(backupRoot, $"target-{overwrittenBackups.Count:D4}.bak");
-                            AtomicFile.Copy(existingPath, backup, overwrite: false); // verified, durable (#31)
-                            overwrittenBackups[fullExisting] = backup;
-                        }
-                    }
-                    await CopyIntoGameAsync(item.StagingPath, effectiveTarget, cancellationToken).ConfigureAwait(false);
+                    var effectiveTarget = FindCaseInsensitiveExistingPath(item.TargetPath) ?? item.TargetPath;
+                    // The scope keeps a verified copy of what is there (an older Luma file) before replacing it.
+                    await CopyIntoGameAsync(scope, item.StagingPath, effectiveTarget).ConfigureAwait(false);
                     installedTargets.Add(Path.GetFullPath(effectiveTarget));
                 }
 
+                await scope.TrackAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                await scope.TrackAllAsync(engineIniTargets, CancellationToken.None).ConfigureAwait(false);
                 var iniState = LumaIniOverrideManager.Apply(game.BinaryDirectory, previousIniState);
                 // A transient wiki failure must not destructively erase Engine.ini ownership from a
                 // previously managed generic install. Reconcile only after a completed generic lookup
@@ -592,6 +582,10 @@ public sealed class LumaFrameworkDeploymentService
                 var engineIniState = shouldReconcileEngineIni
                     ? LumaEngineIniOverrideManager.Apply(game, requestedEngineIni, previousEngineIniState)
                     : previousEngineIniState;
+                if (engineIniState is not null && !engineIniTargets.Contains(Path.GetFullPath(engineIniState.IniPath), StringComparer.Ordinal))
+                    throw new InvalidOperationException($"Engine.ini was written at a path the install did not track: {engineIniState.IniPath}");
+                foreach (var written in engineIniTargets.Prepend(iniPath).Where(File.Exists))
+                    await scope.DeclareWrittenContentAsync(written, CancellationToken.None).ConfigureAwait(false);
 
                 // Remove old RHI-owned files no longer present in the new package only after replacement + INI succeeded.
                 var newTargets = installedTargets.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -601,9 +595,8 @@ public sealed class LumaFrameworkDeploymentService
                     foreach (var old in existingRecord.Files)
                     {
                         if (string.IsNullOrWhiteSpace(old.Path) || !File.Exists(old.Path)) continue;
-                        var full = Path.GetFullPath(old.Path);
-                        if (newTargets.Contains(full)) continue;
-                        File.Delete(old.Path);
+                        if (newTargets.Contains(Path.GetFullPath(old.Path))) continue;
+                        await scope.DeleteAsync(old.Path, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
 
@@ -614,7 +607,7 @@ public sealed class LumaFrameworkDeploymentService
                     {
                         Path = target,
                         ExistedBeforeInstall = oldFiles.ContainsKey(target),
-                        Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false)
+                        Sha256 = await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false)
                     });
                 }
                 foreach (var target in sharedDx9Targets)
@@ -624,7 +617,7 @@ public sealed class LumaFrameworkDeploymentService
                     {
                         Path = target,
                         ExistedBeforeInstall = false,
-                        Sha256 = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false)
+                        Sha256 = await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false)
                     });
                 }
 
@@ -669,26 +662,17 @@ public sealed class LumaFrameworkDeploymentService
                 // The downloads this record deploys (#26): the package (none for a local package) and dgVoodoo2.
                 download?.RecordIn(record.Metadata);
                 preparedDgVoodoo?.Download?.RecordIn(record.Metadata, DgVoodooPreparedPayload.DownloadPart);
-                _records.Upsert(record);
-                var packageKind = localPackage
-                    ? $"local package {selection.DisplayName}"
-                    : selection.IsNamed ? $"named mod {selection.DisplayName}" : "generic Unreal package";
-                var engineIniSummary = engineIniState is null
-                    ? "No RHI-owned Engine.ini keys were required/resolved."
-                    : $"RHI owns {engineIniState.Entries.Count} wiki Engine.ini key(s) at {engineIniState.IniPath}.";
-                return ComponentOperationResult.Ok(
-                    $"Luma Framework {release.Version} installed from {release.AssetName} ({packageKind}). Bundled ReShade/DLSS ownership remained with RHI. {engineIniSummary}",
-                    installedTargets.ToArray());
+                // The commit point (with ReShade's record, after a DX9 translation, in the same write).
+                _records.Commit(dx9 is null ? [scope.Stamp(record)] : [scope.Stamp(record), dx9.ReShadeRecord]);
+                lumaInstalled = (record, engineIniState, installedTargets.ToArray());
             }
             catch (Exception ex)
             {
-                // Compensation never honours cancellation, and each step runs even when an earlier one failed: a
-                // swallowed INI write used to skip the Engine.ini, DX9 and directory restores and leave Luma's keys in
-                // the user's ReShade.ini and the game's Engine.ini with no record to remove them. Every failure a step
-                // meets is caught and logged (never only I/O ones), and the staging folder holding RHI's rollback copies
-                // is kept from here until every step has succeeded (w2 merge review, nit 3).
-                keepStaging = true;
-                var rollbackFailed = false;
+                // Compensation never honours cancellation, and each step runs even when an earlier one failed. The user's
+                // ReShade.ini and Engine.ini go back first through the one user-file writer (a lock the user set
+                // meanwhile is kept, #31); then the scope puts every other file back from its verified copies (the
+                // package files, the files it replaced or removed, dgVoodoo2, the DX9 rename and, journaled, its
+                // overrides). A rollback that cannot finish keeps every copy and says where.
                 void Step(string what, Action action)
                 {
                     try
@@ -698,77 +682,44 @@ public sealed class LumaFrameworkDeploymentService
                     }
                     catch (Exception stepError)
                     {
-                        rollbackFailed = true;
                         AppLog.Warn("luma-rollback", $"Could not {what} for {game.Name}", stepError);
                     }
                 }
-                Step("restore the replaced package files", () =>
-                {
-                    foreach (var target in installedTargets.AsEnumerable().Reverse())
-                    {
-                        if (overwrittenBackups.TryGetValue(target, out var backup))
-                            AtomicFile.Copy(backup, target); // atomic, verified restore (#31)
-                        else if (File.Exists(target))
-                            File.Delete(target);
-                    }
-                });
-                Step("put back the previous package files", () =>
-                {
-                    foreach (var pair in allOldBackups)
-                    {
-                        if (!File.Exists(pair.Key))
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(pair.Key)!);
-                            AtomicFile.Copy(pair.Value, pair.Key, overwrite: false); // atomic, verified restore (#31)
-                        }
-                    }
-                });
-                // The user's ReShade.ini: one atomic, verified write; a lock never blocks the rollback (#31).
                 Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, readOnly: ReadOnlyUserFile.WriteKeepingLock));
-                if (engineIniSnapshotPath is not null)
-                {
+                if (engineIniSnapshotPath is not null && engineIniBeforeExisted && engineIniBefore is not null)
                     Step("restore Engine.ini", () =>
                     {
-                        if (engineIniBeforeExisted && engineIniBefore is not null)
-                        {
-                            Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                            AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
-                        }
-                        else if (File.Exists(engineIniSnapshotPath))
-                        {
-                            File.Delete(engineIniSnapshotPath);
-                        }
+                        Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
+                        AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
                     });
-                }
-                if (dx9TranslationCreatedThisAttempt && dx9Migration is not null && _dx9ReShade is not null)
-                {
-                    try { await _dx9ReShade.RestoreAsync(game, dx9Migration, CancellationToken.None).ConfigureAwait(false); }
-                    catch (Exception dx9Error)
-                    {
-                        rollbackFailed = true;
-                        AppLog.Warn("luma-rollback", $"Could not restore the DX9 ReShade migration for {game.Name}", dx9Error);
-                    }
-                }
+                var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+                if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
                 Step("remove the folders the install created", () => FileCleanup.TryDeleteEmptyDirectories(createdDirectories));
-                // The rollback copies live in the staging folder: keep it when anything could not be put back.
-                if (rollbackFailed)
+                if (!rollback.Success)
                 {
-                    AppLog.Warn("luma-rollback", $"Rollback incomplete for {game.Name}; RHI's copies are kept at {stagingRoot}");
-                    return ComponentOperationResult.Fail($"{RollbackIncompletePrefix}{ex.Message}");
+                    AppLog.Warn("luma-rollback", $"Rollback incomplete for {game.Name}: {string.Join("; ", rollback.Failures)}");
+                    return ComponentOperationResult.Fail($"{RollbackIncompletePrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
                 }
-                keepStaging = false;
                 return ComponentOperationResult.Fail($"Luma Framework installation rolled back: {ex.Message}");
             }
+            await scope.CommitAsync().ConfigureAwait(false);
+            var (_, installedEngineIni, changed) = lumaInstalled!.Value;
+            var packageKind = localPackage
+                ? $"local package {selection.DisplayName}"
+                : selection.IsNamed ? $"named mod {selection.DisplayName}" : "generic Unreal package";
+            var engineIniSummary = installedEngineIni is null
+                ? "No RHI-owned Engine.ini keys were required/resolved."
+                : $"RHI owns {installedEngineIni.Entries.Count} wiki Engine.ini key(s) at {installedEngineIni.IniPath}.";
+            return ComponentOperationResult.Ok(
+                $"Luma Framework {release.Version} installed from {release.AssetName} ({packageKind}). Bundled ReShade/DLSS ownership remained with RHI. {engineIniSummary}",
+                changed);
         }
         finally
         {
-            if (!keepStaging)
+            try { Directory.Delete(stagingRoot, recursive: true); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                try { Directory.Delete(stagingRoot, recursive: true); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    AppLog.Warn("luma", $"Staging folder could not be removed: {stagingRoot}", ex);
-                }
+                AppLog.Warn("luma", $"Staging folder could not be removed: {stagingRoot}", ex);
             }
         }
     }
@@ -788,8 +739,19 @@ public sealed class LumaFrameworkDeploymentService
         if (dx9State is not null && !feederStillUsesDx9 && _dx9ReShade is null)
             return ComponentOperationResult.Fail("Luma DX9 removal needs the ReShade migration coordinator, but it is unavailable.");
 
+        // #23/#169: one journaled removal (files, ReShade.ini, Engine.ini, the DX9 translation); taking the record out of
+        // the ledger (with ReShade's restored record in the same write) is the commit point.
+        var (opened, refusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "Luma Framework removal: " + game.Name, game, ManagedComponentKind.LumaFramework, cancellationToken).ConfigureAwait(false);
+        if (refusal is not null) return ComponentOperationResult.Fail(refusal);
+        await using var scope = opened!;
+
         // Cancel is honoured only up to here: the removal never stops half-way.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var changed = new List<string>();
+        LinuxDeploymentRecord? reShadeBefore = null;
+        LinuxDeploymentRecord? reShadeAfter = null;
+        WineOverrideRestoreResult? dx9OverrideRestore = null;
         try
         {
             var iniState = record.Metadata.TryGetValue(LumaIniOverrideManager.MetadataKey, out var iniJson)
@@ -798,20 +760,24 @@ public sealed class LumaFrameworkDeploymentService
             var engineIniState = record.Metadata.TryGetValue(LumaEngineIniOverrideManager.MetadataKey, out var engineIniJson)
                 ? LumaEngineIniOverrideManager.Deserialize(engineIniJson)
                 : null;
+            var iniFiles = new[] { iniState?.IniPath, engineIniState?.IniPath }.OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+            await scope.TrackAllAsync(iniFiles, CancellationToken.None).ConfigureAwait(false);
             LumaIniOverrideManager.Cleanup(iniState);
             LumaEngineIniOverrideManager.Cleanup(engineIniState);
+            foreach (var written in iniFiles.Where(File.Exists))
+                await scope.DeclareWrittenContentAsync(written, CancellationToken.None).ConfigureAwait(false);
 
-            var changed = new List<string>();
             if (dx9State is not null && !feederStillUsesDx9)
             {
                 foreach (var name in new[] { "D3D9.dll", "dgVoodoo.conf" })
                 {
                     var managed = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
                     if (managed is null || !File.Exists(managed.Path)) continue;
-                    File.Delete(managed.Path);
+                    await scope.DeleteAsync(managed.Path, CancellationToken.None).ConfigureAwait(false);
                     changed.Add(managed.Path);
                 }
-                await _dx9ReShade!.RestoreAsync(game, dx9State, cancellationToken).ConfigureAwait(false);
+                reShadeBefore = _records.Find(game, ManagedComponentKind.ReShade);
+                (reShadeAfter, dx9OverrideRestore) = await _dx9ReShade!.RestoreInsideAsync(game, dx9State, scope, cancellationToken).ConfigureAwait(false);
             }
 
             foreach (var file in record.Files)
@@ -820,17 +786,22 @@ public sealed class LumaFrameworkDeploymentService
                                              Path.GetFileName(file.Path).Equals("dgVoodoo.conf", StringComparison.OrdinalIgnoreCase)))
                     continue;
                 if (string.IsNullOrWhiteSpace(file.Path) || !File.Exists(file.Path)) continue;
-                File.Delete(file.Path);
+                await scope.DeleteAsync(file.Path, CancellationToken.None).ConfigureAwait(false);
                 changed.Add(file.Path);
             }
-            FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi);
-            _records.Remove(game, ManagedComponentKind.LumaFramework);
-            return ComponentOperationResult.Ok("Luma Framework removed. ReShade, DLSS and user/runtime data were preserved; [Luma] and RHI-owned wiki Engine.ini settings were restored.", changed.ToArray());
+            _records.Commit(reShadeAfter is null ? [] : [reShadeAfter], [(game, ManagedComponentKind.LumaFramework)]); // the commit point
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"Luma Framework removal failed: {ex.Message}");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "luma", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
+            if (dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated && game.PrefixPath is { } prefix)
+                _dx9ReShade!.Reapply(prefix, translated);
+            return ComponentOperationResult.Fail($"Luma Framework removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+        // Past the commit point: emptied folders RHI created go (best effort; never rolled back).
+        FileCleanup.TryDeleteEmptyDirectories(record.DirectoriesCreatedByRhi);
+        return ComponentOperationResult.Ok("Luma Framework removed. ReShade, DLSS and user/runtime data were preserved; [Luma] and RHI-owned wiki Engine.ini settings were restored.", changed.ToArray());
     }
 
     internal static bool RequiresDx9RemovalBeforeUpdate(LinuxDeploymentRecord? existingRecord, bool newRequiresDgVoodoo)
@@ -1100,11 +1071,14 @@ public sealed class LumaFrameworkDeploymentService
     /// <summary>Fixed start of an install failure whose rollback did not complete (PT-BR pair); the error follows.</summary>
     public const string RollbackIncompletePrefix = "Luma Framework installation failed and its rollback did not complete (details in rhi.log): ";
 
-    /// <summary>Verified durable copy into the game folder (full re-read hash, temp + rename); replaces the target.</summary>
-    private static async Task CopyIntoGameAsync(string source, string target, CancellationToken cancellationToken)
+    /// <summary>
+    /// Verified durable copy into the game folder through <paramref name="scope"/> (what is there is tracked first, the
+    /// new content declared); replaces the target.
+    /// </summary>
+    private static async Task CopyIntoGameAsync(DeploymentScope scope, string source, string target)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("Luma target directory is invalid."));
-        await AtomicFile.CopyAsync(source, target, cancellationToken: cancellationToken).ConfigureAwait(false);
+        await scope.PlaceCopyAsync(source, target, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static string SanitizeFileName(string value)

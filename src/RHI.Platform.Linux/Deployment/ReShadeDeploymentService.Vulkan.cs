@@ -174,7 +174,7 @@ public sealed partial class ReShadeDeploymentService
             {
                 CleanupManagedIni(existing, game.InstallPath); // w5 integration: the one ReShade.ini link rule (ini-presets review 8)
                 await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
-                _shaderPacks.Cleanup(binaryDirectory);
+                await _shaderPacks.CleanupAsync(binaryDirectory, scope.Operation).ConfigureAwait(false); // #169: tracked
             }
 
             foreach (var directory in MissingDirectories(Path.GetDirectoryName(layerDll)!, prefix))
@@ -207,7 +207,7 @@ public sealed partial class ReShadeDeploymentService
             }
 
             // ReShade's layer stays inactive without a ReShade.ini beside the game, so the layer always manages one.
-            var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
+            var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, scope.Operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             // w5 integration: the user's reshade.vulkan.ini template and Settings (#181), depth defines kept.
             var iniResult = ReShadeIniManager.Apply(binaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths,
                 IniDefaults?.Invoke(game, true), game.InstallPath);
@@ -262,7 +262,7 @@ public sealed partial class ReShadeDeploymentService
             if (valueCreated) RegistryValues.TryRestore(prefix, layerValue);
             if (overrideCreated) _overrides.TryRestore(prefix, overrideRecord);
             RemoveEmptyDirectories(createdDirectories);
-            if (oldOptions is not null)
+            if (oldOptions is not null && scope.Operation is null) // journaled, the rollback put the packs back (#169)
             {
                 try
                 {

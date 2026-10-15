@@ -447,7 +447,7 @@ internal static class UiStrings
         ("Win.OptionalScreenshotFolder", "Pasta opcional para capturas de tela", "Optional screenshot folder"),
         ("Win.CreateScreenshotSubfolderEachGame", "Criar uma subpasta de capturas para cada jogo", "Create a screenshot subfolder for each game"),
         ("Win.OptionalWatchedFolderDefaultDownloads", "Pasta opcional monitorada (padrão: ~/Downloads)", "Optional watched folder (default: ~/Downloads)"),
-        ("Win.KeepDownloadedShaderPacksCached", "Manter pacotes de shaders baixados em cache", "Keep downloaded shader packs cached"),
+        ("Win.KeepDownloadedShaderPacksCached", "Baixar todos os pacotes de shaders ao iniciar", "Download every shader pack at start-up"),
         ("Win.VerboseLogging", "Registro detalhado", "Verbose logging"),
         ("Win.AutomaticallyUpdateRHIManagedComponentsBackgroun", "Atualizar automaticamente em segundo plano os componentes gerenciados pelo RHI", "Automatically update RHI-managed components in the background"),
         ("Win.WatchSelectedFolderDownloadedAddOns", "Monitorar a pasta selecionada por add-ons baixados / arquivos RenoDX-Luma", "Watch the selected folder for downloaded add-ons / RenoDX-Luma files"),

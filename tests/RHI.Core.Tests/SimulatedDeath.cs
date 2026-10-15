@@ -38,7 +38,7 @@ internal sealed class SimulatedDeath : IDisposable
     public async Task<(bool Died, Task<T> Run)> RunUntilDeathAsync<T>(Func<Task<T>> act)
     {
         var run = Task.Run(act);
-        var deadline = DateTime.UtcNow.AddSeconds(60);
+        var deadline = DateTime.UtcNow.AddSeconds(180); // generous: parallel mutant/suite runs slow a full-stack install down
         while (!_dead.IsSet && !run.IsCompleted && DateTime.UtcNow < deadline) await Task.Delay(10);
         return (_dead.IsSet, run);
     }

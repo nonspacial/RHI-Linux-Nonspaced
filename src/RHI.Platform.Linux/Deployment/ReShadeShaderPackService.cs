@@ -237,7 +237,7 @@ public sealed class ReShadeShaderPackService
         CancellationToken cancellationToken = default)
     {
         var prepared = await PrepareSyncAsync(gameDirectory, selectedPackIds, cancellationToken).ConfigureAwait(false);
-        return ApplySync(prepared, cancellationToken);
+        return await ApplySyncAsync(prepared, operation: null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -362,16 +362,23 @@ public sealed class ReShadeShaderPackService
         return new PreparedShaderSync(root, manifestPath, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged);
     }
 
-    /// <summary>The game-folder half of a sync <see cref="PrepareSyncAsync"/> prepared: no network.</summary>
-    internal ReShadeShaderSyncResult ApplySync(PreparedShaderSync prepared, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// The game-folder half of a sync <see cref="PrepareSyncAsync"/> prepared: no network. With <paramref name="operation"/>
+    /// (#169: the ReShade install's journaled operation) every shader file it removes or places and the ownership
+    /// manifest are tracked first and the placed content declared, so a failure — or a crash, at the next start — puts the
+    /// pack folders back as they were.
+    /// </summary>
+    internal async Task<ReShadeShaderSyncResult> ApplySyncAsync(PreparedShaderSync prepared, DeploymentOperation? operation, CancellationToken cancellationToken = default)
     {
         var (root, manifestPath, previous, normalized, stagedById, exclusionsById, needsCoreHeaders, coreHeadersStaged) = prepared;
         // Everything is staged and validated: from the first change in the game folder on, the sync runs to the end
         // (a cancel half-way used to leave copied packs that no manifest owns).
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        RemoveManifestFiles(root, previous);
+        await RemoveManifestFilesAsync(root, previous, operation).ConfigureAwait(false);
         if (normalized.Length == 0)
         {
+            if (operation is not null && File.Exists(manifestPath))
+                await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
             if (!FileCleanup.TryDelete(manifestPath, out var manifestError))
                 AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", manifestError);
             FileCleanup.TryDeleteEmptyTree(root);
@@ -394,7 +401,7 @@ public sealed class ReShadeShaderPackService
             if (Directory.Exists(stagedShaders))
             {
                 var targetShaders = Path.Combine(targetPackRoot, "Shaders");
-                CopyTree(stagedShaders, targetShaders, root, outputManifest, cancellationToken, exclusionsById[id], "Shaders");
+                await CopyTreeAsync(stagedShaders, targetShaders, root, outputManifest, operation, exclusionsById[id], "Shaders").ConfigureAwait(false);
                 if (Directory.Exists(targetShaders) && SafeFileEnumeration.Files(targetShaders).Any())
                     effectPaths.Add($@".\reshade-shaders\RHI\{safeId}\Shaders\**");
             }
@@ -402,7 +409,7 @@ public sealed class ReShadeShaderPackService
             if (Directory.Exists(stagedTextures))
             {
                 var targetTextures = Path.Combine(targetPackRoot, "Textures");
-                CopyTree(stagedTextures, targetTextures, root, outputManifest, cancellationToken, exclusionsById[id], "Textures");
+                await CopyTreeAsync(stagedTextures, targetTextures, root, outputManifest, operation, exclusionsById[id], "Textures").ConfigureAwait(false);
                 if (Directory.Exists(targetTextures) && SafeFileEnumeration.Files(targetTextures).Any())
                     texturePaths.Add($@".\reshade-shaders\RHI\{safeId}\Textures\**");
             }
@@ -412,25 +419,42 @@ public sealed class ReShadeShaderPackService
         {
             var targetCoreRoot = Path.Combine(root, "_Core", "Shaders");
             foreach (var header in CoreHeaderNames)
-                CopyManagedFile(
+                await CopyManagedFileAsync(
                     Path.Combine(coreHeadersStaged!, "Shaders", header),
                     Path.Combine(targetCoreRoot, header),
                     root,
-                    outputManifest);
+                    outputManifest,
+                    operation).ConfigureAwait(false);
             effectPaths.Add(@".\reshade-shaders\RHI\_Core\Shaders\**");
         }
 
-        new JsonFileStore<Manifest>(manifestPath).Save(outputManifest);
+        var manifestFile = new JsonFileStore<Manifest>(manifestPath);
+        if (operation is null) manifestFile.Save(outputManifest);
+        else
+        {
+            // Declared BEFORE the write (w6/crash review 3): a crash right after it rolls the manifest back with the pack
+            // files; declared after, recovery would keep the new manifest as user content over the restored packs.
+            var manifestBytes = manifestFile.Stage(_ => outputManifest)!.After;
+            await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+            await operation.RecordWriteAsync(manifestPath, FileHash.Sha256HexOf(manifestBytes), CancellationToken.None).ConfigureAwait(false);
+            AtomicFile.WriteStoreFile(manifestPath, manifestBytes);
+        }
+        ManifestWrittenForTesting?.Invoke(manifestPath);
         return new(root, effectPaths, texturePaths, normalized);
     }
 
-    internal void Cleanup(string gameDirectory)
+    /// <summary>
+    /// Removes RHI's shader packs and their manifest from the game; inside <paramref name="operation"/> (#169) each file
+    /// and the manifest are tracked first, so a rollback (or the next start after a crash) puts them back.
+    /// </summary>
+    internal async Task CleanupAsync(string gameDirectory, DeploymentOperation? operation)
     {
         var root = Path.Combine(gameDirectory, "reshade-shaders", "RHI");
         var manifestPath = Path.Combine(root, ".rhi-manifest.json");
         if (!File.Exists(manifestPath)) return;
         var manifest = LoadManifest(manifestPath);
-        RemoveManifestFiles(root, manifest);
+        await RemoveManifestFilesAsync(root, manifest, operation).ConfigureAwait(false);
+        if (operation is not null) await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
         if (!FileCleanup.TryDelete(manifestPath, out var removeError))
             AppLog.Warn("shaders", $"Could not remove the shader manifest {manifestPath}", removeError);
         FileCleanup.TryDeleteEmptyTree(root);
@@ -547,7 +571,76 @@ public sealed class ReShadeShaderPackService
         _ => null
     };
 
+    // One pack cache writer at a time (#194): the start-up prefetch and an install's staging never build the same entry
+    // together (one would delete the other's freshly moved tree).
+    private readonly SemaphoreSlim _packGate = new(1, 1);
+
+    /// <summary>Test seam: runs right after a journaled sync wrote the game's shader-pack manifest.</summary>
+    internal Action<string>? ManifestWrittenForTesting { get; set; }
+
+    /// <summary>Test seam: runs in the prefetch right before it waits for the pack cache gate.</summary>
+    internal Func<ReShadeShaderPackDefinition, Task>? BeforePrefetchGateForTesting { get; set; }
+
     internal async Task<string> EnsurePackAsync(
+        ReShadeShaderPackDefinition pack,
+        CancellationToken cancellationToken)
+    {
+        await _packGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await EnsurePackCoreAsync(pack, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _packGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// #194 (upstream 2.8.7 <c>CacheAllShaders</c>, parity T-19): stages every pack the catalogue offers (and the core
+    /// headers) that has no cache entry yet, so a later install needs no download. An entry already there is left as it
+    /// is (an install refreshes it on demand), so this never replaces a tree an install may be copying from: the check
+    /// is made under the pack cache gate (w6/crash review 4), so an install that staged the pack while the prefetch
+    /// waited is seen. Cache only: nothing in any game changes. A pack that fails is logged and skipped. Returns how many
+    /// packs it staged.
+    /// </summary>
+    public async Task<int> PrefetchMissingAsync(CancellationToken cancellationToken = default)
+    {
+        await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
+        var fetched = 0;
+        foreach (var pack in _packs.Where(pack => !pack.IsCustom).Append(CoreHeadersPack).ToArray())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (await EnsurePackIfMissingAsync(pack, cancellationToken).ConfigureAwait(false)) fetched++;
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                AppLog.Warn("shaders", $"Could not stage the shader pack {pack.DisplayName} at start-up", ex);
+            }
+        }
+        return fetched;
+    }
+
+    /// <summary>Stages <paramref name="pack"/> only when it has no cache entry, checked under the pack cache gate.</summary>
+    private async Task<bool> EnsurePackIfMissingAsync(ReShadeShaderPackDefinition pack, CancellationToken cancellationToken)
+    {
+        if (BeforePrefetchGateForTesting is { } beforeGate) await beforeGate(pack).ConfigureAwait(false);
+        await _packGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (Directory.Exists(Path.Combine(_cacheDir, SafePackDirectoryName(pack.Id), "extracted"))) return false;
+            await EnsurePackCoreAsync(pack, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        finally
+        {
+            _packGate.Release();
+        }
+    }
+
+    private async Task<string> EnsurePackCoreAsync(
         ReShadeShaderPackDefinition pack,
         CancellationToken cancellationToken)
     {
@@ -806,11 +899,12 @@ public sealed class ReShadeShaderPackService
             throw new IOException($"Protected shader file in RHI path was modified or is externally owned: {destination}");
     }
 
-    private static void CopyManagedFile(
+    private static async Task CopyManagedFileAsync(
         string source,
         string destination,
         string managedRoot,
-        Manifest manifest)
+        Manifest manifest,
+        DeploymentOperation? operation)
     {
         var rootWithSep = Path.GetFullPath(managedRoot).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
         destination = Path.GetFullPath(destination);
@@ -822,8 +916,21 @@ public sealed class ReShadeShaderPackService
         manifest.Files.Add(new ManifestFile
         {
             RelativePath = Path.GetRelativePath(managedRoot, destination),
-            Sha256 = AtomicFile.Copy(source, destination)
+            Sha256 = await PlaceAsync(source, destination, operation).ConfigureAwait(false)
         });
+    }
+
+    /// <summary>
+    /// One verified copy into the game's shader folder; inside <paramref name="operation"/> the target is tracked and the
+    /// content declared first (#169). Never replaces a file that appeared meanwhile. Returns the placed content's SHA-256.
+    /// </summary>
+    private static async Task<string> PlaceAsync(string source, string destination, DeploymentOperation? operation)
+    {
+        if (operation is null) return AtomicFile.Copy(source, destination, overwrite: false);
+        var sha = await FileHash.Sha256HexAsync(source, CancellationToken.None).ConfigureAwait(false);
+        await operation.TrackFileAsync(destination, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+        await operation.RecordWriteAsync(destination, sha, CancellationToken.None).ConfigureAwait(false);
+        return await AtomicFile.CopyAsync(source, destination, sha, CancellationToken.None, overwrite: false).ConfigureAwait(false);
     }
 
     private static void ValidateDestinationTree(
@@ -848,18 +955,17 @@ public sealed class ReShadeShaderPackService
         }
     }
 
-    private static void CopyTree(
+    private static async Task CopyTreeAsync(
         string sourceRoot,
         string destinationRoot,
         string managedRoot,
         Manifest manifest,
-        CancellationToken cancellationToken,
+        DeploymentOperation? operation,
         IReadOnlySet<string>? excludedFileNames,
         string category)
     {
         foreach (var source in SafeFileEnumeration.Files(sourceRoot))
         {
-            cancellationToken.ThrowIfCancellationRequested();
             if (IsExcluded(excludedFileNames, category, sourceRoot, source)) continue;
             var relative = Path.GetRelativePath(sourceRoot, source);
             var destination = Path.GetFullPath(Path.Combine(destinationRoot, relative));
@@ -872,7 +978,7 @@ public sealed class ReShadeShaderPackService
             manifest.Files.Add(new ManifestFile
             {
                 RelativePath = Path.GetRelativePath(managedRoot, destination),
-                Sha256 = AtomicFile.Copy(source, destination)
+                Sha256 = await PlaceAsync(source, destination, operation).ConfigureAwait(false)
             });
         }
     }
@@ -960,7 +1066,8 @@ public sealed class ReShadeShaderPackService
     internal static void EnsureManifestReadable(string gameDirectory)
         => LoadManifest(Path.Combine(gameDirectory, "reshade-shaders", "RHI", ".rhi-manifest.json"));
 
-    private static void RemoveManifestFiles(string root, Manifest manifest)
+    // Inside an operation each file is tracked (verified copy) before it goes, so a rollback puts it back (#169).
+    private static async Task RemoveManifestFilesAsync(string root, Manifest manifest, DeploymentOperation? operation)
     {
         foreach (var file in manifest.Files.OrderByDescending(f => f.RelativePath.Length))
         {
@@ -969,11 +1076,13 @@ public sealed class ReShadeShaderPackService
                 var path = Path.GetFullPath(Path.Combine(root, file.RelativePath));
                 var rootWithSep = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 if (!path.StartsWith(rootWithSep, StringComparison.Ordinal) || !File.Exists(path)) continue;
-                if (string.Equals(FileHash.Sha256Hex(path), file.Sha256, StringComparison.OrdinalIgnoreCase))
-                    File.Delete(path);
+                if (!string.Equals(FileHash.Sha256Hex(path), file.Sha256, StringComparison.OrdinalIgnoreCase)) continue;
+                if (operation is not null) await operation.TrackFileAsync(path, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
+                AtomicFile.Delete(path);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
             {
+                if (operation is not null) throw; // journaled: a file that cannot be tracked or removed fails the install (rolled back)
                 AppLog.Warn("shaders", $"Could not remove the managed shader file {file.RelativePath}", ex);
             }
         }

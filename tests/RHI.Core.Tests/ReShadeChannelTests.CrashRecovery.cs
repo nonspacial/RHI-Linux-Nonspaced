@@ -176,6 +176,87 @@ public sealed partial class ReShadeChannelTests
         Assert.False(Directory.Exists(Path.Combine(game.BinaryDirectory!, ".rhi-recovered")));
     }
 
+    // #169: the shader packs a ReShade install or update copies into reshade-shaders/RHI (and their ownership manifest)
+    // are tracked in its journaled operation: a crash before the record is saved puts the folder back as it was.
+    [Theory]
+    [InlineData(false)] // no packs -> CrosireMaster: the copied pack goes
+    [InlineData(true)]  // CrosireMaster -> none: the removed pack and its manifest come back
+    public async Task CrashAfterTheShaderPacksWereCopied_BeforeTheRecord_PutsTheShaderFolderBack(bool hadPacks)
+    {
+        var (game, store) = CreateGame("crash-shaders-" + hadPacks);
+        var cache = Path.Combine(_root, "crash-shaders-cache-" + hadPacks);
+        SeedShaderCache(cache, "CrosireMaster");
+        var compiler = Path.Combine(_root, "crash-shaders-native-" + hadPacks, "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        string[] packsBefore = hadPacks ? ["CrosireMaster"] : [], packsAfter = hadPacks ? [] : ["CrosireMaster"];
+        var first = await NewService(store, new MutableHandler(), cache).InstallAsync(game,
+            new ReShadeInstallOptions { ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = packsBefore });
+        Assert.True(first.Success, first.Message);
+        var before = CancelAtWritePhase.Snapshot(game.BinaryDirectory!);
+
+        var testFx = Path.Combine(game.BinaryDirectory!, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx");
+        Assert.Equal(hadPacks, File.Exists(testFx));
+        var journalDir = Path.Combine(_root, "crash-shaders-journal-" + hadPacks);
+        var (journal, overrides) = SimulatedDeath.NewJournal(journalDir, store);
+        var http = new HttpClient(new MutableHandler());
+        var service = new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(journal), store, overrides, new FakeExtractor(), cache,
+            new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")),
+            journal: journal);
+        using var death = new SimulatedDeath(journal);
+        store.SaveFaultForTesting = death.Die; // the update's ledger write is its commit point
+
+        var (died, run) = await death.RunUntilDeathAsync(() => service.InstallAsync(game,
+            new ReShadeInstallOptions { ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = packsAfter }));
+        Assert.True(died, run.IsCompleted ? (await run).Message : "still running");
+        Assert.Equal(!hadPacks, File.Exists(testFx));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, Path.Combine(_root, "crash-shaders-" + hadPacks, "records.json"));
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        CancelAtWritePhase.AssertUnchanged(before, game.BinaryDirectory!);
+    }
+
+    // w6/crash review 3: the manifest's new content is declared in the journal BEFORE it is written, so a crash right after
+    // the write rolls the manifest back with the pack files (declared after, recovery kept the new manifest as user content:
+    // it listed files that were gone and the restored ones were unlisted, so the next install refused them as foreign).
+    [Theory]
+    [InlineData(false)] // no packs -> CrosireMaster: a new manifest
+    [InlineData(true)]  // CrosireMaster -> CrosireMaster + CrosireLegacy: the manifest rewritten
+    public async Task CrashRightAfterTheShaderPackManifestWasWritten_PutsTheShaderFolderBack(bool hadPacks)
+    {
+        var (game, store) = CreateGame("crash-manifest-" + hadPacks);
+        var cache = Path.Combine(_root, "crash-manifest-cache-" + hadPacks);
+        SeedShaderCache(cache, "CrosireMaster");
+        SeedShaderCache(cache, "CrosireLegacy");
+        var compiler = Path.Combine(_root, "crash-manifest-native-" + hadPacks, "D3DCompiler_47.dll");
+        WriteNativeD3DCompiler(compiler, 0x8664);
+        string[] packsBefore = hadPacks ? ["CrosireMaster"] : [], packsAfter = hadPacks ? ["CrosireMaster", "CrosireLegacy"] : ["CrosireMaster"];
+        var first = await NewService(store, new MutableHandler(), cache).InstallAsync(game,
+            new ReShadeInstallOptions { ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = packsBefore });
+        Assert.True(first.Success, first.Message);
+        var before = CancelAtWritePhase.Snapshot(game.BinaryDirectory!);
+
+        var manifest = Path.Combine(game.BinaryDirectory!, "reshade-shaders", "RHI", ".rhi-manifest.json");
+        var journalDir = Path.Combine(_root, "crash-manifest-journal-" + hadPacks);
+        var (journal, overrides) = SimulatedDeath.NewJournal(journalDir, store);
+        var http = new HttpClient(new MutableHandler());
+        var packs = new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders"));
+        var service = new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(journal), store, overrides, new FakeExtractor(), cache,
+            packs, journal: journal);
+        using var death = new SimulatedDeath(journal);
+        packs.ManifestWrittenForTesting = _ => throw death.Die(); // the process dies right after the manifest write
+
+        var (died, run) = await death.RunUntilDeathAsync(() => service.InstallAsync(game,
+            new ReShadeInstallOptions { ManageIni = true, D3DCompiler47Path = compiler, ShaderPackIds = packsAfter }));
+        Assert.True(died, run.IsCompleted ? (await run).Message : "still running");
+        Assert.True(File.Exists(manifest));
+
+        var report = await SimulatedDeath.RecoverAsync(journalDir, Path.Combine(_root, "crash-manifest-" + hadPacks, "records.json"));
+
+        Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
+        CancelAtWritePhase.AssertUnchanged(before, game.BinaryDirectory!); // the manifest too, and no .rhi-recovered copy
+    }
+
     /// <summary>Lets the first <paramref name="hangAt"/> - 1 replaces through; the next one writes and then never returns.</summary>
     private sealed class HangOnSecondReplace(IFileDeploymentService inner, int hangAt = 2) : IFileDeploymentService
     {
