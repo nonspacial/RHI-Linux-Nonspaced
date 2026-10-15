@@ -46,16 +46,32 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
 
     /// <summary>
     /// "Deploy ReShade.ini" (upstream <c>MergeRsIni</c>): the template's keys and the Settings values go into the game's
-    /// ReShade.ini (created from the template when there is none); every other line of the file stays.
+    /// ReShade.ini (created from the template when there is none); every other line of the file stays. When ReShade's
+    /// record manages the file, what this write did is added to it (#203: search paths the template added, keys and a file
+    /// RHI created, the new hash while the file held RHI's last write), so ReShade's removal takes it back; journaled on
+    /// ReShade's record.
     /// </summary>
-    public ComponentOperationResult DeployReShadeIni(DetectedGame game, LinuxAppSettings settings, CancellationToken cancellationToken = default)
+    public async Task<ComponentOperationResult> DeployReShadeIniAsync(DetectedGame game, LinuxAppSettings settings, CancellationToken cancellationToken = default)
     {
         if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        // Find hands out a copy: the ledger changes only through the stamped Upsert below.
         if (records.Find(game, ManagedComponentKind.ReShade) is not { } record) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
-        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         // w5 integration: a ReShade installed as the Vulkan layer (#92) gets the Vulkan template, as its install did.
         var defaults = ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates, vulkan: ReShadeVulkanLayer.IsLayerRecord(record));
+        var iniPath = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade.ini deploy: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        // A failure propagates as before (the batch counts it as failed); the undisposed scope rolls the file back.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        await scope.TrackAsync(iniPath, cancellationToken).ConfigureAwait(false);
+        var hashBefore = File.Exists(iniPath) ? FileHash.Sha256Hex(iniPath) : null;
         var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], defaults, game.InstallPath);
+        await scope.DeclareWrittenContentAsync(iniPath, cancellationToken).ConfigureAwait(false);
+        if (ReShadeDeploymentService.RecordIniWrite(record, result, hashBefore))
+            records.Upsert(scope.Stamp(record));
+        await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(DeployedPrefix + result.Path, result.Path);
     }
 
@@ -263,7 +279,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         => RunBatchAsync(
             DeployTargets(games, kind),
             (game, token) => kind == ManagedComponentKind.ReShade
-                ? Task.FromResult(DeployReShadeIni(game, settings, token))
+                ? DeployReShadeIniAsync(game, settings, token)
                 : DeployAddonIniAsync(game, kind, replaceChanged, token),
             "ini-deploy", cancellationToken);
 

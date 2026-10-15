@@ -345,7 +345,7 @@ public sealed class UserIniTests : IDisposable
         var service = new UserIniService(templates, records, _ => null);
 
         var addon = await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true);
-        var reshade = service.DeployReShadeIni(game, new LinuxAppSettings());
+        var reshade = await service.DeployReShadeIniAsync(game, new LinuxAppSettings());
 
         Assert.False(addon.Success);
         Assert.Equal(UserIniService.NotManagedPrefix + game.Name, addon.Message);
@@ -357,11 +357,11 @@ public sealed class UserIniTests : IDisposable
         records.Manage(game, ManagedComponentKind.ReShade);
         Assert.False((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
         Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(relimiter));
-        Assert.True(service.DeployReShadeIni(game, new LinuxAppSettings()).Success);
+        Assert.True((await service.DeployReShadeIniAsync(game, new LinuxAppSettings())).Success);
     }
 
     [Fact]
-    public void DeployReShadeIni_OnAVulkanLayerReShade_UsesTheVulkanTemplate()
+    public async Task DeployReShadeIni_OnAVulkanLayerReShade_UsesTheVulkanTemplate()
     {
         // w5 integration (#92 × #181): a ReShade RHI installed as the Vulkan layer gets reshade.vulkan.ini, as its install did.
         var layer = Game("Layer Game");
@@ -378,8 +378,8 @@ public sealed class UserIniTests : IDisposable
         });
         var service = Service(records: records);
 
-        Assert.True(service.DeployReShadeIni(layer, new LinuxAppSettings()).Success);
-        Assert.True(service.DeployReShadeIni(proxy, new LinuxAppSettings()).Success);
+        Assert.True((await service.DeployReShadeIniAsync(layer, new LinuxAppSettings())).Success);
+        Assert.True((await service.DeployReShadeIniAsync(proxy, new LinuxAppSettings())).Success);
 
         Assert.Contains("RESHADE_DEPTH_INPUT_IS_REVERSED=1", File.ReadAllText(Ini(layer)));
         Assert.DoesNotContain("RESHADE_DEPTH_INPUT_IS_REVERSED", File.ReadAllText(Ini(proxy)));
@@ -540,13 +540,13 @@ public sealed class UserIniTests : IDisposable
         var game = Game();
         var service = Service(_ => "Alvo de modificações não definido.");
 
-        var reshade = service.DeployReShadeIni(game, new LinuxAppSettings());
+        var reshade = await service.DeployReShadeIniAsync(game, new LinuxAppSettings());
         var addon = await service.DeployAddonIniAsync(game, ManagedComponentKind.DisplayCommander, replaceChanged: true);
 
         Assert.False(reshade.Success);
         Assert.False(addon.Success);
         Assert.Empty(Directory.EnumerateFileSystemEntries(game.BinaryDirectory!));
-        Assert.StartsWith(UserIniService.NativeGamePrefix, Service().DeployReShadeIni(Game("N", "Native Linux"), new LinuxAppSettings()).Message);
+        Assert.StartsWith(UserIniService.NativeGamePrefix, (await Service().DeployReShadeIniAsync(Game("N", "Native Linux"), new LinuxAppSettings())).Message);
     }
 
     [Fact]
@@ -622,11 +622,11 @@ public sealed class UserIniTests : IDisposable
         Assert.Equal(new IniBatchResult(1, 0, 1), applied);
         Assert.Contains("VariableListUseTabs=0", File.ReadAllText(shared));
         Assert.NotNull(new FileInfo(Ini(linked)).LinkTarget); // the link stays a link
-        Assert.True(service.DeployReShadeIni(linked, new LinuxAppSettings()).Success);
+        Assert.True((await service.DeployReShadeIniAsync(linked, new LinuxAppSettings())).Success);
         ReShadeIniManager.Apply(linked.BinaryDirectory!, [], [], null, linked.InstallPath);
         Assert.Contains("TutorialProgress=4", File.ReadAllText(shared));
 
-        Assert.Throws<IOException>(() => service.DeployReShadeIni(escaped, new LinuxAppSettings()));
+        await Assert.ThrowsAsync<IOException>(() => service.DeployReShadeIniAsync(escaped, new LinuxAppSettings()));
         Assert.Throws<IOException>(() => ReShadeGlobalSettingsApplier.ApplyToGame(new LinuxAppSettings(), escaped));
         Assert.Equal("[OVERLAY]\n", File.ReadAllText(outside));
     }
@@ -659,7 +659,7 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
-    public void Deploy_EntersTheWritePhaseBeforeItWrites()
+    public async Task Deploy_EntersTheWritePhaseBeforeItWrites()
     {
         var game = Game();
         var phases = 0;
@@ -668,7 +668,7 @@ public sealed class UserIniTests : IDisposable
         {
             using var op = new OperationCancellation();
             var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(game, ManagedComponentKind.ReShade);
-            Service(records: records).DeployReShadeIni(game, new LinuxAppSettings(), op.Token);
+            await Service(records: records).DeployReShadeIniAsync(game, new LinuxAppSettings(), op.Token);
             Assert.Equal(1, phases);
         }
         finally { OperationCancellation.WritePhaseObserverForTesting = null; }

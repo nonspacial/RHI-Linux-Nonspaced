@@ -203,6 +203,10 @@ internal static class ReShadeIniManager
             Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
 
+    /// <summary>The entries of <c>[GENERAL] <paramref name="key"/></c> in the file at <paramref name="path"/>; null when the file or key is missing.</summary>
+    internal static IReadOnlyList<string>? SearchPaths(string path, string key)
+        => File.Exists(path) && IniLines.Get(File.ReadAllLines(path).ToList(), "GENERAL", key) is { } value ? SplitList(value) : null;
+
     internal static string ResolveIniPath(string gameDirectory)
     {
         var canonical = Path.Combine(gameDirectory, IniName);
