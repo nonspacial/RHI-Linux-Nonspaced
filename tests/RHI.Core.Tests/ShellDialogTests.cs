@@ -228,6 +228,29 @@ public sealed class ShellDialogTests
     }
 
     [Fact]
+    public async Task Settings_ARebuiltViewsRows_ReplaceTheEarlierViewsRows()
+    {
+        // w6/vmsplit review 2: rows are hosted by the view that built them; a second view composing the same model
+        // (template rebuilt) replaces them, so Save writes only the shown rows and Reset touches only those.
+        UiLocalizationService.Apply("en-US");
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var dialog = new SettingsDialogViewModel(fx.Vm, _ => null, _ => Task.FromResult<string?>(null));
+        var resets = new List<string>();
+        object first = new(), second = new();
+
+        dialog.BeginHosting(first);
+        dialog.Host(new(current => current.PeakNits = 111, _ => resets.Add("first")));
+        dialog.BeginHosting(first); // the same view again (re-attached): its rows stay
+        Assert.Equal(111, dialog.Read().PeakNits);
+
+        dialog.BeginHosting(second);
+        dialog.Host(new(current => current.PeakNits = current.PeakNits == 111 ? -1 : 222, _ => resets.Add("second")));
+        Assert.Equal(222, dialog.Read().PeakNits); // the first view's row no longer writes (it would leave 111 → -1)
+        dialog.ResetCommand.Execute(null);
+        Assert.Equal(["second"], resets);
+    }
+
+    [Fact]
     public async Task Settings_ReadsTheForm_HostedRows_AndResetsEverything()
     {
         UiLocalizationService.Apply("en-US");

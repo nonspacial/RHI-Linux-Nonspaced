@@ -75,6 +75,32 @@ public sealed class UiExceptionHandlingTests : IDisposable
         Assert.Contains("UnauthorizedAccessException", logged);
     }
 
+    /// <summary>
+    /// w6/vmsplit review 1: the Add/Edit game Browse buttons (now view-model commands) keep the window handlers' UI-05
+    /// guard — a picker/portal failure is logged under the button's own name and reported, never thrown at the dispatcher.
+    /// </summary>
+    [Fact]
+    public async Task AddAndEditGame_BrowseFailures_AreLoggedUnderTheButtonsName_NotThrown()
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var game = fx.Game("Picker Quest");
+        var pickers = new RHI.Desktop.ViewModels.DialogPickers(
+            title => throw new InvalidOperationException("portal folder " + title),
+            title => throw new InvalidOperationException("portal file " + title));
+        var add = new RHI.Desktop.ViewModels.AddGameDialogViewModel(fx.Vm.ManualGames, game.ExecutablePath!, pickers);
+        var edit = new RHI.Desktop.ViewModels.EditGameDialogViewModel(fx.Vm.ManualGames, game, pickers);
+
+        await add.BrowsePrefixCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(30));
+        await edit.BrowseExecutableCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(30));
+        await edit.BrowseRootCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(30));
+        await edit.BrowseBinaryCommand.ExecuteAsync(null).WaitAsync(TimeSpan.FromSeconds(30));
+
+        var logged = File.ReadAllText(UiExceptionGuard.Log.FilePath);
+        foreach (var context in new[] { "AddGame.BrowsePrefix", "EditGame.BrowseExecutable", "EditGame.BrowseRoot", "EditGame.BrowseBinary" })
+            Assert.Contains($"[{context}]", logged);
+        Assert.Equal(4, _reports.Count(report => report.StartsWith("Something went wrong: portal ", StringComparison.Ordinal)));
+    }
+
     [Fact]
     public async Task RunAsync_PlainCancellationIsOnlyLogged_TimeoutIsReported()
     {

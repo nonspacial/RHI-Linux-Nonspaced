@@ -110,6 +110,20 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
     /// <summary>Saved or reset: the window follows the view mode, add-on watcher and tray icon.</summary>
     public event Action? Applied;
 
+    /// <summary>
+    /// A view is about to host its rows (<see cref="Host"/>). Rows belong to the view that built them: when a different
+    /// view composes this model (its template rebuilt), the earlier view's rows are dropped, so Save never writes and Reset
+    /// never touches rows that are no longer shown, and nothing is registered twice.
+    /// </summary>
+    public void BeginHosting(object view)
+    {
+        if (ReferenceEquals(_hostingView, view)) return;
+        _hostingView = view;
+        _hosted.Clear();
+    }
+
+    private object? _hostingView;
+
     /// <summary>Hosts a lane's rows: they write their values on Save and go back to the defaults on Reset.</summary>
     public void Host(SettingsRowsHost rows) => _hosted.Add(rows);
 

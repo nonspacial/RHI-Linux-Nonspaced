@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RHI.Core.Models;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Settings;
@@ -50,11 +51,12 @@ public sealed partial class AddGameDialogViewModel : ObservableObject
     [RelayCommand]
     private void Cancel() => CloseRequested?.Invoke();
 
+    // A picker/portal failure is logged and reported under the button's own name, like the window's handlers (UI-05).
     [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task BrowsePrefix()
+    private Task BrowsePrefix() => UiExceptionGuard.RunAsync(async () =>
     {
         if (await _pickers.PickFolder(T("Win.SelectWineProtonPrefix")) is { } chosen) Prefix = chosen;
-    }
+    }, "AddGame.BrowsePrefix");
 
     [RelayCommand]
     private async Task Add()
@@ -177,26 +179,27 @@ public sealed partial class EditGameDialogViewModel : ObservableObject
             BinaryDirectory = Path.GetDirectoryName(path) ?? BinaryDirectory;
     }
 
+    // A picker/portal failure is logged and reported under the button's own name, like the window's handlers (UI-05).
     [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task BrowseExecutable()
+    private Task BrowseExecutable() => UiExceptionGuard.RunAsync(async () =>
     {
         var selected = await _pickers.PickExecutable(T("Win.SelectRealGameExecutable"));
         if (string.IsNullOrWhiteSpace(selected)) return;
         PatchExecutable = selected;
         DetectRoot();
-    }
+    }, "EditGame.BrowseExecutable");
 
     [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task BrowseRoot()
+    private Task BrowseRoot() => UiExceptionGuard.RunAsync(async () =>
     {
         if (await _pickers.PickFolder(T("Win.SelectRealGameRoot")) is { } chosen) GameRoot = chosen;
-    }
+    }, "EditGame.BrowseRoot");
 
     [RelayCommand(AllowConcurrentExecutions = true)]
-    private async Task BrowseBinary()
+    private Task BrowseBinary() => UiExceptionGuard.RunAsync(async () =>
     {
         if (await _pickers.PickFolder(T("Win.SelectBinariesPatchesDirectory")) is { } chosen) BinaryDirectory = chosen;
-    }
+    }, "EditGame.BrowseBinary");
 
     [RelayCommand]
     private async Task Reset()

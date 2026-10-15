@@ -34,6 +34,7 @@ public sealed partial class SettingsDialogView : UserControl
     private void Compose(SettingsDialogViewModel model)
     {
         _composed = true;
+        model.BeginHosting(this); // a rebuilt template's rows replace this model's earlier ones (w6/vmsplit review 2)
         var vm = model.Shell;
         var settings = model.Settings;
         void Show(string line) => model.Status = line;

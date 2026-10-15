@@ -150,8 +150,11 @@ public sealed class DlssBatchDialogTests
     [Fact]
     public void TheMarkupExtension_ReadsTheCurrentLanguage()
     {
+        // Both languages pinned (w6/vmsplit review 3): a {l:T} that always read one table fails one of the two.
+        Assert.NotEqual(UiLocalizationService.TextFor("pt-BR", "Win.Close"), UiLocalizationService.TextFor("en-US", "Win.Close"));
         UiLocalizationService.Apply("pt-BR");
         try { Assert.Equal(UiLocalizationService.TextFor("pt-BR", "Win.Close"), new TExtension("Win.Close").ProvideValue(null!)); }
         finally { UiLocalizationService.Apply("en-US"); }
+        Assert.Equal(UiLocalizationService.TextFor("en-US", "Win.Close"), new TExtension("Win.Close").ProvideValue(null!));
     }
 }
