@@ -20,8 +20,10 @@ Not on `main` yet (upstream features still to port):
 > [!NOTE]
 > Before going back to an older build, remove ReShade from every game where its row reads "ReShade · Vulkan": an older
 > build cannot remove the Vulkan layer, so its registration, the Vulkan loader beside the game and its folder in the
-> prefix would stay. Removing it leaves only RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files
-> in the prefix.
+> prefix would stay, with the game's `vulkan-1` Wine override. The older build also drops the layer's registry details from
+> RHI's record when it saves, after which even this build cannot remove the registration. Removing it first leaves only
+> RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files in the prefix. An older build also forgets
+> names, wiki names and bitness set in Edit game the next time it saves the library.
 
 ReShade
 
