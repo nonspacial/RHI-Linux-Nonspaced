@@ -84,7 +84,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     public Task<IniBatchResult> DeployToAllAsync(IReadOnlyList<DetectedGame> games, ManagedComponentKind kind, LinuxAppSettings settings, CancellationToken cancellationToken = default)
         => RunBatchAsync(
             games.Where(game => records.Find(game, kind) is not null).ToList(),
-            (game, token) => kind == ManagedComponentKind.ReShade ? DeployReShadeIni(game, settings, token) : DeployAddonIni(game, kind, token),
+            (game, token) => Task.FromResult(kind == ManagedComponentKind.ReShade ? DeployReShadeIni(game, settings, token) : DeployAddonIni(game, kind, token)),
             "ini-deploy", cancellationToken);
 
     /// <summary>
@@ -97,9 +97,9 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
             ReShadeSettingsTargets(games),
             (game, token) =>
             {
-                if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+                if (Refusal(game) is { } refused) return Task.FromResult(ComponentOperationResult.Fail(refused));
                 _ = OperationCancellation.BeginWrites(token);
-                return ComponentOperationResult.Ok(ReShadeGlobalSettingsApplier.ApplyToGame(settings, game));
+                return Task.FromResult(ComponentOperationResult.Ok(ReShadeGlobalSettingsApplier.ApplyToGame(settings, game)));
             },
             "reshade-settings", cancellationToken);
 
@@ -113,7 +113,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
             ReLimiterSettingsTargets(games),
             (game, token) =>
             {
-                if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+                if (Refusal(game) is { } refused) return Task.FromResult(ComponentOperationResult.Fail(refused));
                 var inis = ReLimiterInis(game);
                 var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
                 // Every file is checked before the first is written: a game is updated whole or not at all.
@@ -128,7 +128,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
                     var lines = IniLines.Read(ini);
                     if (ReLimiterIniEditor.Apply(lines, globals)) IniLines.Write(ini, lines, roots);
                 }
-                return ComponentOperationResult.Ok(string.Join(", ", inis));
+                return Task.FromResult(ComponentOperationResult.Ok(string.Join(", ", inis)));
             },
             "relimiter-settings", cancellationToken);
 
@@ -181,9 +181,10 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     /// <summary>
     /// One batch over games: one <see cref="OperationCancellation"/> per game linked to the batch token (Cancel is
     /// honoured between games only), a refused game counted apart from a failed one, nothing aborted by one game's error.
+    /// Each game runs off the caller's thread and is awaited (an async step never blocks a pool thread; review nit 10).
     /// </summary>
     internal static async Task<IniBatchResult> RunBatchAsync(
-        IReadOnlyList<DetectedGame> games, Func<DetectedGame, CancellationToken, ComponentOperationResult> perGame, string area,
+        IReadOnlyList<DetectedGame> games, Func<DetectedGame, CancellationToken, Task<ComponentOperationResult>> perGame, string area,
         CancellationToken cancellationToken)
     {
         int updated = 0, refused = 0, failed = 0;
