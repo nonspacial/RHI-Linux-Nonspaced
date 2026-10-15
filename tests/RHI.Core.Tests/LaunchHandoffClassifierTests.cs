@@ -29,7 +29,7 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     [InlineData("Manual", "env VAR=x steam -applaunch 1234", LaunchHandoff.Steam)]
     [InlineData("Manual", "env -u DISPLAY VAR=x /usr/bin/steam steam://rungameid/1234", LaunchHandoff.Steam)]
     [InlineData("Manual", "gio open 'steam://rungameid/1234'", LaunchHandoff.Steam)]
-    [InlineData("Manual", "xdg-open 'itch://caves/abc/launch'", LaunchHandoff.Other)]
+    [InlineData("Manual", "xdg-open 'itch://caves/abc/launch'", LaunchHandoff.StoreClient)]
     // w2-launch review, the shapes it found correct (kept by the wrapper-aware rewrite):
     [InlineData("Manual", "steam steam://rungameid/1", LaunchHandoff.Steam)]
     [InlineData("Manual", "steam://rungameid/1", LaunchHandoff.Steam)]
@@ -71,7 +71,7 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     [InlineData("Manual", "env DXVK_HDR=1 gamemoderun steam -applaunch 1", LaunchHandoff.Steam)]
     [InlineData("Manual", "gamemoderun lutris lutris:rungame/x", LaunchHandoff.Lutris)]
     [InlineData("Manual", "gamemoderun xdg-open 'heroic://launch?appName=x'", LaunchHandoff.Heroic)]
-    [InlineData("Manual", "gamemoderun xdg-open 'itch://caves/abc/launch'", LaunchHandoff.Other)]
+    [InlineData("Manual", "gamemoderun xdg-open 'itch://caves/abc/launch'", LaunchHandoff.StoreClient)]
     // sh/bash -c: the inner command decides.
     [InlineData("Steam", "sh -c 'steam -applaunch 1'", LaunchHandoff.Steam)]
     [InlineData("Manual", "bash -lc \"gamemoderun steam -applaunch 1\"", LaunchHandoff.Steam)]
@@ -92,6 +92,10 @@ public sealed class LaunchHandoffClassifierTests : IDisposable
     [InlineData("Manual", "flatpak run --branch stable com.valvesoftware.Steam -applaunch 1", LaunchHandoff.Steam)]
     [InlineData("Manual", "flatpak run --user --arch x86_64 net.lutris.Lutris lutris:rungame/x", LaunchHandoff.Lutris)]
     [InlineData("Manual", "flatpak run com.usebottles.bottles -b Games -p Game", LaunchHandoff.Other)]
+    // w4 review minor 2: the itch app takes no launch options (its own hand-off kind); an unknown URL is still Other.
+    [InlineData("itch", "flatpak run io.itch.itch 'itch://games/1001'", LaunchHandoff.StoreClient)]
+    [InlineData("Manual", "flatpak run io.itch.itch", LaunchHandoff.StoreClient)]
+    [InlineData("Manual", "xdg-open 'mystore://launch/1'", LaunchHandoff.Other)]
     // w2-launch re-review, nit 3: a Flatpak ref with its branch, bash's --rcfile value, gamescope without `--`.
     [InlineData("Manual", "flatpak run com.valvesoftware.Steam//beta -applaunch 1", LaunchHandoff.Steam)]
     [InlineData("Manual", "flatpak run net.lutris.Lutris/x86_64/stable lutris:rungame/x", LaunchHandoff.Lutris)]

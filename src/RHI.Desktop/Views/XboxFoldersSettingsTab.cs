@@ -10,9 +10,9 @@ using RHI.Desktop.ViewModels;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// Settings → "PartingX / Xbox folders" (w3/scan #90, owner decision C; hosted at integration): the folders the Xbox
-/// detector searches besides PartingX's default state folder and <c>~/Games</c>. Built in code like the other Settings
-/// tabs from <see cref="XboxFoldersPresenter"/> only (list, Add folder…, Remove); a refused save shows on the dialog's
+/// Settings → "Xbox / Game Pass folders" (w3/scan #90, owner decision C; hosted at integration): the folders the Xbox
+/// detector searches besides the installer app's default state folder and <c>~/Games</c>. Built in code like the other Settings
+/// tabs from <see cref="XboxFoldersPresenter"/> only (description with Xodus' link, list, Add folder…, Remove); a refused save shows on the dialog's
 /// status line. Each path is one line with a middle ellipsis and the full path in a 2 s tooltip. Hidden when the view
 /// model has no folder list (a window built over a bare view model).
 /// </summary>
@@ -24,7 +24,17 @@ internal static class XboxFoldersSettingsTab
         if (presenter is null) return tab;
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
         panel.Children.Add(new TextBlock { Text = XboxFoldersPresenter.Label, FontSize = 20, FontWeight = FontWeight.SemiBold });
-        panel.Children.Add(ParitySettingsTab.Note(XboxFoldersPresenter.ToolTip));
+        // Shown on every system, a clean one included: what the tab is for, with Xodus' page one click away.
+        panel.Children.Add(new TextBlock { Text = XboxFoldersPresenter.Intro, TextWrapping = TextWrapping.Wrap, Name = "XboxFoldersIntro" });
+        var xodus = new Button { Content = XboxFoldersPresenter.XodusLinkText, Padding = new Thickness(12, 6), Name = "XboxFoldersXodusLink" };
+        ToolTip.SetTip(xodus, XboxFoldersPresenter.XodusUrl);
+        ToolTip.SetShowDelay(xodus, MiddleEllipsisText.TooltipDelay);
+        xodus.Click += (_, _) =>
+        {
+            if (!RHI.Platform.Linux.Paths.LinuxDesktopOpener.TryOpenUri(XboxFoldersPresenter.XodusUrl, out var error))
+                status.Text = ErrorLineText.LinkNotOpened(XboxFoldersPresenter.XodusUrl, error);
+        };
+        panel.Children.Add(xodus);
 
         var list = new StackPanel { Spacing = 6, Name = "XboxFoldersList" };
         void Fill()

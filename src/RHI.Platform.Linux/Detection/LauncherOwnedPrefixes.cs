@@ -12,13 +12,13 @@ internal sealed partial class LauncherOwnedPrefixes
 {
     private readonly HashSet<string> _lutrisPrefixes;
     private readonly string _umuRoot;
-    private readonly IReadOnlyList<string> _partingXEnvironments;
+    private readonly IReadOnlyList<string> _installerAppEnvironments;
 
-    private LauncherOwnedPrefixes(HashSet<string> lutrisPrefixes, string umuRoot, IReadOnlyList<string> partingXEnvironments)
+    private LauncherOwnedPrefixes(HashSet<string> lutrisPrefixes, string umuRoot, IReadOnlyList<string> installerAppEnvironments)
     {
         _lutrisPrefixes = lutrisPrefixes;
         _umuRoot = umuRoot;
-        _partingXEnvironments = partingXEnvironments;
+        _installerAppEnvironments = installerAppEnvironments;
     }
 
     /// <param name="dataHome">
@@ -26,14 +26,14 @@ internal sealed partial class LauncherOwnedPrefixes
     /// <c>~/.config/lutris/games</c> configs leave <c>$GAMEDIR</c> prefixes unresolved (the Lutris detector
     /// passes the same value, so both agree on which prefixes Lutris owns).
     /// </param>
-    /// <param name="partingXEnvironments">
-    /// Environment roots of the PartingX instances RHI knows (<see cref="Xbox.PartingXInstance.KnownEnvironmentRoots"/>):
-    /// a prefix under one is PartingX's when PartingX's marker says so (its title environment's <c>partingx.json</c>
+    /// <param name="installerAppEnvironments">
+    /// Environment roots of the installer app's instances RHI knows (<see cref="Xbox.XboxInstallerInstance.KnownEnvironmentRoots"/>):
+    /// a prefix under one is the installer app's when the installer app's marker says so (its title environment's <c>{app}.json</c>
     /// beside the prefix, or a runtime template under <c>.templates/</c>), whatever else that folder holds yet (Refs #90).
     /// A broad root (a whole <c>~/Games</c>) therefore never hides the user's own Wine prefixes under it.
     /// </param>
     public static LauncherOwnedPrefixes Load(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null,
-        IReadOnlyList<string>? partingXEnvironments = null)
+        IReadOnlyList<string>? installerAppEnvironments = null)
     {
         var prefixes = new HashSet<string>(StringComparer.Ordinal);
         var roots = lutrisConfigRoots.Where(Directory.Exists).ToList();
@@ -66,7 +66,7 @@ internal sealed partial class LauncherOwnedPrefixes
             }
         }
         // umu-launcher's default: $HOME/Games/umu/$GAMEID.
-        return new LauncherOwnedPrefixes(prefixes, PathIdentity.Canonicalize(Path.Combine(home, "Games", "umu")), partingXEnvironments ?? []);
+        return new LauncherOwnedPrefixes(prefixes, PathIdentity.Canonicalize(Path.Combine(home, "Games", "umu")), installerAppEnvironments ?? []);
     }
 
     public bool Owns(string prefixPath)
@@ -74,30 +74,30 @@ internal sealed partial class LauncherOwnedPrefixes
         var canonical = PathIdentity.Canonicalize(prefixPath);
         return _lutrisPrefixes.Contains(canonical) ||
                canonical.StartsWith(_umuRoot + "/", StringComparison.Ordinal) ||
-               _partingXEnvironments.Any(root => canonical.StartsWith(root + "/", StringComparison.Ordinal) && HasPartingXMarker(canonical, root)) ||
-               InPartingXEnvironment(canonical);
+               _installerAppEnvironments.Any(root => canonical.StartsWith(root + "/", StringComparison.Ordinal) && HasInstallerAppMarker(canonical, root)) ||
+               InInstallerAppEnvironment(canonical);
     }
 
-    // Scan re-review nit 3: PartingX writes partingx.json into every title environment (<root>/<account>/<id>/), which
+    // Scan re-review nit 3: the installer app writes {app}.json into every title environment (<root>/<account>/<id>/), which
     // holds the title's prefix (and its cached runtime templates); shared templates live under <root>/.templates/.
-    private static bool HasPartingXMarker(string prefix, string root)
+    private static bool HasInstallerAppMarker(string prefix, string root)
     {
         if (prefix.StartsWith(root + "/.templates/", StringComparison.Ordinal)) return true;
         for (var dir = Path.GetDirectoryName(prefix); dir is not null && dir.StartsWith(root + "/", StringComparison.Ordinal); dir = Path.GetDirectoryName(dir))
-            if (File.Exists(Path.Combine(dir, Xbox.PartingXInstance.EnvironmentFile))) return true;
+            if (File.Exists(Path.Combine(dir, Xbox.XboxInstallerInstance.EnvironmentFile))) return true;
         return false;
     }
 
     /// <summary>
-    /// A title prefix (<c>&lt;env&gt;/default/&lt;id&gt;/prefix</c>) or runtime template under a PartingX environment folder RHI
-    /// knows by its layout alone (Refs #90): PartingX lists, prepares and launches those itself; the Xbox detector lists
+    /// A title prefix (<c>&lt;env&gt;/default/&lt;id&gt;/prefix</c>) or runtime template under an installer-app environment folder RHI
+    /// knows by its layout alone (Refs #90): the installer app lists, prepares and launches those itself; the Xbox detector lists
     /// their games. Instances RHI knows of are matched by their environment root instead (no layout needed).
     /// </summary>
-    private static bool InPartingXEnvironment(string prefix)
+    private static bool InInstallerAppEnvironment(string prefix)
     {
         var current = Path.GetDirectoryName(prefix);
         for (var level = 0; current is not null && level < 4; level++, current = Path.GetDirectoryName(current))
-            if (Xbox.PartingXInstance.IsEnvironmentRoot(current)) return HasPartingXMarker(prefix, current);
+            if (Xbox.XboxInstallerInstance.IsEnvironmentRoot(current)) return HasInstallerAppMarker(prefix, current);
         return false;
     }
 

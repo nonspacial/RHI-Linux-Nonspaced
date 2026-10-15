@@ -1,57 +1,215 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Text;
 
 namespace RHI.Platform.Linux.Detection;
 
 /// <summary>
-/// Read-only reader for one table of a small SQLite 3 database (Lutris' <c>pga.db</c>), so the library
-/// does not need a native SQLite dependency. Supports UTF-8 databases, table b-trees (interior and leaf
-/// pages) and overflow pages. Anything unexpected (a newer format, a damaged or half-written file, a
-/// database over the size cap, a WAL-mode database whose <c>-wal</c> file still holds changes the main
-/// file lacks) yields no rows and a scan warning, and callers fall back to the config files alone.
+/// Read-only reader for tables of a small SQLite 3 database (Lutris' <c>pga.db</c>, the itch app's <c>butler.db</c>), so
+/// the library does not need a native SQLite dependency. Supports UTF-8 databases, table b-trees (interior and leaf pages),
+/// overflow pages and WAL mode: the committed transactions in <c>&lt;db&gt;-wal</c> (salt- and checksum-valid frames up to
+/// the last commit frame, as SQLite's own recovery reads them) are laid over the main file, so a database whose app is
+/// running reads as that app sees it. The main file and the <c>-wal</c> file are read as one snapshot: when a checkpoint
+/// restarts the <c>-wal</c> file meanwhile, the read is repeated once, quietly. Anything unexpected (a newer format, a
+/// damaged or half-written file, a database over the size cap, a <c>-wal</c> file that is not one) yields no rows; the
+/// caller says what it does instead.
 /// </summary>
 internal static class SqliteTableReader
 {
     private const int MaxDatabaseBytes = 64 * 1024 * 1024;
+    private const int WalHeaderBytes = 32;
+    private const int WalFrameHeaderBytes = 24;
 
+    /// <summary>Test seam: runs (per database path) between reading the main file and reading its <c>-wal</c> file.</summary>
+    internal static readonly ConcurrentDictionary<string, Action> AfterMainFileReadForTesting = new(StringComparer.Ordinal);
+
+    /// <summary>One table; on failure a scan warning (Lutris' wording: it falls back to its config files) and no rows.</summary>
     public static IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadTable(string path, string table)
+    {
+        if (TryReadTables(path, [table], out var tables, out var error)) return tables[table];
+        RHI.Core.Services.DetectorDiagnostics.Warn($"SQLite table '{table}' in {path} not read; using the config files alone", error);
+        return [];
+    }
+
+    /// <summary>
+    /// Several tables from one snapshot of the database. A missing database or table reads as no rows. False (with the
+    /// reason) when the database cannot be read; the caller decides how to report it.
+    /// </summary>
+    public static bool TryReadTables(string path, IReadOnlyList<string> names,
+        out IReadOnlyDictionary<string, IReadOnlyList<IReadOnlyDictionary<string, object?>>> tables, out Exception? error)
+    {
+        var result = new Dictionary<string, IReadOnlyList<IReadOnlyDictionary<string, object?>>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in names) result[name] = [];
+        tables = result;
+        error = null;
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                if (Snapshot(path) is not { } bytes) return true;
+                var db = new Database(bytes);
+                var master = db.Rows(1).ToList();
+                foreach (var name in names) result[name] = Read(db, master, name);
+                return true;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
+                                           or IndexOutOfRangeException or ArgumentOutOfRangeException or ArgumentException)
+            {
+                // One quiet retry: the owning app may have been writing (a checkpoint, a -wal restart) during the read.
+                if (attempt == 0) continue;
+                foreach (var name in names) result[name] = [];
+                error = ex;
+                return false;
+            }
+        }
+    }
+
+    private static IReadOnlyList<IReadOnlyDictionary<string, object?>> Read(Database db, IReadOnlyList<IReadOnlyList<object?>> master, string table)
+    {
+        var entry = master.FirstOrDefault(row =>
+            row.Count >= 5 && row[0] as string == "table" && string.Equals(row[1] as string, table, StringComparison.OrdinalIgnoreCase));
+        if (entry is null || entry[3] is not long rootPage || entry[4] is not string sql) return [];
+        var columns = ColumnNames(sql);
+        var rowIdColumn = IntegerPrimaryKey(sql, columns);
+
+        var result = new List<IReadOnlyDictionary<string, object?>>();
+        foreach (var (rowId, values) in db.RowsWithIds((int)rootPage))
+        {
+            var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var c = 0; c < columns.Count; c++)
+                row[columns[c]] = c < values.Count ? values[c] : null;
+            if (rowIdColumn is not null) row[rowIdColumn] = rowId;
+            result.Add(row);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// The database as its writer sees it: the main file with the <c>-wal</c> file's committed pages laid over it. Null when
+    /// the database does not exist. Throws when the files changed under the read (the caller retries once) or are no
+    /// SQLite database.
+    /// </summary>
+    private static byte[]? Snapshot(string path)
+    {
+        var walPath = path + "-wal";
+        var walBefore = ReadCapped(walPath, WalHeaderBytes, whole: false);
+        var info = new FileInfo(path);
+        if (!info.Exists) return null;
+        if (info.Length > MaxDatabaseBytes) throw new InvalidDataException($"unexpected database size {info.Length} bytes");
+        var bytes = ReadCapped(path, MaxDatabaseBytes) ?? throw new FileNotFoundException("database vanished while it was read", path);
+        if (AfterMainFileReadForTesting.TryGetValue(path, out var hook)) hook();
+        // WAL mode (read/write versions 2): committed rows can still sit in <db>-wal, so the main file alone may be stale
+        // (an `installed = 0` row would hide a reinstalled game).
+        var walMode = bytes.Length > 19 && (bytes[18] == 2 || bytes[19] == 2);
+        if (walMode)
+        {
+            var wal = ReadCapped(walPath, MaxDatabaseBytes);
+            // Pages the checkpoint copied into the main file during the read all come from this -wal generation, which is
+            // laid over them again; a new generation (another salt, a truncated file) means the main file may be newer
+            // than the -wal file just read.
+            if (!SameHeader(walBefore, wal)) throw new InvalidDataException("WAL-mode database whose -wal file was restarted while it was read");
+            if (wal is { Length: > 0 }) bytes = ApplyWal(bytes, wal);
+        }
+        if (bytes.Length < 512) throw new InvalidDataException($"unexpected database size {bytes.Length} bytes");
+        return bytes;
+    }
+
+    /// <summary>The file's bytes (at most <paramref name="cap"/>; a longer file throws when <paramref name="whole"/>), null when it is missing.</summary>
+    private static byte[]? ReadCapped(string path, int cap, bool whole = true)
     {
         try
         {
-            var info = new FileInfo(path);
-            if (!info.Exists) return [];
-            if (info.Length < 512 || info.Length > MaxDatabaseBytes)
-                throw new InvalidDataException($"unexpected database size {info.Length} bytes");
-            var bytes = File.ReadAllBytes(path);
-            // WAL mode (read/write versions 2): committed rows can still sit in <db>-wal, so the main
-            // file alone may be stale (an `installed = 0` row would hide a reinstalled game).
-            if (bytes.Length > 19 && (bytes[18] == 2 || bytes[19] == 2) && new FileInfo(path + "-wal") is { Exists: true, Length: > 0 })
-                throw new InvalidDataException("WAL-mode database with uncheckpointed changes in its -wal file");
-            var db = new Database(bytes);
-
-            var master = db.Rows(1).FirstOrDefault(row =>
-                row.Count >= 5 && row[0] as string == "table" && string.Equals(row[1] as string, table, StringComparison.OrdinalIgnoreCase));
-            if (master is null || master[3] is not long rootPage || master[4] is not string sql) return [];
-            var columns = ColumnNames(sql);
-            var rowIdColumn = IntegerPrimaryKey(sql, columns);
-
-            var result = new List<IReadOnlyDictionary<string, object?>>();
-            foreach (var (rowId, values) in db.RowsWithIds((int)rootPage))
-            {
-                var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-                for (var c = 0; c < columns.Count; c++)
-                    row[columns[c]] = c < values.Count ? values[c] : null;
-                if (rowIdColumn is not null) row[rowIdColumn] = rowId;
-                result.Add(row);
-            }
-            return result;
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (whole && stream.Length > cap) throw new InvalidDataException($"{path} is larger than {cap} bytes");
+            var buffer = new byte[Math.Min(stream.Length, cap)];
+            var read = 0;
+            while (read < buffer.Length && stream.Read(buffer, read, buffer.Length - read) is var n && n > 0) read += n;
+            return read == buffer.Length ? buffer : buffer[..read];
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException
-                                       or IndexOutOfRangeException or ArgumentOutOfRangeException or ArgumentException)
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
         {
-            RHI.Core.Services.DetectorDiagnostics.Warn($"SQLite table '{table}' in {path} not read; using the config files alone", ex);
-            return [];
+            return null;
         }
+    }
+
+    private static bool SameHeader(byte[]? before, byte[]? after)
+    {
+        var a = before is null ? [] : before.AsSpan(0, Math.Min(before.Length, WalHeaderBytes));
+        var b = after is null ? [] : after.AsSpan(0, Math.Min(after.Length, WalHeaderBytes));
+        return a.SequenceEqual(b);
+    }
+
+    /// <summary>
+    /// Lays the committed frames of a <c>-wal</c> file over the main file (SQLite's WAL format: 32-byte header with magic,
+    /// version, page size, salts and checksum; frames of a 24-byte header plus one page; a frame counts only while its
+    /// salts match and the running checksum holds, and only up to the last commit frame).
+    /// </summary>
+    internal static byte[] ApplyWal(byte[] database, byte[] wal)
+    {
+        if (wal.Length < WalHeaderBytes) throw new InvalidDataException("WAL-mode database with a -wal file shorter than its header");
+        var magic = BinaryPrimitives.ReadUInt32BigEndian(wal);
+        if (magic is not (0x377f0682 or 0x377f0683)) throw new InvalidDataException("WAL-mode database whose -wal file is not a SQLite WAL");
+        var bigEndian = (magic & 1) == 1;
+        if (BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(4)) != 3007000) throw new InvalidDataException("WAL file of an unknown version");
+        var pageSize = BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(8));
+        if (pageSize is < 512 or > 65536 || (pageSize & (pageSize - 1)) != 0) throw new InvalidDataException("WAL file with a bad page size");
+        if (database.Length >= 18)
+        {
+            int mainPageSize = BinaryPrimitives.ReadUInt16BigEndian(database.AsSpan(16));
+            if ((mainPageSize == 1 ? 65536 : mainPageSize) != pageSize) throw new InvalidDataException("WAL page size differs from the database's");
+        }
+        var (s0, s1) = Checksum(wal.AsSpan(0, 24), bigEndian, 0, 0);
+        if (s0 != BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(24)) || s1 != BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(28)))
+            throw new InvalidDataException("WAL-mode database whose -wal header checksum does not match");
+        var salt1 = BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(16));
+        var salt2 = BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(20));
+
+        var frameSize = WalFrameHeaderBytes + (int)pageSize;
+        var lastCommit = -1;
+        uint pagesAtCommit = 0;
+        for (var frame = 0; WalHeaderBytes + (long)(frame + 1) * frameSize <= wal.Length; frame++)
+        {
+            var header = wal.AsSpan(WalHeaderBytes + frame * frameSize, WalFrameHeaderBytes);
+            if (BinaryPrimitives.ReadUInt32BigEndian(header) == 0 ||
+                BinaryPrimitives.ReadUInt32BigEndian(header[8..]) != salt1 || BinaryPrimitives.ReadUInt32BigEndian(header[12..]) != salt2)
+                break;
+            (s0, s1) = Checksum(header[..8], bigEndian, s0, s1);
+            (s0, s1) = Checksum(wal.AsSpan(WalHeaderBytes + frame * frameSize + WalFrameHeaderBytes, (int)pageSize), bigEndian, s0, s1);
+            if (s0 != BinaryPrimitives.ReadUInt32BigEndian(header[16..]) || s1 != BinaryPrimitives.ReadUInt32BigEndian(header[20..])) break;
+            if (BinaryPrimitives.ReadUInt32BigEndian(header[4..]) is var commit and > 0)
+            {
+                lastCommit = frame;
+                pagesAtCommit = commit;
+            }
+        }
+        if (lastCommit < 0) return database;
+        if ((long)pagesAtCommit * pageSize > MaxDatabaseBytes) throw new InvalidDataException("WAL commit makes the database larger than the cap");
+
+        var image = new byte[pagesAtCommit * pageSize];
+        database.AsSpan(0, Math.Min(database.Length, image.Length)).CopyTo(image);
+        for (var frame = 0; frame <= lastCommit; frame++)
+        {
+            var offset = WalHeaderBytes + frame * frameSize;
+            var page = BinaryPrimitives.ReadUInt32BigEndian(wal.AsSpan(offset));
+            if (page > pagesAtCommit) continue;
+            wal.AsSpan(offset + WalFrameHeaderBytes, (int)pageSize).CopyTo(image.AsSpan((int)((page - 1) * pageSize)));
+        }
+        return image;
+    }
+
+    private static (uint, uint) Checksum(ReadOnlySpan<byte> data, bool bigEndian, uint s0, uint s1)
+    {
+        unchecked
+        {
+            for (var i = 0; i + 8 <= data.Length; i += 8)
+            {
+                var x0 = bigEndian ? BinaryPrimitives.ReadUInt32BigEndian(data[i..]) : BinaryPrimitives.ReadUInt32LittleEndian(data[i..]);
+                var x1 = bigEndian ? BinaryPrimitives.ReadUInt32BigEndian(data[(i + 4)..]) : BinaryPrimitives.ReadUInt32LittleEndian(data[(i + 4)..]);
+                s0 += x0 + s1;
+                s1 += x1 + s0;
+            }
+        }
+        return (s0, s1);
     }
 
     /// <summary>Column names of a <c>CREATE TABLE name (col type, …, constraint …)</c> statement.</summary>
@@ -83,12 +241,21 @@ internal static class SqliteTableReader
     private static bool IsConstraint(string word)
         => word.ToUpperInvariant() is "PRIMARY" or "UNIQUE" or "CHECK" or "FOREIGN" or "CONSTRAINT";
 
-    // An INTEGER PRIMARY KEY column is an alias of the rowid and is stored as NULL in the record.
-    private static string? IntegerPrimaryKey(string sql, IReadOnlyList<string> columns)
-        => columns.FirstOrDefault(column =>
-            System.Text.RegularExpressions.Regex.IsMatch(sql,
-                $@"[(,]\s*[""`\[]?{System.Text.RegularExpressions.Regex.Escape(column)}[""`\]]?\s+INTEGER\s+PRIMARY\s+KEY",
-                System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+    // An INTEGER PRIMARY KEY column is an alias of the rowid and is stored as NULL in the record. So is an INTEGER column
+    // that is the table's only key in a `PRIMARY KEY ("id")` constraint (the form butler's tables use, Refs #90).
+    internal static string? IntegerPrimaryKey(string sql, IReadOnlyList<string> columns)
+    {
+        const System.Text.RegularExpressions.RegexOptions IgnoreCase = System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+        static string Quoted(string column) => $@"[""`\[]?{System.Text.RegularExpressions.Regex.Escape(column)}[""`\]]?";
+        var inline = columns.FirstOrDefault(column =>
+            System.Text.RegularExpressions.Regex.IsMatch(sql, $@"[(,]\s*{Quoted(column)}\s+INTEGER\s+PRIMARY\s+KEY", IgnoreCase));
+        if (inline is not null) return inline;
+        var constraint = System.Text.RegularExpressions.Regex.Match(sql, @"PRIMARY\s+KEY\s*\(\s*([^,()]+?)\s*\)", IgnoreCase);
+        if (!constraint.Success) return null;
+        var key = constraint.Groups[1].Value.Trim('"', '`', '[', ']', '\'');
+        return columns.FirstOrDefault(column => column.Equals(key, StringComparison.OrdinalIgnoreCase) &&
+            System.Text.RegularExpressions.Regex.IsMatch(sql, $@"[(,]\s*{Quoted(column)}\s+INTEGER\s*(NOT\s+NULL\s*)?[,)]", IgnoreCase));
+    }
 
     private sealed class Database
     {

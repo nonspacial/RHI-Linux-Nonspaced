@@ -2,12 +2,38 @@ namespace RHI.Platform.Linux.Paths;
 
 public static class LinuxPaths
 {
-    public static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    public static string ConfigHome => ConfigHomeFrom(Environment.GetEnvironmentVariable);
-    public static string DataHome => DataHomeFrom(Environment.GetEnvironmentVariable);
-    public static string CacheHome => CacheHomeFrom(Environment.GetEnvironmentVariable);
+    // Test seam: an environment (HOME, XDG_*, PATH, XDG_DATA_DIRS) for one async flow, so a test can run the app's own
+    // detector list against a whole fake system without changing the process environment parallel tests share.
+    private static readonly AsyncLocal<IReadOnlyDictionary<string, string>?> FlowEnvironment = new();
+
+    /// <summary>
+    /// Test seam: <see cref="Home"/>, the XDG folders and <see cref="Environment"/> read <paramref name="environment"/> (a
+    /// missing variable is unset) in this async flow and the tasks it starts, until the result is disposed.
+    /// </summary>
+    internal static IDisposable UseEnvironmentInThisFlow(IReadOnlyDictionary<string, string> environment)
+    {
+        var previous = FlowEnvironment.Value;
+        FlowEnvironment.Value = environment;
+        return new FlowRestore(previous);
+    }
+
+    private sealed class FlowRestore(IReadOnlyDictionary<string, string>? previous) : IDisposable
+    {
+        public void Dispose() => FlowEnvironment.Value = previous;
+    }
+
+    /// <summary>An environment variable as RHI's path rules read it (the test flow's environment when one is set).</summary>
+    public static string? Environment(string name)
+        => FlowEnvironment.Value is { } flow ? flow.GetValueOrDefault(name) : System.Environment.GetEnvironmentVariable(name);
+
+    public static string Home => FlowEnvironment.Value is { } flow
+        ? flow.GetValueOrDefault("HOME") ?? ""
+        : System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+    public static string ConfigHome => ConfigHomeFrom(Environment);
+    public static string DataHome => DataHomeFrom(Environment);
+    public static string CacheHome => CacheHomeFrom(Environment);
     /// <summary>XDG state dir (logs and other state that is not user data); defaults to ~/.local/state.</summary>
-    public static string StateHome => StateHomeFrom(Environment.GetEnvironmentVariable);
+    public static string StateHome => StateHomeFrom(Environment);
 
     // The XDG base-directory spec: an empty or relative value is invalid and is ignored (the default is used), so
     // XDG_CONFIG_HOME="" never turns into a folder relative to whatever directory RHI was started from.

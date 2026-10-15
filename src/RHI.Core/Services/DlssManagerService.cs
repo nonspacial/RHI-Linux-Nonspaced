@@ -453,7 +453,7 @@ public sealed class DlssManagerService
         CancellationToken cancellationToken = default)
     {
         targetDlls = targetDlls.ToArray();
-        // Refused before the download (Refs #90): an Xbox title PartingX is working on, or a protected package file.
+        // Refused before the download (Refs #90): an Xbox title the installer app is working on, or a protected package file.
         if (XboxWriteGate.Refusal(targetDlls) is { } xbox) return new(false, [], xbox); // w3/scan hook
         var entry = Entries(kind).FirstOrDefault(x => string.Equals(x.Version, version, StringComparison.OrdinalIgnoreCase));
         if (entry is null) return new(false, [], $"Version '{version}' does not exist in the current manifest.");

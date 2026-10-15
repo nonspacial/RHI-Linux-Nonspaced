@@ -25,7 +25,7 @@ internal sealed record XboxPackage(
     bool ExecutableIsLauncher,
     string? Problem)
 {
-    /// <summary>True when the package names an executable that exists on disk (PartingX's own verify rule, plus the config).</summary>
+    /// <summary>True when the package names an executable that exists on disk (the installer app's own verify rule, plus the config).</summary>
     public bool HasExecutable => Executable is not null;
 }
 
@@ -35,17 +35,17 @@ internal static class XboxPackageReader
     public const string ManifestFileName = "appxmanifest.xml";
     public const string StreamingFileName = ".xodus-streaming.msixvc";
     public const string StreamingTempFileName = ".xodus-streaming-tmp.msixvc";
-    public const string AppxRecordFileName = ".partingx-appx.json";
+    public static readonly string AppxRecordFileName = RHI.Core.Services.XboxInstallerApp.AppxRecordFile;
 
     // Package XML files are a few KiB; anything far larger is not one.
     private const long MaxXmlBytes = 4 * 1024 * 1024;
 
-    /// <summary>True when <paramref name="dir"/> holds a finished Xodus/PartingX package (msixvc or Appx record) and a config or manifest.</summary>
+    /// <summary>True when <paramref name="dir"/> holds a finished Xodus/installer-app package (msixvc or Appx record) and a config or manifest.</summary>
     public static bool LooksLikePackage(string dir)
         => (File.Exists(Path.Combine(dir, StreamingFileName)) || File.Exists(Path.Combine(dir, AppxRecordFileName))) &&
            (FindChild(dir, ConfigFileName) is not null || FindChild(dir, ManifestFileName) is not null);
 
-    /// <param name="executableOverride">An executable the owning app was told to run instead (a PartingX user recipe).</param>
+    /// <param name="executableOverride">An executable the owning app was told to run instead (an installer-app user recipe).</param>
     public static XboxPackage? Read(string root, string? executableOverride = null)
     {
         var configPath = FindChild(root, ConfigFileName);

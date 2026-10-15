@@ -1028,12 +1028,12 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.WineOverrideReapplyCompensator.DeferredPrefix,
          "O Wine está em execução neste prefixo e sobrescreveria a alteração ao sair; por isso este override do Wine será reaplicado na próxima inicialização: "),
         // w3/scan rows
-        ("PartingX is working on this game (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O PartingX está trabalhando neste jogo (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
-        ("PartingX's job list could not be read, so RHI cannot tell whether PartingX is changing this game. File: ", "Não foi possível ler a lista de tarefas do PartingX, então o RHI não sabe se o PartingX está alterando este jogo. Arquivo: "),
-        ("PartingX owns this game, but RHI does not know which PartingX instance installed it, so it cannot tell whether PartingX is changing it. Nothing was changed. Start that PartingX once, or add its folder in Settings → PartingX / Xbox folders. Folder: ", "Este jogo pertence ao PartingX, mas o RHI não sabe qual instância do PartingX o instalou, então não sabe se o PartingX está alterando o jogo. Nada foi alterado. Abra esse PartingX uma vez ou adicione a pasta dele em Configurações → Pastas do PartingX / Xbox. Pasta: "),
-        ("A PartingX instance file uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ", "Um arquivo de instância do PartingX usa um formato mais novo do que este RHI lê (atualize o RHI); essa instância não é lida dele. Arquivo: "),
+        ("The app that installed this game is working on it (installing, updating, preparing or running it); RHI changes nothing until it has finished.", "O app que instalou este jogo está trabalhando nele (instalando, atualizando, preparando ou executando); o RHI não altera nada até ele terminar."),
+        ("The job list of the app that installed this game could not be read, so RHI cannot tell whether that app is changing it. File: ", "Não foi possível ler a lista de tarefas do app que instalou este jogo, então o RHI não sabe se esse app está alterando o jogo. Arquivo: "),
+        ("This game was installed by a copy of the Xbox app RHI does not know, so it cannot tell whether that app is changing it. Nothing was changed. Start that app once, or add its folder in Settings → Xbox / Game Pass folders. Folder: ", "Este jogo foi instalado por uma cópia do app do Xbox que o RHI não conhece, então não sabe se esse app está alterando o jogo. Nada foi alterado. Abra esse app uma vez ou adicione a pasta dele em Configurações → Pastas do Xbox / Game Pass. Pasta: "),
+        ("An instance file of the Xbox app uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ", "Um arquivo de instância do app do Xbox usa um formato mais novo do que este RHI lê (atualize o RHI); essa instância não é lida dele. Arquivo: "),
         (RHI.Core.Services.XboxWriteGate.EncryptedExecutableMessage, "Não foi possível determinar se o executável do jogo é de 32 ou 64 bits: este pacote do Xbox o mantém criptografado no disco e não declara sua arquitetura, então o RHI não pode instalar mods nele."),
-        ("RHI never changes this file of an Xbox package: the game would no longer start, or PartingX/Xodus would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o PartingX/Xodus o restauraria. Arquivo: "),
+        ("RHI never changes this file of an Xbox package: the game would no longer start, or the app that installed it would put it back. File: ", "O RHI nunca altera este arquivo de um pacote Xbox: o jogo deixaria de iniciar, ou o app que o instalou o restauraria. Arquivo: "),
         // w3/parity rows
         (RHI.Platform.Linux.Deployment.DownloadSources.NexusApi.RefusalPrefix,
             "Download recusado: links da API do Nexus Mods devem ser HTTPS em um host confiável (api.nexusmods.com). Link recusado: "),
@@ -1282,7 +1282,11 @@ public static class UiLocalizationService
 
     /// <summary>English marker words left in <paramref name="value"/> (tests: a PT-BR presentation must have none).</summary>
     internal static IReadOnlyList<string> EnglishMarkersIn(string value)
-        => Tokens(value.Replace('\'', ' ')).Where(EnglishMarkers.Contains).ToArray();
+        => Tokens(ProductNames.Aggregate(value, (text, name) => text.Replace(name, " ", StringComparison.Ordinal)).Replace('\'', ' '))
+            .Where(EnglishMarkers.Contains).ToArray();
+
+    // Product names Portuguese text keeps in English ("Pastas do Xbox / Game Pass"): not untranslated words.
+    private static readonly string[] ProductNames = ["Game Pass"];
 
     private sealed record PortugueseOnlyTemplate(string Anchor, Regex Pattern, string Replacement, int LiteralLength);
 

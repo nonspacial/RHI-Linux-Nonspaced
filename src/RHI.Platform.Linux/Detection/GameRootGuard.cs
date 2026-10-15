@@ -85,7 +85,8 @@ public static class GameRootGuard
             "bin", ".local", ".local/bin", ".local/share", ".config", ".cache", ".var", ".var/app", ".steam",
             ".wine", "Games", "Applications", "Downloads", "Desktop", "Documents"
         ];
-        return containers.Any(c => path == home + "/" + c);
+        // A container that is a symlink (~/Games -> /media/disk/Games) is refused under its target's spelling too.
+        return containers.Any(c => path == home + "/" + c || path == PathIdentity.Canonicalize(home + "/" + c));
     }
 
     private static bool IsPrefixSystemFolder(string path)

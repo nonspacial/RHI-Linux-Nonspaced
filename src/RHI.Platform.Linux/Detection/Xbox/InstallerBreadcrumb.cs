@@ -4,15 +4,15 @@ using RHI.Core.Services;
 namespace RHI.Platform.Linux.Detection.Xbox;
 
 /// <summary>
-/// A PartingX instance announcing itself (Refs #90; PartingX #217/#218, spec <c>reviews/w3-90-partingx-entrypoints.md</c>):
-/// every <c>${XDG_DATA_HOME:-~/.local/share}/partingx/instances/*.json</c>, one per instance, kept after PartingX exits.
+/// An installer-app instance announcing itself (Refs #90; its tracker #217/#218, spec <c>reviews/w3-90 entry-point spec</c>):
+/// every <c>${XDG_DATA_HOME:-~/.local/share}/{app}/instances/*.json</c>, one per instance, kept after the installer app exits.
 /// Schema 1 fields read here: <c>schema</c>, <c>app</c>, <c>updatedAt</c>, <c>stateDir</c>, <c>settingsFile</c>,
 /// <c>jobsFile</c>, <c>payloadRoots[]</c>, <c>environmentRoot</c>, <c>runtimeRoot</c>, <c>launch{argv[],env{}}</c> and
 /// <c>entryPoints{play[],show[]}</c>; unknown fields are ignored. A file of a newer schema is skipped with a scan
 /// warning (its meaning may have changed); a missing, garbled or foreign file is skipped with a log line. When several
 /// files name one state folder, the newest <c>updatedAt</c> wins.
 /// </summary>
-internal sealed record PartingXBreadcrumb(
+internal sealed record InstallerBreadcrumb(
     string File,
     DateTimeOffset? UpdatedAt,
     string StateDir,
@@ -27,14 +27,14 @@ internal sealed record PartingXBreadcrumb(
     IReadOnlyList<string>? ShowEntry)
 {
     public const int SupportedSchema = 1;
-    public const string App = "PartingX";
+    public static string App => XboxInstallerApp.ProductTag;
 
     /// <summary>The argument an entry point carries for the title's store id; replaced in whole arguments only.</summary>
     public const string StoreIdPlaceholder = "{storeId}";
 
     /// <summary>Fixed start of the scan warning for a breadcrumb of a newer schema; the file follows.</summary>
     public const string NewerSchemaPrefix =
-        "A PartingX instance file uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ";
+        "An instance file of the Xbox app uses a newer format than this RHI reads (update RHI); that instance is not read from it. File: ";
 
     private const long MaxBytes = 64 * 1024;
 
@@ -52,15 +52,15 @@ internal sealed record PartingXBreadcrumb(
     /// Whether a newer-schema file is a scan warning of the calling detector: the Xbox detector's (it lists the games);
     /// the Wine detector only borrows the folders, so it stays quiet rather than report the same file twice.
     /// </param>
-    public static IReadOnlyList<PartingXBreadcrumb> ReadAll(string? directory, bool reportNewerSchema = true)
+    public static IReadOnlyList<InstallerBreadcrumb> ReadAll(string? directory, bool reportNewerSchema = true)
     {
-        var crumbs = new List<PartingXBreadcrumb>();
+        var crumbs = new List<InstallerBreadcrumb>();
         if (directory is null || !Directory.Exists(directory)) return crumbs;
         string[] files;
         try { files = Directory.GetFiles(directory, "*.json"); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            AppLog.Warn("scan", $"PartingX instance list {directory} unreadable", ex);
+            AppLog.Warn("scan", $"Xbox app instance list {directory} unreadable", ex);
             return crumbs;
         }
         foreach (var file in files.Order(StringComparer.Ordinal))
@@ -74,7 +74,7 @@ internal sealed record PartingXBreadcrumb(
             .ToList();
     }
 
-    private static PartingXBreadcrumb? Read(string file, bool reportNewerSchema)
+    private static InstallerBreadcrumb? Read(string file, bool reportNewerSchema)
     {
         try
         {
@@ -84,26 +84,26 @@ internal sealed record PartingXBreadcrumb(
             if (root.ValueKind != JsonValueKind.Object ||
                 !root.TryGetProperty("schema", out var schemaValue) || !schemaValue.TryGetInt32(out var schema) || schema < 1)
             {
-                AppLog.Warn("scan", $"PartingX instance file {file} has no schema; skipped");
+                AppLog.Warn("scan", $"Xbox app instance file {file} has no schema; skipped");
                 return null;
             }
             if (schema > SupportedSchema)
             {
-                AppLog.Warn("scan", $"PartingX instance file {file}: schema {schema}, this RHI reads {SupportedSchema}");
+                AppLog.Warn("scan", $"Xbox app instance file {file}: schema {schema}, this RHI reads {SupportedSchema}");
                 if (reportNewerSchema) DetectorDiagnostics.Warn(NewerSchemaPrefix + file);
                 return null;
             }
-            if (PartingXInstance.String(root, "app") is { } app && !string.Equals(app, App, StringComparison.Ordinal))
+            if (XboxInstallerInstance.String(root, "app") is { } app && !string.Equals(app, App, StringComparison.Ordinal))
             {
-                AppLog.Warn("scan", $"Instance file {file} belongs to {app}, not PartingX; skipped");
+                AppLog.Warn("scan", $"Instance file {file} belongs to {app}, not the installer app; skipped");
                 return null;
             }
-            if (Rooted(PartingXInstance.String(root, "stateDir")) is not { } stateDir)
+            if (Rooted(XboxInstallerInstance.String(root, "stateDir")) is not { } stateDir)
             {
-                AppLog.Warn("scan", $"PartingX instance file {file} names no absolute stateDir; skipped");
+                AppLog.Warn("scan", $"Xbox app instance file {file} names no absolute stateDir; skipped");
                 return null;
             }
-            DateTimeOffset? updatedAt = PartingXInstance.String(root, "updatedAt") is { } stamp &&
+            DateTimeOffset? updatedAt = XboxInstallerInstance.String(root, "updatedAt") is { } stamp &&
                                         DateTimeOffset.TryParse(stamp, System.Globalization.CultureInfo.InvariantCulture,
                                             System.Globalization.DateTimeStyles.AssumeUniversal, out var parsed)
                 ? parsed
@@ -112,15 +112,15 @@ internal sealed record PartingXBreadcrumb(
             var argv = Strings(launch, "argv");
             if (argv is { Count: 0 } || (argv is not null && !Path.IsPathRooted(argv[0]))) argv = null;
             var entryPoints = root.TryGetProperty("entryPoints", out var entries) && entries.ValueKind == JsonValueKind.Object ? entries : default;
-            return new PartingXBreadcrumb(
+            return new InstallerBreadcrumb(
                 file,
                 updatedAt,
                 stateDir,
-                Rooted(PartingXInstance.String(root, "settingsFile")),
-                Rooted(PartingXInstance.String(root, "jobsFile")),
+                Rooted(XboxInstallerInstance.String(root, "settingsFile")),
+                Rooted(XboxInstallerInstance.String(root, "jobsFile")),
                 (Strings(root, "payloadRoots") ?? []).Where(Path.IsPathRooted).Distinct(StringComparer.Ordinal).ToArray(),
-                Rooted(PartingXInstance.String(root, "environmentRoot")),
-                Rooted(PartingXInstance.String(root, "runtimeRoot")),
+                Rooted(XboxInstallerInstance.String(root, "environmentRoot")),
+                Rooted(XboxInstallerInstance.String(root, "runtimeRoot")),
                 argv,
                 Environment(launch),
                 Strings(entryPoints, "play"),
@@ -128,7 +128,7 @@ internal sealed record PartingXBreadcrumb(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
-            AppLog.Warn("scan", $"PartingX instance file {file} unreadable", ex);
+            AppLog.Warn("scan", $"Xbox app instance file {file} unreadable", ex);
             return null;
         }
     }

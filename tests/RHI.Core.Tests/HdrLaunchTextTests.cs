@@ -123,7 +123,7 @@ public sealed class HdrLaunchTextTests : IDisposable
     [Theory]
     [InlineData("Steam", "steam -applaunch 1234", "Launch Options", "gamescope --hdr-enabled -- %command%")]
     [InlineData("Lutris", "lutris 'lutris:rungame/game'", "System options", "command prefix gamescope --hdr-enabled --")]
-    [InlineData("Manual", "xdg-open 'itch://caves/abc/launch'", "that launcher", "wrapper command gamescope --hdr-enabled --")]
+    [InlineData("Manual", "flatpak run com.usebottles.bottles -b Games -p Game", "that launcher", "wrapper command gamescope --hdr-enabled --")]
     public void EachLauncher_GetsItsOwnSteps(string source, string command, string where, string what)
     {
         var game = Game(source, command);
@@ -135,6 +135,34 @@ public sealed class HdrLaunchTextTests : IDisposable
         Assert.Contains(where, en, StringComparison.Ordinal);
         Assert.Contains(what, en, StringComparison.Ordinal);
         Assert.DoesNotContain(UiLocalizationService.EnglishMarkersIn(pt), w => !w.Equals("no", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("Wine", "WINEPREFIX='/p' wine '/p/drive_c/Ubisoft/UbisoftConnect.exe' 'uplay://launch/5266'")]
+    [InlineData("Wine", "WINEPREFIX='/p' wine '/p/drive_c/Battle.net/Battle.net.exe' '--exec=launch pro'")]
+    [InlineData("Wine", "WINEPREFIX='/p' wine '/p/drive_c/Rockstar/Launcher.exe' '-launchTitleInFolder' 'C:\\Games\\GTA'")]
+    [InlineData("itch", "xdg-open 'itch://games/1001'")]
+    public void StoreClientHandoff_SaysTheProfileCannotGoThroughIt_NeverToSetAWrapperThere(string source, string command)
+    {
+        // w4 review minor 2: a plain-Wine prefix card started through its store client was told "Set it in that launcher:
+        // wrapper command …", but Ubisoft Connect, Battle.net, Rockstar and itch have no such setting.
+        var game = Game(source, command);
+        game.Runner = "Wine";
+        game.CompatibilityTool = null;
+        game.CompatibilityLayerType = null;
+        var plan = Service(gamescope: true).BuildPlan(game, Profile(LinuxHdrModes.Gamescope));
+
+        var en = InLanguage("en-US", () => HdrLaunchText.HandoffNotice(plan, game));
+        var pt = InLanguage("pt-BR", () => HdrLaunchText.HandoffNotice(plan, game));
+
+        Assert.Equal(LaunchHandoff.StoreClient, plan.Handoff);
+        Assert.False(plan.AppliesAtLaunch);
+        Assert.Null(HdrLaunchText.LaunchRefusal(plan, launcherAcceptsOptions: true));
+        Assert.Equal("This game's store client starts it, and that client has no setting for launch options or a wrapper, so the HDR profile cannot be applied to this game through it.", en);
+        Assert.StartsWith("O cliente da loja deste jogo é quem o inicia", pt, StringComparison.Ordinal);
+        Assert.DoesNotContain("gamescope", en, StringComparison.Ordinal);
+        Assert.DoesNotContain(UiLocalizationService.EnglishMarkersIn(pt), w => !w.Equals("no", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(en, InLanguage("en-US", () => HdrLaunchText.Copied(plan, game)));
     }
 
     [Fact]

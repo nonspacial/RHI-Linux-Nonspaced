@@ -1,3 +1,4 @@
+using RHI.Core.Services;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 
@@ -8,8 +9,8 @@ namespace RHI.Core.Tests;
 public sealed class XboxPlayTooltipTests
 {
     [Theory]
-    [InlineData("en-US", "Unavailable: start this game from PartingX.")]
-    [InlineData("pt-BR", "Indisponível: inicie este jogo pelo PartingX.")]
+    [InlineData("en-US", "Unavailable: start this game from the app that installed it.")]
+    [InlineData("pt-BR", "Indisponível: inicie este jogo pelo app que o instalou.")]
     public async Task XboxCardWithoutAnOpenCommand_PlayIsDisabled_AndTheTooltipNamesTheOwningApp(string language, string start)
     {
         var root = Path.Combine(Path.GetTempPath(), $"rhi-xbox-tip-{Guid.NewGuid():N}");
@@ -18,8 +19,8 @@ public sealed class XboxPlayTooltipTests
         File.WriteAllBytes(exe, [0x13, 0x37, 0, 0]);
         var game = new DetectedGame
         {
-            Name = "Xbox Game", InstallPath = dir, ExecutablePath = exe, Source = "Xbox", Runner = "PartingX",
-            XboxPackage = new XboxPackageInfo("9ABC", "PartingX", null, null)
+            Name = "Xbox Game", InstallPath = dir, ExecutablePath = exe, Source = "Xbox", Runner = XboxInstallerApp.DisplayName,
+            XboxPackage = new XboxPackageInfo("9ABC", XboxInstallerApp.DisplayName, null, null)
         };
         try
         {

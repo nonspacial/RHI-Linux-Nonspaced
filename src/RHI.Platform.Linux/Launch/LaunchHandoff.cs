@@ -13,12 +13,18 @@ public enum LaunchHandoff
     Heroic,
     Lutris,
     /// <summary>
-    /// The app that owns an Xbox / Game Pass install (PartingX, the Xodus GUI) is opened; the user starts the game there
+    /// The app that owns an Xbox / Game Pass install (the installer app, the Xodus GUI) is opened; the user starts the game there
     /// (Refs #90). A direct <c>xodus-cli run</c> is not a hand-off: it runs the game.
     /// </summary>
     Xbox,
     /// <summary>Another opener or launcher (a URI handler, a launcher's Flatpak) that starts the game on its own.</summary>
-    Other
+    Other,
+    /// <summary>
+    /// A game store's own client (Ubisoft Connect, the EA app, Battle.net, the Rockstar Games Launcher, itch) given its
+    /// "start this game" argument (Refs #90): the client starts the game itself, and none of them has a setting for launch
+    /// options or a wrapper, so no HDR profile can reach the game through it.
+    /// </summary>
+    StoreClient
 }
 
 /// <summary>
@@ -38,13 +44,13 @@ public static class LaunchHandoffClassifier
     private static readonly string[] SteamPrograms = ["steam", "steam.sh", "steam-runtime", "steam-native"];
     private static readonly string[] HeroicPrograms = ["heroic", "heroic-games-launcher"];
     // The apps that own Xbox installs on Linux (Refs #90); xodus-cli is not one (`xodus-cli run` runs the game).
-    private static readonly string[] XboxPrograms = ["partingx", "xodus-gui"];
+    private static readonly string[] XboxPrograms = [RHI.Core.Services.XboxInstallerApp.FileTag, "xodus-gui"];
     private static readonly string[] Shells = ["sh", "bash", "dash", "zsh", "ksh", "mksh", "busybox-sh"];
     // Shell set-up that runs before the program (`cd /game && steam …`, `export X=1; steam …`).
     private static readonly string[] SetupCommands = ["cd", "pushd", "popd", "export", "unset", "set", "umask", "ulimit", "source", ".", ":", "true", "trap", "shopt", "alias"];
 
     // Launchers distributed as Flatpaks that start the game themselves; any other Flatpak app is the game.
-    private static readonly string[] LauncherFlatpaks = ["com.usebottles.bottles", "io.itch.itch", "com.playonlinux.PlayOnLinux4"];
+    private static readonly string[] LauncherFlatpaks = ["com.usebottles.bottles", "com.playonlinux.PlayOnLinux4"];
 
     // flatpak run options that take their value as the next word (`--branch stable`); `--opt=value` is one word.
     private static readonly string[] FlatpakValueOptions =
@@ -108,7 +114,7 @@ public static class LaunchHandoffClassifier
     public static LaunchHandoff Classify(DetectedGame game)
     {
         ArgumentNullException.ThrowIfNull(game);
-        // An Xbox card's own command (PartingX's Play entry point, or the owning app's opener, which may be that app's
+        // An Xbox card's own command (the installer app's Play entry point, or the owning app's opener, which may be that app's
         // start script naming no store) is the owning app's hand-off; a command the user typed instead is read by its words.
         if (game.UserLaunchCommand is null && game.XboxPackage?.OpenCommand is { } open &&
             string.Equals(open, game.LaunchCommand, StringComparison.Ordinal))
@@ -136,7 +142,7 @@ public static class LaunchHandoffClassifier
 
     /// <summary>
     /// The programs that start an Xbox card's owning app (scan re-review minor 1): its Play/Show entry point's launcher
-    /// (the breadcrumb's <c>argv[0]</c>, e.g. a PartingX instance's <c>run.sh</c>) and the opener's program. A command
+    /// (the breadcrumb's <c>argv[0]</c>, e.g. an installer-app instance's <c>run.sh</c>) and the opener's program. A command
     /// the user typed that runs one of them is still the owning app's hand-off, whatever the file is called.
     /// </summary>
     private static IReadOnlyCollection<string> OwningAppPrograms(XboxPackageInfo? package)
@@ -190,7 +196,7 @@ public static class LaunchHandoffClassifier
             (program.StartsWith("heroic", StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
             return LaunchHandoff.Heroic;
         if (XboxPrograms.Contains(program, StringComparer.OrdinalIgnoreCase) ||
-            (program.StartsWith("partingx", StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
+            (program.StartsWith(RHI.Core.Services.XboxInstallerApp.FileTag, StringComparison.OrdinalIgnoreCase) && program.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)))
             return LaunchHandoff.Xbox;
         if (UriOpeners.Contains(program, StringComparer.OrdinalIgnoreCase))
         {
@@ -316,13 +322,22 @@ public static class LaunchHandoffClassifier
         if (app.Equals("net.lutris.Lutris", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
         if (app.Equals("com.heroicgameslauncher.hgl", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Heroic;
         if (app.Equals("io.github.xodus-gaming.xodus", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Xbox;
+        if (app.Equals("io.itch.itch", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.StoreClient;
         if (LauncherFlatpaks.Contains(app, StringComparer.OrdinalIgnoreCase)) return LaunchHandoff.Other;
         return LaunchHandoff.None;
     }
 
     private static LaunchHandoff ByUri(string uri) => StoreUri(uri) ?? LaunchHandoff.Other;
 
-    /// <summary>The store a <c>steam:</c>/<c>heroic:</c>/<c>lutris:</c> URL (or <c>--option=URL</c>) names, else null.</summary>
+    // The store clients' own "start this game" arguments (Lutris' store services, Rockstar's launcher, the itch app, Refs #90):
+    // the client starts the game, so the command is that client's hand-off.
+    private static readonly string[] StoreClientUriSchemes = ["uplay:", "origin2:", "origin:", "link2ea:", "battlenet:", "itch:"];
+
+    /// <summary>
+    /// The store a <c>steam:</c>/<c>heroic:</c>/<c>lutris:</c> URL (or <c>--option=URL</c>) names, else null. A Windows store
+    /// client's game-start argument (<c>uplay://launch/…</c>, Battle.net's <c>--exec="launch …"</c>, Rockstar's
+    /// <c>-launchTitleInFolder</c>, <c>itch://</c>) is a <see cref="LaunchHandoff.StoreClient"/> hand-off.
+    /// </summary>
     private static LaunchHandoff? StoreUri(string word)
     {
         var equals = word.IndexOf('=');
@@ -330,8 +345,13 @@ public static class LaunchHandoffClassifier
         if (value.StartsWith("steam:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Steam;
         if (value.StartsWith("heroic:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Heroic;
         if (value.StartsWith("lutris:", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.Lutris;
-        if (value.StartsWith("partingx:", StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
+        if (value.StartsWith(RHI.Core.Services.XboxInstallerApp.UriScheme, StringComparison.OrdinalIgnoreCase) || value.StartsWith("xodus:", StringComparison.OrdinalIgnoreCase))
             return LaunchHandoff.Xbox;
+        if (StoreClientUriSchemes.Any(scheme => value.StartsWith(scheme, StringComparison.OrdinalIgnoreCase)))
+            return LaunchHandoff.StoreClient;
+        if (word.StartsWith("--exec=", StringComparison.OrdinalIgnoreCase) && value.TrimStart('"').StartsWith("launch ", StringComparison.OrdinalIgnoreCase))
+            return LaunchHandoff.StoreClient;
+        if (word.Equals("-launchTitleInFolder", StringComparison.OrdinalIgnoreCase)) return LaunchHandoff.StoreClient;
         return null;
     }
 

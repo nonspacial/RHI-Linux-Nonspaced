@@ -1,3 +1,4 @@
+using RHI.Core.Services;
 using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
@@ -127,18 +128,18 @@ public sealed class CardMenuTests : IDisposable
     }
 
     [Fact]
-    public async Task ShowInPartingX_IsOfferedOnlyForATitleWithAShowEntryPoint()
+    public async Task ShowInInstallerApp_IsOfferedOnlyForATitleWithAShowEntryPoint()
     {
         var xbox = Game("Xbox Quest");
-        xbox.XboxPackage = new XboxPackageInfo("9ABC", "PartingX", null, null, ShowArgv: ["/opt/partingx/run.sh", "--show", "9ABC"]);
+        xbox.XboxPackage = new XboxPackageInfo("9ABC", XboxInstallerApp.DisplayName, null, null, ShowArgv: ["/opt/xbox-app/run.sh", "--show", "9ABC"]);
         var noShow = Game("Opener Quest");
-        noShow.XboxPackage = new XboxPackageInfo("9DEF", "PartingX", "'/opt/partingx/run.sh'", null);
+        noShow.XboxPackage = new XboxPackageInfo("9DEF", XboxInstallerApp.DisplayName, "'/opt/xbox-app/run.sh'", null);
         using var fx = await ViewModelFixture.StartAsync([xbox, noShow, Game("Plain Quest")]);
 
         var menu = fx.Vm.CardMenuFor(Row(fx, "Xbox Quest"));
 
         var show = Assert.Single(menu, i => i.Id == "show-in-owning-app");
-        Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningApp", "PartingX"), show.Label);
+        Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningApp", UiLocalizationService.Text("Scan.InstallerAppName")), show.Label);
         Assert.Equal(["open-folder", "show-in-owning-app", "favourite", "hide"], menu.Select(i => i.Id));
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Opener Quest")), i => i.Id == "show-in-owning-app");
         Assert.DoesNotContain(fx.Vm.CardMenuFor(Row(fx, "Plain Quest")), i => i.Id == "show-in-owning-app");

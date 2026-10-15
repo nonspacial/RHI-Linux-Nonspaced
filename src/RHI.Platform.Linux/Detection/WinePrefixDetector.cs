@@ -11,16 +11,16 @@ public sealed class WinePrefixDetector : IGameDetector
     private readonly string _home;
     private readonly string? _dataHome;
     private readonly Func<IEnumerable<string>> _lutrisConfigRoots;
-    private readonly Func<IEnumerable<string>> _partingXStateFolders;
+    private readonly Func<IEnumerable<string>> _installerAppStateFolders;
 
     public WinePrefixDetector() : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome) { }
 
-    /// <param name="xboxFolders">The "PartingX / Xbox folders" setting (w3/scan): prefixes of those instances are PartingX's.</param>
+    /// <param name="xboxFolders">The "Xbox / Game Pass folders" setting (w3/scan): prefixes of those instances are the installer app's.</param>
     public WinePrefixDetector(Xbox.XboxFolderStore xboxFolders)
         : this(LinuxPaths.Home, LinuxPaths.LutrisConfigRoots, LinuxPaths.DataHome, xboxFolders.Folders)
         => XboxFolderStore = xboxFolders;
 
-    /// <summary>The "PartingX / Xbox folders" setting this detector reads (the app passes its one shared store).</summary>
+    /// <summary>The "Xbox / Game Pass folders" setting this detector reads (the app passes its one shared store).</summary>
     internal Xbox.XboxFolderStore? XboxFolderStore { get; }
 
     internal WinePrefixDetector(string home, IEnumerable<string> lutrisConfigRoots, string? dataHome = null, IEnumerable<string>? xboxFolders = null)
@@ -31,7 +31,7 @@ public sealed class WinePrefixDetector : IGameDetector
         _home = home;
         _dataHome = dataHome;
         _lutrisConfigRoots = lutrisConfigRoots;
-        _partingXStateFolders = xboxFolders ?? (() => []);
+        _installerAppStateFolders = xboxFolders ?? (() => []);
     }
 
     public string Name => "Wine";
@@ -47,12 +47,12 @@ public sealed class WinePrefixDetector : IGameDetector
             Path.Combine(_home, "Games"),
             Path.Combine(_home, ".local", "share", "bottles", "bottles")
         };
-        // PartingX's title prefixes (Refs #90): every environment root its breadcrumbs, default state folders and the
-        // user's PartingX folders name.
-        var partingX = Xbox.PartingXInstance.KnownEnvironmentRoots(
-            Path.Combine(_dataHome ?? Path.Combine(_home, ".local", "share"), "partingx", "instances"),
-            _partingXStateFolders().Append(Path.Combine(_home, ".local", "state", "partingx")));
-        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome, partingX);
+        // The installer app's title prefixes (Refs #90): every environment root its breadcrumbs, default state folders and the
+        // user's installer-app folders name.
+        var installerApp = Xbox.XboxInstallerInstance.KnownEnvironmentRoots(
+            Path.Combine(_dataHome ?? Path.Combine(_home, ".local", "share"), XboxInstallerApp.FolderName, "instances"),
+            _installerAppStateFolders().Append(Path.Combine(_home, ".local", "state", XboxInstallerApp.FolderName)));
+        var owned = LauncherOwnedPrefixes.Load(_home, _lutrisConfigRoots(), _dataHome, installerApp);
         var games = new List<DetectedGame>();
         foreach (var root in roots.Where(Directory.Exists))
         {
@@ -75,26 +75,40 @@ public sealed class WinePrefixDetector : IGameDetector
                     DetectorDiagnostics.Warn($"Wine prefix {prefix}: runtime markers unreadable; its games are listed without a launch command", ex);
                     runtime = null;
                 }
-                foreach (var entry in PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")))
+                var records = Launchers.StoreLauncherRecords.Find(prefix, _home, ct)
+                    .ToDictionary(record => PathIdentity.Canonicalize(record.InstallDirectory), StringComparer.Ordinal);
+                var entries = PrefixGameFolders.Find(Path.Combine(prefix, "drive_c")).ToList();
+                // Games a store launcher recorded outside Program Files and drive_c/Games (another drive, a custom
+                // library folder) are listed too, unless they sit inside a folder listed already.
+                var entryFolders = entries.Select(entry => PathIdentity.Canonicalize(entry.Directory)).ToHashSet(StringComparer.Ordinal);
+                entries.AddRange(records
+                    .Where(pair => !entryFolders.Contains(pair.Key) &&
+                                   !entryFolders.Any(folder => pair.Key.StartsWith(folder + "/", StringComparison.Ordinal)))
+                    .Select(pair => new PrefixGameFolders.Entry(pair.Value.InstallDirectory, null, null)));
+                foreach (var entry in entries)
                 {
                     ct.ThrowIfCancellationRequested();
                     var appDir = entry.Directory;
+                    records.TryGetValue(PathIdentity.Canonicalize(appDir), out var record);
                     string? exe;
-                    try { exe = PrefixGameFolders.FindExecutable(entry, ct); }
+                    try { exe = record?.GameExecutable ?? PrefixGameFolders.FindExecutable(entry, ct); }
                     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                     {
                         DetectorDiagnostics.Warn($"Wine prefix folder {appDir} skipped", ex);
                         continue;
                     }
                     if (exe is null) continue;
+                    // A store launcher's game starts through that launcher (its own launch argument), like Lutris' store
+                    // services do; without the launcher's exe the game exe is started directly, as upstream does.
+                    var launcherExe = record?.LauncherExecutable;
                     games.Add(new DetectedGame
                     {
-                        Name = Path.GetFileName(appDir),
+                        Name = record?.Name ?? Path.GetFileName(appDir),
                         InstallPath = appDir,
                         Source = "Wine",
                         PrefixPath = prefix,
                         ExecutablePath = exe,
-                        LaunchExecutablePath = exe,
+                        LaunchExecutablePath = launcherExe ?? exe,
                         Runner = runtime is null ? null : runtime.IsProton ? "Proton" : "Wine",
                         CompatibilityTool = runtime?.Version,
                         // Unknown runtime: every Wine-running path (Winetricks, the D3DCompiler step) refuses it.
@@ -103,7 +117,11 @@ public sealed class WinePrefixDetector : IGameDetector
                             : runtime.IsProton ? "proton" : null,
                         WineBinaryPath = runtime?.WineBinary,
                         WineServerPath = runtime?.WineServer,
-                        LaunchCommand = runtime is null ? null : BuildLaunchCommand(prefix, exe, runtime)
+                        LaunchCommand = runtime is null ? null
+                            : launcherExe is null ? BuildLaunchCommand(prefix, exe, runtime, [])
+                            : BuildLaunchCommand(prefix, launcherExe, runtime, record!.PlayArguments),
+                        // With no launch argument the launcher only opens: the user starts the game there.
+                        ParentLauncherName = launcherExe is not null && record!.PlayArguments.Count == 0 ? record.LauncherName : null
                     });
                 }
             }
@@ -115,10 +133,11 @@ public sealed class WinePrefixDetector : IGameDetector
     /// A Proton-built prefix is only started with that Proton's own Wine: host `wine` runs
     /// wineboot over it and can break it. Without that Wine the entry is listed but not launchable.
     /// </summary>
-    private static string? BuildLaunchCommand(string prefix, string exe, PrefixRuntime runtime)
+    private static string? BuildLaunchCommand(string prefix, string exe, PrefixRuntime runtime, IReadOnlyList<string> arguments)
     {
         if (runtime.IsProton && runtime.WineBinary is null) return null;
-        return $"WINEPREFIX={Shell(prefix)} {(runtime.WineBinary is null ? "wine" : Shell(runtime.WineBinary))} {Shell(exe)}";
+        var command = $"WINEPREFIX={Shell(prefix)} {(runtime.WineBinary is null ? "wine" : Shell(runtime.WineBinary))} {Shell(exe)}";
+        return arguments.Count == 0 ? command : command + " " + string.Join(' ', arguments.Select(Shell));
     }
 
     private static IEnumerable<string> FindPrefixes(string root, int maxDepth)

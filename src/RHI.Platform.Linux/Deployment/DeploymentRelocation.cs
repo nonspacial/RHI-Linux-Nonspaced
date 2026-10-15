@@ -136,7 +136,7 @@ public sealed class DeploymentRelocation
     {
         ArgumentNullException.ThrowIfNull(stores);
         repaired = [];
-        // Refs #90: the owned files are hashed and the records re-pointed only while PartingX leaves the title alone.
+        // Refs #90: the owned files are hashed and the records re-pointed only while the installer app leaves the title alone.
         if (XboxWriteGate.Refusal(game) is { } xbox) return new(false, 0, xbox); // w3/scan hook
         var candidates = Preview(game).ToList();
         if (candidates.Count == 0)

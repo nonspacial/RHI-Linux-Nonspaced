@@ -64,8 +64,91 @@ public sealed class HeroicGameDetector : IGameDetector
         AttachConfiguredPrefixes(result.Values, heroicRoots);
         AttachFallbackPrefixes(result.Values.ToList(), _prefixRoots());
 
-        return result.Values.ToArray();
+        var games = result.Values.ToList();
+        return [.. games, .. StoreLauncherGamesInPrefixes(games, LinuxPaths.Home, ct)];
     }
+
+    /// <summary>
+    /// Games a Windows store client installed inside a Heroic game's prefix (Refs #90): a store client added to Heroic as a
+    /// sideloaded app (Battle.net, the EA app, Ubisoft Connect, Rockstar, itch), or one an Epic/GOG title brought along.
+    /// Each recorded game Heroic does not list itself gets its own card, moddable in its real folder. With the store's
+    /// client among the prefix's sideloaded apps, Play starts that app through Heroic (the user starts the game there);
+    /// otherwise the card has no launch command until the user sets one in Edit game.
+    /// </summary>
+    private static List<DetectedGame> StoreLauncherGamesInPrefixes(IReadOnlyList<DetectedGame> games, string home, CancellationToken ct)
+    {
+        var found = new List<DetectedGame>();
+        var listed = games.Select(g => PathIdentity.Canonicalize(g.InstallPath)).ToArray();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var sharing in games.Where(g => !string.IsNullOrWhiteSpace(g.PrefixPath) && !IsNative(g))
+                     .GroupBy(g => PathIdentity.Canonicalize(g.PrefixPath!), StringComparer.Ordinal))
+        {
+            var owner = sharing.First();
+            IReadOnlyList<Launchers.StoreLauncherGame> records;
+            try { records = Launchers.StoreLauncherRecords.Find(owner.PrefixPath!, home, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                DetectorDiagnostics.Warn($"Games inside the Heroic prefix {sharing.Key} not listed", ex);
+                continue;
+            }
+            foreach (var record in records)
+            {
+                ct.ThrowIfCancellationRequested();
+                var folder = PathIdentity.Canonicalize(record.InstallDirectory);
+                // A folder Heroic lists (or one inside it, or holding it) is that Heroic game: no second card.
+                if (listed.Any(root => IsSameOrUnder(root, folder) || IsSameOrUnder(folder, root)) || !seen.Add(folder)) continue;
+                string? exe;
+                try { exe = record.GameExecutable ?? PrefixGameFolders.FindExecutable(new PrefixGameFolders.Entry(record.InstallDirectory, null, null), ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    DetectorDiagnostics.Warn($"Heroic prefix game folder {record.InstallDirectory} skipped", ex);
+                    continue;
+                }
+                if (exe is null) continue;
+                var parent = StoreClientApp(sharing, record.Store);
+                // The store client is a launcher, not a game: no patch target of its own until Edit game names one.
+                if (parent is not null) parent.RequiresExplicitPatchTarget = true;
+                var runtime = parent ?? owner;
+                found.Add(new DetectedGame
+                {
+                    Name = record.Name,
+                    InstallPath = record.InstallDirectory,
+                    Source = runtime.Source,
+                    ExecutablePath = exe,
+                    // The client is what Play starts; the game exe stays the patch target.
+                    LaunchExecutablePath = parent?.LaunchExecutablePath ?? exe,
+                    PrefixPath = runtime.PrefixPath,
+                    Runner = runtime.Runner,
+                    CompatibilityTool = runtime.CompatibilityTool,
+                    CompatibilityLayerType = runtime.CompatibilityLayerType,
+                    WineBinaryPath = runtime.WineBinaryPath,
+                    WineServerPath = runtime.WineServerPath,
+                    LaunchCommand = parent?.LaunchCommand,
+                    ParentLauncherName = parent?.Name
+                });
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The sideloaded Heroic app in a prefix that is this store's own client (by its executable); null when the prefix has
+    /// none: another store's client cannot start the game, and an Epic/GOG game is never started to reach it either.
+    /// </summary>
+    private static DetectedGame? StoreClientApp(IEnumerable<DetectedGame> sharing, Launchers.StoreLauncher store)
+    {
+        var provider = Launchers.StoreLauncherRecords.ProviderName(store);
+        return sharing.FirstOrDefault(g => g.Source == DisplaySource("sideload") && !string.IsNullOrWhiteSpace(g.LaunchCommand) &&
+                                           ProviderOf(g) == provider);
+    }
+
+    private static string? ProviderOf(DetectedGame game)
+        => Settings.LinuxGameIdentityService.InferProviderFromExecutable(game.LaunchExecutablePath) ??
+           Settings.LinuxGameIdentityService.InferProviderFromExecutable(game.ExecutablePath);
+
+    private static bool IsSameOrUnder(string path, string folder)
+        => path == folder || path.StartsWith(folder + "/", StringComparison.Ordinal);
 
     private static void ParseFile(
         string file,

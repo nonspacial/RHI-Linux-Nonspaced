@@ -5,12 +5,12 @@ using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Detection.Xbox;
 
-/// <summary>The "PartingX / Xbox folders" setting (Refs #90, owner decision C).</summary>
+/// <summary>The "Xbox / Game Pass folders" setting (Refs #90, owner decision C).</summary>
 public sealed class XboxFolderSettings
 {
     /// <summary>
-    /// Folders the user added, each one of: a PartingX state folder (holds <c>settings.json</c>), a PartingX instance
-    /// folder (holds <c>state/partingx</c>), or a folder of Xodus installs. <c>$XDG_STATE_HOME/partingx</c> and
+    /// Folders the user added, each one of: an installer-app state folder (holds <c>settings.json</c>), an installer-app instance
+    /// folder (holds <c>state/{app}</c>), or a folder of Xodus installs. <c>$XDG_STATE_HOME/{app}</c> and
     /// <c>~/Games</c> are always searched and are not stored here.
     /// </summary>
     public List<string> Folders { get; set; } = [];
@@ -38,7 +38,7 @@ public sealed class XboxFolderStore
     public string FilePath { get; }
 
     /// <summary>The always-searched default state folder, shown in Settings beside the user's own entries.</summary>
-    public static string DefaultPartingXStateFolder => Path.Combine(LinuxPaths.StateHome, "partingx");
+    public static string DefaultInstallerStateFolder => Path.Combine(LinuxPaths.StateHome, XboxInstallerApp.FolderName);
 
     /// <summary>The user's folders; empty when the file is missing or unreadable (an unreadable one is set aside and logged).</summary>
     public IReadOnlyList<string> Folders()

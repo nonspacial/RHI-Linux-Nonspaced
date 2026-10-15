@@ -21,7 +21,7 @@ public static class ReShadeGlobalSettingsApplier
         if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
             throw new DirectoryNotFoundException("Selected game binary directory is unavailable.");
 
-        // Refs #90: nothing of an Xbox title PartingX is working on (or cannot be checked) is changed.
+        // Refs #90: nothing of an Xbox title the installer app is working on (or cannot be checked) is changed.
         var iniPath = RHI.Core.Services.XboxWriteGate.Checked(FindCaseInsensitive(root, "ReShade.ini") ?? Path.Combine(root, "ReShade.ini")); // w3/scan hook
         var lines = File.Exists(iniPath) ? File.ReadAllLines(iniPath).ToList() : new List<string>();
 

@@ -10,18 +10,18 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Core.Tests;
 
 /// <summary>
-/// Refs #90: PartingX's real breadcrumb (schema 1, <c>reviews/w3-90-partingx-entrypoints.md</c>) is the primary source,
-/// Play is PartingX's <c>--play &lt;storeId&gt;</c> entry point and the card menu's "Show in PartingX" its <c>--show</c>,
+/// Refs #90: the installer app's real breadcrumb (schema 1, <c>reviews/w3-90 entry-point spec</c>) is the primary source,
+/// Play is the installer app's <c>--play &lt;storeId&gt;</c> entry point and the card menu's "Show in the app that installed it" its <c>--show</c>,
 /// both executed as an argument vector with the breadcrumb's environment and no shell. Synthetic breadcrumbs and a fake
-/// launcher script that records its argv/env; the real run.sh and PartingX are never run.
+/// launcher script that records its argv/env; the real run.sh and installer-app are never run.
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
-public sealed class PartingXBreadcrumbTests : IDisposable
+public sealed class InstallerBreadcrumbTests : IDisposable
 {
     private readonly DetectionTestTree _tree = new();
     private readonly string _crumbs;
 
-    public PartingXBreadcrumbTests() => _crumbs = _tree.Dir("data", "partingx", "instances");
+    public InstallerBreadcrumbTests() => _crumbs = _tree.Dir("data", XboxInstallerApp.FolderName, "instances");
 
     public void Dispose() => _tree.Dispose();
 
@@ -32,25 +32,25 @@ public sealed class PartingXBreadcrumbTests : IDisposable
            "<ShellVisuals DefaultDisplayName=\"Shell Name\" /><ExecutableList><Executable Name=\"Game.exe\" Id=\"Game\" /></ExecutableList>" +
            $"<StoreId>{id}</StoreId></Game>";
 
-    /// <summary>A finished PartingX title under <paramref name="payloadRoot"/>, with an environment on runtime rt1 under <paramref name="envRoot"/>.</summary>
+    /// <summary>A finished installer-app title under <paramref name="payloadRoot"/>, with an environment on runtime rt1 under <paramref name="envRoot"/>.</summary>
     private string Title(string payloadRoot, string id, string? envRoot = null)
     {
         var dir = Path.Combine(payloadRoot, id);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(Path.Combine(dir, ".partingx-owned"), JsonSerializer.Serialize(new { storeId = id, packageTitle = "Title " + id }));
+        File.WriteAllText(Path.Combine(dir, XboxInstallerApp.OwnedMarker), JsonSerializer.Serialize(new { storeId = id, packageTitle = "Title " + id }));
         File.WriteAllText(Path.Combine(dir, ".xodus-streaming.msixvc"), "msixvc");
         File.WriteAllText(Path.Combine(dir, "MicrosoftGame.config"), GdkConfig(id));
         File.WriteAllBytes(Path.Combine(dir, "Game.exe"), Encrypted);
         if (envRoot is not null)
         {
             Directory.CreateDirectory(Path.Combine(envRoot, "default", id, "prefix", "drive_c"));
-            File.WriteAllText(Path.Combine(envRoot, "default", id, "partingx.json"), JsonSerializer.Serialize(new { selectedRuntime = "rt1" }));
+            File.WriteAllText(Path.Combine(envRoot, "default", id, XboxInstallerApp.EnvironmentFile), JsonSerializer.Serialize(new { selectedRuntime = "rt1" }));
         }
         return dir;
     }
 
     /// <summary>
-    /// A fake PartingX launcher (in a folder whose name needs quoting): writes each argument on its own line, its
+    /// A fake installer-app launcher (in a folder whose name needs quoting): writes each argument on its own line, its
     /// environment and its parent's name, then exits with <paramref name="exitCode"/>.
     /// </summary>
     private (string Script, string Out) FakeLauncher(int exitCode = 0)
@@ -70,10 +70,10 @@ public sealed class PartingXBreadcrumbTests : IDisposable
 
     private object Crumb(string stateDir, string[] payloadRoots, string? launcher, string? envRoot = null, string? runtimeRoot = null,
         string? jobs = null, int schema = 1, string? updatedAt = "2026-10-14T12:57:59.289Z", string[]? play = null, Dictionary<string, string>? env = null,
-        string app = "PartingX")
+        string? app = null)
         => new
         {
-            schema, app, version = "0.1.0", updatedAt, stateDir,
+            schema, app = app ?? XboxInstallerApp.ProductTag, version = "0.1.0", updatedAt, stateDir,
             settingsFile = Path.Combine(stateDir, "settings.json"),
             jobsFile = jobs ?? Path.Combine(stateDir, "jobs.json"),
             payloadRoots, environmentRoot = envRoot, runtimeRoot,
@@ -83,7 +83,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
             future = new { field = 1 }
         };
 
-    private void WriteCrumb(string name, object crumb) => _tree.File(JsonSerializer.Serialize(crumb), "data", "partingx", "instances", name);
+    private void WriteCrumb(string name, object crumb) => _tree.File(JsonSerializer.Serialize(crumb), "data", XboxInstallerApp.FolderName, "instances", name);
 
     private (IReadOnlyList<DetectedGame> Games, IReadOnlyList<string> Warnings) Detect(IReadOnlyList<string>? userFolders = null, IReadOnlyList<string>? defaults = null)
         => DetectorDiagnostics.CollectAsync(() => Task.FromResult(XboxGameDetector.DetectIn(
@@ -93,7 +93,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     [Fact]
     public void Schema1_IsThePrimarySource_ItsFoldersAndJobListDecide_AndPlayIsItsEntryPoint()
     {
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var first = _tree.Dir("px", "payloads");
         var second = _tree.Dir("disk2", "payloads");
         var envs = _tree.Dir("px", "envs");
@@ -104,7 +104,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         // settings.json names another payload folder: with a breadcrumb it is not read.
         var other = _tree.Dir("settings-only");
         Title(other, "9SET");
-        _tree.File(JsonSerializer.Serialize(new { payloadRoot = other }), "px", "state", "partingx", "settings.json");
+        _tree.File(JsonSerializer.Serialize(new { payloadRoot = other }), "px", "state", XboxInstallerApp.FolderName, "settings.json");
         var jobs = _tree.Path_("elsewhere", "jobs.json");
         var (script, _) = FakeLauncher();
         WriteCrumb("355353fff774f03b.json", Crumb(state, [first, second], script, envs, runtimes, jobs));
@@ -122,7 +122,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         Assert.Equal([script, "--play", "9AAA"], package.PlayArgv);
         Assert.Equal([script, "--show", "9AAA"], package.ShowArgv);
         Assert.Equal(new Dictionary<string, string> { ["XDG_STATE_HOME"] = "/px state/it's" }, package.LaunchEnvironment);
-        // The card's command is the entry point as a shell line (Edit game's detected launch); PartingX starts the game.
+        // The card's command is the entry point as a shell line (Edit game's detected launch); the installer app starts the game.
         Assert.Equal($"env 'XDG_STATE_HOME=/px state/it'\\''s' {OwningAppLocator.Shell(script)} '--play' '9AAA'", game.LaunchCommand);
         Assert.Equal(package.OpenCommand, game.LaunchCommand);
         Assert.Null(game.ParentLauncherName);
@@ -138,25 +138,25 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     [Fact]
     public void NewerSchema_IsSkippedWithAScanWarning_GarbledAndForeignFilesQuietly()
     {
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var payloads = _tree.Dir("px", "payloads");
         Title(payloads, "9NEW");
         var (script, _) = FakeLauncher();
         WriteCrumb("a-newer.json", Crumb(state, [payloads], script, schema: 2));
-        _tree.File("{ \"schema\": 1, \"stateDir\": ", "data", "partingx", "instances", "b-garbled.json");
+        _tree.File("{ \"schema\": 1, \"stateDir\": ", "data", XboxInstallerApp.FolderName, "instances", "b-garbled.json");
         WriteCrumb("c-foreign.json", Crumb(_tree.Dir("other", "state"), [payloads], script, app: "SomethingElse"));
-        _tree.File("{}", "data", "partingx", "instances", "d-noschema.json");
+        _tree.File("{}", "data", XboxInstallerApp.FolderName, "instances", "d-noschema.json");
 
         var (games, warnings) = Detect();
 
         Assert.Empty(games);
-        Assert.Equal([PartingXBreadcrumb.NewerSchemaPrefix + Path.Combine(_crumbs, "a-newer.json")], warnings);
+        Assert.Equal([InstallerBreadcrumb.NewerSchemaPrefix + Path.Combine(_crumbs, "a-newer.json")], warnings);
     }
 
     [Fact]
     public void TwoFilesForOneStateFolder_TheNewestUpdatedAtWins()
     {
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var old = _tree.Dir("old-payloads");
         var current = _tree.Dir("new-payloads");
         Title(old, "9OLD");
@@ -174,7 +174,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     [Fact]
     public void StoreId_IsSubstitutedInWholeArgumentsOnly()
     {
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var payloads = _tree.Dir("px", "payloads");
         Title(payloads, "9SUB");
         var (script, _) = FakeLauncher();
@@ -186,28 +186,28 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     }
 
     [Fact]
-    public void ABreadcrumbWhoseLauncherIsGone_FallsBackToOpeningPartingX()
+    public void ABreadcrumbWhoseLauncherIsGone_FallsBackToOpeningInstallerApp()
     {
         var instance = _tree.Dir("px");
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var payloads = _tree.Dir("px", "payloads");
         Title(payloads, "9GONE");
-        var runSh = _tree.File("#!/bin/sh\nexec ./PartingX.AppImage \"$@\"\n", "px", "run.sh");
+        var runSh = _tree.File("#!/bin/sh\nexec ./" + XboxInstallerApp.ProductTag + ".AppImage \"$@\"\n", "px", "run.sh");
         File.SetUnixFileMode(runSh, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        WriteCrumb("i.json", Crumb(state, [payloads], Path.Combine(instance, "moved", "PartingX.AppImage")));
+        WriteCrumb("i.json", Crumb(state, [payloads], Path.Combine(instance, "moved", XboxInstallerApp.ProductTag + ".AppImage")));
 
         var game = Assert.Single(Detect().Games);
 
         Assert.Null(game.XboxPackage!.PlayArgv);
         Assert.Null(game.XboxPackage.ShowArgv);
         Assert.Equal(OwningAppLocator.Shell(runSh), game.LaunchCommand);
-        Assert.Equal("PartingX", game.ParentLauncherName); // opening the app: the user starts the game there
+        Assert.Equal(XboxInstallerApp.DisplayName, game.ParentLauncherName); // opening the app: the user starts the game there
         Assert.Null(RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(game));
     }
 
     private DetectedGame BreadcrumbCard(string script, string id = "9RUN")
     {
-        var state = _tree.Dir("px", "state", "partingx");
+        var state = _tree.Dir("px", "state", XboxInstallerApp.FolderName);
         var payloads = _tree.Dir("px", "payloads");
         Title(payloads, id);
         WriteCrumb("i.json", Crumb(state, [payloads], script, env: new() { ["XDG_STATE_HOME"] = "/px state/it's $(touch pwned)", ["RHI_TEST_MARK"] = "1" }));
@@ -239,7 +239,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     }
 
     [Fact]
-    public async Task ShowInPartingX_ExecutesTheShowEntryPoint_FromTheCardMenu()
+    public async Task ShowInInstallerApp_ExecutesTheShowEntryPoint_FromTheCardMenu()
     {
         var (script, output) = FakeLauncher();
         var game = BreadcrumbCard(script, "9SHOW");
@@ -247,13 +247,13 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         UiLocalizationService.Apply("pt-BR");
         try
         {
-            Assert.Equal("Mostrar no PartingX", RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(game));
+            Assert.Equal("Mostrar no app que o instalou", RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(game));
         }
         finally
         {
             UiLocalizationService.Apply("en-US");
         }
-        Assert.Equal("Show in PartingX", RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(game));
+        Assert.Equal("Show in the app that installed it", RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(game));
         Assert.Null(RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppLabel(new DetectedGame { Name = "Steam" }));
 
         Assert.Null(await RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppAsync(game, launcher));
@@ -273,7 +273,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         var shown = await RHI.Desktop.ViewModels.XboxCardActions.ShowInOwningAppAsync(game, launcher);
 
         Assert.Equal(3, error.ExitCode);
-        Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningAppExited", "PartingX", 3), shown);
+        Assert.Equal(UiLocalizationService.Format("Scan.ShowInOwningAppExited", UiLocalizationService.Text("Scan.InstallerAppName"), 3), shown);
     }
 
     [Fact]
@@ -293,7 +293,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         Assert.Equal(LaunchHandoff.None, LaunchHandoffClassifier.Classify(game));
 
         // The user types the entry point's line back as their own command: it is theirs (a shell runs it), and since its
-        // program is the card's PartingX launcher it is still PartingX's hand-off (scan re-review minor 1).
+        // program is the card's installer-app launcher it is still the installer app's hand-off (scan re-review minor 1).
         LinuxGameIdentityService.ApplyDetectedIdentity(game, new LinuxGameEditOverride { LaunchCommand = entry });
         Assert.Null(LinuxGameLauncher.XboxEntryPoint(game));
         Assert.Equal(LaunchHandoff.Xbox, LaunchHandoffClassifier.Classify(game));
@@ -305,30 +305,30 @@ public sealed class PartingXBreadcrumbTests : IDisposable
     }
 
     [Fact]
-    public async Task PrefixesUnderAKnownInstancesEnvironmentRoot_ArePartingXs_WithoutItsTemplatesFolder()
+    public async Task PrefixesUnderAKnownInstancesEnvironmentRoot_AreInstallerApps_WithoutItsTemplatesFolder()
     {
-        // An environment root before PartingX's first template: no .templates, so only the breadcrumb tells.
+        // An environment root before the installer app's first template: no .templates, so only the breadcrumb tells.
         var home = _tree.Dir("home");
         var envs = _tree.Dir("home", "Games", "px-envs");
         var prefix = _tree.Dir("home", "Games", "px-envs", "default", "9P", "prefix");
         _tree.File("", "home", "Games", "px-envs", "default", "9P", "prefix", "system.reg");
-        _tree.File("{}", "home", "Games", "px-envs", "default", "9P", PartingXInstance.EnvironmentFile);
+        _tree.File("{}", "home", "Games", "px-envs", "default", "9P", XboxInstallerInstance.EnvironmentFile);
         _tree.Exe("home", "Games", "px-envs", "default", "9P", "prefix", "drive_c", "Program Files", "Tool", "Tool.exe");
         var settingsEnvs = _tree.Dir("home", "Games", "settings-envs");
         var settingsPrefix = _tree.Dir("home", "Games", "settings-envs", "default", "9Q", "prefix");
         _tree.File("", "home", "Games", "settings-envs", "default", "9Q", "prefix", "system.reg");
-        _tree.File("{}", "home", "Games", "settings-envs", "default", "9Q", PartingXInstance.EnvironmentFile);
+        _tree.File("{}", "home", "Games", "settings-envs", "default", "9Q", XboxInstallerInstance.EnvironmentFile);
         _tree.Exe("home", "Games", "settings-envs", "default", "9Q", "prefix", "drive_c", "Program Files", "Other", "Other.exe");
         _tree.File("", "home", "Games", "standalone", "system.reg");
         _tree.Exe("home", "Games", "standalone", "drive_c", "Program Files", "Free", "Free.exe");
-        _tree.Dir("user-px", "state", "partingx");
-        _tree.File(JsonSerializer.Serialize(new { payloadRoot = "/p", environmentRoot = settingsEnvs }), "user-px", "state", "partingx", "settings.json");
+        _tree.Dir("user-px", "state", XboxInstallerApp.FolderName);
+        _tree.File(JsonSerializer.Serialize(new { payloadRoot = "/p", environmentRoot = settingsEnvs }), "user-px", "state", XboxInstallerApp.FolderName, "settings.json");
         WriteCrumb("i.json", Crumb(_tree.Dir("px", "state"), [_tree.Dir("px", "payloads")], null, envs));
         // A newer-schema file is the Xbox detector's scan warning; the Wine detector does not report it a second time.
         WriteCrumb("newer.json", Crumb(_tree.Dir("px2", "state"), [_tree.Dir("px2", "payloads")], null, schema: 2));
 
-        var roots = PartingXInstance.KnownEnvironmentRoots(_crumbs, [_tree.Path_("user-px")]);
-        var owned = LauncherOwnedPrefixes.Load(home, [], partingXEnvironments: roots);
+        var roots = XboxInstallerInstance.KnownEnvironmentRoots(_crumbs, [_tree.Path_("user-px")]);
+        var owned = LauncherOwnedPrefixes.Load(home, [], installerAppEnvironments: roots);
         var (listed, warnings) = await DetectorDiagnostics.CollectAsync(() =>
             new WinePrefixDetector(home, [_tree.Dir("lutris")], _tree.Path_("data"), [_tree.Path_("user-px")]).DetectAsync());
 
@@ -338,16 +338,16 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         Assert.Empty(warnings);
     }
 
-    // Scan re-review nit 3: a breadcrumb naming a broad environment root (the whole ~/Games) hides only PartingX's own
-    // prefixes there (its partingx.json beside the prefix, or a template), never the user's other Wine prefixes.
+    // Scan re-review nit 3: a breadcrumb naming a broad environment root (the whole ~/Games) hides only the installer app's own
+    // prefixes there (its {app}.json beside the prefix, or a template), never the user's other Wine prefixes.
     [Fact]
-    public async Task ABroadEnvironmentRoot_HidesOnlyPrefixesPartingXMarked()
+    public async Task ABroadEnvironmentRoot_HidesOnlyPrefixesInstallerAppMarked()
     {
         var home = _tree.Dir("home");
         var games = _tree.Dir("home", "Games");
         var title = _tree.Dir("home", "Games", "default", "9P", "prefix");
         _tree.File("", "home", "Games", "default", "9P", "prefix", "system.reg");
-        _tree.File("{}", "home", "Games", "default", "9P", PartingXInstance.EnvironmentFile);
+        _tree.File("{}", "home", "Games", "default", "9P", XboxInstallerInstance.EnvironmentFile);
         _tree.Exe("home", "Games", "default", "9P", "prefix", "drive_c", "Program Files", "Tool", "Tool.exe");
         var template = _tree.Dir("home", "Games", ".templates", "rt1", "prefix");
         var cachedTemplate = _tree.Dir("home", "Games", "default", "9P", "cache", "rt1", "prefix");
@@ -356,7 +356,7 @@ public sealed class PartingXBreadcrumbTests : IDisposable
         _tree.Exe("home", "Games", "standalone", "drive_c", "Program Files", "Free", "Free.exe");
         WriteCrumb("broad.json", Crumb(_tree.Dir("px", "state"), [_tree.Dir("px", "payloads")], null, games));
 
-        var owned = LauncherOwnedPrefixes.Load(home, [], partingXEnvironments: PartingXInstance.KnownEnvironmentRoots(_crumbs, []));
+        var owned = LauncherOwnedPrefixes.Load(home, [], installerAppEnvironments: XboxInstallerInstance.KnownEnvironmentRoots(_crumbs, []));
         var listed = await new WinePrefixDetector(home, [_tree.Dir("lutris")], _tree.Path_("data"), []).DetectAsync();
 
         Assert.True(owned.Owns(title));

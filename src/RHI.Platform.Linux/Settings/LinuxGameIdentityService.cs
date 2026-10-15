@@ -179,6 +179,10 @@ public static class LinuxGameIdentityService
             return "Rockstar";
         if (EqualsAny(file, "steam.exe")) return "Steam";
         if (EqualsAny(file, "XboxPcApp.exe", "GamingServices.exe")) return "Xbox";
+        // The itch app for Windows (AppData/Local/itch[/app-<version>]/itch.exe); a game's own itch.exe sits elsewhere.
+        if (file.Equals("itch.exe", StringComparison.OrdinalIgnoreCase) &&
+            normalized.Contains("/AppData/Local/itch/", StringComparison.OrdinalIgnoreCase))
+            return "itch";
 
         return null;
     }

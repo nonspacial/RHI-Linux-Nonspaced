@@ -7,7 +7,7 @@ namespace RHI.Core.Tests;
 
 /// <summary>
 /// Rows other lanes put into Settings, hosted by vmsplit's <see cref="SettingsViewModel"/> at integration: scan's
-/// "PartingX / Xbox folders" list (#90) and parity's Accounts &amp; updates presenters (#100, #163, #99).
+/// "Xbox / Game Pass folders" list (#90) and parity's Accounts &amp; updates presenters (#100, #163, #99).
 /// </summary>
 [Collection(UiLanguageCollection.Name)]
 public sealed class SettingsHostedRowsTests : IDisposable
@@ -28,17 +28,17 @@ public sealed class SettingsHostedRowsTests : IDisposable
         var other = new CountingDetector("Steam");
         using var fx = await ViewModelFixture.StartAsync([], detectors: [xbox, wine, other]);
         var folders = Assert.IsType<XboxFoldersPresenter>(fx.Vm.Settings.XboxFolders);
-        var partingX = Directory.CreateDirectory(Path.Combine(_root, "partingx-state")).FullName;
+        var installerApp = Directory.CreateDirectory(Path.Combine(_root, "installer-state")).FullName;
         var (xboxScans, wineScans, otherScans) = (xbox.Scans, wine.Scans, other.Scans);
 
-        Assert.Null(folders.Add(partingX));
+        Assert.Null(folders.Add(installerApp));
 
         for (var i = 0; i < 400 && (xbox.Scans == xboxScans || wine.Scans == wineScans || fx.Vm.IsBusy); i++) await Task.Delay(10);
         Assert.Equal((xboxScans + 1, wineScans + 1, otherScans), (xbox.Scans, wine.Scans, other.Scans));
-        Assert.Equal([partingX], folders.Folders);
-        Assert.Equal([partingX], new XboxFolderStore(Path.Combine(fx.ConfigDir, "xbox-folders.json")).Folders());
+        Assert.Equal([installerApp], folders.Folders);
+        Assert.Equal([installerApp], new XboxFolderStore(Path.Combine(fx.ConfigDir, "xbox-folders.json")).Folders());
         Assert.Equal(["Wine", XboxGameDetector.SourceName], SettingsViewModel.XboxFolderDetectors.Order(StringComparer.Ordinal));
-        Assert.Null(folders.Remove(partingX));
+        Assert.Null(folders.Remove(installerApp));
         Assert.Empty(new XboxFolderStore(Path.Combine(fx.ConfigDir, "xbox-folders.json")).Folders());
     }
 
