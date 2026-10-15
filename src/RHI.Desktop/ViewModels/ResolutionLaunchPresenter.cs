@@ -9,10 +9,13 @@ namespace RHI.Desktop.ViewModels;
 
 /// <summary>
 /// #191: the resolution auto-toggle around Play. Before a direct launch whose plan switches the display, the switch runs
-/// (the previous mode recorded first) and the launch gets listeners: the game's process id is recorded with the switch,
-/// and when the launched command ends the display goes back. A launch that fails puts it back at once. At start-up a
-/// switch left behind (RHI closed or crashed while a game ran) is put back once that game has ended. Without a switcher
-/// (tests, the harness) nothing is ever switched.
+/// (the previous mode recorded first) and the launch carries the restore command, which the launch shell runs itself
+/// when the game's command ends (so the display goes back even when RHI was closed meanwhile), plus listeners: the
+/// game's process id is recorded with the switch, and when the launched command ends RHI checks the display is back and
+/// forgets the record. A launch that fails puts it back at once. At start-up a switch left behind (RHI crashed, or the
+/// shell's restore failed) is put back once that game has ended. Once the host is probed the resolution list becomes the
+/// display's own sizes where its tool lists them. Without a switcher (tests, the harness) nothing is ever switched or
+/// queried.
 /// </summary>
 public sealed class ResolutionLaunchPresenter
 {
@@ -20,6 +23,8 @@ public sealed class ResolutionLaunchPresenter
 
     private readonly MainWindowViewModel _shell;
     private DisplayModeSwitcher? _switcher;
+    private LinuxHdrHostSnapshot? _host;
+    private Task? _listing;
 
     public static ResolutionLaunchPresenter For(MainWindowViewModel shell) => Presenters.GetValue(shell, s => new ResolutionLaunchPresenter(s));
 
@@ -40,7 +45,32 @@ public sealed class ResolutionLaunchPresenter
         {
             _switcher = value;
             if (value is not null) Recovery = RecoverAsync(value);
+            StartListing();
         }
+    }
+
+    /// <summary>The host probe landed (start-up): the display's own sizes are listed once its tool is known.</summary>
+    internal void HostProbed(LinuxHdrHostSnapshot host)
+    {
+        _host = host;
+        StartListing();
+    }
+
+    /// <summary>The listing of the display's sizes (tests await it); completed when none was started.</summary>
+    internal Task DisplaySizesListed => _listing ?? Task.CompletedTask;
+
+    private void StartListing()
+    {
+        if (_listing is not null || _switcher is not { } switcher || _host is not { Probed: true } host) return;
+        var tool = DisplayModeSwitcher.AvailableTool(host);
+        if (tool == DisplayTool.None) return;
+        _listing = ListAsync(switcher, tool);
+    }
+
+    private async Task ListAsync(DisplayModeSwitcher switcher, DisplayTool tool)
+    {
+        var sizes = await switcher.ListResolutionsAsync(tool, CancellationToken.None).ConfigureAwait(false);
+        if (sizes is { Count: > 0 }) Post(() => _shell.Runtime.UseDisplayResolutions(sizes));
     }
 
     /// <summary>The start-up recovery (tests await it).</summary>
@@ -72,7 +102,9 @@ public sealed class ResolutionLaunchPresenter
         return (options with
         {
             Started = switcher.AttachGame,
-            Exited = () => UiExceptionGuard.Forget(RestoreAsync(), "display-mode-restore")
+            Exited = () => UiExceptionGuard.Forget(RestoreAsync(), "display-mode-restore"),
+            // The launch shell puts the mode back itself when the game's command ends, RHI running or not.
+            AfterExit = switcher.RestoreCommand(result.State!)
         }, notice);
     }
 

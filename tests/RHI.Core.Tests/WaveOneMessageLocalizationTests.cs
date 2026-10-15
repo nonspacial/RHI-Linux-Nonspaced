@@ -325,6 +325,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.NoModePrefix + "2560x1440";
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix + "kscreen-doctor";
         yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix + "/state/display-mode.json";
+        yield return RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer;
         // w5/reshade-core rows
     }
 

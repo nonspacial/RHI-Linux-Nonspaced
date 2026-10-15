@@ -240,6 +240,21 @@ public static class OptionLists
             .Select(size => new OptionEntry<string>(size, null, size.Replace("x", " × ", StringComparison.Ordinal))).ToArray());
 
     /// <summary>
+    /// #191: the resolution list from the display's own sizes (largest first, as listed) plus <paramref name="keep"/> (a
+    /// saved choice the display does not offer stays visible and selectable); 1920x1080 is the fallback where offered,
+    /// else the largest size.
+    /// </summary>
+    public static OptionList<string> GameResolutionFrom(IEnumerable<string> displaySizes, string? keep)
+    {
+        var sizes = displaySizes.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (!string.IsNullOrWhiteSpace(keep) && !sizes.Contains(keep, StringComparer.OrdinalIgnoreCase)) sizes.Add(keep);
+        if (sizes.Count == 0) return GameResolution;
+        var fallback = sizes.Contains(GameResolution.Fallback, StringComparer.OrdinalIgnoreCase) ? GameResolution.Fallback : sizes[0];
+        return new OptionList<string>(fallback, StringComparer.OrdinalIgnoreCase,
+            sizes.Select(size => new OptionEntry<string>(size, null, size.Replace("x", " × ", StringComparison.Ordinal))).ToArray());
+    }
+
+    /// <summary>
     /// #187: the global OptiScaler overlay key: "" keeps each INI template's own key (default), then OptiScaler's Auto,
     /// upstream's keys (virtual-key codes) and Disabled.
     /// </summary>

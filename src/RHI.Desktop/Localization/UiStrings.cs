@@ -992,6 +992,8 @@ internal static class UiStrings
         ("Shell.ResSwitchFailed", "A tela não foi mudada ({0}); o jogo começa na resolução atual.", "The display was not switched ({0}); the game starts at the current resolution."),
         ("Shell.ResRestored", "A resolução da tela voltou à anterior.", "The display resolution is back to what it was."),
         ("Shell.ResRestoreFailed", "Não foi possível voltar a resolução da tela ({0}). O RHI tenta de novo na próxima abertura; você também pode ajustá-la nas configurações de tela.", "Could not put the display resolution back ({0}). RHI tries again at its next start; you can also set it in the display settings."),
+        ("Shell.ResRecordSetAside", "O registro do modo de tela a restaurar não pôde ser lido, então o RHI não o usou (cópia guardada em {0}). Se a tela ainda estiver na resolução de um jogo, ajuste-a nas configurações de tela.", "The saved display mode to go back to could not be read, so RHI did not use it (a copy is kept at {0}). If the display is still at a game's resolution, set it back in the display settings."),
+        ("Shell.ResRecordStuck", "A tela não foi mudada: o registro do modo de tela a restaurar não pôde ser lido nem posto de lado. Corrija ou apague {0}.", "The display was not switched: the saved display mode to go back to could not be read or set aside. Fix or delete {0}."),
         ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
     ];

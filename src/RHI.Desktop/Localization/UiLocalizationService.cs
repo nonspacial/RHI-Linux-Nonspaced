@@ -1218,6 +1218,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.NoModePrefix, "A tela não oferece esta resolução: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.ToolMissingPrefix, "A ferramenta de tela não está instalada: "),
         (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.StateUnsavedPrefix, "O RHI não conseguiu registrar o modo de tela atual, então não o mudou: "),
+        (RHI.Platform.Linux.Hdr.DisplayModeSwitcher.UnsafeAnswer, "A ferramenta de tela indicou uma saída ou modo que o RHI não aceita, então a tela não foi mudada."),
         // w5/reshade-core rows
     ];
 

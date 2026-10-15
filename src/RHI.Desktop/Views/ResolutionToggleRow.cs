@@ -11,7 +11,9 @@ namespace RHI.Desktop.Views;
 /// <summary>
 /// #191: the resolution auto-toggle under the HDR controls (one AXAML element, DataContext the
 /// <see cref="RuntimePanelViewModel"/>): a toggle, the resolution (shown only while the toggle is on) and the plain line
-/// that says what will happen. Disabled with the HDR controls (no game, an operation running).
+/// that says what will happen. Disabled with the HDR controls (no game, an operation running); hidden where no plan can
+/// ever apply on the card and desktop (<see cref="RuntimePanelViewModel.ShowResolutionToggle"/>). The size list follows
+/// <see cref="RuntimePanelViewModel.ResolutionOptions"/> (the display's own sizes once listed).
 /// </summary>
 public sealed class ResolutionToggleRow : ContentControl
 {
@@ -52,11 +54,7 @@ public sealed class ResolutionToggleRow : ContentControl
         base.OnDataContextChanged(e);
         if (_vm is not null) _vm.PropertyChanged -= OnVmChanged;
         _vm = DataContext as RuntimePanelViewModel;
-        if (_vm is not null)
-        {
-            _size.ItemsSource = _vm.ResolutionOptions;
-            _vm.PropertyChanged += OnVmChanged;
-        }
+        if (_vm is not null) _vm.PropertyChanged += OnVmChanged;
         Sync();
     }
 
@@ -78,7 +76,8 @@ public sealed class ResolutionToggleRow : ContentControl
     private void OnVmChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(RuntimePanelViewModel.ResolutionToggle) or nameof(RuntimePanelViewModel.SelectedResolution)
-            or nameof(RuntimePanelViewModel.ResolutionHint) or nameof(RuntimePanelViewModel.CanEditHdrProfile))
+            or nameof(RuntimePanelViewModel.ResolutionHint) or nameof(RuntimePanelViewModel.CanEditHdrProfile)
+            or nameof(RuntimePanelViewModel.ResolutionOptions) or nameof(RuntimePanelViewModel.ShowResolutionToggle))
             Sync();
     }
 
@@ -87,6 +86,9 @@ public sealed class ResolutionToggleRow : ContentControl
         _syncing = true;
         try
         {
+            IsVisible = _vm?.ShowResolutionToggle == true;
+            // A new list (the display's own sizes): swapped while syncing, so the null the ComboBox writes is ignored.
+            if (_vm is not null && !ReferenceEquals(_size.ItemsSource, _vm.ResolutionOptions)) _size.ItemsSource = _vm.ResolutionOptions;
             var on = _vm?.ResolutionToggle == true;
             _toggle.IsChecked = on;
             _toggle.IsEnabled = _size.IsEnabled = _vm?.CanEditHdrProfile == true;

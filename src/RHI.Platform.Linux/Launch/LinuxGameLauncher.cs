@@ -59,10 +59,11 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         if (!CanLaunch(game)) throw new InvalidOperationException("No launch command is known for this game.");
         // Wrapping a store client (xdg-open heroic://…, steam -applaunch) never reaches the game it starts later,
         // so a launch profile on a hand-off would be reported as applied without effect (#46). Started/Exited listeners
-        // (#191) are not a profile.
-        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix)) &&
+        // (#191) are not a profile; a command to run after the game (#191) is refused like one (the hand-off ends at once).
+        if (((options.Environment?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(options.CommandPrefix) || options.AfterExit is not null) &&
             LaunchHandoffClassifier.IsHandoff(game))
             throw new InvalidOperationException(HandoffProfileRefused);
+        if (options.AfterExit is not null) CheckAfterExit(options.AfterExit);
 
         // The installer app's own Play entry point runs as an argument vector with no shell, so there is no stderr redirection to a
         // per-launch log: the installer app keeps its own logs, and an early failure is still reported by its exit code.
@@ -176,8 +177,36 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
         if (userCommand) AddUserBinDirectories(psi);
         psi.ArgumentList.Add(userCommand ? "-lc" : "-c");
         var command = BuildShellCommand(game.LaunchCommand!, options.CommandPrefix);
+        if (options.AfterExit is { } afterExit) command = WithAfterExit(command, afterExit);
         psi.ArgumentList.Add(stderrLog is null ? command : WithCappedStderrLog(command, stderrLog));
         return psi;
+    }
+
+    /// <summary>How long the launch shell lets the after-exit command run (with <c>timeout</c> when it is installed).</summary>
+    internal const int AfterExitTimeoutSeconds = 15;
+
+    /// <summary>An after-exit vector must name an absolute program and hold no NUL (it cannot be an argument).</summary>
+    internal static void CheckAfterExit(IReadOnlyList<string> argv)
+    {
+        if (argv.Count == 0 || !argv[0].StartsWith('/') || argv.Any(argument => argument is null || argument.Contains('\0')))
+            throw new ArgumentException("The command to run after the game must be an absolute program path and its arguments.", nameof(argv));
+    }
+
+    /// <summary>
+    /// #191: runs <paramref name="command"/> in a subshell (an <c>exec</c> or <c>exit</c> in it ends only the subshell), then
+    /// <paramref name="afterExit"/> — every entry single-quoted, so it is one argument and nothing in it is expanded — with
+    /// no input or output and a time limit, and exits with the command's status. The launch shell, not RHI, runs it, so it
+    /// happens even when RHI has been closed meanwhile.
+    /// </summary>
+    internal static string WithAfterExit(string command, IReadOnlyList<string> afterExit)
+    {
+        CheckAfterExit(afterExit);
+        var argv = string.Join(" ", afterExit.Select(ShellQuote));
+        return
+            $"(\n{command}\n)\n" +
+            "rhi_game_status=$?\n" +
+            $"if command -v timeout >/dev/null 2>&1; then timeout {AfterExitTimeoutSeconds} {argv}; else {argv}; fi </dev/null >/dev/null 2>&1\n" +
+            "exit $rhi_game_status";
     }
 
     /// <summary>

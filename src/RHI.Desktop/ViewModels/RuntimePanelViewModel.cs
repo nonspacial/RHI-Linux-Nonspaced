@@ -143,7 +143,49 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     [ObservableProperty] private OptionItem<string> selectedResolution = OptionLists.GameResolution.Options().For(OptionLists.GameResolution.Fallback);
 
-    public OptionItems<string> ResolutionOptions { get; } = OptionLists.GameResolution.Options();
+    /// <summary>The sizes offered: the display's own once its tool listed them (<see cref="UseDisplayResolutions"/>), else a fixed list.</summary>
+    public OptionItems<string> ResolutionOptions { get; private set; } = OptionLists.GameResolution.Options();
+
+    private OptionList<string> _resolutionList = OptionLists.GameResolution;
+    private IReadOnlyList<string>? _displaySizes;
+
+    /// <summary>
+    /// #191: the display's tool listed its sizes: offer those (the saved choice of the selected game stays in the list
+    /// even when the display lacks it). The shown choice is kept; nothing is saved.
+    /// </summary>
+    internal void UseDisplayResolutions(IReadOnlyList<DisplayResolution> sizes)
+    {
+        _displaySizes = sizes.Select(size => size.ToString()).ToArray();
+        RebuildResolutionOptions(SavedResolution());
+    }
+
+    /// <summary>The selected game's saved resolution, or null.</summary>
+    private string? SavedResolution()
+        => SelectedGame is { } game && Host.LibraryState.HdrProfiles.TryGetValue(LinuxGameLibraryStore.GameKey(game), out var saved)
+            ? saved.Normalize().Resolution
+            : null;
+
+    /// <summary>Rebuilds the display-size list when <paramref name="keep"/> is not in it (or it was never built); selects keep, else the fallback.</summary>
+    private void RebuildResolutionOptions(string? keep)
+    {
+        if (_displaySizes is null) return;
+        var list = OptionLists.GameResolutionFrom(_displaySizes, keep);
+        var shown = keep ?? (SelectedResolution?.Value is { } current && list.Values.Contains(current, StringComparer.OrdinalIgnoreCase) ? current : list.Fallback);
+        var loading = _loadingHdrProfile;
+        _loadingHdrProfile = true;
+        try
+        {
+            _resolutionList = list;
+            ResolutionOptions = list.Options();
+            OnPropertyChanged(nameof(ResolutionOptions));
+            SelectedResolution = ResolutionOptions.For(shown);
+        }
+        finally { _loadingHdrProfile = loading; }
+        RaiseHdrPlanChanged();
+    }
+
+    /// <summary>#191: the toggle shows only where a plan could ever apply on this card and desktop (owner rule: hide, not disable).</summary>
+    public bool ShowResolutionToggle => SelectedGame is { } game && DisplayModeSwitcher.CanEverApply(game, HdrHost);
 
     /// <summary>The profile the controls show (HDR mode, legacy WSI, resolution toggle and size).</summary>
     private LinuxHdrGameProfile ShownProfile() => new LinuxHdrGameProfile
@@ -411,6 +453,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(ShowHdrLaunchProfile));
         OnPropertyChanged(nameof(SelectedResolutionPlan));
         OnPropertyChanged(nameof(ResolutionHint));
+        OnPropertyChanged(nameof(ShowResolutionToggle));
     }
 
     partial void OnResolutionToggleChanged(bool value)
@@ -512,7 +555,9 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             SelectedHdrMode = FormatHdrMode(profile.Mode);
             HdrLegacyWsi = profile.EnableLegacyWsi;
             ResolutionToggle = profile.ResolutionToggle;
-            SelectedResolution = ResolutionOptions.For(profile.Resolution ?? OptionLists.GameResolution.Fallback);
+            if (profile.Resolution is { } savedSize && !_resolutionList.Values.Contains(savedSize, StringComparer.OrdinalIgnoreCase))
+                RebuildResolutionOptions(savedSize);
+            SelectedResolution = ResolutionOptions.For(profile.Resolution ?? _resolutionList.Fallback);
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();
@@ -526,7 +571,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             SelectedHdrMode = FormatHdrMode(LinuxHdrModes.Off);
             HdrLegacyWsi = false;
             ResolutionToggle = false;
-            SelectedResolution = ResolutionOptions.For(OptionLists.GameResolution.Fallback);
+            SelectedResolution = ResolutionOptions.For(_resolutionList.Fallback);
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();

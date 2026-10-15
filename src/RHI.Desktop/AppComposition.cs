@@ -52,7 +52,10 @@ internal sealed class AppComposition
     // w5/catalogue-info rows
     // w5/ini-presets rows
     // w5/shell-launch rows
-    /// <summary>#191: switches the display around a direct launch (kscreen-doctor / wlr-randr); null in tests, never switching.</summary>
+    /// <summary>
+    /// #191: switches the display around a direct launch (kscreen-doctor / wlr-randr). Only the app passes one to
+    /// <see cref="Create"/>; without it (tests, the harness) the view model never switches, queries or recovers the display.
+    /// </summary>
     public RHI.Platform.Linux.Hdr.DisplayModeSwitcher? DisplayModes { get; init; }
     // w5/reshade-core rows
 
@@ -86,7 +89,9 @@ internal sealed class AppComposition
         return new WineRecovery(overrides, LinuxDeploymentRecovery.CreateJournal(overrides, journalDirectory, isPrefixInUse, records));
     }
 
-    public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal)
+    /// <param name="displayModes">#191: the display switcher the app runs with; null (tests) = the display is never touched.</param>
+    public static AppComposition Create(HttpClient http, LinuxDeploymentRecordStore records, WineDllOverrideService wineOverrides, DeploymentJournal journal,
+        RHI.Platform.Linux.Hdr.DisplayModeSwitcher? displayModes = null)
     {
         var libraryStore = new LinuxGameLibraryStore();
         // w3/scan hook: one "Xbox / Game Pass folders" store for Settings, the Xbox detector and the Wine detector (Refs #90).
@@ -273,7 +278,7 @@ internal sealed class AppComposition
             // w5/catalogue-info rows
             // w5/ini-presets rows
             // w5/shell-launch rows
-            DisplayModes = new RHI.Platform.Linux.Hdr.DisplayModeSwitcher(),
+            DisplayModes = displayModes,
             // w5/reshade-core rows
         };
     }

@@ -467,6 +467,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // The library scan never waits behind the DLSS manifest: both start now (Refs #43).
         var dlssManifestTask = LoadDlssManifestAsync();
         Runtime.LastHdrHost ??= await hdrHost;
+        Resolution.HostProbed(Runtime.LastHdrHost); // #191 (w5/shell-launch): the display's own sizes, once its tool is known
         Runtime.RaiseHdrPlanChanged();
         await RefreshAsync();
         await dlssManifestTask;

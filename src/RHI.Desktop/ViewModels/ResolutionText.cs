@@ -32,18 +32,28 @@ public static class ResolutionText
     }
 
     /// <summary>The status addition after a switch attempt before Play; null when there is nothing to say.</summary>
-    public static string? Switch(DisplaySwitchResult result, ResolutionPlan plan) => result.Outcome switch
+    public static string? Switch(DisplaySwitchResult result, ResolutionPlan plan)
     {
-        DisplaySwitchOutcome.Switched => TF("Shell.ResSwitched", plan.Target),
-        DisplaySwitchOutcome.EarlierSwitchPending => T("Shell.ResEarlierPending"),
-        DisplaySwitchOutcome.Failed => TF("Shell.ResSwitchFailed", UiLocalizationService.Present(result.Detail)),
-        _ => null
-    };
+        var line = result.Outcome switch
+        {
+            DisplaySwitchOutcome.Switched => TF("Shell.ResSwitched", plan.Target),
+            DisplaySwitchOutcome.EarlierSwitchPending => T("Shell.ResEarlierPending"),
+            DisplaySwitchOutcome.RecordUnreadable => TF("Shell.ResRecordStuck", result.Detail),
+            DisplaySwitchOutcome.Failed => TF("Shell.ResSwitchFailed", UiLocalizationService.Present(result.Detail)),
+            _ => null
+        };
+        if (result.SetAsideCopy is not { } copy) return line;
+        var note = TF("Shell.ResRecordSetAside", copy);
+        return line is null ? note : note + " " + line;
+    }
 
     /// <summary>The status line after putting the display back; null when nothing was to be done.</summary>
     public static string? Restore(DisplayRestoreResult result) => result.Outcome switch
     {
         DisplayRestoreOutcome.Restored => T("Shell.ResRestored"),
+        DisplayRestoreOutcome.RecordUnreadable => result.SetAsideCopy is { } copy
+            ? TF("Shell.ResRecordSetAside", copy)
+            : TF("Shell.ResRecordStuck", result.Detail),
         DisplayRestoreOutcome.Failed => TF("Shell.ResRestoreFailed", UiLocalizationService.Present(result.Detail)),
         _ => null
     };
