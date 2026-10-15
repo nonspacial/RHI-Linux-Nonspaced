@@ -1,3 +1,4 @@
+using RHI.Core.Deployment;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using RHI.Core.Models;
@@ -245,10 +246,10 @@ public sealed class ComponentUpdateLogStore : IGameStateStore
         try
         {
             var target = _path + ".corrupt-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss");
-            File.Copy(_path, target, overwrite: false);
+            AtomicFile.Copy(_path, target, overwrite: false); // verified, durable (#31)
             return target;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             AppLog.Warn("update-history", $"The unreadable update history at {_path} could not be copied aside.", ex);
             return _path;

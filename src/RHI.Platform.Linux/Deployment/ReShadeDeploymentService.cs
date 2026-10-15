@@ -408,10 +408,12 @@ public sealed partial class ReShadeDeploymentService
             if (!previousPayload.ExistedBeforeInstall && File.Exists(originalBackup))
                 return ComponentOperationResult.Fail($"An unexpected .original file appeared beside an RHI-created ReShade proxy. Update is blocked to avoid adopting ambiguous backup state: {originalBackup}");
 
-            if (File.Exists(target))
+            // With a journal the operation tracks the target (verified copy) and its rollback puts it back (#169); the
+            // hand-made snapshot is only for an unjournaled run (tests, tools), a verified copy too.
+            if (File.Exists(target) && _journal is null)
             {
                 updateSnapshot = target + $".rhi-update-snapshot-{Guid.NewGuid():N}";
-                File.Copy(target, updateSnapshot, overwrite: false);
+                AtomicFile.Copy(target, updateSnapshot, overwrite: false);
             }
         }
 
@@ -507,7 +509,7 @@ public sealed partial class ReShadeDeploymentService
             {
                 CleanupManagedIni(existingRecord, game.InstallPath); // w5/ini-presets hook (review 8)
                 await DeclareIniWritesAsync().ConfigureAwait(false);
-                _shaderPacks.Cleanup(game.BinaryDirectory);
+                await _shaderPacks.CleanupAsync(game.BinaryDirectory, operation).ConfigureAwait(false); // #169: tracked
             }
 
             // For an update of an RHI-created proxy there is intentionally no long-lived .original.
@@ -603,7 +605,7 @@ public sealed partial class ReShadeDeploymentService
                 additionalOverrides.Add(previousCompilerOverride);
             }
 
-            var shaderResult = _shaderPacks.ApplySync(preparedShaders, cancellationToken);
+            var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             ReShadeIniApplyResult? iniResult = null;
             if (options.ManageIni)
                 iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, IniDefaults?.Invoke(game, false), game.InstallPath); // w5/ini-presets hook (#181, review 8)
@@ -708,13 +710,19 @@ public sealed partial class ReShadeDeploymentService
             }
             if (existingRecord is not null && updateSnapshot is not null && File.Exists(updateSnapshot))
             {
-                try { File.Copy(updateSnapshot, target, overwrite: true); } catch { }
+                try { AtomicFile.Copy(updateSnapshot, target); }
+                catch (Exception restoreError) when (restoreError is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    AppLog.Warn("reshade", $"Could not put the previous ReShade back at {target}; its copy is kept at {updateSnapshot}", restoreError);
+                    updateSnapshot = null; // keep the only copy
+                }
             }
             try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
 
             // If this was an update and profile application failed, keep the record conservative and try
             // to restore its previous INI/shader selection from cached sources.
-            if (existingRecord is not null && oldOptions is not null)
+            // Journaled, the operation's rollback (when it is disposed) puts the shader folder and ReShade.ini back (#169).
+            if (existingRecord is not null && oldOptions is not null && operation is null)
             {
                 try
                 {
@@ -794,7 +802,7 @@ public sealed partial class ReShadeDeploymentService
                 optiScalerAfter = await ManagedOptiScalerWithIniHashAsync(game).ConfigureAwait(false);
             }
 
-            _shaderPacks.Cleanup(binaryDirectory);
+            await _shaderPacks.CleanupAsync(binaryDirectory, scope.Operation).ConfigureAwait(false); // #169: tracked
             if (record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals("ReShade.ini", StringComparison.OrdinalIgnoreCase)) is { } managedIni)
             {
                 await scope.TrackAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);

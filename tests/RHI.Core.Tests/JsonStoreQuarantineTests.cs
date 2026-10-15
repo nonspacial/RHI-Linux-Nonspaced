@@ -734,7 +734,7 @@ public sealed class JsonStoreQuarantineTests : IDisposable
                 {
                     try { await s.SyncAsync(dir, ["CrosireMaster"]); return true; }
                     catch (JsonStoreUnavailableException) { }
-                    try { s.Cleanup(dir); return true; }
+                    try { await s.CleanupAsync(dir, operation: null); return true; }
                     catch (JsonStoreUnavailableException) { return false; }
                 });
             }

@@ -57,7 +57,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["ClshortfuseShaders"]);
 
-        service.Cleanup(game);
+        await service.CleanupAsync(game, operation: null);
 
         Assert.False(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", "_Core", "Shaders", "ReShade.fxh")));
         Assert.False(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", "_Core", "Shaders", "ReShadeUI.fxh")));
@@ -150,7 +150,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         Directory.CreateDirectory(game);
         await service.SyncAsync(game, ["CrosireMaster"]);
 
-        service.Cleanup(game);
+        await service.CleanupAsync(game, operation: null);
 
         Assert.False(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
         Assert.False(File.Exists(Path.Combine(game, "reshade-shaders", "RHI", ".rhi-manifest.json")));
@@ -167,7 +167,7 @@ public sealed class ReShadeShaderPackServiceTests : IDisposable
         var shader = Path.Combine(game, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx");
         File.AppendAllText(shader, "\n// user edit");
 
-        service.Cleanup(game);
+        await service.CleanupAsync(game, operation: null);
 
         Assert.True(File.Exists(shader));
         Assert.Contains("user edit", File.ReadAllText(shader));
