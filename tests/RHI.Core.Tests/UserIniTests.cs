@@ -265,23 +265,28 @@ public sealed class UserIniTests : IDisposable
         => new(Templates(), records ?? new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")), refusal ?? (_ => null));
 
     [Fact]
-    public async Task ApplyToAll_WritesEveryGameWithAReShadeIni_CountsRefusedAndSkipsTheRest()
+    public async Task ApplyToAll_WritesEveryGameWithRhisReShadeAndAReShadeIni_CountsRefusedAndSkipsTheRest()
     {
         var a = Game("A");
         var b = Game("B");
         var locked = Game("Locked");
         var none = Game("None");
         var native = Game("Native", runner: "Native Linux");
-        foreach (var game in new[] { a, b, locked, native }) File.WriteAllText(Ini(game), "[OVERLAY]\n");
-        var service = Service(game => game.Name == "Locked" ? "busy" : null);
+        var external = Game("External"); // the user's own ReShade: left alone (review finding 1)
+        foreach (var game in new[] { a, b, locked, native, external }) File.WriteAllText(Ini(game), "[OVERLAY]\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json"));
+        foreach (var game in new[] { a, b, locked, none, native }) records.Manage(game, ManagedComponentKind.ReShade);
+        var service = Service(game => game.Name == "Locked" ? "busy" : null, records);
 
-        var result = await service.ApplyReShadeSettingsToAllAsync([a, b, locked, none, native], new LinuxAppSettings { ReShadeVariableListUseTabs = false });
+        Assert.Equal([a, b, locked, native], service.ReShadeSettingsTargets([a, b, locked, none, native, external]));
+        var result = await service.ApplyReShadeSettingsToAllAsync([a, b, locked, none, native, external], new LinuxAppSettings { ReShadeVariableListUseTabs = false });
 
         Assert.Equal(new IniBatchResult(2, 2, 0), result);
         Assert.Contains("VariableListUseTabs=0", File.ReadAllText(Ini(a)));
         Assert.Contains("VariableListUseTabs=0", File.ReadAllText(Ini(b)));
         Assert.Equal("[OVERLAY]\n", File.ReadAllText(Ini(locked)));
         Assert.Equal("[OVERLAY]\n", File.ReadAllText(Ini(native)));
+        Assert.Equal("[OVERLAY]\n", File.ReadAllText(Ini(external)));
         Assert.False(File.Exists(Ini(none)));
     }
 
@@ -291,13 +296,14 @@ public sealed class UserIniTests : IDisposable
         var a = Game("A");
         var b = Game("B");
         foreach (var game in new[] { a, b }) File.WriteAllText(Ini(game), "[OVERLAY]\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(a, ManagedComponentKind.ReShade).Manage(b, ManagedComponentKind.ReShade);
         using var cts = new CancellationTokenSource();
         // The user presses Cancel the moment A's write starts: A finishes, B is never started.
         OperationCancellation.WritePhaseObserverForTesting = _ => cts.Cancel();
         try
         {
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-                Service().ApplyReShadeSettingsToAllAsync([a, b], new LinuxAppSettings { ReShadeVariableListUseTabs = false }, cts.Token));
+                Service(records: records).ApplyReShadeSettingsToAllAsync([a, b], new LinuxAppSettings { ReShadeVariableListUseTabs = false }, cts.Token));
         }
         finally { OperationCancellation.WritePhaseObserverForTesting = null; }
 
@@ -315,8 +321,9 @@ public sealed class UserIniTests : IDisposable
         File.WriteAllText(outside, "[OVERLAY]\n");
         File.CreateSymbolicLink(Ini(bad), outside); // a link out of the game folder is refused
         File.WriteAllText(Ini(good), "[OVERLAY]\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(bad, ManagedComponentKind.ReShade).Manage(good, ManagedComponentKind.ReShade);
 
-        var result = await Service().ApplyReShadeSettingsToAllAsync([bad, good], new LinuxAppSettings { ReShadeVariableListUseTabs = false });
+        var result = await Service(records: records).ApplyReShadeSettingsToAllAsync([bad, good], new LinuxAppSettings { ReShadeVariableListUseTabs = false });
 
         Assert.Equal(new IniBatchResult(1, 0, 1), result);
         Assert.Equal("[OVERLAY]\n", File.ReadAllText(outside));
@@ -324,16 +331,46 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
-    public void DeployAddonIni_ReplacesTheGamesFileWithTheTemplate()
+    public void Deploy_WithoutRhisComponent_IsRefusedAndTheUsersFilesStay()
+    {
+        // Review finding 1: a ReLimiter / Display Commander / ReShade the user installed is theirs.
+        var game = Game();
+        var templates = Templates();
+        Directory.CreateDirectory(templates.Directory);
+        File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), "[FrameLimiter]\ntarget_fps=117\n");
+        var relimiter = Path.Combine(game.BinaryDirectory!, "ReLimiter.ini");
+        File.WriteAllText(relimiter, "[FrameLimiter]\nmy_tuning=1\n");
+        File.WriteAllText(Ini(game), "[OVERLAY]\nMine=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json"));
+        var service = new UserIniService(templates, records, _ => null);
+
+        var addon = service.DeployAddonIni(game, ManagedComponentKind.ReLimiter);
+        var reshade = service.DeployReShadeIni(game, new LinuxAppSettings());
+
+        Assert.False(addon.Success);
+        Assert.Equal(UserIniService.NotManagedPrefix + game.Name, addon.Message);
+        Assert.Equal(UserIniService.NotManagedPrefix + game.Name, reshade.Message);
+        Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(relimiter));
+        Assert.Equal("[OVERLAY]\nMine=1\n", File.ReadAllText(Ini(game)));
+
+        // RHI's ReShade alone does not open the ReLimiter file.
+        records.Manage(game, ManagedComponentKind.ReShade);
+        Assert.False(service.DeployAddonIni(game, ManagedComponentKind.ReLimiter).Success);
+        Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(relimiter));
+        Assert.True(service.DeployReShadeIni(game, new LinuxAppSettings()).Success);
+    }
+
+    [Fact]
+    public void DeployAddonIni_WhereRhiManagesIt_ReplacesTheGamesFileWithTheTemplate()
     {
         var game = Game();
         var templates = Templates();
         Directory.CreateDirectory(templates.Directory);
         File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), "[FrameLimiter]\ntarget_fps=117\n");
         File.WriteAllText(Path.Combine(game.BinaryDirectory!, "ReLimiter.ini"), "[FrameLimiter]\nold=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.ReLimiter);
 
-        var result = new UserIniService(templates, new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")), _ => null)
-            .DeployAddonIni(game, ManagedComponentKind.ReLimiter);
+        var result = new UserIniService(templates, records, _ => null).DeployAddonIni(game, ManagedComponentKind.ReLimiter);
 
         Assert.True(result.Success, result.Message);
         Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "ReLimiter.ini")));
@@ -387,7 +424,8 @@ public sealed class UserIniTests : IDisposable
         try
         {
             using var op = new OperationCancellation();
-            Service().DeployReShadeIni(game, new LinuxAppSettings(), op.Token);
+            var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Manage(game, ManagedComponentKind.ReShade);
+            Service(records: records).DeployReShadeIni(game, new LinuxAppSettings(), op.Token);
             Assert.Equal(1, phases);
         }
         finally { OperationCancellation.WritePhaseObserverForTesting = null; }

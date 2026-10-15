@@ -27,6 +27,12 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     /// <summary>Fixed text before the folder when the game's binary folder is gone (localisation key).</summary>
     public const string NoFolderPrefix = "INI files were not written: the game's folder is not available: ";
 
+    /// <summary>
+    /// Fixed text before the game name when RHI did not install the component there (localisation key): a copy the user
+    /// installed is theirs, so its INI is never touched (review finding 1).
+    /// </summary>
+    public const string NotManagedPrefix = "INI files were not written: RHI did not install this component in this game, and a copy it did not install is left alone: ";
+
     public UserIniTemplates Templates => templates;
 
     /// <summary>The file name a component's INI is deployed under (beside its add-on).</summary>
@@ -44,6 +50,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     public ComponentOperationResult DeployReShadeIni(DetectedGame game, LinuxAppSettings settings, CancellationToken cancellationToken = default)
     {
         if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        if (records.Find(game, ManagedComponentKind.ReShade) is null) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
         var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], ReShadeGlobalSettingsApplier.InstallDefaults(settings, game, templates));
         return ComponentOperationResult.Ok(DeployedPrefix + result.Path, result.Path);
@@ -60,6 +67,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     {
         var name = AddonIniName(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "No INI template for this component.");
         if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        if (records.Find(game, kind) is null) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
         var template = templates.Read(kind == ManagedComponentKind.ReLimiter ? UserIniTemplate.ReLimiter : UserIniTemplate.DisplayCommander, out _);
         var directory = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
         var target = ExistingCaseInsensitive(directory, name) ?? Path.Combine(directory, name);
@@ -81,11 +89,12 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
 
     /// <summary>
     /// "Apply to all games" (upstream <c>ApplyScreenshotPath_Click</c>): screenshot folder, hotkeys and effect list style
-    /// into every game that has a ReShade.ini (main and numbered files).
+    /// into every game whose ReShade RHI installed and that has a ReShade.ini (main and numbered files). A ReShade the
+    /// user installed is left alone (review finding 1).
     /// </summary>
     public Task<IniBatchResult> ApplyReShadeSettingsToAllAsync(IReadOnlyList<DetectedGame> games, LinuxAppSettings settings, CancellationToken cancellationToken = default)
         => RunBatchAsync(
-            games.Where(HasReShadeIni).ToList(),
+            ReShadeSettingsTargets(games),
             (game, token) =>
             {
                 if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
@@ -96,11 +105,12 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
 
     /// <summary>
     /// ReLimiter "Apply to all games" (#188; upstream <c>ApplyUlOsdHotkey_Click</c>): the four globals go into every game's
-    /// relimiter.ini (beside the add-on, and RE Framework's <c>_storage_/relimiter.ini</c>); only those keys change.
+    /// relimiter.ini (beside the add-on, and RE Framework's <c>_storage_/relimiter.ini</c>) where RHI installed ReLimiter;
+    /// only those keys change.
     /// </summary>
     public Task<IniBatchResult> ApplyReLimiterSettingsToAllAsync(IReadOnlyList<DetectedGame> games, ReLimiterGlobals globals, CancellationToken cancellationToken = default)
         => RunBatchAsync(
-            games.Where(game => ReLimiterInis(game).Count > 0).ToList(),
+            ReLimiterSettingsTargets(games),
             (game, token) =>
             {
                 if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
@@ -133,6 +143,14 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         if (ReLimiterIniEditor.Apply(lines, globals)) IniLines.Write(path, lines, [templates.Directory]);
         return path;
     }
+
+    /// <summary>The games "Apply to all games" writes ReShade settings into: RHI's ReShade, a ReShade.ini there.</summary>
+    public IReadOnlyList<DetectedGame> ReShadeSettingsTargets(IReadOnlyList<DetectedGame> games)
+        => games.Where(game => records.Find(game, ManagedComponentKind.ReShade) is not null && HasReShadeIni(game)).ToList();
+
+    /// <summary>The games ReLimiter's "Apply to all games" writes into: RHI's ReLimiter, a relimiter.ini there.</summary>
+    public IReadOnlyList<DetectedGame> ReLimiterSettingsTargets(IReadOnlyList<DetectedGame> games)
+        => games.Where(game => records.Find(game, ManagedComponentKind.ReLimiter) is not null && ReLimiterInis(game).Count > 0).ToList();
 
     /// <summary>The game's relimiter.ini files: beside the ReShade add-ons, and in RE Framework's <c>_storage_</c> folder.</summary>
     public static IReadOnlyList<string> ReLimiterInis(DetectedGame game)

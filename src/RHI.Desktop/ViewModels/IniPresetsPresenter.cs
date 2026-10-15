@@ -18,12 +18,16 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
 
     internal UserIniService Service => new(new UserIniTemplates(TemplatesFolder), records, managed.IniWriteRefusal);
 
-    /// <summary>The components whose row gets the INI ⚙ while they are installed.</summary>
+    /// <summary>
+    /// The components whose row gets the INI ⚙ while RHI manages them: a copy the user installed (shown as installed,
+    /// not managed) is theirs, and the ⚙ is hidden there (review finding 1).
+    /// </summary>
     public static bool HasIniSettings(ManagedComponent component)
         => component.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable
+           && component.ManagedByRhi
            && (component.Kind is ManagedComponentKind.ReShade or ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
                // #189: Luma's ⚙ (HDR on first boot, TAA) is upstream's, for Unreal Engine games whose Luma RHI installed.
-               || component.Kind == ManagedComponentKind.LumaFramework && component.ManagedByRhi && component.UnrealEngine);
+               || component.Kind == ManagedComponentKind.LumaFramework && component.UnrealEngine);
 
     /// <summary>The file "Deploy" writes for a component.</summary>
     public static string IniFileName(ManagedComponentKind kind)

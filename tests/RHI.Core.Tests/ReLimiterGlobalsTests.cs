@@ -89,12 +89,15 @@ public sealed class ReLimiterGlobalsTests : IDisposable
         var re = Game("Re", storage: true);
         var none = Game("None", withIni: false);
         var refused = Game("Refused");
+        var external = Game("External"); // the user's own ReLimiter: left alone (review finding 1)
         var templates = new UserIniTemplates(Path.Combine(_root, "inis"));
-        var service = new UserIniService(templates, new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")),
-            game => game.Name == "Refused" ? "busy" : null);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json"));
+        foreach (var game in new[] { plain, re, none, refused }) records.Manage(game, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(templates, records, game => game.Name == "Refused" ? "busy" : null);
         var globals = new ReLimiterGlobals("Ctrl+F12", false, true, 116);
 
-        var result = await service.ApplyReLimiterSettingsToAllAsync([plain, re, none, refused], globals);
+        Assert.Equal([plain, re, refused], service.ReLimiterSettingsTargets([plain, re, none, refused, external]));
+        var result = await service.ApplyReLimiterSettingsToAllAsync([plain, re, none, refused, external], globals);
         var template = service.ApplyReLimiterSettingsToTemplate(globals);
 
         Assert.Equal(new IniBatchResult(2, 1, 0), result);
@@ -108,6 +111,7 @@ public sealed class ReLimiterGlobalsTests : IDisposable
         Assert.Contains("dlss_info_hooks=true", File.ReadAllText(Path.Combine(re.BinaryDirectory!, "_storage_", "relimiter.ini")));
         Assert.Equal("[FrameLimiter]\nkeep=1\n", File.ReadAllText(Path.Combine(refused.BinaryDirectory!, "relimiter.ini")));
         Assert.False(File.Exists(Path.Combine(none.BinaryDirectory!, "relimiter.ini")));
+        Assert.Equal("[FrameLimiter]\nkeep=1\n", File.ReadAllText(Path.Combine(external.BinaryDirectory!, "relimiter.ini")));
         Assert.Contains("osd_toggle_key=Ctrl+F12", File.ReadAllText(template));
         Assert.StartsWith("[UltraLimiter]", File.ReadAllText(template));
     }
@@ -121,7 +125,8 @@ public sealed class ReLimiterGlobalsTests : IDisposable
         File.WriteAllText(Path.Combine(outside, "relimiter.ini"), "[FrameLimiter]\n");
         Directory.CreateSymbolicLink(Path.Combine(linked.BinaryDirectory!, "_storage_"), outside);
         var fine = Game("Fine");
-        var service = new UserIniService(new UserIniTemplates(Path.Combine(_root, "inis")), new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")), _ => null);
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(linked, ManagedComponentKind.ReLimiter).Manage(fine, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(new UserIniTemplates(Path.Combine(_root, "inis")), records, _ => null);
 
         var result = await service.ApplyReLimiterSettingsToAllAsync([linked, fine], new ReLimiterGlobals("F11", false, false, 0));
 

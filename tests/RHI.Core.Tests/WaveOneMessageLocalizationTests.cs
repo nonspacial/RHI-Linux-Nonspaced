@@ -323,6 +323,7 @@ public sealed class WaveOneMessageLocalizationTests
         // #181
         yield return UserIniService.NativeGamePrefix + "Celeste";
         yield return UserIniService.NoFolderPrefix + P;
+        yield return UserIniService.NotManagedPrefix + "Celeste";
         yield return UserIniService.DeployedPrefix + P;
         yield return UserIniTemplates.TooLargePrefix + P;
         yield return IniLines.LinkRefusalPrefix + P;

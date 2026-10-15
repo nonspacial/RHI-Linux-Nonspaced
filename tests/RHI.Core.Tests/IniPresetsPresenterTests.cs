@@ -25,16 +25,20 @@ public sealed class IniPresetsPresenterTests
     }
 
     [Theory]
-    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.Installed, true)]
-    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.UpdateAvailable, true)]
-    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.Available, false)]
-    [InlineData(ManagedComponentKind.ReLimiter, ComponentAvailability.Installed, true)]
-    [InlineData(ManagedComponentKind.DisplayCommander, ComponentAvailability.Installed, true)]
-    [InlineData(ManagedComponentKind.DisplayCommander, ComponentAvailability.Unsupported, false)]
-    [InlineData(ManagedComponentKind.RenoDX, ComponentAvailability.Installed, false)]
-    public void IniSettings_ShowOnlyForAnInstalledComponentWithAnIni(ManagedComponentKind kind, ComponentAvailability availability, bool shown)
+    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.Installed, true, true)]
+    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.UpdateAvailable, true, true)]
+    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.Available, true, false)]
+    [InlineData(ManagedComponentKind.ReLimiter, ComponentAvailability.Installed, true, true)]
+    [InlineData(ManagedComponentKind.DisplayCommander, ComponentAvailability.Installed, true, true)]
+    [InlineData(ManagedComponentKind.DisplayCommander, ComponentAvailability.Unsupported, true, false)]
+    [InlineData(ManagedComponentKind.RenoDX, ComponentAvailability.Installed, true, false)]
+    // Review finding 1: a copy the user installed (detected on disk, not RHI's) gets no ⚙.
+    [InlineData(ManagedComponentKind.ReShade, ComponentAvailability.Installed, false, false)]
+    [InlineData(ManagedComponentKind.ReLimiter, ComponentAvailability.Installed, false, false)]
+    [InlineData(ManagedComponentKind.DisplayCommander, ComponentAvailability.UpdateAvailable, false, false)]
+    public void IniSettings_ShowOnlyForAComponentRhiManagesWithAnIni(ManagedComponentKind kind, ComponentAvailability availability, bool managedByRhi, bool shown)
     {
-        var row = new ComponentRowViewModel(new ManagedComponent { Kind = kind, DisplayName = kind.ToString(), Availability = availability }, null!);
+        var row = new ComponentRowViewModel(new ManagedComponent { Kind = kind, DisplayName = kind.ToString(), Availability = availability, ManagedByRhi = managedByRhi }, null!);
         Assert.Equal(shown, row.HasIniSettings);
     }
 
@@ -52,6 +56,7 @@ public sealed class IniPresetsPresenterTests
             Runner = "Proton", SteamAppId = 77001, Source = "Steam"
         };
         using var fx = await ViewModelFixture.StartAsync([game]);
+        fx.Records.Manage(fx.Vm.AllLibraryGames.Single(), ManagedComponentKind.ReShade);
         var settings = fx.Vm.IniPresets.SavedSettings();
         settings.ReShadeVariableListUseTabs = false;
 
