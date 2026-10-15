@@ -1,6 +1,8 @@
+using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Detection;
 using RHI.Platform.Linux.Detection.Launchers;
 using RHI.Platform.Linux.Launch;
@@ -185,6 +187,110 @@ public sealed class ItchDetectionTests : IDisposable
     }
 
     [Fact]
+    public async Task WhileTheItchAppRuns_ButlersWriteAheadLogIsRead_WithoutAWarning()
+    {
+        // w4 review minor 3: butler keeps butler.db in WAL mode while the itch app runs; every scan warned three times.
+        var userData = WalLibrary(wal => wal);
+
+        var (installs, warnings) = await DetectorDiagnostics.CollectAsync(() =>
+            Task.FromResult(ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None)));
+
+        Assert.Equal(["Lantern Keeper Deluxe", "Moss Garden"], installs.Select(i => i.Name).Order());
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void TornLastWalFrame_KeepsEveryEarlierCommit()
+    {
+        // The rename's frame is half-written: Moss Garden (committed before it) is there, the rename is not.
+        var userData = WalLibrary(wal => wal[..^100]);
+
+        var installs = ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None);
+
+        Assert.Equal(["Lantern Keeper", "Moss Garden"], installs.Select(i => i.Name).Order());
+    }
+
+    [Fact]
+    public void BigEndianWal_IsReadToo()
+    {
+        // SQLite on a big-endian host writes magic 0x377f0683 and big-endian checksums.
+        var userData = WalLibrary(BigEndian);
+
+        var installs = ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None);
+
+        Assert.Equal(["Lantern Keeper Deluxe", "Moss Garden"], installs.Select(i => i.Name).Order());
+    }
+
+    public static TheoryData<string> LogEnds() => ["uncommitted", "bad checksum", "stale salt"];
+
+    [Theory]
+    [MemberData(nameof(LogEnds))]
+    public void WalFramesPastTheLastValidCommit_AreNotRead(string end)
+    {
+        // As SQLite's own recovery: an uncommitted frame, a frame whose checksum fails, or one from an older -wal
+        // generation (another salt) ends the log; Moss Garden's earlier commit still counts.
+        var userData = WalLibrary(wal => end switch
+        {
+            "uncommitted" => Rewrite(wal, bigEndian: false, w => BinaryPrimitives.WriteUInt32BigEndian(w.AsSpan(RenameFrame + 4), 0)),
+            "bad checksum" => Corrupt(wal, RenameFrame + 24 + 100),
+            _ => Rewrite(wal, bigEndian: false, w => w[RenameFrame + 8] ^= 0xFF)
+        });
+
+        var installs = ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None);
+
+        Assert.Equal(["Lantern Keeper", "Moss Garden"], installs.Select(i => i.Name).Order());
+    }
+
+    private static byte[] Corrupt(byte[] wal, int offset)
+    {
+        var copy = (byte[])wal.Clone();
+        copy[offset] ^= 0xFF;
+        return copy;
+    }
+
+    [Fact]
+    public async Task WalRestartedDuringTheRead_IsReadAgainQuietly()
+    {
+        // A checkpoint restarted the -wal file between reading the main file and the -wal file: one quiet retry.
+        var userData = WalLibrary(wal => wal);
+        var database = Path.Combine(userData, "db", "butler.db");
+        var walBytes = File.ReadAllBytes(database + "-wal");
+        File.Delete(database + "-wal");
+        var restarts = 0;
+        SqliteTableReader.AfterMainFileReadForTesting[database] = () =>
+        {
+            if (restarts++ == 0) File.WriteAllBytes(database + "-wal", walBytes);
+        };
+        try
+        {
+            var (installs, warnings) = await DetectorDiagnostics.CollectAsync(() =>
+                Task.FromResult(ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None)));
+
+            Assert.Equal(["Lantern Keeper Deluxe", "Moss Garden"], installs.Select(i => i.Name).Order());
+            Assert.Empty(warnings);
+            Assert.Equal(2, restarts);
+        }
+        finally { SqliteTableReader.AfterMainFileReadForTesting.TryRemove(database, out _); }
+    }
+
+    [Theory]
+    [InlineData("not a log")]
+    [InlineData("header checksum")]
+    public async Task UnreadableButlerDatabase_IsOneItchWarning_AndReceiptsStillList(string damage)
+    {
+        var userData = WalLibrary(wal => damage == "not a log" ? new byte[wal.Length] : Corrupt(wal, 24));
+        // Unknown install locations are lost with the database; the default apps folder's receipts still list its games.
+        _tree.Exe("itch", "apps", "moss", "Moss.exe");
+        Receipt(_tree.Path_("itch", "apps", "moss"), 1002, "Moss Garden");
+        var (installs, warnings) = await DetectorDiagnostics.CollectAsync(() =>
+            Task.FromResult(ItchLibrary.Read(userData, MapFixture, Home, CancellationToken.None)));
+
+        Assert.Equal(["Moss Garden"], installs.Select(i => i.Name));
+        var warning = Assert.Single(warnings);
+        Assert.StartsWith($"itch database {Path.Combine(userData, "db", "butler.db")} not read; its games are listed from the receipts", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Receipt_ThatIsNotGzip_IsSkipped_WithTheFolderName()
     {
         var folder = _tree.Dir("game");
@@ -207,6 +313,57 @@ public sealed class ItchDetectionTests : IDisposable
 
     private string? MapFixture(string recorded)
         => recorded.StartsWith("/fixture/", StringComparison.Ordinal) ? _tree.Path_(recorded["/fixture/".Length..].Split('/')) : null;
+
+    /// <summary>itch user data whose butler.db is the WAL fixture (its -wal file passed through <paramref name="wal"/>).</summary>
+    private string WalLibrary(Func<byte[], byte[]> wal)
+    {
+        var userData = _tree.Dir("itch");
+        var database = Path.Combine(_tree.Dir("itch", "db"), "butler.db");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "itch-butler-wal.db"), database);
+        File.WriteAllBytes(database + "-wal", wal(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures", "itch-butler-wal.db-wal"))));
+        _tree.Exe("library", "lantern-keeper", "Lantern.exe");
+        _tree.Exe("library", "moss", "Moss.exe");
+        return userData;
+    }
+
+    /// <summary>The same -wal file as a big-endian host writes it: magic 0x377f0683, every checksum over big-endian words.</summary>
+    private static byte[] BigEndian(byte[] wal) => Rewrite(wal, bigEndian: true, _ => { });
+
+    // The -wal fixture's frames (4 KiB pages): 0-2 = Moss Garden's transaction (commit at 2), 3 = the rename (commit).
+    private const int RenameFrame = 32 + 3 * (24 + 4096);
+
+    /// <summary>The -wal file after <paramref name="edit"/>, every checksum recomputed (so only the edit can invalidate it).</summary>
+    private static byte[] Rewrite(byte[] wal, bool bigEndian, Action<byte[]> edit)
+    {
+        var copy = (byte[])wal.Clone();
+        if (bigEndian) BinaryPrimitives.WriteUInt32BigEndian(copy, 0x377f0683);
+        edit(copy);
+        var pageSize = (int)BinaryPrimitives.ReadUInt32BigEndian(copy.AsSpan(8));
+        uint s0 = 0, s1 = 0;
+        uint Word(ReadOnlySpan<byte> data) => bigEndian ? BinaryPrimitives.ReadUInt32BigEndian(data) : BinaryPrimitives.ReadUInt32LittleEndian(data);
+        void Sum(ReadOnlySpan<byte> data)
+        {
+            for (var i = 0; i < data.Length; i += 8)
+            {
+                s0 = unchecked(s0 + Word(data[i..]) + s1);
+                s1 = unchecked(s1 + Word(data[(i + 4)..]) + s0);
+            }
+        }
+        void Store(int offset)
+        {
+            BinaryPrimitives.WriteUInt32BigEndian(copy.AsSpan(offset), s0);
+            BinaryPrimitives.WriteUInt32BigEndian(copy.AsSpan(offset + 4), s1);
+        }
+        Sum(copy.AsSpan(0, 24));
+        Store(24);
+        for (var frame = 32; frame + 24 + pageSize <= copy.Length; frame += 24 + pageSize)
+        {
+            Sum(copy.AsSpan(frame, 8));
+            Sum(copy.AsSpan(frame + 24, pageSize));
+            Store(frame + 16);
+        }
+        return copy;
+    }
 
     private static void Receipt(string folder, long gameId, string title)
     {

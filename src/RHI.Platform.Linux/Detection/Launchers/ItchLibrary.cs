@@ -11,8 +11,9 @@ internal sealed record ItchInstall(long? GameId, string Name, string Folder, str
 /// Reads the itch app's own install records (Refs #90), read only: butler's database <c>db/butler.db</c> (tables
 /// <c>caves</c>, <c>install_locations</c>, <c>games</c>; the cave's <c>verdict</c> names the launch candidates) and, for
 /// every install location plus the default <c>apps</c> folder, the receipt butler writes into each game folder
-/// (<c>.itch/receipt.json.gz</c>: game id and title). The receipts keep games listed while itch runs (its database then
-/// sits in a write-ahead log RHI does not read). Upstream RHI has no itch detector; this follows butler's own layout.
+/// (<c>.itch/receipt.json.gz</c>: game id and title). While the itch app runs, butler keeps recent changes in the
+/// database's write-ahead log, which <see cref="SqliteTableReader"/> reads with it; the receipts keep games listed when the
+/// database cannot be read at all. Upstream RHI has no itch detector; this follows butler's own layout.
 /// </summary>
 internal static class ItchLibrary
 {
@@ -30,18 +31,21 @@ internal static class ItchLibrary
         var database = Path.Combine(userData, "db", "butler.db");
         if (File.Exists(database))
         {
-            var titles = SqliteTableReader.ReadTable(database, "games")
+            // One snapshot of all three tables (with butler's -wal file laid over it while the itch app runs), one warning.
+            if (!SqliteTableReader.TryReadTables(database, ["games", "install_locations", "caves"], out var tables, out var error))
+                DetectorDiagnostics.Warn($"itch database {database} not read; its games are listed from the receipts in their folders", error);
+            var titles = tables["games"]
                 .Where(row => Number(row, "id") is not null)
                 .GroupBy(row => Number(row, "id")!.Value)
                 .ToDictionary(group => group.Key, group => Text(group.First(), "title"));
             var locationPaths = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var row in SqliteTableReader.ReadTable(database, "install_locations"))
+            foreach (var row in tables["install_locations"])
             {
                 if (Text(row, "id") is not { } id || Text(row, "path") is not { } recorded || toLinux(recorded) is not { } path) continue;
                 locationPaths[id] = path;
                 locations.Add(path);
             }
-            foreach (var cave in SqliteTableReader.ReadTable(database, "caves"))
+            foreach (var cave in tables["caves"])
             {
                 ct.ThrowIfCancellationRequested();
                 var folder = Text(cave, "custom_install_folder") is { } custom
