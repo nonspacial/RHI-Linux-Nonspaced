@@ -155,7 +155,12 @@ public static class LinuxGameIdentityService
         var source = game.Source ?? string.Empty;
         if (source.Contains("Heroic/Epic", StringComparison.OrdinalIgnoreCase)) return "Epic";
         if (source.Contains("Heroic/GOG", StringComparison.OrdinalIgnoreCase)) return "GOG";
-        if (source.Contains("Steam", StringComparison.OrdinalIgnoreCase)) return "Steam";
+        // A non-Steam shortcut's card without a command (another store's game in a store client's prefix, #176) is not
+        // started by Steam: no Steam launcher badge on a card whose Play is disabled (w6 review 4).
+        var commandless = string.IsNullOrWhiteSpace(game.LaunchCommand);
+        if (source.Contains("Steam", StringComparison.OrdinalIgnoreCase)
+            && !(commandless && source.Equals(Detection.SteamGameDetector.ShortcutSource, StringComparison.OrdinalIgnoreCase)))
+            return "Steam";
 
         // The same hand-off classification the launcher and HDR profile use (#106): Heroic/Amazon and
         // Heroic/Sideload games (xdg-open heroic://…) are launched by Heroic; the old Source == "Heroic" test

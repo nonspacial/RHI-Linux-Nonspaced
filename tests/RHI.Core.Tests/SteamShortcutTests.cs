@@ -130,6 +130,7 @@ public sealed class SteamShortcutTests : IDisposable
         Assert.Equal("proton_9", game.CompatibilityTool);
         Assert.EndsWith(" steam://rungameid/17814925174428925952", game.LaunchCommand);
         Assert.Equal(LaunchHandoff.Steam, LaunchHandoffClassifier.Classify(game));
+        Assert.Equal("Steam", LinuxGameIdentityService.InferLaunchProvider(game));
         LinuxGameIdentityService.ApplyDetectedIdentity(game);
         Assert.True(game.HasConfirmedPatchTarget);
         Assert.Equal(exe, game.ExecutablePath);
@@ -208,6 +209,9 @@ public sealed class SteamShortcutTests : IDisposable
         Assert.Null(other.LaunchCommand);
         Assert.Null(other.ParentLauncherName);
         Assert.Equal(LaunchHandoff.None, LaunchHandoffClassifier.Classify(other)); // not handed to Steam without a command
+        // w6 review 4: nor badged as started by Steam (Play is disabled); the client's own game keeps its launcher.
+        Assert.Null(LinuxGameIdentityService.InferLaunchProvider(other));
+        Assert.NotNull(LinuxGameIdentityService.InferLaunchProvider(game));
     }
 
     [Fact]
