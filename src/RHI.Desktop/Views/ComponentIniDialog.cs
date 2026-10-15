@@ -45,11 +45,70 @@ public static class ComponentIniDialog
         };
         ToolTip.SetTip(deploy, UiLocalizationService.Text(kind == ManagedComponentKind.ReShade ? "Ini.DeployReShadeTip" : "Ini.DeployAddonTip"));
         ToolTip.SetShowDelay(deploy, 2000);
-        deploy.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        // Review finding 2: a relimiter.ini / DisplayCommander.ini that changed since RHI wrote it is replaced only after an
+        // inline yes, and kept beside it as a backup that "Restore" puts back.
+        var confirmText = new TextBlock { Name = "IniDeployChangedAsk", TextWrapping = TextWrapping.Wrap };
+        var confirmYes = new Button { Name = "IniDeployReplace", Classes = { "rhi" }, Content = UiLocalizationService.Text("Ini.DeployReplaceConfirm"), Margin = new Avalonia.Thickness(0, 0, 8, 0) };
+        var confirmNo = new Button { Name = "IniDeployKeep", Classes = { "rhi" }, Content = UiLocalizationService.Text("Win.Cancel") };
+        var confirmButtons = new WrapPanel { Orientation = Orientation.Horizontal };
+        confirmButtons.Children.Add(confirmYes);
+        confirmButtons.Children.Add(confirmNo);
+        var confirm = new StackPanel { Spacing = 6, IsVisible = false };
+        confirm.Children.Add(confirmText);
+        confirm.Children.Add(confirmButtons);
+
+        var restore = new Button
+        {
+            Name = "IniRestoreBackup",
+            Classes = { "rhi" },
+            Content = UiLocalizationService.Format("Ini.RestoreBackup", file),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        ToolTip.SetShowDelay(restore, 2000);
+        void RefreshRestore()
+        {
+            var backup = presenter.AddonIniBackup(kind);
+            restore.IsVisible = backup is not null;
+            ToolTip.SetTip(restore, backup is null ? null : UiLocalizationService.Format("Ini.RestoreBackupTip", backup));
+        }
+        RefreshRestore();
+
+        async Task DeployAsync(bool replaceChanged)
         {
             deploy.IsEnabled = false;
-            try { Show(await presenter.DeployForSelectedAsync(kind)); }
-            finally { deploy.IsEnabled = true; }
+            try { Show(await presenter.DeployForSelectedAsync(kind, replaceChanged)); }
+            finally
+            {
+                deploy.IsEnabled = true;
+                RefreshRestore();
+            }
+        }
+        deploy.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            if (presenter.DeployNeedsConfirmation(kind))
+            {
+                confirmText.Text = UiLocalizationService.Format("Ini.DeployChangedAsk", file);
+                confirm.IsVisible = true;
+                return;
+            }
+            confirm.IsVisible = false;
+            await DeployAsync(replaceChanged: false);
+        }, nameof(ComponentIniDialog));
+        confirmNo.Click += (_, _) => confirm.IsVisible = false;
+        confirmYes.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            confirm.IsVisible = false;
+            await DeployAsync(replaceChanged: true);
+        }, nameof(ComponentIniDialog));
+        restore.Click += async (_, _) => await UiExceptionGuard.RunAsync(async () =>
+        {
+            restore.IsEnabled = false;
+            try { Show(await presenter.RestoreAddonIniAsync(kind)); }
+            finally
+            {
+                restore.IsEnabled = true;
+                RefreshRestore();
+            }
         }, nameof(ComponentIniDialog));
 
         var open = new Button
@@ -69,7 +128,9 @@ public static class ComponentIniDialog
         var buttons = new WrapPanel { Orientation = Orientation.Horizontal };
         deploy.Margin = new Avalonia.Thickness(0, 0, 8, 8);
         open.Margin = new Avalonia.Thickness(0, 0, 8, 8);
+        restore.Margin = new Avalonia.Thickness(0, 0, 8, 8);
         buttons.Children.Add(deploy);
+        buttons.Children.Add(restore);
         buttons.Children.Add(open);
         if (kind == ManagedComponentKind.LumaFramework)
         {
@@ -81,6 +142,7 @@ public static class ComponentIniDialog
         {
             panel.Children.Add(new TextBlock { Text = UiLocalizationService.Text("Ini.TemplateSection"), FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(buttons);
+            panel.Children.Add(confirm);
             panel.Children.Add(result);
         }
         if (kind == ManagedComponentKind.ReShade && presenter.PresetsApply()) panel.Children.Add(PresetSection(presenter, openFolder, Show)); // #180: RHI's ReShade only

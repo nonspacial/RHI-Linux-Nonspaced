@@ -182,8 +182,12 @@ public sealed class GitHubReShadeAddonDeploymentService
             if (AuxiliaryConfigPath(deployDir) is { } auxiliaryPath)
                 await scope.TrackAsync(auxiliaryPath, cancellationToken).ConfigureAwait(false);
             var auxiliaryConfig = TryEnsureAuxiliaryConfigIfAbsent(deployDir);
+            string? createdConfigSha = null; // w5/ini-presets hook (#181 review 2): what RHI wrote, so a later Deploy knows the user's changes
             if (auxiliaryConfig.Created && auxiliaryConfig.Path is { } createdConfig)
+            {
                 await scope.DeclareWrittenContentAsync(createdConfig, cancellationToken).ConfigureAwait(false);
+                createdConfigSha = FileHash.Sha256Hex(createdConfig);
+            }
 
             if (existingManaged is not null &&
                 !Path.GetFullPath(existingManaged.Path).Equals(Path.GetFullPath(target), StringComparison.Ordinal) &&
@@ -192,7 +196,7 @@ public sealed class GitHubReShadeAddonDeploymentService
                 await scope.DeleteAsync(existingManaged.Path, cancellationToken).ConfigureAwait(false);
             }
 
-            _records.Upsert(scope.Stamp(new LinuxDeploymentRecord
+            var installed = new LinuxDeploymentRecord
             {
                 GameKey = LinuxDeploymentRecordStore.GameKey(game),
                 GameName = game.Name,
@@ -223,7 +227,9 @@ public sealed class GitHubReShadeAddonDeploymentService
                     [VerifiedDownload.MetadataSha256Key] = download.Sha256,
                     [VerifiedDownload.MetadataIntegrityKey] = download.Integrity
                 }
-            }));
+            };
+            UserIniService.CarryMetadata(record, installed, createdConfigSha); // w5/ini-presets hook (#181 review 2)
+            _records.Upsert(scope.Stamp(installed));
         }
         catch (Exception ex)
         {

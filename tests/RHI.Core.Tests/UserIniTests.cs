@@ -331,7 +331,7 @@ public sealed class UserIniTests : IDisposable
     }
 
     [Fact]
-    public void Deploy_WithoutRhisComponent_IsRefusedAndTheUsersFilesStay()
+    public async Task Deploy_WithoutRhisComponent_IsRefusedAndTheUsersFilesStay()
     {
         // Review finding 1: a ReLimiter / Display Commander / ReShade the user installed is theirs.
         var game = Game();
@@ -344,7 +344,7 @@ public sealed class UserIniTests : IDisposable
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json"));
         var service = new UserIniService(templates, records, _ => null);
 
-        var addon = service.DeployAddonIni(game, ManagedComponentKind.ReLimiter);
+        var addon = await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true);
         var reshade = service.DeployReShadeIni(game, new LinuxAppSettings());
 
         Assert.False(addon.Success);
@@ -355,37 +355,168 @@ public sealed class UserIniTests : IDisposable
 
         // RHI's ReShade alone does not open the ReLimiter file.
         records.Manage(game, ManagedComponentKind.ReShade);
-        Assert.False(service.DeployAddonIni(game, ManagedComponentKind.ReLimiter).Success);
+        Assert.False((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
         Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(relimiter));
         Assert.True(service.DeployReShadeIni(game, new LinuxAppSettings()).Success);
     }
 
-    [Fact]
-    public void DeployAddonIni_WhereRhiManagesIt_ReplacesTheGamesFileWithTheTemplate()
+    private string ReLimiterTemplate(string content)
     {
-        var game = Game();
         var templates = Templates();
         Directory.CreateDirectory(templates.Directory);
-        File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), "[FrameLimiter]\ntarget_fps=117\n");
-        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "ReLimiter.ini"), "[FrameLimiter]\nold=1\n");
-        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.ReLimiter);
+        File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), content);
+        return templates.PathOf(UserIniTemplate.ReLimiter);
+    }
 
-        var result = new UserIniService(templates, records, _ => null).DeployAddonIni(game, ManagedComponentKind.ReLimiter);
+    private static string[] Backups(DetectedGame game)
+        => Directory.EnumerateFiles(game.BinaryDirectory!, "*.rhi-backup-*").Select(path => Path.GetFileName(path)).ToArray();
+
+    [Fact]
+    public async Task DeployAddonIni_NoFileYet_WritesTheTemplate_AndRecordsWhatRhiWrote()
+    {
+        var game = Game();
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=117\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(Templates(), records, _ => null);
+        var ini = Path.Combine(game.BinaryDirectory!, "relimiter.ini");
+
+        Assert.Equal(UserIniService.AddonIniState.Absent, service.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+        var result = await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "ReLimiter.ini")));
-        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "relimiter.ini")) &&
-                     !File.Exists(Path.Combine(game.BinaryDirectory!, "ReLimiter.ini")));
+        Assert.Equal(UserIniService.DeployedPrefix + ini, result.Message);
+        Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(ini));
+        Assert.Empty(Backups(game));
+        Assert.True(FileHash.HexEquals(FileHash.Sha256Hex(ini), records.Find(game, ManagedComponentKind.ReLimiter)!.Metadata[UserIniService.WrittenSha256Key]));
     }
 
     [Fact]
-    public void Deploy_RefusedGame_WritesNothing()
+    public async Task DeployAddonIni_AFileTheUserChanged_IsRefusedUntilConfirmed_ThenKeptAsABackup_AndRestored()
+    {
+        // Review finding 2: the game's own relimiter.ini (or one changed since RHI wrote it) is never lost.
+        var game = Game();
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=117\n");
+        var ini = Path.Combine(game.BinaryDirectory!, "ReLimiter.ini");
+        File.WriteAllText(ini, "[FrameLimiter]\nmy_tuning=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(Templates(), records, _ => null);
+
+        Assert.Equal(UserIniService.AddonIniState.Changed, service.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+        var refused = await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter);
+        Assert.False(refused.Success);
+        Assert.Equal(UserIniService.ChangedPrefix + ini, refused.Message);
+        Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(ini));
+        Assert.Empty(Backups(game));
+
+        var replaced = await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true);
+
+        Assert.True(replaced.Success, replaced.Message);
+        Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(ini)); // the existing name (any case) is kept
+        Assert.False(File.Exists(Path.Combine(game.BinaryDirectory!, "relimiter.ini")) && !File.Exists(ini));
+        var backup = Assert.Single(Backups(game));
+        Assert.StartsWith("ReLimiter.ini.rhi-backup-", backup);
+        Assert.Equal(UserIniService.DeployedBackupPrefix + Path.Combine(game.BinaryDirectory!, backup), replaced.Message);
+        Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(Path.Combine(game.BinaryDirectory!, backup)));
+        Assert.Equal(Path.Combine(game.BinaryDirectory!, backup), service.AddonIniBackup(game, ManagedComponentKind.ReLimiter));
+
+        // A second deploy over RHI's own copy loses nothing: no question, no second backup, the first stays restorable.
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=141\n");
+        Assert.Equal(UserIniService.AddonIniState.RhiCopy, service.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+        Assert.True((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter)).Success);
+        Assert.Equal("[FrameLimiter]\ntarget_fps=141\n", File.ReadAllText(ini));
+        Assert.Single(Backups(game));
+
+        var restored = await service.RestoreAddonIniAsync(game, ManagedComponentKind.ReLimiter);
+
+        Assert.True(restored.Success, restored.Message);
+        Assert.Equal(UserIniService.RestoredPrefix + ini, restored.Message);
+        Assert.Equal("[FrameLimiter]\nmy_tuning=1\n", File.ReadAllText(ini));
+        Assert.Empty(Backups(game));
+        Assert.Null(service.AddonIniBackup(game, ManagedComponentKind.ReLimiter));
+        var metadata = records.Find(game, ManagedComponentKind.ReLimiter)!.Metadata;
+        Assert.DoesNotContain(metadata.Keys, key => key.StartsWith(UserIniService.MetadataKeyPrefix, StringComparison.Ordinal));
+        Assert.Equal(UserIniService.AddonIniState.Changed, service.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+    }
+
+    [Fact]
+    public async Task RestoreAddonIni_AFileChangedSinceRhiWroteIt_IsRefusedAndTheBackupStays()
+    {
+        var game = Game();
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=117\n");
+        var ini = Path.Combine(game.BinaryDirectory!, "relimiter.ini");
+        File.WriteAllText(ini, "[FrameLimiter]\nmine=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.ReLimiter);
+        var service = new UserIniService(Templates(), records, _ => null);
+        Assert.True((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
+        var backup = service.AddonIniBackup(game, ManagedComponentKind.ReLimiter)!;
+        File.WriteAllText(ini, "[FrameLimiter]\ntuned_after=1\n"); // the add-on (or the user) wrote it since
+
+        var result = await service.RestoreAddonIniAsync(game, ManagedComponentKind.ReLimiter);
+
+        Assert.False(result.Success);
+        Assert.Equal(UserIniService.RestoreChangedPrefix + backup, result.Message);
+        Assert.Equal("[FrameLimiter]\ntuned_after=1\n", File.ReadAllText(ini));
+        Assert.Equal("[FrameLimiter]\nmine=1\n", File.ReadAllText(backup));
+    }
+
+    [Fact]
+    public async Task DeployAddonIni_ARecordSaveThatFails_TakesTheNewFileAndTheBackupBack()
+    {
+        var game = Game();
+        ReLimiterTemplate("[DisplayCommander]\nmine=0\n");
+        var templates = Templates();
+        File.WriteAllText(templates.PathOf(UserIniTemplate.DisplayCommander), "[DisplayCommander]\nfrom_template=1\n");
+        var ini = Path.Combine(game.BinaryDirectory!, "DisplayCommander.ini");
+        File.WriteAllText(ini, "[DisplayCommander]\nall_my_settings=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json")).Manage(game, ManagedComponentKind.DisplayCommander);
+        var service = new UserIniService(templates, records, _ => null);
+
+        ComponentOperationResult result;
+        using (LedgerWriteBlocker.Block(records, Path.Combine(_root, "r.json")))
+            result = await service.DeployAddonIniAsync(game, ManagedComponentKind.DisplayCommander, replaceChanged: true);
+
+        Assert.False(result.Success);
+        Assert.Equal("[DisplayCommander]\nall_my_settings=1\n", File.ReadAllText(ini));
+        Assert.Empty(Backups(game));
+        Assert.False(records.Find(game, ManagedComponentKind.DisplayCommander)!.Metadata.ContainsKey(UserIniService.WrittenSha256Key));
+    }
+
+    [Fact]
+    public async Task DeployToAll_AddonInisChangedSinceRhiWroteThem_AreSkippedUnlessConfirmed_ThenBackedUp()
+    {
+        var changed = Game("Changed");
+        var fresh = Game("Fresh");
+        var templates = Templates();
+        Directory.CreateDirectory(templates.Directory);
+        File.WriteAllText(templates.PathOf(UserIniTemplate.DisplayCommander), "[DisplayCommander]\nfrom_template=1\n");
+        var changedIni = Path.Combine(changed.BinaryDirectory!, "DisplayCommander.ini");
+        File.WriteAllText(changedIni, "[DisplayCommander]\nall_my_settings=1\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "r.json"))
+            .Manage(changed, ManagedComponentKind.DisplayCommander).Manage(fresh, ManagedComponentKind.DisplayCommander);
+        var service = new UserIniService(templates, records, _ => null);
+
+        Assert.Equal(1, service.ChangedAddonInis([changed, fresh], ManagedComponentKind.DisplayCommander));
+        var unconfirmed = await service.DeployToAllAsync([changed, fresh], ManagedComponentKind.DisplayCommander, new LinuxAppSettings());
+        Assert.Equal(new IniBatchResult(1, 1, 0), unconfirmed);
+        Assert.Equal("[DisplayCommander]\nall_my_settings=1\n", File.ReadAllText(changedIni));
+        Assert.Empty(Backups(changed));
+
+        var confirmed = await service.DeployToAllAsync([changed, fresh], ManagedComponentKind.DisplayCommander, new LinuxAppSettings(), replaceChanged: true);
+
+        Assert.Equal(new IniBatchResult(2, 0, 0), confirmed);
+        Assert.Equal("[DisplayCommander]\nfrom_template=1\n", File.ReadAllText(changedIni));
+        Assert.Equal("[DisplayCommander]\nall_my_settings=1\n", File.ReadAllText(Path.Combine(changed.BinaryDirectory!, Assert.Single(Backups(changed)))));
+        Assert.Equal(0, service.ChangedAddonInis([changed, fresh], ManagedComponentKind.DisplayCommander));
+    }
+
+    [Fact]
+    public async Task Deploy_RefusedGame_WritesNothing()
     {
         var game = Game();
         var service = Service(_ => "Alvo de modificações não definido.");
 
         var reshade = service.DeployReShadeIni(game, new LinuxAppSettings());
-        var addon = service.DeployAddonIni(game, ManagedComponentKind.DisplayCommander);
+        var addon = await service.DeployAddonIniAsync(game, ManagedComponentKind.DisplayCommander, replaceChanged: true);
 
         Assert.False(reshade.Success);
         Assert.False(addon.Success);

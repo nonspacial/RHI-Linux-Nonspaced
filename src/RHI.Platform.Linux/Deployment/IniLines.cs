@@ -142,14 +142,21 @@ public static class IniLines
     /// symlinked file is followed only to a file of the same name inside <paramref name="allowedRoots"/>.
     /// </summary>
     public static void Write(string path, IReadOnlyList<string> lines, IReadOnlyList<string> allowedRoots)
-    {
-        var policy = new UserFileLinkPolicy(Path.GetFileName(path), allowedRoots, LinkRefusalPrefix);
-        AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: policy, readOnly: ReadOnlyUserFile.WriteKeepingLock);
-    }
+        => AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: Policy(path, allowedRoots), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+
+    /// <summary><see cref="Write"/> for bytes kept as they are (a backup put back).</summary>
+    public static void WriteBytes(string path, byte[] bytes, IReadOnlyList<string> allowedRoots)
+        => AtomicFile.ReplaceUserFile(path, bytes, Policy(path, allowedRoots), readOnly: ReadOnlyUserFile.WriteKeepingLock);
 
     /// <summary>Throws (the same refusal <see cref="Write"/> would) when a write to <paramref name="path"/> would be refused for its links.</summary>
-    public static void CheckLinks(string path, IReadOnlyList<string> allowedRoots)
-        => AtomicFile.ResolveUserFileTarget(path, new UserFileLinkPolicy(Path.GetFileName(path), allowedRoots, LinkRefusalPrefix));
+    public static void CheckLinks(string path, IReadOnlyList<string> allowedRoots) => ResolveTarget(path, allowedRoots);
+
+    /// <summary>The file a <see cref="Write"/> to <paramref name="path"/> replaces (a link's allowed target); throws its refusal.</summary>
+    public static string ResolveTarget(string path, IReadOnlyList<string> allowedRoots)
+        => AtomicFile.ResolveUserFileTarget(path, Policy(path, allowedRoots));
+
+    private static UserFileLinkPolicy Policy(string path, IReadOnlyList<string> allowedRoots)
+        => new(Path.GetFileName(path), allowedRoots, LinkRefusalPrefix);
 
     /// <summary>Fixed text before "link -> target" when a symlinked INI points outside the game (localisation key).</summary>
     public const string LinkRefusalPrefix = "INI link not followed: its target must be a file of the same name inside the game folder. Link: ";

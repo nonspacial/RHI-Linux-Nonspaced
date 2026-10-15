@@ -71,6 +71,46 @@ public sealed class IniPresetsPresenterTests
         Assert.False(fx.Vm.IsBusy);
     }
 
+    // Review finding 2: the ⚙'s Deploy asks before replacing a relimiter.ini the user changed, keeps a backup, restores it.
+    [Fact]
+    public async Task DeployAddonIni_AsksForAChangedFile_KeepsABackup_AndRestoresIt()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-deploy-" + Guid.NewGuid().ToString("N"), "bin");
+        Directory.CreateDirectory(bin);
+        var ini = Path.Combine(bin, "relimiter.ini");
+        File.WriteAllText(ini, "[FrameLimiter]\nmine=1\n");
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Deploy Card", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77004, Source = "Steam"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var card = fx.Vm.AllLibraryGames.Single();
+        fx.Records.Manage(card, ManagedComponentKind.ReLimiter);
+        fx.Vm.SelectedGame = card;
+        var presenter = fx.Vm.IniPresets;
+
+        Assert.True(presenter.DeployNeedsConfirmation(ManagedComponentKind.ReLimiter));
+        Assert.False(presenter.DeployNeedsConfirmation(ManagedComponentKind.ReShade));
+        Assert.Equal(1, presenter.DeployChangedCount(ManagedComponentKind.ReLimiter));
+        Assert.Equal(UiLocalizationService.Present(UserIniService.ChangedPrefix + ini), await presenter.DeployForSelectedAsync(ManagedComponentKind.ReLimiter));
+        Assert.Equal("[FrameLimiter]\nmine=1\n", File.ReadAllText(ini));
+        Assert.Null(presenter.AddonIniBackup(ManagedComponentKind.ReLimiter));
+
+        var line = await presenter.DeployForSelectedAsync(ManagedComponentKind.ReLimiter, replaceChanged: true);
+
+        var backup = presenter.AddonIniBackup(ManagedComponentKind.ReLimiter);
+        Assert.NotNull(backup);
+        Assert.Equal(UiLocalizationService.Present(UserIniService.DeployedBackupPrefix + backup), line);
+        Assert.False(presenter.DeployNeedsConfirmation(ManagedComponentKind.ReLimiter));
+        Assert.Equal(UiLocalizationService.Present(UserIniService.RestoredPrefix + ini), await presenter.RestoreAddonIniAsync(ManagedComponentKind.ReLimiter));
+        Assert.Equal("[FrameLimiter]\nmine=1\n", File.ReadAllText(ini));
+        Assert.False(File.Exists(backup));
+        Assert.False(fx.Vm.IsBusy);
+    }
+
     [Fact]
     public void BatchSummary_SaysWhatHappened()
     {

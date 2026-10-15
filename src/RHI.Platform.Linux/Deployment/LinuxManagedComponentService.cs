@@ -2449,6 +2449,9 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w5/ini-presets hook (#181): INI deploys and "apply to all games" refuse a game where any install would be refused.
     public string? IniWriteRefusal(DetectedGame game) => PatchTargetGuard(game)?.Message;
 
+    // w5/ini-presets hook (#181 review 2): INI deploys journaled on the component's record (set by the app's composition).
+    public UserIniService? UserIni { get; set; }
+
     // w5/ini-presets hook (#180): the ReShade preset service (journaled; set by the app's composition).
     public ReShadePresetService? ReShadePresets { get; set; }
 

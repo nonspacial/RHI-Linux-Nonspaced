@@ -19,7 +19,8 @@ public sealed record IniBatchResult(int Updated, int Refused, int Failed)
 /// never a blocker); each game is refused, without a write, where an install would be (no confirmed patch target,
 /// records left at a moved folder, an Xbox title its installer app is working on, a native Linux game).
 /// </summary>
-public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRecordStore records, Func<DetectedGame, string?> writeRefusal)
+public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRecordStore records, Func<DetectedGame, string?> writeRefusal,
+    DeploymentJournal? journal = null)
 {
     /// <summary>Fixed text before the game name when a game is not a Windows game (localisation key).</summary>
     public const string NativeGamePrefix = "INI files were not written: this is a native Linux game: ";
@@ -59,33 +60,218 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     /// <summary>Fixed text before the path after a deployed INI (localisation key).</summary>
     public const string DeployedPrefix = "INI deployed from your template: ";
 
-    /// <summary>
-    /// "Deploy relimiter.ini / DisplayCommander.ini" (upstream <c>CopyUlIni</c>/<c>CopyDcIni</c>): the game's file becomes a
-    /// copy of the template, beside the add-on.
-    /// </summary>
-    public ComponentOperationResult DeployAddonIni(DetectedGame game, ManagedComponentKind kind, CancellationToken cancellationToken = default)
+    /// <summary>Fixed text before the backup's path after a deploy that kept the game's earlier file (localisation key).</summary>
+    public const string DeployedBackupPrefix = "INI deployed from your template; the game's earlier file is kept beside it as: ";
+
+    /// <summary>Fixed text before the path when the game's file changed since RHI wrote it and nobody confirmed (localisation key).</summary>
+    public const string ChangedPrefix = "INI not written: the game's file changed since RHI wrote it (or RHI did not write it); confirm to replace it, a backup is kept: ";
+
+    /// <summary>Fixed text before the path after a backup was put back (localisation key).</summary>
+    public const string RestoredPrefix = "Your earlier INI is back: ";
+
+    /// <summary>Fixed text before the backup's path when nothing can be restored (localisation key).</summary>
+    public const string NoBackupPrefix = "No INI backup RHI kept is left to restore: ";
+
+    /// <summary>Fixed text before the path when a restore would lose changes made since RHI wrote the file (localisation key).</summary>
+    public const string RestoreChangedPrefix = "The backup was not restored: the game's file changed since RHI wrote it; the backup stays beside it: ";
+
+    /// <summary>Component record metadata: SHA-256 of the add-on INI RHI last wrote (install or Deploy).</summary>
+    public const string WrittenSha256Key = "UserIni.WrittenSha256";
+
+    /// <summary>Component record metadata: file name of the latest backup Deploy kept beside the INI.</summary>
+    public const string BackupKey = "UserIni.Backup";
+
+    /// <summary>Component record metadata: SHA-256 of that backup.</summary>
+    public const string BackupSha256Key = "UserIni.BackupSha256";
+
+    /// <summary>Every <c>UserIni.*</c> key: an add-on update builds a fresh record and carries these over.</summary>
+    public const string MetadataKeyPrefix = "UserIni.";
+
+    /// <summary>What a Deploy of the add-on INI would replace.</summary>
+    public enum AddonIniState
+    {
+        /// <summary>No file yet.</summary>
+        Absent,
+        /// <summary>The file already holds the template.</summary>
+        Template,
+        /// <summary>The file is what RHI last wrote (install or Deploy): nothing of the user's is lost.</summary>
+        RhiCopy,
+        /// <summary>The file changed since RHI wrote it, or RHI never wrote it: Deploy asks and keeps a backup.</summary>
+        Changed
+    }
+
+    private static UserIniTemplate TemplateOf(ManagedComponentKind kind)
+        => kind == ManagedComponentKind.ReLimiter ? UserIniTemplate.ReLimiter : UserIniTemplate.DisplayCommander;
+
+    /// <summary>The add-on INI's path in the game (the existing file in any case, else the template's name).</summary>
+    public static string AddonIniPath(DetectedGame game, ManagedComponentKind kind)
     {
         var name = AddonIniName(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "No INI template for this component.");
-        if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
-        if (records.Find(game, kind) is null) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
-        var template = templates.Read(kind == ManagedComponentKind.ReLimiter ? UserIniTemplate.ReLimiter : UserIniTemplate.DisplayCommander, out _);
         var directory = RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!);
-        var target = ExistingCaseInsensitive(directory, name) ?? Path.Combine(directory, name);
+        return ExistingCaseInsensitive(directory, name) ?? Path.Combine(directory, name);
+    }
+
+    /// <summary>What a Deploy of <paramref name="kind"/>'s INI into <paramref name="game"/> would replace (review finding 2).</summary>
+    public AddonIniState InspectAddonIni(DetectedGame game, ManagedComponentKind kind)
+    {
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory)) return AddonIniState.Absent;
+        var target = AddonIniPath(game, kind);
+        if (!File.Exists(target)) return AddonIniState.Absent;
+        if (IniLines.Read(target).SequenceEqual(IniLines.FromBytes(templates.Read(TemplateOf(kind), out _)), StringComparer.Ordinal))
+            return AddonIniState.Template;
+        var written = records.Find(game, kind)?.Metadata.GetValueOrDefault(WrittenSha256Key);
+        return !string.IsNullOrWhiteSpace(written) && FileHash.HexEquals(FileHash.Sha256Hex(target), written)
+            ? AddonIniState.RhiCopy
+            : AddonIniState.Changed;
+    }
+
+    /// <summary>
+    /// "Deploy relimiter.ini / DisplayCommander.ini" (upstream <c>CopyUlIni</c>/<c>CopyDcIni</c>): the game's file becomes a
+    /// copy of the template, beside the add-on. Upstream overwrites; here the game's file is never lost (review finding 2):
+    /// a file that changed since RHI wrote it (or that RHI never wrote) is replaced only with
+    /// <paramref name="replaceChanged"/>, and then kept beside it as <c>&lt;name&gt;.rhi-backup-&lt;utc&gt;</c>, recorded
+    /// on the component's record so <see cref="RestoreAddonIniAsync"/> can put it back. Journaled on that record: a
+    /// crash before the record is saved takes the new file and the backup back.
+    /// </summary>
+    public async Task<ComponentOperationResult> DeployAddonIniAsync(DetectedGame game, ManagedComponentKind kind, bool replaceChanged = false, CancellationToken cancellationToken = default)
+    {
+        _ = AddonIniName(kind) ?? throw new ArgumentOutOfRangeException(nameof(kind), kind, "No INI template for this component.");
+        if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        // Find hands out a copy: the ledger changes only through the stamped Upsert below.
+        if (records.Find(game, kind) is not { } record) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
+        var lines = IniLines.FromBytes(templates.Read(TemplateOf(kind), out _));
+        var target = AddonIniPath(game, kind);
+        var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
         XboxWriteGate.ThrowIfRefused(target);
-        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        IniLines.Write(target, IniLines.FromBytes(template), ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!));
-        return ComponentOperationResult.Ok(DeployedPrefix + target, target);
+        var written = IniLines.ResolveTarget(target, roots); // a link is followed only to a same-named file in the game
+        var state = InspectAddonIni(game, kind);
+        if (state == AddonIniState.Changed && !replaceChanged) return ComponentOperationResult.Fail(ChangedPrefix + target);
+        var previous = state == AddonIniState.Changed ? File.ReadAllBytes(written) : null;
+        var backup = previous is null ? null : FreeBackupPath(target);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"{AddonIniName(kind)} deploy: {game.Name}", game, kind, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        try
+        {
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            if (backup is not null)
+            {
+                record.Metadata[BackupSha256Key] = await scope.PlaceBytesAsync(backup, previous!, cancellationToken).ConfigureAwait(false);
+                record.Metadata[BackupKey] = Path.GetFileName(backup);
+            }
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+            IniLines.Write(target, lines, roots);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+            record.Metadata[WrittenSha256Key] = FileHash.Sha256Hex(written);
+            records.Upsert(scope.Stamp(record));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return backup is null
+            ? ComponentOperationResult.Ok(DeployedPrefix + target, target)
+            : ComponentOperationResult.Ok(DeployedBackupPrefix + backup, target, backup);
+    }
+
+    /// <summary>
+    /// An add-on install or update builds a fresh record: the INI deploy state (<c>UserIni.*</c>) of the record it replaces
+    /// is carried over, and a config the install just created from the template counts as RHI's write.
+    /// </summary>
+    public static void CarryMetadata(LinuxDeploymentRecord? previous, LinuxDeploymentRecord next, string? createdConfigSha256)
+    {
+        foreach (var (key, value) in previous?.Metadata ?? [])
+            if (key.StartsWith(MetadataKeyPrefix, StringComparison.Ordinal)) next.Metadata[key] = value;
+        if (!string.IsNullOrWhiteSpace(createdConfigSha256)) next.Metadata[WrittenSha256Key] = createdConfigSha256;
+    }
+
+    /// <summary>The backup Deploy kept for this game's add-on INI, while it is still there unchanged; else null.</summary>
+    public string? AddonIniBackup(DetectedGame game, ManagedComponentKind kind)
+    {
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory)) return null;
+        var metadata = records.Find(game, kind)?.Metadata;
+        if (metadata?.GetValueOrDefault(BackupKey) is not { Length: > 0 } name || name != Path.GetFileName(name)) return null;
+        var path = Path.Combine(Path.GetDirectoryName(AddonIniPath(game, kind))!, name);
+        return File.Exists(path) && new FileInfo(path).LinkTarget is null
+               && metadata.GetValueOrDefault(BackupSha256Key) is { Length: > 0 } sha && FileHash.HexEquals(FileHash.Sha256Hex(path), sha)
+            ? path
+            : null;
+    }
+
+    /// <summary>
+    /// Puts the backup Deploy kept back in place of the add-on INI (journaled on the component's record) and deletes
+    /// the backup. Refused, with the backup kept, when the game's file changed since RHI wrote it.
+    /// </summary>
+    public async Task<ComponentOperationResult> RestoreAddonIniAsync(DetectedGame game, ManagedComponentKind kind, CancellationToken cancellationToken = default)
+    {
+        if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        if (records.Find(game, kind) is not { } record) return ComponentOperationResult.Fail(NotManagedPrefix + game.Name);
+        var target = AddonIniPath(game, kind);
+        if (AddonIniBackup(game, kind) is not { } backup) return ComponentOperationResult.Fail(NoBackupPrefix + target);
+        var roots = ReShadeGlobalSettingsApplier.GameRoots(game, game.BinaryDirectory!);
+        XboxWriteGate.ThrowIfRefused(target);
+        var written = IniLines.ResolveTarget(target, roots);
+        if (File.Exists(written) && InspectAddonIni(game, kind) == AddonIniState.Changed)
+            return ComponentOperationResult.Fail(RestoreChangedPrefix + backup);
+        var bytes = File.ReadAllBytes(backup);
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"{AddonIniName(kind)} restore: {game.Name}", game, kind, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        try
+        {
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+            IniLines.WriteBytes(target, bytes, roots);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+            await scope.DeleteAsync(backup, cancellationToken).ConfigureAwait(false);
+            // The file is the user's again: RHI no longer holds a write there.
+            foreach (var key in new[] { WrittenSha256Key, BackupKey, BackupSha256Key }) record.Metadata.Remove(key);
+            records.Upsert(scope.Stamp(record));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
+        }
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(RestoredPrefix + target, target);
+    }
+
+    // <name>.rhi-backup-<utc>, never an existing name.
+    private static string FreeBackupPath(string target)
+    {
+        var stem = $"{target}.rhi-backup-{DateTime.UtcNow:yyyyMMdd-HHmmss}";
+        var path = stem;
+        for (var n = 2; File.Exists(path) || new FileInfo(path).LinkTarget is not null; n++) path = $"{stem}-{n}";
+        return path;
     }
 
     /// <summary>
     /// Mass INI deploy (upstream <c>MassDeployRsIni/UlIni/DcIni_Click</c>): every game where RHI manages the component.
-    /// One game per unit: Cancel stops between games, a game whose write failed keeps its file.
+    /// One game per unit: Cancel stops between games, a game whose write failed keeps its file. An add-on INI that
+    /// changed since RHI wrote it is replaced only with <paramref name="replaceChanged"/> (the inline question names how
+    /// many), and is then kept as a backup beside it (review finding 2); without it such a game is counted as skipped.
     /// </summary>
-    public Task<IniBatchResult> DeployToAllAsync(IReadOnlyList<DetectedGame> games, ManagedComponentKind kind, LinuxAppSettings settings, CancellationToken cancellationToken = default)
+    public Task<IniBatchResult> DeployToAllAsync(IReadOnlyList<DetectedGame> games, ManagedComponentKind kind, LinuxAppSettings settings,
+        bool replaceChanged = false, CancellationToken cancellationToken = default)
         => RunBatchAsync(
-            games.Where(game => records.Find(game, kind) is not null).ToList(),
-            (game, token) => Task.FromResult(kind == ManagedComponentKind.ReShade ? DeployReShadeIni(game, settings, token) : DeployAddonIni(game, kind, token)),
+            DeployTargets(games, kind),
+            (game, token) => kind == ManagedComponentKind.ReShade
+                ? Task.FromResult(DeployReShadeIni(game, settings, token))
+                : DeployAddonIniAsync(game, kind, replaceChanged, token),
             "ini-deploy", cancellationToken);
+
+    /// <summary>The games a mass deploy of <paramref name="kind"/>'s INI writes: where RHI manages the component.</summary>
+    public IReadOnlyList<DetectedGame> DeployTargets(IReadOnlyList<DetectedGame> games, ManagedComponentKind kind)
+        => games.Where(game => records.Find(game, kind) is not null).ToList();
+
+    /// <summary>How many of those hold an add-on INI that changed since RHI wrote it (each kept as a backup when replaced).</summary>
+    public int ChangedAddonInis(IReadOnlyList<DetectedGame> games, ManagedComponentKind kind)
+        => AddonIniName(kind) is null ? 0 : DeployTargets(games, kind).Count(game => InspectAddonIni(game, kind) == AddonIniState.Changed);
 
     /// <summary>
     /// "Apply to all games" (upstream <c>ApplyScreenshotPath_Click</c>): screenshot folder, hotkeys and effect list style

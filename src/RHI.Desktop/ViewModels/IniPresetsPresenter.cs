@@ -16,7 +16,8 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     /// <summary>The INIs folder (shared with the OptiScaler templates).</summary>
     public string TemplatesFolder => Path.Combine(configRoot, "inis");
 
-    internal UserIniService Service => new(new UserIniTemplates(TemplatesFolder), records, managed.IniWriteRefusal);
+    // The app's journaled service (AppComposition); tests and older wiring get an unjournaled one over the same folder.
+    internal UserIniService Service => managed.UserIni ?? new(new UserIniTemplates(TemplatesFolder), records, managed.IniWriteRefusal);
 
     /// <summary>
     /// The components whose row gets the INI ⚙ while RHI manages them: a copy the user installed (shown as installed,
@@ -55,10 +56,30 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
     public string Save(LinuxAppSettings settings) => vm.Settings.SaveLinuxSettings(settings);
 
     /// <summary>How many library games a mass deploy of <paramref name="kind"/>'s INI would write (RHI manages the component).</summary>
-    public int DeployCandidates(ManagedComponentKind kind) => vm.AllLibraryGames.Count(game => records.Find(game, kind) is not null);
+    public int DeployCandidates(ManagedComponentKind kind) => Service.DeployTargets(vm.AllLibraryGames.ToList(), kind).Count;
 
-    /// <summary>"Deploy X.ini" for the selected game.</summary>
-    public async Task<string> DeployForSelectedAsync(ManagedComponentKind kind)
+    /// <summary>
+    /// How many of those hold a relimiter.ini / DisplayCommander.ini that changed since RHI wrote it (the mass deploy's
+    /// question names them: each is kept as a backup beside it; review finding 2).
+    /// </summary>
+    public int DeployChangedCount(ManagedComponentKind kind) => Service.ChangedAddonInis(vm.AllLibraryGames.ToList(), kind);
+
+    /// <summary>
+    /// Whether "Deploy X.ini" for the selected game must ask first: the game's relimiter.ini / DisplayCommander.ini changed
+    /// since RHI wrote it, or RHI never wrote it (review finding 2). ReShade.ini keeps its other lines and never asks.
+    /// </summary>
+    public bool DeployNeedsConfirmation(ManagedComponentKind kind)
+    {
+        if (vm.SelectedGame is not { } game || UserIniService.AddonIniName(kind) is null) return false;
+        try { return Service.InspectAddonIni(game, kind) == UserIniService.AddonIniState.Changed; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+    }
+
+    /// <summary>
+    /// "Deploy X.ini" for the selected game. <paramref name="replaceChanged"/>: the user confirmed replacing an add-on INI
+    /// that changed since RHI wrote it (a backup is kept beside it); without it such a file is left as it is.
+    /// </summary>
+    public async Task<string> DeployForSelectedAsync(ManagedComponentKind kind, bool replaceChanged = false)
     {
         if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
         using var op = vm.Operations.TryBegin("ini-deploy", cancellable: false);
@@ -68,8 +89,8 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         try
         {
             var result = await Task.Run(() => kind == ManagedComponentKind.ReShade
-                ? service.DeployReShadeIni(game, settings, op.Token)
-                : service.DeployAddonIni(game, kind, op.Token));
+                ? Task.FromResult(service.DeployReShadeIni(game, settings, op.Token))
+                : service.DeployAddonIniAsync(game, kind, replaceChanged, op.Token));
             return Report(UiLocalizationService.Present(result.Message));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -78,10 +99,39 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         }
     }
 
-    /// <summary>Mass INI deploy of <paramref name="kind"/>'s INI to every game where RHI manages it.</summary>
-    public Task<string> DeployToAllAsync(ManagedComponentKind kind, LinuxAppSettings settings)
+    /// <summary>The backup a Deploy kept of the selected game's add-on INI (still there, unchanged), or null.</summary>
+    public string? AddonIniBackup(ManagedComponentKind kind)
+    {
+        if (vm.SelectedGame is not { } game || UserIniService.AddonIniName(kind) is null) return null;
+        try { return Service.AddonIniBackup(game, kind); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>Puts the backup a Deploy kept back in place of the selected game's add-on INI.</summary>
+    public async Task<string> RestoreAddonIniAsync(ManagedComponentKind kind)
+    {
+        if (vm.SelectedGame is not { } game) return Report(UiLocalizationService.Text("Vm.SelectGameFirst"));
+        using var op = vm.Operations.TryBegin("ini-restore", cancellable: false);
+        if (op is null) return Report(UiLocalizationService.Text("Vm.AnotherRHIOperationAlreadyRunning"));
+        var service = Service;
+        try
+        {
+            var result = await Task.Run(() => service.RestoreAddonIniAsync(game, kind, op.Token));
+            return Report(UiLocalizationService.Present(result.Message));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            return Report(UiLocalizationService.Format("Ini.RestoreFailed", IniFileName(kind), UiLocalizationService.Present(ex.Message)));
+        }
+    }
+
+    /// <summary>
+    /// Mass INI deploy of <paramref name="kind"/>'s INI to every game where RHI manages it. <paramref name="replaceChanged"/>:
+    /// the inline question (which named the changed files) was confirmed; each such file is kept as a backup.
+    /// </summary>
+    public Task<string> DeployToAllAsync(ManagedComponentKind kind, LinuxAppSettings settings, bool replaceChanged = false)
         => RunBatchAsync("ini-deploy-all", IniFileName(kind),
-            (service, games, token) => service.DeployToAllAsync(games, kind, settings, token));
+            (service, games, token) => service.DeployToAllAsync(games, kind, settings, replaceChanged, token));
 
     /// <summary>"Apply to all games": screenshot folder, hotkeys, effect list style into every ReShade.ini.</summary>
     public Task<string> ApplyReShadeSettingsToAllAsync(LinuxAppSettings settings)

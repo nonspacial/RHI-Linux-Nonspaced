@@ -325,6 +325,11 @@ public sealed class WaveOneMessageLocalizationTests
         yield return UserIniService.NoFolderPrefix + P;
         yield return UserIniService.NotManagedPrefix + "Celeste";
         yield return UserIniService.DeployedPrefix + P;
+        yield return UserIniService.DeployedBackupPrefix + P;
+        yield return UserIniService.ChangedPrefix + P;
+        yield return UserIniService.RestoredPrefix + P;
+        yield return UserIniService.NoBackupPrefix + P;
+        yield return UserIniService.RestoreChangedPrefix + P;
         yield return UserIniTemplates.TooLargePrefix + P;
         yield return IniLines.LinkRefusalPrefix + P;
         // #180

@@ -31,5 +31,23 @@ public sealed partial class GitHubReShadeAddonDeploymentServiceTests
 
         Assert.True(result.Success, result.Message);
         Assert.Equal("[FrameLimiter]\nosd_toggle_key=Ctrl+F12\n", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "relimiter.ini")));
+
+        // Review finding 2: the config the install created counts as RHI's write, so a later Deploy of a changed template
+        // replaces it without asking; a file the user changed asks, and its backup survives an update of the add-on.
+        File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), "[FrameLimiter]\nosd_toggle_key=F10\n");
+        var ini = new UserIniService(templates, store, _ => null);
+        Assert.Equal(UserIniService.AddonIniState.RhiCopy, ini.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+        File.WriteAllText(Path.Combine(game.BinaryDirectory!, "relimiter.ini"), "[FrameLimiter]\nmine=1\n");
+        Assert.True((await ini.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
+        var backup = ini.AddonIniBackup(game, ManagedComponentKind.ReLimiter);
+        Assert.NotNull(backup);
+
+        var updated = await service.InstallAsync(game);
+
+        Assert.True(updated.Success, updated.Message);
+        Assert.Equal(backup, ini.AddonIniBackup(game, ManagedComponentKind.ReLimiter));
+        Assert.Equal(UserIniService.AddonIniState.Template, ini.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+        File.WriteAllText(templates.PathOf(UserIniTemplate.ReLimiter), "[FrameLimiter]\nosd_toggle_key=F9\n");
+        Assert.Equal(UserIniService.AddonIniState.RhiCopy, ini.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
     }
 }

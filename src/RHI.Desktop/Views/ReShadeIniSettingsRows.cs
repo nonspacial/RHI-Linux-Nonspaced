@@ -95,7 +95,8 @@ internal sealed class ReShadeIniSettingsRows
             }
             if (pending is not { } kind) return;
             pending = null;
-            showStatus(await presenter.DeployToAllAsync(kind, Current()));
+            // The question named the files that changed since RHI wrote them: confirmed, each is kept as a backup (review 2).
+            showStatus(await presenter.DeployToAllAsync(kind, Current(), replaceChanged: true));
         }, nameof(ReShadeIniSettingsRows));
 
         var deployButtons = new WrapPanel { Orientation = Orientation.Horizontal };
@@ -114,7 +115,9 @@ internal sealed class ReShadeIniSettingsRows
                 }
                 pending = kind;
                 pendingPreset = null;
-                confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, count);
+                var changed = kind == ManagedComponentKind.ReShade ? 0 : presenter.DeployChangedCount(kind);
+                confirmText.Text = UiLocalizationService.Format(kind == ManagedComponentKind.ReShade ? "Ini.DeployAllReShadeAsk" : "Ini.DeployAllAddonAsk", file, count)
+                                   + (changed > 0 ? " " + UiLocalizationService.Format("Ini.DeployAllChangedNote", changed, file) : "");
                 ShowConfirm(deployHost);
             };
             deployButtons.Children.Add(button);
