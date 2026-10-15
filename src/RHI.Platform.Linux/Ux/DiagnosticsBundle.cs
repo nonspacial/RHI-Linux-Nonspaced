@@ -80,14 +80,16 @@ public sealed class DiagnosticsBundle
     {
         if (string.IsNullOrEmpty(text)) return text ?? "";
         var masked = text;
+        // Saved secrets first, by value (a key that is not token-shaped, or one pasted into a message), before the home
+        // folder and user name: a secret holding either would otherwise be cut up and escape by-value masking.
+        foreach (var secret in _secrets.Select(store => store.ValueForMasking()).OfType<string>()
+                     .Where(value => value.Length >= MinMaskedSecretLength).Distinct(StringComparer.Ordinal).OrderByDescending(value => value.Length))
+            masked = masked.Replace(secret, SecretPlaceholder, StringComparison.Ordinal);
         if (_home.Length > 1)
             masked = Regex.Replace(masked, Regex.Escape(_home) + @"(?![\w.-])", "~"); // the folder itself or anything below it
         if (_userName.Length >= 2)
             masked = Regex.Replace(masked, @"(?<![\w.-])" + Regex.Escape(_userName) + @"(?![\w.-])", "[user]");
-        // Saved secrets first, by value (a key that is not token-shaped, or one pasted into a message), then key fields.
-        foreach (var secret in _secrets.Select(store => store.ValueForMasking()).OfType<string>()
-                     .Where(value => value.Length >= MinMaskedSecretLength).Distinct(StringComparer.Ordinal).OrderByDescending(value => value.Length))
-            masked = masked.Replace(secret, SecretPlaceholder, StringComparison.Ordinal);
+        // Then key fields.
         masked = KeyInLink.Replace(masked, "$1" + SecretPlaceholder);
         masked = ApiKeyField.Replace(masked, "$1" + SecretPlaceholder);
         masked = SteamUserData.Replace(masked, "$1[userid]");

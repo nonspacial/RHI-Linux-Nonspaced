@@ -69,6 +69,25 @@ public sealed class SupportBundleTests : IDisposable
             SupportPresenter.SecretFiles());
     }
 
+    // shell-launch re-review nit 4: saved secrets are masked before the user name and home folder, so a secret holding
+    // either is still masked whole.
+    [Fact]
+    public void Mask_ASecretHoldingTheUserNameOrHome_IsStillMaskedWhole()
+    {
+        var config = Directory.CreateDirectory(Path.Combine(_root, "cfg-user")).FullName;
+        var nexus = Path.Combine(config, "nexus_api.txt");
+        var github = Path.Combine(config, "github_api.txt");
+        const string UserKey = "Zx9q:alice:Lm4p8Rt2";
+        var homeKey = $"{Home}/Kq7wT3vB";
+        File.WriteAllText(nexus, UserKey);
+        File.WriteAllText(github, homeKey);
+        var bundle = new DiagnosticsBundle(Logs, Out, Home, "alice", secretFiles: [nexus, github]);
+
+        var masked = bundle.Mask($"key {UserKey}; token {homeKey}; user alice");
+
+        Assert.Equal("key [secret]; token [secret]; user [user]", masked);
+    }
+
     [Fact]
     public void LogsArchive_HoldsEveryLogMasked_SkipsLinks_AndNeverReplacesAFile()
     {

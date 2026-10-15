@@ -466,6 +466,43 @@ public sealed class ResolutionToggleTests : IDisposable
         Assert.Equal(["--output DP-2 --mode 2560x1440@165.000Hz"], File.ReadAllLines(log)); // no RHI listener involved
     }
 
+    // shell-launch re-review nits 1-2: the restore runs under the 15 s limit, through timeout named by its absolute path,
+    // never a shell function (or another program) called timeout that the user's login shell puts first.
+    [Fact]
+    public async Task TheLaunchShell_RunsTheRestoreUnderTheFifteenSecondLimit_ThroughTimeoutByAbsolutePath()
+    {
+        var bin = Directory.CreateDirectory(Path.Combine(_root, "shellbin-timeout")).FullName;
+        var log = Path.Combine(_root, "timeout.log");
+        var fakeTimeout = Path.Combine(bin, "timeout");
+        File.WriteAllText(fakeTimeout, $"#!/bin/sh\nprintf 'timeout %s\\n' \"$1\" >> '{log}'\nshift\nexec \"$@\"\n");
+        var tool = Path.Combine(bin, DisplayModeSwitcher.KScreenDoctor);
+        File.WriteAllText(tool, $"#!/bin/sh\nprintf 'restore %s\\n' \"$*\" >> '{log}'\n");
+        foreach (var file in new[] { fakeTimeout, tool })
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var hijacked = Path.Combine(_root, "timeout-function-ran");
+        // A login profile that defines a function named timeout, and a PATH whose first timeout is not coreutils'.
+        var script = $"timeout() {{ touch '{hijacked}'; }}\nPATH='{bin}':\"$PATH\"\n" +
+                     RHI.Platform.Linux.Launch.LinuxGameLauncher.WithAfterExit("exit 4", [tool, "output.DP-1.mode.3840x2160@144"], fakeTimeout);
+        var psi = new System.Diagnostics.ProcessStartInfo("/bin/sh") { UseShellExecute = false };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(script);
+        using var shell = System.Diagnostics.Process.Start(psi)!;
+        await shell.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Equal(4, shell.ExitCode);
+        Assert.Equal([$"timeout {RHI.Platform.Linux.Launch.LinuxGameLauncher.AfterExitTimeoutSeconds}", "restore output.DP-1.mode.3840x2160@144"], File.ReadAllLines(log));
+        Assert.Equal(15, RHI.Platform.Linux.Launch.LinuxGameLauncher.AfterExitTimeoutSeconds);
+        Assert.False(File.Exists(hijacked));
+
+        // The launcher's own choice is an absolute coreutils path (or none), and the built script names it, not "timeout".
+        var chosen = RHI.Platform.Linux.Launch.LinuxGameLauncher.TimeoutProgram;
+        Assert.True(chosen is null || RHI.Platform.Linux.Launch.LinuxGameLauncher.TimeoutCandidates.Contains(chosen));
+        var built = RHI.Platform.Linux.Launch.LinuxGameLauncher.WithAfterExit("true", ["/usr/bin/kscreen-doctor", "x"]);
+        Assert.DoesNotContain("command -v timeout", built);
+        if (chosen is not null) Assert.Contains($"'{chosen}' 15 '/usr/bin/kscreen-doctor' 'x'", built);
+        Assert.Throws<ArgumentException>(() => RHI.Platform.Linux.Launch.LinuxGameLauncher.WithAfterExit("true", ["/usr/bin/kscreen-doctor"], "timeout"));
+    }
+
     [Fact]
     public void TheBuiltCommand_CarriesTheRestoreAfterTheGameCommand_AndHandOffsAndUnsafeVectorsAreRefused()
     {

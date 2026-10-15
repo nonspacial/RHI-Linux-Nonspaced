@@ -185,6 +185,16 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// <summary>How long the launch shell lets the after-exit command run (with <c>timeout</c> when it is installed).</summary>
     internal const int AfterExitTimeoutSeconds = 15;
 
+    /// <summary>Where coreutils' <c>timeout</c> is looked for, by absolute path only (re-review nit 1).</summary>
+    internal static readonly string[] TimeoutCandidates = ["/usr/bin/timeout", "/bin/timeout", "/run/current-system/sw/bin/timeout"];
+
+    /// <summary>
+    /// The <c>timeout</c> program the launch shell runs the after-exit command under, by absolute path: never a shell
+    /// function, alias or other program named <c>timeout</c> that the user's login profile or PATH puts first. Null when
+    /// none of <see cref="TimeoutCandidates"/> exists (the command then runs without a limit).
+    /// </summary>
+    internal static readonly string? TimeoutProgram = TimeoutCandidates.FirstOrDefault(File.Exists);
+
     /// <summary>An after-exit vector must name an absolute program and hold no NUL (it cannot be an argument).</summary>
     internal static void CheckAfterExit(IReadOnlyList<string> argv)
     {
@@ -198,14 +208,22 @@ public sealed class LinuxGameLauncher : IGameLaunchOptionsLauncher
     /// no input or output and a time limit, and exits with the command's status. The launch shell, not RHI, runs it, so it
     /// happens even when RHI has been closed meanwhile.
     /// </summary>
-    internal static string WithAfterExit(string command, IReadOnlyList<string> afterExit)
+    internal static string WithAfterExit(string command, IReadOnlyList<string> afterExit) => WithAfterExit(command, afterExit, TimeoutProgram);
+
+    /// <param name="timeoutProgram">Absolute path of <c>timeout</c> (<see cref="TimeoutProgram"/>); null: no limit.</param>
+    internal static string WithAfterExit(string command, IReadOnlyList<string> afterExit, string? timeoutProgram)
     {
         CheckAfterExit(afterExit);
+        if (timeoutProgram is not null && !timeoutProgram.StartsWith('/'))
+            throw new ArgumentException("timeout must be named by its absolute path.", nameof(timeoutProgram));
         var argv = string.Join(" ", afterExit.Select(ShellQuote));
+        var limited = timeoutProgram is null
+            ? argv
+            : $"if [ -x {ShellQuote(timeoutProgram)} ]; then {ShellQuote(timeoutProgram)} {AfterExitTimeoutSeconds} {argv}; else {argv}; fi";
         return
             $"(\n{command}\n)\n" +
             "rhi_game_status=$?\n" +
-            $"if command -v timeout >/dev/null 2>&1; then timeout {AfterExitTimeoutSeconds} {argv}; else {argv}; fi </dev/null >/dev/null 2>&1\n" +
+            $"{limited} </dev/null >/dev/null 2>&1\n" +
             "exit $rhi_game_status";
     }
 
