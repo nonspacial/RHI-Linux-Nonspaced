@@ -160,6 +160,48 @@ public sealed class IniPresetsPresenterTests
         Assert.False(fx.Vm.IsBusy);
     }
 
+    // Review finding 3: a dropped preset is stored only once the dialog is confirmed, never over a preset already there.
+    [Fact]
+    public async Task DroppedPreset_CancelStoresNothing_InstallKeepsBothPresets()
+    {
+        var bin = Path.Combine(Path.GetTempPath(), "rhi-ini-drop-" + Guid.NewGuid().ToString("N"), "bin");
+        Directory.CreateDirectory(bin);
+        var exe = Path.Combine(bin, "Game.exe");
+        PeArchitectureDetectorTests.WritePe(exe, 0x8664);
+        var game = new DetectedGame
+        {
+            Name = "Drop Card", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = exe,
+            Runner = "Proton", SteamAppId = 77005, Source = "Steam"
+        };
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        var card = fx.Vm.AllLibraryGames.Single();
+        fx.Records.Manage(card, ManagedComponentKind.ReShade);
+        var presenter = fx.Vm.IniPresets;
+        Directory.CreateDirectory(presenter.PresetsFolder);
+        var mine = Path.Combine(presenter.PresetsFolder, "ReShadePreset.ini");
+        File.WriteAllText(mine, "Techniques=Mine@Mine.fx\nMyTweak=1\n");
+        var drop = Path.Combine(Path.GetDirectoryName(bin)!, "download", "ReShadePreset.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(drop)!);
+        File.WriteAllText(drop, "Techniques=SMAA@SMAA.fx\n");
+        IReadOnlyList<DetectedGame>? offered = null;
+
+        var cancelled = await presenter.OfferDroppedPresetAsync(drop, (targets, _) => { offered = targets; return Task.FromResult<(DetectedGame, bool)?>(null); });
+
+        Assert.Null(cancelled);
+        Assert.Equal([card], offered);
+        Assert.Equal([mine], presenter.AvailablePresets());
+        Assert.Equal("Techniques=Mine@Mine.fx\nMyTweak=1\n", File.ReadAllText(mine));
+        Assert.False(File.Exists(Path.Combine(bin, "ReShadePreset.ini")));
+
+        var line = await presenter.OfferDroppedPresetAsync(drop, (targets, _) => Task.FromResult<(DetectedGame, bool)?>((targets[0], false)));
+
+        var stored = Path.Combine(presenter.PresetsFolder, "ReShadePreset (2).ini");
+        Assert.Equal("Techniques=Mine@Mine.fx\nMyTweak=1\n", File.ReadAllText(mine));
+        Assert.Equal("Techniques=SMAA@SMAA.fx\n", File.ReadAllText(stored));
+        Assert.StartsWith(UiLocalizationService.Format("Ini.PresetStoredAs", "ReShadePreset.ini", "ReShadePreset (2).ini"), line);
+        Assert.True(File.Exists(Path.Combine(bin, "ReShadePreset (2).ini")));
+    }
+
     // #189: the Luma ⚙ writes under the busy gate and reports a localised line.
     [Fact]
     public async Task LumaHdr_HoldsTheGate_AndSaysWhatWasSet()

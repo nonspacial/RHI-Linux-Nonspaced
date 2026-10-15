@@ -110,15 +110,49 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         return content;
     }
 
-    /// <summary>A dropped preset is kept in the presets folder (same name; an existing preset of that name is replaced, as upstream).</summary>
+    /// <summary>
+    /// A dropped preset is kept in the presets folder. Upstream replaces a preset of the same name; here a preset already
+    /// in the folder is never overwritten (review finding 3): the same content under that name (any case, or a numbered
+    /// copy from an earlier drop) is reused, other content goes in under the first free <c>Name (2).ini</c>,
+    /// <c>Name (3).ini</c>… Names compare case-insensitively, as Wine does.
+    /// </summary>
     public static string StorePreset(string source, string folder)
     {
         ReadPreset(source);
+        var bytes = File.ReadAllBytes(source);
+        var sha = FileHash.Sha256HexOf(bytes);
         Directory.CreateDirectory(folder);
-        var target = Path.Combine(folder, Path.GetFileName(source));
-        if (Path.GetFullPath(source).Equals(Path.GetFullPath(target), StringComparison.Ordinal)) return target;
-        AtomicFile.Copy(source, target);
-        return target;
+        var fullSource = Path.GetFullPath(source);
+        var stem = Path.GetFileNameWithoutExtension(source);
+        var extension = Path.GetExtension(source);
+        for (var n = 1; ; n++)
+        {
+            var name = n == 1 ? Path.GetFileName(source) : $"{stem} ({n}){extension}";
+            var existing = ExistingCaseInsensitive(folder, name);
+            if (existing is null)
+            {
+                var target = Path.Combine(folder, name);
+                AtomicFile.WriteNew(target, bytes); // never replaces a file that appeared meanwhile
+                return target;
+            }
+            if (Path.GetFullPath(existing).Equals(fullSource, StringComparison.Ordinal)) return existing;
+            if (File.Exists(existing) && new FileInfo(existing).LinkTarget is null && FileHash.HexEquals(FileHash.Sha256Hex(existing), sha))
+                return existing;
+        }
+    }
+
+    // The file of that name in the folder in any case (Wine's lookup), or null.
+    private static string? ExistingCaseInsensitive(string folder, string name)
+    {
+        try
+        {
+            return Directory.EnumerateFileSystemEntries(folder)
+                .FirstOrDefault(path => Path.GetFileName(path).Equals(name, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return Path.Combine(folder, name) is var exact && Path.Exists(exact) ? exact : null;
+        }
     }
 
     // ---- one game ----------------------------------------------------------------------------------
@@ -158,8 +192,9 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         if (record is null || string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
             return Refused(NoManagedReShadePrefix + game.Name);
 
-        var fileName = Path.GetFileName(presetPath);
-        var target = Path.Combine(game.BinaryDirectory, fileName);
+        // Wine finds names in any case: a game file whose name differs only in case is the same name (review finding 4).
+        var target = ExistingCaseInsensitive(game.BinaryDirectory, Path.GetFileName(presetPath)) ?? Path.Combine(game.BinaryDirectory, Path.GetFileName(presetPath));
+        var fileName = Path.GetFileName(target);
         byte[] bytes;
         try { bytes = File.ReadAllBytes(presetPath); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return Refused(ex.Message); }

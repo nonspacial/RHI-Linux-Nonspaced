@@ -63,6 +63,66 @@ public sealed class ReShadePresetTests : IDisposable
     }
 
     [Fact]
+    public void StorePreset_NeverOverwritesAPresetInTheFolder_SameContentIsReused_OtherContentGetsANumberedName()
+    {
+        // Review finding 3: ReShade names every preset ReShadePreset.ini; a second game's drop must not wipe the first.
+        var folder = Path.Combine(_root, "inis", "reshade-presets");
+        Directory.CreateDirectory(folder);
+        var mine = Path.Combine(folder, "ReShadePreset.ini");
+        File.WriteAllText(mine, "Techniques=Mine@Mine.fx\nMyTweak=1\n");
+        var drop = Path.Combine(_root, "drop", "ReShadePreset.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(drop)!);
+        File.WriteAllText(drop, Preset);
+        var same = Path.Combine(_root, "same", "reshadepreset.INI"); // same content, another case
+        Directory.CreateDirectory(Path.GetDirectoryName(same)!);
+        File.WriteAllText(same, "Techniques=Mine@Mine.fx\nMyTweak=1\n");
+
+        var stored = ReShadePresetService.StorePreset(drop, folder);
+        var again = ReShadePresetService.StorePreset(drop, folder);
+        var reused = ReShadePresetService.StorePreset(same, folder);
+
+        Assert.Equal("Techniques=Mine@Mine.fx\nMyTweak=1\n", File.ReadAllText(mine));
+        Assert.Equal(Path.Combine(folder, "ReShadePreset (2).ini"), stored);
+        Assert.Equal(Preset, File.ReadAllText(stored));
+        Assert.Equal(stored, again);
+        Assert.Equal(mine, reused);
+        Assert.Equal([mine, stored], ReShadePresetService.ListPresets(folder).OrderBy(x => x.Length).ToArray());
+
+        // A name taken in another case counts as taken (Wine finds either).
+        var lower = Path.Combine(_root, "lower", "reshadepreset.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(lower)!);
+        File.WriteAllText(lower, "Techniques=Other@Other.fx\n");
+        Assert.Equal(Path.Combine(folder, "reshadepreset (3).ini"), ReShadePresetService.StorePreset(lower, folder));
+        Assert.Equal("Techniques=Mine@Mine.fx\nMyTweak=1\n", File.ReadAllText(mine));
+    }
+
+    [Fact]
+    public async Task Install_ANameTakenInAnotherCase_IsTheSameName()
+    {
+        // Review finding 4: the game holds the user's ReShadePreset.ini; a preset called reshadepreset.ini must not land
+        // beside it as a second file Wine might load instead.
+        var (game, records, _) = Setup();
+        var theirs = Path.Combine(game.BinaryDirectory!, "ReShadePreset.ini");
+        File.WriteAllText(theirs, "Techniques=Theirs@Theirs.fx\n");
+        var preset = Path.Combine(_root, "reshadepreset.ini");
+        File.WriteAllText(preset, Preset);
+        var service = new ReShadePresetService(records, null, _ => null);
+
+        var refused = await service.InstallAsync(game, preset);
+
+        Assert.Equal(ReShadePresetService.NameTakenPrefix + theirs, refused.Message);
+        Assert.Equal(["ReShade.ini", "ReShadePreset.ini"], Directory.EnumerateFiles(game.BinaryDirectory!).Select(path => Path.GetFileName(path)).Order(StringComparer.Ordinal).ToArray());
+
+        // The same content under the other case is RHI's to take over: it keeps the game's spelling.
+        File.WriteAllText(theirs, Preset);
+        var installed = await service.InstallAsync(game, preset);
+        Assert.True(installed.Success, installed.Message);
+        Assert.Equal(["ReShade.ini", "ReShadePreset.ini"], Directory.EnumerateFiles(game.BinaryDirectory!).Select(path => Path.GetFileName(path)).Order(StringComparer.Ordinal).ToArray());
+        Assert.Equal("ReShadePreset.ini", Assert.Single(service.Installed(game)).FileName);
+        Assert.Contains(@"PresetPath=.\ReShadePreset.ini", File.ReadAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini")));
+    }
+
+    [Fact]
     public void Classifier_OffersADroppedIniAsAPreset()
         => Assert.Equal(LinuxDroppedFileKind.ReShadePreset, LinuxDroppedFileClassifier.Classify("/x/Mine.INI"));
 

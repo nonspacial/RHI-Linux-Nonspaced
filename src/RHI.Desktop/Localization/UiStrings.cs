@@ -942,7 +942,8 @@ internal static class UiStrings
         ("Ini.PresetInstallAllTip", "Copia a predefinição para cada jogo em que o RHI gerencia o ReShade e a seleciona no ReShade.ini; um arquivo do jogo com o mesmo nome que não seja do RHI fica como está.", "Copies the preset into every game where RHI manages ReShade and selects it in ReShade.ini; a game file of the same name that is not RHI's stays as it is."),
         ("Ini.PresetAllAsk", "Instalar {0} em {1} jogos onde o RHI gerencia o ReShade?", "Install {0} in {1} games where RHI manages ReShade?"),
         ("Ini.PresetDropTitle", "Instalar predefinição do ReShade", "Install ReShade preset"),
-        ("Ini.PresetDropText", "{0} foi guardada na pasta de predefinições. Instalar em qual jogo?", "{0} was kept in the presets folder. Install it in which game?"),
+        ("Ini.PresetDropText", "Instalar {0} em qual jogo? Ela também fica guardada na pasta de predefinições; uma predefinição diferente que já esteja lá com esse nome fica como está, e esta recebe um nome numerado.", "Install {0} in which game? It is also kept in the presets folder; a different preset already there under that name stays as it is, and this one gets a numbered name."),
+        ("Ini.PresetStoredAs", "{0} foi guardada na pasta de predefinições como {1} (outra predefinição lá já tinha esse nome).", "{0} is kept in the presets folder as {1} (another preset there already had its name)."),
         ("Ini.PresetStoredNoGames", "{0} foi guardada na pasta de predefinições; instale o ReShade com o RHI em um jogo para usá-la.", "{0} was kept in the presets folder; install ReShade with RHI in a game to use it."),
         // #189 Luma settings.
         ("Ini.LumaSection", "Configurações do Engine.ini do Luma", "Luma Engine.ini settings"),

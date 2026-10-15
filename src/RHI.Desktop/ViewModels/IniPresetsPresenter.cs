@@ -208,6 +208,35 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         }
     }
 
+    /// <summary>
+    /// A dropped preset (#180; upstream <c>DragDropHandler.Preset</c>): checked first, then <paramref name="ask"/> offers the
+    /// games whose ReShade RHI manages. Only a confirmed choice keeps it in the presets folder (never over another preset
+    /// there: <see cref="ReShadePresetService.StorePreset"/>) and installs it; Cancel (null) stores nothing (review
+    /// finding 3). With no such game the drop is only kept in the folder. Returns the status line, or null after Cancel.
+    /// </summary>
+    public async Task<string?> OfferDroppedPresetAsync(string source,
+        Func<IReadOnlyList<DetectedGame>, string, Task<(DetectedGame Game, bool WithShaderPacks)?>> ask)
+    {
+        try { ReShadePresetService.ReadPreset(source); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            return Report(UiLocalizationService.Present(ex.Message));
+        }
+        var targets = PresetTargets();
+        if (targets.Count == 0)
+        {
+            var (kept, notKept) = StorePreset(source);
+            return kept is null ? notKept : Report(UiLocalizationService.Format("Ini.PresetStoredNoGames", Path.GetFileName(kept)));
+        }
+        if (await ask(targets, Path.GetFileName(source)) is not { } chosen) return null;
+        var (stored, refusal) = StorePreset(source);
+        if (stored is null) return refusal;
+        var line = await InstallPresetAsync(stored, chosen.WithShaderPacks, chosen.Game);
+        return Path.GetFileName(stored).Equals(Path.GetFileName(source), StringComparison.OrdinalIgnoreCase)
+            ? line
+            : Report(UiLocalizationService.Format("Ini.PresetStoredAs", Path.GetFileName(source), Path.GetFileName(stored)) + " " + line);
+    }
+
     /// <summary>A dropped preset is checked and kept in the presets folder; returns its new path, or the refusal line.</summary>
     public (string? Path, string? Refusal) StorePreset(string source)
     {

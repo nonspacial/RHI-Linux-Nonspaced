@@ -2,35 +2,27 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
-using RHI.Desktop.Localization;
+using RHI.Core.Models;
 using RHI.Desktop.ViewModels;
 
 namespace RHI.Desktop.Views;
 
 /// <summary>
 /// w5/ini-presets (#180; upstream <c>DragDropHandler.Preset</c>): a dropped <c>.ini</c> is checked as a ReShade preset,
-/// kept in the presets folder, then installed into a game the user picks (the selected game is chosen first; only games
-/// whose ReShade RHI manages are offered), with the shader packs it needs when ticked.
+/// then installed into a game the user picks (the selected game is chosen first; only games whose ReShade RHI manages are
+/// offered), with the shader packs it needs when ticked. It goes into the presets folder only once Install is chosen,
+/// never over another preset there (review finding 3); the flow lives in <see cref="IniPresetsPresenter.OfferDroppedPresetAsync"/>.
 /// </summary>
 public partial class MainWindow
 {
     private async Task OfferDroppedPresetAsync(string path)
     {
         if (DataContext is not MainWindowViewModel vm) return;
-        var presenter = vm.IniPresets;
-        var (stored, refusal) = presenter.StorePreset(path);
-        if (stored is null)
-        {
-            vm.StatusText = refusal ?? vm.StatusText;
-            return;
-        }
-        var targets = presenter.PresetTargets();
-        if (targets.Count == 0)
-        {
-            vm.StatusText = TF("Ini.PresetStoredNoGames", Path.GetFileName(stored));
-            return;
-        }
+        await vm.IniPresets.OfferDroppedPresetAsync(path, (targets, name) => AskPresetGameAsync(vm, targets, name));
+    }
 
+    private async Task<(DetectedGame Game, bool WithShaderPacks)?> AskPresetGameAsync(MainWindowViewModel vm, IReadOnlyList<DetectedGame> targets, string presetName)
+    {
         var games = new ComboBox
         {
             Name = "PresetDropGame",
@@ -48,7 +40,7 @@ public partial class MainWindow
         buttons.Children.Add(cancel);
         buttons.Children.Add(install);
         var panel = new StackPanel { Spacing = 14, Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = TF("Ini.PresetDropText", Path.GetFileName(stored)), TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
+        panel.Children.Add(new TextBlock { Text = TF("Ini.PresetDropText", presetName), TextWrapping = TextWrapping.Wrap, MaxWidth = 560 });
         panel.Children.Add(games);
         panel.Children.Add(withPacks);
         panel.Children.Add(buttons);
@@ -63,7 +55,7 @@ public partial class MainWindow
         };
         cancel.Click += (_, _) => dialog.Close(false);
         install.Click += (_, _) => dialog.Close(true);
-        if (!await ShowFittedDialogAsync<bool>(dialog) || games.SelectedIndex < 0) return;
-        await presenter.InstallPresetAsync(stored, withPacks.IsChecked == true, targets[games.SelectedIndex]);
+        if (!await ShowFittedDialogAsync<bool>(dialog) || games.SelectedIndex < 0) return null;
+        return (targets[games.SelectedIndex], withPacks.IsChecked == true);
     }
 }
