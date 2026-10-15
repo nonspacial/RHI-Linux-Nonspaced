@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.RenoDxSettingsDialogView"
+             x:DataType="vm:RenoDxSettingsDialogViewModel">
+  <!-- The RenoDX ⚙ dialog (epic #89). The #182 peak-brightness rows are the ini-presets lane's control (code-behind). -->
+  <StackPanel Spacing="10" Margin="18">
+    <TextBlock Text="{l:T Win.CompatibilitySettings}" FontSize="18" FontWeight="SemiBold"/>
+    <TextBlock Text="{l:T Win.ChangesWrittenImmediatelySelectedGameRenodx}" TextWrapping="Wrap" Opacity="0.72"/>
+    <TextBlock Text="{Binding Warning}" TextWrapping="Wrap" Opacity="0.8" IsVisible="{Binding HasWarning}"/>
+    <Panel x:Name="PeakSlot" IsVisible="False"/>
+    <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding HasRows}">
+      <ItemsControl.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Spacing="10"/>
+        </ItemsPanelTemplate>
+      </ItemsControl.ItemsPanel>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:RenoDxSettingRow">
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock Text="{Binding Label}" Width="360" VerticalAlignment="Center" TextWrapping="Wrap" ToolTip.Tip="{Binding Tooltip}"/>
+            <ComboBox Width="210" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}"/>
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Opacity="0.78"/>
+    <TextBlock Text="{Binding IniPath}" FontSize="10" Opacity="0.55" TextWrapping="Wrap" IsVisible="{Binding HasIniPath}"/>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,166 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.SettingsDialogView"
+             x:DataType="vm:SettingsDialogViewModel">
+  <!-- Settings (epic #89). Rows and tabs other lanes added are code-built controls the code-behind puts into the
+       *Slot placeholders (and appends after the Maintenance tab); their values reach Save through SettingsRowsHost. -->
+  <Grid RowDefinitions="*,Auto">
+    <TabControl x:Name="Tabs">
+      <TabItem Header="ReShade">
+        <ScrollViewer>
+          <StackPanel Spacing="14" Margin="18">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:T Win.ReShadeDefaults}"/>
+            <TextBlock Text="{l:T Win.NativeLinuxPersistenceRHICompatibleSettings}" TextWrapping="Wrap" Opacity="0.72"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.DefaultReShadeChannel}"/>
+              <ComboBox ItemsSource="{Binding ReShadeChannels}" SelectedItem="{Binding ReShadeChannel}" Width="230"/>
+            </StackPanel>
+            <CheckBox Content="{l:T Win.ManageReShadeIniSearchPaths}" IsChecked="{Binding ManageIni}"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.ScreenshotFolder}"/>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding ScreenshotPath}" PlaceholderText="{l:T Win.OptionalScreenshotFolder}" MinWidth="430"/>
+                <Button Grid.Column="1" Content="{l:T Win.Browse}" Padding="12,6" Command="{Binding BrowseScreenshotsCommand}"/>
+              </Grid>
+              <TextBlock Text="{l:T Win.EmptyKeepsSavePathAlreadyConfigured}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <CheckBox Content="{l:T Win.CreateScreenshotSubfolderEachGame}" IsChecked="{Binding PerGameScreenshots}"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.OverlayHotkey}"/>
+              <Panel x:Name="OverlayHotkeySlot" IsVisible="False"/>
+              <TextBlock Text="{l:T Win.DefaultHomeRHIStoresHotkeyFormat}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.ScreenshotHotkey}"/>
+              <Panel x:Name="ScreenshotHotkeySlot" IsVisible="False"/>
+              <TextBlock Text="{l:T Win.DefaultPrintScreenRHIStoresHotkey}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Panel x:Name="ReShadeIniSlot" IsVisible="False"/>
+            <Panel x:Name="PeakBrightnessSlot" IsVisible="False"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="Shaders/Add-ons">
+        <ScrollViewer>
+          <StackPanel Spacing="14" Margin="18">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="Shaders / Add-ons"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.ShaderCache}"/>
+              <CheckBox Content="{l:T Win.KeepDownloadedShaderPacksCached}" IsChecked="{Binding CacheAllShaders}"/>
+              <TextBlock Text="{l:T Win.KeepsDownloadedShaderPacksRHIXDG}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <CheckBox Content="{l:T Win.WatchSelectedFolderDownloadedAddOns}" IsChecked="{Binding AddonWatcherEnabled}"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.WatchedAddFolder}"/>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding AddonWatchFolder}" PlaceholderText="{l:T Win.OptionalWatchedFolderDefaultDownloads}" MinWidth="430"/>
+                <Button Grid.Column="1" Content="{l:T Win.Browse}" Padding="12,6" Command="{Binding BrowseWatchFolderCommand}"/>
+              </Grid>
+              <TextBlock Text="{l:T Win.NativeLinuxWatcherNeverDeletesSource}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.VerboseLogging}"/>
+              <CheckBox Content="{l:T Win.VerboseLogging}" IsChecked="{Binding VerboseLogging}"/>
+              <TextBlock Text="{l:T Win.PreferencePersistedComponentLogsRemainUnder}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Panel x:Name="ReLimiterSlot" IsVisible="False"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="DLSS/Streamline">
+        <ScrollViewer>
+          <StackPanel Spacing="14" Margin="18">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:T Win.DLSSStreamlineDefaults}"/>
+            <TextBlock Text="{l:T Win.QuickApplyBatchApplyReplaceOnly}" TextWrapping="Wrap" Opacity="0.72"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.SuperResolutionNvngxDlssDll}"/>
+              <ComboBox ItemsSource="{Binding DefaultDlss.Items}" SelectedItem="{Binding DefaultDlss.Selected}" MinWidth="230"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.RayReconstructionNvngxDlssdDll}"/>
+              <ComboBox ItemsSource="{Binding DefaultDlssd.Items}" SelectedItem="{Binding DefaultDlssd.Selected}" MinWidth="230"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.FrameGenerationNvngxDlssgDll}"/>
+              <ComboBox ItemsSource="{Binding DefaultDlssg.Items}" SelectedItem="{Binding DefaultDlssg.Selected}" MinWidth="230"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.NeuralRenderingNvngxDlssnrDll}"/>
+              <ComboBox ItemsSource="{Binding DefaultDlssnr.Items}" SelectedItem="{Binding DefaultDlssnr.Selected}" MinWidth="230"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="Streamline"/>
+              <ComboBox ItemsSource="{Binding DefaultStreamline.Items}" SelectedItem="{Binding DefaultStreamline.Selected}" MinWidth="230"/>
+            </StackPanel>
+            <Panel x:Name="OptiScalerTemplatesSlot" IsVisible="False"/>
+            <Panel x:Name="FollowNewestSlot" IsVisible="False"/>
+            <Panel x:Name="OptiScalerMenuKeySlot" IsVisible="False"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="{l:T Ui.UxTab}">
+        <ScrollViewer>
+          <StackPanel Spacing="14" Margin="18">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:T Ui.DesktopExperience}"/>
+            <TextBlock Text="{l:T Win.NativeDesktopConveniencesLiveHereRHI}" TextWrapping="Wrap" Opacity="0.72"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Ui.Language}"/>
+              <ComboBox ItemsSource="{Binding UiLanguages}" SelectedItem="{Binding UiLanguage}" Width="240"/>
+              <TextBlock Text="{l:T Ui.LanguageNote}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Ui.ViewMode}"/>
+              <ComboBox ItemsSource="{Binding ViewModes}" SelectedItem="{Binding ViewMode}" Width="190"/>
+              <TextBlock Text="{l:T Win.CompactViewKeepsSelectedGameWorkflow}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <CheckBox x:Name="TrayIconBox" Content="{l:T Win.EnableSystemTrayIconStatusNotifierItemAppIndicat}" IsChecked="{Binding TrayIconEnabled}"/>
+            <CheckBox Content="{l:T Win.HideTrayWhenClosingMainWindow}" IsChecked="{Binding CloseToTray}" IsEnabled="{Binding CloseToTrayEnabled}"/>
+            <TextBlock Text="{l:T Win.TraySupportDependsDesktopEnvironmentKDE}" TextWrapping="Wrap" FontSize="11" Opacity="0.65"/>
+            <CheckBox Content="{l:T Win.ShowEachNewMOTDOnceAt}" IsChecked="{Binding ShowMotdOnStartup}"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="{l:T Ui.MaintenanceTab}">
+        <ScrollViewer>
+          <StackPanel Spacing="14" Margin="18">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="{l:T Ui.Maintenance}"/>
+            <StackPanel Spacing="5">
+              <TextBlock FontWeight="SemiBold" Text="{l:T Win.BackgroundComponentUpdates}"/>
+              <CheckBox Content="{l:T Win.AutomaticallyUpdateRHIManagedComponentsBackgroun}" IsChecked="{Binding AutoUpdateComponents}"/>
+              <TextBlock Text="{l:T Win.DisabledByDefaultWhenEnabledRHI}" FontSize="11" Opacity="0.65" TextWrapping="Wrap"/>
+            </StackPanel>
+            <Panel x:Name="UpdateInclusionSlot" IsVisible="False"/>
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="14" RowSpacing="8">
+              <TextBlock Text="settings.json" Opacity="0.72"/>
+              <TextBlock Grid.Column="1" Text="{Binding Snapshot.SettingsPath}" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="1" Text="{l:T Win.Configuration}" Opacity="0.72"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Snapshot.ConfigRoot}" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="2" Text="Cache" Opacity="0.72"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Snapshot.CacheRoot}" TextWrapping="Wrap"/>
+              <TextBlock Grid.Row="3" Text="{l:T Win.Data}" Opacity="0.72"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Snapshot.DataRoot}" TextWrapping="Wrap"/>
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="{l:T Win.OpenConfiguration}" Padding="12,6" Command="{Binding OpenConfigurationCommand}"/>
+              <Button Content="{l:T Win.OpenCache}" Padding="12,6" Command="{Binding OpenCacheCommand}"/>
+              <Button Content="{l:T Win.OpenData}" Padding="12,6" Command="{Binding OpenDataCommand}"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Button Content="{l:T Win.ClearCache}" Padding="12,6" Command="{Binding ClearCacheCommand}" IsEnabled="{Binding CanClearCache}"/>
+              <Button Content="{Binding ResetLabel}" Padding="12,6" Command="{Binding ResetCommand}"/>
+            </StackPanel>
+            <TextBlock Text="{l:T Win.ClearCacheRemovesOnlyRHILinux}" TextWrapping="Wrap" Opacity="0.68"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+    </TabControl>
+    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" Margin="12">
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
+      <Button Grid.Column="1" Content="{l:T Win.ApplyReShadeDefaultsSelectedGame}" Padding="14,7" Command="{Binding ApplyToGameCommand}"
+              IsEnabled="{Binding CanApplyToGame}"/>
+      <Button Grid.Column="2" Content="{Binding SaveLabel}" Padding="14,7" Command="{Binding SaveCommand}"/>
+    </Grid>
+  </Grid>
+</UserControl>

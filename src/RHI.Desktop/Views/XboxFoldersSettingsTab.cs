@@ -18,7 +18,7 @@ namespace RHI.Desktop.Views;
 /// </summary>
 internal static class XboxFoldersSettingsTab
 {
-    public static TabItem Create(XboxFoldersPresenter? presenter, TextBlock status, Func<string, Task<string?>> pickFolder)
+    public static TabItem Create(XboxFoldersPresenter? presenter, Action<string> show, Func<string, Task<string?>> pickFolder)
     {
         var tab = new TabItem { Header = XboxFoldersPresenter.Label, IsVisible = presenter is not null, Name = "XboxFoldersTab" };
         if (presenter is null) return tab;
@@ -32,7 +32,7 @@ internal static class XboxFoldersSettingsTab
         xodus.Click += (_, _) =>
         {
             if (!RHI.Platform.Linux.Paths.LinuxDesktopOpener.TryOpenUri(XboxFoldersPresenter.XodusUrl, out var error))
-                status.Text = ErrorLineText.LinkNotOpened(XboxFoldersPresenter.XodusUrl, error);
+                show(ErrorLineText.LinkNotOpened(XboxFoldersPresenter.XodusUrl, error));
         };
         panel.Children.Add(xodus);
 
@@ -47,7 +47,7 @@ internal static class XboxFoldersSettingsTab
                 ToolTip.SetTip(path, folder);
                 ToolTip.SetShowDelay(path, MiddleEllipsisText.TooltipDelay);
                 var remove = new Button { Content = XboxFoldersPresenter.RemoveText, Padding = new Thickness(12, 6) };
-                remove.Click += (_, _) => { if (presenter.Remove(folder) is { } refused) status.Text = refused; };
+                remove.Click += (_, _) => { if (presenter.Remove(folder) is { } refused) show(refused); };
                 row.Children.Add(path);
                 row.Children.Add(remove);
                 Grid.SetColumn(remove, 1);
@@ -72,7 +72,7 @@ internal static class XboxFoldersSettingsTab
         {
             var chosen = await pickFolder(XboxFoldersPresenter.AddText);
             if (string.IsNullOrWhiteSpace(chosen)) return;
-            if (presenter.Add(chosen) is { } refused) status.Text = refused; // already localised (TryPersist)
+            if (presenter.Add(chosen) is { } refused) show(refused); // already localised (TryPersist)
         }
     }
 }

@@ -33,6 +33,20 @@ public sealed class CompiledBindingsTests
     [InlineData(typeof(UpdatesViewModel), nameof(UpdatesViewModel.CanUpdateAll))]
     [InlineData(typeof(ManualGamesViewModel), nameof(ManualGamesViewModel.CanRemoveManualGame))]
     [InlineData(typeof(ProxyComponentDialogViewModel), nameof(ProxyComponentDialogViewModel.ShowCancel))]
+    // Dialogs moved out of the window's code-behind (epic #89): Views/Dialogs/*.axaml.
+    [InlineData(typeof(DlssBatchDialogViewModel), nameof(DlssBatchDialogViewModel.CloseLabel))]
+    [InlineData(typeof(DlssBatchGameRow), nameof(DlssBatchGameRow.IsChecked))]
+    [InlineData(typeof(VersionChoice), nameof(VersionChoice.Selected))]
+    [InlineData(typeof(RenoDxSettingsDialogViewModel), nameof(RenoDxSettingsDialogViewModel.Message))]
+    [InlineData(typeof(RenoDxSettingRow), nameof(RenoDxSettingRow.SelectedIndex))]
+    [InlineData(typeof(OptiScalerSettingsDialogViewModel), nameof(OptiScalerSettingsDialogViewModel.ShowCancel))]
+    [InlineData(typeof(OptiScalerIniSetting), nameof(OptiScalerIniSetting.SelectedIndex))]
+    [InlineData(typeof(AddGameDialogViewModel), nameof(AddGameDialogViewModel.Prefix))]
+    [InlineData(typeof(EditGameDialogViewModel), nameof(EditGameDialogViewModel.BinaryDirectory))]
+    [InlineData(typeof(ShaderAddonsDialogViewModel), nameof(ShaderAddonsDialogViewModel.CanApply))]
+    [InlineData(typeof(ShaderPackRow), nameof(ShaderPackRow.IsChecked))]
+    [InlineData(typeof(ShaderPackFilesDialogViewModel), nameof(ShaderPackFilesDialogViewModel.Status))]
+    [InlineData(typeof(SettingsDialogViewModel), nameof(SettingsDialogViewModel.CloseToTrayEnabled))]
     public void MainWindow_BindingPaths_AreCompiledAgainstTheirDataType(Type dataType, string property)
         => Assert.Contains($"{dataType.FullName},{dataType.Assembly.GetName().Name}.{property}!Getter", CompiledAccessors);
 }
