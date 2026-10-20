@@ -85,7 +85,7 @@ public sealed class ComponentInfoTests : IDisposable
         Assert.DoesNotContain("3.3.1", ComponentInfoCatalogue.ChangelogEntries(changelog, "3.3.4", 3));
     }
 
-    private const string Manifest = """
+    internal const string Manifest = """
         {"version": 3,
          "lumaGameNotes": {"Luma Noted": {"notes": "Switch to DX11 with -dx11", "notesUrl": "https://www.nexusmods.com/luma/mods/1", "notesUrlLabel": "Luma Nexus"}},
          "lumaGameInfo": {"Luma Manifest": {"notes": "Luma manifest note"}},
@@ -98,7 +98,7 @@ public sealed class ComponentInfoTests : IDisposable
         }
         """;
 
-    private const string RenoDxDb = """
+    internal const string RenoDxDb = """
         [{"name": "Wiki Game", "status": "Done", "author": "A", "snapshotUrl": "https://github.com/a/b/releases/download/snapshot/renodx-wiki.addon64",
           "discussionUrl": "https://github.com/clshortfuse/renodx/discussions/9", "notes": "Turn off in-game sharpening."},
          {"name": "Nexus Only Game", "status": "Done", "author": "B", "snapshotUrl": null, "nexusUrl": "https://www.nexusmods.com/nexusonly/mods/50"},
@@ -111,9 +111,9 @@ public sealed class ComponentInfoTests : IDisposable
          {"Name": "Native Game", "Status": "Done", "Method": "native", "Comments": "Needs testing"}]
         """;
 
-    private const string LimiterChangelog = "# Changelog\n## 3.3.5\n- Newest\n## 3.3.4\n- Installed one\n## 3.3.3\n- Older\n## 3.3.2\n- Oldest\n";
+    internal const string LimiterChangelog = "# Changelog\n## 3.3.5\n- Newest\n## 3.3.4\n- Installed one\n## 3.3.3\n- Older\n## 3.3.2\n- Oldest\n";
 
-    private static HttpResponseMessage Text(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/plain") };
+    internal static HttpResponseMessage Text(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "text/plain") };
 
     private sealed record Services(ComponentInfoCatalogue Catalogue, GameLinkCatalogueTests.Fake Http, GameLinkCatalogue Links);
 

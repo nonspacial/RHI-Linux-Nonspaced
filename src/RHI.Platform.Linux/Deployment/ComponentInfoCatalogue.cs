@@ -122,8 +122,17 @@ public sealed partial class ComponentInfoCatalogue
     }
 
     /// <summary>Works out the dialog's content. Never throws for a remote source; <paramref name="cancellationToken"/> stops waiting.</summary>
-    public async Task<ComponentInfo> ResolveAsync(DetectedGame game, ManagedComponentKind kind, string? installedVersion = null,
+    public Task<ComponentInfo> ResolveAsync(DetectedGame game, ManagedComponentKind kind, string? installedVersion = null,
         CancellationToken cancellationToken = default)
+        => ResolveCoreAsync(game, kind, installedVersion, perGameFetches: true, cancellationToken);
+
+    /// <summary>
+    /// The dialog's content; with <paramref name="perGameFetches"/> off (#210, the ⓘ highlight) only the shared lists are
+    /// read (manifest, RenoDX/Luma catalogues, OptiScaler wiki, HDR Gaming Database): no per-game request (Nexus Mods
+    /// summary, change log, UE-Extended/Unity comment), which never changes the source tier upstream highlights by.
+    /// </summary>
+    private async Task<ComponentInfo> ResolveCoreAsync(DetectedGame game, ManagedComponentKind kind, string? installedVersion,
+        bool perGameFetches, CancellationToken cancellationToken)
     {
         var policy = _manifest is null ? null
             : await Optional<UpstreamLibraryPolicySnapshot>(async () => await _manifest.FetchLibraryPolicyAsync(cancellationToken).ConfigureAwait(false),
@@ -131,11 +140,11 @@ public sealed partial class ComponentInfoCatalogue
         var info = kind switch
         {
             // Only RenoDX and Luma link the HDR Gaming Database (upstream LookupHdrUrl).
-            ManagedComponentKind.RenoDX => await RenoDxAsync(game, _links?.HdrDatabasePageFor(game), cancellationToken).ConfigureAwait(false),
+            ManagedComponentKind.RenoDX => await RenoDxAsync(game, _links?.HdrDatabasePageFor(game), perGameFetches, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.LumaFramework => await LumaAsync(game, policy, _links?.HdrDatabasePageFor(game), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.OptiScaler => await OptiScalerAsync(game, policy, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ReLimiter or ManagedComponentKind.DisplayCommander
-                => await ReleaseNotesAsync(game, kind, policy, installedVersion, cancellationToken).ConfigureAwait(false),
+                => await ReleaseNotesAsync(game, kind, policy, installedVersion, perGameFetches, cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.REFramework => ManifestOrGeneral(kind, ManifestNote(policy, ComponentNoteKeys.ReFramework, game)),
             ManagedComponentKind.ReShade => ManifestOrGeneral(kind, ManifestNote(policy, ComponentNoteKeys.ReShade, game)), // w5 integration (#186)
             _ => General(kind)
@@ -145,11 +154,11 @@ public sealed partial class ComponentInfoCatalogue
 
     // ── RenoDX ──────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private async Task<ComponentInfo> RenoDxAsync(DetectedGame game, string? hdr, CancellationToken cancellationToken)
+    private async Task<ComponentInfo> RenoDxAsync(DetectedGame game, string? hdr, bool perGameFetches, CancellationToken cancellationToken)
     {
         var kind = ManagedComponentKind.RenoDX;
         var nativeHdr = game.NativeHdrByManifest;
-        var dbComment = await DatabaseCommentAsync(game, cancellationToken).ConfigureAwait(false);
+        var dbComment = perGameFetches ? await DatabaseCommentAsync(game, cancellationToken).ConfigureAwait(false) : null;
         var links = new List<ComponentInfoLink>();
         if (!string.IsNullOrWhiteSpace(game.ManifestGameNote))
         {
@@ -183,7 +192,7 @@ public sealed partial class ComponentInfoCatalogue
         }
 
         // Upstream tier 2b: the Nexus Mods summary of a mod published only there.
-        if (!nativeHdr && listed is { SnapshotUrl64: null, SnapshotUrl32: null, NexusUrl: { } nexus }
+        if (perGameFetches && !nativeHdr && listed is { SnapshotUrl64: null, SnapshotUrl32: null, NexusUrl: { } nexus }
             && await NexusSummaryAsync(nexus, cancellationToken).ConfigureAwait(false) is { } summary)
         {
             AddPublisherLinks(links, listed);
@@ -304,7 +313,7 @@ public sealed partial class ComponentInfoCatalogue
     // ── ReLimiter / Display Commander ───────────────────────────────────────────────────────────────────────────
 
     private async Task<ComponentInfo> ReleaseNotesAsync(DetectedGame game, ManagedComponentKind kind, UpstreamLibraryPolicySnapshot? policy,
-        string? installedVersion, CancellationToken cancellationToken)
+        string? installedVersion, bool perGameFetches, CancellationToken cancellationToken)
     {
         var limiter = kind == ManagedComponentKind.ReLimiter;
         var links = new List<ComponentInfoLink>();
@@ -315,7 +324,7 @@ public sealed partial class ComponentInfoCatalogue
             return new(kind, ComponentInfoSource.Manifest, [manifest.Notes!.Trim()], false, false, null, null, null, links);
         }
         var url = limiter ? ReLimiterChangelogUrl : DisplayCommanderChangelogUrl;
-        var changelog = await Cached("changelog:" + url, async ct =>
+        var changelog = !perGameFetches ? null : await Cached("changelog:" + url, async ct =>
             await TrustedDownload.GetStringAsync(_http, url, DownloadSources.ComponentNotes, cancellationToken: ct).ConfigureAwait(false), cancellationToken)
             .ConfigureAwait(false);
         AddLink(links, ComponentInfoLinkKind.Releases, limiter ? ReLimiterReleasesUrl : DisplayCommanderReleasesUrl);

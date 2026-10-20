@@ -124,6 +124,7 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w5/reshade-core rows
     // w7 lane rows: component-row members (one member each)
     // w7/smalls rows
+    public ComponentInfoHighlightState InfoHighlight { get; } = new(component.DisplayName); // #210: ⓘ highlight, set by ComponentInfoPresenter.FollowRows
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows
