@@ -432,7 +432,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     {
         if (!_settings.CacheAllShaders || _disposed) return;
         var cancel = _shaderPackPrefetchCancel.Token; // read here, not in the task: Dispose disposes the source
-        ShaderPackPrefetch = Task.Run(() => PrefetchShaderPacksAsync(cancel)); // off the UI context
+        ShaderPackPrefetch = StartShaderPackPrefetch(() => PrefetchShaderPacksAsync(cancel));
     }
 
     void IStartupSteps.StartBackgroundUpdates(bool runImmediate) => Updates.RestartBackgroundUpdateLoop(runImmediate);
@@ -440,6 +440,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
 
     /// <summary>#194: the start-up shader-pack prefetch (null while CacheAllShaders is off); a test seam.</summary>
     internal Task? ShaderPackPrefetch { get; private set; }
+
+    /// <summary>Starts the prefetch off the UI context (<see cref="Task.Run(Func{Task})"/>); a test seam that runs it later.</summary>
+    internal Func<Func<Task>, Task> StartShaderPackPrefetch { get; set; } = static work => Task.Run(work);
 
     private readonly CancellationTokenSource _shaderPackPrefetchCancel = new();
 

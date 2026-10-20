@@ -439,3 +439,48 @@ public sealed class ShaderPackPrefetchStartUpTests
     }
 
 }
+
+/// <summary>
+/// #194 after the window closed: a first scan that ends after Dispose starts no prefetch (the cancellation source is
+/// disposed by then), and a prefetch started before Dispose that runs after it uses the token read when it was started.
+/// Sets no UI language, so not in the UI-language collection.
+/// </summary>
+public sealed class ShaderPackPrefetchDisposeTests
+{
+    private static async Task<ViewModelFixture> StartedAsync()
+    {
+        var fx = await ViewModelFixture.StartAsync([], httpFailure: _ => new HttpRequestException("offline (test)"), cacheAllShaders: true);
+        await fx.Vm.ShaderPackPrefetch!.WaitAsync(TimeSpan.FromSeconds(60)); // the start-up prefetch is over
+        return fx;
+    }
+
+    [Fact]
+    public async Task ScanEndingAfterDispose_StartsNoPrefetch()
+    {
+        using var fx = await StartedAsync();
+        var startUp = fx.Vm.ShaderPackPrefetch;
+        var starts = 0;
+        fx.Vm.StartShaderPackPrefetch = _ => { starts++; return Task.CompletedTask; };
+        fx.Vm.Dispose();
+
+        ((RHI.Desktop.ViewModels.IStartupSteps)fx.Vm).LibraryScanned(); // reading the disposed source's token would throw
+
+        Assert.Equal(0, starts);
+        Assert.Same(startUp, fx.Vm.ShaderPackPrefetch);
+    }
+
+    [Fact]
+    public async Task PrefetchRunAfterDispose_UsesTheTokenReadWhenItStarted()
+    {
+        using var fx = await StartedAsync();
+        Func<Task>? pending = null;
+        fx.Vm.StartShaderPackPrefetch = work => { pending = work; return Task.CompletedTask; }; // the pool runs it later
+        ((RHI.Desktop.ViewModels.IStartupSteps)fx.Vm).LibraryScanned();
+        Assert.NotNull(pending);
+
+        fx.Vm.Dispose(); // before the queued work starts
+
+        // Read inside the work, the token would come from the disposed source (ObjectDisposedException).
+        await pending!().WaitAsync(TimeSpan.FromSeconds(10));
+    }
+}
