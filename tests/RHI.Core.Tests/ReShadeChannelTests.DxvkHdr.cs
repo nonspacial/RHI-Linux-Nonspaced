@@ -673,6 +673,35 @@ public sealed partial class ReShadeChannelTests
         Assert.False(ReShadeVulkanLayer.IsLayerRecord(rig.Store.Find(rig.Game, ManagedComponentKind.ReShade)));
     }
 
+    // Repair after move: DX9 HDR's files are its record's own, so the record follows the game, and removal on the moved
+    // game puts ReShade back at the new d3d9.dll.
+    [Fact]
+    public async Task DxvkHdr_RepairAfterMove_RecordsFollowTheGame_AndRemovalStillPutsReShadeBack()
+    {
+        var rig = Rig("dxvk-moved");
+        await InstallDllReShadeAsync(rig);
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var oldRoot = rig.Game.InstallPath!;
+        var newRoot = Path.Combine(_root, "dxvk-moved", "other-library", "game");
+        Directory.CreateDirectory(Path.GetDirectoryName(newRoot)!);
+        Directory.Move(oldRoot, newRoot);
+        var moved = rig.Game.ShallowClone();
+        moved.InstallPath = newRoot;
+        moved.BinaryDirectory = Path.Combine(newRoot, "bin");
+        moved.ExecutablePath = Path.Combine(newRoot, "bin", "Game.exe");
+
+        var repair = new DeploymentRelocation(rig.Store).Repair(moved, [], out _);
+
+        Assert.True(repair.Success, repair.Message);
+        Assert.All(rig.Dxvk.GetRecord(moved)!.Files, file => Assert.StartsWith(moved.BinaryDirectory + "/", file.Path, StringComparison.Ordinal));
+        var removed = await rig.Dxvk.RemoveAsync(moved);
+        Assert.True(removed.Success, removed.Message);
+        var back = rig.Store.Find(moved, ManagedComponentKind.ReShade)!;
+        Assert.Equal(Path.Combine(moved.BinaryDirectory, "d3d9.dll"), ProxyPayloadLocator.ReShadePayload(back)!.Path);
+        Assert.True(File.Exists(Path.Combine(moved.BinaryDirectory, "d3d9.dll")));
+        Assert.False(File.Exists(Path.Combine(moved.BinaryDirectory, "vulkan-1.dll")));
+    }
+
     [Fact]
     public void DxvkHdr_Presets_AreUpstreamsSixTiers_SafestFirst()
     {
