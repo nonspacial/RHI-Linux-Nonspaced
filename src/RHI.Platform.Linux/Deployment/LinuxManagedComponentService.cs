@@ -1412,7 +1412,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken)
         => dependency switch
         {
-            ManagedComponentKind.ReShade => _reshade.InstallAsync(game, cancellationToken),
+            ManagedComponentKind.ReShade => InstallReShadeForShaderSetAsync(game, ReShadeDeploymentService.DefaultOptionsFor(game), update: false, cancellationToken), // w7/shader-sets hook (#179 review major 2)
             ManagedComponentKind.REFramework => _reFramework.InstallAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail(
                 $"{DisplayDependencyName(dependency)} is declared as an automatic dependency but has no dependency installer."))
@@ -2281,7 +2281,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
         return Track(game, component, ComponentUpdateAction.Update, () => component switch
         {
-            ManagedComponentKind.ReShade => _reshade.UpdateAsync(game, cancellationToken),
+            ManagedComponentKind.ReShade => InstallReShadeForShaderSetAsync(game, _reshade.GetInstalledOptions(game), update: true, cancellationToken), // w7/shader-sets hook (#179 review major 2)
             ManagedComponentKind.RenoDX => _renodx.UpdateAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.ReLimiter => _relimiter.UpdateAsync(game, cancellationToken),
             ManagedComponentKind.DisplayCommander => _displayCommander.UpdateAsync(game, cancellationToken),
@@ -2398,7 +2398,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         CancellationToken cancellationToken)
         => component switch
         {
-            ManagedComponentKind.ReShade => _reshade.InstallAsync(game, ReShadeRowOptions(game), cancellationToken), // w5/reshade-core (#92)
+            ManagedComponentKind.ReShade => InstallReShadeForShaderSetAsync(game, ReShadeRowOptions(game), update: false, cancellationToken), // w5/reshade-core (#92); w7/shader-sets hook (#179 review major 2)
             ManagedComponentKind.RenoDX => _renodx.InstallAsync(game, indexedFiles, cancellationToken),
             ManagedComponentKind.RenoDXUpgrade => _renodxUpgrade.InstallAsync(game, cancellationToken),
             ManagedComponentKind.OptiScaler => InstallOptiScalerUnderChosenNameAsync(game, OptiScalerVariant.Stable, null, cancellationToken), // #172
@@ -2810,6 +2810,37 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     /// <summary>The message when the shader and add-on choices cannot be read (PT-BR pair).</summary>
     public const string ShaderSetsUnreadableMessage = "The shader and add-on choices cannot be read; nothing was changed.";
+
+    /// <summary>
+    /// Appended to a ReShade install or update that could not take the game's shader packs because no native
+    /// D3DCompiler_47 could be had for its prefix (review major 2; PT-BR pair). ReShade itself is installed.
+    /// </summary>
+    public const string ShaderPacksNotInstalledNote =
+        " The game's shader packs were not installed: they need a native D3DCompiler_47 in its Wine prefix. Install it with the D3DCompiler 47 row in the ReShade section, then Apply in Shaders/Add-ons.";
+
+    /// <summary>
+    /// Review major 2: ReShade's install and update read the game's effective set inside ReShade's own install
+    /// (<see cref="ReShadeShaderPackService.WithEffectiveSelection"/>), so every path that reaches it — the ReShade row,
+    /// ReShade installed for RenoDX/Luma/ShortFuse/Feeder, Update All and a managed update — first gets a native
+    /// D3DCompiler_47 for that set, as profile Apply and the shader batch do. When none can be had ReShade still installs
+    /// (the hook then keeps the caller's own list) and the result says why the packs are missing.
+    /// </summary>
+    private async Task<ComponentOperationResult> InstallReShadeForShaderSetAsync(DetectedGame game, ReShadeInstallOptions options, bool update,
+        CancellationToken cancellationToken)
+    {
+        if (_shaderSets is not null && !options.VulkanLayer && string.IsNullOrWhiteSpace(options.D3DCompiler47Path)
+            && !ReShadeVulkanLayer.IsLayerRecord(_records.Find(game, ManagedComponentKind.ReShade))
+            && EffectiveShaderPacks(game) is { Count: > 0 }
+            && await EnsureNativeD3DCompilerDependencyAsync(game, null, "ReShade shader packs", cancellationToken).ConfigureAwait(false) is { } compiler)
+            AppLog.Warn("shader-sets", $"{game.Name}: ReShade goes on without the game's shader packs: {compiler.Message}");
+        var result = update
+            ? await _reshade.UpdateAsync(game, cancellationToken).ConfigureAwait(false)
+            : await _reshade.InstallAsync(game, options, cancellationToken).ConfigureAwait(false);
+        return result.Success && EffectiveShaderPacks(game) is { Count: > 0 } effective
+               && !SamePacks(_reshade.GetInstalledOptions(game).ShaderPackIds, effective)
+            ? result with { Message = result.Message + ShaderPacksNotInstalledNote }
+            : result;
+    }
 
     /// <summary>
     /// After a ReShade install (the ReShade row, profile Apply, or ReShade installed for another component): a game with

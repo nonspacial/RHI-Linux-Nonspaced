@@ -631,9 +631,19 @@ public sealed class ReShadeShaderPackService
     {
         if (Sets is not { } sets) return options;
         sets.Pin(game);
-        if (EffectivePackIds(game) is { } packs) options.ShaderPackIds = packs.ToArray();
+        if (EffectivePackIds(game) is not { } packs) return options;
+        // Review major 2: a set this game cannot compile (no native D3DCompiler_47 beside it or in its prefix, none chosen,
+        // not the Vulkan layer) keeps the caller's own list, so ReShade itself still installs; the managed paths try to get
+        // the compiler first and say why the packs are missing.
+        if (packs.Count > 0 && !options.VulkanLayer && string.IsNullOrWhiteSpace(options.D3DCompiler47Path) && !HasNativeCompiler(game))
+            return options;
+        options.ShaderPackIds = packs.ToArray();
         return options;
     }
+
+    private static bool HasNativeCompiler(DetectedGame game)
+        => GameArchitecture.Of(game) is var architecture and (PeArchitecture.X86 or PeArchitecture.X64)
+           && ReShadeDeploymentService.FindNativeD3DCompilerForGame(game, architecture) is not null;
 
     internal async Task<string> EnsurePackAsync(
         ReShadeShaderPackDefinition pack,

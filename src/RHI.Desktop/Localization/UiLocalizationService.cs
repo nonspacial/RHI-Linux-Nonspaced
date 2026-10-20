@@ -1345,6 +1345,8 @@ public static class UiLocalizationService
             "Nada foi alterado: a escolha de shaders e add-ons do jogo não pôde ser salva: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetNotAppliedPrefix, " Os add-ons do jogo não foram aplicados: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetAppliedNote, " Os add-ons do jogo foram aplicados."),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote,
+            " Os pacotes de shaders do jogo não foram instalados: eles precisam de um D3DCompiler_47 nativo no prefixo Wine. Instale-o na linha D3DCompiler 47 da seção ReShade e depois use Aplicar em Shaders/Add-ons."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];

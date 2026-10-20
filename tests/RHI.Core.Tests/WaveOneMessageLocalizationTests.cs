@@ -407,6 +407,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return LinuxManagedComponentService.ShaderChoiceNotSavedPrefix + E;
         yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetNotAppliedPrefix + E;
         yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetAppliedNote;
+        yield return "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + LinuxManagedComponentService.ShaderPacksNotInstalledNote;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     }
