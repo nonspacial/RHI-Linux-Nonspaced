@@ -2229,6 +2229,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.ReShadeAddonManager => await _addonManager.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #194
             // w7 lane rows: update checks (one arm each)
             // w7/smalls rows
+            ManagedComponentKind.NrCostScaler when _nrCostScaler is not null => await _nrCostScaler.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #199
             // w7/reshade rows
             // w7/shader-sets rows
             // w7/nvapi-launch rows
@@ -2284,6 +2285,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.ReShadeAddonManager => _addonManager.UpdateAsync(game, cancellationToken), // #194
             // w7 lane rows: updates (one arm each)
             // w7/smalls rows
+            ManagedComponentKind.NrCostScaler when _nrCostScaler is not null => _nrCostScaler.UpdateAsync(game, cancellationToken), // #199
             // w7/reshade rows
             // w7/shader-sets rows
             // w7/nvapi-launch rows

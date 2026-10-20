@@ -10,7 +10,8 @@ public sealed class UpdateAllBackgroundTests
     [Fact]
     public void SupportedComponents_MirrorsLinuxNativeFamilies()
     {
-        Assert.Equal(15, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Equal(16, LinuxUpdateAllService.SupportedComponents.Count);
+        Assert.Contains(ManagedComponentKind.NrCostScaler, LinuxUpdateAllService.SupportedComponents); // #199
         Assert.Contains(ManagedComponentKind.RtxEncore, LinuxUpdateAllService.SupportedComponents); // w4/encore (#158)
         Assert.Contains(ManagedComponentKind.ReShadeAddonManager, LinuxUpdateAllService.SupportedComponents); // #194
         Assert.Contains(ManagedComponentKind.ReShade, LinuxUpdateAllService.SupportedComponents);

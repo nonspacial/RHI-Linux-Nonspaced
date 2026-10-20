@@ -1337,6 +1337,13 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DownloadSources.LunarGVulkanRuntime.RefusalPrefix,
             "Download recusado: links do runtime Vulkan devem ser HTTPS em um host confiável (LunarG). Link recusado: "),
         // w7/smalls rows
+        // #199 NR Cost Scaler in Update All.
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.CouldNotCheckPrefix, "NR Cost Scaler: não foi possível verificar a versão mais recente: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.UpToDatePrefix, "O NR Cost Scaler está em dia: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.UpdateAvailablePrefix, "Atualização do NR Cost Scaler disponível: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.UpdatedPrefix, "NR Cost Scaler atualizado: "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.NotUpdatedModifiedPrefix, "NR Cost Scaler não atualizado: seus arquivos mudaram desde a instalação pelo RHI (mantidos como estão): "),
+        (RHI.Platform.Linux.Deployment.NrCostScalerService.IniKeptNote, " O seu próprio nvngx_dlssnr.ini foi mantido."),
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

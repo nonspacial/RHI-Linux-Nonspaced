@@ -485,10 +485,15 @@ public sealed class NrCostScalerUpdateAllTests
 {
     private const string NewerShortFuse = """[{"tag_name":"renodx-dlss-SF-2.0","assets":[{"name":"renodx-dlss.addon64","browser_download_url":"https://github.com/rhi-tests/sf/releases/download/2.0/renodx-dlss.addon64"}]}]""";
 
+    // #199: the scaler itself takes part in Update All; its release list says it is current (the recorded "1.0").
+    private const string CurrentScaler = """{"tag_name":"1.0","assets":[{"name":"DLSSNR-Cost-Scaler-1.0.zip","browser_download_url":"https://github.com/xenmods/DLSSNR-Cost-Scaler/releases/download/1.0/DLSSNR-Cost-Scaler-1.0.zip"}]}""";
+
     private static HttpResponseMessage? Respond(HttpRequestMessage request)
         => request.RequestUri!.AbsoluteUri == ShortFuseDeploymentService.ReleasesApiUrl
             ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(NewerShortFuse) }
-            : null;
+            : request.RequestUri.AbsoluteUri == NrCostScalerService.ReleaseApiUrl
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(CurrentScaler) }
+                : null;
 
     // #170: an add-on RHI turned off for ReShade's No Addons build (its file renamed to <name>.rhi-off) is held, not
     // updated, and Update All says why in its own words.
@@ -544,10 +549,11 @@ public sealed class NrCostScalerUpdateAllTests
         foreach (var mode in new[] { LinuxUpdateRunMode.Manual, LinuxUpdateRunMode.Background })
         {
             var result = await new LinuxUpdateAllService(fx.Records, fx.Managed, new NeverRunning()).RunAsync([game], _ => [], mode);
-            Assert.Equal((0, 0, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount, result.HeldCount));
-            Assert.Equal("Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 held by NR Cost Scaler (remove it to update the method).",
+            // #199: the scaler's own row is current (its release list answers with the recorded version).
+            Assert.Equal((0, 1, 0, 0, 1), (result.ChangedCount, result.CurrentCount, result.FailedCount, result.UncheckedCount, result.HeldCount));
+            Assert.Equal("Update All: 0 updated · 1 current · 0 deferred · 0 failed · 1 held by NR Cost Scaler (remove it to update the method).",
                 RHI.Desktop.Localization.UiLocalizationService.UpdateAllSummaryFor("en-US", result));
-            Assert.Equal("Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 retido(s) pelo NR Cost Scaler (remova-o para atualizar o método).",
+            Assert.Equal("Atualizar tudo: 0 atualizado(s) · 1 em dia · 0 adiado(s) · 0 com falha · 1 retido(s) pelo NR Cost Scaler (remova-o para atualizar o método).",
                 RHI.Desktop.Localization.UiLocalizationService.UpdateAllSummaryFor("pt-BR", result));
         }
         Assert.Equal("1.0", fx.Records.Find(game, ManagedComponentKind.ShortFuse)!.Version); // never attempted
