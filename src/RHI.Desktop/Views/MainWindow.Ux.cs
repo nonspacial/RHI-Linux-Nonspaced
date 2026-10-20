@@ -354,7 +354,7 @@ public sealed partial class MainWindow
     private async Task<RHI.Core.Models.DetectedGame?> ShowDroppedRenoDxDialogAsync(DroppedRenoDxOffer offer, DroppedRenoDxPresenter presenter)
     {
         var games = new ComboBox { ItemsSource = offer.GameNames, SelectedIndex = offer.MatchedIndex, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var folder = new MiddleEllipsisText { WrapNonPath = false, Classes = { "muted" } };
+        var folder = new MiddleEllipsisText { WrapNonPath = false, MiddleNonPath = true, Classes = { "muted" } }; // one line, full path in the 2 s tooltip
         var replaces = new TextBlock { TextWrapping = TextWrapping.Wrap, Classes = { "muted" } };
         var accept = new Button { Content = T("Vm.Install"), Padding = new Thickness(14, 7) };
         var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
