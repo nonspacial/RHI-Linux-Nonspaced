@@ -94,7 +94,7 @@ public sealed class ShaderSetModesViewModelTests
 
         Assert.Equal(ShaderAddonMode.Off, fx.Managed.ShaderSets!.ChoiceFor(game)!.ShaderMode);
         // The line stays after the game is re-read (offline notices may follow it).
-        Assert.StartsWith(UiLocalizationService.Format("Sets.SummaryLine", "Shaders", UiLocalizationService.Format("Sets.SumUnchanged", 1)), fx.Vm.StatusText);
+        Assert.StartsWith("Shader packs: " + UiLocalizationService.Format("Sets.SumUnchanged", 1) + ".", fx.Vm.StatusText);
     }
 
     [Fact]
@@ -112,7 +112,7 @@ public sealed class ShaderSetModesViewModelTests
         await profile.ModeChange!.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.Equal(ShaderAddonMode.Global, fx.Managed.ShaderSets.ChoiceFor(game)!.ShaderMode);
-        Assert.StartsWith(UiLocalizationService.Format("Sets.SummaryLine", "Shaders", UiLocalizationService.Format("Sets.SumFailed", 1, "")).TrimEnd('.'),
+        Assert.StartsWith("Shader packs: " + UiLocalizationService.Format("Sets.SumFailed", 1, ""),
             fx.Vm.StatusText);
         Assert.Contains("Tunic (", fx.Vm.StatusText);
         CancelAtWritePhase.AssertUnchanged(before, game.InstallPath);
@@ -150,7 +150,7 @@ public sealed class ShaderSetModesViewModelTests
         await profile.ModeChange!.WaitAsync(TimeSpan.FromSeconds(30));
 
         Assert.Equal(GlobalShaderMode.Custom, fx.Managed.ShaderSets!.ShaderMode);
-        Assert.StartsWith(UiLocalizationService.Format("Sets.SummaryLine", "Shaders", UiLocalizationService.Text("Sets.SumNone")), fx.Vm.StatusText);
+        Assert.StartsWith("Shader packs: " + UiLocalizationService.Text("Sets.SumNone") + ".", fx.Vm.StatusText);
     }
 
     [Theory]
@@ -166,8 +166,8 @@ public sealed class ShaderSetModesViewModelTests
         var line = ReShadeProfileViewModel.SummaryText(ShaderAddonSetPart.Addons,
             new ShaderAddonSetBatchResult(2, 0, 1, 1, 0, 0, false, [], ["Tunic"]));
         Assert.Equal(language == "pt-BR"
-            ? "Add-ons: 2 jogo(s) atualizado(s); 1 retido(s) pelo No Addons; 1 pulado(s) por estar(em) em execução: Tunic."
-            : "Add-ons: 2 game(s) updated; 1 held by No Addons; 1 skipped while running: Tunic.", line);
+            ? "Add-ons do ReShade: 2 jogo(s) atualizado(s); 1 retido(s) pelo No Addons; 1 pulado(s) por estar(em) em execução: Tunic."
+            : "ReShade add-ons: 2 game(s) updated; 1 held by No Addons; 1 skipped while running: Tunic.", line);
         UiLocalizationService.Apply("en-US");
     }
 

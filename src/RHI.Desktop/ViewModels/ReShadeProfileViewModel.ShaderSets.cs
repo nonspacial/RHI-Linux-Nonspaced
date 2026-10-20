@@ -37,6 +37,9 @@ public sealed partial class ReShadeProfileViewModel
 
     private GlobalShaderAddonStore? Sets => _components.ShaderSets;
 
+    /// <summary>The global sets are wired (the app; tests without them hide the Settings rows).</summary>
+    internal bool HasShaderSets => Sets is not null;
+
     partial void OnShowShaderModeChanged(bool value) => OnPropertyChanged(nameof(ShowSetModes));
     partial void OnShowAddonModeChanged(bool value) => OnPropertyChanged(nameof(ShowSetModes));
 
@@ -69,7 +72,16 @@ public sealed partial class ReShadeProfileViewModel
         ShaderModeOptions.Relabel();
         AddonModeOptions.Relabel();
         GlobalShaderModeOptions.Relabel();
+        OnPropertyChanged(nameof(ShaderModeLabel));
+        OnPropertyChanged(nameof(AddonModeLabel));
+        OnPropertyChanged(nameof(ShaderModeTip));
+        OnPropertyChanged(nameof(AddonModeTip));
     }
+
+    public string ShaderModeLabel => T("Win.ShaderPacks");
+    public string AddonModeLabel => T("Win.ReShadeAddOns");
+    public string ShaderModeTip => T("Sets.ShaderModeTip");
+    public string AddonModeTip => T("Sets.AddonModeTip");
 
     partial void OnSelectedShaderModeChanged(OptionItem<ShaderAddonMode>? value) => OnModeChosen(ShaderAddonSetPart.Shaders, value);
 
@@ -195,7 +207,7 @@ public sealed partial class ReShadeProfileViewModel
     /// <summary>Which games are running (a test seam; the real probe reads /proc).</summary>
     internal IGameRunningProbe? RunningProbe { get; set; }
 
-    /// <summary>One status line from a batch's counts: "Shaders: 2 game(s) updated; 1 failed, files kept: Game (why)."</summary>
+    /// <summary>One status line from a batch's counts: "Shader packs: 2 game(s) updated; 1 failed, files kept: Game (why)."</summary>
     internal static string SummaryText(ShaderAddonSetPart part, ShaderAddonSetBatchResult result)
     {
         var parts = new List<string>();
@@ -208,6 +220,6 @@ public sealed partial class ReShadeProfileViewModel
                 string.Join("; ", result.Failures.Select(f => $"{f.Game} ({UiLocalizationService.Present(f.Reason).TrimEnd('.')})"))));
         if (result.NotRun > 0) parts.Add(TF("Sets.SumCancelled", result.NotRun));
         if (parts.Count == 0) parts.Add(T("Sets.SumNone"));
-        return TF("Sets.SummaryLine", T(part == ShaderAddonSetPart.Shaders ? "Sets.Shaders" : "Sets.Addons"), string.Join("; ", parts));
+        return $"{T(part == ShaderAddonSetPart.Shaders ? "Win.ShaderPacks" : "Win.ReShadeAddOns")}: {string.Join("; ", parts)}.";
     }
 }

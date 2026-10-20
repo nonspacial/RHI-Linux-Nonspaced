@@ -1179,11 +1179,7 @@ internal static class UiStrings
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
-        ("Sets.Global", "Global", "Global"),
         ("Sets.Select", "Escolher", "Select"),
-        ("Sets.Off", "Desligado", "Off"),
-        ("Sets.Shaders", "Shaders", "Shaders"),
-        ("Sets.Addons", "Add-ons", "Add-ons"),
         ("Sets.ShaderModeTip", "Global: o conjunto global de shaders (Configurações → ReShade). Escolher: os pacotes deste jogo. Desligado: nenhum pacote de shaders do RHI neste jogo.", "Global: the global shader set (Settings → ReShade). Select: this game's own packs. Off: no RHI shader packs in this game."),
         ("Sets.AddonModeTip", "Global: os add-ons globais (Configurações → ReShade). Escolher: os add-ons deste jogo. Desligado: nenhum add-on do Addon Manager neste jogo.", "Global: the global add-ons (Settings → ReShade). Select: this game's own add-ons. Off: no Addon Manager add-ons in this game."),
         ("Sets.GlobalModeManaged", "Gerenciado pelo RHI", "RHI managed"),
@@ -1204,7 +1200,6 @@ internal static class UiStrings
         ("Sets.SumFailed", "{0} com falha, arquivos mantidos: {1}", "{0} failed, files kept: {1}"),
         ("Sets.SumCancelled", "{0} sem alteração (cancelado)", "{0} not changed (cancelled)"),
         ("Sets.SumNone", "nenhum jogo com o ReShade do RHI usa Global", "no game with RHI's ReShade is set to Global"),
-        ("Sets.SummaryLine", "{0}: {1}.", "{0}: {1}."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];

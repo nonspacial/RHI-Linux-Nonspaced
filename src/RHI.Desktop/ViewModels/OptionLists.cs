@@ -294,12 +294,12 @@ public static class OptionLists
     // w7/shader-sets rows
     /// <summary>#179: a game's Shaders / Add-ons choice (upstream Global / Select / Off).</summary>
     public static readonly OptionList<ShaderAddonMode> ShaderAddonModes = new(ShaderAddonMode.Global, null,
-        new(ShaderAddonMode.Global, "Sets.Global"),
+        new(ShaderAddonMode.Global, null, "Global"),
         new(ShaderAddonMode.Select, "Sets.Select"),
-        new(ShaderAddonMode.Off, "Sets.Off"));
+        new(ShaderAddonMode.Off, "Ini.Off"));
     /// <summary>#179: the global shader mode (upstream Off / RHI Managed / Custom).</summary>
     public static readonly OptionList<GlobalShaderMode> GlobalShaderModes = new(GlobalShaderMode.Managed, null,
-        new(GlobalShaderMode.Off, "Sets.Off"),
+        new(GlobalShaderMode.Off, "Ini.Off"),
         new(GlobalShaderMode.Managed, "Sets.GlobalModeManaged"),
         new(GlobalShaderMode.Custom, "Sets.GlobalModeCustom"));
     // w7/nvapi-launch rows
