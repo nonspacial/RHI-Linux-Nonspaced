@@ -15,7 +15,7 @@ Not on `main` yet (upstream features still to port):
 - Installing a dropped or downloaded RenoDX add-on straight into the matching game.
 - Renaming an installed ReShade or OptiScaler DLL in place.
 
-## Wave 6 — 2026-10-15: Addon Manager updates, non-Steam shortcuts, crash-safe Feeder and Luma
+## Wave 6 — 2026-10-20: Addon Manager updates, non-Steam shortcuts, crash-safe Feeder and Luma
 
 > [!NOTE]
 > **Repair after move** now treats ReShade Addon Manager add-ons like every other component. If an add-on RHI placed
@@ -25,21 +25,24 @@ Not on `main` yet (upstream features still to port):
 > there first), then run the repair again.
 
 > [!NOTE]
-> Going back to an older build: the Addon Manager's selection is still written to `addon-manager.json`, which older
-> builds read, so they keep seeing the add-ons. An older build drops the Addon Manager's entries from RHI's install
-> records the first time it saves them. Back on this build, RHI takes the selection up again from that file, including
-> changes the older build made; where the entries were dropped, Update All downloads those add-ons once more, because
-> the versions recorded for them are gone.
+> Going back to the wave-5 build needs nothing removed first (for older builds, the wave-5 and earlier notes below still
+> apply). The Addon Manager's selection is still written to `addon-manager.json`, which older builds read, so they keep
+> seeing the add-ons. An older build drops the Addon Manager's entries from RHI's install records the first time it
+> saves them. Back on this build, RHI takes the selection up again from that file, including changes the older build
+> made; where the entries were dropped, Update All downloads those add-ons once more, because the versions recorded for
+> them are gone. An older build shows no card for non-Steam games added to Steam, so components installed on them
+> cannot be updated or removed from it; their install records are kept, and this build manages them again.
 
 Library
 
 - **Non-Steam games added to Steam** (Steam's "Add a Non-Steam Game") get their own cards when the shortcut points at
   a Windows game's `.exe`, with the Proton prefix and compatibility tool Steam uses for it; Play starts the shortcut
   through Steam. A shortcut to the EA app, Ubisoft Connect, Battle.net, Rockstar or itch.io gives no card of its own:
-  the games that launcher installed in the shortcut's prefix get cards instead, modded in their real folders, and Play
-  starts that launcher through Steam for you to start the game from. Installers, uninstallers, native programs and scripts are not listed, and a shortcuts file that
-  cannot be read is a scan warning; the rest of the Steam library is still listed. These cards show as
-  "Steam/Non-Steam".
+  every game of those stores found in the shortcut's prefix gets a card instead, modded in its real folder. For that
+  launcher's own games, Play starts the launcher through Steam for you to start the game from; a game from another
+  store in the same prefix has no launch command until you set one in **Edit game**. Installers, uninstallers, native
+  programs and scripts are not listed, and a shortcuts file that cannot be read is a scan warning; the rest of the
+  Steam library is still listed. These cards show as "Steam/Non-Steam".
 - The Luma mod for a game is found by the wiki name set in **Edit game** (or the manifest's) as well as by its
   detected name, and changing the wiki name looks it up again.
 
@@ -62,8 +65,8 @@ Safety
   and the selection back together.
 - **DLSS5 Feeder** and **Luma** installs and removals are one journaled operation each, including their INI edits and,
   for DirectX 9 games, dgVoodoo2 and the move of ReShade between `d3d9.dll` and `dxgi.dll`: a failure or crash puts
-  every file back, and ReShade's record always names the file ReShade is really in. ReShade's shader-pack folder is journaled with
-  ReShade's install and update.
+  every file back, and ReShade's record always names the file ReShade is really in. ReShade's shader-pack folder is
+  journaled with ReShade's install and update.
 - A display switch that failed and could not go back says the display may not be at its previous mode and that RHI
   puts it back at its next start.
 

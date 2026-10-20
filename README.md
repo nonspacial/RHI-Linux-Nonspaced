@@ -108,7 +108,7 @@ RHI Linux supports Steam games running through Proton, including:
 * launching through Steam / Proton
 * non-Steam games added to Steam (**Add a Non-Steam Game**) that point at a Windows game's `.exe`, with the Proton prefix and compatibility tool Steam uses for them; Play starts them through Steam
 
-Tools, DLC and other entries Steam itself does not class as games are not listed. A non-Steam shortcut to the EA app, Ubisoft Connect, Battle.net, Rockstar or itch.io gets no card of its own; the games that launcher installed in the shortcut's prefix are listed instead (see [Other store launchers](#other-store-launchers)). Installers, native programs and scripts added as shortcuts are not listed.
+Tools, DLC and other entries Steam itself does not class as games are not listed. A non-Steam shortcut to the EA app, Ubisoft Connect, Battle.net, Rockstar or itch.io gets no card of its own; every game of those stores found in the shortcut's prefix is listed instead (see [Other store launchers](#other-store-launchers)). Play starts the launcher through Steam for that launcher's own games; a game from another store in the same prefix has no launch command until you set one in **Edit game**. Installers, native programs and scripts added as shortcuts are not listed.
 
 ## Heroic
 
@@ -210,7 +210,7 @@ This installs to `~/.local/opt/rhi-linux` (the previous install is kept as `~/.l
 > A build from before 15 October 2026 does not know RTX Encore, the OptiScaler DLL-name choice or add-ons turned off by No Addons. The first time it saves a ReShade DLL name, it forgets RTX Encore's saved DLL name and Neural Rendering choice, and the saved OptiScaler DLL name, for every game where that component is not installed; choose them again once you are back on the current build. **Remove RTX Encore from every game before going back.** An older build cannot update or remove it, and the first time it saves any install record it drops RTX Encore's record for good: after that even this build can no longer update or remove it, and its `nvngx_dlssnr.dll.original` and Wine override are left behind. Also switch No Addons games back to ReShade Stable or Nightly first, so their add-ons are turned back on.
 
 > [!NOTE]
-> Older builds still read the ReShade Addon Manager's selection from `addon-manager.json`, but drop its entries from RHI's install records the first time they save them. Back on the current build, RHI takes the selection up again from that file, and Update All downloads those add-ons once more.
+> Going back to a build from 15 October 2026 needs nothing removed first (for older builds, the notes above still apply). Older builds still read the ReShade Addon Manager's selection from `addon-manager.json`, but drop its entries from RHI's install records the first time they save them. Back on the current build, RHI takes the selection up again from that file, and Update All downloads those add-ons once more. An older build shows no card for non-Steam games added to Steam, so components installed on them cannot be updated or removed from it; their install records are kept, and the current build manages them again.
 
 ## Runtime requirements
 
