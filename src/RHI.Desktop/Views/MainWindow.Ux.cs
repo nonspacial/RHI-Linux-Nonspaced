@@ -259,7 +259,7 @@ public sealed partial class MainWindow
                 case LinuxDroppedFileKind.LumaAddon:
                     await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaAdd"));
                     break;
-                case LinuxDroppedFileKind.ReShadeAddon when DroppedRenoDxPresenter.Handles(path): // w7/smalls (#195)
+                case LinuxDroppedFileKind.ReShadeAddon when DroppedRenoDxPresenter.Handles(path, watched: false): // w7/smalls (#195)
                     await PromptInstallDroppedRenoDxAsync(path, watchFolder: null);
                     break;
                 case LinuxDroppedFileKind.ReShadeAddon:
@@ -299,7 +299,7 @@ public sealed partial class MainWindow
         {
             if (LinuxDroppedFileClassifier.IsLikelyLumaAddon(candidate.Path))
                 await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaAddDetectedByWatcher"));
-            else if (DroppedRenoDxPresenter.Handles(candidate.Path)) // w7/smalls (#195)
+            else if (DroppedRenoDxPresenter.Handles(candidate.Path, watched: true)) // w7/smalls (#195)
                 await PromptInstallDroppedRenoDxAsync(candidate.Path, _addonWatcher.CurrentPath);
             else
                 await PromptImportCustomAddonAsync(candidate.Path, T("Win.AddDetectedByWatcher"));
@@ -333,9 +333,9 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// #195: a dropped or watched RenoDX add-on: the game it goes into is confirmed (or chosen) first, then it is installed
-    /// as that game's RenoDX mod. <paramref name="watchFolder"/>: the watch folder a watched file came from (removed after
-    /// a successful install, as upstream).
+    /// #195: a dropped add-on or a watched RenoDX add-on: the game it goes into is confirmed (or chosen) first, then it is
+    /// installed (a RenoDX add-on as that game's RenoDX mod). <paramref name="watchFolder"/>: the watch folder a watched
+    /// file came from (removed after a successful install, as upstream).
     /// </summary>
     private async Task PromptInstallDroppedRenoDxAsync(string path, string? watchFolder)
     {
@@ -350,7 +350,7 @@ public sealed partial class MainWindow
         await presenter.InstallAsync(vm, offer, game);
     }
 
-    /// <summary>#195: the "Install RenoDX add-on" dialog: file, the game (matched or chosen), its folder, what it replaces.</summary>
+    /// <summary>#195: the "Install (RenoDX) add-on" dialog: file, the game (matched or chosen), its folder, what it replaces.</summary>
     private async Task<RHI.Core.Models.DetectedGame?> ShowDroppedRenoDxDialogAsync(DroppedRenoDxOffer offer, DroppedRenoDxPresenter presenter)
     {
         var games = new ComboBox { ItemsSource = offer.GameNames, SelectedIndex = offer.MatchedIndex, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -363,11 +363,14 @@ public sealed partial class MainWindow
             var chosen = games.SelectedIndex >= 0 && games.SelectedIndex < offer.Games.Count ? offer.Games[games.SelectedIndex] : null;
             folder.FullText = chosen is null ? "" : TF("Sm.DropFolder", DroppedRenoDxPresenter.FolderFor(chosen));
             folder.IsVisible = chosen is not null;
-            replaces.Text = chosen is null ? null : presenter.ReplacesFor(chosen);
+            replaces.Text = chosen is null ? null : presenter.ReplacesFor(offer, chosen);
             replaces.IsVisible = !string.IsNullOrEmpty(replaces.Text);
             accept.IsEnabled = chosen is not null;
             ToolTip.SetTip(accept, chosen is null ? offer.ChooseTip : null); // the blocker is fixed in the list above
         }
+        // A disabled button shows its tooltip only with ShowOnDisabled; the owner's ~2 s delay as elsewhere.
+        ToolTip.SetShowOnDisabled(accept, true);
+        ToolTip.SetShowDelay(accept, MiddleEllipsisText.TooltipDelay);
         games.SelectionChanged += (_, _) => Follow();
         Follow();
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };

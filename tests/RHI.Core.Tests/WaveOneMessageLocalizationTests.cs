@@ -413,6 +413,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage;
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage;
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage;
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonInstalledPrefix + "/jogos/Exemplo/bin/ShaderToggler.addon64";
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage;
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon64BitOn32BitMessage;
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

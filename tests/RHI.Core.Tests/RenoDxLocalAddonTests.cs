@@ -4,6 +4,7 @@ using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Ux;
 
 namespace RHI.Core.Tests;
 
@@ -247,6 +248,106 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         Assert.Equal(3, DroppedRenoDxPresenter.MatchIndex(games, "renodx-unknown.addon64", games[3], None)); // the selected game
         Assert.Equal(-1, DroppedRenoDxPresenter.MatchIndex(games, "renodx-unknown.addon64", null, None));    // the user picks
         Assert.Equal(0, DroppedRenoDxPresenter.MatchIndex(games, "renodx-alanwake2.addon64", games[4], None)); // a match beats the selection
+        // A one-word name: upstream's word match needs two words, the whole name in the file name finds it.
+        Assert.Equal(4, DroppedRenoDxPresenter.MatchIndex(games, "renodx-tunic.addon64", null, None));
+        // The longest whole name wins over a shorter one it contains.
+        var dishonored = new[] { G("Dishonored"), G("Dishonored 2") };
+        Assert.Equal(1, DroppedRenoDxPresenter.MatchIndex(dishonored, "renodx-dishonored2.addon64", null, None));
+    }
+
+    [Theory]
+    // Dropped (upstream DragDropHandler): every add-on but renodx-dlss5* / renodx-dlss.* is offered for a game.
+    [InlineData("renodx-hogwartslegacy.addon64", false, DroppedAddonTarget.RenoDxInstall)]
+    [InlineData("renodx-hogwartslegacy.addon", false, DroppedAddonTarget.RenoDxInstall)]
+    [InlineData("ShaderToggler.addon64", false, DroppedAddonTarget.GameAddonInstall)]
+    [InlineData("tw3-darkernights-remastered.addon32", false, DroppedAddonTarget.GameAddonInstall)]
+    [InlineData("renodxhogwarts.addon64", false, DroppedAddonTarget.GameAddonInstall)] // not "renodx-": not RenoDX's
+    [InlineData("renodx-dlss5-feed.addon64", false, DroppedAddonTarget.CustomAddonsImport)] // upstream ignores it
+    [InlineData("renodx-dlss.addon64", false, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("renodx-upgrade.addon64", false, DroppedAddonTarget.CustomAddonsImport)] // RHI's rows install these
+    [InlineData("renodx-mfgunlock.addon64", false, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("renodx-universal_ue-dof-fix.addon64", false, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("relimiter.addon64", false, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("tool.addon", false, DroppedAddonTarget.CustomAddonsImport)] // Custom Add-ons needs the bitness in the name
+    // Watched (upstream AddonFileWatcher): only renodx-*.addon64|32 game add-ons.
+    [InlineData("renodx-hogwartslegacy.addon64", true, DroppedAddonTarget.RenoDxInstall)]
+    [InlineData("renodx-hogwartslegacy.addon32", true, DroppedAddonTarget.RenoDxInstall)]
+    [InlineData("renodx-hogwartslegacy.addon", true, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("ShaderToggler.addon64", true, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("renodxhogwarts.addon64", true, DroppedAddonTarget.CustomAddonsImport)]
+    [InlineData("renodx-devkit.addon64", true, DroppedAddonTarget.CustomAddonsImport)]
+    public void TheGameInstallIsOffered_ForUpstreamsDroppedAndWatchedSets(string name, bool watched, DroppedAddonTarget expected)
+    {
+        Assert.Equal(expected, LinuxDroppedFileClassifier.AddonTarget(Path.Combine("/downloads", name), watched));
+        Assert.Equal(expected != DroppedAddonTarget.CustomAddonsImport, DroppedRenoDxPresenter.Handles(Path.Combine("/downloads", name), watched));
+    }
+
+    [Fact]
+    public async Task AWatchedFile_StaysWhenTheInstallFails_OrWhenItChangedMeanwhile()
+    {
+        var game = Game(Path.Combine(_root, "shell"), "Foo Game", 0x8664);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        game = fx.Vm.AllLibraryGames.Single(g => g.Name == "Foo Game");
+        var watch = Directory.CreateDirectory(Path.Combine(fx.Root, "watch")).FullName;
+
+        var wrongBitness = Addon(watch, "renodx-foogame.addon32", machine: 0x14c);
+        var refusedOffer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, wrongBitness, watch)!;
+        Assert.True(refusedOffer.DeleteSourceAfterInstall);
+        Assert.False(await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, refusedOffer, refusedOffer.Games[0]));
+        Assert.True(File.Exists(wrongBitness));
+
+        // The browser saves a new download under the same name while RHI installs the first one.
+        var watched = Addon(watch, "renodx-foogame.addon64");
+        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, watched, watch)!;
+        var rewritten = false;
+        fx.Records.SaveFaultForTesting = () =>
+        {
+            if (!rewritten) { rewritten = true; PeArchitectureDetectorTests.WritePe(watched, 0x8664, 4096); }
+            return null;
+        };
+        Assert.True(await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, offer, offer.Games[0]));
+        fx.Records.SaveFaultForTesting = null;
+        Assert.True(rewritten);
+        Assert.Equal(4096, new FileInfo(watched).Length); // the newer download is kept
+    }
+
+    [Fact]
+    public async Task AnotherDroppedAddon_GoesIntoTheGameThroughShadersAddons_BesideRhisRenoDx()
+    {
+        var game = Game(Path.Combine(_root, "shell"), "Foo Game", 0x8664);
+        using var fx = await ViewModelFixture.StartAsync([game]);
+        game = fx.Vm.AllLibraryGames.Single(g => g.Name == "Foo Game");
+        Assert.True((await fx.Managed.InstallLocalRenoDxAddonAsync(game, Addon(fx.Root, "renodx-foogame.addon64"))).Success);
+        var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
+        var bytes = File.ReadAllBytes(dropped);
+
+        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped)!;
+        Assert.False(offer.IsRenoDx);
+        Assert.Equal(UiLocalizationService.Text("Sm.DropAddonTitle"), offer.Title);
+        Assert.Null(fx.Vm.DroppedRenoDx.ReplacesFor(offer, offer.Games[0])); // it replaces nothing
+        Assert.False(offer.DeleteSourceAfterInstall);
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+
+        Assert.True(await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, offer, offer.Games[0]), string.Join(" | ", lines));
+
+        var placed = Path.Combine(game.BinaryDirectory!, "ShaderToggler.addon64");
+        Assert.Equal(bytes, File.ReadAllBytes(placed));
+        Assert.Contains(lines, line => line.StartsWith(LinuxManagedComponentService.DroppedAddonInstalledPrefix + placed, StringComparison.Ordinal));
+        Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(fx.Managed.CustomAddonRoot, "ShaderToggler.addon64")));
+        Assert.Contains("custom-ShaderToggler", (await fx.Managed.GetReShadeAddonManagerSnapshotAsync(game)).SelectedIds);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "renodx-foogame.addon64"))); // RenoDX stays
+        Assert.Equal("renodx-foogame.addon64", fx.Records.Find(game, ManagedComponentKind.RenoDX)!.Version);
+        Assert.Equal(bytes, File.ReadAllBytes(dropped)); // a dropped file is never touched
+
+        // Unticked in Shaders/Add-ons, it leaves the game.
+        Assert.True((await fx.Managed.ApplyReShadeAddonSelectionAsync(game, [])).Success);
+        Assert.False(File.Exists(placed));
+
+        // Its own bitness must fit the game, with a plain reason, before anything is copied.
+        var x86 = Addon(Path.Combine(fx.Root, "drop"), "Other.addon32", machine: 0x14c);
+        Assert.Equal(LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage, (await fx.Managed.InstallDroppedAddonForGameAsync(game, x86)).Message);
+        Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "Other.addon32")));
     }
 
     [Fact]

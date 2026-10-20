@@ -1594,6 +1594,33 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ? Task.FromResult(guard)
             : Track(game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Install, () => _renodx.InstallLocalAddonAsync(game, addonPath, cancellationToken));
 
+    /// <summary>#195: a dropped ReShade add-on that is not RenoDX's, installed into the game.</summary>
+    public const string DroppedAddonInstalledPrefix = "Add-on installed for this game; Shaders/Add-ons lists it (untick it there to take it out): ";
+    public const string DroppedAddon32BitOn64BitMessage = "This add-on is 32-bit and the game is 64-bit; it needs the add-on's .addon64 file.";
+    public const string DroppedAddon64BitOn32BitMessage = "This add-on is 64-bit and the game is 32-bit; it needs the add-on's .addon32 file.";
+
+    /// <summary>
+    /// #195 (upstream <c>ProcessDroppedAddon</c> for an add-on that is not RenoDX's: copied into the game beside it): the
+    /// file is imported into Custom Add-ons (never over a different one) and added to the game's Shaders/Add-ons selection,
+    /// whose journaled apply places it, records it and takes it out again when it is unticked. RenoDX is left alone.
+    /// </summary>
+    public async Task<ComponentOperationResult> InstallDroppedAddonForGameAsync(DetectedGame game, string addonPath, CancellationToken cancellationToken = default)
+    {
+        if (InstallGuard(game) is { } guard) return guard;
+        if (!string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) && File.Exists(addonPath)
+            && GameArchitecture.Of(game) is var architecture and (PeArchitecture.X86 or PeArchitecture.X64)
+            && PeArchitectureDetector.Detect(addonPath) is var addon and (PeArchitecture.X86 or PeArchitecture.X64) && addon != architecture)
+            return ComponentOperationResult.Fail(addon == PeArchitecture.X86 ? DroppedAddon32BitOn64BitMessage : DroppedAddon64BitOn32BitMessage);
+        var imported = _addonManager.ImportCustomAddonFile(addonPath);
+        if (!imported.Success || imported.ChangedFiles is not [var copy, ..]) return imported;
+        var id = "custom-" + Path.GetFileNameWithoutExtension(copy);
+        var selected = (await _addonManager.GetSnapshotAsync(game, cancellationToken).ConfigureAwait(false)).SelectedIds;
+        var applied = await ApplyReShadeAddonSelectionAsync(game,
+            selected.Contains(id, StringComparer.OrdinalIgnoreCase) ? selected : [.. selected, id], cancellationToken).ConfigureAwait(false);
+        var placed = Path.Combine(RenoDxDeploymentService.ResolveAddonDeployPath(game.BinaryDirectory!), Path.GetFileName(copy));
+        return applied.Success ? ComponentOperationResult.Ok(DroppedAddonInstalledPrefix + placed, copy, placed) : applied;
+    }
+
     /// <summary>#195: the game's RenoDX record (the drop dialog names the add-on it replaces).</summary>
     public LinuxDeploymentRecord? GetRenoDxRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX);
 
