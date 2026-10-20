@@ -119,7 +119,7 @@ public sealed partial class ReShadeProfileViewModel
         using var op = BeginOperation("shader-sets");
         if (op is null)
         {
-            LoadSetModes(game);
+            await PutSavedChoiceBackAsync(game);
             return;
         }
         // Switching shaders to Global forgets the game's own pack list (upstream); add-ons keep theirs for a later Select.
@@ -129,11 +129,19 @@ public sealed partial class ReShadeProfileViewModel
                 else Sets!.SetAddonMode(game, mode);
             }, "Sets.WhatChoice", sessionOnly: false) is not null)
         {
-            LoadSetModes(game);
+            await PutSavedChoiceBackAsync(game);
             return;
         }
         await ApplySetsAsync(op, [game], part, globalOnly: false);
         await ReprobeKeepingStatusAsync(game);
+    }
+
+    // A refused choice is put back once the dropdown's own write has finished: a revert raised inside that write does not
+    // reach the control (harness: the dropdown kept showing the refused entry).
+    private async Task PutSavedChoiceBackAsync(DetectedGame? game)
+    {
+        await Task.Yield();
+        LoadSetModes(game);
     }
 
     // ── Global sets (Settings → Shaders/Add-ons) ──────────────────────────
@@ -149,7 +157,7 @@ public sealed partial class ReShadeProfileViewModel
         using var op = BeginOperation("shader-sets");
         if (op is null || TryPersist(() => Sets!.SetShaderMode(mode), "Sets.WhatChoice", sessionOnly: false) is not null)
         {
-            LoadSetModes(SelectedGame);
+            await PutSavedChoiceBackAsync(SelectedGame);
             return;
         }
         await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Shaders, globalOnly: true);

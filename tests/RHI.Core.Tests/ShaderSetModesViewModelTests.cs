@@ -138,6 +138,25 @@ public sealed class ShaderSetModesViewModelTests
     }
 
     [Fact]
+    public async Task AChoiceWhileAnotherOperationRuns_IsRefused_AndTheSavedOneComesBack()
+    {
+        var (fx, game) = await StartWithGameAsync();
+        using var _ = fx;
+        GiveReShade(fx, game);
+        var profile = fx.Vm.ReShadeProfile;
+        profile.LoadSetModes(game); // Select (migrated)
+        using (fx.Vm.Operations.TryBegin("test"))
+        {
+            profile.SelectedShaderMode = profile.ShaderModeOptions.For(ShaderAddonMode.Off);
+            await profile.ModeChange!.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        Assert.Equal(ShaderAddonMode.Select, profile.SelectedShaderMode!.Value);
+        Assert.Equal(ShaderAddonMode.Select, fx.Managed.ShaderSets!.ChoiceFor(game)!.ShaderMode);
+        Assert.False(fx.Managed.ShaderSets.ChoiceFor(game)!.Saved); // nothing was written
+    }
+
+    [Fact]
     public async Task GlobalShaderMode_IsSaved_AndOnlyGamesSetToGlobalAreReached()
     {
         var (fx, game) = await StartWithGameAsync();
