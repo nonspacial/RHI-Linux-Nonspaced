@@ -2,9 +2,11 @@ using System.IO.Compression;
 using System.Text.Json;
 using RHI.Core;
 using RHI.Core.Deployment;
+using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Platform.Linux.Paths;
 using RHI.Platform.Linux.Persistence;
+using RHI.Platform.Linux.Settings;
 
 namespace RHI.Platform.Linux.Deployment;
 
@@ -492,6 +494,17 @@ public sealed class ReShadeShaderPackService
         return result;
     }
 
+    /// <summary>
+    /// #179: the pack ids a sync of <paramref name="ids"/> deploys (dependencies added) in <paramref name="catalog"/>, so
+    /// two selections that deploy the same packs compare equal (a record holds the expanded list).
+    /// </summary>
+    public static IReadOnlySet<string> DeployedPackIds(IEnumerable<string> ids, IReadOnlyList<ReShadeShaderPackInfo> catalog)
+    {
+        var definitions = catalog.Select(pack => new ReShadeShaderPackDefinition(pack.Id, pack.DisplayName, pack.Description,
+            ReShadeShaderPackSourceKind.DirectUrl, "", Requires: pack.Requires, IsCustom: pack.IsCustom)).ToList();
+        return ExpandDependencies(ids, definitions).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
     internal static IReadOnlyList<ReShadeShaderPackDefinition> MergeManifestOverridesForTest(
         IReadOnlyDictionary<string, UpstreamShaderPackDefinition> overrides)
     {
@@ -581,6 +594,47 @@ public sealed class ReShadeShaderPackService
     /// <summary>Test seam: runs in the prefetch right before it waits for the pack cache gate.</summary>
     internal Func<ReShadeShaderPackDefinition, Task>? BeforePrefetchGateForTesting { get; set; }
 
+    /// <summary>
+    /// #179: the global shader set and each game's Global / Select / Off choice. Null (tests, a service built without it):
+    /// every install keeps the packs its caller asked for, as before.
+    /// </summary>
+    public GlobalShaderAddonStore? Sets { get; set; }
+
+    /// <summary>
+    /// #179, the one answer to "which shader packs does this game get": Off → none; Select → the game's own list; Global →
+    /// the global set (global mode Off → none, Custom → the local custom folder only). Null when no store is attached or
+    /// its file cannot be read (the caller's list stands).
+    /// </summary>
+    public IReadOnlyList<string>? EffectivePackIds(DetectedGame game)
+        => Sets is { } sets && sets.ChoiceFor(game) is { } choice ? EffectivePackIds(choice, sets.ShaderMode, sets.GlobalShaderPackIds) : null;
+
+    internal static IReadOnlyList<string> EffectivePackIds(ShaderAddonGameChoice choice, GlobalShaderMode globalMode, IReadOnlyList<string> globalSet)
+        => choice.ShaderMode switch
+        {
+            ShaderAddonMode.Off => [],
+            ShaderAddonMode.Select => choice.ShaderPackIds,
+            _ => globalMode switch
+            {
+                GlobalShaderMode.Off => [],
+                GlobalShaderMode.Custom => [ReShadeShaderPackCatalog.CustomPackId],
+                _ => globalSet,
+            },
+        };
+
+    /// <summary>
+    /// #179 hook for ReShade's install and update (every path: the ReShade row, a dependency install, profile Apply,
+    /// Update All): the packs become the game's effective set, and a game seen for the first time has its choice saved
+    /// first (so the record this install writes is never taken for an older build's selection). Unchanged without a
+    /// readable store.
+    /// </summary>
+    public ReShadeInstallOptions WithEffectiveSelection(DetectedGame game, ReShadeInstallOptions options)
+    {
+        if (Sets is not { } sets) return options;
+        sets.Pin(game);
+        if (EffectivePackIds(game) is { } packs) options.ShaderPackIds = packs.ToArray();
+        return options;
+    }
+
     internal async Task<string> EnsurePackAsync(
         ReShadeShaderPackDefinition pack,
         CancellationToken cancellationToken)
@@ -607,8 +661,12 @@ public sealed class ReShadeShaderPackService
     public async Task<int> PrefetchMissingAsync(CancellationToken cancellationToken = default)
     {
         await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
+        // #179: the global set's packs first, so a game that follows it finds them staged soonest.
+        IReadOnlyList<string> first = Sets is { ShaderMode: GlobalShaderMode.Managed } sets ? sets.GlobalShaderPackIds : [];
         var fetched = 0;
-        foreach (var pack in _packs.Where(pack => !pack.IsCustom).Append(CoreHeadersPack).ToArray())
+        foreach (var pack in _packs.Where(pack => !pack.IsCustom)
+                     .OrderBy(pack => first.Contains(pack.Id, StringComparer.OrdinalIgnoreCase) ? 0 : 1)
+                     .Append(CoreHeadersPack).ToArray())
         {
             cancellationToken.ThrowIfCancellationRequested();
             try

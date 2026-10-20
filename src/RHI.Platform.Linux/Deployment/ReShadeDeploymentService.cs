@@ -237,6 +237,7 @@ public sealed partial class ReShadeDeploymentService
             return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
             return ComponentOperationResult.Fail(wineRunning);
+        options = _shaderPacks.WithEffectiveSelection(game, options); // w7/shader-sets hook (#179): the game's effective shader set
 
         // #92: the Vulkan layer on request, and an installed layer stays one (Update All never switches the path).
         var installedRecord = _records.Find(game, ManagedComponentKind.ReShade);

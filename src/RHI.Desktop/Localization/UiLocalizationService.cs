@@ -617,6 +617,8 @@ public static class UiLocalizationService
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderSetsUnreadableMessage,
+            "As escolhas de shaders e add-ons não podem ser lidas; nada foi alterado."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];
@@ -1339,6 +1341,10 @@ public static class UiLocalizationService
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderChoiceNotSavedPrefix,
+            "Nada foi alterado: a escolha de shaders e add-ons do jogo não pôde ser salva: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetNotAppliedPrefix, " Os add-ons do jogo não foram aplicados: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.AddonSetAppliedNote, " Os add-ons do jogo foram aplicados."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];

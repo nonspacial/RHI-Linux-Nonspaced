@@ -403,6 +403,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
+        yield return LinuxManagedComponentService.ShaderSetsUnreadableMessage;
+        yield return LinuxManagedComponentService.ShaderChoiceNotSavedPrefix + E;
+        yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetNotAppliedPrefix + E;
+        yield return ReShadeAddonManagerService.ReconcileFailedPrefix + E + LinuxManagedComponentService.AddonSetAppliedNote;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     }

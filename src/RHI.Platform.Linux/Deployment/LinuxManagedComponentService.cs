@@ -1137,6 +1137,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w7/smalls rows
             // w7/reshade rows
             // w7/shader-sets rows
+            _shaderSets, // #179 per-game Global / Select / Off and Select lists
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
         ];
@@ -1354,6 +1355,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             return ComponentOperationResult.Fail(AppendRollbackMessage(result.Message, rollback));
         }
 
+        result = await ApplyAddonSetAfterReShadeAsync(game, target, installedThisAttempt, result, cancellationToken).ConfigureAwait(false); // w7/shader-sets hook (#179)
         if (installedThisAttempt.Count == 0) return result;
 
         var changed = dependencyChanges
@@ -1716,6 +1718,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = InstallGuard(game);
         if (guard is not null) return guard;
+        if (RecordExplicitShaderChoice(game, options.ShaderPackIds) is { } notSaved) return ComponentOperationResult.Fail(notSaved); // w7/shader-sets hook (#179): a changed list makes the game Select
         // w5/reshade-core (#92): Apply on a Vulkan game is the explicit layer choice too; its shaders need no D3DCompiler.
         options.VulkanLayer = options.VulkanLayer || ReShadeRowOptions(game).VulkanLayer;
         return await Track(game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2663,7 +2666,163 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     // w5/ini-presets hook (#182): RenoDX peak brightness (journaled; set by the app's composition).
     public RenoDxPeakNits? RenoDxPeakNits { get; set; }
 
+    // ── w7/shader-sets (#179): global shader / add-on sets, per-game Global / Select / Off ──────────────────────────
+
+    /// <summary>Fixed text before the reason when a game's own shader or add-on choice could not be saved (PT-BR pair).</summary>
+    public const string ShaderChoiceNotSavedPrefix = "Nothing was changed: the game's shader and add-on choice could not be saved: ";
+    /// <summary>Fixed text before the reason when ReShade was installed but the game's add-ons were not (PT-BR pair).</summary>
+    public const string AddonSetNotAppliedPrefix = " The game's add-ons were not applied: ";
+    /// <summary>The note after ReShade's message when the game's add-ons were applied with it (PT-BR pair).</summary>
+    public const string AddonSetAppliedNote = " The game's add-ons were applied.";
+
+    private GlobalShaderAddonStore? _shaderSets;
+
+    /// <summary>
+    /// #179: the global sets and per-game choices (set by the app's composition; the Addon Manager reads the same store).
+    /// The shader-pack service ReShade uses is given it by the composition too (<see cref="ReShadeShaderPackService.Sets"/>).
+    /// </summary>
+    public GlobalShaderAddonStore? ShaderSets
+    {
+        get => _shaderSets;
+        set
+        {
+            _shaderSets = value;
+            if (_addonManager is not null) _addonManager.Sets = value;
+        }
+    }
+
+    /// <summary>True when RHI's ReShade is installed on the game (the only games a shader or add-on set reaches).</summary>
+    public bool HasRhiReShade(DetectedGame game) => _records.Find(game, ManagedComponentKind.ReShade) is not null;
+
+    /// <summary>The packs <paramref name="game"/> gets now (null without a readable store).</summary>
+    public IReadOnlyList<string>? EffectiveShaderPacks(DetectedGame game)
+        => _shaderSets is { } sets && sets.ChoiceFor(game) is { } choice
+            ? ReShadeShaderPackService.EffectivePackIds(choice, sets.ShaderMode, sets.GlobalShaderPackIds)
+            : null;
+
+    /// <summary>The Addon Manager add-ons <paramref name="game"/> gets now (null without a readable store).</summary>
+    public ReShadeAddonEffectiveSet? EffectiveAddons(DetectedGame game) => _addonManager?.EffectiveSelectionFor(game);
+
+    /// <summary>The selection the game's Addon Manager record holds now (empty without one).</summary>
+    public IReadOnlyList<string> RecordedAddonSelection(DetectedGame game) => _addonManager?.RecordedSelection(game) ?? [];
+
+    /// <summary>
+    /// A pack list the user chose for this game (profile Apply, the Shaders/Add-ons dialog, a preset with its shaders):
+    /// when it differs from what the game gets now, the game switches to Select with exactly that list (upstream). Returns
+    /// why it could not be saved (nothing may then be installed), or null.
+    /// </summary>
+    public string? RecordExplicitShaderChoice(DetectedGame game, IReadOnlyList<string> packIds)
+    {
+        if (_shaderSets is not { } sets || EffectiveShaderPacks(game) is not { } now || SamePacks(now, packIds)) return null;
+        return SaveChoice(() => sets.SetShaderMode(game, ShaderAddonMode.Select, packIds));
+    }
+
+    /// <summary>As <see cref="RecordExplicitShaderChoice"/>, for the game's Addon Manager add-ons.</summary>
+    public string? RecordExplicitAddonChoice(DetectedGame game, IReadOnlyList<string> addonIds)
+    {
+        if (_shaderSets is not { } sets || EffectiveAddons(game) is not { HeldByNoAddons: false } now || SameIds(now.Ids, addonIds)) return null;
+        return SaveChoice(() => sets.SetAddonMode(game, ShaderAddonMode.Select, addonIds));
+    }
+
+    /// <summary>Saves a game's shader mode (and its Select list when given); returns why it was not saved, or null.</summary>
+    public string? SetShaderMode(DetectedGame game, ShaderAddonMode mode, IReadOnlyList<string>? packIds = null)
+        => _shaderSets is { } sets ? SaveChoice(() => sets.SetShaderMode(game, mode, packIds)) : null;
+
+    /// <summary>Saves a game's add-on mode (and its Select list when given); returns why it was not saved, or null.</summary>
+    public string? SetAddonMode(DetectedGame game, ShaderAddonMode mode, IReadOnlyList<string>? addonIds = null)
+        => _shaderSets is { } sets ? SaveChoice(() => sets.SetAddonMode(game, mode, addonIds)) : null;
+
+    private static string? SaveChoice(Action save)
+    {
+        try
+        {
+            save();
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("shader-sets", "Could not save a game's shader and add-on choice", ex);
+            return ShaderChoiceNotSavedPrefix + ex.Message;
+        }
+    }
+
+    private static bool SameIds(IReadOnlyCollection<string> a, IReadOnlyCollection<string> b)
+        => a.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(b.Where(id => !string.IsNullOrWhiteSpace(id)).Select(id => id.Trim()));
+
+    // Two pack lists that deploy the same packs (a ReShade record holds the list with its dependencies added).
+    private bool SamePacks(IEnumerable<string> a, IEnumerable<string> b)
+        => ReShadeShaderPackService.DeployedPackIds(a, _reshade.AvailableShaderPacks)
+            .SetEquals(ReShadeShaderPackService.DeployedPackIds(b, _reshade.AvailableShaderPacks));
+
+    /// <summary>
+    /// Brings the game's RHI shader packs to its effective set through ReShade's own journaled install (the installed
+    /// profile re-applied: <c>ApplySyncAsync</c> inside ReShade's operation, the record updated at its commit point). The
+    /// native D3DCompiler_47 is ensured first as profile Apply does. Nothing without RHI's ReShade or when the packs are
+    /// already the effective set.
+    /// </summary>
+    public async Task<ShaderSetApplyResult> ApplyShaderSetAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        var record = _records.Find(game, ManagedComponentKind.ReShade);
+        if (record is null) return new(ShaderSetOutcome.NotApplicable, "");
+        if (EffectiveShaderPacks(game) is not { } packs) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
+        var options = ReShadeRowOptions(game);
+        if (SamePacks(options.ShaderPackIds, packs)) return new(ShaderSetOutcome.Unchanged, "");
+        if (InstallGuard(game) is { } guard) return new(ShaderSetOutcome.Failed, guard.Message);
+        if (!options.VulkanLayer && packs.Count > 0 && string.IsNullOrWhiteSpace(options.D3DCompiler47Path)
+            && await EnsureNativeD3DCompilerDependencyAsync(game, null, "ReShade shader packs", cancellationToken).ConfigureAwait(false) is { } compiler)
+            return new(ShaderSetOutcome.Failed, compiler.Message);
+        var result = await _reshade.InstallAsync(game, options, cancellationToken).ConfigureAwait(false);
+        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
+    }
+
+    /// <summary>
+    /// Brings the game's Addon Manager add-ons to its effective set (one journaled Addon Manager operation). Held while
+    /// ReShade is the No Addons build; nothing without RHI's ReShade or when the add-ons already match.
+    /// </summary>
+    public async Task<ShaderSetApplyResult> ApplyAddonSetAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (_records.Find(game, ManagedComponentKind.ReShade) is null) return new(ShaderSetOutcome.NotApplicable, "");
+        if (EffectiveAddons(game) is not { } effective) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
+        if (effective.HeldByNoAddons) return new(ShaderSetOutcome.Held, ReShadeAddonSwitch.HeldPrefix + ReShadeAddonManagerService.DisplayName);
+        if (SameIds(_addonManager.RecordedSelection(game), effective.Ids) && (effective.Ids.Count == 0 || _addonManager.HasRecord(game)))
+            return new(ShaderSetOutcome.Unchanged, "");
+        var result = await ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken).ConfigureAwait(false);
+        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
+    }
+
+    /// <summary>The message when the shader and add-on choices cannot be read (PT-BR pair).</summary>
+    public const string ShaderSetsUnreadableMessage = "The shader and add-on choices cannot be read; nothing was changed.";
+
+    /// <summary>
+    /// After a ReShade install (the ReShade row, profile Apply, or ReShade installed for another component): a game with
+    /// no Addon Manager add-ons yet gets its effective add-ons, as upstream deploys the game's add-ons after ReShade. Its
+    /// own journaled operation; a failure leaves ReShade installed and is said after ReShade's message.
+    /// </summary>
+    private async Task<ComponentOperationResult> ApplyAddonSetAfterReShadeAsync(DetectedGame game, ManagedComponentKind target,
+        IReadOnlyCollection<ManagedComponentKind> installedThisAttempt, ComponentOperationResult result, CancellationToken cancellationToken)
+    {
+        if (_shaderSets is null || _addonManager is null || !result.Success) return result;
+        if (target != ManagedComponentKind.ReShade && !installedThisAttempt.Contains(ManagedComponentKind.ReShade)) return result;
+        if (_addonManager.HasRecord(game) || EffectiveAddons(game) is not { HeldByNoAddons: false, Ids.Count: > 0 } effective) return result;
+        ComponentOperationResult addons;
+        try
+        {
+            addons = await ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            addons = ComponentOperationResult.Fail(ex is OperationCanceledException ? "cancelled." : ex.Message);
+        }
+        return result with { Message = result.Message + (addons.Success ? AddonSetAppliedNote : AddonSetNotAppliedPrefix + addons.Message) };
+    }
+
 }
+
+/// <summary>#179: what bringing one game to its effective shader or add-on set did.</summary>
+public enum ShaderSetOutcome { Changed, Unchanged, Held, NotApplicable, Failed }
+
+/// <summary>#179: one game's outcome and the message of the operation (empty when nothing ran).</summary>
+public sealed record ShaderSetApplyResult(ShaderSetOutcome Outcome, string Message);
 
 /// <summary>Outcome of changing a Neural Rendering add-on pin (see <see cref="LinuxManagedComponentService.PlanNeuralPinChange"/>).</summary>
 public enum NeuralPinChange
