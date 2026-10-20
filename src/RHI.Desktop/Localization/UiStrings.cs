@@ -1180,6 +1180,16 @@ internal static class UiStrings
         // #210 the highlighted ⓘ (component rows).
         ("Sm.InfoTipGameNotes", "Notas para este jogo sobre o {0}: notas, compatibilidade e links", "Notes for this game about {0}: notes, compatibility and links"),
         ("Sm.InfoTipChangelog", "Novidades do {0} a partir da versão instalada, e links", "What is new in {0} from the installed version, and links"),
+        // #195 a dropped or watched RenoDX add-on.
+        ("Sm.DropTitle", "Instalar add-on do RenoDX", "Install RenoDX add-on"),
+        ("Sm.DropIntro", "Instalar {0} como o mod RenoDX deste jogo:", "Install {0} as this game's RenoDX mod:"),
+        ("Sm.DropFolder", "Instala em: {0}", "Installs into: {0}"),
+        ("Sm.DropReplaces", "Substitui o add-on do RenoDX que o RHI instalou: {0}", "Replaces the RenoDX add-on RHI installed: {0}"),
+        ("Sm.DropNote", "O botão Remover da linha do RenoDX o retira. Atualizar tudo não consegue verificar um arquivo adicionado assim.", "The RenoDX row's Remove button takes it out. Update All cannot check a file added this way."),
+        ("Sm.DropChooseTip", "Escolha o jogo na lista acima.", "Choose the game in the list above."),
+        ("Sm.DropInstalling", "Instalando o add-on do RenoDX {0} em {1}…", "Installing the RenoDX add-on {0} for {1}…"),
+        ("Sm.DropSourceRemoved", "O arquivo baixado foi retirado da pasta observada.", "The downloaded file was removed from the watch folder."),
+        ("Sm.DropNoGame", "Nenhum jogo da biblioteca pode receber um add-on do RenoDX: {0}", "No game in the library can take a RenoDX add-on: {0}"),
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

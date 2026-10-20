@@ -259,6 +259,9 @@ public sealed partial class MainWindow
                 case LinuxDroppedFileKind.LumaAddon:
                     await PromptInstallLumaAddonAsync(path, T("Win.InstallLumaAdd"));
                     break;
+                case LinuxDroppedFileKind.ReShadeAddon when DroppedRenoDxPresenter.Handles(path): // w7/smalls (#195)
+                    await PromptInstallDroppedRenoDxAsync(path, watchFolder: null);
+                    break;
                 case LinuxDroppedFileKind.ReShadeAddon:
                     await PromptImportCustomAddonAsync(path, T("Win.AddDroppedWindow"));
                     break;
@@ -296,6 +299,8 @@ public sealed partial class MainWindow
         {
             if (LinuxDroppedFileClassifier.IsLikelyLumaAddon(candidate.Path))
                 await PromptInstallLumaAddonAsync(candidate.Path, T("Win.LumaAddDetectedByWatcher"));
+            else if (DroppedRenoDxPresenter.Handles(candidate.Path)) // w7/smalls (#195)
+                await PromptInstallDroppedRenoDxAsync(candidate.Path, _addonWatcher.CurrentPath);
             else
                 await PromptImportCustomAddonAsync(candidate.Path, T("Win.AddDetectedByWatcher"));
             return;
@@ -325,6 +330,68 @@ public sealed partial class MainWindow
             T("Win.InstallLuma"));
         if (!install) return;
         await vm.InstallLocalLumaPackageAsync(path);
+    }
+
+    /// <summary>
+    /// #195: a dropped or watched RenoDX add-on: the game it goes into is confirmed (or chosen) first, then it is installed
+    /// as that game's RenoDX mod. <paramref name="watchFolder"/>: the watch folder a watched file came from (removed after
+    /// a successful install, as upstream).
+    /// </summary>
+    private async Task PromptInstallDroppedRenoDxAsync(string path, string? watchFolder)
+    {
+        if (DataContext is not MainWindowViewModel vm || !File.Exists(path)) return;
+        var presenter = vm.DroppedRenoDx;
+        if (presenter.OfferFor(vm, path, watchFolder) is not { } offer)
+        {
+            vm.StatusText = TF("Sm.DropNoGame", Path.GetFileName(path));
+            return;
+        }
+        if (await ShowDroppedRenoDxDialogAsync(offer, presenter) is not { } game) return;
+        await presenter.InstallAsync(vm, offer, game);
+    }
+
+    /// <summary>#195: the "Install RenoDX add-on" dialog: file, the game (matched or chosen), its folder, what it replaces.</summary>
+    private async Task<RHI.Core.Models.DetectedGame?> ShowDroppedRenoDxDialogAsync(DroppedRenoDxOffer offer, DroppedRenoDxPresenter presenter)
+    {
+        var games = new ComboBox { ItemsSource = offer.GameNames, SelectedIndex = offer.MatchedIndex, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var folder = new MiddleEllipsisText { WrapNonPath = false, Classes = { "muted" } };
+        var replaces = new TextBlock { TextWrapping = TextWrapping.Wrap, Classes = { "muted" } };
+        var accept = new Button { Content = T("Vm.Install"), Padding = new Thickness(14, 7) };
+        var cancel = new Button { Content = T("Win.Cancel"), Padding = new Thickness(14, 7) };
+        void Follow()
+        {
+            var chosen = games.SelectedIndex >= 0 && games.SelectedIndex < offer.Games.Count ? offer.Games[games.SelectedIndex] : null;
+            folder.FullText = chosen is null ? "" : TF("Sm.DropFolder", DroppedRenoDxPresenter.FolderFor(chosen));
+            folder.IsVisible = chosen is not null;
+            replaces.Text = chosen is null ? null : presenter.ReplacesFor(chosen);
+            replaces.IsVisible = !string.IsNullOrEmpty(replaces.Text);
+            accept.IsEnabled = chosen is not null;
+            ToolTip.SetTip(accept, chosen is null ? offer.ChooseTip : null); // the blocker is fixed in the list above
+        }
+        games.SelectionChanged += (_, _) => Follow();
+        Follow();
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        buttons.Children.Add(cancel); buttons.Children.Add(accept);
+        var panel = new StackPanel { Spacing = 12, Margin = new Thickness(18) };
+        panel.Children.Add(new TextBlock { Text = offer.Intro, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(games);
+        panel.Children.Add(folder);
+        panel.Children.Add(replaces);
+        panel.Children.Add(new TextBlock { Text = offer.Note, TextWrapping = TextWrapping.Wrap, Classes = { "muted" } });
+        panel.Children.Add(buttons);
+        var dialog = new Window
+        {
+            Title = offer.Title,
+            Width = 600,
+            MinWidth = 360,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled }
+        };
+        cancel.Click += (_, _) => dialog.Close(null);
+        accept.Click += (_, _) => dialog.Close(games.SelectedIndex >= 0 && games.SelectedIndex < offer.Games.Count ? offer.Games[games.SelectedIndex] : null);
+        return await ShowFittedDialogAsync<RHI.Core.Models.DetectedGame?>(dialog);
     }
 
     private async Task PromptImportCustomAddonAsync(string path, string title)

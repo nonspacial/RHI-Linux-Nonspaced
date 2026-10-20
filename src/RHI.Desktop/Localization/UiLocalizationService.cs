@@ -1344,6 +1344,13 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.NrCostScalerService.UpdatedPrefix, "NR Cost Scaler atualizado: "),
         (RHI.Platform.Linux.Deployment.NrCostScalerService.NotUpdatedModifiedPrefix, "NR Cost Scaler não atualizado: seus arquivos mudaram desde a instalação pelo RHI (mantidos como estão): "),
         (RHI.Platform.Linux.Deployment.NrCostScalerService.IniKeptNote, " O seu próprio nvngx_dlssnr.ini foi mantido."),
+        // #195 a dropped or watched RenoDX add-on.
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalPackageCheckMessage, "O RenoDX foi instalado a partir de um arquivo local; Atualizar tudo não consegue verificá-lo."),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix, "RenoDX instalado a partir de um arquivo local: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalNotAnAddonPrefix, "Não é um add-on do RenoDX que o RHI possa instalar (um arquivo de add-on do ReShade terminado em .addon64 ou .addon32): "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage, "Este add-on do RenoDX é de 32 bits e o jogo é de 64 bits; ele precisa do arquivo .addon64 do jogo."),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage, "Este add-on do RenoDX é de 64 bits e o jogo é de 32 bits; ele precisa do arquivo .addon32 do jogo."),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage, "O add-on do RenoDX para Control precisa dos passos extras do RHI: instale-o com o botão Instalar da linha do RenoDX."),
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

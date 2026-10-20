@@ -162,6 +162,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public ReShadeLegacyPresenter ReShadeLegacy => ReShadeLegacyPresenter.For(this, _managedComponents); // #186
     // w7 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w7/smalls rows
+    public DroppedRenoDxPresenter DroppedRenoDx => new(_managedComponents); // #195: dropped / watched RenoDX add-on
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows

@@ -1588,6 +1588,20 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public ComponentOperationResult ImportCustomAddonFile(string sourcePath)
         => _addonManager.ImportCustomAddonFile(sourcePath);
 
+    /// <summary>#195: a dropped or watched RenoDX add-on file installed as the game's RenoDX mod (install guards, update history).</summary>
+    public Task<ComponentOperationResult> InstallLocalRenoDxAddonAsync(DetectedGame game, string addonPath, CancellationToken cancellationToken = default)
+        => (InstallGuard(game) ?? AddonOffGuard(game, ManagedComponentKind.RenoDX)) is { } guard
+            ? Task.FromResult(guard)
+            : Track(game, ManagedComponentKind.RenoDX, ComponentUpdateAction.Install, () => _renodx.InstallLocalAddonAsync(game, addonPath, cancellationToken));
+
+    /// <summary>#195: the game's RenoDX record (the drop dialog names the add-on it replaces).</summary>
+    public LinuxDeploymentRecord? GetRenoDxRecord(DetectedGame game) => _records.Find(game, ManagedComponentKind.RenoDX);
+
+    /// <summary>#195: the add-on file name the RenoDX catalogue matched for the game this session (its snapshot), else null.</summary>
+    public string? RenoDxCatalogueFileName(DetectedGame game)
+        => _renodx.TryGetPreparedCompatibility(game, out var mod) && mod?.UrlFor(GameArchitecture.Of(game)) is { } url
+           && Uri.TryCreate(url, UriKind.Absolute, out var uri) ? Path.GetFileName(uri.LocalPath) : null;
+
     public Task<IReadOnlyList<ReShadeShaderPackInfo>> RefreshReShadeShaderPackCatalogAsync(
         CancellationToken cancellationToken = default)
         => _reshade.RefreshShaderPackCatalogAsync(cancellationToken);
