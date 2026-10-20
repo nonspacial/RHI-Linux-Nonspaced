@@ -172,6 +172,53 @@ public sealed class DxvkHdrRowTests
         Assert.StartsWith(UiLocalizationService.Format("Vm.InstallationCancelled", "DX9 HDR"), fx.Vm.StatusText, StringComparison.Ordinal);
     }
 
+    // The component row's Install goes through the confirmation first (w7/dxvk-hdr hook in ManageComponentAsync):
+    // declining it installs nothing.
+    [Fact]
+    public async Task RowInstall_AsksFirst_AndDecliningChangesNothing()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-dxvk-row-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bin = Path.Combine(root, "Row Dx9", "bin");
+            var prefix = Path.Combine(root, "Row Dx9", "pfx");
+            Directory.CreateDirectory(bin);
+            Directory.CreateDirectory(prefix);
+            PeArchitectureDetectorTests.WritePe(Path.Combine(bin, "Game.exe"), 0x8664, 4096);
+            File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+            var game = new DetectedGame
+            {
+                Name = "Row Dx9", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = Path.Combine(bin, "Game.exe"),
+                PrefixPath = prefix, Runner = "Proton", Source = "Test", GraphicsApi = GraphicsApi.DirectX9
+            };
+            using var fx = await ViewModelFixture.StartAsync([game]);
+            var selected = fx.Vm.Games.Single(row => row.Game.Name == game.Name).Game;
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnCompleted(AnalysisOutcome outcome) { if (outcome.Game.Name == game.Name) done.TrySetResult(); }
+            fx.Vm.Session.Completed += OnCompleted;
+            try
+            {
+                fx.Vm.SelectedGame = selected;
+                if (!fx.Vm.Session.TryGetCached(selected, out _)) await done.Task.WaitAsync(TimeSpan.FromMinutes(2));
+            }
+            finally { fx.Vm.Session.Completed -= OnCompleted; }
+            var row = fx.Vm.Session.Analysis!.Components.Single(c => c.Kind == ManagedComponentKind.DxvkHdr);
+            Assert.True(row.ActionAllowed, row.Note);
+            string? asked = null;
+            fx.Vm.ConfirmAsync = (_, text, _) => { asked = text; return Task.FromResult(false); };
+
+            await fx.Vm.ManageComponentCommand.ExecuteAsync(ManagedComponentKind.DxvkHdr);
+
+            Assert.Equal(UiLocalizationService.Text("Dxvk.ConfirmBody"), asked);
+            Assert.Null(fx.Records.Find(selected, ManagedComponentKind.DxvkHdr));
+            Assert.False(File.Exists(Path.Combine(bin, "d3d9.dll")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
+    }
+
     [Fact]
     public async Task WithoutReShade_TheConfirmationDoesNotMentionIt()
     {
