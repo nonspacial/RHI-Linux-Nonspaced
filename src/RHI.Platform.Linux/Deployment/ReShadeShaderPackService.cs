@@ -438,8 +438,8 @@ public sealed class ReShadeShaderPackService
             await operation.TrackFileAsync(manifestPath, CancellationToken.None, includeBackup: false).ConfigureAwait(false);
             await operation.RecordWriteAsync(manifestPath, FileHash.Sha256HexOf(manifestBytes), CancellationToken.None).ConfigureAwait(false);
             AtomicFile.WriteStoreFile(manifestPath, manifestBytes);
+            ManifestWrittenForTesting?.Invoke(manifestPath); // straight after the write: a crash test here fails if the declaration moves after it
         }
-        ManifestWrittenForTesting?.Invoke(manifestPath);
         return new(root, effectPaths, texturePaths, normalized);
     }
 
@@ -575,7 +575,7 @@ public sealed class ReShadeShaderPackService
     // together (one would delete the other's freshly moved tree).
     private readonly SemaphoreSlim _packGate = new(1, 1);
 
-    /// <summary>Test seam: runs right after a journaled sync wrote the game's shader-pack manifest.</summary>
+    /// <summary>Test seam: runs straight after a journaled sync wrote the game's shader-pack manifest (inside the journaled branch).</summary>
     internal Action<string>? ManifestWrittenForTesting { get; set; }
 
     /// <summary>Test seam: runs in the prefetch right before it waits for the pack cache gate.</summary>
