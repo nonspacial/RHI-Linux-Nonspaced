@@ -10,7 +10,7 @@ namespace RHI.Platform.Linux.Settings;
 /// <summary>A game's choice for its shaders or its add-ons (#179, upstream per-game Global / Select / Off).</summary>
 public enum ShaderAddonMode
 {
-    /// <summary>The global set (Settings → ReShade).</summary>
+    /// <summary>The global set (Settings → Shaders/Add-ons).</summary>
     Global,
     /// <summary>The game's own list.</summary>
     Select,

@@ -506,7 +506,7 @@ build.
 
 - Ported (upstream `SelectedShaderPacks`, `GlobalShadersOff`/`UseCustomShaders`, `EnabledGlobalAddons`,
   `PerGameShaderMode`/`PerGameAddonMode`): a global shader set, a global shader mode (Off / RHI managed / Custom) and
-  global add-ons (Settings → ReShade), and per game **Shaders: Global / Select / Off** and **Add-ons: Global / Select /
+  global add-ons (Settings → Shaders/Add-ons, beside the shader cache as upstream), and per game **Shaders: Global / Select / Off** and **Add-ons: Global / Select /
   Off** in the ReShade section (shown only where RHI installed ReShade; the add-on choice is hidden on the No Addons
   build). Global follows the global set (global Off = none, Custom = the local custom shader folder only); Select is the
   game's own list (picked in the Shaders/Add-ons dialog); Off takes RHI's shader packs or Addon Manager add-ons out of the

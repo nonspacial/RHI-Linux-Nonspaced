@@ -74,7 +74,7 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
         };
 
     /// <summary>
-    /// #179: the same dialog for the global shader set and add-ons (Settings → ReShade): Apply saves them and brings every
+    /// #179: the same dialog for the global shader set and add-ons (Settings → Shaders/Add-ons): Apply saves them and brings every
     /// game set to Global up to date.
     /// </summary>
     internal static ShaderAddonsDialogViewModel ForGlobal(MainWindowViewModel shell, ShaderAddonManagerUiSnapshot snapshot,

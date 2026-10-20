@@ -136,7 +136,7 @@ public sealed partial class ReShadeProfileViewModel
         await ReprobeKeepingStatusAsync(game);
     }
 
-    // ── Global sets (Settings → ReShade) ──────────────────────────────────
+    // ── Global sets (Settings → Shaders/Add-ons) ──────────────────────────
 
     partial void OnSelectedGlobalShaderModeChanged(OptionItem<GlobalShaderMode>? value)
     {

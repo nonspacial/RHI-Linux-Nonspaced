@@ -1180,8 +1180,8 @@ internal static class UiStrings
         // w7/reshade rows
         // w7/shader-sets rows
         ("Sets.Select", "Escolher", "Select"),
-        ("Sets.ShaderModeTip", "Global: o conjunto global de shaders (Configurações → ReShade). Escolher: os pacotes deste jogo. Desligado: nenhum pacote de shaders do RHI neste jogo.", "Global: the global shader set (Settings → ReShade). Select: this game's own packs. Off: no RHI shader packs in this game."),
-        ("Sets.AddonModeTip", "Global: os add-ons globais (Configurações → ReShade). Escolher: os add-ons deste jogo. Desligado: nenhum add-on do Addon Manager neste jogo.", "Global: the global add-ons (Settings → ReShade). Select: this game's own add-ons. Off: no Addon Manager add-ons in this game."),
+        ("Sets.ShaderModeTip", "Global: o conjunto global de shaders (Configurações → Shaders/Add-ons). Escolher: os pacotes deste jogo. Desligado: nenhum pacote de shaders do RHI neste jogo.", "Global: the global shader set (Settings → Shaders/Add-ons). Select: this game's own packs. Off: no RHI shader packs in this game."),
+        ("Sets.AddonModeTip", "Global: os add-ons globais (Configurações → Shaders/Add-ons). Escolher: os add-ons deste jogo. Desligado: nenhum add-on do Addon Manager neste jogo.", "Global: the global add-ons (Settings → Shaders/Add-ons). Select: this game's own add-ons. Off: no Addon Manager add-ons in this game."),
         ("Sets.GlobalModeManaged", "Gerenciado pelo RHI", "RHI managed"),
         ("Sets.GlobalModeCustom", "Pasta personalizada", "Custom folder"),
         ("Sets.GlobalShaderMode", "Shaders globais", "Global shaders"),
