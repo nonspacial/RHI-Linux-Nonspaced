@@ -13,7 +13,7 @@ public sealed record OptiScalerDllNameState(IReadOnlyList<DllNameOption> Options
 /// OptiScaler's "DLL name" dropdown in its settings (#172), like ReShade's (#120): Automatic (dxgi.dll, or the next free name
 /// while another RHI component holds dxgi.dll) by default, any of
 /// OptiScaler's names before it is installed; while it is installed, its name and every free name (a choice renames it in
-/// place, #196), or only its name, locked, while RHI's ReShade is chained to it; never a name another RHI component
+/// place, #196, also while RHI's ReShade is chained to it), or only its name, locked, when the file changed; never a name another RHI component
 /// already uses on the game. The install takes the same answer
 /// (<see cref="LinuxManagedComponentService.OptiScalerProxyNameFor"/>).
 /// </summary>
@@ -27,7 +27,7 @@ public static class OptiScalerDllNamePresenter
             var (targets, refusal) = components.OptiScalerRenameOptions(game);
             if (refusal is not null)
             {
-                // The ReShade chain keeps the name, or the file changed: only the installed name, locked, and why.
+                // The file changed since RHI installed it: only the installed name, locked, and why.
                 var only = new DllNameOption(installed, installed);
                 return new([only], only, false, UiLocalizationService.Present(refusal));
             }

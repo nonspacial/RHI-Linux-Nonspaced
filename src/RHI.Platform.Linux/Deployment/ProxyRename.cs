@@ -22,13 +22,16 @@ public static class ProxyRename
     /// <param name="NewName">The offered name to rename to (already checked against the component's list).</param>
     /// <param name="AfterRename">Changes the component's own record fields for the new name (OptiScaler's metadata).</param>
     /// <param name="Choice">The saved DLL-name choice to write with the rename (null: unchanged).</param>
+    /// <param name="Alongside">Another record of the game saved in the same ledger write as the renamed one (the commit
+    /// point): RHI's ReShade chained to a renamed OptiScaler, which records the name it goes back to.</param>
     internal sealed record Request(
         DetectedGame Game,
         LinuxDeploymentRecord Record,
         LinuxDeployedFile Payload,
         string NewName,
         Action<LinuxDeploymentRecord>? AfterRename,
-        StagedFileWrite? Choice);
+        StagedFileWrite? Choice,
+        LinuxDeploymentRecord? Alongside = null);
 
     /// <summary>Fixed text before the component when RHI has not installed it on the game (PT-BR presentation pair).</summary>
     public const string NotInstalledPrefix = "Nothing was renamed: RHI has not installed this component on this game: ";
@@ -155,7 +158,8 @@ public static class ProxyRename
             payload.Sha256 = sha; // a rename cannot change content
             record.WineOverride = newOverride;
             request.AfterRename?.Invoke(record);
-            records.Upsert(scope.Stamp(record));
+            if (request.Alongside is { } alongside) records.Commit([scope.Stamp(record), alongside]);
+            else records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {

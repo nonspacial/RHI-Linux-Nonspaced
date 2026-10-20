@@ -1,4 +1,5 @@
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Platform.Linux.Persistence;
 
 namespace RHI.Platform.Linux.Deployment;
@@ -7,22 +8,33 @@ namespace RHI.Platform.Linux.Deployment;
 public sealed partial class OptiScalerDeploymentService
 {
     /// <summary>
-    /// Fixed text before OptiScaler's installed name while RHI's ReShade is chained to it as ReShade64.dll: removing
-    /// OptiScaler moves ReShade back to OptiScaler's name, so it stays (PT-BR presentation pair).
+    /// Metadata on RHI's ReShade record while it is chained to OptiScaler as <c>ReShade64.dll</c> and OptiScaler was renamed
+    /// in place (#196 decision): the name ReShade had when OptiScaler took it, so removing OptiScaler moves ReShade back
+    /// there (as upstream restores ReShade's own name), not to OptiScaler's new name — which ReShade may not load under
+    /// (wininet.dll, winhttp.dll, dbghelp.dll). Absent = OptiScaler still has that name.
     /// </summary>
-    public const string RenameChainedPrefix =
-        "OptiScaler's DLL cannot be renamed in place while RHI's ReShade is chained to it as ReShade64.dll; remove ReShade first, or remove OptiScaler and install it again under the new name: ";
+    public const string ReShadeChainNameMetadataKey = "ReShade.ChainedFromName";
 
     /// <summary>Why RHI's OptiScaler on <paramref name="game"/> cannot be renamed in place at all, or null when it can.</summary>
     public string? RenameBlocker(DetectedGame game)
-    {
-        if (_records.Find(game, ManagedComponentKind.OptiScaler) is not { } record)
-            return ProxyRename.NotInstalledPrefix + "OptiScaler";
-        var reShade = _records.Find(game, ManagedComponentKind.ReShade);
-        if (reShade?.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase)) == true)
-            return RenameChainedPrefix + GetProxyName(record);
-        return null;
-    }
+        => _records.Find(game, ManagedComponentKind.OptiScaler) is null ? ProxyRename.NotInstalledPrefix + "OptiScaler" : null;
+
+    /// <summary>
+    /// The name RHI's ReShade, chained to OptiScaler as <c>ReShade64.dll</c>, goes back to when OptiScaler is removed: the
+    /// name it had when the chain was made (<see cref="ReShadeChainNameMetadataKey"/>), else OptiScaler's current name.
+    /// </summary>
+    internal static string ChainedReShadeName(LinuxDeploymentRecord? reShade, LinuxDeploymentRecord optiScaler)
+        => reShade?.Metadata.GetValueOrDefault(ReShadeChainNameMetadataKey) is { Length: > 0 } recorded
+           && ProxyDllNames.Canonical(recorded) is { } offered
+            ? offered
+            : GetProxyName(optiScaler);
+
+    // RHI's ReShade chained to OptiScaler (its record lists ReShade64.dll), or null.
+    private LinuxDeploymentRecord? ChainedReShade(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.ReShade) is { } reShade
+           && reShade.Files.Any(file => Path.GetFileName(file.Path).Equals("ReShade64.dll", StringComparison.OrdinalIgnoreCase))
+            ? reShade
+            : null;
 
     /// <summary>
     /// What OptiScaler's DLL-name dropdown offers while it is installed (#196): the names of <paramref name="candidates"/>
@@ -53,8 +65,16 @@ public sealed partial class OptiScalerDeploymentService
         if (target is null) return ComponentOperationResult.Fail(ProxyNameNotOfferedPrefix + name);
         var record = _records.Find(game, ManagedComponentKind.OptiScaler)!;
         if (ProxyFile(record) is not { } payload) return ComponentOperationResult.Fail(ProxyRename.ChangedPrefix + GetProxyName(record));
+        // RHI's ReShade chained as ReShade64.dll stays where it is (OptiScaler loads it by that name, whatever its own);
+        // its record keeps the name it goes back to on OptiScaler's removal, saved in the same write (#196 decision).
+        LinuxDeploymentRecord? chained = null;
+        if (ChainedReShade(game) is { } reShade && !reShade.Metadata.ContainsKey(ReShadeChainNameMetadataKey))
+        {
+            chained = reShade;
+            chained.Metadata[ReShadeChainNameMetadataKey] = GetProxyName(record);
+        }
         return await ProxyRename.RunAsync(_journal, _records, _overrides, "OptiScaler",
-            new ProxyRename.Request(game, record, payload, target, renamed => renamed.Metadata[ProxyNameMetadataKey] = target, choice),
+            new ProxyRename.Request(game, record, payload, target, renamed => renamed.Metadata[ProxyNameMetadataKey] = target, choice, chained),
             cancellationToken).ConfigureAwait(false);
     }
 

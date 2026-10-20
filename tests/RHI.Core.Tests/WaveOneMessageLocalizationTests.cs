@@ -413,7 +413,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ProxyRename.FailedPrefix + WineRegistryEditor.MissingHiveMessage;
         yield return ReShadeDeploymentService.RenameNotInPlacePrefix + "ReShade64.dll";
         yield return ReShadeDeploymentService.RenameNameNotOfferedPrefix + "ReShade32.dll";
-        yield return OptiScalerDeploymentService.RenameChainedPrefix + "dxgi.dll";
+        yield return OptiScalerDeploymentService.ChainNameTakenPrefix + "dxgi.dll";
         yield return LinuxManagedComponentService.DllNamesResetMessage;
         yield return LinuxManagedComponentService.DllNamesResetMessage + " " + ProxyRename.RenamedPrefix + "winmm.dll → dxgi.dll";
         yield return XnaGacReShade.RowNote;
