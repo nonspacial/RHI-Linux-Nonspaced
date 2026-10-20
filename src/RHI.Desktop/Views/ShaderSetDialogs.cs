@@ -13,7 +13,7 @@ namespace RHI.Desktop.Views;
 /// </summary>
 internal static class ShaderSetDialogs
 {
-    private const double SideMargin = 24;
+    private const double SideMargin = 32; // as MainWindow.DialogSideMargin
 
     /// <summary>The game's own list of <paramref name="part"/>: Apply makes it Select.</summary>
     public static async Task ShowSelectListAsync(Control anchor, MainWindowViewModel vm, ShaderAddonSetPart part)
@@ -102,7 +102,10 @@ internal static class ShaderSetDialogs
         return dialog.ShowDialog(owner);
     }
 
-    private static (bool Opened, string? Error) OpenFolder(string path)
+    // The dialog presents the reason itself (ErrorLineText), as for the main window's own folder buttons.
+    private static (bool Opened, string? Error) OpenFolder(string path) => (TryOpenFolder(path, out var error), error);
+
+    private static bool TryOpenFolder(string path, out string? error)
     {
         try
         {
@@ -110,8 +113,9 @@ internal static class ShaderSetDialogs
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            return (false, ex.Message);
+            error = ex.Message;
+            return false;
         }
-        return (LinuxDesktopOpener.TryOpenDirectory(path, out var error), error);
+        return LinuxDesktopOpener.TryOpenDirectory(path, out error);
     }
 }

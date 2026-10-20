@@ -167,7 +167,7 @@ public sealed partial class ReShadeProfileViewModel
     public async Task<ComponentOperationResult> ApplyGlobalSetsAsync(IReadOnlyList<string> shaderIds, IReadOnlyList<string> addonIds,
         CancellationToken cancellationToken = default)
     {
-        if (Sets is not { } sets) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        if (Sets is not { } sets) return ComponentOperationResult.Fail(UiLocalizationService.Present(LinuxManagedComponentService.ShaderSetsUnreadableMessage));
         using var op = BeginOperation("shader-sets", linkedToken: cancellationToken);
         if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         var shadersChanged = !Same(sets.GlobalShaderPackIds, shaderIds);
