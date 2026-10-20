@@ -342,6 +342,30 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(5, rig.Dxvk.PresetOf(rig.Game));
     }
 
+    // The archive's d3d9.dll must be DXVK HDR for the game's bitness: a plain DXVK (no HDR build marker) or the other
+    // bitness is refused before anything changes, and nothing is cached as if it were the build.
+    [Theory]
+    [InlineData("plain-dxvk")]
+    [InlineData("other-bitness")]
+    public async Task DxvkHdr_ArchiveWithoutTheGamesHdrBuild_IsRefusedBeforeAnyChange(string what)
+    {
+        var rig = Rig("dxvk-notbuild-" + what);
+        if (what == "plain-dxvk") PeArchitectureDetectorTests.WritePe(Path.Combine(rig.Builds.Folder, "x64.dll"), 0x8664, 8192);
+        else File.WriteAllBytes(Path.Combine(rig.Builds.Folder, "x64.dll"), DxvkHdrDll(0x014c));
+        var before = CancelAtWritePhase.Snapshot(rig.Bin, rig.Game.PrefixPath!);
+
+        var result = await rig.Dxvk.InstallAsync(rig.Game);
+
+        Assert.False(result.Success);
+        Assert.Equal(DxvkHdrDeploymentService.DownloadFailedPrefix + DxvkHdrDeploymentService.NotDxvkHdrPrefix + "normal/x64/d3d9.dll", result.Message);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin, rig.Game.PrefixPath!);
+
+        rig.Builds.Set("a"); // the release fixed: the next install takes it (the refused copy was never cached)
+        var retried = await rig.Dxvk.InstallAsync(rig.Game);
+        Assert.True(retried.Success, retried.Message);
+        Assert.Equal(rig.Builds.Bytes(false), File.ReadAllBytes(rig.D3d9));
+    }
+
     [Fact]
     public async Task DxvkHdr_UntrustedAssetLink_IsNeverDownloaded()
     {
