@@ -14,8 +14,10 @@ public static class PeIconReader
 {
     /// <summary>Largest icon resource read (a 256×256 32-bit DIB is about 270 KB; PNG icons are smaller).</summary>
     public const int MaxIconBytes = 4 * 1024 * 1024;
-    /// <summary>Largest side of a DIB icon that is converted.</summary>
+    /// <summary>Largest side of an icon that is converted (DIB) or passed on (PNG, from its IHDR).</summary>
     public const int MaxDibSide = 1024;
+    /// <summary>Icon data read across all candidates of one file before RHI gives up (a hostile exe can list many).</summary>
+    public const int MaxTotalIconBytes = 16 * 1024 * 1024;
     private const int MaxGroupEntries = 256;
     private const int MaxSections = 96;
     private const int MaxDirectoryEntries = 4096;
@@ -24,9 +26,13 @@ public static class PeIconReader
     private const uint ResourceTypeGroupIcon = 14;
     private static ReadOnlySpan<byte> PngSignature => [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A];
 
+    /// <summary>Test seam: icon data bytes read by this thread's last <see cref="ReadLargestIconPng"/>.</summary>
+    [ThreadStatic] internal static long IconBytesReadForTesting;
+
     /// <summary>The largest icon of the PE at <paramref name="path"/> as PNG bytes, or null.</summary>
     public static byte[]? ReadLargestIconPng(string? path)
     {
+        IconBytesReadForTesting = 0;
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
         try
         {
@@ -47,7 +53,13 @@ public static class PeIconReader
     internal static byte[]? ToPng(byte[] icon)
     {
         if (icon.AsSpan().StartsWith(PngSignature))
-            return icon.Length >= 33 && icon.AsSpan(12, 4).SequenceEqual("IHDR"u8) ? icon : null;
+        {
+            // Passed on as stored, so the desktop decodes it: the sides its IHDR declares are capped like a DIB's.
+            if (icon.Length < 33 || !icon.AsSpan(12, 4).SequenceEqual("IHDR"u8)) return null;
+            var width = BinaryPrimitives.ReadInt32BigEndian(icon.AsSpan(16));
+            var height = BinaryPrimitives.ReadInt32BigEndian(icon.AsSpan(20));
+            return width is > 0 and <= MaxDibSide && height is > 0 and <= MaxDibSide ? icon : null;
+        }
         return DibToRgba(icon) is { } image ? EncodePng(image.Width, image.Height, image.Rgba) : null;
     }
 
@@ -133,11 +145,15 @@ public static class PeIconReader
             .Select(e => (Side: Math.Max(e[0] == 0 ? 256 : e[0], e[1] == 0 ? 256 : e[1]), Bits: BinaryPrimitives.ReadUInt16LittleEndian(e.AsSpan(6)),
                 Bytes: BinaryPrimitives.ReadUInt32LittleEndian(e.AsSpan(8)), Id: BinaryPrimitives.ReadUInt16LittleEndian(e.AsSpan(12))))
             .OrderByDescending(e => e.Side).ThenByDescending(e => e.Bits).ThenByDescending(e => e.Bytes);
+        long budget = MaxTotalIconBytes;
         foreach (var candidate in candidates)
         {
             if (FindEntry(stream, resourceBase, icons.Offset, candidate.Id) is not { IsDirectory: true } iconLanguages) continue;
             if (FindEntry(stream, resourceBase, iconLanguages.Offset, null) is not { } iconData) continue;
-            if (Data(iconData, MaxIconBytes) is { } bytes && ToPng(bytes) is not null) return bytes;
+            if (Data(iconData, (int)Math.Min(MaxIconBytes, budget)) is not { } bytes) continue;
+            IconBytesReadForTesting += bytes.Length;
+            if (ToPng(bytes) is not null) return bytes;
+            if ((budget -= bytes.Length) <= 0) break; // the rest is not read
         }
         return null;
     }

@@ -110,6 +110,28 @@ public sealed class PeIconReaderTests : IDisposable
         Assert.Equal(small, PeIconReader.ReadLargestIconPng(Write("huge2.exe", WithIcons(new Icon(0, 0, 32, huge, Id: 1), new Icon(32, 32, 32, small, Id: 2)))));
     }
 
+    [Fact]
+    public void APngIconClaimingHugeSides_IsNotPassedOn_TheNextOneIs()
+    {
+        var bomb = PngIcon(16, 1);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bomb.AsSpan(16), 60000); // IHDR width
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bomb.AsSpan(20), 60000); // IHDR height
+        Assert.Null(PeIconReader.ReadLargestIconPng(Write("bomb.exe", WithIcons(new Icon(0, 0, 32, bomb, Id: 1)))));
+        var small = PngIcon(32, 3);
+        Assert.Equal(small, PeIconReader.ReadLargestIconPng(Write("bomb2.exe", WithIcons(new Icon(0, 0, 32, bomb, Id: 1), new Icon(32, 32, 32, small, Id: 2)))));
+    }
+
+    [Fact]
+    public void ManyUnreadableCandidates_StopAtTheTotalReadBudget()
+    {
+        var garbage = new byte[PeIconReader.MaxIconBytes];
+        garbage[0] = 0x28; // a DIB header size of 40, the rest zero: width 0, refused
+        var path = Write("many.exe", WithIcons(Enumerable.Range(1, 40).Select(i => new Icon(16, 16, 32, garbage, Id: (ushort)i)).ToArray()));
+
+        Assert.Null(PeIconReader.ReadLargestIconPng(path));
+        Assert.InRange(PeIconReader.IconBytesReadForTesting, 1, PeIconReader.MaxTotalIconBytes); // not 40 × 4 MB
+    }
+
     private static byte[] Patch(byte[] bytes, int offset, int value)
     {
         System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(offset), value);
@@ -213,5 +235,30 @@ public sealed class PeIconReaderTests : IDisposable
         var second = await service.CreateAsync(game, "steam:77", ShortcutPlace.Desktop);
         Assert.EndsWith(".png", IconLine(second.FilePath!), StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFiles(IconDir, "*.jpg")); // the older copy does not linger
+    }
+
+    [Fact]
+    public async Task TheOtherPlacesShortcut_KeepsTheIconFileItNames()
+    {
+        var game = Game("Both Places", Enumerable.Repeat((byte)1, 512).ToArray(), appId: 78);
+        var service = Service([SteamWithArt(78)]);
+        var menu = await service.CreateAsync(game, "steam:78", ShortcutPlace.ApplicationsMenu); // Steam art (exe unreadable)
+
+        File.WriteAllBytes(game.ExecutablePath!, WithIcons(new Icon(16, 16, 32, PngIcon(16, 5), Id: 1)));
+        var desktop = await service.CreateAsync(game, "steam:78", ShortcutPlace.Desktop);           // the exe icon now
+
+        Assert.EndsWith(".png", IconLine(desktop.FilePath!), StringComparison.Ordinal);
+        Assert.True(File.Exists(IconLine(menu.FilePath!)), "the menu entry's Steam art was deleted");
+
+        // Once the menu entry is made again it uses the exe icon too, and the Steam copy goes.
+        var again = await service.CreateAsync(game, "steam:78", ShortcutPlace.ApplicationsMenu);
+        Assert.Equal(IconLine(desktop.FilePath!), IconLine(again.FilePath!));
+        Assert.Empty(Directory.EnumerateFiles(IconDir, "*.jpg"));
+
+        // The reverse: the exe icon cannot be read once (RHI's own icon): the menu's PNG stays.
+        File.WriteAllBytes(game.ExecutablePath!, [1, 2, 3]);
+        var fallback = await Service().CreateAsync(game, "steam:78", ShortcutPlace.Desktop);
+        Assert.Equal(DesktopShortcutService.DefaultIcon, IconLine(fallback.FilePath!));
+        Assert.True(File.Exists(IconLine(again.FilePath!)));
     }
 }

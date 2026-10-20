@@ -105,11 +105,13 @@ public sealed class DesktopShortcutService
         {
             var existed = File.Exists(path);
             if (existed && !IsOurs(path, gameKey)) return new ShortcutResult(ShortcutOutcome.ForeignFileInTheWay, path);
-            var icon = ExeIcon(game, gameKey) ?? SteamIcon(game, gameKey) ?? DefaultIcon;
-            ForgetOtherIcons(game, gameKey, keep: icon);
+            // The exe is read off the caller's thread (bounded, but it is the game's file).
+            var icon = await Task.Run(() => ExeIcon(game, gameKey)).ConfigureAwait(false) ?? SteamIcon(game, gameKey) ?? DefaultIcon;
+            var desktop = place == ShortcutPlace.Desktop ? folder : await _desktopFolder(cancellationToken).ConfigureAwait(false);
+            var otherFolder = place == ShortcutPlace.Desktop ? _applicationsFolder : desktop;
+            ForgetOtherIcons(game, gameKey, keep: icon, otherEntry: otherFolder is null ? null : Path.Combine(otherFolder, FileName(game.Name, gameKey)));
             var entry = BuildEntry(game.Name, command, icon, gameKey);
             AtomicFile.WriteStoreFile(path, Encoding.UTF8.GetBytes(entry), place == ShortcutPlace.Desktop ? DesktopMode : MenuMode);
-            var desktop = place == ShortcutPlace.Desktop ? folder : await _desktopFolder(cancellationToken).ConfigureAwait(false);
             RemoveUnusedIcons(desktop);
             return new ShortcutResult(existed ? ShortcutOutcome.Updated : ShortcutOutcome.Created, path);
         }
@@ -185,14 +187,28 @@ public sealed class DesktopShortcutService
         }
     }
 
-    /// <summary>Removes RHI's other icon copy of this shortcut (the Steam art after an exe icon, or both for RHI's own icon).</summary>
-    private void ForgetOtherIcons(DetectedGame game, string gameKey, string keep)
+    /// <summary>
+    /// Removes RHI's other icon copy of this shortcut (the Steam art after an exe icon, or both for RHI's own icon), but never
+    /// the one the game's shortcut in the other place (<paramref name="otherEntry"/>) still names; nothing while that place
+    /// is unknown (null).
+    /// </summary>
+    private void ForgetOtherIcons(DetectedGame game, string gameKey, string keep, string? otherEntry)
     {
+        if (otherEntry is null) return;
+        var usedThere = IconOf(otherEntry, gameKey);
         foreach (var extension in IconExtensions)
         {
             var candidate = IconPath(game, gameKey, extension);
-            if (candidate != keep && File.Exists(candidate)) FileCleanup.TryDelete(candidate);
+            if (candidate != keep && DesktopEntryFormat.EscapeString(candidate) != usedThere && File.Exists(candidate)) FileCleanup.TryDelete(candidate);
         }
+    }
+
+    /// <summary>The <c>Icon=</c> value of RHI's shortcut for this key at <paramref name="entry"/>, else null.</summary>
+    private static string? IconOf(string entry, string gameKey)
+    {
+        if (!File.Exists(entry) || !IsOurs(entry, gameKey)) return null;
+        var line = File.ReadLines(entry).FirstOrDefault(l => l.StartsWith("Icon=", StringComparison.Ordinal));
+        return line?["Icon=".Length..].Trim();
     }
 
     /// <summary>
