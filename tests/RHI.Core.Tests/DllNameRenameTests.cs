@@ -282,6 +282,54 @@ public sealed class DllNameRenameTests : IDisposable
         Assert.False(managed.HasDllNamesToReset(fx.Game));
     }
 
+    [Theory]
+    [InlineData("optiscaler-chain")]
+    [InlineData("dx9-translation")]
+    [InlineData("shortfuse")]
+    public async Task HasDllNamesToReset_IsFalse_WhenAnotherComponentDecidesReShadesName(string scenario)
+    {
+        // Review 1: ReShade under a name another component decides cannot be renamed back, so Reset has nothing to do
+        // (its button stays hidden); a saved choice still counts, and Reset clears it without touching the DLL.
+        var fx = Fixture("reset-blocked-" + scenario);
+        var managed = Managed(fx, fx.Service);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var name = scenario == "optiscaler-chain" ? "ReShade64.dll" : "winmm.dll";
+        Assert.True((await fx.Service.RenameProxyAsync(fx.Game, name)).Success);
+        fx.Names.SetReShade(fx.Game, null);
+        switch (scenario)
+        {
+            case "optiscaler-chain": // installing ReShade after OptiScaler chains it as ReShade64.dll
+                fx.Records.Upsert(OtherRecord(fx, ManagedComponentKind.OptiScaler, Path.Combine(fx.Bin, "OptiScaler.ini")));
+                break;
+            case "dx9-translation":
+                var luma = OtherRecord(fx, ManagedComponentKind.LumaFramework, Path.Combine(fx.Bin, "luma.addon64"));
+                luma.Metadata[LumaFrameworkDeploymentService.MetaDx9Migration] = "{\"OriginalPath\":\"d3d9.dll\"}";
+                fx.Records.Upsert(luma);
+                break;
+            default: // ShortFuse moved ReShade (its record names the payload it came from)
+                var record = fx.Records.Find(fx.Game, ManagedComponentKind.ReShade)!;
+                record.Metadata[ShortFuseDeploymentService.MetaReShadeOriginalPath] = Path.Combine(fx.Bin, "dxgi.dll");
+                fx.Records.Upsert(record);
+                break;
+        }
+        Assert.NotNull(fx.Service.RenameBlocker(fx.Game));
+
+        Assert.False(managed.HasDllNamesToReset(fx.Game));
+
+        fx.Names.SetReShade(fx.Game, "version.dll");
+        Assert.True(managed.HasDllNamesToReset(fx.Game));
+        var before = fx.Snapshot();
+        var reset = await managed.ResetDllNamesAsync(fx.Game);
+
+        Assert.True(reset.Success, reset.Message);
+        Assert.Null(fx.Names.GetReShade(fx.Game));
+        Assert.True(File.Exists(Path.Combine(fx.Bin, name)));
+        Assert.Equal(Path.Combine(fx.Bin, name), ProxyPayloadLocator.ReShadePayload(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade))!.Path);
+        CancelAtWritePhase.AssertUnchanged(before.Where(entry => !entry.Key.StartsWith(Path.GetDirectoryName(fx.NamesPath)! + "/", StringComparison.Ordinal))
+            .ToDictionary(entry => entry.Key, entry => entry.Value), [fx.Bin, Path.GetDirectoryName(fx.UserReg)!]);
+        Assert.False(managed.HasDllNamesToReset(fx.Game));
+    }
+
     [Fact]
     public async Task RenameOptions_HideTakenNames_AndARefusalLocksTheName()
     {
