@@ -50,6 +50,7 @@ public sealed class OptionListsTests
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            AssertRoundTrips(OptionLists.DxvkHdrPreset); // #200
         }
         finally
         {

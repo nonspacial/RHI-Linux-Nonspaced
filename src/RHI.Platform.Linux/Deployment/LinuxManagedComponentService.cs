@@ -61,9 +61,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         NrCostScalerService? nrCostScaler = null, // w3/parity (#96)
         RtxEncoreDeploymentService? rtxEncore = null, // w4/encore (#158)
         UpdateInclusionStore? updateInclusion = null, // w5/update-policy (#178)
-        DlssAutoFollowStore? dlssFollow = null) // w5/update-policy (#177): its per-game holds join Repair after move
+        DlssAutoFollowStore? dlssFollow = null, // w5/update-policy (#177): its per-game holds join Repair after move
+        DxvkHdrDeploymentService? dxvkHdr = null) // w7/dxvk-hdr (#200)
     {
         _dlssFollow = dlssFollow;
+        _dxvkHdr = dxvkHdr; // w7/dxvk-hdr (#200)
         _nrCostScaler = nrCostScaler;
         _rtxEncore = rtxEncore;
         _updateInclusion = updateInclusion;
@@ -880,6 +882,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         foreach (var component in components.Where(c => ReShadeAddonSwitch.IsOff(Find(c.Kind))))
             component.Note = ReShadeAddonSwitch.OffNote;
 
+        _dxvkHdr?.Decorate(game, components, Find(ManagedComponentKind.DxvkHdr)); // w7/dxvk-hdr hook (#200): the DX9 HDR row
         DecorateModCredits(game, components, managedRenoDx, managedLumaFramework);
         DecorateUpdateInclusion(game, components); // w5/update-policy (#178)
     }
@@ -977,6 +980,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     private readonly RtxEncoreDeploymentService? _rtxEncore; // w4/encore (#158)
     private readonly UpdateInclusionStore? _updateInclusion; // w5/update-policy (#178)
     private readonly DlssAutoFollowStore? _dlssFollow; // w5/update-policy (#177)
+    private readonly DxvkHdrDeploymentService? _dxvkHdr; // w7/dxvk-hdr (#200)
 
     /// <summary>#178: what the game's update inclusion (and Settings, for every game) leaves out of Update All.</summary>
     public UpdateExclusion UpdateExclusionFor(DetectedGame game, ManagedComponentKind component)
@@ -1084,6 +1088,18 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 
     /// <summary>The NR Cost Scaler service (null in builds and tests constructed without it).</summary>
     public NrCostScalerService? NrCostScaler => _nrCostScaler;
+
+    /// <summary>w7/dxvk-hdr (#200): the game a ReShade install targets (a Vulkan view beside DX9 HDR; see ReShadeDeploymentService.ViewForDxvkHdr).</summary>
+    private DetectedGame ReShadeViewForDxvkHdr(DetectedGame game) => _reshade is null ? game : _reshade.ViewForDxvkHdr(game);
+
+    /// <summary>w7/dxvk-hdr (#200): the DX9 HDR service (null in builds and tests constructed without it).</summary>
+    public DxvkHdrDeploymentService? DxvkHdr => _dxvkHdr;
+
+    /// <summary>w7/dxvk-hdr (#200): the ⚙ preset choice, behind the patch-target guard (a conf rewrite, not an update: no history entry).</summary>
+    public Task<ComponentOperationResult> SetDxvkHdrPresetAsync(DetectedGame game, int preset, CancellationToken cancellationToken = default)
+        => PatchTargetGuard(game) is { } guard ? Task.FromResult(guard)
+            : _dxvkHdr is null ? Task.FromResult(ComponentOperationResult.Fail(DxvkHdrDeploymentService.NotInstalledMessage))
+            : _dxvkHdr.SetPresetAsync(game, preset, cancellationToken);
 
     private ManagedUpdateCheck? PatchTargetUpdateGuard(DetectedGame game)
     {
@@ -1555,6 +1571,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        ManagedComponentKind.DxvkHdr => DxvkHdrDeploymentService.DisplayName,
         _ => kind.ToString()
     };
 
@@ -1716,6 +1733,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     {
         var guard = InstallGuard(game);
         if (guard is not null) return guard;
+        game = ReShadeViewForDxvkHdr(game); // w7/dxvk-hdr hook (#200): ReShade beside DX9 HDR takes the Vulkan layer
         // w5/reshade-core (#92): Apply on a Vulkan game is the explicit layer choice too; its shaders need no D3DCompiler.
         options.VulkanLayer = options.VulkanLayer || ReShadeRowOptions(game).VulkanLayer;
         return await Track(game, ManagedComponentKind.ReShade, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
@@ -2233,6 +2251,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => await _dxvkHdr.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false),
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -2288,6 +2307,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.UpdateAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -2369,6 +2389,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var guard = InstallGuard(game) ?? LayerGuard(game, component) ?? AddonOffGuard(game, component) // w3/parity (#96), #170
                     ?? VulkanLayerConflict(game, component); // w5/reshade-core (#92)
         if (guard is not null) return guard;
+        if (component == ManagedComponentKind.ReShade) game = ReShadeViewForDxvkHdr(game); // w7/dxvk-hdr hook (#200): ReShade beside DX9 HDR takes the Vulkan layer
 
         return await Track(game, component, ComponentUpdateAction.Install, () => InstallWithManagedDependenciesAsync(
             game,
@@ -2408,6 +2429,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.InstallAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -2605,6 +2627,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.RemoveAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

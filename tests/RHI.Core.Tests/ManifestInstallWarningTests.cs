@@ -20,6 +20,7 @@ public sealed class ManifestInstallWarningTests
     [InlineData(ManagedComponentKind.REFramework, "reframework")]
     [InlineData(ManagedComponentKind.ReLimiter, "relimiter")]
     [InlineData(ManagedComponentKind.DisplayCommander, "dc")]
+    [InlineData(ManagedComponentKind.DxvkHdr, "dxvk")] // #200
     [InlineData(ManagedComponentKind.RenoDXUpgrade, null)]
     [InlineData(ManagedComponentKind.Dlss, null)]
     [InlineData(ManagedComponentKind.UltimateAsiLoader, null)]

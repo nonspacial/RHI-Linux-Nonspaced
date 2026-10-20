@@ -128,6 +128,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    public bool HasDxvkHdrSettings => DxvkHdrPresenter.HasSettings(component); // #200: DX9 HDR ⚙ (preset)
+    public string DxvkHdrSettingsTip => DxvkHdrPresenter.SettingsTip; // #200: provenance in the 2 s tooltip
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }
