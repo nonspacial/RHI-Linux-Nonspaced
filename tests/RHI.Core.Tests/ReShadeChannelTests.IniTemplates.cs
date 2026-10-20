@@ -26,7 +26,8 @@ public sealed partial class ReShadeChannelTests
         var text = File.ReadAllText(Path.Combine(game.BinaryDirectory!, "ReShade.ini"));
         Assert.Contains("; mine", text);
         Assert.Contains("KeepMe=1", text);
-        Assert.Contains("DisabledAddons=Generic Depth,Effect Runtime Sync", text); // template wins (upstream)
+        Assert.Contains("DisabledAddons=Generic Depth\n", text); // #208: the game's own value stays (unlike upstream)
+        Assert.Contains("TutorialProgress=4", text); // a key the file lacked comes from the template
         Assert.Contains("VariableListUseTabs=1", text);
         Assert.Contains("KeyOverlay=45,0,0,0", text);
         Assert.Contains(@"EffectSearchPaths=.\reshade-shaders\Shaders\**", text);
