@@ -402,6 +402,20 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
         // w7/smalls rows
         // w7/reshade rows
+        yield return ProxyRename.NotInstalledPrefix + "OptiScaler";
+        yield return ProxyRename.NameKeptPrefix + "dxgi.dll";
+        yield return ProxyRename.ChangedPrefix + P;
+        yield return ProxyRename.OriginalKeptPrefix + P;
+        yield return ProxyRename.TargetTakenPrefix + P;
+        yield return ProxyRename.TargetHeldPrefix + "winmm.dll (Ultimate ASI Loader)";
+        yield return ProxyRename.NoPrefixMessage;
+        yield return ProxyRename.RenamedPrefix + "dxgi.dll → winmm.dll";
+        yield return ProxyRename.FailedPrefix + WineRegistryEditor.MissingHiveMessage;
+        yield return ReShadeDeploymentService.RenameNotInPlacePrefix + "ReShade64.dll";
+        yield return ReShadeDeploymentService.RenameNameNotOfferedPrefix + "ReShade32.dll";
+        yield return OptiScalerDeploymentService.RenameChainedPrefix + "dxgi.dll";
+        yield return LinuxManagedComponentService.DllNamesResetMessage;
+        yield return LinuxManagedComponentService.DllNamesResetMessage + " " + ProxyRename.RenamedPrefix + "winmm.dll → dxgi.dll";
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

@@ -1338,6 +1338,22 @@ public static class UiLocalizationService
             "Download recusado: links do runtime Vulkan devem ser HTTPS em um host confiável (LunarG). Link recusado: "),
         // w7/smalls rows
         // w7/reshade rows
+        (RHI.Platform.Linux.Deployment.ProxyRename.NotInstalledPrefix, "Nada foi renomeado: o RHI não instalou este componente neste jogo: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.NameKeptPrefix, "A DLL já tem este nome; a escolha foi salva: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.ChangedPrefix, "A DLL não foi renomeada: o arquivo mudou desde que o RHI o instalou. Arquivo: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.OriginalKeptPrefix,
+            "A DLL não foi renomeada: o RHI guarda o arquivo original do jogo com esse nome como cópia de segurança, então o nome precisa ficar; remova o componente e instale-o de novo com o novo nome. Arquivo: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.TargetTakenPrefix, "A DLL não foi renomeada: outro arquivo já usa esse nome na pasta do jogo. Arquivo: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.TargetHeldPrefix, "A DLL não foi renomeada: outro componente que o RHI instalou neste jogo usa esse nome. Nome e componente: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.NoPrefixMessage, "A DLL não foi renomeada: o prefixo Wine/Proton do jogo não está preparado; inicie o jogo uma vez primeiro."),
+        (RHI.Platform.Linux.Deployment.ProxyRename.RenamedPrefix, "DLL renomeada no lugar; o override do Wine e o registro do RHI vão junto com ela: "),
+        (RHI.Platform.Linux.Deployment.ProxyRename.FailedPrefix, "A renomeação da DLL falhou e foi revertida; a DLL mantém o nome: "),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameNotInPlacePrefix,
+            "A DLL do ReShade não pode ser renomeada no lugar enquanto outro componente decide o nome dela (OptiScaler, ShortFuse ou a tradução DirectX 9); remova o ReShade e instale-o de novo para mudar: "),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameNameNotOfferedPrefix, "A DLL não foi renomeada: o ReShade não é oferecido com este nome para este jogo: "),
+        (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.RenameChainedPrefix,
+            "A DLL do OptiScaler não pode ser renomeada no lugar enquanto o ReShade do RHI está encadeado a ela como ReShade64.dll; remova o ReShade primeiro, ou remova o OptiScaler e instale-o de novo com o novo nome: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DllNamesResetMessage, "Todos os nomes de DLL deste jogo voltaram para automático."),
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

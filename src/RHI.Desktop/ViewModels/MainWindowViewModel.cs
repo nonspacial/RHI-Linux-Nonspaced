@@ -163,6 +163,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w7 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w7/smalls rows
     // w7/reshade rows
+    public Task<bool> RenameOptiScalerDllNameAsync(string? name) => OptiScalerDllNamePresenter.RenameAsync(this, _managedComponents, name); // #196
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows

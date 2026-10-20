@@ -244,7 +244,7 @@ public sealed partial class ReShadeDeploymentService
             return await InstallVulkanLayerAsync(game, options, installedRecord, architecture, isUpdate, cancellationToken).ConfigureAwait(false);
 
         // The proxy name: the user's choice, else the RHI manifest's, else the API's (#120). An installed ReShade keeps
-        // the name it was installed under (the record decides below); a new name needs a removal first.
+        // the name it was installed under (the record decides below); a new name is an in-place rename (#196, RenameProxyAsync).
         var resolution = ResolveProxyName(game);
         if (resolution is null)
             return ComponentOperationResult.Fail(ReShadeVulkanLayer.IsVulkanTarget(game)

@@ -19,8 +19,11 @@ public sealed record DllNameOption(string? Value, string Display)
 /// <summary>
 /// The ReShade "DLL name" dropdown of the selected game (#120, upstream's per-game DLL-name dropdown). Automatic uses the
 /// RHI manifest's name for the game, else the file the game's graphics API loads; any offered name can be chosen
-/// before ReShade is installed. While RHI's ReShade is installed the dropdown shows the name it was installed under and
-/// is disabled (no in-place rename). State is worked out off the UI thread after each selection or analysis.
+/// before ReShade is installed. While RHI's ReShade is installed the dropdown shows the name it was installed under, and
+/// choosing another free name renames it in place (#196, one journaled operation with its Wine override and record);
+/// when another component decides the name (or the file changed) it shows only that name, locked, with the reason.
+/// <b>Reset DLL names</b> (#196, upstream) puts every ReShade / OptiScaler name of the game back to automatic; it is shown
+/// only when something is not automatic. State is worked out off the UI thread after each selection or analysis.
 /// </summary>
 public sealed partial class DllNamePickerViewModel : ObservableObject
 {
@@ -31,6 +34,8 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     private readonly Func<Action, string, bool, bool, string?> _persist;
     private DetectedGame? _game;
     private string? _savedChoice;
+    private string? _installed;
+    private string? _automatic;
     private bool _rebuilding;
     private int _generation;
 
@@ -69,6 +74,18 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     /// <summary>The 2 s tooltip: which name ReShade uses and why.</summary>
     [ObservableProperty] private string hint = "";
 
+    // w7/reshade (#196): Reset DLL names.
+    /// <summary>Reset DLL names is shown: a ReShade / OptiScaler name of the game is saved or installed away from automatic.</summary>
+    [ObservableProperty] private bool canReset;
+
+    /// <summary>The Reset button's label and 2 s tooltip, in the UI language of the last refresh.</summary>
+    [ObservableProperty] private string resetLabel = UiLocalizationService.Text("Rx.ResetDllNames");
+
+    [ObservableProperty] private string resetTip = UiLocalizationService.Text("Rx.ResetDllNamesTip");
+
+    /// <summary>The latest rename or reset the picker started (test seam).</summary>
+    public Task Changed { get; private set; } = Task.CompletedTask;
+
     /// <summary>The latest state refresh (test seam).</summary>
     public Task Refreshed { get; private set; } = Task.CompletedTask;
 
@@ -106,7 +123,8 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
         UiExceptionGuard.Forget(Refreshed, "DLL name picker");
     }
 
-    private sealed record PickerState(ProxyNameResolution Resolution, string? Choice, string? Installed, bool Is32Bit);
+    private sealed record PickerState(ProxyNameResolution Resolution, string? Choice, string? Installed, bool Is32Bit,
+        string? Automatic, IReadOnlyList<string> RenameTargets, string? RenameRefusal, bool CanReset);
 
     private async Task RefreshAsync(DetectedGame? game, int generation)
     {
@@ -118,8 +136,12 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
             {
                 if (_components.ResolveReShadeProxyName(game) is not { } resolution) return null;
                 var architecture = GameArchitecture.Of(game);
-                return new PickerState(resolution, _components.ReShadeDllNames.GetReShade(game), _components.InstalledReShadeProxyName(game),
-                    architecture == PeArchitecture.X86);
+                var installed = _components.InstalledReShadeProxyName(game);
+                (IReadOnlyList<string> Targets, string? Refusal) rename = installed is null ? ([], null) : _components.ReShadeRenameOptions(game);
+                var (targets, refusal) = rename;
+                return new PickerState(resolution, _components.ReShadeDllNames.GetReShade(game), installed,
+                    architecture == PeArchitecture.X86, _components.ReShadeAutomaticProxyName(game), targets, refusal,
+                    _components.HasDllNamesToReset(game));
             }).ConfigureAwait(true);
         }
         // One Apply at a time, and only the latest refresh's: without a UI synchronisation context (tests, a caller off
@@ -137,7 +159,12 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     private void Apply(DetectedGame? game, PickerState? state)
     {
         _game = game;
+        _installed = state?.Installed;
+        _automatic = state?.Automatic;
         Label = UiLocalizationService.Text("Names.DllNameLabel");
+        ResetLabel = UiLocalizationService.Text("Rx.ResetDllNames");
+        ResetTip = UiLocalizationService.Text("Rx.ResetDllNamesTip");
+        CanReset = state?.CanReset == true;
         _rebuilding = true;
         try
         {
@@ -155,11 +182,27 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
             _savedChoice = state.Choice;
             if (state.Installed is { } installed)
             {
-                var only = new DllNameOption(installed, installed);
-                Options.Add(only);
-                SelectedOption = only;
-                CanChoose = false;
-                Hint = UiLocalizationService.Format("Names.DllNameTipInstalled", installed);
+                if (state.RenameRefusal is { } refusal)
+                {
+                    // Another component decides the name, or the file changed: only the installed name, locked, and why.
+                    var only = new DllNameOption(installed, installed);
+                    Options.Add(only);
+                    SelectedOption = only;
+                    CanChoose = false;
+                    Hint = UiLocalizationService.Present(refusal);
+                    return;
+                }
+                // #196: Automatic (when its name is free or is this one), the installed name, and every free offered name.
+                var renameTo = new HashSet<string>(state.RenameTargets, StringComparer.OrdinalIgnoreCase) { installed };
+                if (state.Automatic is { } automaticName && renameTo.Contains(automaticName))
+                    Options.Add(new DllNameOption(null, UiLocalizationService.Format("Names.DllNameAutomatic", automaticName)));
+                foreach (var name in ProxyDllNames.OfferedFor(state.Is32Bit).Where(renameTo.Contains))
+                    Options.Add(new DllNameOption(name, name));
+                var automaticSelected = state.Choice is null && string.Equals(installed, state.Automatic, StringComparison.OrdinalIgnoreCase);
+                SelectedOption = Options.FirstOrDefault(o => automaticSelected ? o.Value is null : string.Equals(o.Value, installed, StringComparison.OrdinalIgnoreCase))
+                                 ?? Options[0];
+                CanChoose = !_shell.IsBusy && !_shell.IsSelectionProbeBusy;
+                Hint = UiLocalizationService.Format("Rx.DllNameTipRename", installed);
                 return;
             }
 
@@ -203,6 +246,13 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     {
         // Rebuilding the list writes null and the restored entry here; neither is the user's choice.
         if (_rebuilding || value is null || _game is not { } game) return;
+        // #196: RHI's ReShade is installed and the choice names another file: rename it in place.
+        if (_installed is { } installed && !string.Equals(value.Value ?? _automatic, installed, StringComparison.OrdinalIgnoreCase))
+        {
+            Changed = RunAsync("dll-rename", "Rx.Renaming", token => _components.RenameReShadeProxyAsync(game, value.Value, token), game);
+            UiExceptionGuard.Forget(Changed, "DLL name rename");
+            return;
+        }
         if (string.Equals(value.Value, _savedChoice, StringComparison.OrdinalIgnoreCase)) return;
         var refused = _persist(() => _components.ReShadeDllNames.SetReShade(game, value.Value), "Ui.WhatGamePreferences", false, true);
         if (refused is not null)
@@ -214,6 +264,44 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
             return;
         }
         _savedChoice = value.Value;
+        Refresh();
+    }
+
+    /// <summary>Reset DLL names (#196): every ReShade / OptiScaler name of the selected game back to automatic.</summary>
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private Task ResetAsync()
+    {
+        if (_game is not { } game) return Task.CompletedTask;
+        Changed = RunAsync("dll-reset", "Rx.Resetting", token => _components.ResetDllNamesAsync(game, token), game);
+        return Changed;
+    }
+
+    // One rename or reset as a shell operation: the busy gate, its status lines, then the game is analysed again (the
+    // files changed) and the picker shows the result; a refused or failed change shows the name as it is again.
+    private async Task RunAsync(string kind, string busyKey, Func<CancellationToken, Task<ComponentOperationResult>> change, DetectedGame game)
+    {
+        IPanelHost host = _shell;
+        using (var op = host.BeginOperation(kind))
+        {
+            if (op is null)
+            {
+                Refresh();
+                return;
+            }
+            try
+            {
+                host.StatusText = UiLocalizationService.Text(busyKey);
+                var result = await change(op.Token).ConfigureAwait(true);
+                host.StatusText = !result.Success && op.CancelRequested
+                    ? MainWindowViewModel.OperationCancelledText()
+                    : UiLocalizationService.Present(result.Message);
+                await host.ReprobeKeepingStatusAsync(game).ConfigureAwait(true);
+            }
+            catch (Exception ex) when (op.WasCancelled(ex))
+            {
+                host.StatusText = MainWindowViewModel.OperationCancelledText();
+            }
+        }
         Refresh();
     }
 }

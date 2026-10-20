@@ -841,7 +841,6 @@ internal static class UiStrings
         ("Names.DllNameTipManifest", "O ReShade será instalado como {0}: o manifesto do RHI define este nome para este jogo.", "ReShade will be installed as {0}: the RHI manifest sets this name for this game."),
         ("Names.DllNameTipManifestIgnored", "O ReShade será instalado como {0}. O nome {1} do manifesto do RHI não é usado: a API gráfica deste jogo não o carregaria.", "ReShade will be installed as {0}. The RHI manifest's {1} is not used: this game's graphics API would not load it."),
         ("Names.DllNameTipChosen", "O ReShade será instalado como {0}, o nome que você escolheu. Escolha Automático para voltar a {1}.", "ReShade will be installed as {0}, the name you chose. Choose Automatic to go back to {1}."),
-        ("Names.DllNameTipInstalled", "O ReShade está instalado como {0}. Remova o ReShade para instalá-lo com outro nome.", "ReShade is installed as {0}. Remove ReShade to install it under another name."),
         ("Names.DllNameTipOwnName", " Nada carrega {0} sozinho; use-o só com um mod que carregue o ReShade (OptiScaler).", " Nothing loads {0} by itself; use it only with a mod that loads ReShade (OptiScaler)."),
         ("Names.OptiScalerDllNameTip", "O OptiScaler será instalado como {0}. dxgi.dll serve para a maioria dos jogos; escolha outro nome só quando um guia deste jogo pedir.", "OptiScaler will be installed as {0}. dxgi.dll suits most games; choose another name only when a guide for this game asks for it."),
         ("Names.OptiScalerDllNameTipInstalled", "O OptiScaler está instalado como {0}. Remova o OptiScaler para instalá-lo com outro nome.", "OptiScaler is installed as {0}. Remove OptiScaler to install it under another name."),
@@ -1178,6 +1177,12 @@ internal static class UiStrings
         ("Rs.LegacyVersionTip", "Versões antigas do ReShade publicadas pelo RHI. Uma versão antiga pode não suportar add-ons recentes e fica fora das atualizações automáticas.", "Older ReShade versions listed by RHI. An older version may not support newer add-ons and is left out of automatic updates."),
         // w7/smalls rows
         // w7/reshade rows
+        ("Rx.ResetDllNames", "Redefinir nomes de DLL", "Reset DLL names"),
+        ("Rx.ResetDllNamesTip", "Volta todos os nomes de DLL deste jogo (ReShade e OptiScaler) para automático; uma DLL instalada com outro nome é renomeada de volta para o nome automático.", "Puts every DLL name of this game (ReShade and OptiScaler) back to automatic; an installed DLL under another name is renamed back to its automatic name."),
+        ("Rx.Renaming", "Renomeando a DLL…", "Renaming the DLL…"),
+        ("Rx.Resetting", "Redefinindo os nomes de DLL…", "Resetting the DLL names…"),
+        ("Rx.DllNameTipRename", "O ReShade está instalado como {0}. Escolha outro nome para renomeá-lo no lugar; o override do Wine vai junto com ele.", "ReShade is installed as {0}. Choose another name to rename it in place; its Wine override moves with it."),
+        ("Rx.OptiScalerDllNameTipRename", "O OptiScaler está instalado como {0}. Escolha outro nome para renomeá-lo no lugar; o override do Wine vai junto com ele.", "OptiScaler is installed as {0}. Choose another name to rename it in place; its Wine override moves with it."),
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
