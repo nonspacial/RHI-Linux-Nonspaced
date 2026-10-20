@@ -96,6 +96,8 @@ public sealed class UpstreamLibraryPolicySnapshot
         = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
     // w7/smalls rows
     // w7/reshade rows
+    /// <summary>#201: manifest <c>gacSymlinkGames</c>: XNA games whose ReShade goes into this Windows GAC folder of the prefix.</summary>
+    public IReadOnlyDictionary<string, string> XnaGacFolders { get; init; } = EmptyStrings();
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
@@ -227,6 +229,8 @@ internal sealed partial class UpstreamManifestDocument
     public Dictionary<string, UpstreamManifestGameNote>? ReShadeGameInfo { get; set; }
     // w7/smalls rows
     // w7/reshade rows
+    [JsonPropertyName("gacSymlinkGames")]
+    public Dictionary<string, string>? GacSymlinkGames { get; set; }
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
@@ -341,6 +345,7 @@ public sealed partial class UpstreamRhiManifestService
             ReShadeGameInfo = NormalizeGameNotes(manifest.ReShadeGameInfo),
             // w7/smalls rows
             // w7/reshade rows
+            XnaGacFolders = NormalizeStringDictionary(manifest.GacSymlinkGames),
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
@@ -420,6 +425,7 @@ public sealed partial class UpstreamRhiManifestService
         Add(result, manifest.ReShadeGameInfo?.Keys);
         // w7/smalls rows
         // w7/reshade rows
+        Add(result, manifest.GacSymlinkGames?.Keys);
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

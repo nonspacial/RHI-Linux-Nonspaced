@@ -1354,6 +1354,18 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.OptiScalerDeploymentService.RenameChainedPrefix,
             "A DLL do OptiScaler não pode ser renomeada no lugar enquanto o ReShade do RHI está encadeado a ela como ReShade64.dll; remova o ReShade primeiro, ou remova o OptiScaler e instale-o de novo com o novo nome: "),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DllNamesResetMessage, "Todos os nomes de DLL deste jogo voltaram para automático."),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.RowNote,
+            "Jogo XNA: o ReShade é instalado como d3d9.dll na pasta do jogo e na pasta de assemblies .NET do prefixo Wine/Proton dele, onde o XNA o carrega. Use apenas em títulos single-player/offline."),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.NativeLinuxNote,
+            "Esta é a versão nativa para Linux do jogo, que não usa XNA, então o ReShade não pode ser adicionado a ela. A versão para Windows rodando pelo Proton pode receber o ReShade."),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.PrefixUnknownMessage,
+            "O ReShade deste jogo XNA vai para o prefixo Wine/Proton dele, que ainda não está preparado; inicie o jogo uma vez para preparar o prefixo e depois instale o ReShade."),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.FolderMissingPrefix,
+            "O ReShade deste jogo XNA vai para a pasta de assemblies .NET do prefixo dele, que ainda não existe; inicie o jogo uma vez para preparar o prefixo e depois instale o ReShade. Pasta: "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.OutsidePrefixPrefix, "A pasta de assemblies XNA indicada pelo manifesto do RHI levaria para fora do prefixo deste jogo, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.ForeignFilePrefix, "Um arquivo que o RHI não instalou já está na pasta de assemblies XNA, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.ChangedCopyPrefix, "A cópia do ReShade na pasta de assemblies XNA mudou desde que o RHI a colocou, então não foi substituída: "),
+        (RHI.Platform.Linux.Deployment.XnaGacReShade.ModeSuffix, " (pasta do jogo e pasta de assemblies .NET do prefixo, para XNA)"),
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

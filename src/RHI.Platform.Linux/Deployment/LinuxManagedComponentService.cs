@@ -283,6 +283,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         component.ActionAllowed = notOffered is null;
                         component.Note = notOffered ?? ReShadeVulkanLayer.RowNote;
                     }
+                    else if (XnaGacReShade.IsListed(game)) // w7/reshade (#201): XNA games take the GAC path
+                    {
+                        var notOffered = XnaGacReShade.OfferRefusal(game);
+                        component.ActionAllowed = notOffered is null;
+                        component.Note = notOffered ?? XnaGacReShade.RowNote;
+                    }
                     else if (ReShadeDeploymentService.SelectProxyName(game.EffectiveGraphicsApi) is null)
                     {
                         component.ActionAllowed = false;

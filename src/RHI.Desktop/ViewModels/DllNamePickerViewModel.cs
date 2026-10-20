@@ -129,7 +129,8 @@ public sealed partial class DllNamePickerViewModel : ObservableObject
     private async Task RefreshAsync(DetectedGame? game, int generation)
     {
         PickerState? state = null;
-        if (game is not null && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
+        // #201: an XNA game takes ReShade as d3d9.dll only (the GAC path): no DLL-name row.
+        if (game is not null && !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) && !XnaGacReShade.IsListed(game))
         {
             // Ledger, preference file and executable header: read off the UI thread.
             state = await Task.Run(() =>

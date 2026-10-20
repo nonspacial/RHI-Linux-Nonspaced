@@ -70,6 +70,7 @@ public sealed partial class ReShadeDeploymentService
     private const string MetaIniTextureCreated = "ReShade.IniTextureKeyCreated";
     private const string MetaIniEffectAdded = "ReShade.IniEffectPathsAdded";
     private const string MetaIniTextureAdded = "ReShade.IniTexturePathsAdded";
+    private const string MetaIniBasePathCreated = "ReShade.IniBasePathCreated"; // #201
     private const string MetaShortFuseOriginalPayloadPath = ShortFuseDeploymentService.MetaReShadeOriginalPath;
 
     private readonly HttpClient _http;
@@ -225,14 +226,17 @@ public sealed partial class ReShadeDeploymentService
         bool isUpdate,
         CancellationToken cancellationToken)
     {
+        // w7/reshade (#201): an XNA game listed by the RHI manifest takes the GAC path (XnaGacReShade).
+        var xna = XnaGacReShade.IsListed(game);
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            return ComponentOperationResult.Fail("ReShade DLL deployment is only for Windows games running through Wine/Proton.");
+            return ComponentOperationResult.Fail(xna ? XnaGacReShade.NativeLinuxNote : "ReShade DLL deployment is only for Windows games running through Wine/Proton.");
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
             return ComponentOperationResult.Fail("Game binary directory is not known yet.");
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return ComponentOperationResult.Fail("Game executable was not detected.");
 
-        var architecture = GameArchitecture.Of(game);
+        // #201: the GAC folder declares the bitness of the graphics assembly that loads ReShade (GAC_32 = x86).
+        var architecture = xna ? XnaGacReShade.ArchitectureOf(game) : GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("Could not determine whether the game executable is 32-bit or 64-bit.");
         if (_overrides.EditRefusal(game.PrefixPath) is { } wineRunning)
@@ -245,7 +249,15 @@ public sealed partial class ReShadeDeploymentService
 
         // The proxy name: the user's choice, else the RHI manifest's, else the API's (#120). An installed ReShade keeps
         // the name it was installed under (the record decides below); a new name is an in-place rename (#196, RenameProxyAsync).
-        var resolution = ResolveProxyName(game);
+        string? xnaFolder = null;
+        if (xna)
+        {
+            var (folder, xnaRefusal) = XnaGacReShade.ResolveFolder(game);
+            if (xnaRefusal is not null) return ComponentOperationResult.Fail(xnaRefusal);
+            xnaFolder = folder;
+            options.ManageIni = true; // ReShade in the GAC finds the game folder through ReShade.ini's [INSTALL] BasePath
+        }
+        var resolution = xna ? new ProxyNameResolution(XnaGacReShade.ProxyName, ProxyNameSource.Manifest) : ResolveProxyName(game);
         if (resolution is null)
             return ComponentOperationResult.Fail(ReShadeVulkanLayer.IsVulkanTarget(game)
                 ? ReShadeVulkanLayer.NotOnRequestMessage
@@ -326,6 +338,12 @@ public sealed partial class ReShadeDeploymentService
         if (existingRecord is null &&
             ProxyPayloadLocator.FindReShadeOnDisk(game.BinaryDirectory, OwnedPaths(managedOptiScaler)) is { } other)
             return ComponentOperationResult.Fail(OtherReShadePresentPrefix + other);
+
+        // #201: the two GAC copies; anything RHI did not place there (or a copy that changed since) refuses the install.
+        var gacDll = xnaFolder is null ? null : Path.Combine(xnaFolder, XnaGacReShade.ProxyName);
+        var gacIni = xnaFolder is null ? null : Path.Combine(xnaFolder, "ReShade.ini");
+        if (xnaFolder is not null && await XnaGacRefusalAsync(existingRecord, xnaFolder, cancellationToken).ConfigureAwait(false) is { } gacRefusal)
+            return ComponentOperationResult.Fail(gacRefusal);
 
         D3DCompilerPlan? d3dCompilerPlan = null;
         if (options.ShaderPackIds.Count > 0 || !string.IsNullOrWhiteSpace(options.D3DCompiler47Path))
@@ -484,6 +502,9 @@ public sealed partial class ReShadeDeploymentService
             }
         }
         await using var operation = journaled;
+        // #201: without a journal (tests, tools) the GAC copies are tracked here and put back by hand on a failure.
+        var localGacFiles = operation is null && xnaFolder is not null ? new OwnedFileSet() : null;
+        string? gacIniSha = null;
         string[] trackedInis = [];
         // Crash recovery restores a tracked file only while it holds what this install wrote, so every
         // write is declared: DLL payloads by hash before they are placed, in-place INI edits right after.
@@ -609,9 +630,23 @@ public sealed partial class ReShadeDeploymentService
 
             var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             ReShadeIniApplyResult? iniResult = null;
+            var iniDefaults = IniDefaults?.Invoke(game, false);
+            if (xnaFolder is not null) // #201: ReShade runs from the GAC copy; its base is the game folder
+                iniDefaults = (iniDefaults ?? new ReShadeIniDefaults()) with { InstallBasePath = XnaGacReShade.WindowsPathOf(game.PrefixPath!, game.BinaryDirectory) };
             if (options.ManageIni)
-                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, IniDefaults?.Invoke(game, false), game.InstallPath); // w5/ini-presets hook (#181, review 8)
+                iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, iniDefaults, game.InstallPath); // w5/ini-presets hook (#181, review 8)
             await DeclareIniWritesAsync().ConfigureAwait(false);
+            if (xnaFolder is not null)
+            {
+                // #201: the DLL and ReShade.ini copied into the GAC folder (tracked and declared first; see XnaGacReShade).
+                await PlaceGacCopyAsync(operation, localGacFiles, target, gacDll!, result.Sha256 ?? await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+                gacIniSha = existingRecord?.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey);
+                if (iniResult is not null && GacIniIsRhis(gacIni!, gacIniSha))
+                {
+                    await PlaceGacCopyAsync(operation, localGacFiles, iniResult.Path, gacIni!, iniResult.Sha256, cancellationToken).ConfigureAwait(false);
+                    gacIniSha = iniResult.Sha256;
+                }
+            }
 
             var files = new List<LinuxDeployedFile>
             {
@@ -625,6 +660,8 @@ public sealed partial class ReShadeDeploymentService
             };
             if (compilerFileRecord is not null)
                 files.Add(compilerFileRecord);
+            if (gacDll is not null) // #201: RHI's copy in the GAC folder, removed with ReShade
+                files.Add(new LinuxDeployedFile { Path = gacDll, ExistedBeforeInstall = false, Sha256 = files[0].Sha256 });
             if (iniResult is not null)
             {
                 files.Add(new LinuxDeployedFile
@@ -649,6 +686,8 @@ public sealed partial class ReShadeDeploymentService
             if (d3dCompilerPlan is not null)
                 SetOrRemove(metadata, MetaD3DCompilerSource, d3dCompilerPlan.UserSourcePath);
             WriteIniMetadata(metadata, iniResult);
+            SetOrRemove(metadata, XnaGacReShade.FolderMetadataKey, xnaFolder);
+            SetOrRemove(metadata, XnaGacReShade.IniSha256MetadataKey, xnaFolder is null ? null : gacIniSha);
             SetOrRemove(metadata, LinuxDeploymentRecovery.OperationIdMetadataKey, operation?.Id);
 
             var record = new LinuxDeploymentRecord
@@ -670,11 +709,13 @@ public sealed partial class ReShadeDeploymentService
             _records.Commit([record, .. addonPlan.Records]);
             // The record carries the operation id, so it is the commit point even if this cleanup fails.
             if (operation is not null) await operation.CommitAsync().ConfigureAwait(false);
+            localGacFiles?.Release();
             try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
 
             var mode = Path.GetFileName(target).Equals(ShortFuseDeploymentService.ReShadeAsiName, StringComparison.OrdinalIgnoreCase)
                 ? "ReShade64.asi (ShortFuse / UAL)"
-                : coexist ? "ReShade64.dll (OptiScaler coexistence)" : Path.GetFileName(target);
+                : coexist ? "ReShade64.dll (OptiScaler coexistence)"
+                : xnaFolder is not null ? XnaGacReShade.ProxyName + XnaGacReShade.ModeSuffix : Path.GetFileName(target);
             var packs = shaderResult.PackIds.Count == 0 ? "no RHI shader packs" : $"shader packs: {string.Join(", ", shaderResult.PackIds)}";
             var compilerNote = d3dCompilerPlan is null
                 ? ""
@@ -686,6 +727,7 @@ public sealed partial class ReShadeDeploymentService
         catch (Exception ex)
         {
             ReShadeAddonSwitch.Undo(addonMoves); // #170: add-ons back under their names before anything else
+            if (localGacFiles is not null) await localGacFiles.RollbackAsync(RollbackMode.InProcess).ConfigureAwait(false); // #201
             // Best-effort rollback. On an update, the long-lived .original is the real pre-RHI game file,
             // so do not restore it over the previous managed ReShade. Instead the update is blocked before
             // destructive operations where possible; for a fresh install, restore/remove normally.
@@ -810,6 +852,15 @@ public sealed partial class ReShadeDeploymentService
                 await scope.TrackAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
                 CleanupManagedIni(record, game.InstallPath); // w5/ini-presets hook (review 8)
                 await scope.DeclareWrittenContentAsync(managedIni.Path, cancellationToken).ConfigureAwait(false);
+            }
+
+            // #201: the GAC ReShade.ini copy goes while it still holds RHI's last copy (else it is the user's and stays).
+            if (XnaGacReShade.IsGacRecord(record))
+            {
+                var gacIni = Path.Combine(record.Metadata[XnaGacReShade.FolderMetadataKey], "ReShade.ini");
+                if (File.Exists(gacIni) && record.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey) is { Length: > 0 } copied
+                    && FileHash.HexEquals(await FileHash.Sha256HexAsync(gacIni, CancellationToken.None).ConfigureAwait(false), copied))
+                    await scope.DeleteAsync(gacIni, cancellationToken).ConfigureAwait(false);
             }
 
             foreach (var file in record.Files.Where(file => !file.AllowUserChanges))
@@ -1482,13 +1533,15 @@ public sealed partial class ReShadeDeploymentService
             ReadStringList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
             ReadBool(record.Metadata, MetaIniEffectCreated),
             ReadBool(record.Metadata, MetaIniTextureCreated),
-            gameRoot);
+            gameRoot,
+            record.Metadata.GetValueOrDefault(MetaIniBasePathCreated));
     }
 
     private static void WriteIniMetadata(Dictionary<string, string> metadata, ReShadeIniApplyResult? ini)
     {
-        foreach (var key in new[] { MetaIniCreated, MetaIniEffectCreated, MetaIniTextureCreated, MetaIniEffectAdded, MetaIniTextureAdded }) metadata.Remove(key);
+        foreach (var key in new[] { MetaIniCreated, MetaIniEffectCreated, MetaIniTextureCreated, MetaIniEffectAdded, MetaIniTextureAdded, MetaIniBasePathCreated }) metadata.Remove(key);
         if (ini is null) return;
+        if (ini.BasePathCreated is { } basePath) metadata[MetaIniBasePathCreated] = basePath;
         metadata[MetaIniCreated] = ini.CreatedByRhi.ToString();
         metadata[MetaIniEffectCreated] = ini.EffectKeyCreated.ToString();
         metadata[MetaIniTextureCreated] = ini.TextureKeyCreated.ToString();

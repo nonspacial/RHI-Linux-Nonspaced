@@ -224,6 +224,11 @@ public sealed class DetectedGame
     public string? ManifestReShadeNoteUrlLabel { get; set; }
     // w7/smalls rows
     // w7/reshade rows
+    /// <summary>
+    /// #201: manifest <c>gacSymlinkGames</c>: the Windows folder (<c>C:\Windows\Microsoft.NET\assembly\GAC_32\…</c>)
+    /// of this XNA game's graphics assembly; ReShade's install places its d3d9.dll there inside the game's prefix.
+    /// </summary>
+    public string? ManifestXnaGacFolder { get; set; }
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows

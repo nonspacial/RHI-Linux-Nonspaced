@@ -31,7 +31,8 @@ public sealed partial class ReShadeDeploymentService
     /// <summary>
     /// Why RHI's ReShade on <paramref name="game"/> cannot be renamed in place at all, or null when it can: not RHI's,
     /// the Vulkan layer (no DLL), ShortFuse's loader name, the OptiScaler chain (<c>ReShade64.dll</c>, OptiScaler loads it
-    /// by that name) or the DirectX 9 translation's move (its restore expects the name it moved ReShade to).
+    /// by that name), the DirectX 9 translation's move (its restore expects the name it moved ReShade to) or an XNA GAC
+    /// install (#201: XNA's graphics assembly loads d3d9.dll only).
     /// </summary>
     public string? RenameBlocker(DetectedGame game)
     {
@@ -43,7 +44,8 @@ public sealed partial class ReShadeDeploymentService
             || record.Metadata.TryGetValue(MetaShortFuseOriginalPayloadPath, out var shortFuse) && !string.IsNullOrWhiteSpace(shortFuse)
             || current.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase)
             || (IsReShadeOwnName(current) && _records.Find(game, ManagedComponentKind.OptiScaler) is not null)
-            || HasDx9Translation(game))
+            || HasDx9Translation(game)
+            || XnaGacReShade.IsGacRecord(record)) // #201: XNA loads ReShade as d3d9.dll only
             return RenameNotInPlacePrefix + current;
         return null;
     }

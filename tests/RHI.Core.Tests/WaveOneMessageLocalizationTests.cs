@@ -416,6 +416,13 @@ public sealed class WaveOneMessageLocalizationTests
         yield return OptiScalerDeploymentService.RenameChainedPrefix + "dxgi.dll";
         yield return LinuxManagedComponentService.DllNamesResetMessage;
         yield return LinuxManagedComponentService.DllNamesResetMessage + " " + ProxyRename.RenamedPrefix + "winmm.dll → dxgi.dll";
+        yield return XnaGacReShade.RowNote;
+        yield return XnaGacReShade.NativeLinuxNote;
+        yield return XnaGacReShade.PrefixUnknownMessage;
+        yield return XnaGacReShade.FolderMissingPrefix + P;
+        yield return XnaGacReShade.OutsidePrefixPrefix + @"D:\Jogos";
+        yield return XnaGacReShade.ForeignFilePrefix + P;
+        yield return XnaGacReShade.ChangedCopyPrefix + P;
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

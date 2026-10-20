@@ -213,6 +213,7 @@ public sealed class SelectedGameSessionTests
             nameof(DetectedGame.ManifestReShadeNoteUrl), nameof(DetectedGame.ManifestReShadeNoteUrlLabel),
             // w7/smalls rows
             // w7/reshade rows
+            nameof(DetectedGame.ManifestXnaGacFolder),
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
