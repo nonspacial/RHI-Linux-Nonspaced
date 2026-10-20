@@ -198,6 +198,7 @@ public sealed class UpstreamGameLibraryPolicyService(
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows
+        RHI.Platform.Linux.Hdr.DlssPresetCatalogue.Observe(policy); // #211: the manifest's DLSS preset lists (global, not per game)
         // w7/dxvk-hdr rows
     }
 

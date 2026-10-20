@@ -98,6 +98,8 @@ public sealed class UpstreamLibraryPolicySnapshot
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows
+    /// <summary>#211: manifest <c>dlssPresets</c> (extra DLSS presets for the per-game NVIDIA settings); null when absent.</summary>
+    public RHI.Platform.Linux.Hdr.UpstreamDlssPresetsDefinition? DlssPresets { get; init; }
     // w7/dxvk-hdr rows
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
@@ -229,6 +231,8 @@ internal sealed partial class UpstreamManifestDocument
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows
+    [JsonPropertyName("dlssPresets")]
+    public RHI.Platform.Linux.Hdr.UpstreamManifestDlssPresets? DlssPresets { get; set; } // #211
     // w7/dxvk-hdr rows
 }
 
@@ -343,6 +347,7 @@ public sealed partial class UpstreamRhiManifestService
             // w7/reshade rows
             // w7/shader-sets rows
             // w7/nvapi-launch rows
+            DlssPresets = RHI.Platform.Linux.Hdr.DlssPresetCatalogue.FromManifest(manifest.DlssPresets), // #211
             // w7/dxvk-hdr rows
         };
     }

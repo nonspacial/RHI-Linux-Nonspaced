@@ -35,15 +35,24 @@ public sealed class LinuxHdrGameProfile
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? Resolution { get; set; }
 
+    /// <summary>
+    /// #211: the game's NVIDIA DLSS settings (presets, render scale, frame generation), set through Proton's NVAPI layer
+    /// at launch. Null (not written) while nothing is chosen, so the profile keeps the shape older builds wrote.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public NvidiaGameSettings? Nvidia { get; set; }
+
     public LinuxHdrGameProfile Normalize()
     {
         Mode = LinuxHdrModes.Normalize(Mode);
         Resolution = DisplayResolution.Parse(Resolution)?.ToString();
+        Nvidia = Nvidia?.Normalize() is { } nvidia && !nvidia.IsDefault() ? nvidia : null;
         return this;
     }
 
     /// <summary>True when nothing differs from a game without a profile (the entry can be dropped).</summary>
-    public bool IsDefault() => Mode == LinuxHdrModes.Off && !EnableLegacyWsi && !ResolutionToggle && Resolution is null;
+    public bool IsDefault() => Mode == LinuxHdrModes.Off && !EnableLegacyWsi && !ResolutionToggle && Resolution is null
+        && (Nvidia is null || Nvidia.IsDefault());
 }
 
 /// <param name="Desktop">XDG_CURRENT_DESKTOP (else DESKTOP_SESSION); null when neither is set.</param>
@@ -68,6 +77,9 @@ public sealed record LinuxHdrHostSnapshot(
 
     /// <summary>False only for <see cref="NotProbed"/>.</summary>
     public bool Probed { get; init; } = true;
+
+    /// <summary>#211: the host's NVIDIA GPU (none until probed).</summary>
+    public NvidiaGpuFacts Gpu { get; init; } = NvidiaGpuFacts.None;
 }
 
 /// <summary>
@@ -124,8 +136,17 @@ public sealed record LinuxHdrLaunchPlan(
     /// <summary>Placeholder while no game is selected.</summary>
     public static LinuxHdrLaunchPlan NoGame { get; } = new(false, false, new Dictionary<string, string>(StringComparer.Ordinal), null, "%command%", LinuxHdrPlanReason.NoGame);
 
-    /// <summary>RHI applies this profile itself when it launches the game (enabled, valid, not a store hand-off).</summary>
-    public bool AppliesAtLaunch => Enabled && CanApply && Handoff == LaunchHandoff.None;
+    /// <summary>
+    /// #211: the game's NVIDIA settings; their variables are already part of <see cref="Environment"/> and
+    /// <see cref="LaunchOptions"/> (for every HDR mode, Off included).
+    /// </summary>
+    public NvidiaLaunchPlan Nvidia { get; init; } = NvidiaLaunchPlan.Hidden(NvidiaPlanReason.NoGame);
+
+    /// <summary>
+    /// RHI applies this profile itself when it launches the game (not a store hand-off): an enabled, valid HDR profile,
+    /// or (#211) NVIDIA settings with HDR Off.
+    /// </summary>
+    public bool AppliesAtLaunch => Handoff == LaunchHandoff.None && (Enabled ? CanApply : Nvidia.HasVariables);
 }
 
 /// <summary>
@@ -139,15 +160,19 @@ public sealed partial class LinuxHdrLaunchProfileService
     private readonly Func<string, string?> _environment;
     private readonly Func<string, bool> _commandExists;
     private readonly Func<string?> _nvidiaVersion;
+    private readonly Func<NvidiaGpuFacts> _nvidiaGpu;
 
+    /// <param name="nvidiaGpu">#211: the GPU probe (default: <see cref="NvidiaGpuProbe.Read()"/>, read-only /proc and /sys).</param>
     public LinuxHdrLaunchProfileService(
         Func<string, string?>? environment = null,
         Func<string, bool>? commandExists = null,
-        Func<string?>? nvidiaVersion = null)
+        Func<string?>? nvidiaVersion = null,
+        Func<NvidiaGpuFacts>? nvidiaGpu = null)
     {
         _environment = environment ?? Environment.GetEnvironmentVariable;
         _commandExists = commandExists ?? CommandExists;
         _nvidiaVersion = nvidiaVersion ?? ReadNvidiaVersion;
+        _nvidiaGpu = nvidiaGpu ?? NvidiaGpuProbe.Read;
     }
 
     public LinuxHdrHostSnapshot ProbeHost()
@@ -163,7 +188,8 @@ public sealed partial class LinuxHdrLaunchProfileService
         return new LinuxHdrHostSnapshot(wayland, desktop, _commandExists("gamescope"), nvidia, legacy)
         {
             KScreenDoctorAvailable = _commandExists(DisplayModeSwitcher.KScreenDoctor),
-            WlrRandrAvailable = _commandExists(DisplayModeSwitcher.WlrRandr)
+            WlrRandrAvailable = _commandExists(DisplayModeSwitcher.WlrRandr),
+            Gpu = _nvidiaGpu()
         };
     }
 
@@ -175,21 +201,44 @@ public sealed partial class LinuxHdrLaunchProfileService
     /// off its thread and builds plans from the snapshot).
     /// </summary>
     public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host)
+        => BuildPlan(game, profile, host, dlss: null);
+
+    /// <summary>
+    /// The plan with the game's NVIDIA settings merged in (#211): <paramref name="dlss"/> = the DLSS features the game
+    /// ships (null while its files are not known: a saved choice then applies as it is).
+    /// </summary>
+    public LinuxHdrLaunchPlan BuildPlan(DetectedGame game, LinuxHdrGameProfile? profile, LinuxHdrHostSnapshot host, NvidiaDlssFamilies? dlss)
     {
         ArgumentNullException.ThrowIfNull(game);
         ArgumentNullException.ThrowIfNull(host);
         profile = (profile ?? new LinuxHdrGameProfile()).Normalize();
         var handoff = LaunchHandoffClassifier.Classify(game);
+        var nvidia = NvidiaLaunchSettings.Plan(game, profile.Nvidia, host, dlss);
+        LinuxHdrLaunchPlan plan;
         if (profile.Mode == LinuxHdrModes.Off)
-            return new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%", LinuxHdrPlanReason.Off, host, Handoff: handoff);
+            plan = new LinuxHdrLaunchPlan(false, true, EmptyEnvironment(), null, "%command%", LinuxHdrPlanReason.Off, host);
         // A stand-in host says nothing about the session or gamescope: never word it as a missing tool or a session.
-        if (!host.Probed)
-            return Blocked(profile, host, LinuxHdrPlanReason.HostNotProbed) with { Handoff = handoff };
+        else if (!host.Probed)
+            plan = Blocked(profile, host, LinuxHdrPlanReason.HostNotProbed);
+        else
+            plan = profile.Mode == LinuxHdrModes.NativeWayland
+                ? BuildNativeWayland(game, profile, host)
+                : BuildGamescope(game, profile, host);
+        return WithNvidia(plan, nvidia) with { Handoff = handoff };
+    }
 
-        var plan = profile.Mode == LinuxHdrModes.NativeWayland
-            ? BuildNativeWayland(game, profile, host)
-            : BuildGamescope(game, profile, host);
-        return plan with { Handoff = handoff };
+    /// <summary>
+    /// #211: adds the NVIDIA variables to the plan's environment and its launch options. A blocked HDR mode adds nothing
+    /// of its own to the launch options (they stay copyable for the NVIDIA part only); HDR's variables win a clash.
+    /// </summary>
+    private static LinuxHdrLaunchPlan WithNvidia(LinuxHdrLaunchPlan plan, NvidiaLaunchPlan nvidia)
+    {
+        if (!nvidia.HasVariables) return plan with { Nvidia = nvidia };
+        var env = new Dictionary<string, string>(nvidia.Environment, StringComparer.Ordinal);
+        foreach (var pair in plan.Environment) env[pair.Key] = pair.Value;
+        var applies = plan.Enabled && plan.CanApply;
+        var options = BuildLaunchOptions(applies ? env : nvidia.Environment, applies ? plan.CommandPrefix : null);
+        return plan with { Environment = env, LaunchOptions = options, Nvidia = nvidia };
     }
 
     private LinuxHdrLaunchPlan BuildNativeWayland(DetectedGame game, LinuxHdrGameProfile profile, LinuxHdrHostSnapshot host)

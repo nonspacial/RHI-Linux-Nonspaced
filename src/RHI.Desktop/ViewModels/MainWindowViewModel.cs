@@ -975,10 +975,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         if (plan.AppliesAtLaunch && _launcher is IGameLaunchOptionsLauncher profiledLauncher)
         {
             var hdrGame = SelectedGame;
-            StatusText = TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display);
+            var profileLine = Runtime.ProfileLaunchLine(hdrGame, plan); // w7/nvapi-launch hook (#211): HDR's line, or the NVIDIA settings' with HDR Off
+            StatusText = profileLine;
             var (hdrOptions, hdrNotice) = await Resolution.PrepareAsync(resolutionPlan, new GameLaunchOptions(plan.Environment, plan.CommandPrefix));
-            var hdrLine = hdrNotice is null ? TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display)
-                : TF("Vm.LaunchingHDRProfile", hdrGame.Name, Runtime.SelectedHdrMode.Display) + " " + hdrNotice;
+            var hdrLine = hdrNotice is null ? profileLine : profileLine + " " + hdrNotice;
             StatusText = hdrLine;
             if (await TryLaunchAsync(hdrGame, () => profiledLauncher.LaunchAsync(hdrGame, hdrOptions)))
                 StatusText = hdrLine;

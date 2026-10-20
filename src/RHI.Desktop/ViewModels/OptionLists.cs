@@ -293,6 +293,39 @@ public static class OptionLists
     // w7/reshade rows
     // w7/shader-sets rows
     // w7/nvapi-launch rows
+    /// <summary>#211: the "Custom" entry of the render-scale and target-frame-rate lists (the value comes from the box beside it).</summary>
+    public const uint NvidiaCustom = uint.MaxValue;
+    /// <summary>#211: a DLSS preset list (manifest-driven): Default and NVIDIA Recommended translated, preset names as upstream lists them.</summary>
+    public static OptionList<uint> DlssPresets(IReadOnlyList<DlssPreset> presets)
+        => new(DlssPresetCatalogue.Default, null, presets.Select(p => p.Value == DlssPresetCatalogue.Default ? new OptionEntry<uint>(p.Value, "Ini.LumaHdrDefault")
+            : string.Equals(p.Name, "NVIDIA Recommended", StringComparison.OrdinalIgnoreCase) ? new OptionEntry<uint>(p.Value, "Nv.PresetRecommended", null, p.Name)
+            : new OptionEntry<uint>(p.Value, null, p.Name)).DistinctBy(e => e.Value).ToArray());
+    /// <summary>#211: the lists before the manifest is read (round-trip tests; the panel builds its own from the catalogue).</summary>
+    public static readonly OptionList<uint> NvidiaSrPreset = DlssPresets(DlssPresetCatalogue.Fallback.SuperResolution);
+    public static readonly OptionList<uint> NvidiaRrPreset = DlssPresets(DlssPresetCatalogue.Fallback.RayReconstruction);
+    public static readonly OptionList<uint> NvidiaFgPreset = DlssPresets(DlssPresetCatalogue.Fallback.FrameGeneration);
+    /// <summary>#211: upstream's render-scale list (<c>DlssPresetService.RenderScaleOptions</c>): Off = the game decides; Custom 33–100.</summary>
+    public static readonly OptionList<uint> NvidiaRenderScale = new(0, null,
+        new(0, "Ini.Off"), new(100, null, "100% DLAA"), new(99, "Nv.Scale99"), new(88, "Nv.Scale88"), new(77, "Nv.Scale77"),
+        new(75, "Nv.Scale75"), new(67, "Nv.Scale67"), new(58, "Nv.Scale58"), new(50, "Nv.Scale50"), new(45, "Nv.Scale45"),
+        new(33, "Nv.Scale33"), new(NvidiaCustom, "Win.Custom"));
+    /// <summary>#211: upstream's MFG dialog "FG Mode".</summary>
+    public static readonly OptionList<string> NvidiaFrameGenerationMode = new(NvidiaFrameGenerationModes.Default, StringComparer.OrdinalIgnoreCase,
+        new(NvidiaFrameGenerationModes.Default, "Ini.LumaHdrDefault"),
+        new(NvidiaFrameGenerationModes.Fixed, "Nv.FgFixed"),
+        new(NvidiaFrameGenerationModes.Dynamic, "Nv.FgDynamic"));
+    /// <summary>#211: Fixed mode's frame count (driver value 1–5 = 2×–6×); Default leaves it to the game.</summary>
+    public static readonly OptionList<uint> NvidiaFixedFrameCount = new(0, null,
+        [new OptionEntry<uint>(0, "Ini.LumaHdrDefault"), .. Enumerable.Range(1, 5).Select(n => new OptionEntry<uint>((uint)n, null, $"{n + 1}×"))]);
+    /// <summary>#211: Dynamic mode's most frames (driver value 1–5 = up to 2×–6×); Default leaves it to the driver.</summary>
+    public static readonly OptionList<uint> NvidiaDynamicFrameCount = new(0, null,
+        new(0, "Ini.LumaHdrDefault"), new(1, "Nv.UpTo2x"), new(2, "Nv.UpTo3x"), new(3, "Nv.UpTo4x"), new(4, "Nv.UpTo5x"), new(5, "Nv.UpTo6x"));
+    /// <summary>#211: Dynamic mode's target: Off, max refresh rate, upstream's VRR caps, Custom 20–1000 FPS.</summary>
+    public static readonly OptionList<uint> NvidiaTargetFrameRate = new(0, null,
+        [new OptionEntry<uint>(0, "Ini.Off"),
+         new OptionEntry<uint>(NvidiaGameSettings.TargetFrameRateMaxRefresh, "Nv.MaxRefreshRate"),
+         .. ReLimiterIniEditor.TargetFpsPresets.Select(p => new OptionEntry<uint>((uint)p.Fps, null, $"{p.Fps} FPS · {p.Hz} Hz VRR")),
+         new OptionEntry<uint>(NvidiaCustom, "Win.Custom")]);
     // w7/dxvk-hdr rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>

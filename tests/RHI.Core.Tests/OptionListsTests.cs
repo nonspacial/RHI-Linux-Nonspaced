@@ -49,6 +49,14 @@ public sealed class OptionListsTests
             // w7/reshade rows
             // w7/shader-sets rows
             // w7/nvapi-launch rows
+            AssertRoundTrips(OptionLists.NvidiaSrPreset); // #211
+            AssertRoundTrips(OptionLists.NvidiaRrPreset);
+            AssertRoundTrips(OptionLists.NvidiaFgPreset);
+            AssertRoundTrips(OptionLists.NvidiaRenderScale);
+            AssertRoundTrips(OptionLists.NvidiaFrameGenerationMode);
+            AssertRoundTrips(OptionLists.NvidiaFixedFrameCount);
+            AssertRoundTrips(OptionLists.NvidiaDynamicFrameCount);
+            AssertRoundTrips(OptionLists.NvidiaTargetFrameRate);
             // w7/dxvk-hdr rows
         }
         finally

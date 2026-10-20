@@ -345,6 +345,9 @@
                     </views:ResponsiveRow>
                   </StackPanel>
 
+                  <!-- w7/nvapi-launch (#211): per-game NVIDIA settings (DLSS presets, render scale, RTX 50 frame generation). -->
+                  <views:NvidiaSettingsBlock DataContext="{Binding Nvidia}"/>
+
                   <TextBlock Text="{DynamicResource Ui.StreamlineUpdateNote}" Classes="muted" TextWrapping="Wrap"/>
 
                   <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
