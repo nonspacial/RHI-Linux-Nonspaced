@@ -1709,7 +1709,17 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public string? InstalledReShadeProxyName(DetectedGame game)
         => ProxyPayloadLocator.ReShadePayload(_records.Find(game, ManagedComponentKind.ReShade)) is { } payload ? Path.GetFileName(payload.Path) : null;
 
-    public ReShadeInstallOptions GetReShadeOptions(DetectedGame game) => _reshade.GetInstalledOptions(game);
+    /// <summary>
+    /// The profile the ReShade section and the Shaders/Add-ons dialog start from: the installed profile, with the packs the
+    /// game gets now (#179, its effective set; review major 1: a new game's empty record would otherwise read as an explicit
+    /// "no packs" choice and turn it into Select on an untouched Apply).
+    /// </summary>
+    public ReShadeInstallOptions GetReShadeOptions(DetectedGame game)
+    {
+        var options = _reshade.GetInstalledOptions(game);
+        if (EffectiveShaderPacks(game) is { } effective) options.ShaderPackIds = effective.ToArray(); // w7/shader-sets hook (#179)
+        return options;
+    }
 
     public async Task<ComponentOperationResult> ApplyReShadeAsync(
         DetectedGame game,

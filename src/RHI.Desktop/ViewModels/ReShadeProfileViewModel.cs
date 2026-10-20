@@ -345,8 +345,10 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         var game = SelectedGame;
         var shaderCatalog = await _components.RefreshReShadeShaderPackCatalogAsync(cancellationToken);
         var addonSnapshot = await _components.GetReShadeAddonManagerSnapshotAsync(game, cancellationToken);
-        IReadOnlyList<string> selectedShaders = _components.GetReShadeOptions(game).ShaderPackIds.ToArray();
-        var selectedAddons = addonSnapshot.SelectedIds;
+        IReadOnlyList<string> selectedShaders = _components.GetReShadeOptions(game).ShaderPackIds.ToArray(); // #179: the effective set
+        // #179 review major 1: the add-ons the game gets now, not the record's (none for a new game: an untouched Apply
+        // would make it Select).
+        var selectedAddons = _components.EffectiveAddons(game) is { HeldByNoAddons: false } effectiveAddons ? effectiveAddons.Ids : addonSnapshot.SelectedIds;
         if (selectPart is { } part && Sets?.ChoiceFor(game) is { } choice)
         {
             if (part == ShaderAddonSetPart.Shaders)
