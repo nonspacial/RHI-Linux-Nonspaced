@@ -79,10 +79,10 @@ Interface
 > [!NOTE]
 > Before going back to an older build, remove ReShade from every game where its row reads "ReShade · Vulkan": an older
 > build cannot remove the Vulkan layer, so its registration, the Vulkan loader beside the game and its folder in the
-> prefix would stay, with the game's `vulkan-1` Wine override. The older build also drops the layer's registry details from
-> RHI's record when it saves, after which even this build cannot remove the registration. Removing it first leaves only
-> RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files in the prefix. An older build also forgets
-> names, wiki names and bitness set in Edit game the next time it saves the library.
+> prefix would stay, with the game's `vulkan-1` Wine override. The older build also drops the layer's registry details
+> from RHI's record when it saves, after which even this build cannot remove the registration. Removing it first leaves
+> only RHI's `system.reg.rhi-lock` and up to three `system.reg.rhi-backup-…` files in the prefix. An older build also
+> forgets names, wiki names and bitness set in Edit game the next time it saves the library.
 
 ReShade
 
@@ -147,9 +147,9 @@ Library and links
 
 Support
 
-- Settings → **Support**: **Copy logs** (all of RHI's logs zipped, with your home folder, user name, Steam IDs, tokens and
-  saved keys masked), **Open logs folder** and **Export game data**. A card's right-click **Copy game report** saves a
-  masked report for that game.
+- Settings → **Support**: **Copy logs** (all of RHI's logs zipped, with your home folder, user name, Steam IDs, tokens
+  and saved keys masked), **Open logs folder** and **Export game data**. A card's right-click **Copy game report** saves
+  a masked report for that game.
 - **Help** (from Quick start) and **What's new** (from Help or the version in the status bar).
 
 ## Wave 4 — 2026-10-15: store launchers, RTX Encore, No Addons add-ons, OptiScaler DLL name
@@ -213,7 +213,8 @@ Interface
 
 > [!WARNING]
 > Before going back to an older build, remove OptiScaler F5 DLSSNR and set pinned OptiScaler Nightly games back to
-> "Latest (auto-update)". See [`UPSTREAM.md`](UPSTREAM.md#rolling-back-to-a-build-older-than-wave-3-f5-dlssnr-nightly-pins).
+> "Latest (auto-update)".
+> See [`UPSTREAM.md`](UPSTREAM.md#rolling-back-to-a-build-older-than-wave-3-f5-dlssnr-nightly-pins).
 
 Upstream 2.8.6–2.8.7
 
