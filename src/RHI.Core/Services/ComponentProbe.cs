@@ -110,11 +110,14 @@ public static class ComponentProbe
         result.Single(component => component.Kind == ManagedComponentKind.RtxEncore).GameShipsDlss =
             DlssManagerService.ShipsOwnDlss(stackRoot, indexedFiles);
 
-        // w7/dxvk-hdr (#200): the DX9 HDR row exists only where it can apply (a Windows DirectX 9 game outside Xbox/Game
-        // Pass) or where its d3d9.dll is already beside the executable (so an installed one can always be removed).
+        // w7/dxvk-hdr (#200): the DX9 HDR row is shown only where it can apply (a Windows DirectX 9 game outside Xbox/Game
+        // Pass) or where its d3d9.dll is already beside the executable. Everywhere else it is Unsupported (hidden), so
+        // RHI's record can still bring it back as Installed with Remove (the record outlives a deleted d3d9.dll or an
+        // API change; review major 1).
         var dxvkHdrInstalled = HasDxvkHdrFootprint(indexedFiles, binaryDirectory);
-        if (dxvkHdrInstalled || IsDxvkHdrCandidate(game))
-            result = [.. result, Make(ManagedComponentKind.DxvkHdr, DxvkHdrDisplayName, dxvkHdrInstalled)];
+        var dxvkHdrRow = Make(ManagedComponentKind.DxvkHdr, DxvkHdrDisplayName, dxvkHdrInstalled);
+        if (!dxvkHdrInstalled && !IsDxvkHdrCandidate(game)) dxvkHdrRow.Availability = ComponentAvailability.Unsupported;
+        result = [.. result, dxvkHdrRow];
 
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {

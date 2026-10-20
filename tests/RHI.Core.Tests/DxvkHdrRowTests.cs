@@ -85,7 +85,8 @@ public sealed class DxvkHdrRowTests
         };
         if (kind == "xbox") game.XboxPackage = new XboxPackageInfo("9TEST", "installer", null, null);
 
-        Assert.Null(Row(Decorated(fx, game)));
+        // Listed hidden (Unsupported) at most: RHI's record could bring it back for Remove; without one nothing shows.
+        Assert.False(Row(Decorated(fx, game)) is { } row && ComponentRowViewModel.IsShown(row));
     }
 
     [Fact]
@@ -212,6 +213,70 @@ public sealed class DxvkHdrRowTests
             Assert.Equal(UiLocalizationService.Text("Dxvk.ConfirmBody"), asked);
             Assert.Null(fx.Records.Find(selected, ManagedComponentKind.DxvkHdr));
             Assert.False(File.Exists(Path.Combine(bin, "d3d9.dll")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch (IOException) { }
+        }
+    }
+
+    // Review major 1, at the VM: RHI's record whose d3d9.dll the user deleted (also on a game no longer DirectX 9) still
+    // lists the row with Remove, and the row's command removes the rest (dxvk.conf, the record).
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecordWhoseD3d9IsGone_TheRowStillOffersRemove_AndRemoveClearsTheRest(bool noLongerDx9)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rhi-dxvk-gone-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var bin = Path.Combine(root, "Gone Dx9", "bin");
+            var prefix = Path.Combine(root, "Gone Dx9", "pfx");
+            Directory.CreateDirectory(bin);
+            Directory.CreateDirectory(prefix);
+            PeArchitectureDetectorTests.WritePe(Path.Combine(bin, "Game.exe"), 0x8664, 4096);
+            File.WriteAllText(Path.Combine(prefix, "user.reg"), "WINE REGISTRY Version 2\n");
+            var conf = Path.Combine(bin, "dxvk.conf");
+            File.WriteAllText(conf, DxvkHdrPresets.ConfFor(0));
+            var game = new DetectedGame
+            {
+                Name = "Gone Dx9", InstallPath = Path.GetDirectoryName(bin)!, BinaryDirectory = bin, ExecutablePath = Path.Combine(bin, "Game.exe"),
+                PrefixPath = prefix, Runner = "Proton", Source = "Test", GraphicsApi = noLongerDx9 ? GraphicsApi.DirectX11 : GraphicsApi.DirectX9
+            };
+            using var fx = await ViewModelFixture.StartAsync([game]);
+            fx.Records.Upsert(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.DxvkHdr,
+                BinaryDirectory = bin, Version = "3.1-HDR-mod-v0.3.4",
+                Files =
+                [
+                    new LinuxDeployedFile { Path = Path.Combine(bin, "d3d9.dll"), Sha256 = FileHash.Sha256HexOf(ReShadeChannelTests.DxvkHdrDll(0x8664)) },
+                    new LinuxDeployedFile { Path = conf, Sha256 = FileHash.Sha256Hex(conf), AllowUserChanges = true }
+                ]
+            });
+            var selected = fx.Vm.Games.Single(row => row.Game.Name == game.Name).Game;
+            var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnCompleted(AnalysisOutcome outcome) { if (outcome.Game.Name == game.Name) done.TrySetResult(); }
+            // Start-up may already have analysed the game before the record existed: analyse it afresh.
+            fx.Vm.SelectedGame = null;
+            fx.Vm.Session.Invalidate(selected);
+            fx.Vm.Session.Completed += OnCompleted;
+            try
+            {
+                fx.Vm.SelectedGame = selected;
+                if (!fx.Vm.Session.TryGetCached(selected, out _)) await done.Task.WaitAsync(TimeSpan.FromMinutes(2));
+            }
+            finally { fx.Vm.Session.Completed -= OnCompleted; }
+
+            var shown = fx.Vm.Components.Single(row => row.Kind == ManagedComponentKind.DxvkHdr);
+            Assert.True(shown.IsRemoveAction);
+            Assert.Equal(ComponentAvailability.Installed, shown.Availability);
+            fx.Vm.ConfirmAsync = (_, _, _) => Task.FromResult(true);
+
+            await fx.Vm.ManageComponentCommand.ExecuteAsync(ManagedComponentKind.DxvkHdr);
+
+            Assert.Null(fx.Records.Find(selected, ManagedComponentKind.DxvkHdr));
+            Assert.False(File.Exists(conf));
         }
         finally
         {

@@ -1403,6 +1403,8 @@ public static class UiLocalizationService
             " A execução HDR está desligada para este jogo: ligue-a (Execução HDR, nos detalhes do jogo) para ver HDR."),
         (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ExternalNote,
             "Há ao lado do jogo um d3d9.dll DXVK HDR que o RHI não instalou; o RHI não mexe nele."),
+        (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.MissingD3d9Note,
+            "O d3d9.dll do DX9 HDR não está mais ao lado do jogo, então o DX9 HDR não faz nada agora. Remover tira o resto que o RHI preparou para ele; depois você pode instalá-lo de novo."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeNamePrefix,
             "O ReShade está instalado neste jogo com outro nome de DLL, e o DX9 HDR só consegue passar para o caminho Vulkan um ReShade instalado como d3d9.dll, então nada foi alterado. Remova o ReShade pela linha dele, instale o DX9 HDR e depois instale o ReShade de novo. O ReShade está instalado agora como: "),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeModifiedPrefix,

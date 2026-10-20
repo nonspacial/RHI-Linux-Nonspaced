@@ -133,6 +133,7 @@ public sealed class DxvkHdrDeploymentService
     public const string RowReShadeNote = " ReShade on this game moves to its Vulkan layer while DX9 HDR is installed.";
     public const string HdrLaunchOffNote = " HDR launch is Off for this game: turn it on (HDR launch, in the game's details) to see HDR.";
     public const string ExternalNote = "A DXVK HDR d3d9.dll RHI did not install is beside the game; RHI leaves it alone.";
+    public const string MissingD3d9Note = "DX9 HDR's d3d9.dll is no longer beside the game, so DX9 HDR does nothing now. Remove takes away the rest RHI set up for it; then you can install it again.";
 
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
@@ -178,20 +179,24 @@ public sealed class DxvkHdrDeploymentService
     }
 
     /// <summary>The DX9 HDR row (the component service's decoration hook): installed state, action and note.</summary>
+    /// <remarks>
+    /// RHI's record makes the row Installed with Remove whatever is left on disk (review major 1): a d3d9.dll the user
+    /// deleted, or a game no longer DirectX 9, must still let RHI take dxvk.conf, the per-exe override and ReShade's move
+    /// to its Vulkan layer back. Without a record the row is shown only where DX9 HDR can apply (Unsupported = hidden).
+    /// </remarks>
     public void Decorate(DetectedGame game, IReadOnlyList<ManagedComponent> components, LinuxDeploymentRecord? record)
     {
         if (components.FirstOrDefault(component => component.Kind == ManagedComponentKind.DxvkHdr) is not { } row) return;
-        if (row.Availability == ComponentAvailability.Unsupported) return;
+        if (record is null && row.Availability == ComponentAvailability.Unsupported) return;
         row.ManagedByRhi = record is not null;
-        if (record is not null && row.Availability == ComponentAvailability.Available
-            && record.Files.Any(file => Path.GetFileName(file.Path).Equals(D3d9FileName, StringComparison.OrdinalIgnoreCase) && File.Exists(file.Path)))
+        if (record is not null && row.Availability is ComponentAvailability.Available or ComponentAvailability.Unsupported)
             row.Availability = ComponentAvailability.Installed;
         if (!game.HasConfirmedPatchTarget) return; // the service's patch-target note stays
         var hdrOff = HdrLaunchOn?.Invoke(game) == false ? HdrLaunchOffNote : "";
         if (row.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable)
         {
             row.ActionAllowed = record is not null;
-            row.Note = record is null ? ExternalNote : RowNote + hdrOff;
+            row.Note = record is null ? ExternalNote : D3d9Missing(record) ? MissingD3d9Note : RowNote + hdrOff;
             row.InstalledVersion = record?.Version;
             return;
         }
@@ -473,6 +478,11 @@ public sealed class DxvkHdrDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(PresetSetMessage, conf.Path);
     }
+
+    /// <summary>Whether the record's d3d9.dll is gone from disk (the row then says Remove clears the rest).</summary>
+    private static bool D3d9Missing(LinuxDeploymentRecord record)
+        => record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(D3d9FileName, StringComparison.OrdinalIgnoreCase)) is not { } d3d9
+           || !File.Exists(d3d9.Path);
 
     /// <summary>The other RHI component recorded as owning <paramref name="path"/> (display name), or null.</summary>
     private string? HolderOf(DetectedGame game, string path)
