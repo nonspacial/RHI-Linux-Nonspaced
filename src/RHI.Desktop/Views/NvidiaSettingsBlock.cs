@@ -234,7 +234,7 @@ public sealed class NvidiaSettingsBlock : ContentControl
             Grid.SetColumn(Line, 1);
             Grid.SetColumn(control, 2);
             control.VerticalAlignment = VerticalAlignment.Center;
-            Panel = new ResponsiveRow { Columns = "170,*,200", ColumnSpacing = 8, LineSpacing = 6, HeadColumns = 2, MinStarWidth = 160 };
+            Panel = new ResponsiveRow { Columns = "170,*,200", ColumnSpacing = 8, LineSpacing = 6, HeadColumns = 2, MinStarWidth = 220 };
             Panel.Children.Add(Label);
             Panel.Children.Add(Line);
             Panel.Children.Add(control);
