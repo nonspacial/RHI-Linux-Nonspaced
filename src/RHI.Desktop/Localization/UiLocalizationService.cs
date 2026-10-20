@@ -1347,7 +1347,8 @@ public static class UiLocalizationService
         // #195 a dropped or watched RenoDX add-on.
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalPackageCheckMessage, "O RenoDX foi instalado a partir de um arquivo local; Atualizar tudo não consegue verificá-lo."),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix, "RenoDX instalado a partir de um arquivo local: "),
-        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalNotAnAddonPrefix, "Não é um add-on do RenoDX que o RHI possa instalar (um arquivo de add-on do ReShade terminado em .addon64 ou .addon32): "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalNotAnAddonPrefix, "Não é um add-on do RenoDX que o RHI possa instalar (um arquivo de add-on do ReShade: .addon64, .addon32 ou .addon): "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalLedgerUnreadablePrefix, "Instalação do RenoDX recusada: os registros de instalação do RHI não podem ser lidos, então nada foi gravado. Cópia dos registros: "),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage, "Este add-on do RenoDX é de 32 bits e o jogo é de 64 bits; ele precisa do arquivo .addon64 do jogo."),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage, "Este add-on do RenoDX é de 64 bits e o jogo é de 32 bits; ele precisa do arquivo .addon32 do jogo."),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage, "O add-on do RenoDX para Control precisa dos passos extras do RHI: instale-o com o botão Instalar da linha do RenoDX."),

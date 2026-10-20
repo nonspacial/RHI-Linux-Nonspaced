@@ -149,6 +149,56 @@ public sealed class RenoDxLocalAddonTests : IDisposable
     }
 
     [Fact]
+    public async Task ASaveTheLedgerRefuses_IsAFailedResult_AndPutsTheTargetBack()
+    {
+        // The ledger's own refusal (an unreadable ledger) is an InvalidOperationException, not an IO error.
+        _store.SaveFaultForTesting = () => new InvalidOperationException("The RHI deployment ledger is unreadable");
+        var result = await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"));
+        _store.SaveFaultForTesting = null;
+
+        Assert.StartsWith("RenoDX install failed: ", result.Message, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(Bin, "renodx-foogame.addon64"))); // no add-on left without a record
+    }
+
+    [Fact]
+    public async Task AnUnreadableLedger_RefusesBeforeAnythingIsWritten()
+    {
+        File.WriteAllText(Path.Combine(_root, "records.json"), "{ not json");
+        var result = await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"));
+
+        Assert.StartsWith(RenoDxDeploymentService.LocalLedgerUnreadablePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Equal(["Game.exe", "ReShade64.dll"], Directory.EnumerateFiles(Bin).Select(Path.GetFileName).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task RhisOwnAddon_TheUserChanged_IsNotReplaced()
+    {
+        Assert.True((await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"))).Success);
+        var target = Path.Combine(Bin, "renodx-foogame.addon64");
+        File.WriteAllText(target, "MZ the user's edit");
+
+        var refused = await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64", size: 4096));
+
+        Assert.StartsWith("Managed RenoDX file was modified outside RHI", refused.Message, StringComparison.Ordinal);
+        Assert.Equal("MZ the user's edit", File.ReadAllText(target));
+    }
+
+    [Fact]
+    public async Task AFileWithoutAnAddonHeader_IsNotInstalled_AnAddonWithoutBitnessInItsNameIs()
+    {
+        var page = Path.Combine(Downloads, "renodx-foogame.addon64");
+        File.WriteAllText(page, "<html>a web page saved under the add-on's name</html>");
+        Assert.Equal(RenoDxDeploymentService.LocalNotAnAddonPrefix + "renodx-foogame.addon64", (await _service.InstallLocalAddonAsync(_game, page)).Message);
+        Assert.Null(_store.Find(_game, ManagedComponentKind.RenoDX));
+
+        // Upstream's drop takes a plain .addon too; its header says which game it fits.
+        var plain = Addon(Downloads, "renodx-foogame.addon");
+        var result = await _service.InstallLocalAddonAsync(_game, plain);
+        Assert.True(result.Success, result.Message);
+        Assert.True(File.Exists(Path.Combine(Bin, "renodx-foogame.addon")));
+    }
+
+    [Fact]
     public async Task OtherRefusals_ChangeNothing()
     {
         var noReShade = Game(_root, "Bare Game", 0x8664, reshade: false);
@@ -168,6 +218,10 @@ public sealed class RenoDxLocalAddonTests : IDisposable
 
     [Theory]
     [InlineData("renodx-hogwartslegacy.addon64", true)]
+    [InlineData("renodx-hogwartslegacy.addon", true)]     // upstream's drop: no bitness in the name
+    [InlineData("renodxhogwarts.addon64", false)]         // upstream: the name starts "renodx-"
+    [InlineData("renodx-universal_ue-dof-fix.addon64", false)] // DoF Fix's
+    [InlineData("renodx-dlssfix.addon64", false)]
     [InlineData("RenoDX-Cyberpunk2077.addon32", true)]
     [InlineData("renodx-dlss5-feed.addon64", false)]     // DLSS5 Feeder's
     [InlineData("renodx-upgrade.addon64", false)]        // RenoDX Upgrade's
@@ -175,9 +229,9 @@ public sealed class RenoDxLocalAddonTests : IDisposable
     [InlineData("renodx-devkit.addon64", false)]
     [InlineData("renodx-dlss.addon64", false)]           // ShortFuse's
     [InlineData("relimiter.addon64", false)]             // another ReShade add-on: Custom Add-ons import
-    [InlineData("renodx-foo.addon", false)]
+    [InlineData("renodx-foo.addon.txt", false)]
     public void OnlyRenoDxGameAddons_TakeTheInstallPath(string name, bool expected)
-        => Assert.Equal(expected, DroppedRenoDxPresenter.Handles(Path.Combine("/downloads", name)));
+        => Assert.Equal(expected, RenoDxDeploymentService.IsDroppedRenoDxAddon(Path.Combine("/downloads", name)));
 
     [Fact]
     public void TheGameIsMatched_ByTheCatalogueFile_ThenItsName_ThenUpstreamsWords_ThenTheSelection()

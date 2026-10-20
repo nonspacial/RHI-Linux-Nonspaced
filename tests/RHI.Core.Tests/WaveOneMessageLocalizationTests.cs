@@ -409,6 +409,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalPackageCheckMessage; // #195
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix + "/jogos/Exemplo/renodx-exemplo.addon64";
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalNotAnAddonPrefix + "renodx-exemplo.txt";
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalLedgerUnreadablePrefix + "/dados/rhi-linux/deployments.json.corrupt";
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage;
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage;
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage;

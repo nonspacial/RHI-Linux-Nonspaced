@@ -538,7 +538,8 @@ public sealed class RenoDxDeploymentService
     public const string LocalPackageMetadataKey = "RenoDX.LocalPackage";
     public const string LocalPackageCheckMessage = "RenoDX was installed from a local file; Update All cannot check it.";
     public const string LocalInstalledPrefix = "RenoDX installed from a local file: ";
-    public const string LocalNotAnAddonPrefix = "Not a RenoDX add-on RHI can install (a ReShade add-on file ending in .addon64 or .addon32): ";
+    public const string LocalNotAnAddonPrefix = "Not a RenoDX add-on RHI can install (a ReShade add-on file: .addon64, .addon32 or .addon): ";
+    public const string LocalLedgerUnreadablePrefix = "RenoDX install refused: RHI's deployment records cannot be read, so nothing was written. Copy of the records: ";
     public const string Local32BitOn64BitMessage = "This RenoDX add-on is 32-bit and the game is 64-bit; it needs the game's .addon64 file.";
     public const string Local64BitOn32BitMessage = "This RenoDX add-on is 64-bit and the game is 32-bit; it needs the game's .addon32 file.";
     public const string LocalControlUeMessage = "Control's RenoDX add-on needs RHI's extra steps: install it with the RenoDX row's Install button.";
@@ -548,21 +549,25 @@ public sealed class RenoDxDeploymentService
         => record?.Metadata.TryGetValue(LocalPackageMetadataKey, out var value) == true && value == "1";
 
     /// <summary>
-    /// #195: whether a dropped or watched file is a RenoDX game add-on (upstream: <c>renodx-*</c>) rather than another
-    /// ReShade add-on or one of the auxiliary RenoDX add-ons other components own (DLSS5, upgrade, MFG unlock, devkit).
+    /// #195: whether a dropped or watched file is a RenoDX game add-on (upstream <c>AddonFileWatcher</c>: a
+    /// <c>renodx-*</c> name other than <c>renodx-universal_ue</c>, <c>-devkit</c>, <c>-dlssfix</c>, <c>-upgrade</c>,
+    /// <c>-mfgunlock</c>, <c>-dlss5</c> and <c>-dlss.</c>; ending in <c>.addon64</c>, <c>.addon32</c> or, as upstream's drop,
+    /// <c>.addon</c>) rather than another ReShade add-on or an auxiliary one other components own.
     /// </summary>
     public static bool IsDroppedRenoDxAddon(string? path)
     {
         var name = Path.GetFileName(path);
-        if (string.IsNullOrEmpty(name) || !name.StartsWith("renodx", StringComparison.OrdinalIgnoreCase)) return false;
+        if (string.IsNullOrEmpty(name) || !name.StartsWith("renodx-", StringComparison.OrdinalIgnoreCase)) return false;
         var extension = Path.GetExtension(name);
-        return (extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) || extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase))
+        return (extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) || extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".addon", StringComparison.OrdinalIgnoreCase))
                && !IsAuxiliaryRenoDxAddon(name)
-               && !name.StartsWith("renodx-devkit", StringComparison.OrdinalIgnoreCase)
-               && !name.StartsWith("renodx-dlssfix", StringComparison.OrdinalIgnoreCase)
-               && !name.StartsWith("renodx-dlss.", StringComparison.OrdinalIgnoreCase)
-               && !name.StartsWith("renodx-universal_ue", StringComparison.OrdinalIgnoreCase);
+               && !UpstreamWatcherSkips.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>The <c>renodx-</c> names upstream's watcher leaves alone (global or other components' add-ons).</summary>
+    private static readonly string[] UpstreamWatcherSkips =
+        ["renodx-universal_ue", "renodx-devkit", "renodx-dlssfix", "renodx-upgrade", "renodx-mfgunlock", "renodx-dlss5", "renodx-dlss."];
 
     /// <summary>
     /// #195 (upstream <c>DragDropHandler.ProcessDroppedAddon</c>): installs a local RenoDX add-on file as the game's RenoDX
@@ -591,13 +596,11 @@ public sealed class RenoDxDeploymentService
         var architecture = GameArchitecture.Of(game);
         if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
             return ComponentOperationResult.Fail("Could not determine game bitness for the RenoDX add-on.");
-        // The add-on's own PE header decides its bitness; the extension only when the header cannot be read.
-        var addonArchitecture = PeArchitectureDetector.Detect(addonPath) switch
-        {
-            PeArchitecture.X86 => PeArchitecture.X86,
-            PeArchitecture.X64 => PeArchitecture.X64,
-            _ => Path.GetExtension(fileName).Equals(".addon32", StringComparison.OrdinalIgnoreCase) ? PeArchitecture.X86 : PeArchitecture.X64
-        };
+        // The add-on's own PE header decides its bitness; a file without a readable x86/x64 header (a saved web page,
+        // a cut-off download) is not an add-on.
+        var addonArchitecture = PeArchitectureDetector.Detect(addonPath);
+        if (addonArchitecture is not (PeArchitecture.X86 or PeArchitecture.X64))
+            return ComponentOperationResult.Fail(LocalNotAnAddonPrefix + fileName);
         if (addonArchitecture != architecture)
             return ComponentOperationResult.Fail(addonArchitecture == PeArchitecture.X86 ? Local32BitOn64BitMessage : Local64BitOn32BitMessage);
         if (ControlUePostInstallService.Applies(game, fileName)) return ComponentOperationResult.Fail(LocalControlUeMessage);
@@ -613,13 +616,8 @@ public sealed class RenoDxDeploymentService
                 var existingName = Path.GetFileName(existing);
                 if (IsAuxiliaryRenoDxAddon(existingName)) continue;
                 if (managedOldPath is not null && PathsEqual(existing, managedOldPath)) continue;
+                // A same-named file RHI does not own is caught here too: every accepted name is a renodx-* add-on.
                 return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
-            }
-            foreach (var sameName in Directory.EnumerateFiles(deployDir, "*", CaseInsensitiveTopLevel)
-                         .Where(path => Path.GetFileName(path).Equals(fileName, StringComparison.OrdinalIgnoreCase)))
-            {
-                if (existingRecord?.Files.FirstOrDefault(file => PathsEqual(file.Path, sameName)) is null)
-                    return ComponentOperationResult.Fail($"RenoDX install refused: a file RHI Linux does not own already has this add-on's name. Move or remove it, then install again: {sameName}");
             }
         }
         if (managedOldPath is not null && File.Exists(managedOldPath))
@@ -629,6 +627,10 @@ public sealed class RenoDxDeploymentService
                 || !string.Equals(await FileHash.Sha256HexAsync(managedOldPath, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {managedOldPath}");
         }
+
+        // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger).
+        if (_records.CorruptLedgerPath is { } quarantined)
+            return ComponentOperationResult.Fail(LocalLedgerUnreadablePrefix + quarantined);
 
         var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
         var targetBefore = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : null;
@@ -656,7 +658,7 @@ public sealed class RenoDxDeploymentService
             record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(target);
             _records.Upsert(record);
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts the target back
         {
             var notes = RestoreSnapshots([new FileSnapshot(target, targetBefore)], SnapshotFallbackDirectory);
             return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + (notes.Count > 0 ? " Rollback incomplete: " + string.Join(" ", notes) : ""));
