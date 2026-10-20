@@ -1179,6 +1179,32 @@ internal static class UiStrings
         // w7/smalls rows
         // w7/reshade rows
         // w7/shader-sets rows
+        ("Sets.Global", "Global", "Global"),
+        ("Sets.Select", "Escolher", "Select"),
+        ("Sets.Off", "Desligado", "Off"),
+        ("Sets.Shaders", "Shaders", "Shaders"),
+        ("Sets.Addons", "Add-ons", "Add-ons"),
+        ("Sets.ShaderModeTip", "Global: o conjunto global de shaders (Configurações → ReShade). Escolher: os pacotes deste jogo. Desligado: nenhum pacote de shaders do RHI neste jogo.", "Global: the global shader set (Settings → ReShade). Select: this game's own packs. Off: no RHI shader packs in this game."),
+        ("Sets.AddonModeTip", "Global: os add-ons globais (Configurações → ReShade). Escolher: os add-ons deste jogo. Desligado: nenhum add-on do Addon Manager neste jogo.", "Global: the global add-ons (Settings → ReShade). Select: this game's own add-ons. Off: no Addon Manager add-ons in this game."),
+        ("Sets.GlobalModeManaged", "Gerenciado pelo RHI", "RHI managed"),
+        ("Sets.GlobalModeCustom", "Pasta personalizada", "Custom folder"),
+        ("Sets.GlobalShaderMode", "Shaders globais", "Global shaders"),
+        ("Sets.GlobalShaderModeTip", "Gerenciado pelo RHI: o conjunto global de pacotes. Pasta personalizada: só a sua pasta de shaders personalizados. Desligado: nenhum shader nos jogos em Global.", "RHI managed: the global pack set. Custom folder: only your custom shader folder. Off: no shaders in games set to Global."),
+        ("Sets.EditGlobalShaders", "Shaders globais…", "Global shaders…"),
+        ("Sets.EditGlobalAddons", "Add-ons globais…", "Global add-ons…"),
+        ("Sets.GlobalNote", "Jogos em Global usam estes. Uma mudança atualiza esses jogos agora.", "Games set to Global use these. A change updates those games now."),
+        ("Sets.GlobalDialogTitle", "Shaders e add-ons globais", "Global shaders and add-ons"),
+        ("Sets.ApplyGlobal", "Aplicar aos jogos em Global", "Apply to games set to Global"),
+        ("Sets.WhatChoice", "a escolha de shaders e add-ons", "the shader and add-on choice"),
+        ("Sets.Applying", "Atualizando shaders e add-ons…", "Updating shaders and add-ons…"),
+        ("Sets.SumChanged", "{0} jogo(s) atualizado(s)", "{0} game(s) updated"),
+        ("Sets.SumUnchanged", "{0} já em dia", "{0} already up to date"),
+        ("Sets.SumHeld", "{0} retido(s) pelo No Addons", "{0} held by No Addons"),
+        ("Sets.SumRunning", "{0} pulado(s) por estar(em) em execução: {1}", "{0} skipped while running: {1}"),
+        ("Sets.SumFailed", "{0} com falha, arquivos mantidos: {1}", "{0} failed, files kept: {1}"),
+        ("Sets.SumCancelled", "{0} sem alteração (cancelado)", "{0} not changed (cancelled)"),
+        ("Sets.SumNone", "nenhum jogo com o ReShade do RHI usa Global", "no game with RHI's ReShade is set to Global"),
+        ("Sets.SummaryLine", "{0}: {1}.", "{0}: {1}."),
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     ];

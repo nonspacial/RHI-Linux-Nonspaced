@@ -6,7 +6,7 @@
              x:DataType="vm:ShaderAddonsDialogViewModel">
   <!-- Shaders/Add-ons (epic #89). The shader-profile panel (#93) is the parity lane's control (code-behind). -->
   <Grid RowDefinitions="*,Auto" Margin="8">
-    <TabControl>
+    <TabControl SelectedIndex="{Binding InitialTab, Mode=OneTime}">
       <TabItem Header="{l:T Win.ShaderPacks}">
         <ScrollViewer>
           <StackPanel Spacing="8" Margin="12">
@@ -59,7 +59,7 @@
         <Button Content="{l:T Win.OpenCustomShaders}" Padding="12,6" Command="{Binding OpenCustomShadersCommand}"/>
         <Button Content="{l:T Win.OpenCustomAddOns}" Padding="12,6" Command="{Binding OpenCustomAddonsCommand}"/>
       </WrapPanel>
-      <Button Grid.Column="1" Content="{l:T Win.ApplySelectedGame}" Padding="14,7" HorizontalAlignment="Right" VerticalAlignment="Top"
+      <Button Grid.Column="1" Content="{Binding ApplyText}" Padding="14,7" HorizontalAlignment="Right" VerticalAlignment="Top"
               Command="{Binding ApplyCommand}" IsEnabled="{Binding CanApply}"/>
       <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.78"/>
     </Grid>

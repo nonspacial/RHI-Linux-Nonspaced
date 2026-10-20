@@ -64,6 +64,7 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         OptionLists.ReShadeChannel.Fill(ReShadeChannels);
         SelectedReShadeChannel = ReShadeChannelDisplay(channel);
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(Host.Settings.ReShadeChannel));
+        RelabelSetModes(); // #179
     }
 
     /// <summary>The selection or its analysis changed: the D3DCompiler 47 installers and their hint follow.</summary>
@@ -315,6 +316,7 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         ReShadeUpdateText = pin is not null // #186: the version a fresh install will use
             ? TF("Vm.Profile", ReShadeChannelDisplay(nameof(ReShadeChannel.Legacy)), $" {pin}")
             : TF("Vm.Profile", ReShadeChannelDisplay(profile.Channel.ToString()), string.IsNullOrWhiteSpace(profile.LegacyVersion) ? "" : $" {profile.LegacyVersion}");
+        LoadSetModes(game); // #179
     }
 
     private void ResetReShadeProfile()
@@ -331,22 +333,44 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         ShaderMaxG2D = false;
         _selectedShaderPackIds.Clear();
         ReShadeUpdateText = UiLocalizationService.Format("Ui.ReShadeGlobalDefault", ReShadeChannelDisplay(Host.Settings.ReShadeChannel));
+        LoadSetModes(null); // #179
     }
 
-    public async Task<ShaderAddonManagerUiSnapshot?> GetShaderAddonManagerSnapshotAsync(CancellationToken cancellationToken = default)
+    /// <param name="selectPart">#179: the dialog opens for the game's own list of this part (Select): it starts from that
+    /// list (shaders: else the global set, as upstream) and its Apply makes the part Select.</param>
+    public async Task<ShaderAddonManagerUiSnapshot?> GetShaderAddonManagerSnapshotAsync(CancellationToken cancellationToken = default,
+        ShaderAddonSetPart? selectPart = null)
     {
         if (SelectedGame is null) return null;
         var game = SelectedGame;
         var shaderCatalog = await _components.RefreshReShadeShaderPackCatalogAsync(cancellationToken);
         var addonSnapshot = await _components.GetReShadeAddonManagerSnapshotAsync(game, cancellationToken);
-        var selectedShaders = _components.GetReShadeOptions(game).ShaderPackIds.ToArray();
+        IReadOnlyList<string> selectedShaders = _components.GetReShadeOptions(game).ShaderPackIds.ToArray();
+        var selectedAddons = addonSnapshot.SelectedIds;
+        if (selectPart is { } part && Sets?.ChoiceFor(game) is { } choice)
+        {
+            if (part == ShaderAddonSetPart.Shaders)
+                selectedShaders = choice.ShaderPackIds.Count > 0 ? choice.ShaderPackIds
+                    : Sets.GlobalShaderPackIds.Where(id => !id.Equals(ReShadeShaderPackCatalog.CustomPackId, StringComparison.OrdinalIgnoreCase)).ToArray();
+            else
+                selectedAddons = choice.AddonIds;
+        }
         return new ShaderAddonManagerUiSnapshot(
             shaderCatalog,
             selectedShaders,
             addonSnapshot.Catalog,
-            addonSnapshot.SelectedIds,
+            selectedAddons,
             _components.CustomShaderRoot,
             addonSnapshot.CustomAddonRoot);
+    }
+
+    /// <summary>#179: the global dialog's lists (the global set and add-ons) with both catalogues.</summary>
+    public async Task<ShaderAddonManagerUiSnapshot> GetGlobalShaderAddonSnapshotAsync(CancellationToken cancellationToken = default)
+    {
+        var shaderCatalog = await _components.RefreshReShadeShaderPackCatalogAsync(cancellationToken);
+        var addonCatalog = await _components.RefreshReShadeAddonCatalogAsync(cancellationToken);
+        var (shaders, addons) = GlobalLists();
+        return new ShaderAddonManagerUiSnapshot(shaderCatalog, shaders, addonCatalog, addons, _components.CustomShaderRoot, _components.CustomAddonRoot);
     }
 
     public Task<IReadOnlyList<ReShadeShaderPackFileInfo>> GetShaderPackFilesAsync(
@@ -361,12 +385,24 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
     public async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
         IReadOnlyList<string> shaderIds,
         IReadOnlyList<string> addonIds,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ShaderAddonSetPart? selectPart = null)
     {
         if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
         var game = SelectedGame;
         using var op = BeginOperation("shaders-addons", linkedToken: cancellationToken);
         if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        // #179: the game's own lists. Chosen through Select: that part becomes Select with exactly these; otherwise a part
+        // becomes Select only when its list differs from what the game gets now (the shader half is decided by
+        // ApplyReShadeAsync itself).
+        if (Sets is { } sets && TryPersist(() =>
+            {
+                if (selectPart == ShaderAddonSetPart.Shaders) sets.SetShaderMode(game, ShaderAddonMode.Select, shaderIds);
+                if (selectPart == ShaderAddonSetPart.Addons
+                    || (_components.EffectiveAddons(game) is { HeldByNoAddons: false } now && !Same(now.Ids, addonIds)))
+                    sets.SetAddonMode(game, ShaderAddonMode.Select, addonIds);
+            }, "Sets.WhatChoice", sessionOnly: false) is { } refused)
+            return ComponentOperationResult.Fail(refused);
         try
         {
             // Apply installs ReShade when RHI does not manage it yet (plus RE Framework on RE Engine): warn first.
@@ -392,7 +428,10 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
             }
 
             StatusText = T("Vm.ApplyingReShadeAddSelection");
-            var addonResult = await _components.ApplyReShadeAddonSelectionAsync(game, addonIds, op.Token);
+            // #179: a new ReShade install may already have applied these add-ons (the game's effective set).
+            var addonResult = installsReShade && _components.AddonSelectionMatches(game, addonIds)
+                ? ComponentOperationResult.Ok("")
+                : await _components.ApplyReShadeAddonSelectionAsync(game, addonIds, op.Token);
             if (!addonResult.Success)
             {
                 return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addonResult.Message))));
@@ -405,6 +444,7 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
             ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
             ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
             await ReprobeGameAsync(game);
+            LoadSetModes(game); // #179: a changed list made the game Select
             return ComponentOperationResult.Ok(ShowStatus(UiLocalizationService.ShaderAddonAppliedFor(
                 UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource)));
         }

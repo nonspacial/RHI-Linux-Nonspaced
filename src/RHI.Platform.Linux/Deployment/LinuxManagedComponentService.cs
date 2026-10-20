@@ -2703,6 +2703,14 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The Addon Manager add-ons <paramref name="game"/> gets now (null without a readable store).</summary>
     public ReShadeAddonEffectiveSet? EffectiveAddons(DetectedGame game) => _addonManager?.EffectiveSelectionFor(game);
 
+    /// <summary>True when the game's Addon Manager record holds exactly <paramref name="addonIds"/> (none: no record either).</summary>
+    public bool AddonSelectionMatches(DetectedGame game, IReadOnlyList<string> addonIds)
+        => _addonManager is not null && SameIds(_addonManager.RecordedSelection(game), addonIds) && (addonIds.Count == 0) != _addonManager.HasRecord(game);
+
+    /// <summary>The Addon Manager's catalogue (the global add-ons dialog has no game).</summary>
+    public Task<IReadOnlyList<ReShadeAddonCatalogItem>> RefreshReShadeAddonCatalogAsync(CancellationToken cancellationToken = default)
+        => _addonManager.RefreshCatalogItemsAsync(cancellationToken);
+
     /// <summary>The selection the game's Addon Manager record holds now (empty without one).</summary>
     public IReadOnlyList<string> RecordedAddonSelection(DetectedGame game) => _addonManager?.RecordedSelection(game) ?? [];
 

@@ -63,16 +63,34 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
     private readonly Func<ReShadeShaderPackInfo, Task> _showFiles;
     private readonly Action<string> _showMainStatus;
 
+    /// <param name="selectPart">#179: opened by choosing Select for this part: Apply makes it the game's own list.</param>
     internal static ShaderAddonsDialogViewModel For(MainWindowViewModel shell, ShaderAddonManagerUiSnapshot snapshot,
-        Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles)
-        => new(snapshot, shell.SelectedGame?.Name ?? "", (shaders, addons) => shell.ReShadeProfile.ApplyShaderAddonManagerAsync(shaders, addons),
-            openFolder, showFiles, line => shell.StatusText = line, shell.Parity);
+        Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles,
+        RHI.Platform.Linux.Deployment.ShaderAddonSetPart? selectPart = null)
+        => new(snapshot, shell.SelectedGame?.Name ?? "", (shaders, addons) => shell.ReShadeProfile.ApplyShaderAddonManagerAsync(shaders, addons, default, selectPart),
+            openFolder, showFiles, line => shell.StatusText = line, shell.Parity)
+        {
+            InitialTab = selectPart == RHI.Platform.Linux.Deployment.ShaderAddonSetPart.Addons ? 1 : 0,
+        };
+
+    /// <summary>
+    /// #179: the same dialog for the global shader set and add-ons (Settings → ReShade): Apply saves them and brings every
+    /// game set to Global up to date.
+    /// </summary>
+    internal static ShaderAddonsDialogViewModel ForGlobal(MainWindowViewModel shell, ShaderAddonManagerUiSnapshot snapshot,
+        Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles,
+        RHI.Platform.Linux.Deployment.ShaderAddonSetPart part)
+        => new(snapshot, "", (shaders, addons) => shell.ReShadeProfile.ApplyGlobalSetsAsync(shaders, addons),
+            openFolder, showFiles, line => shell.StatusText = line, shell.Parity, isGlobal: true)
+        {
+            InitialTab = part == RHI.Platform.Linux.Deployment.ShaderAddonSetPart.Addons ? 1 : 0,
+        };
 
     /// <param name="openFolder">Opens (creating) a folder; says whether it opened, and why not.</param>
     internal ShaderAddonsDialogViewModel(ShaderAddonManagerUiSnapshot snapshot, string gameName,
         Func<IReadOnlyList<string>, IReadOnlyList<string>, Task<ComponentOperationResult>> apply,
         Func<string, (bool Opened, string? Error)> openFolder, Func<ReShadeShaderPackInfo, Task> showFiles, Action<string> showMainStatus,
-        ParityFeatures? parity = null)
+        ParityFeatures? parity = null, bool isGlobal = false)
     {
         _apply = apply;
         _openFolder = openFolder;
@@ -80,7 +98,9 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
         _showMainStatus = showMainStatus;
         Snapshot = snapshot;
         Parity = parity;
-        WindowTitle = $"Shaders/Add-ons — {gameName}";
+        IsGlobal = isGlobal;
+        WindowTitle = isGlobal ? T("Sets.GlobalDialogTitle") : $"Shaders/Add-ons — {gameName}";
+        ApplyText = T(isGlobal ? "Sets.ApplyGlobal" : "Win.ApplySelectedGame");
 
         var selectedShaders = snapshot.SelectedShaderPackIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var shaderItems = new List<CatalogItem>();
@@ -112,6 +132,12 @@ public sealed partial class ShaderAddonsDialogViewModel : ObservableObject
     }
 
     public string WindowTitle { get; }
+    /// <summary>#179: the global set and add-ons rather than a game's.</summary>
+    public bool IsGlobal { get; }
+    /// <summary>The Apply button's label (a game, or the games set to Global).</summary>
+    public string ApplyText { get; }
+    /// <summary>The tab shown first: 0 shader packs, 1 add-ons.</summary>
+    public int InitialTab { get; init; }
     public ShaderAddonManagerUiSnapshot Snapshot { get; }
     /// <summary>The shader-profile panel's features (#93, hosted by the view); null hides the panel.</summary>
     public ParityFeatures? Parity { get; }
