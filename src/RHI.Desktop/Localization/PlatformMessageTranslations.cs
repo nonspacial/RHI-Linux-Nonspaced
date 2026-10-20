@@ -183,5 +183,10 @@ internal static class PlatformMessageTranslations
         // w5/ini-presets rows
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 }

@@ -614,6 +614,11 @@ public static class UiLocalizationService
             "Este jogo de 32 bits roda em um prefixo Wine só de 32 bits (um prefixo antigo do Wine ou do Lutris), onde a camada Vulkan do ReShade não carrega, então ela não é oferecida. Prefixos do Proton e prefixos novos do Wine são de 64 bits."),
         (RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.IncompleteRecordMessage,
             "O registro do RHI da camada Vulkan do ReShade neste jogo está incompleto, então a atualização foi interrompida; remova o ReShade e instale-o de novo."),
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1331,6 +1336,11 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LoaderInvalidPrefix, "O carregador Vulkan baixado não é um carregador Vulkan válido para este jogo: "),
         (RHI.Platform.Linux.Deployment.DownloadSources.LunarGVulkanRuntime.RefusalPrefix,
             "Download recusado: links do runtime Vulkan devem ser HTTPS em um host confiável (LunarG). Link recusado: "),
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

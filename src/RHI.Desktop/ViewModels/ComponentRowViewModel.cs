@@ -122,6 +122,12 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     public string IniSettingsTip => UiLocalizationService.Format("Ini.SettingsTip", component.DisplayName); // #181
     // w5/shell-launch rows
     // w5/reshade-core rows
+    // w7 lane rows: component-row members (one member each)
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

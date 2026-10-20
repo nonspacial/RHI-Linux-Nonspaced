@@ -104,6 +104,11 @@ public sealed partial class SettingsDialogView : UserControl
         Fill("OptiScalerMenuKeySlot", optiScalerMenuKey.Control);
         model.Host(new(current => current.OptiScalerMenuKey = optiScalerMenuKey.Key, optiScalerMenuKey.Reset));
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
@@ -115,5 +120,10 @@ public sealed partial class SettingsDialogView : UserControl
         // w5/shell-launch rows
         tabs.Items.Add(SupportSettingsTab.Create(vm.Support, Show, model.OpenFolder, model.CopyText)); // #192 Copy logs, Open logs folder, Export game data
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     }
 }

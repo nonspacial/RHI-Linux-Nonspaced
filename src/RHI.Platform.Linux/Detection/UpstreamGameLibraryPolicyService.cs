@@ -194,6 +194,11 @@ public sealed class UpstreamGameLibraryPolicyService(
             game.ManifestReShadeNoteUrl = reShadeNote.Url;
             game.ManifestReShadeNoteUrlLabel = reShadeNote.UrlLabel;
         }
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     }
 
     private static bool IsBlacklisted(string? name, UpstreamLibraryPolicySnapshot policy)

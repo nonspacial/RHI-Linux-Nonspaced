@@ -289,6 +289,11 @@ public static class OptionLists
             })
         ]);
     // w5/reshade-core rows
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");

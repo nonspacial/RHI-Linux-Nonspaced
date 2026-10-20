@@ -493,3 +493,15 @@ build.
   ReShade's ⓘ dialog (#184).
 - Changed from upstream: upstream stores the pin as a per-game channel override when it first sees the game; RHI Linux
   has no per-game channel setting outside the installed profile, so the pin applies to each fresh install instead.
+
+## Parity notes (upstream 2.8.7, wave 7 owner decisions)
+
+<!-- w7/smalls notes -->
+
+<!-- w7/reshade notes -->
+
+<!-- w7/shader-sets notes -->
+
+<!-- w7/nvapi-launch notes -->
+
+<!-- w7/dxvk-hdr notes -->

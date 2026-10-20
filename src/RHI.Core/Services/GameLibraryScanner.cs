@@ -292,6 +292,11 @@ public sealed class GameLibraryScanner
             first.ManifestReShadeNote ??= candidate.ManifestReShadeNote;
             first.ManifestReShadeNoteUrl ??= candidate.ManifestReShadeNoteUrl;
             first.ManifestReShadeNoteUrlLabel ??= candidate.ManifestReShadeNoteUrlLabel;
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         }
         return first;
     }

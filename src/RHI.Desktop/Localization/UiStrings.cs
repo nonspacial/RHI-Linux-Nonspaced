@@ -1176,5 +1176,10 @@ internal static class UiStrings
         ("Shell.EditSavedNames", "{0}: alterações salvas.", "{0}: changes saved."),
         // w5/reshade-core rows
         ("Rs.LegacyVersionTip", "Versões antigas do ReShade publicadas pelo RHI. Uma versão antiga pode não suportar add-ons recentes e fica fora das atualizações automáticas.", "Older ReShade versions listed by RHI. An older version may not support newer add-ons and is left out of automatic updates."),
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 }

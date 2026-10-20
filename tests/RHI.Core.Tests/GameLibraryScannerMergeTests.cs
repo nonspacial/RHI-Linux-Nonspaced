@@ -239,6 +239,11 @@ public sealed class GameLibraryScannerMergeTests : IDisposable
         // w5/shell-launch rows
         if (t == typeof(DetectedWikiName)) return new DetectedWikiName("x");
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         throw new InvalidOperationException($"Add a sample for {type}");
     }
 }

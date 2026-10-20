@@ -66,6 +66,11 @@ internal sealed class AppComposition
     /// </summary>
     public RHI.Platform.Linux.Hdr.DisplayModeSwitcher? DisplayModes { get; init; }
     // w5/reshade-core rows
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -225,6 +230,12 @@ internal sealed class AppComposition
         renodx.PeakNits = () => PeakNitsSettings.From(settingsStore.Load()); // #182: peak brightness into RenoDX presets at install
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // w7 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -238,6 +249,12 @@ internal sealed class AppComposition
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            // w7 lane rows: named arguments, each line starting with a comma
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -281,6 +298,11 @@ internal sealed class AppComposition
         managedComponents.RenoDxPeakNits = new RenoDxPeakNits(records, journal, managedComponents.IniWriteRefusal); // #182
         // w5/shell-launch rows
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -327,6 +349,11 @@ internal sealed class AppComposition
             // w5/shell-launch rows
             DisplayModes = displayModes,
             // w5/reshade-core rows
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         };
     }
 }

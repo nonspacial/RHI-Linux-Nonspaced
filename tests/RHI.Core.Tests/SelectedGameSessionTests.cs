@@ -211,6 +211,11 @@ public sealed class SelectedGameSessionTests
             // w5/reshade-core rows
             nameof(DetectedGame.ManifestLegacyReShadeVersion), nameof(DetectedGame.ManifestReShadeNote),
             nameof(DetectedGame.ManifestReShadeNoteUrl), nameof(DetectedGame.ManifestReShadeNoteUrlLabel),
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         ];
         var writable = typeof(DetectedGame).GetProperties().Where(p => p.CanWrite).Select(p => p.Name).ToHashSet();
         Assert.Empty(writable.Except(GameRuntimeFacts.OwnedProperties).Except(notProbeOwned));

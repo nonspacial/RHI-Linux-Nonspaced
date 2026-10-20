@@ -160,6 +160,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     public ResolutionLaunchPresenter Resolution => ResolutionLaunchPresenter.For(this); // #191 resolution auto-toggle
     // w5/reshade-core rows
     public ReShadeLegacyPresenter ReShadeLegacy => ReShadeLegacyPresenter.For(this, _managedComponents); // #186
+    // w7 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1575,6 +1581,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         items.Add(new("game-report", T("Shell.CopyReport"), new AsyncRelayCommand(() => Support.ReportCommand.ExecuteAsync(game)),
             SeparatorBefore: true, Tip: T("Shell.CopyReportTip")));
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         return items;
     }
 

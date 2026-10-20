@@ -55,6 +55,11 @@ public sealed class SettingsViewModel : PanelViewModel
         return null;
     }
     // w5/reshade-core rows
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -106,6 +111,11 @@ public sealed class SettingsViewModel : PanelViewModel
             // w5/shell-launch rows
             OptiScalerMenuKey = Host.Settings.OptiScalerMenuKey, // #187 OptiScaler overlay key
             // w5/reshade-core rows
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

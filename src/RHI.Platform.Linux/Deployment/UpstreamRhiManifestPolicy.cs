@@ -94,6 +94,11 @@ public sealed class UpstreamLibraryPolicySnapshot
     /// <summary>#186: manifest <c>reshadeGameInfo</c>: a per-game note shown with ReShade (same shape as <c>gameNotes</c>).</summary>
     public IReadOnlyDictionary<string, UpstreamGameNoteDefinition> ReShadeGameInfo { get; init; }
         = new Dictionary<string, UpstreamGameNoteDefinition>(StringComparer.OrdinalIgnoreCase);
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     private static IReadOnlyDictionary<string, string> EmptyStrings()
         => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -220,6 +225,11 @@ internal sealed partial class UpstreamManifestDocument
     public Dictionary<string, string>? LegacyReShadeVersions { get; set; }
     [JsonPropertyName("reshadeGameInfo")]
     public Dictionary<string, UpstreamManifestGameNote>? ReShadeGameInfo { get; set; }
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 }
 
 internal sealed class UpstreamManifestSplitGame
@@ -329,6 +339,11 @@ public sealed partial class UpstreamRhiManifestService
             // w5/reshade-core rows
             LegacyReShadeVersions = NormalizeLegacyReShadeVersions(manifest.LegacyReShadeVersions),
             ReShadeGameInfo = NormalizeGameNotes(manifest.ReShadeGameInfo),
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         };
     }
 
@@ -403,6 +418,11 @@ public sealed partial class UpstreamRhiManifestService
         // w5/reshade-core rows
         Add(result, manifest.LegacyReShadeVersions?.Keys);
         Add(result, manifest.ReShadeGameInfo?.Keys);
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         return result;
     }
 

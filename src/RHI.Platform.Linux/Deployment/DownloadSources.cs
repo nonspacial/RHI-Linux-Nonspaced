@@ -175,6 +175,11 @@ public static class DownloadSources
     public static readonly TrustedDownloadPolicy LunarGVulkanRuntime = new(
         "Vulkan runtime", "LunarG", ["sdk.lunarg.com", "vulkan.lunarg.com"], maxBytes: 128L * 1024 * 1024);
 
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -200,5 +205,10 @@ public static class DownloadSources
         // w5/shell-launch rows
         // w5/reshade-core rows
         LunarGVulkanRuntime,
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 }

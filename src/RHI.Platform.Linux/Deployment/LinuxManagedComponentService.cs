@@ -1134,6 +1134,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             // w5/ini-presets rows
             // w5/shell-launch rows
             // w5/reshade-core rows
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }
@@ -1545,6 +1550,11 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         ManagedComponentKind.NrCostScaler => NrCostScalerService.DisplayName, // w3/parity (#96)
         ManagedComponentKind.RtxEncore => RtxEncoreDeploymentService.DisplayName, // w4/encore (#158)
         ManagedComponentKind.ReShadeAddonManager => ReShadeAddonManagerService.DisplayName, // #194
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         _ => kind.ToString()
     };
 
@@ -2217,6 +2227,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlss5Feeder => await _dlss5Feeder.CheckUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.Dlss5Feeder), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ShortFuse => await _shortFuse.CheckManagedUpdateAsync(game, _neuralVersionPins.Get(game, ManagedComponentKind.ShortFuse), cancellationToken).ConfigureAwait(false),
             ManagedComponentKind.ReShadeAddonManager => await _addonManager.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false), // #194
+            // w7 lane rows: update checks (one arm each)
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -2266,6 +2282,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.Dlss5Dx11Bridge or ManagedComponentKind.Dlss5Feeder or ManagedComponentKind.ShortFuse
                 => SwapNeuralAddonVersionCoreAsync(game, component, cancellationToken),
             ManagedComponentKind.ReShadeAddonManager => _addonManager.UpdateAsync(game, cancellationToken), // #194
+            // w7 lane rows: updates (one arm each)
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -2380,6 +2402,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DofFix => _dofFix.InstallAsync(game, cancellationToken),
             ManagedComponentKind.REFramework => _reFramework.InstallAsync(game, cancellationToken),
             ManagedComponentKind.LumaFramework => _lumaFramework.InstallAsync(game, cancellationToken),
+            // w7 lane rows: installs (one arm each)
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -2571,6 +2599,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
             ManagedComponentKind.DofFix => _dofFix.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.REFramework => _reFramework.RemoveAsync(game, cancellationToken),
             ManagedComponentKind.LumaFramework => _lumaFramework.RemoveAsync(game, cancellationToken),
+            // w7 lane rows: removals (one arm each)
+            // w7/smalls rows
+            // w7/reshade rows
+            // w7/shader-sets rows
+            // w7/nvapi-launch rows
+            // w7/dxvk-hdr rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }

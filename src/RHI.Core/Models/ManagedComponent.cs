@@ -30,7 +30,13 @@ public enum ManagedComponentKind
     RtxEncore = 21,
     // w6/crash (#168): the Addon Manager's per-game add-on selection (no component row; addon-manager.json is the
     // copy older builds read).
-    ReShadeAddonManager = 22
+    ReShadeAddonManager = 22,
+    // w7 lane rows: new component kinds (next free value 23; each row ends with a comma)
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 }
 
 public enum ComponentAvailability

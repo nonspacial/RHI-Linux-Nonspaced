@@ -71,6 +71,11 @@ public sealed class LinuxAppSettings
     /// </summary>
     public string OptiScalerMenuKey { get; set; } = "";
     // w5/reshade-core rows
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -116,6 +121,11 @@ public sealed class LinuxAppSettings
         // w5/shell-launch rows
         OptiScalerMenuKey = NormalizeOptiScalerMenuKey(OptiScalerMenuKey);
         // w5/reshade-core rows
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
         return this;
     }
 

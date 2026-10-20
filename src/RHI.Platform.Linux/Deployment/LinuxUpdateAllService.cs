@@ -158,7 +158,13 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.Dlss5Dx11Bridge,
         ManagedComponentKind.ShortFuse,
         // #194 (upstream AddonPackService.CheckAndUpdateAllAsync): the Addon Manager's add-ons, after ReShade.
-        ManagedComponentKind.ReShadeAddonManager
+        ManagedComponentKind.ReShadeAddonManager,
+        // w7 lane rows: Update All families (each row ends with a comma)
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);

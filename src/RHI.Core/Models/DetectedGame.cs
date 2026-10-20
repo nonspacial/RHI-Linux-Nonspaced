@@ -222,6 +222,11 @@ public sealed class DetectedGame
     public string? ManifestReShadeNote { get; set; }
     public string? ManifestReShadeNoteUrl { get; set; }
     public string? ManifestReShadeNoteUrlLabel { get; set; }
+    // w7/smalls rows
+    // w7/reshade rows
+    // w7/shader-sets rows
+    // w7/nvapi-launch rows
+    // w7/dxvk-hdr rows
 
     /// <summary>
     /// Game-local patch target is ready when no explicit split is required or when a real game executable has been

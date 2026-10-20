@@ -400,6 +400,11 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.Win32PrefixMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
+        // w7/smalls rows
+        // w7/reshade rows
+        // w7/shader-sets rows
+        // w7/nvapi-launch rows
+        // w7/dxvk-hdr rows
     }
 
     [Theory]
