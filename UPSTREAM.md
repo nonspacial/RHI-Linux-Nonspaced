@@ -735,3 +735,16 @@ build.
   a link and puts the shared file back byte for byte. Luma's own ReShade.ini write and the Feeder's preset edit still
   refuse a linked ReShade.ini (unchanged), so such an install fails and is rolled back cleanly; the Feeder's rollback used
   to replace the link with a plain copy and leave its search paths in the shared file.
+
+<!-- w8 integration notes -->
+
+### #204 / #213 — integration of the wave-8 lanes
+- Every journaled operation the other wave-8 lanes added or changed follows #204: RenoDX install, update, dropped add-on,
+  removal, ⚙ colour-grading and HDR switches and peak brightness, RenoDX Upgrade, Control UE's `FgSlHdr10`, ReShade
+  presets, the per-game Apply and **Apply to all games**, Deploy ReShade.ini and add-on INIs, the XNA GAC ReShade.ini
+  rewrite after a move and the Luma ⚙. A commit write that lands and then reports an error is reported as done.
+- The Luma ⚙ TAA switch tracks `Engine.ini` through RenoDX's tracker (one resolver; the file's Unix mode and any folder the
+  write creates are journaled), so a rolled-back change keeps a read-only `Engine.ini` read-only.
+- DX9 HDR's ReShade.ini write (when the game has none) tracks the link-rule target like every other ReShade.ini writer.
+  The audit's narrow case (a dangling link to a shared file not made yet) does not occur: .NET counts a dangling link as
+  an existing file, so no ReShade.ini is written there.

@@ -12,7 +12,61 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 Not on `main` yet (upstream features still to port):
 
 - Global default DLSS presets for every game (upstream's Settings).
-- The Unreal Engine `Engine.ini` setting upstream adds when a RenoDX add-on is dropped onto an Unreal game.
+
+## Wave 8 — 2026-10-21: RenoDX Engine.ini settings for Unreal games, safer RenoDX and ReShade.ini changes
+
+> [!WARNING]
+> Before going back to the wave-7 build, do these first; it does not know what this build added:
+>
+> - Remove RenoDX from every Unreal Engine game where RHI installed it (at least where its ⚙ shows **Fix colour grading
+>   updates (Unreal)** or **Turn on the game's HDR output (UE-Extended)**). This build's removal takes its lines out of
+>   the game's `Engine.ini` and ReShade.ini and gives `Engine.ini` back the lock it had. The wave-7 build leaves those lines
+>   in place and `Engine.ini` read-only, and its next RenoDX update forgets that RHI wrote them, so after that no build
+>   takes them out; remove them by hand then (`r.LUT.UpdateEveryFrame=1`, the UE-Extended HDR lines).
+> - Close RHI and check that `~/.local/share/rhi-linux/journal` is empty. A change this build left unfinished (RHI was
+>   closed or crashed in the middle of one, or could not read its install records afterwards) may hold a step the
+>   wave-7 build cannot undo — putting back a read-only `Engine.ini` — and it would keep that entry. Start this build once
+>   more first and let it finish or undo the change.
+>
+> Presets, **Apply to all games** and Luma ⚙ changes made here stay as they are; the wave-7 build simply does not know
+> that some of those ReShade.ini lines are RHI's.
+
+Components
+
+- **RenoDX on Unreal Engine games** (upstream's Engine.ini setting): install, update, Update All and a dropped add-on put
+  `r.LUT.UpdateEveryFrame=1` into the game's `Engine.ini`, unless the RHI manifest says not to, the game uses a custom
+  Engine.ini file, or you turned it off. RenoDX's ⚙ gets a **Fix colour grading updates (Unreal)** switch. As upstream
+  does, `Engine.ini` is made read-only while RHI's line is in it; turning the switch off or removing RenoDX takes only
+  RHI's line out and gives the file back the lock it had. A line you already had is left alone and not locked, the file
+  keeps its line endings and encoding, and RHI writes it only where the game has made its config folder (after its first
+  launch). When `Engine.ini` cannot be written (a link outside the prefix, an unreadable file) RenoDX still installs and
+  its line says why.
+- **UE-Extended RenoDX** (upstream's native HDR set-up): the HDR lines in `Engine.ini` and the native-HDR keys in
+  ReShade.ini's `[renodx]` section are written as upstream's UE-Extended list says, and the ⚙ gets **Turn on the game's
+  HDR output (UE-Extended)**. Switching UE-Extended off takes the HDR lines out again and removing RenoDX takes out every
+  line RHI wrote; values you set yourself stay.
+- **XNA games:** after **Repair after move**, the ReShade.ini copy in the prefix's .NET assembly folder points to the
+  game's new folder. If you changed that copy, it is kept and the repair line names the file and the folder to set.
+
+Safety
+
+- RenoDX's install, update, dropped add-on and removal are each one change that is undone as a whole if anything fails,
+  also after a crash: the add-on, its ReShade.ini keys, peak brightness, the Engine.ini lines and lock, and Control
+  Ultimate Edition's files. A Control UE file that cannot be put back during removal now undoes the whole removal; trying
+  again finishes it.
+- ReShade presets, **Apply to all games** and the per-game Apply of the ReShade settings are recorded on ReShade's install
+  record, so removing ReShade still deletes a ReShade.ini that RHI created, and RHI's preset choice stays when ReShade
+  writes a new ReShade.ini.
+- A ReShade.ini linked to your shared file in `~/.config/ReShade` stays a link when a preset, Luma ⚙, peak brightness,
+  RenoDX or DLSS5 Feeder change is undone, and the shared file gets its earlier content back. A read-only `Engine.ini`
+  stays read-only when a Luma ⚙ change is undone.
+- When RHI's install records are saved but the save then reports an error, the change is kept and its line says so,
+  instead of being undone while the records say it is installed. If the records cannot be read at all afterwards,
+  nothing is undone: RHI decides at the next start, and until then refuses that game's next change with a plain reason.
+
+Interface
+
+- **What's new** shows quoted paragraphs, nested quotes and code blocks as written.
 
 ## Wave 7 — 2026-10-21: DX9 HDR, NVIDIA settings, global shader set, dropped add-ons, DLL renames
 
