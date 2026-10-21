@@ -41,13 +41,39 @@ public sealed class XnaGacReShadeTests : IDisposable
         Assert.Equal(0x014c, PeMachine(dll)); // GAC_32: the 32-bit ReShade
         Assert.Equal(File.ReadAllBytes(dll), File.ReadAllBytes(gacDll));
         var ini = File.ReadAllText(Path.Combine(fx.Bin, "ReShade.ini")); // ManageIni is forced on: the GAC copy needs BasePath
-        Assert.Contains("[INSTALL]\nBasePath=Z:" + fx.Bin.Replace('/', '\\'), ini);
-        Assert.Equal(ini, File.ReadAllText(Path.Combine(fx.Gac, "ReShade.ini")));
+        var gacIni = File.ReadAllText(Path.Combine(fx.Gac, "ReShade.ini"));
+        Assert.Contains("[INSTALL]\nBasePath=Z:" + fx.Bin.Replace('/', '\\'), gacIni);
+        Assert.DoesNotContain("BasePath", ini); // only RHI's GAC copy carries it (review 2)
+        Assert.Equal(ini.TrimEnd('\n'), gacIni.Replace("\n[INSTALL]\nBasePath=Z:" + fx.Bin.Replace('/', '\\'), "").TrimEnd('\n'));
         Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(fx.Registry(), "d3d9", "Terraria.exe"));
         var record = fx.Records.Find(fx.Game, ManagedComponentKind.ReShade)!;
         Assert.Contains(record.Files, file => file.Path == gacDll);
         Assert.Equal(fx.Gac, record.Metadata[XnaGacReShade.FolderMetadataKey]);
         Assert.False(Directory.Exists(Path.Combine(_root, "install", "elsewhere")));
+    }
+
+    [Fact]
+    public async Task Install_LinkedSharedReShadeIni_GetsNoBasePath()
+    {
+        // Review 2: the game folder's ReShade.ini may be a link to the user's shared ~/.config/ReShade file, which every
+        // game reads; Terraria's folder must not become their base. BasePath goes into RHI's own GAC copy only.
+        var fx = Fixture("linked-ini");
+        var shared = Path.Combine(RHI.Platform.Linux.Paths.LinuxPaths.ConfigHome, "ReShade", Guid.NewGuid().ToString("N"), "ReShade.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(shared)!);
+        File.WriteAllText(shared, "[GENERAL]\nPresetPath=.\\Mine.ini\n");
+        var link = Path.Combine(fx.Bin, "ReShade.ini");
+        File.CreateSymbolicLink(link, shared);
+
+        var result = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions());
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(shared, new FileInfo(link).LinkTarget); // still the link
+        Assert.DoesNotContain("BasePath", File.ReadAllText(shared));
+        Assert.DoesNotContain("[INSTALL]", File.ReadAllText(shared));
+        var gacIni = File.ReadAllText(Path.Combine(fx.Gac, "ReShade.ini"));
+        Assert.Contains("[INSTALL]\nBasePath=Z:" + fx.Bin.Replace('/', '\\'), gacIni);
+        Assert.Contains("PresetPath=.\\Mine.ini", gacIni);
+        Assert.Null(new FileInfo(Path.Combine(fx.Gac, "ReShade.ini")).LinkTarget); // RHI's copy, not a link
     }
 
     [Fact]

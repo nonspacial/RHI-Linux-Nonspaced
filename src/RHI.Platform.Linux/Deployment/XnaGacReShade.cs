@@ -8,8 +8,9 @@ namespace RHI.Platform.Linux.Deployment;
 /// #201 (upstream 2.8.7 <c>AuxInstallService.GacSymlink</c>, manifest <c>gacSymlinkGames</c>): ReShade for XNA Framework
 /// games such as Terraria. XNA's <c>Microsoft.Xna.Framework.Graphics.dll</c> lives in the prefix's .NET assembly folder
 /// (the GAC) and loads <c>d3d9.dll</c> from there, never from the game folder, so ReShade is installed as
-/// <c>d3d9.dll</c> in the game folder (with ReShade.ini, whose <c>[INSTALL] BasePath</c> points ReShade at the game
-/// folder for shaders and presets) and the DLL and ini are also placed in that GAC folder inside the game's own prefix.
+/// <c>d3d9.dll</c> in the game folder (with ReShade.ini) and the DLL and ini are also placed in that GAC folder inside the
+/// game's own prefix; the GAC ini copy alone carries <c>[INSTALL] BasePath</c>, pointing ReShade at the game folder for
+/// shaders and presets (the game folder's ReShade.ini may be a file shared by every game).
 /// <para>Linux deviation (headless Wine check, w7/reshade progress file): upstream symlinks the two GAC entries to the
 /// game-folder files; RHI copies them, because a journaled rollback restores a tracked path as a plain file (it cannot
 /// put a link back) and copies survive a library move. Updates rewrite both copies; removal deletes only the copies RHI

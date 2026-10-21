@@ -37,6 +37,27 @@ public sealed partial class ReShadeDeploymentService
     private static async Task PlaceGacCopyAsync(DeploymentOperation? operation, OwnedFileSet? local, string source, string target,
         string sha256, CancellationToken cancellationToken)
     {
+        await TrackGacWriteAsync(operation, local, target, sha256, cancellationToken).ConfigureAwait(false);
+        await AtomicFile.CopyAsync(source, target, sha256, CancellationToken.None, overwrite: true).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="bytes"/> (RHI's GAC ReShade.ini) to <paramref name="target"/>, tracked (journal, else
+    /// <paramref name="local"/>) and declared before the write; returns their SHA-256.
+    /// </summary>
+    private static async Task<string> PlaceGacBytesAsync(DeploymentOperation? operation, OwnedFileSet? local, string target,
+        byte[] bytes, CancellationToken cancellationToken)
+    {
+        var sha256 = FileHash.Sha256HexOf(bytes);
+        await TrackGacWriteAsync(operation, local, target, sha256, cancellationToken).ConfigureAwait(false);
+        AtomicFile.WriteAllBytes(target, bytes);
+        return sha256;
+    }
+
+    // Tracks a GAC folder file (journal, else the local set) and declares what is about to be written there.
+    private static async Task TrackGacWriteAsync(DeploymentOperation? operation, OwnedFileSet? local, string target, string sha256,
+        CancellationToken cancellationToken)
+    {
         if (operation is not null)
         {
             await operation.TrackFileAsync(target, cancellationToken, includeBackup: false).ConfigureAwait(false);
@@ -47,7 +68,6 @@ public sealed partial class ReShadeDeploymentService
             await local!.TrackWithSnapshotAsync(target, cancellationToken, includeBackup: false).ConfigureAwait(false);
             await local.RecordWriteAsync(target, sha256, cancellationToken).ConfigureAwait(false);
         }
-        await AtomicFile.CopyAsync(source, target, sha256, CancellationToken.None, overwrite: true).ConfigureAwait(false);
     }
 
     // The GAC ReShade.ini may be (re)written: absent, or still the copy RHI last placed (a changed one is the user's).

@@ -11,8 +11,7 @@ internal sealed record ReShadeIniApplyResult(
     bool TextureKeyCreated,
     IReadOnlyList<string> AddedEffectPaths,
     IReadOnlyList<string> AddedTexturePaths,
-    string Sha256,
-    string? BasePathCreated = null);
+    string Sha256);
 
 /// <summary>
 /// What an install (or "Deploy ReShade.ini") writes into a game's ReShade.ini besides RHI's shader search paths (#181;
@@ -48,12 +47,6 @@ public sealed record ReShadeIniDefaults
 
     /// <summary><c>[OVERLAY] VariableListUseTabs</c>: true = Tabs, false = Tree.</summary>
     public bool? VariableListUseTabs { get; init; }
-
-    /// <summary>
-    /// #201: <c>[INSTALL] BasePath</c>, the Windows path of the folder ReShade takes as its base (shaders, presets) when it
-    /// runs from another folder (an XNA game's GAC copy). Written on every install; removal takes back what RHI added.
-    /// </summary>
-    public string? InstallBasePath { get; init; }
 }
 
 /// <summary>
@@ -101,8 +94,7 @@ internal static class ReShadeIniManager
             ];
             if (defaults is not null) ApplySettings(baseline, defaults);
             Write(path, baseline, gameDirectory, gameRoot);
-            return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path),
-                defaults?.InstallBasePath is { Length: > 0 } ? BasePathSectionCreated : null);
+            return new(path, false, true, true, true, effectAdded, textureAdded, FileHash.Sha256Hex(path));
         }
 
         // A new file starts as a copy of the template (upstream copies it as-is); an existing one gets the template merged.
@@ -114,9 +106,6 @@ internal static class ReShadeIniManager
         if (existed && defaults?.Template is { } template)
             MergeTemplate(lines, IniLines.FromBytes(template), defaults.SkipPreprocessorDefinitions, effectAdded, textureAdded,
                 recordTemplatePaths: true, overwrite: defaults.TemplateKeysWin);
-        var basePathCreated = defaults?.InstallBasePath is not { Length: > 0 } ? null
-            : IniLines.FindSection(lines, InstallSection).Start < 0 ? BasePathSectionCreated
-            : IniLines.Get(lines, InstallSection, BasePathKey) is null ? BasePathKeyCreated : null;
         if (defaults is not null) ApplySettings(lines, defaults);
         MergeSearchPath(lines, "GENERAL", EffectKey, effectPaths, effectAdded);
         MergeSearchPath(lines, "GENERAL", TextureKey, texturePaths, textureAdded);
@@ -125,14 +114,22 @@ internal static class ReShadeIniManager
         if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
             Write(path, lines, gameDirectory, gameRoot);
 
-        return new(path, existed, !existed, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path), basePathCreated);
+        return new(path, existed, !existed, effectKeyCreated, textureKeyCreated, effectAdded, textureAdded, FileHash.Sha256Hex(path));
     }
 
-    internal const string InstallSection = "INSTALL";
-    internal const string BasePathKey = "BasePath";
-    /// <summary>#201: what an install's <c>[INSTALL] BasePath</c> added: the key alone, or its section too.</summary>
-    internal const string BasePathKeyCreated = "key";
-    internal const string BasePathSectionCreated = "section";
+    /// <summary>
+    /// #201: <paramref name="ini"/>'s bytes with <c>[INSTALL] BasePath</c> set to <paramref name="basePath"/> (the folder
+    /// ReShade takes as its base when it runs from another folder: an XNA game's GAC copy). Only that copy, RHI's own file,
+    /// gets the key; the game folder's ReShade.ini (which may be a shared file every game reads) never does (review 2).
+    /// </summary>
+    internal static byte[] WithInstallBasePath(byte[] ini, string basePath)
+    {
+        var lines = IniLines.FromBytes(ini);
+        IniLines.Set(lines, "INSTALL", "BasePath", basePath);
+        var text = new StringBuilder();
+        foreach (var line in lines) text.Append(line).Append('\n');
+        return new UTF8Encoding(false).GetBytes(text.ToString());
+    }
 
     /// <summary>The template's lines for a new ReShade.ini (its <c>[GENERAL] PreprocessorDefinitions</c> dropped when asked).</summary>
     internal static List<string> TemplateLines(byte[] template, bool skipPreprocessorDefinitions)
@@ -180,7 +177,6 @@ internal static class ReShadeIniManager
         if (defaults.OverlayHotkey is { Length: > 0 } overlay) IniLines.Set(lines, "INPUT", "KeyOverlay", overlay);
         if (defaults.ScreenshotHotkey is { Length: > 0 } screenshot) IniLines.Set(lines, "INPUT", "KeyScreenshot", screenshot);
         if (defaults.VariableListUseTabs is { } tabs) IniLines.Set(lines, "OVERLAY", "VariableListUseTabs", tabs ? "1" : "0");
-        if (defaults.InstallBasePath is { Length: > 0 } basePath) IniLines.Set(lines, InstallSection, BasePathKey, basePath);
     }
 
     /// <summary>#180: points ReShade at a preset beside it (<c>[GENERAL] PresetPath=.\name.ini</c>); creates ReShade.ini if needed.</summary>
@@ -215,8 +211,7 @@ internal static class ReShadeIniManager
         IReadOnlyList<string> texturePathsAdded,
         bool effectKeyCreated,
         bool textureKeyCreated,
-        string? gameRoot = null,
-        string? basePathCreated = null)
+        string? gameRoot = null)
     {
         if (!File.Exists(path)) return;
 
@@ -233,7 +228,6 @@ internal static class ReShadeIniManager
         var changed = false;
         changed |= RemoveSearchPaths(lines, "GENERAL", EffectKey, effectPathsAdded, effectKeyCreated);
         changed |= RemoveSearchPaths(lines, "GENERAL", TextureKey, texturePathsAdded, textureKeyCreated);
-        changed |= RemoveBasePath(lines, basePathCreated);
         if (changed)
             Write(path, lines, Path.GetDirectoryName(path) ?? path, gameRoot);
     }
@@ -354,19 +348,6 @@ internal static class ReShadeIniManager
             lines.RemoveAt(keyIndex);
         else
             lines[keyIndex] = $"{key}={string.Join(',', values)}";
-        return true;
-    }
-
-    // #201: takes back the [INSTALL] BasePath an install added (and the section, with the blank line before it, when the
-    // install created it and nothing else was put in it since).
-    private static bool RemoveBasePath(List<string> lines, string? created)
-    {
-        if (created is null || !IniLines.Remove(lines, InstallSection, BasePathKey)) return false;
-        if (created != BasePathSectionCreated) return true;
-        var (start, end) = IniLines.FindSection(lines, InstallSection);
-        if (start < 0 || lines.Skip(start + 1).Take(end - start - 1).Any(line => !string.IsNullOrWhiteSpace(line))) return true;
-        lines.RemoveRange(start, end - start);
-        if (start > 0 && start == lines.Count && string.IsNullOrWhiteSpace(lines[start - 1])) lines.RemoveAt(start - 1);
         return true;
     }
 

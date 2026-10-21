@@ -70,7 +70,6 @@ public sealed partial class ReShadeDeploymentService
     private const string MetaIniTextureCreated = "ReShade.IniTextureKeyCreated";
     private const string MetaIniEffectAdded = "ReShade.IniEffectPathsAdded";
     private const string MetaIniTextureAdded = "ReShade.IniTexturePathsAdded";
-    private const string MetaIniBasePathCreated = "ReShade.IniBasePathCreated"; // #201
     private const string MetaShortFuseOriginalPayloadPath = ShortFuseDeploymentService.MetaReShadeOriginalPath;
 
     private readonly HttpClient _http;
@@ -631,20 +630,22 @@ public sealed partial class ReShadeDeploymentService
             var shaderResult = await _shaderPacks.ApplySyncAsync(preparedShaders, operation, cancellationToken).ConfigureAwait(false); // #169: journaled
             ReShadeIniApplyResult? iniResult = null;
             var iniDefaults = IniDefaults?.Invoke(game, false);
-            if (xnaFolder is not null) // #201: ReShade runs from the GAC copy; its base is the game folder
-                iniDefaults = (iniDefaults ?? new ReShadeIniDefaults()) with { InstallBasePath = XnaGacReShade.WindowsPathOf(game.PrefixPath!, game.BinaryDirectory) };
             if (options.ManageIni)
                 iniResult = ReShadeIniManager.Apply(game.BinaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths, iniDefaults, game.InstallPath); // w5/ini-presets hook (#181, review 8)
             await DeclareIniWritesAsync().ConfigureAwait(false);
             if (xnaFolder is not null)
             {
                 // #201: the DLL and ReShade.ini copied into the GAC folder (tracked and declared first; see XnaGacReShade).
+                // ReShade runs from the GAC copy and takes the game folder as its base: [INSTALL] BasePath goes into that
+                // copy only, never into the game folder's ReShade.ini, which may be a file shared by every game (review 2).
                 await PlaceGacCopyAsync(operation, localGacFiles, target, gacDll!, result.Sha256 ?? await FileHash.Sha256HexAsync(target, CancellationToken.None).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
                 gacIniSha = existingRecord?.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey);
                 if (iniResult is not null && GacIniIsRhis(gacIni!, gacIniSha))
                 {
-                    await PlaceGacCopyAsync(operation, localGacFiles, iniResult.Path, gacIni!, iniResult.Sha256, cancellationToken).ConfigureAwait(false);
-                    gacIniSha = iniResult.Sha256;
+                    var gacIniBytes = ReShadeIniManager.WithInstallBasePath(
+                        await File.ReadAllBytesAsync(iniResult.Path, CancellationToken.None).ConfigureAwait(false),
+                        XnaGacReShade.WindowsPathOf(game.PrefixPath!, game.BinaryDirectory));
+                    gacIniSha = await PlaceGacBytesAsync(operation, localGacFiles, gacIni!, gacIniBytes, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -1533,15 +1534,13 @@ public sealed partial class ReShadeDeploymentService
             ReadStringList(record.Metadata.GetValueOrDefault(MetaIniTextureAdded)),
             ReadBool(record.Metadata, MetaIniEffectCreated),
             ReadBool(record.Metadata, MetaIniTextureCreated),
-            gameRoot,
-            record.Metadata.GetValueOrDefault(MetaIniBasePathCreated));
+            gameRoot);
     }
 
     private static void WriteIniMetadata(Dictionary<string, string> metadata, ReShadeIniApplyResult? ini)
     {
-        foreach (var key in new[] { MetaIniCreated, MetaIniEffectCreated, MetaIniTextureCreated, MetaIniEffectAdded, MetaIniTextureAdded, MetaIniBasePathCreated }) metadata.Remove(key);
+        foreach (var key in new[] { MetaIniCreated, MetaIniEffectCreated, MetaIniTextureCreated, MetaIniEffectAdded, MetaIniTextureAdded }) metadata.Remove(key);
         if (ini is null) return;
-        if (ini.BasePathCreated is { } basePath) metadata[MetaIniBasePathCreated] = basePath;
         metadata[MetaIniCreated] = ini.CreatedByRhi.ToString();
         metadata[MetaIniEffectCreated] = ini.EffectKeyCreated.ToString();
         metadata[MetaIniTextureCreated] = ini.TextureKeyCreated.ToString();
