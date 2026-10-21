@@ -151,8 +151,11 @@ public sealed class ControlUePostInstallService
     /// <param name="keepUserChanges">Files a restore just left alone because the user changed them
     /// (<see cref="ControlUeRestoreResult.KeptUserChanges"/>): the step skips them, so an update never overwrites a
     /// DLSS version or HDR preset chosen after the install (#124).</param>
+    /// <param name="files">#205: the swap primitive for the DLLs; RenoDX passes an unjournaled one, because the steps run
+    /// inside its own journaled operation, which tracked every file first and is their one undo (null: this service's own).</param>
     internal async Task<ControlUePostInstallResult> ApplyAsync(
-        DetectedGame game, string gameDirectory, ControlUeSources sources, IReadOnlySet<string>? keepUserChanges = null)
+        DetectedGame game, string gameDirectory, ControlUeSources sources, IReadOnlySet<string>? keepUserChanges = null,
+        IFileDeploymentService? files = null)
     {
         var notes = new List<string>(sources.Notes);
         var dlls = new List<ControlUeOwnedDll>();
@@ -168,7 +171,7 @@ public sealed class ControlUePostInstallService
             }
             try
             {
-                var owned = await DeployDllAsync(found.Path, found.Version, target).ConfigureAwait(false);
+                var owned = await DeployDllAsync(found.Path, found.Version, target, files ?? _files).ConfigureAwait(false);
                 if (owned is null) notes.Add($"{dllName}: already {found.Version}.");
                 else
                 {
@@ -200,7 +203,85 @@ public sealed class ControlUePostInstallService
         return new ControlUePostInstallResult(state.IsEmpty ? null : state, notes);
     }
 
-    private async Task<ControlUeOwnedDll?> DeployDllAsync(string source, string version, string target)
+    private static readonly string[] DllNames = ["nvngx_dlss.dll", "nvngx_dlssd.dll"];
+
+    /// <summary>
+    /// #205: tracks, in RenoDX's own operation, every file the Control UE restore of <paramref name="previous"/> and the apply
+    /// of <paramref name="sources"/> may change (the two DLLs with their <c>.original</c>, the earlier copies beside them,
+    /// renderer.ini), and declares the whole files those steps place before they are placed: a rollback, in process or at
+    /// the next start, puts them back with the rest of the install as one operation. The steps' own DLL swaps then run
+    /// unjournaled inside it (each swap is atomic on its own; RenoDX's operation is the one undo). Returns the tracked paths
+    /// for <see cref="DeclareWrittenAsync"/>.
+    /// </summary>
+    internal static async Task<IReadOnlyList<string>> TrackAsync(DeploymentScope scope, DetectedGame game, string gameDirectory,
+        ControlUePostInstallState? previous, ControlUeSources? sources, CancellationToken cancellationToken)
+    {
+        var applies = sources is not null;
+        var paths = new List<string>();
+        void Add(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            var full = Path.GetFullPath(path);
+            if (!paths.Contains(full, StringComparer.Ordinal)) paths.Add(full);
+        }
+        foreach (var dll in previous?.Dlls ?? [])
+        {
+            Add(dll.Path);
+            Add(dll.PreviousSnapshotPath);
+        }
+        Add(previous?.RendererIni?.Path);
+        if (applies)
+        {
+            foreach (var name in DllNames)
+            {
+                var target = ResolveExisting(gameDirectory, name);
+                Add(target);
+                Add(target + PreviousSnapshotSuffix);
+            }
+            Add(ResolveRendererIni(game, gameDirectory));
+        }
+        foreach (var path in paths) await scope.TrackAsync(path, cancellationToken).ConfigureAwait(false);
+
+        // What the restore puts at each DLL (its earlier copy, or .original), and what the apply places (the newest DLLs,
+        // and beside a swapped DLL an earlier copy of whatever is there then).
+        var restored = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        async Task Declare(string path, string sha)
+        {
+            await scope.DeclareWriteAsync(path, sha, cancellationToken).ConfigureAwait(false);
+            if (!restored.TryGetValue(path, out var list)) restored[path] = list = [];
+            list.Add(sha);
+        }
+        foreach (var dll in previous?.Dlls ?? [])
+        {
+            var full = Path.GetFullPath(dll.Path);
+            if (dll.PreviousSnapshotPath is { } copy && File.Exists(copy)) await Declare(full, await FileHash.Sha256HexAsync(copy, cancellationToken).ConfigureAwait(false));
+            var backup = full + TransactionalFileDeploymentService.BackupExtension;
+            if (File.Exists(backup)) await Declare(full, await FileHash.Sha256HexAsync(backup, cancellationToken).ConfigureAwait(false));
+        }
+        if (sources is not null)
+        {
+            foreach (var (source, name) in new[] { (sources.SuperResolution, DllNames[0]), (sources.RayReconstruction, DllNames[1]) })
+            {
+                var target = Path.GetFullPath(ResolveExisting(gameDirectory, name));
+                var copy = target + PreviousSnapshotSuffix;
+                var before = restored.GetValueOrDefault(target)?.ToList() ?? [];
+                if (File.Exists(target)) before.Add(await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false));
+                foreach (var sha in before.Distinct(StringComparer.OrdinalIgnoreCase))
+                    await scope.DeclareWriteAsync(copy, sha, cancellationToken).ConfigureAwait(false);
+                if (source is { } found && File.Exists(found.Path))
+                    await scope.DeclareWriteAsync(target, await FileHash.Sha256HexAsync(found.Path, cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+            }
+        }
+        return paths;
+    }
+
+    /// <summary>#205: declares what each tracked path holds after the steps (renderer.ini is edited in place).</summary>
+    internal static async Task DeclareWrittenAsync(DeploymentScope scope, IReadOnlyList<string> paths, CancellationToken cancellationToken)
+    {
+        foreach (var path in paths) await scope.DeclareWrittenContentAsync(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<ControlUeOwnedDll?> DeployDllAsync(string source, string version, string target, IFileDeploymentService files)
     {
         var existed = File.Exists(target);
         var originalBackup = target + TransactionalFileDeploymentService.BackupExtension;
@@ -219,7 +300,7 @@ public sealed class ControlUePostInstallService
             AtomicFile.Copy(target, snapshot, overwrite: false);
         }
 
-        var result = await _files.ReplaceAsync(source, target, CancellationToken.None).ConfigureAwait(false);
+        var result = await files.ReplaceAsync(source, target, CancellationToken.None).ConfigureAwait(false);
         if (!result.Success || !result.Changed)
         {
             if (snapshot is not null) FileCleanup.TryDelete(snapshot);
@@ -273,7 +354,8 @@ public sealed class ControlUePostInstallService
     /// Puts back what <see cref="ApplyAsync"/> changed. A file changed outside RHI since is left as
     /// it is (ownership relinquished). Never cancellable: a half-restored game must not be left behind.
     /// </summary>
-    internal async Task<ControlUeRestoreResult> RestoreAsync(ControlUePostInstallState state)
+    /// <param name="files">#205: as <see cref="ApplyAsync"/>'s.</param>
+    internal async Task<ControlUeRestoreResult> RestoreAsync(ControlUePostInstallState state, IFileDeploymentService? files = null)
     {
         var notes = new List<string>();
         var remaining = new List<ControlUeOwnedDll>();
@@ -285,7 +367,7 @@ public sealed class ControlUePostInstallService
         {
             try
             {
-                if (!await RestoreDllAsync(dll, notes).ConfigureAwait(false))
+                if (!await RestoreDllAsync(dll, notes, files ?? _files).ConfigureAwait(false))
                     keptUserChanges.Add(Path.GetFullPath(dll.Path));
             }
             catch (Exception ex)
@@ -318,7 +400,7 @@ public sealed class ControlUePostInstallService
         => kept is null || kept.Count == 0 ? null : kept.Order(StringComparer.Ordinal).ToList();
 
     /// <returns>False when the DLL was changed outside RHI and was left as it is.</returns>
-    private async Task<bool> RestoreDllAsync(ControlUeOwnedDll dll, List<string> notes)
+    private static async Task<bool> RestoreDllAsync(ControlUeOwnedDll dll, List<string> notes, IFileDeploymentService files)
     {
         var name = Path.GetFileName(dll.Path);
         var present = File.Exists(dll.Path);
@@ -370,7 +452,7 @@ public sealed class ControlUePostInstallService
                 notes.Add($"{name}: {TransactionalFileDeploymentService.BackupExtension} backup is missing; left as it is.");
                 return true;
             }
-            var restore = await _files.RestoreAsync(dll.Path, CancellationToken.None).ConfigureAwait(false);
+            var restore = await files.RestoreAsync(dll.Path, CancellationToken.None).ConfigureAwait(false);
             if (!restore.Success) throw new IOException(restore.Error ?? "restore failed.");
             notes.Add($"{name}: restored.");
         }

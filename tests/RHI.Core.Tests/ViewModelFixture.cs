@@ -251,7 +251,8 @@ internal sealed class ViewModelFixture : IDisposable
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, cacheDir);
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
-            unityDatabase: new RenoDxUnityDatabaseService(http), controlUe: new ControlUePostInstallService(deployment, dlss));
+            unityDatabase: new RenoDxUnityDatabaseService(http), controlUe: new ControlUePostInstallService(deployment, dlss),
+            journal: SimulatedDeath.NewJournal(Path.Combine(Path.GetDirectoryName(cacheDir)!, "renodx-journal"), records).Journal); // w8/renodx (#205): journaled as in the app
         var relimiter = new GitHubReShadeAddonDeploymentService(http, records, new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter, "ReLimiter", "https://api.github.com/repos/RankFTW/ReLimiter/releases/latest",
             "relimiter.addon64", "relimiter.addon32", 100 * 1024, ManagedComponentKind.DisplayCommander));

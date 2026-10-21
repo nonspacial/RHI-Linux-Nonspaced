@@ -298,7 +298,9 @@ public static class LinuxDeploymentRecovery
              new WineRegistryValueCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse, records),
              new WineRegistryValueReapplyCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse),
              // w5/reshade-core (#92 review finding 3): folders an operation created (the layer's ProgramData folders)
-             new CreatedDirectoryCompensator()]);
+             new CreatedDirectoryCompensator(),
+             // w8/renodx hook (#205): a user file's mode (a locked Engine.ini) back after the file rollback
+             new UserFileModeCompensator()]);
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)

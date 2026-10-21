@@ -141,7 +141,7 @@ internal sealed class AppComposition
         var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
             unityDatabase: new RenoDxUnityDatabaseService(http),
-            controlUe: new ControlUePostInstallService(deployment, dlss));
+            controlUe: new ControlUePostInstallService(deployment, dlss), journal: journal); // w8/renodx (#205): journaled
         var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest, journal: journal);
         var relimiter = new GitHubReShadeAddonDeploymentService(http, records, journal: journal, definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,

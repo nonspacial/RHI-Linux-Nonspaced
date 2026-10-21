@@ -31,7 +31,17 @@ public sealed class RenoDxDeploymentService
     private readonly RenoDxUnityDatabaseService? _unityDatabase;
     private readonly ControlUePostInstallService _controlUe;
     private readonly string _cacheDir;
+    private readonly DeploymentJournal? _journal;
 
+    /// <summary>
+    /// #205: Control UE's DLL swaps inside RenoDX's operation: each swap is atomic on its own (in memory), and RenoDX's
+    /// journaled operation, which tracked every file they touch first, is the one undo (a nested journaled swap would
+    /// commit on its own and leave two mechanisms restoring the same file).
+    /// </summary>
+    private static readonly TransactionalFileDeploymentService InsideOperation = new();
+
+    /// <param name="journal">#205: the app's deployment journal; install, update, local drop and removal each run as one
+    /// journaled operation on RenoDX's record (null: the same operation, rolled back in process only).</param>
     public RenoDxDeploymentService(
         HttpClient http,
         LinuxDeploymentRecordStore records,
@@ -39,9 +49,11 @@ public sealed class RenoDxDeploymentService
         string? cacheDir = null,
         UpstreamRhiManifestService? upstreamManifest = null,
         RenoDxUnityDatabaseService? unityDatabase = null,
-        ControlUePostInstallService? controlUe = null)
+        ControlUePostInstallService? controlUe = null,
+        DeploymentJournal? journal = null)
     {
         _http = http;
+        _journal = journal;
         // Without a DLSS manager the Control UE step still restores on removal; it just cannot fetch DLLs.
         _controlUe = controlUe ?? new ControlUePostInstallService(new TransactionalFileDeploymentService(), newestDll: null);
         _records = records;
@@ -338,126 +350,120 @@ public sealed class RenoDxDeploymentService
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {sameName}");
         }
 
+        // Downloads and reads first (Cancel still honoured), every game file change after the write gate.
+        string cached;
+        RenoDxRemoteStamp? remoteStamp;
+        ControlUePostInstallState? previousControlState;
+        ControlUeSources? controlSources;
+        UpstreamEngineIniTemplate? engineIniTemplate;
+        LinuxDeployedFile? oldManagedFile = null;
         try
         {
-            var (cached, remoteStamp) = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
-            // Control UE (upstream 2.7.9): runs on a fresh install, which the UI confirms first, or
-            // on a reinstall/update of an install that already carries the step. Downloads happen
-            // here, before any game file changes, so cancelling cannot leave the step half done.
-            var previousControlState = ControlUePostInstallService.Deserialize(existingRecord);
-            var controlSources = ControlUePostInstallService.Applies(game, fileName) &&
-                                 (existingRecord is null || previousControlState is not null)
+            (cached, remoteStamp) = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
+            // Control UE (upstream 2.7.9): runs on a fresh install, which the UI confirms first, or on a reinstall/update of
+            // an install that already carries the step. Its DLLs are fetched here, before any game file changes.
+            previousControlState = ControlUePostInstallService.Deserialize(existingRecord);
+            controlSources = ControlUePostInstallService.Applies(game, fileName) &&
+                             (existingRecord is null || previousControlState is not null)
                 ? await _controlUe.PrepareAsync(cancellationToken).ConfigureAwait(false)
                 : null;
-            LinuxDeployedFile? oldManagedFile = null;
-            if (existingRecord is not null && managedOldPath is not null && !Path.GetFullPath(managedOldPath).Equals(Path.GetFullPath(target), StringComparison.Ordinal))
-            {
-                oldManagedFile = existingRecord.Files.First();
-                if (File.Exists(oldManagedFile.Path))
-                {
-                    var oldHash = await FileHash.Sha256HexAsync(oldManagedFile.Path, cancellationToken).ConfigureAwait(false);
-                    if (!string.Equals(oldHash, oldManagedFile.Sha256, StringComparison.OrdinalIgnoreCase))
-                        return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {oldManagedFile.Path}");
-                }
-            }
-
-            var targetExistedBeforeCopy = File.Exists(target);
-            var targetBeforeCopy = targetExistedBeforeCopy
-                ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false)
-                : null;
-            var iniPathBeforeApply = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory);
-            var iniBeforeApply = iniPathBeforeApply is not null && File.Exists(iniPathBeforeApply)
-                ? await File.ReadAllBytesAsync(iniPathBeforeApply, cancellationToken).ConfigureAwait(false)
-                : null;
-            var previousEngineIniState = existingRecord is not null &&
-                existingRecord.Metadata.TryGetValue(UpstreamEngineIniFileManager.MetadataKey, out var previousEngineIniJson)
-                    ? UpstreamEngineIniFileManager.Deserialize(previousEngineIniJson)
-                    : null;
-            var engineIniSnapshotPath = previousEngineIniState?.IniPath
-                ?? (!string.IsNullOrWhiteSpace(game.EngineIniFileOverride)
-                    ? UpstreamEngineIniFileManager.ResolveTargetPath(game)
-                    : null);
-            var engineIniBeforeExisted = engineIniSnapshotPath is not null && File.Exists(engineIniSnapshotPath);
-            var engineIniBeforeApply = engineIniBeforeExisted
-                ? await File.ReadAllBytesAsync(engineIniSnapshotPath!, cancellationToken).ConfigureAwait(false)
-                : null;
-
             // The upstream Engine.ini template is fetched here, with the other downloads, and applied after the gate
-            // (w2 merge review, minor 1: it used to be fetched after the add-on was copied).
-            var engineIniTemplate = string.IsNullOrWhiteSpace(game.EngineIniFileOverride)
+            // (w2 merge review, minor 1).
+            engineIniTemplate = string.IsNullOrWhiteSpace(game.EngineIniFileOverride)
                 ? null
                 : await _engineIniFiles.FetchAsync(game.EngineIniFileOverride!, cancellationToken).ConfigureAwait(false);
+            if (existingRecord is not null && managedOldPath is not null && !PathsEqual(managedOldPath, target))
+            {
+                oldManagedFile = existingRecord.Files.First();
+                if (File.Exists(oldManagedFile.Path)
+                    && !string.Equals(await FileHash.Sha256HexAsync(oldManagedFile.Path, cancellationToken).ConfigureAwait(false), oldManagedFile.Sha256, StringComparison.OrdinalIgnoreCase))
+                    return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {oldManagedFile.Path}");
+            }
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"RenoDX install failed: {ex.Message}");
+        }
 
-            RenoDxIniOverrideApplyResult iniApply;
-            Dictionary<string, RenoDxIniOverrideState> peakStates; // #182
-            UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
-            // Downloads and snapshots are done: from the copy on, Cancel is refused (a late cancel used to leave the
-            // add-on and its INI keys in place with no record).
+        var previousIniState = existingRecord is not null &&
+            existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
+            ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
+            : null;
+        var previousEngineIniState = existingRecord is not null &&
+            existingRecord.Metadata.TryGetValue(UpstreamEngineIniFileManager.MetadataKey, out var previousEngineIniJson)
+                ? UpstreamEngineIniFileManager.Deserialize(previousEngineIniJson)
+                : null;
+        var peak = PeakNits?.Invoke() is { Applies: true } global ? global : null; // #182
+
+        // #205: one journaled operation on RenoDX's record — the add-on, its [renodx] keys, peak brightness, the Engine.ini
+        // template, RHI's earlier add-on under another name and the Control UE steps; the stamped record is the commit point.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RenoDX install: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
+        RenoDxIniOverrideApplyResult iniApply;
+        Dictionary<string, RenoDxIniOverrideState> peakStates;
+        UpstreamEngineIniApplyResult engineIniApply = new(previousEngineIniState, 0, 0, null);
+        var controlNotes = new List<string>();
+        try
+        {
+            // Downloads and checks are done: from here on, Cancel is refused (a late cancel used to leave the add-on and its
+            // INI keys in place with no record).
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            try
+            // The INI files first, at the files a write through them replaces (a refused ReShade.ini link changes nothing).
+            if (RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory) is { } reshadeIni && File.Exists(reshadeIni)
+                && (requestedIniOverrides.Count > 0 || peak is not null))
+                await inis.TrackReShadeIniAsync(reshadeIni, game.BinaryDirectory, game.InstallPath, cancellationToken).ConfigureAwait(false);
+            foreach (var engineIni in EngineIniPathsTouched(game, engineIniTemplate, previousEngineIniState))
+                await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
+            // The verified copy returns the hash of what it placed: no second read of the target.
+            var newHash = await scope.PlaceCopyAsync(cached, target, cancellationToken).ConfigureAwait(false);
+            iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
+            // #182: the global peak brightness into the chosen presets (kept where the user changed it since RHI's write).
+            peakStates = RenoDxPeakNits.Read(existingRecord);
+            if (peak is not null)
+                peakStates = RenoDxPeakNits.Apply(game.BinaryDirectory, game.InstallPath, peak.Nits, RenoDxPeakNits.GlobalSections(peak.Presets), peakStates, force: false);
+            if (engineIniTemplate is not null)
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
-                await AtomicFile.CopyAsync(cached, target, cancellationToken: cancellationToken).ConfigureAwait(false);
-                var previousIniState = existingRecord is not null &&
-                    existingRecord.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var previousIniJson)
-                    ? RenoDxIniOverrideManager.Deserialize(previousIniJson)
-                    : null;
-                iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
-                // #182: the global peak brightness into the chosen presets (kept where the user changed it since RHI's write).
-                peakStates = RenoDxPeakNits.Read(existingRecord);
-                if (PeakNits?.Invoke() is { Applies: true } peak)
-                    peakStates = RenoDxPeakNits.Apply(game.BinaryDirectory, game.InstallPath, peak.Nits, RenoDxPeakNits.GlobalSections(peak.Presets), peakStates, force: false);
-
-                if (engineIniTemplate is not null)
-                {
-                    engineIniApply = UpstreamEngineIniFileManager.Apply(game, engineIniTemplate, previousEngineIniState);
-                }
-                else if (previousEngineIniState is not null)
-                {
-                    UpstreamEngineIniFileManager.Cleanup(previousEngineIniState);
-                    engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
-                }
+                engineIniApply = UpstreamEngineIniFileManager.Apply(game, engineIniTemplate, previousEngineIniState);
             }
-            catch (Exception failure)
+            else if (previousEngineIniState is not null)
             {
-                // Put every file back as it was; one that cannot be restored keeps its snapshot and is reported (#121).
-                var snapshots = new List<FileSnapshot> { new(target, targetBeforeCopy) };
-                if (iniPathBeforeApply is not null && iniBeforeApply is not null)
-                    snapshots.Add(new(iniPathBeforeApply, iniBeforeApply, RenoDxIniOverrideManager.LinkPolicy(game.BinaryDirectory, game.InstallPath)));
-                if (engineIniSnapshotPath is not null)
-                    snapshots.Add(FileSnapshot.EngineIni(engineIniSnapshotPath, engineIniBeforeApply));
-                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
-                if (notes.Count > 0)
-                    throw new IOException($"{failure.Message} Rollback incomplete: {string.Join(" ", notes)}", failure);
-                throw;
+                UpstreamEngineIniFileManager.Cleanup(previousEngineIniState);
+                engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
             }
+            await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
 
-            var newHash = await FileHash.Sha256HexAsync(target, cancellationToken).ConfigureAwait(false);
-
-            // Only remove a previous RHI-managed filename after the replacement and INI application are safely in place.
+            // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
             if (oldManagedFile is not null && File.Exists(oldManagedFile.Path))
-                File.Delete(oldManagedFile.Path);
+                await scope.DeleteAsync(oldManagedFile.Path, cancellationToken).ConfigureAwait(false);
 
-            // Put the previous Control UE changes back first, then apply afresh, so the first
-            // pre-RHI state stays the restore point. A partial restore keeps what is left owned.
-            // A file the user changed since (DLSS version, HDR preset) is left as they set it and
-            // not applied again (#124).
-            var controlNotes = new List<string>();
+            // Put the previous Control UE changes back first, then apply afresh, so the first pre-RHI state stays the restore
+            // point; a file the user changed since (DLSS version, HDR preset) is left as they set it and not applied again
+            // (#124). Every file either step may change is tracked in this operation first (#205): one undo for all of it.
             var controlState = previousControlState;
-            ControlUePostInstallState? controlApplied = null;
-            IReadOnlySet<string>? controlKeptUserChanges = null;
-            if (previousControlState is not null)
+            if (previousControlState is not null || controlSources is not null)
             {
-                var restored = await _controlUe.RestoreAsync(previousControlState).ConfigureAwait(false);
-                controlState = restored.Remaining;
-                controlKeptUserChanges = restored.KeptUserChanges;
-                if (restored.Remaining is not null) controlNotes.AddRange(restored.Notes);
-            }
-            if (controlSources is not null && controlState is null)
-            {
-                var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources, controlKeptUserChanges).ConfigureAwait(false);
-                controlState = controlApplied = applied.State;
-                controlNotes.AddRange(applied.Notes);
+                var controlPaths = await ControlUePostInstallService.TrackAsync(
+                    scope, game, game.BinaryDirectory, previousControlState, controlSources, cancellationToken).ConfigureAwait(false);
+                IReadOnlySet<string>? controlKeptUserChanges = null;
+                if (previousControlState is not null)
+                {
+                    var restored = await _controlUe.RestoreAsync(previousControlState, InsideOperation).ConfigureAwait(false);
+                    controlState = restored.Remaining;
+                    controlKeptUserChanges = restored.KeptUserChanges;
+                    if (restored.Remaining is not null) controlNotes.AddRange(restored.Notes);
+                }
+                if (controlSources is not null && controlState is null)
+                {
+                    var applied = await _controlUe.ApplyAsync(game, game.BinaryDirectory, controlSources, controlKeptUserChanges, InsideOperation).ConfigureAwait(false);
+                    controlState = applied.State;
+                    controlNotes.AddRange(applied.Notes);
+                }
+                await ControlUePostInstallService.DeclareWrittenAsync(scope, controlPaths, cancellationToken).ConfigureAwait(false);
             }
 
             var record = new LinuxDeploymentRecord
@@ -494,42 +500,38 @@ public sealed class RenoDxDeploymentService
             if (peakStates.Count > 0) record.Metadata[RenoDxPeakNits.MetadataKey] = RenoDxPeakNits.Serialize(peakStates); // #182
             if ((ueExtendedChoice ?? existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey)) is { Length: > 0 } ueChoice)
                 record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates; a new one is saved here, in the update's own record
-            try
-            {
-                _records.Upsert(record);
-            }
-            catch (Exception saveFailure)
-            {
-                // Nothing would own the Control UE changes; undo them rather than orphan them, and say so if that fails.
-                if (controlApplied is not null)
-                {
-                    try { await _controlUe.RestoreAsync(controlApplied).ConfigureAwait(false); }
-                    catch (Exception restoreFailure)
-                    {
-                        throw new IOException($"{saveFailure.Message} Control UE changes could not be undone: {restoreFailure.Message}", saveFailure);
-                    }
-                }
-                throw;
-            }
-            var iniSummary = iniApply.AppliedCount > 0
-                ? unityUpgrades.Count > 0
-                    ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database / manifest)"
-                    : $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
-                : iniApply.PreservedUserEdits > 0
-                    ? $" · {iniApply.PreservedUserEdits} user-edited [renodx] override(s) preserved"
-                    : "";
-            var engineIniSummary = engineIniApply.AppliedCount > 0
-                ? $" · {engineIniApply.AppliedCount} upstream Engine.ini template key(s) applied from {game.EngineIniFileOverride}"
-                : engineIniApply.PreservedUserEdits > 0
-                    ? $" · {engineIniApply.PreservedUserEdits} user-edited Engine.ini key(s) preserved"
-                    : "";
-            var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
-            return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}", target);
+            // The commit point: nothing above survives without this record (the rollback, or the next start, undoes it all).
+            _records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RenoDX install failed: {ex.Message}");
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            inis.RestoreModesAfterRollback();
+            return ComponentOperationResult.Fail($"RenoDX install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
+        await scope.CommitAsync().ConfigureAwait(false);
+
+        var iniSummary = iniApply.AppliedCount > 0
+            ? unityUpgrades.Count > 0
+                ? $" · {iniApply.AppliedCount} [renodx] override(s) applied (RHI Unity database / manifest)"
+                : $" · {iniApply.AppliedCount} manifest [renodx] override(s) applied"
+            : iniApply.PreservedUserEdits > 0
+                ? $" · {iniApply.PreservedUserEdits} user-edited [renodx] override(s) preserved"
+                : "";
+        var engineIniSummary = engineIniApply.AppliedCount > 0
+            ? $" · {engineIniApply.AppliedCount} upstream Engine.ini template key(s) applied from {game.EngineIniFileOverride}"
+            : engineIniApply.PreservedUserEdits > 0
+                ? $" · {engineIniApply.PreservedUserEdits} user-edited Engine.ini key(s) preserved"
+                : "";
+        var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
+        return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}", target);
+    }
+
+    /// <summary>#205: the Engine.ini files an install's template step writes or cleans (the new target and the previous one).</summary>
+    private static IEnumerable<string> EngineIniPathsTouched(DetectedGame game, UpstreamEngineIniTemplate? template, UpstreamEngineIniFileState? previous)
+    {
+        if (template is not null && UpstreamEngineIniFileManager.ResolveTargetPath(game) is { } next) yield return next;
+        if ((template is not null || previous is not null) && previous?.IniPath is { Length: > 0 } old) yield return old;
     }
 
     // ── #195: a dropped or watched RenoDX add-on ─────────────────────────────────────────────────────────────────
@@ -575,9 +577,9 @@ public sealed class RenoDxDeploymentService
     /// All reports it as "could not be checked"). The same refusals as an install from the catalogue (native Linux game,
     /// no ReShade, unknown bitness, a RenoDX add-on or a same-named file RHI does not own, a managed file the user changed),
     /// plus a 32-bit add-on for a 64-bit game (and the reverse) and Control's add-on (its extra steps run from the row).
-    /// Only the add-on file is written (no INI or Engine.ini step): the source is copied verified, the record saved, and
-    /// only then the RenoDX add-on RHI installed before (another name) removed; a failed save puts the target back. The
-    /// source file is never changed.
+    /// Only the add-on file is written (no INI or Engine.ini step): the source is copied verified and the RenoDX add-on RHI
+    /// installed before (another name) removed in one journaled operation (#205) whose commit point is the saved record;
+    /// any failure before it, or a crash, puts both back. The source file is never changed.
     /// </summary>
     public async Task<ComponentOperationResult> InstallLocalAddonAsync(DetectedGame game, string addonPath, CancellationToken cancellationToken = default)
     {
@@ -634,13 +636,20 @@ public sealed class RenoDxDeploymentService
 
 
         var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
-        var targetBefore = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : null;
-        // Checks are done: from the copy on, Cancel is refused (#205: RenoDX's install is not journaled yet).
-        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        // #205: one journaled operation on RenoDX's record; the stamped record is the commit point.
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
+            _journal, "RenoDX local add-on: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
         try
         {
+            // Checks are done: from the copy on, Cancel is refused.
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             Directory.CreateDirectory(deployDir);
-            await AtomicFile.CopyAsync(addonPath, target, sha, CancellationToken.None).ConfigureAwait(false);
+            await scope.PlaceCopyAsync(addonPath, target, cancellationToken, sha).ConfigureAwait(false);
+            // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
+            if (managedOldPath is not null && !PathsEqual(managedOldPath, target) && File.Exists(managedOldPath))
+                await scope.DeleteAsync(managedOldPath, cancellationToken).ConfigureAwait(false);
             var record = existingRecord is null ? new LinuxDeploymentRecord() : LinuxDeploymentRecordStore.Clone(existingRecord);
             record.GameKey = LinuxDeploymentRecordStore.GameKey(game);
             record.GameName = game.Name;
@@ -657,16 +666,14 @@ public sealed class RenoDxDeploymentService
             VerifiedDownload.Forget(record.Metadata);
             record.Metadata[LocalPackageMetadataKey] = "1";
             record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(target);
-            _records.Upsert(record);
+            _records.Upsert(scope.Stamp(record));
         }
-        catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts the target back
+        catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts everything back
         {
-            var notes = RestoreSnapshots([new FileSnapshot(target, targetBefore)], SnapshotFallbackDirectory);
-            return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + (notes.Count > 0 ? " Rollback incomplete: " + string.Join(" ", notes) : ""));
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + DeploymentScope.RollbackNote(rollback));
         }
-        // After the commit point: RHI's earlier add-on under another name goes (a leftover is only logged).
-        if (managedOldPath is not null && !PathsEqual(managedOldPath, target) && File.Exists(managedOldPath) && !FileCleanup.TryDelete(managedOldPath, out var error))
-            AppLog.Warn("renodx", $"Could not remove the earlier RenoDX add-on {managedOldPath}", error);
+        await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(LocalInstalledPrefix + target, target);
     }
 
@@ -870,6 +877,15 @@ public sealed class RenoDxDeploymentService
         ];
     }
 
+    /// <summary>Fixed text of a removal stopped by a Control UE file that could not be put back (PT-BR pair); the reason follows.</summary>
+    public const string ControlUeRestoreIncompletePrefix = "Control UE restore incomplete; RenoDX was kept: ";
+
+    /// <summary>
+    /// Removes RHI's RenoDX: the Control UE files go back first, then RHI's [renodx], peak-brightness and Engine.ini keys
+    /// come out (a value the user changed since stays), then the add-on. One journaled operation (#205) whose commit point is
+    /// the record leaving the ledger: any failure, or a crash, puts every file back and keeps the record, so a retry can
+    /// finish the job; a Control UE file that cannot be put back keeps RenoDX installed as a whole.
+    /// </summary>
     public async Task<ComponentOperationResult> RemoveAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
@@ -885,25 +901,35 @@ public sealed class RenoDxDeploymentService
                 if (!string.Equals(current, file.Sha256, StringComparison.OrdinalIgnoreCase))
                     return ComponentOperationResult.Fail($"Protected modified file: {file.Path} no longer matches the RHI-managed hash, so it was not deleted.");
             }
+        }
+        catch (Exception ex)
+        {
+            return ComponentOperationResult.Fail($"RenoDX removal failed: {ex.Message}");
+        }
 
-            // Cancel is honoured only up to here: the removal never stops half-way.
-            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-
-            // Control UE DLLs and renderer.ini go back first. If any of them cannot, RenoDX stays
-            // installed and the record keeps owning what is left, so a retry can finish the job.
-            var controlSummary = "";
+        var (opened, journalRefusal) = await DeploymentScope.BeginRemovalAsync(
+            _journal, _records, "RenoDX removal: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
+        // Cancel is honoured only up to here: the removal never stops half-way.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var controlSummary = "";
+        var inControlStep = false;
+        try
+        {
+            // Control UE DLLs and renderer.ini go back first. If any of them cannot, the whole removal is undone: RenoDX
+            // stays installed and its record keeps owning everything, so a retry can finish the job.
             if (ControlUePostInstallService.Deserialize(record) is { } controlState)
             {
-                var restored = await _controlUe.RestoreAsync(controlState).ConfigureAwait(false);
-                if (restored.Remaining is not null)
-                {
-                    record.Metadata[ControlUePostInstallService.MetadataKey] = ControlUePostInstallService.Serialize(restored.Remaining);
-                    _records.Upsert(record);
-                    return ComponentOperationResult.Fail($"Control UE restore incomplete; RenoDX was kept: {string.Join(" ", restored.Notes)}");
-                }
-                record.Metadata.Remove(ControlUePostInstallService.MetadataKey);
-                _records.Upsert(record);
+                inControlStep = true;
+                var controlPaths = await ControlUePostInstallService.TrackAsync(
+                    scope, game, game.BinaryDirectory ?? record.BinaryDirectory, controlState, null, cancellationToken).ConfigureAwait(false);
+                var restored = await _controlUe.RestoreAsync(controlState, InsideOperation).ConfigureAwait(false);
+                if (restored.Remaining is not null) throw new IOException(string.Join(" ", restored.Notes));
+                await ControlUePostInstallService.DeclareWrittenAsync(scope, controlPaths, cancellationToken).ConfigureAwait(false);
                 controlSummary = $" Control UE: {string.Join(" ", restored.Notes)}";
+                inControlStep = false;
             }
 
             var iniState = record.Metadata.TryGetValue(RenoDxIniOverrideManager.MetadataKey, out var iniJson)
@@ -914,143 +940,35 @@ public sealed class RenoDxDeploymentService
                 ? RenoDxIniOverrideManager.Deserialize(fgHdrJson)
                 : null;
             var peakStates = RenoDxPeakNits.Read(record); // #182: peak brightness owned per preset section
-            var iniSnapshotPath = iniState?.IniPath ?? fgHdrState?.IniPath ?? peakStates.Values.FirstOrDefault()?.IniPath;
-            var iniSnapshot = iniSnapshotPath is not null && File.Exists(iniSnapshotPath)
-                ? await File.ReadAllBytesAsync(iniSnapshotPath, cancellationToken).ConfigureAwait(false)
-                : null;
-            var fgHdrSnapshotPath = fgHdrState?.IniPath is { } hdrPath && !string.Equals(hdrPath, iniSnapshotPath, StringComparison.Ordinal) ? hdrPath : null;
-            var fgHdrSnapshot = fgHdrSnapshotPath is not null && File.Exists(fgHdrSnapshotPath)
-                ? await File.ReadAllBytesAsync(fgHdrSnapshotPath, cancellationToken).ConfigureAwait(false)
-                : null;
             var engineIniState = record.Metadata.TryGetValue(UpstreamEngineIniFileManager.MetadataKey, out var engineIniJson)
                 ? UpstreamEngineIniFileManager.Deserialize(engineIniJson)
                 : null;
-            var engineIniSnapshotPath = engineIniState?.IniPath;
-            var engineIniSnapshot = engineIniSnapshotPath is not null && File.Exists(engineIniSnapshotPath)
-                ? await File.ReadAllBytesAsync(engineIniSnapshotPath, cancellationToken).ConfigureAwait(false)
-                : null;
+            // Every INI the clean-up edits, at the file a write through it replaces (a shared ReShade.ini, not its link).
+            foreach (var ini in new[] { iniState?.IniPath, fgHdrState?.IniPath }.Concat(peakStates.Values.Select(state => state.IniPath))
+                         .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path)).Distinct(StringComparer.Ordinal))
+                await inis.TrackReShadeIniAsync(ini!, Path.GetDirectoryName(ini!) ?? ini!, game.InstallPath, cancellationToken).ConfigureAwait(false);
+            if (engineIniState?.IniPath is { Length: > 0 } engineIni && File.Exists(engineIni))
+                await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
 
-            try
-            {
-                RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
-                RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
-                RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
-                UpstreamEngineIniFileManager.Cleanup(engineIniState);
-                foreach (var file in record.Files)
-                    if (File.Exists(file.Path)) File.Delete(file.Path);
-            }
-            catch (Exception failure)
-            {
-                // Only files that existed are put back: a removal never recreates something that was absent.
-                var snapshots = new List<FileSnapshot>();
-                if (iniSnapshotPath is not null && iniSnapshot is not null)
-                    snapshots.Add(new(iniSnapshotPath, iniSnapshot,
-                        RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(iniSnapshotPath) ?? iniSnapshotPath, game.InstallPath)));
-                if (fgHdrSnapshotPath is not null && fgHdrSnapshot is not null)
-                    snapshots.Add(new(fgHdrSnapshotPath, fgHdrSnapshot,
-                        RenoDxIniOverrideManager.LinkPolicy(Path.GetDirectoryName(fgHdrSnapshotPath) ?? fgHdrSnapshotPath, game.InstallPath)));
-                if (engineIniSnapshotPath is not null && engineIniSnapshot is not null) snapshots.Add(FileSnapshot.EngineIni(engineIniSnapshotPath, engineIniSnapshot));
-                var notes = RestoreSnapshots(snapshots, SnapshotFallbackDirectory);
-                if (notes.Count > 0)
-                    throw new IOException($"{failure.Message} Restore incomplete: {string.Join(" ", notes)}", failure);
-                throw;
-            }
+            RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
+            RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
+            RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
+            UpstreamEngineIniFileManager.Cleanup(engineIniState);
+            await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
+            foreach (var file in record.Files)
+                if (File.Exists(file.Path)) await scope.DeleteAsync(file.Path, cancellationToken).ConfigureAwait(false);
 
             _records.Remove(game, ManagedComponentKind.RenoDX);
-            return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored." + controlSummary);
         }
         catch (Exception ex)
         {
-            return ComponentOperationResult.Fail($"RenoDX removal failed: {ex.Message}");
+            var rollback = await scope.RollbackRemovalAsync(_records, game, record, "renodx").ConfigureAwait(false);
+            inis.RestoreModesAfterRollback();
+            return ComponentOperationResult.Fail(
+                $"{(inControlStep ? ControlUeRestoreIncompletePrefix : "RenoDX removal failed: ")}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
-    }
-
-    /// <summary>
-    /// A file's bytes before an operation; null bytes = the file did not exist. <paramref name="LinkPolicy"/> says which
-    /// symlink the restore may write through (null: none); <paramref name="ReadOnly"/> whether a read-only file is
-    /// refused or written and kept read-only.
-    /// </summary>
-    internal sealed record FileSnapshot(string Path, byte[]? Bytes, UserFileLinkPolicy? LinkPolicy = null,
-        ReadOnlyUserFile ReadOnly = ReadOnlyUserFile.Refuse)
-    {
-        /// <summary>An Engine.ini snapshot: restored like every Engine.ini write (a read-only file is written and stays locked).</summary>
-        internal static FileSnapshot EngineIni(string path, byte[]? bytes)
-            => new(path, bytes, LumaEngineIniOverrideManager.LinkPolicy(path), ReadOnlyUserFile.WriteKeepingLock);
-    }
-
-    private string SnapshotFallbackDirectory => System.IO.Path.Combine(_cacheDir, "restore-snapshots");
-
-    /// <summary>
-    /// Puts each snapshot back atomically (or deletes a file that did not exist). A file that cannot be restored
-    /// keeps its previous bytes in a sidecar next to it, else under <paramref name="fallbackDirectory"/>, and the
-    /// returned notes say where; nothing is dropped silently. A file that still holds its snapshot bytes is left alone.
-    /// Runs to completion whatever the caller's token, and whatever one snapshot throws.
-    /// </summary>
-    internal static IReadOnlyList<string> RestoreSnapshots(IEnumerable<FileSnapshot> snapshots, string fallbackDirectory)
-    {
-        var notes = new List<string>();
-        foreach (var snapshot in snapshots)
-        {
-            try
-            {
-                if (snapshot.Bytes is not null)
-                {
-                    if (File.Exists(snapshot.Path) && File.ReadAllBytes(snapshot.Path).AsSpan().SequenceEqual(snapshot.Bytes))
-                        continue;
-                    var directory = System.IO.Path.GetDirectoryName(snapshot.Path);
-                    if (string.IsNullOrEmpty(directory))
-                        throw new IOException(AtomicFile.NoFolderPrefix + snapshot.Path);
-                    Directory.CreateDirectory(directory);
-                    AtomicFile.ReplaceUserFile(snapshot.Path, snapshot.Bytes, snapshot.LinkPolicy, readOnly: snapshot.ReadOnly);
-                }
-                else if (File.Exists(snapshot.Path))
-                {
-                    File.Delete(snapshot.Path);
-                }
-            }
-            catch (Exception ex)
-            {
-                // Rollback must finish: any fault (bad recorded path, refused link, I/O) keeps the bytes and is reported,
-                // in the result and in the app log.
-                var note = KeepSnapshot(snapshot, ex, fallbackDirectory);
-                AppLog.Warn("renodx-rollback", note, ex);
-                notes.Add(note);
-            }
-        }
-        return notes;
-    }
-
-    private static string KeepSnapshot(FileSnapshot snapshot, Exception failure, string fallbackDirectory)
-    {
-        if (snapshot.Bytes is null)
-            return $"Could not remove {snapshot.Path}: {failure.Message}";
-        var stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", System.Globalization.CultureInfo.InvariantCulture);
-        var candidates = new List<string>();
-        if (System.IO.Path.IsPathFullyQualified(snapshot.Path))
-            candidates.Add($"{snapshot.Path}.rhi-snapshot-{stamp}");
-        candidates.Add(System.IO.Path.Combine(fallbackDirectory, $"{stamp}-{SafeFileName(System.IO.Path.GetFileName(snapshot.Path))}"));
-        var errors = new List<string>();
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                Directory.CreateDirectory(System.IO.Path.GetDirectoryName(candidate)!);
-                AtomicFile.ReplaceUserFile(candidate, snapshot.Bytes);
-                return $"Could not restore {snapshot.Path} ({failure.Message}); its previous contents were kept at {candidate}";
-            }
-            catch (Exception ex)
-            {
-                errors.Add(ex.Message);
-            }
-        }
-        return $"Could not restore {snapshot.Path} ({failure.Message}) nor keep a copy of its previous contents ({string.Join("; ", errors)})";
-    }
-
-    private static string SafeFileName(string name)
-    {
-        var invalid = System.IO.Path.GetInvalidFileNameChars();
-        var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return string.IsNullOrWhiteSpace(safe) ? "snapshot" : safe;
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok("RHI-managed RenoDX add-on removed and manifest ReShade/Engine.ini ownership restored." + controlSummary);
     }
 
     public static string ResolveAddonDeployPath(string binaryDirectory)

@@ -243,7 +243,8 @@ internal sealed class UpstreamEngineIniFileManager
 
         if (!changed) return;
         TrimTrailingBlankLines(lines);
-        if (state.FileCreatedByRhi && lines.All(string.IsNullOrWhiteSpace))
+        // A file RHI created and left empty goes; never a link (the user put a file of theirs behind it since).
+        if (state.FileCreatedByRhi && lines.All(string.IsNullOrWhiteSpace) && new FileInfo(state.IniPath).LinkTarget is null)
         {
             File.Delete(state.IniPath);
             return;

@@ -500,6 +500,12 @@ internal static class LumaEngineIniOverrideManager
         => AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: LinkPolicy(path), readOnly: ReadOnlyUserFile.WriteKeepingLock);
 
     /// <summary>
+    /// w8/renodx (#205): the file a <see cref="WriteUserEngineIni"/> to <paramref name="path"/> replaces — the path itself, or
+    /// the target of a link <see cref="LinkPolicy"/> allows — which is what a journal tracks; throws the write's refusal.
+    /// </summary>
+    internal static string ResolveWriteTarget(string path) => AtomicFile.ResolveUserFileTarget(path, LinkPolicy(path));
+
+    /// <summary>
     /// Where an Engine.ini write may land once every symlink on its path is resolved (the file itself or any folder
     /// above it): a file named Engine.ini (any case) inside the Wine prefix the path is in (the folder holding the
     /// nearest <c>drive_c</c>) or the UE project folder (the folder holding the nearest <c>Saved</c>). The walk up stops

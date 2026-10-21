@@ -149,9 +149,11 @@ public sealed class RenoDxPeakNits(LinuxDeploymentRecordStore records, Deploymen
         try
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
+            // #205/#213 audit: the file a write through ReShade.ini replaces (a shared file's link target, never the link).
+            var written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory, game.InstallPath);
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
             var states = Apply(game.BinaryDirectory, game.InstallPath, nits, sections(ini), Read(record), force: true);
-            await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
             record.Metadata[MetadataKey] = Serialize(states);
             records.Upsert(scope.Stamp(record));
         }
