@@ -379,8 +379,10 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
     {
         var fifo = Path.Combine(Downloads, "renodx-fifo.zip");
         Assert.Equal(0, Mono_MkFifo(fifo));
-        var read = DroppedArchiveExtractor.InspectAsync(fifo, Scratch);
-        Assert.Same(read, await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(20)))); // a FIFO would block the copy
+        var read = Task.Run(() => DroppedArchiveExtractor.InspectAsync(fifo, Scratch));
+        var inTime = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(20))) == read;
+        if (!inTime) { using (File.OpenWrite(fifo)) { } } // unblock a read that should never have started
+        Assert.True(inTime, "a FIFO must never be read (it would block the copy)");
         Assert.Equal(DroppedArchiveExtractor.NotAFileRefusal + "renodx-fifo.zip", (await read).Refusal);
 
         var device = Path.Combine(Downloads, "renodx-zero.zip");
@@ -389,6 +391,8 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
 
         var huge = Path.Combine(Downloads, "renodx-huge.zip");
         using (var sparse = File.Create(huge)) sparse.SetLength((1L << 30) + 1); // sparse: nothing is written
+        // Unreadable on purpose: refused on its listed size alone, before RHI opens it (opening it would fail otherwise).
+        if (Environment.UserName != "root") File.SetUnixFileMode(huge, UnixFileMode.UserWrite);
         Assert.Equal(DroppedArchiveExtractor.ArchiveTooLargeRefusal + "renodx-huge.zip", await RefusedAsync(huge));
     }
 
@@ -434,6 +438,30 @@ public sealed class DroppedArchiveExtractorTests : IDisposable
             using var archive = (await DroppedArchiveExtractor.InspectAsync(archivePath, Scratch)).Archive!;
             var error = await Assert.ThrowsAsync<InvalidDataException>(() => archive.ExtractAsync(archive.Addons.Single(), CancellationToken.None));
             Assert.Equal(DroppedArchiveExtractor.SizeMismatchRefusal + "renodx-foogame.addon64", error.Message);
+            Assert.Equal(["archive"], Directory.EnumerateFileSystemEntries(archive.Folder).Select(Path.GetFileName));
+        }
+        finally
+        {
+            ExternalArchiveRunner.FindToolForTesting.Value = null;
+        }
+        Assert.True(ScratchIsEmpty());
+    }
+
+    [Theory]
+    [InlineData("true")]                                                                                       // nothing came out
+    [InlineData("head -c 2048 /dev/zero > \"$OUT/renodx-foogame.addon64\"; head -c 2048 /dev/zero > \"$OUT/other.addon64\"")] // two files
+    [InlineData("mkfifo \"$OUT/renodx-foogame.addon64\"")]                                                     // not a plain file
+    public async Task AToolThatGivesBackNoneTwoOrNoPlainFile_IsRefused(string extract)
+    {
+        var tool = FakeSevenZip(OneAddonListing, extract);
+        var archivePath = Path.Combine(Downloads, "odd.7z");
+        File.WriteAllText(archivePath, "7z");
+        ExternalArchiveRunner.FindToolForTesting.Value = () => tool;
+        try
+        {
+            using var archive = (await DroppedArchiveExtractor.InspectAsync(archivePath, Scratch)).Archive!;
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() => archive.ExtractAsync(archive.Addons.Single(), CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(30)));
+            Assert.Equal(DroppedArchiveExtractor.NotExtractedRefusal + "renodx-foogame.addon64", error.Message);
             Assert.Equal(["archive"], Directory.EnumerateFileSystemEntries(archive.Folder).Select(Path.GetFileName));
         }
         finally
