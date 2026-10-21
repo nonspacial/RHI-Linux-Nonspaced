@@ -57,4 +57,63 @@ public sealed class ChangelogTextBlocksTests
         Assert.Contains(blocks, block => block.Text.StartsWith("• A RenoDX add-on installed from a dropped or downloaded file", StringComparison.Ordinal)
                                          && block.Text.EndsWith("for the game.", StringComparison.Ordinal));
     }
+
+    // ── review 5: nested quotes and fenced code ─────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void ABareNestedMarker_EndsTheParagraph()
+    {
+        var blocks = ChangelogText.Blocks("> > One paragraph\n> > on two lines.\n> >\n> > Another one.\n");
+
+        Assert.Equal(new (int, string)[] { (0, "One paragraph on two lines."), (0, "Another one.") }, blocks);
+    }
+
+    [Fact]
+    public void ANestedQuote_IsItsOwnBlock_AndShowsNoMarker()
+    {
+        var blocks = ChangelogText.Blocks("> Outer line.\n> > Inner line\n> > goes on.\n> Outer again.\n");
+
+        Assert.Equal(new (int, string)[] { (0, "Outer line."), (0, "Inner line goes on."), (0, "Outer again.") }, blocks);
+    }
+
+    [Fact]
+    public void FencedCodeInsideAQuote_IsOneBlock_LinesAndIndentationKept_NoMarkersTakenOut()
+    {
+        const string markdown = """
+            > Run this:
+            >
+            > ```sh
+            > ls -l `pwd`  # **not** emphasis
+            >   - indented, not a bullet
+            > # not a heading
+            > ```
+            >
+            > After.
+            """;
+
+        var blocks = ChangelogText.Blocks(markdown);
+
+        Assert.Equal(new (int, string)[]
+        {
+            (0, "Run this:"),
+            (0, "ls -l `pwd`  # **not** emphasis\n  - indented, not a bullet\n# not a heading"),
+            (0, "After.")
+        }, blocks);
+    }
+
+    [Fact]
+    public void AFenceInsideAQuote_EndsWhereTheQuoteEnds()
+    {
+        var blocks = ChangelogText.Blocks("> ```\n> code line\n\nA paragraph after the quote.\n");
+
+        Assert.Equal(new (int, string)[] { (0, "code line"), (0, "A paragraph after the quote.") }, blocks);
+    }
+
+    [Fact]
+    public void AFenceOutsideAQuote_KeepsItsBlankLines_AndOnlyItsOwnKindOfRunClosesIt()
+    {
+        var blocks = ChangelogText.Blocks("Before.\n~~~~\nfirst\n\n```\nlast\n~~~~\n## Heading\n");
+
+        Assert.Equal(new (int, string)[] { (0, "Before."), (0, "first\n\n```\nlast"), (2, "Heading") }, blocks);
+    }
 }
