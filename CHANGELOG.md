@@ -62,9 +62,12 @@ Safety
   RenoDX or DLSS5 Feeder change is undone, and the shared file gets its earlier content back. A read-only `Engine.ini`
   stays read-only when a Luma ⚙ change is undone.
 - When RHI's install records are saved but the save then reports an error, the change is kept and its line says so (also
-  for the Luma ⚙, peak brightness, the RenoDX ⚙ `Engine.ini` switches, the per-game Apply, the batch buttons and the
-  ReShade settings file Repair after move rewrites), instead of being undone while the records say it is installed. If the records cannot be read at all afterwards,
-  nothing is undone: RHI decides at the next start, and until then refuses that game's next change with a plain reason.
+  for the Luma ⚙, peak brightness, the RenoDX ⚙ `Engine.ini` switches, the per-game Apply, Shaders/Add-ons Apply, a
+  preset with its shader packs, the batch buttons, Save global set, Update All and the ReShade settings file Repair
+  after move rewrites), instead of being undone while the records say it is installed. If the records cannot be read at
+  all afterwards, nothing is undone: RHI finishes or undoes the change before the game's next change, or at the next
+  start. The game's next change goes ahead once the records can be read again, and is refused with a plain reason until
+  then.
 
 Interface
 
