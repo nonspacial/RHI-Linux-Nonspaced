@@ -339,7 +339,9 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         try
         {
             fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
-            if (!(fx.Vm.Session.Game?.Name == game.Name && fx.Vm.Session.Analysis is not null && !fx.Vm.IsSelectionProbeBusy))
+            // An analysis already published for the game (the start-up one may have raised Completed before this
+            // subscription) needs no Completed; the busy flag is awaited below either way.
+            if (!(fx.Vm.Session.Game?.Name == game.Name && fx.Vm.Session.Analysis is not null))
                 await analysed.Task.WaitAsync(HangGuard);
         }
         finally { fx.Vm.Session.Completed -= OnCompleted; }
