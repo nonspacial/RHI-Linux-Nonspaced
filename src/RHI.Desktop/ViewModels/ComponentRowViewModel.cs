@@ -11,7 +11,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     /// it cannot work (not a 64-bit DX11/DX12/Vulkan Windows game with its own DLSS); an RTX Encore found on disk still shows.
     /// </summary>
     public static bool IsShown(ManagedComponent component)
-        => !(component.Kind == ManagedComponentKind.RtxEncore && component.Availability == ComponentAvailability.Unsupported);
+        => !(component.Kind is ManagedComponentKind.RtxEncore or ManagedComponentKind.DxvkHdr // w7/dxvk-hdr (#200): DX9 HDR too
+             && component.Availability == ComponentAvailability.Unsupported);
 
     public ManagedComponentKind Kind => component.Kind;
     public ComponentAvailability Availability => component.Availability;
@@ -129,6 +130,8 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    public bool HasDxvkHdrSettings => DxvkHdrPresenter.HasSettings(component); // #200: DX9 HDR ⚙ (preset)
+    public string DxvkHdrSettingsTip => DxvkHdrPresenter.SettingsTip; // #200: provenance in the 2 s tooltip
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

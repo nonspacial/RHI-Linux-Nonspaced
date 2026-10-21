@@ -1287,5 +1287,20 @@ internal static class UiStrings
         ("Nv.RestoredToDefault", "Configurações NVIDIA de volta ao padrão: {0}.", "NVIDIA settings set back to Default: {0}."),
         ("Nv.LauncherCannotApply", "Há configurações NVIDIA escolhidas, mas este launcher não consegue aplicar opções de inicialização do Linux.", "NVIDIA settings are chosen, but this launcher cannot apply Linux launch options."),
         // w7/dxvk-hdr rows
+        // #200 DX9 HDR (row ⚙, preset list, install confirmation)
+        ("Dxvk.SettingsTip", "Predefinição do DX9 HDR. Build DXVK HDR de EndlesslyFlowering (Lilium), um fork do DXVK.", "DX9 HDR preset. DXVK HDR build by EndlesslyFlowering (Lilium), a fork of DXVK."),
+        ("Dxvk.DialogIntro", "Escolha quanto o DXVK HDR melhora a imagem deste jogo. O RHI grava a escolha no dxvk.conf ao lado do jogo.", "Choose how far DXVK HDR upgrades this game's picture. RHI writes the choice to the dxvk.conf beside the game."),
+        ("Dxvk.PresetLabel", "Predefinição", "Preset"),
+        ("Dxvk.PresetTip", "A mais segura muda só a imagem final e funciona com quase todos os jogos. As outras também melhoram as imagens internas do jogo: HDR melhor, mas alguns jogos mostram erros visuais.", "Safest changes only the final picture and works with nearly every game. The others also upgrade the game's own render images: better HDR, but some games show visual errors."),
+        ("Dxvk.Preset0", "Mais segura", "Safest"),
+        ("Dxvk.Preset1", "Segunda mais segura", "Second safest"),
+        ("Dxvk.Preset2", "Pouco arriscada", "Slightly unsafe"),
+        ("Dxvk.Preset3", "Arriscada", "Unsafe"),
+        ("Dxvk.Preset4", "Mais arriscada", "More unsafe"),
+        ("Dxvk.Applying", "Aplicando…", "Applying…"),
+        ("Dxvk.HdrOffHint", "A execução HDR está desligada para este jogo: ligue-a (Execução HDR, nos detalhes do jogo) para ver HDR.", "HDR launch is Off for this game: turn it on (HDR launch, in the game's details) to see HDR."),
+        ("Dxvk.ConfirmTitle", "Instalar DX9 HDR — {0}", "Install DX9 HDR — {0}"),
+        ("Dxvk.ConfirmBody", "O DX9 HDR troca o DirectX 9 deste jogo pelo DXVK HDR, só neste jogo: o RHI coloca d3d9.dll e dxvk.conf ao lado do jogo e diz ao Wine para usá-los. Remover o DX9 HDR pela linha dele desfaz tudo.", "DX9 HDR replaces this game's DirectX 9 with DXVK HDR, for this game only: RHI puts d3d9.dll and dxvk.conf beside the game and tells Wine to use them. Removing DX9 HDR from its row puts everything back."),
+        ("Dxvk.ConfirmReShade", "O ReShade está instalado neste jogo como d3d9.dll. O DX9 HDR precisa desse nome, então o RHI passa o ReShade para a camada Vulkan dele neste jogo (o carregador Vulkan ao lado do jogo). O ReShade mantém configurações, shaders e add-ons. Remover o DX9 HDR devolve o ReShade como d3d9.dll.", "ReShade is installed on this game as d3d9.dll. DX9 HDR needs that name, so RHI moves ReShade to its Vulkan layer for this game (the Vulkan loader beside the game). ReShade keeps its settings, shaders and add-ons. Removing DX9 HDR puts ReShade back as d3d9.dll."),
     ];
 }

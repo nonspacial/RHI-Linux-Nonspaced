@@ -327,6 +327,14 @@ public static class OptionLists
          .. ReLimiterIniEditor.TargetFpsPresets.Select(p => new OptionEntry<uint>((uint)p.Fps, null, $"{p.Fps} FPS · {p.Hz} Hz VRR")),
          new OptionEntry<uint>(NvidiaCustom, "Win.Custom")]);
     // w7/dxvk-hdr rows
+    /// <summary>#200: DX9 HDR's dxvk.conf presets (upstream's six tiers, safest first; plain labels, the value is the tier).</summary>
+    public static readonly OptionList<int> DxvkHdrPreset = new(DxvkHdrPresets.Default, null,
+        new(0, "Dxvk.Preset0", null, DxvkHdrPresets.For(0).Name),
+        new(1, "Dxvk.Preset1", null, DxvkHdrPresets.For(1).Name),
+        new(2, "Dxvk.Preset2", null, DxvkHdrPresets.For(2).Name),
+        new(3, "Dxvk.Preset3", null, DxvkHdrPresets.For(3).Name),
+        new(4, "Dxvk.Preset4", null, DxvkHdrPresets.For(4).Name),
+        new(5, null, "Experimental", DxvkHdrPresets.For(5).Name)); // the same word in both languages
 
     /// <summary>The "Latest" entry heading every version list.</summary>
     public static string LatestDisplay() => UiLocalizationService.Text("Ui.OptionLatest");

@@ -166,6 +166,7 @@ public sealed class LinuxUpdateAllService
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        ManagedComponentKind.DxvkHdr, // #200 DX9 HDR: d3d9.dll only
     ];
 
     private static readonly ReadOnlyCollection<ManagedComponentKind> SupportedReadOnly = Array.AsReadOnly(Supported);

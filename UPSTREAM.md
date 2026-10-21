@@ -94,7 +94,7 @@ Direct launches (standalone Wine prefixes and manual games) start in the launch 
 
 ### #131 — Manifest install warnings (2.8.0)
 
-Ported. Before a user-initiated install, the manifest's `installWarnings[<game>][<component>]` text is shown with Continue / Cancel for every component the install adds: the one the user asked for (ReShade, RenoDX, Luma, OptiScaler, REFramework, ReLimiter or Display Commander) and each managed dependency Linux installs automatically with it — ReShade under RenoDX, ReLimiter, Display Commander, Luma, ShortFuse, DLSS5 Feeder and the other ReShade add-ons, and REFramework under ReShade on RE Engine. Upstream has no automatic dependencies (add-ons stay greyed until the user installs ReShade, RE Engine ReShade asks for REFramework first), so there each warning comes from its own install click; Linux shows them together in one dialog, one section per component in install order, each naming its component when more than one is shown. Cancel stops before any file is touched. The list of added components comes from the same dependency plan the install executes (computed off the UI thread), so a refused install (broken managed dependency, conflicting component) shows no dependency warning. Covered paths: the component row's Install, ShortFuse install, applying a ReShade profile (when ReShade is absent or its state is unknown, and for any dependency it would add), the Shaders/Add-ons manager's Apply when RHI does not manage ReShade yet, and a dropped or watched local Luma package. Update All and the background pass never prompt. The game is matched by its canonical manifest name (the library policy pass), and only when that name was reached from the game's own title: a manifest title found only in the folder path attaches no warning (upstream matches the card title). The text itself is upstream English; the title, section headings and buttons are localised. Links: every http(s) URL in the text becomes a button under it (a trailing URL moves out of the text, as upstream; a closing bracket that pairs with one inside the URL stays part of it); buttons open through the desktop handler (`LinuxDesktopOpener`, http(s) only). Linux deviations: upstream links only a trailing URL (GTA V Enhanced's inline DirectStorageFix link is clickable here too); upstream warns again on every ReShade reinstall/update click, Linux only on the first install. The `dxvk` key has no Linux component (Proton owns DXVK) and is ignored.
+Ported. Before a user-initiated install, the manifest's `installWarnings[<game>][<component>]` text is shown with Continue / Cancel for every component the install adds: the one the user asked for (ReShade, RenoDX, Luma, OptiScaler, REFramework, ReLimiter or Display Commander) and each managed dependency Linux installs automatically with it — ReShade under RenoDX, ReLimiter, Display Commander, Luma, ShortFuse, DLSS5 Feeder and the other ReShade add-ons, and REFramework under ReShade on RE Engine. Upstream has no automatic dependencies (add-ons stay greyed until the user installs ReShade, RE Engine ReShade asks for REFramework first), so there each warning comes from its own install click; Linux shows them together in one dialog, one section per component in install order, each naming its component when more than one is shown. Cancel stops before any file is touched. The list of added components comes from the same dependency plan the install executes (computed off the UI thread), so a refused install (broken managed dependency, conflicting component) shows no dependency warning. Covered paths: the component row's Install, ShortFuse install, applying a ReShade profile (when ReShade is absent or its state is unknown, and for any dependency it would add), the Shaders/Add-ons manager's Apply when RHI does not manage ReShade yet, and a dropped or watched local Luma package. Update All and the background pass never prompt. The game is matched by its canonical manifest name (the library policy pass), and only when that name was reached from the game's own title: a manifest title found only in the folder path attaches no warning (upstream matches the card title). The text itself is upstream English; the title, section headings and buttons are localised. Links: every http(s) URL in the text becomes a button under it (a trailing URL moves out of the text, as upstream; a closing bracket that pairs with one inside the URL stays part of it); buttons open through the desktop handler (`LinuxDesktopOpener`, http(s) only). Linux deviations: upstream links only a trailing URL (GTA V Enhanced's inline DirectStorageFix link is clickable here too); upstream warns again on every ReShade reinstall/update click, Linux only on the first install. The `dxvk` key is DX9 HDR's (#200), shown before its install.
 
 ### #132 — ReShade when reshade.me answers HTTP 5xx (2.8.3)
 
@@ -446,8 +446,9 @@ build.
 ### #92 — ReShade for Vulkan games (implicit layer)
 
 - Ported, adapted to Wine/Proton (spike: Wine's own `vulkan-1.dll` loads no Windows layers; the Khronos loader reads
-  implicit layers only from HKEY_LOCAL_MACHINE under Wine, never HKEY_CURRENT_USER; DXVK and vkd3d-proton load
-  `winevulkan.dll` directly, so DirectX games never see the layer). Upstream registers one global layer for the whole
+  implicit layers only from HKEY_LOCAL_MACHINE under Wine, never HKEY_CURRENT_USER; Proton's DXVK and vkd3d-proton load
+  `winevulkan.dll` directly, so DirectX games never see the layer — except with DX9 HDR (#200), whose DXVK HDR build asks
+  for `vulkan-1.dll` first). Upstream registers one global layer for the whole
   PC; RHI Linux sets it up per game: the Khronos Vulkan loader (`vulkan-1.dll`, newest from LunarG's Vulkan runtime)
   beside the executable with a per-executable `vulkan-1=native,builtin` Wine override, the layer (`ReShade64.dll`/
   `ReShade32.dll` and upstream's `ReShade64.json` manifest) in the prefix's `C:\ProgramData\RHI-Linux\ReShadeVulkan\<game>\`,
@@ -604,3 +605,35 @@ build.
 - Not ported: the SR "preset override mode" companion setting 0x00634291 (not in NVIDIA's public settings header nor in NVIDIA's or dxvk-nvapi's Linux recipe), the developer-only NR presets and `dlssPresetsDev`, ReBAR, the FPS limiter and the other driver-profile pages (no launch-variable route). Global default presets (upstream Settings → DLSS defaults, written by Apply defaults): follow-up #215 (the owner picks Apply-defaults copy vs launch fallback).
 
 <!-- w7/dxvk-hdr notes -->
+
+### #200 — DX9 HDR (DXVK HDR for DirectX 9 games)
+
+- Ported as an opt-in per game (owner decision 2026-10-20: "the point of mods is to mod"; the fork's "Proton owns DXVK"
+  rule does not apply to it). Upstream's DXVK "Lilium HDR" variant in DX9 direct mode: EndlesslyFlowering's DXVK HDR
+  build (latest GitHub release, the non-gplasync `.7z`, GitHub's digest checked, extracted by the host 7-Zip/bsdtar) as
+  the game's `d3d9.dll` beside the executable, upstream's DX9 preset as `dxvk.conf` beside it (six tiers, Safest by
+  default, chosen in the row's ⚙; changing it rewrites the file as upstream does), and — Linux only — a per-executable
+  `d3d9=native,builtin` Wine override (GE-Proton10-18 and Proton Experimental skip a game-folder `d3d9.dll` without it;
+  Proton's own `d3d9=n` for its DXVK lets the game-folder copy win anyway; `PROTON_USE_WINED3D=1` defeats it:
+  `reviews/w7-dxvk-hdr-wine.md`). Offered only for Windows DirectX 9 games (detected or the user's/manifest's override),
+  not native, not Xbox / Game Pass; DirectX 8 is left out (upstream places only `d3d9.dll`, which a DirectX 8 game does
+  not load). A `d3d9.dll` or `dxvk.conf` RHI did not write refuses the install; removal gives everything back and keeps a
+  `dxvk.conf` the user changed. Update All swaps `d3d9.dll` only; the manifest's `dxvk` install warning is shown first.
+- Linux deviations: the preset files leave out upstream's two async lines (`dxvk.enableAsync`, `dxvk.gplAsyncCache`:
+  gplasync builds only; DXVK HDR's own presets say "only enable these on Windows"). Upstream's NVIDIA present-method
+  profile step is Windows-only and not ported. HDR output needs the game's own HDR launch setting on (the row says so
+  while it is Off).
+- ReShade: as upstream, an RHI ReShade installed as `d3d9.dll` moves to ReShade's Vulkan layer (#92, here per game: the
+  Khronos loader beside the exe, `vulkan-1=native,builtin`, the layer registered in `system.reg`) in the same journaled
+  operation — the install's confirmation says so first — and goes back to `d3d9.dll` when DX9 HDR is removed (both
+  records saved in one ledger write each way). DXVK HDR's `d3d9.dll` asks for `vulkan-1.dll` before `winevulkan.dll`, so
+  it reaches the per-game loader (LoadLibrary-level check; the overlay itself is the owner game test). Installing ReShade
+  later on a DX9 HDR game takes the layer path; removing DX9 HDR then gives it the `d3d9.dll` name. A ReShade under
+  another DLL name, one loaded through ShortFuse, or one that replaced a pre-existing `d3d9.dll` is refused with what to
+  do.
+- Linux additions (wave-7 review): RHI's record keeps the row's Remove whatever is left on disk (a `d3d9.dll` the user
+  deleted, a game no longer DirectX 9), and Remove takes back `dxvk.conf`, the override and ReShade's move. The row notes
+  when the game's launch command turns on `PROTON_USE_WINED3D` (DX9 HDR then has no effect; Steam's own launch
+  options are not read). DX9 HDR and Luma Framework's / DLSS5 Feeder's DirectX 9 translation (dgVoodoo2) both need
+  `d3d9.dll`: each refuses while the other is installed and names what to remove. The `d3d9.dll` taken from the archive
+  is capped at 64 MiB before 7-Zip extracts it (the archive's listed size) and again after.

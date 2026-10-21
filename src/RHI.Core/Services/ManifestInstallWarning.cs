@@ -9,7 +9,7 @@ namespace RHI.Core.Services;
 public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Links)
 {
     /// <summary>Upstream manifest component key for a Linux component; null when upstream defines no warning key.</summary>
-    /// <remarks>Upstream also uses <c>dxvk</c>, which has no Linux component (Proton owns DXVK).</remarks>
+    /// <remarks>Upstream's <c>dxvk</c> key is DX9 HDR's (#200), the one opt-in DXVK component on Linux.</remarks>
     public static string? ManifestKey(ManagedComponentKind kind) => kind switch
     {
         ManagedComponentKind.ReShade => "reshade",
@@ -19,6 +19,7 @@ public sealed record ManifestInstallWarning(string Text, IReadOnlyList<Uri> Link
         ManagedComponentKind.REFramework => "reframework",
         ManagedComponentKind.ReLimiter => "relimiter",
         ManagedComponentKind.DisplayCommander => "dc",
+        ManagedComponentKind.DxvkHdr => "dxvk", // w7/dxvk-hdr (#200)
         _ => null
     };
 

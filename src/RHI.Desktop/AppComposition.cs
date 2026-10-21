@@ -240,6 +240,8 @@ internal sealed class AppComposition
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("shader-sets", "Could not save the shader and add-on choices taken from the deployment records", ex); }
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // #200 DX9 HDR: DXVK HDR beside DirectX 9 games (the view model points its row note at the in-memory library).
+        var dxvkHdr = new DxvkHdrDeploymentService(http, records, wineOverrides, reshade, journal);
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -259,6 +261,7 @@ internal sealed class AppComposition
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            , dxvkHdr: dxvkHdr // #200 DX9 HDR
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);

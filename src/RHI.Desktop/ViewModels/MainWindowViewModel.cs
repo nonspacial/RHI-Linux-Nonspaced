@@ -168,6 +168,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    public DxvkHdrPresenter DxvkHdr => new(this, _managedComponents); // #200: DX9 HDR ⚙ and its install confirmation
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -370,6 +371,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         _quarantineSubscription = JsonStoreQuarantine.Listen(notice => Dispatcher.UIThread.Post(() => ReportStoreQuarantined(notice)));
         _settings = _settingsStore.Load();
         _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
+        if (_managedComponents.DxvkHdr is { } dxvkHdr) dxvkHdr.HdrLaunchOn = game => DxvkHdrPresenter.HdrLaunchOn(_libraryState, game); // w7/dxvk-hdr hook (#200): the row reads the in-memory library (review nit 8)
         LibraryFilterMode = _libraryState.FilterMode;
         ViewMode = _settings.ViewMode;
         ReShadeProfile.ShowGlobalDefault();
@@ -1386,6 +1388,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             }
 
             if (!removing && !await AcceptManifestInstallWarningsAsync(game, kind, component.DisplayName, installsTarget: true, probe.Files)) return;
+            if (!removing && kind == ManagedComponentKind.DxvkHdr && !await DxvkHdr.ConfirmInstallAsync(game)) return; // w7/dxvk-hdr hook (#200)
 
             // Upstream 2.7.9: Control Ultimate Edition's RenoDX mod is an RR fix with extra steps; confirm first. Since 2.8.1
             // the confirmation also offers OptiScaler FG and "Using HDR?" (w3/dllnames #136; a plain confirmation = FG No).

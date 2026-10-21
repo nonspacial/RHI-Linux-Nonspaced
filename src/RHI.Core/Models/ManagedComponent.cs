@@ -37,6 +37,8 @@ public enum ManagedComponentKind
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    // #200: DXVK HDR (EndlesslyFlowering's DXVK HDR build) as d3d9.dll + dxvk.conf beside a DirectX 9 game, opt-in per game.
+    DxvkHdr = 23,
 }
 
 public enum ComponentAvailability

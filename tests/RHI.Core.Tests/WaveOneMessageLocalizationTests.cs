@@ -451,6 +451,41 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Settings.GlobalShaderAddonStore.LedgerUnreadableMessage;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotOfferedMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.PrefixNotStartedMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.BitnessUnknownMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.AlreadyInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotInstalledMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ForeignD3d9Prefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.HeldByComponentPrefix + "Luma Framework";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ForeignConfPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UntrustedAssetPrefix + "https://github.com/x/dxvk/releases/download/v1/a.7z";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.PackageIncompletePrefix + "normal/x32/d3d9.dll";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotDxvkHdrPrefix + "normal/x64/d3d9.dll";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.D3d9TooLargePrefix + "normal/x64/d3d9.dll";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.InstalledPrefix + "3.1-HDR-mod-v0.3.4" + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ReShadeMovedNote;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdatedPrefix + "3.1-HDR-mod-v0.3.4";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.AlreadyCurrentPrefix + "3.1-HDR-mod-v0.3.4";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RemovedMessage + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ReShadeBackNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.KeptConfPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.FailedRolledBackPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RemovalFailedPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ModifiedFilePrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ConfChangedPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.PresetSetMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdateAvailablePrefix + "3.1-HDR-mod-v0.3.5";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.CurrentPrefix + "3.1-HDR-mod-v0.3.4";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.CouldNotCheckPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowReShadeNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.HdrLaunchOffNote;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ExternalNote;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.MissingD3d9Note;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.Dx9TranslationPrefix + "Luma Framework";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.BlocksDx9TranslationMessage;
+        yield return "Luma Framework installation rolled back: " + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.BlocksDx9TranslationMessage;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.WineD3dNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.HdrLaunchOffNote;
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeNamePrefix + "dxgi.dll";
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeModifiedPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeOriginalPrefix + P;
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeShortFuseMessage;
     }
 
     [Theory]

@@ -110,6 +110,15 @@ public static class ComponentProbe
         result.Single(component => component.Kind == ManagedComponentKind.RtxEncore).GameShipsDlss =
             DlssManagerService.ShipsOwnDlss(stackRoot, indexedFiles);
 
+        // w7/dxvk-hdr (#200): the DX9 HDR row is shown only where it can apply (a Windows DirectX 9 game outside Xbox/Game
+        // Pass) or where its d3d9.dll is already beside the executable. Everywhere else it is Unsupported (hidden), so
+        // RHI's record can still bring it back as Installed with Remove (the record outlives a deleted d3d9.dll or an
+        // API change; review major 1).
+        var dxvkHdrInstalled = HasDxvkHdrFootprint(indexedFiles, binaryDirectory);
+        var dxvkHdrRow = Make(ManagedComponentKind.DxvkHdr, DxvkHdrDisplayName, dxvkHdrInstalled);
+        if (!dxvkHdrInstalled && !IsDxvkHdrCandidate(game)) dxvkHdrRow.Availability = ComponentAvailability.Unsupported;
+        result = [.. result, dxvkHdrRow];
+
         if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
         {
             foreach (var component in result)
@@ -134,6 +143,49 @@ public static class ComponentProbe
 
     /// <summary>The RTX Encore row's name (upstream 2.8.6 "RTX Encore (Beta)": every release so far is a prerelease).</summary>
     public const string RtxEncoreDisplayName = "RTX Encore (Beta)";
+
+    /// <summary>#200: the DX9 HDR row's name (plain: no format or colour-space names; provenance lives in the tooltip).</summary>
+    public const string DxvkHdrDisplayName = "DX9 HDR";
+
+    /// <summary>
+    /// #200: a string only EndlesslyFlowering's DXVK HDR build carries (its swap-chain colour-space upgrade setting, in
+    /// both bitnesses); Proton's and upstream DXVK's d3d9.dll do not, so a plain DXVK is never taken for DX9 HDR.
+    /// </summary>
+    public const string DxvkHdrMarker = "d3d9.upgradeSwapChainColorSpaceTo";
+
+    /// <summary>
+    /// #200: where DX9 HDR can apply: a Windows game (not native Linux, not an Xbox / Game Pass install) whose effective
+    /// graphics API is DirectX 9 (detected, or the user's / manifest's override). DirectX 8 is left out: upstream places
+    /// only d3d9.dll, which a DirectX 8 game does not load itself.
+    /// </summary>
+    public static bool IsDxvkHdrCandidate(DetectedGame game)
+        => !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
+           && game.XboxPackage is null
+           && game.EffectiveGraphicsApi == GraphicsApi.DirectX9;
+
+    /// <summary>#200: a d3d9.dll beside the executable that carries <see cref="DxvkHdrMarker"/>.</summary>
+    private static bool HasDxvkHdrFootprint(IReadOnlyList<string> indexedFiles, string? binaryDirectory)
+    {
+        if (binaryDirectory is null) return false;
+        return indexedFiles.Any(path =>
+            Path.GetFileName(path).Equals("d3d9.dll", StringComparison.OrdinalIgnoreCase)
+            && Path.GetDirectoryName(path) is { } parent
+            && Path.GetFullPath(parent).TrimEnd(Path.DirectorySeparatorChar).Equals(binaryDirectory, StringComparison.Ordinal)
+            && IsDxvkHdrBuild(path));
+    }
+
+    /// <summary>#200: whether <paramref name="path"/> is EndlesslyFlowering's DXVK HDR build (by <see cref="DxvkHdrMarker"/>).</summary>
+    public static bool IsDxvkHdrBuild(string path)
+    {
+        try
+        {
+            return File.Exists(path) && BinaryStringSearch.ContainsAny(path, DxvkHdrMarker);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private static bool IsRtxEncoreCandidate(string path, string binaryDirectory)
     {

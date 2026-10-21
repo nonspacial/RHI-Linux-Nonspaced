@@ -58,6 +58,7 @@ public sealed class OptionListsTests
             AssertRoundTrips(OptionLists.NvidiaDynamicFrameCount);
             AssertRoundTrips(OptionLists.NvidiaTargetFrameRate);
             // w7/dxvk-hdr rows
+            AssertRoundTrips(OptionLists.DxvkHdrPreset); // #200
         }
         finally
         {

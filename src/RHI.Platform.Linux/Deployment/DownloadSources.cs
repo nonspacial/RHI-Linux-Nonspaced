@@ -180,6 +180,12 @@ public static class DownloadSources
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    /// <summary>
+    /// #200 DX9 HDR: EndlesslyFlowering/dxvk GitHub releases (one ~6 MB .7z per release; GitHub's published digest is
+    /// checked). The asset link must also sit under that repository's release path (DxvkHdrDeploymentService).
+    /// </summary>
+    public static readonly TrustedDownloadPolicy DxvkHdr = new(
+        "DXVK HDR", "GitHub", GitHubReleaseHosts, maxBytes: 128L * 1024 * 1024);
     /// <summary>Every policy above plus the core ones, for the localisation contract test.</summary>
     public static IReadOnlyList<TrustedDownloadPolicy> All { get; } =
     [
@@ -210,5 +216,6 @@ public static class DownloadSources
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        DxvkHdr,
     ];
 }
