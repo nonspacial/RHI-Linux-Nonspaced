@@ -7,36 +7,15 @@ using RHI.Platform.Linux.Paths;
 namespace RHI.Desktop.Views;
 
 /// <summary>
-/// #179: opens the existing Shaders/Add-ons dialog (and a pack's Files dialog) for a game's own list (Select) or for the
-/// global set and add-ons, from the ReShade section's choices and from Settings → Shaders/Add-ons. Same sizes and fitting as the
-/// main window's own Shaders/Add-ons button.
+/// #179: opens the existing Shaders/Add-ons dialog (and a pack's Files dialog) for the global set and add-ons from
+/// Settings → Shaders/Add-ons. Same sizes and fitting as the main window's own Shaders/Add-ons button.
 /// </summary>
 internal static class ShaderSetDialogs
 {
     private const double SideMargin = 32; // as MainWindow.DialogSideMargin
 
-    /// <summary>The game's own list of <paramref name="part"/>: Apply makes it Select.</summary>
-    public static async Task ShowSelectListAsync(Control anchor, MainWindowViewModel vm, ShaderAddonSetPart part)
-    {
-        if (TopLevel.GetTopLevel(anchor) is not Window owner || vm.SelectedGame is null) return;
-        vm.StatusText = UiLocalizationService.Text("Win.LoadingShadersAddOnsCatalog");
-        ShaderAddonManagerUiSnapshot? snapshot;
-        try
-        {
-            snapshot = await vm.ReShadeProfile.GetShaderAddonManagerSnapshotAsync(selectPart: part);
-        }
-        catch (Exception ex)
-        {
-            vm.StatusText = UiLocalizationService.Format("Win.CouldNotLoadShadersAddOns", UiLocalizationService.Present(ex.Message));
-            return;
-        }
-        if (snapshot is null) return;
-        var model = ShaderAddonsDialogViewModel.For(vm, snapshot, OpenFolder, pack => ShowFilesAsync(owner, vm, pack), part);
-        await ShowAsync(owner, model);
-    }
-
-    /// <summary>The global shader set and add-ons (Settings → Shaders/Add-ons), opened on <paramref name="part"/>'s tab.</summary>
-    public static async Task ShowGlobalAsync(Control anchor, MainWindowViewModel vm, ShaderAddonSetPart part, Action<string> show)
+    /// <summary>The global shader set and add-ons (Settings → Shaders/Add-ons → Global shaders and add-ons…).</summary>
+    public static async Task ShowGlobalAsync(Control anchor, MainWindowViewModel vm, Action<string> show)
     {
         if (TopLevel.GetTopLevel(anchor) is not Window owner) return;
         ShaderAddonManagerUiSnapshot snapshot;
@@ -49,7 +28,7 @@ internal static class ShaderSetDialogs
             show(UiLocalizationService.Format("Win.CouldNotLoadShadersAddOns", UiLocalizationService.Present(ex.Message)));
             return;
         }
-        var model = ShaderAddonsDialogViewModel.ForGlobal(vm, snapshot, OpenFolder, pack => ShowFilesAsync(owner, vm, pack), part);
+        var model = ShaderAddonsDialogViewModel.ForGlobal(vm, snapshot, OpenFolder, pack => ShowFilesAsync(owner, vm, pack));
         await ShowAsync(owner, model);
         show(vm.StatusText);
     }

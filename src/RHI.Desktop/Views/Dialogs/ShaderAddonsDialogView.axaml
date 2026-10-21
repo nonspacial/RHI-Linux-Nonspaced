@@ -4,51 +4,78 @@
              xmlns:l="using:RHI.Desktop.Localization"
              x:Class="RHI.Desktop.Views.Dialogs.ShaderAddonsDialogView"
              x:DataType="vm:ShaderAddonsDialogViewModel">
-  <!-- Shaders/Add-ons (epic #89). The shader-profile panel (#93) is the parity lane's control (code-behind). -->
+  <!-- Shaders/Add-ons (epic #89). The shader-profile panel (#93) is the parity lane's control (code-behind).
+       #179 layout B: each tab starts with the game's choice (Use the global set / Choose for this game / None) above
+       the list, which can be ticked only for Choose; in the global dialog the line says what the list is. The choice
+       stays put while the list scrolls under it. -->
   <Grid RowDefinitions="*,Auto" Margin="8">
-    <TabControl SelectedIndex="{Binding InitialTab, Mode=OneTime}">
+    <TabControl>
       <TabItem Header="{l:T Win.ShaderPacks}">
-        <ScrollViewer>
-          <StackPanel Spacing="8" Margin="12">
-            <Panel x:Name="ShaderProfileSlot" IsVisible="False"/>
-            <ItemsControl ItemsSource="{Binding ShaderItems}" IsVisible="{Binding HasShaderItems}">
+        <Grid RowDefinitions="Auto,*">
+          <StackPanel Margin="12,8,12,0" Spacing="6" IsVisible="{Binding ShowShaderHint}">
+            <WrapPanel x:Name="ShaderChoice" ItemSpacing="18" LineSpacing="2" IsVisible="{Binding HasShaderChoice}">
+              <RadioButton GroupName="ShaderSetMode" Content="{l:T Sets.UseGlobal}" IsChecked="{Binding ShaderUseGlobal}"/>
+              <RadioButton GroupName="ShaderSetMode" Content="{l:T Sets.Choose}" IsChecked="{Binding ShaderChoose}"/>
+              <RadioButton GroupName="ShaderSetMode" Content="{l:T Sets.None}" IsChecked="{Binding ShaderNone}"/>
+            </WrapPanel>
+            <TextBlock Classes="muted" Text="{Binding ShaderHint}" TextWrapping="Wrap"/>
+            <TextBlock Classes="muted" Text="{l:T Sets.ShadersBehind}" IsVisible="{Binding ShadersBehind}" TextWrapping="Wrap"/>
+            <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,2,0,0"/>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1">
+            <StackPanel Spacing="8" Margin="12" IsEnabled="{Binding ShadersEditable}">
+              <Panel x:Name="ShaderProfileSlot" IsVisible="False"/>
+              <ItemsControl ItemsSource="{Binding ShaderItems}" IsVisible="{Binding HasShaderItems}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="8"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.DataTemplates>
+                  <DataTemplate DataType="vm:CatalogHeading">
+                    <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="#4DC9E6" Margin="0,8,0,2"/>
+                  </DataTemplate>
+                  <DataTemplate DataType="vm:ShaderPackRow">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                      <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsChecked}" Margin="0,2" ToolTip.Tip="{Binding Tooltip}"/>
+                      <Button Grid.Column="1" Content="{l:T Win.Files}" Padding="10,4" VerticalAlignment="Center"
+                              ToolTip.Tip="{l:T Win.SelectShadersTexturesIndividuallySelectionSaved}" Command="{Binding FilesCommand}"/>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.DataTemplates>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="{l:T Win.ReShadeAddOns}">
+        <Grid RowDefinitions="Auto,*">
+          <StackPanel Margin="12,8,12,0" Spacing="6" IsVisible="{Binding ShowAddonHint}">
+            <WrapPanel x:Name="AddonChoice" ItemSpacing="18" LineSpacing="2" IsVisible="{Binding HasAddonChoice}">
+              <RadioButton GroupName="AddonSetMode" Content="{l:T Sets.UseGlobal}" IsChecked="{Binding AddonUseGlobal}"/>
+              <RadioButton GroupName="AddonSetMode" Content="{l:T Sets.Choose}" IsChecked="{Binding AddonChoose}"/>
+              <RadioButton GroupName="AddonSetMode" Content="{l:T Sets.None}" IsChecked="{Binding AddonNone}"/>
+            </WrapPanel>
+            <TextBlock Classes="muted" Text="{Binding AddonHint}" TextWrapping="Wrap"/>
+            <TextBlock Classes="muted" Text="{l:T Sets.AddonsBehind}" IsVisible="{Binding AddonsBehind}" TextWrapping="Wrap"/>
+            <Border Height="1" Background="{DynamicResource RhiBorderBrush}" Margin="0,2,0,0"/>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding Addons}" Margin="12" IsEnabled="{Binding AddonsEditable}">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                   <StackPanel Spacing="8"/>
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
-              <ItemsControl.DataTemplates>
-                <DataTemplate DataType="vm:CatalogHeading">
-                  <TextBlock Text="{Binding Text}" FontWeight="SemiBold" Foreground="#4DC9E6" Margin="0,8,0,2"/>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:AddonRow">
+                  <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" IsEnabled="{Binding IsEnabled}" Margin="0,2"
+                            ToolTip.Tip="{Binding Tooltip}"/>
                 </DataTemplate>
-                <DataTemplate DataType="vm:ShaderPackRow">
-                  <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsChecked}" Margin="0,2" ToolTip.Tip="{Binding Tooltip}"/>
-                    <Button Grid.Column="1" Content="{l:T Win.Files}" Padding="10,4" VerticalAlignment="Center"
-                            ToolTip.Tip="{l:T Win.SelectShadersTexturesIndividuallySelectionSaved}" Command="{Binding FilesCommand}"/>
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.DataTemplates>
+              </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem Header="{l:T Win.ReShadeAddOns}">
-        <ScrollViewer>
-          <ItemsControl ItemsSource="{Binding Addons}" Margin="12">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <StackPanel Spacing="8"/>
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:AddonRow">
-                <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" IsEnabled="{Binding IsEnabled}" Margin="0,2"
-                          ToolTip.Tip="{Binding Tooltip}"/>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
+          </ScrollViewer>
+        </Grid>
       </TabItem>
     </TabControl>
     <!-- #165: the buttons share one line (the two folder buttons wrap below each other when narrow, Apply stays right)

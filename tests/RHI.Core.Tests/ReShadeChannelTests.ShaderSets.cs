@@ -38,37 +38,28 @@ public sealed partial class ReShadeChannelTests
     private static string PackFile(DetectedGame game, string pack = "CrosireMaster")
         => Path.Combine(game.BinaryDirectory!, "reshade-shaders", "RHI", pack, "Shaders", "Test.fx");
 
-    public static TheoryData<ShaderAddonMode, GlobalShaderMode, bool, string> ShaderMatrix()
+    // Upstream's global Off and Custom modes are global sets too (layout B): none, or only the local custom folder.
+    public static TheoryData<ShaderAddonMode, string, string> ShaderMatrix()
     {
-        var data = new TheoryData<ShaderAddonMode, GlobalShaderMode, bool, string>();
+        var data = new TheoryData<ShaderAddonMode, string, string>();
         foreach (var mode in Enum.GetValues<ShaderAddonMode>())
-            foreach (var global in Enum.GetValues<GlobalShaderMode>())
-                foreach (var globalSetEmpty in new[] { true, false })
+            foreach (var globalSet in new[] { "", "Lilium,Prod80", ReShadeShaderPackCatalog.CustomPackId })
+                data.Add(mode, globalSet, mode switch
                 {
-                    var expected = mode switch
-                    {
-                        ShaderAddonMode.Off => "",
-                        ShaderAddonMode.Select => "Own",
-                        _ => global switch
-                        {
-                            GlobalShaderMode.Off => "",
-                            GlobalShaderMode.Custom => ReShadeShaderPackCatalog.CustomPackId,
-                            _ => globalSetEmpty ? "" : "Lilium,Prod80",
-                        },
-                    };
-                    data.Add(mode, global, globalSetEmpty, expected);
-                }
+                    ShaderAddonMode.Off => "",
+                    ShaderAddonMode.Select => "Own",
+                    _ => globalSet,
+                });
         return data;
     }
 
     [Theory]
     [MemberData(nameof(ShaderMatrix))]
-    public void ShaderResolution_GlobalSelectOff_ByGlobalModeAndSet(ShaderAddonMode mode, GlobalShaderMode global, bool globalSetEmpty, string expected)
+    public void ShaderResolution_GlobalSelectOff_ByGlobalSet(ShaderAddonMode mode, string globalSet, string expected)
     {
         var choice = new ShaderAddonGameChoice(mode, ["Own"], ShaderAddonMode.Global, [], Saved: true);
-        IReadOnlyList<string> globalSet = globalSetEmpty ? [] : ["Lilium", "Prod80"];
 
-        var packs = ReShadeShaderPackService.EffectivePackIds(choice, global, globalSet);
+        var packs = ReShadeShaderPackService.EffectivePackIds(choice, globalSet.Split(',', StringSplitOptions.RemoveEmptyEntries));
 
         Assert.Equal(expected, string.Join(",", packs));
     }

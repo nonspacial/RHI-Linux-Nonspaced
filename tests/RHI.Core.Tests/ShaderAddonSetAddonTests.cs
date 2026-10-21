@@ -250,16 +250,15 @@ public sealed class ShaderAddonSetAddonTests : IDisposable
     }
 
     [Theory]
-    [InlineData(GlobalShaderMode.Managed, true)]
-    [InlineData(GlobalShaderMode.Off, false)]
-    public async Task Prefetch_StagesTheGlobalSetsPacksFirst(GlobalShaderMode mode, bool depth3DFirst)
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task Prefetch_StagesTheGlobalSetsPacksFirst(bool inGlobalSet, bool depth3DFirst)
     {
         var handler = new PackHandler();
         using var http = new HttpClient(handler);
         var records = new LinuxDeploymentRecordStore(P("prefetch", "deployments.json"));
         var sets = new GlobalShaderAddonStore(records, P("prefetch", "sets.json"));
-        sets.SetGlobalShaderPackIds(["Depth3D"]);
-        sets.SetShaderMode(mode);
+        sets.SetGlobalShaderPackIds(inGlobalSet ? ["Depth3D"] : []);
         var service = new ReShadeShaderPackService(http, P("prefetch", "cache"), customRoot: P("prefetch", "custom")) { Sets = sets };
 
         await service.PrefetchMissingAsync();

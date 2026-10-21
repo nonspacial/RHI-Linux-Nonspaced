@@ -1,5 +1,5 @@
-using CommunityToolkit.Mvvm.ComponentModel;
 using RHI.Core.Models;
+using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 using RHI.Platform.Linux.Settings;
@@ -7,170 +7,157 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
-/// #179 (upstream 2.8.7 per-game Shaders / Add-ons: Global / Select / Off, and the global sets in Settings): the two
-/// per-game choices in the ReShade section and the global shader mode, set and add-ons. Global and Off apply at once;
-/// Select opens the Shaders/Add-ons dialog for the game's own list (<see cref="ShowSelectList"/>, set by the view) and the
-/// choice becomes Select only when that dialog applies it. A change reaches the game's files only through the existing
-/// journaled paths (<see cref="ShaderAddonSetBatch"/>).
+/// The game's shader and add-on choice as the Shaders/Add-ons dialog shows it (#179, layout B): per tab "Use the global
+/// set / Choose for this game / None", the game's own lists, the global lists, and whether the deployed files lag behind
+/// the choice (review minor 4).
+/// </summary>
+public sealed record ShaderAddonSetChoices(
+    ShaderAddonMode ShaderMode,
+    IReadOnlyList<string> OwnShaders,
+    IReadOnlyList<string> GlobalShaders,
+    bool ShadersBehind,
+    ShaderAddonMode AddonMode,
+    IReadOnlyList<string> OwnAddons,
+    IReadOnlyList<string> GlobalAddons,
+    bool AddonsHeld,
+    bool AddonsBehind);
+
+/// <summary>What the per-game dialog's Apply sends: each tab's choice and the ticked lists (no add-on choice while held).</summary>
+public sealed record ShaderAddonSetSelection(
+    ShaderAddonMode ShaderMode,
+    IReadOnlyList<string> Shaders,
+    ShaderAddonMode? AddonMode,
+    IReadOnlyList<string> Addons);
+
+/// <summary>
+/// #179 (upstream 2.8.7 per-game Shaders / Add-ons: Global / Select / Off, and the global sets in Settings), layout B
+/// (owner): the choice lives at the top of each tab of the game's Shaders/Add-ons dialog, and Settings opens the same
+/// dialog for the global set. A change reaches the game's files only through the journaled paths: the shaders-only sync
+/// and the Addon Manager (<see cref="LinuxManagedComponentService.ApplyShaderSetAsync"/>,
+/// <see cref="LinuxManagedComponentService.ApplyAddonSetAsync"/>, <see cref="ShaderAddonSetBatch"/>); ReShade itself is
+/// never re-installed for it.
 /// </summary>
 public sealed partial class ReShadeProfileViewModel
 {
-    public OptionItems<ShaderAddonMode> ShaderModeOptions { get; } = OptionLists.ShaderAddonModes.Options();
-    public OptionItems<ShaderAddonMode> AddonModeOptions { get; } = OptionLists.ShaderAddonModes.Options();
-    public OptionItems<GlobalShaderMode> GlobalShaderModeOptions { get; } = OptionLists.GlobalShaderModes.Options();
-
-    [ObservableProperty] private OptionItem<ShaderAddonMode>? selectedShaderMode;
-    [ObservableProperty] private OptionItem<ShaderAddonMode>? selectedAddonMode;
-    [ObservableProperty] private OptionItem<GlobalShaderMode>? selectedGlobalShaderMode;
-    /// <summary>The Shaders choice applies: RHI installed ReShade on the selected game (hidden otherwise).</summary>
-    [ObservableProperty] private bool showShaderMode;
-    /// <summary>The Add-ons choice applies: as <see cref="ShowShaderMode"/>, and ReShade is not the No Addons build.</summary>
-    [ObservableProperty] private bool showAddonMode;
-
-    private bool _loadingSetModes;
-
-    /// <summary>Set by the view: opens the Shaders/Add-ons dialog for the game's own list of that part (Select).</summary>
-    internal Func<ShaderAddonSetPart, Task>? ShowSelectList { get; set; }
-
-    /// <summary>The running mode change (a test seam; null when none ran).</summary>
-    internal Task? ModeChange { get; private set; }
-
     private GlobalShaderAddonStore? Sets => _components.ShaderSets;
 
-    /// <summary>The global sets are wired (the app; tests without them hide the Settings rows).</summary>
+    /// <summary>The global sets are wired (the app; tests without them hide the Settings rows and the dialog's choices).</summary>
     internal bool HasShaderSets => Sets is not null;
 
-    partial void OnShowShaderModeChanged(bool value) => OnPropertyChanged(nameof(ShowSetModes));
-    partial void OnShowAddonModeChanged(bool value) => OnPropertyChanged(nameof(ShowSetModes));
-
-    /// <summary>Either choice is shown.</summary>
-    public bool ShowSetModes => ShowShaderMode || ShowAddonMode;
-
-    /// <summary>Shows the selected game's saved choices (or hides them where they cannot apply).</summary>
-    internal void LoadSetModes(DetectedGame? game)
+    /// <summary>The game's choice for the dialog; null without a readable store (the dialog then has no choice row).</summary>
+    internal ShaderAddonSetChoices? SetChoicesFor(DetectedGame? game)
     {
-        _loadingSetModes = true;
-        try
-        {
-            var choice = game is null ? null : Sets?.ChoiceFor(game);
-            var managed = game is not null && choice is not null && _components.HasRhiReShade(game);
-            ShowShaderMode = managed;
-            ShowAddonMode = managed && _components.EffectiveAddons(game!) is { HeldByNoAddons: false };
-            SelectedShaderMode = ShaderModeOptions.For(choice?.ShaderMode ?? ShaderAddonMode.Global);
-            SelectedAddonMode = AddonModeOptions.For(choice?.AddonMode ?? ShaderAddonMode.Global);
-            SelectedGlobalShaderMode = GlobalShaderModeOptions.For(Sets?.ShaderMode ?? GlobalShaderMode.Managed);
-        }
-        finally
-        {
-            _loadingSetModes = false;
-        }
+        if (game is null || Sets is not { } sets || sets.ChoiceFor(game) is not { } choice) return null;
+        return new ShaderAddonSetChoices(
+            choice.ShaderMode, choice.ShaderPackIds, sets.GlobalShaderPackIds, _components.ShaderSetBehind(game),
+            choice.AddonMode, choice.AddonIds, sets.GlobalAddonIds, _components.EffectiveAddons(game)?.HeldByNoAddons == true,
+            _components.AddonSetBehind(game));
     }
 
-    /// <summary>The UI language changed: the choices are relabelled in place.</summary>
-    internal void RelabelSetModes()
+    /// <summary>
+    /// The per-game dialog's Apply: saves each tab's choice (Choose: exactly the ticked list; the global set: the game's own
+    /// pack list is forgotten, as upstream; None: the list is kept for a later Choose), then brings the game to it: a game
+    /// with RHI's ReShade through the shaders-only sync and the Addon Manager, a game without it by installing ReShade with
+    /// that set (warning first, as before).
+    /// </summary>
+    public async Task<ComponentOperationResult> ApplyShaderAddonChoicesAsync(ShaderAddonSetSelection selection, CancellationToken cancellationToken = default)
     {
-        ShaderModeOptions.Relabel();
-        AddonModeOptions.Relabel();
-        GlobalShaderModeOptions.Relabel();
-        OnPropertyChanged(nameof(ShaderModeLabel));
-        OnPropertyChanged(nameof(AddonModeLabel));
-        OnPropertyChanged(nameof(ShaderModeTip));
-        OnPropertyChanged(nameof(AddonModeTip));
-    }
-
-    public string ShaderModeLabel => T("Win.ShaderPacks");
-    public string AddonModeLabel => T("Win.ReShadeAddOns");
-    public string ShaderModeTip => T("Sets.ShaderModeTip");
-    public string AddonModeTip => T("Sets.AddonModeTip");
-
-    partial void OnSelectedShaderModeChanged(OptionItem<ShaderAddonMode>? value) => OnModeChosen(ShaderAddonSetPart.Shaders, value);
-
-    partial void OnSelectedAddonModeChanged(OptionItem<ShaderAddonMode>? value) => OnModeChosen(ShaderAddonSetPart.Addons, value);
-
-    private void OnModeChosen(ShaderAddonSetPart part, OptionItem<ShaderAddonMode>? value)
-    {
-        if (_loadingSetModes || value is null || SelectedGame is not { } game || Sets is null) return;
-        ModeChange = value.Value == ShaderAddonMode.Select ? OpenSelectListAsync(game, part) : ChangeModeAsync(game, part, value.Value);
-    }
-
-    /// <summary>Select again while on Select (the dropdown closed on the same entry): the list opens again (upstream).</summary>
-    internal void ReopenSelectList(ShaderAddonSetPart part)
-    {
-        if (SelectedGame is { } game && Sets?.ChoiceFor(game) is { } choice
-            && (part == ShaderAddonSetPart.Shaders ? choice.ShaderMode : choice.AddonMode) == ShaderAddonMode.Select)
-            ModeChange = OpenSelectListAsync(game, part);
-    }
-
-    private async Task OpenSelectListAsync(DetectedGame game, ShaderAddonSetPart part)
-    {
-        try
-        {
-            if (ShowSelectList is { } show) await show(part);
-        }
-        finally
-        {
-            // Applied in the dialog: Select is saved; closed without applying: the saved choice comes back.
-            if (ReferenceEquals(SelectedGame, game)) LoadSetModes(game);
-        }
-    }
-
-    private async Task ChangeModeAsync(DetectedGame game, ShaderAddonSetPart part, ShaderAddonMode mode)
-    {
-        using var op = BeginOperation("shader-sets");
-        if (op is null)
-        {
-            await PutSavedChoiceBackAsync(game);
-            return;
-        }
-        // Switching shaders to Global forgets the game's own pack list (upstream); add-ons keep theirs for a later Select.
+        if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
+        var game = SelectedGame;
+        if (Sets is not { } sets) return await ApplyShaderAddonManagerAsync(selection.Shaders, selection.Addons, cancellationToken);
+        using var op = BeginOperation("shaders-addons", linkedToken: cancellationToken);
+        if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
         if (TryPersist(() =>
             {
-                if (part == ShaderAddonSetPart.Shaders) Sets!.SetShaderMode(game, mode, mode == ShaderAddonMode.Global ? [] : null);
-                else Sets!.SetAddonMode(game, mode);
-            }, "Sets.WhatChoice", sessionOnly: false) is not null)
+                sets.SetShaderMode(game, selection.ShaderMode, selection.ShaderMode switch
+                {
+                    ShaderAddonMode.Select => selection.Shaders,
+                    ShaderAddonMode.Global => [],
+                    _ => null,
+                });
+                if (selection.AddonMode is { } addonMode)
+                    sets.SetAddonMode(game, addonMode, addonMode == ShaderAddonMode.Select ? selection.Addons : null);
+            }, "Sets.WhatChoice", sessionOnly: false) is { } refused)
+            return ComponentOperationResult.Fail(ShowStatus(refused));
+        try
         {
-            await PutSavedChoiceBackAsync(game);
-            return;
+            var result = _components.IsReShadeManaged(game) ? await SyncChoicesAsync(game, op) : await InstallWithChoicesAsync(game, op);
+            if (result.Success) await ReprobeGameAsync(game);
+            ShowEffectivePacks(game);
+            return result;
         }
-        await ApplySetsAsync(op, [game], part, globalOnly: false);
-        await ReprobeKeepingStatusAsync(game);
-    }
-
-    // A refused choice is put back once the dropdown's own write has finished: a revert raised inside that write does not
-    // reach the control (harness: the dropdown kept showing the refused entry).
-    private async Task PutSavedChoiceBackAsync(DetectedGame? game)
-    {
-        await Task.Yield();
-        LoadSetModes(game);
-    }
-
-    // ── Global sets (Settings → Shaders/Add-ons) ──────────────────────────
-
-    partial void OnSelectedGlobalShaderModeChanged(OptionItem<GlobalShaderMode>? value)
-    {
-        if (_loadingSetModes || value is null || Sets is not { } sets || sets.ShaderMode == value.Value) return;
-        ModeChange = ChangeGlobalShaderModeAsync(value.Value);
-    }
-
-    private async Task ChangeGlobalShaderModeAsync(GlobalShaderMode mode)
-    {
-        using var op = BeginOperation("shader-sets");
-        if (op is null || TryPersist(() => Sets!.SetShaderMode(mode), "Sets.WhatChoice", sessionOnly: false) is not null)
+        catch (Exception ex) when (op.WasCancelled(ex) && op.CancelRequested)
         {
-            await PutSavedChoiceBackAsync(SelectedGame);
-            return;
+            return ComponentOperationResult.Fail(ShowStatus(OperationCancelledText()));
         }
-        await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Shaders, globalOnly: true);
-        if (SelectedGame is { } game) await ReprobeKeepingStatusAsync(game);
+        catch (Exception ex) when (!op.Token.IsCancellationRequested)
+        {
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAddOnsFailed", UiLocalizationService.Present(ex.Message))));
+        }
     }
 
-    /// <summary>The global dialog's lists as saved now (the packs and add-ons games set to Global get).</summary>
+    // RHI's ReShade is installed: only the pack files and the Addon Manager's add-ons change (review major 3).
+    private async Task<ComponentOperationResult> SyncChoicesAsync(DetectedGame game, OperationScope op)
+    {
+        StatusText = T("Vm.ApplyingShaderPackSelection");
+        var shaders = await _components.ApplyShaderSetAsync(game, op.Token);
+        if (shaders.Outcome == ShaderSetOutcome.Failed)
+            return ComponentOperationResult.Fail(ShowStatus(OutcomeText(op, false, shaders.Message)));
+        StatusText = T("Vm.ApplyingReShadeAddSelection");
+        var addons = await _components.ApplyAddonSetAsync(game, op.Token);
+        if (addons.Outcome == ShaderSetOutcome.Failed)
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
+        return ComponentOperationResult.Ok(ShowStatus(AppliedLine(game, fromCache: false)));
+    }
+
+    // No RHI ReShade yet: Apply installs it (warning first) with the game's set; its add-ons follow.
+    private async Task<ComponentOperationResult> InstallWithChoicesAsync(DetectedGame game, OperationScope op)
+    {
+        var installsReShade = !Host.Session.TryGetCached(game, out var probe)
+                              || probe.Components.FirstOrDefault(c => c.Kind == ManagedComponentKind.ReShade) is not { } row
+                              || ManifestInstallWarning.IsFirstInstall(row.Availability);
+        if (!await Host.AcceptManifestInstallWarningsAsync(game, ManagedComponentKind.ReShade, "ReShade", installsReShade, Host.Session.CachedFiles(game)))
+            return ComponentOperationResult.Fail(StatusText);
+        StatusText = T("Vm.ApplyingShaderPackSelection");
+        var shaderResult = await _components.ApplyReShadeAsync(game, _components.GetReShadeOptions(game), op.Token);
+        if (!shaderResult.Success)
+        {
+            StatusText = OutcomeText(op, shaderResult.Success, shaderResult.Message);
+            return shaderResult;
+        }
+        StatusText = T("Vm.ApplyingReShadeAddSelection");
+        var addons = await _components.ApplyAddonSetAsync(game, op.Token);
+        if (addons.Outcome == ShaderSetOutcome.Failed)
+            return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
+        return ComponentOperationResult.Ok(ShowStatus(AppliedLine(game, shaderResult.FromCachedSource)));
+    }
+
+    private string AppliedLine(DetectedGame game, bool fromCache)
+        => UiLocalizationService.ShaderAddonAppliedFor(UiLocalizationService.CurrentLanguage,
+            _components.EffectiveShaderPacks(game)?.Count ?? 0, _components.EffectiveAddons(game)?.Ids.Count ?? 0, fromCache);
+
+    // The ReShade section's quick packages follow what the game gets now.
+    private void ShowEffectivePacks(DetectedGame game)
+    {
+        if (!ReferenceEquals(SelectedGame, game)) return;
+        _selectedShaderPackIds.Clear();
+        _selectedShaderPackIds.UnionWith(_components.GetReShadeOptions(game).ShaderPackIds);
+        ShaderCrosireMaster = _selectedShaderPackIds.Contains("CrosireMaster");
+        ShaderCrosireLegacy = _selectedShaderPackIds.Contains("CrosireLegacy");
+        ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
+        ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
+    }
+
+    // -- Global sets (Settings -> Shaders/Add-ons -> Global shaders and add-ons...) ---------------------------------------
+
+    /// <summary>The global dialog's lists as saved now (the packs and add-ons games set to the global set get).</summary>
     internal (IReadOnlyList<string> Shaders, IReadOnlyList<string> Addons) GlobalLists()
         => Sets is { } sets ? (sets.GlobalShaderPackIds, sets.GlobalAddonIds) : ([], []);
 
     /// <summary>
-    /// The global dialog's Apply: saves the global set and add-ons and brings every game set to Global up to date (only
-    /// the half that changed). Returns the status line.
+    /// The global dialog's Save: saves the global set and add-ons and brings every game set to the global set up to date,
+    /// both halves every time, so a game a cancelled or skipped run left behind catches up too (review minor 4). Returns
+    /// the status line.
     /// </summary>
     public async Task<ComponentOperationResult> ApplyGlobalSetsAsync(IReadOnlyList<string> shaderIds, IReadOnlyList<string> addonIds,
         CancellationToken cancellationToken = default)
@@ -178,32 +165,28 @@ public sealed partial class ReShadeProfileViewModel
         if (Sets is not { } sets) return ComponentOperationResult.Fail(UiLocalizationService.Present(LinuxManagedComponentService.ShaderSetsUnreadableMessage));
         using var op = BeginOperation("shader-sets", linkedToken: cancellationToken);
         if (op is null) return ComponentOperationResult.Fail(T("Vm.AnotherRHIOperationAlreadyRunning"));
-        var shadersChanged = !Same(sets.GlobalShaderPackIds, shaderIds);
-        var addonsChanged = !Same(sets.GlobalAddonIds, addonIds);
         if (TryPersist(() =>
             {
-                if (shadersChanged) sets.SetGlobalShaderPackIds(shaderIds);
-                if (addonsChanged) sets.SetGlobalAddonIds(addonIds);
+                if (!Same(sets.GlobalShaderPackIds, shaderIds)) sets.SetGlobalShaderPackIds(shaderIds);
+                if (!Same(sets.GlobalAddonIds, addonIds)) sets.SetGlobalAddonIds(addonIds);
             }, "Sets.WhatChoice", sessionOnly: false) is { } refused)
             return ComponentOperationResult.Fail(refused);
-        var lines = new List<string>();
-        if (shadersChanged) lines.Add(await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Shaders, globalOnly: true));
-        if (addonsChanged) lines.Add(await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Addons, globalOnly: true));
+        var shaders = await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Shaders);
+        var addons = op.CancelRequested ? "" : await ApplySetsAsync(op, Host.AllGames, ShaderAddonSetPart.Addons);
         if (SelectedGame is { } game) await ReprobeKeepingStatusAsync(game);
-        var line = lines.Count == 0 ? SummaryText(ShaderAddonSetPart.Shaders, new(0, 0, 0, 0, 0, 0, false, [], [])) : string.Join(" ", lines);
-        return ComponentOperationResult.Ok(ShowStatus(line));
+        return ComponentOperationResult.Ok(ShowStatus(string.Join(" ", new[] { shaders, addons }.Where(line => line.Length > 0))));
     }
 
     private static bool Same(IReadOnlyCollection<string> a, IReadOnlyCollection<string> b)
         => a.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(b);
 
-    private async Task<string> ApplySetsAsync(OperationScope op, IReadOnlyList<DetectedGame> games, ShaderAddonSetPart part, bool globalOnly)
+    private async Task<string> ApplySetsAsync(OperationScope op, IReadOnlyList<DetectedGame> games, ShaderAddonSetPart part)
     {
         StatusText = T("Sets.Applying");
         ShaderAddonSetBatchResult result;
         try
         {
-            result = await new ShaderAddonSetBatch(_components, RunningProbe).ApplyAsync(games, part, op.Token, globalOnly);
+            result = await new ShaderAddonSetBatch(_components, RunningProbe).ApplyAsync(games, part, op.Token);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {

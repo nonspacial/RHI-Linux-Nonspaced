@@ -18,17 +18,6 @@ public enum ShaderAddonMode
     Off,
 }
 
-/// <summary>What the global shader set means (#179, upstream Settings \"Shaders\": Off / RHI Managed / Custom).</summary>
-public enum GlobalShaderMode
-{
-    /// <summary>The global pack set.</summary>
-    Managed,
-    /// <summary>No shaders for games that follow the global set.</summary>
-    Off,
-    /// <summary>Only the local custom shader folder.</summary>
-    Custom,
-}
-
 /// <summary>A game's shader and add-on choice as resolved now (adopted from the ledger when the game has no entry yet).</summary>
 public sealed record ShaderAddonGameChoice(
     ShaderAddonMode ShaderMode,
@@ -40,8 +29,9 @@ public sealed record ShaderAddonGameChoice(
 /// <summary>
 /// #179 (upstream 2.8.7 <c>SelectedShaderPacks</c>, <c>GlobalShadersOff</c>/<c>UseCustomShaders</c>,
 /// <c>EnabledGlobalAddons</c>, <c>PerGameShaderMode</c>/<c>PerGameAddonMode</c> and the per-game selections): the global
-/// shader set, its mode and the global add-ons, and per game a Global / Select / Off choice for shaders and for add-ons
-/// with the game's own lists. <c>~/.config/rhi-linux/shader-addon-sets.json</c>, keyed like the ledger
+/// shader set and the global add-ons, and per game a Global / Select / Off choice for shaders and for add-ons with the
+/// game's own lists. Upstream's global Off and Custom modes are the global list itself (layout B, owner): nothing ticked
+/// = Off, only \"Custom Shaders (local)\" ticked = Custom. <c>~/.config/rhi-linux/shader-addon-sets.json</c>, keyed like the ledger
 /// (<see cref="GameRecordIdentity"/>).
 /// <para>Migration (owner decision): a game this store has no entry for takes its choice from the ledger — the packs on
 /// its RHI ReShade record become <b>Select</b> with exactly those packs, the Addon Manager record's selection becomes
@@ -69,7 +59,6 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
     internal sealed class Document
     {
         public int Schema { get; set; } = 1;
-        public string GlobalShaderMode { get; set; } = nameof(Settings.GlobalShaderMode.Managed);
         /// <summary>Null: never edited (the default set).</summary>
         public List<string>? GlobalShaderPackIds { get; set; }
         public List<string> GlobalAddonIds { get; set; } = [];
@@ -98,15 +87,6 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
 
     // ── Global ─────────────────────────────────────────────────────────────
 
-    /// <summary>The global shader mode (Managed when unreadable).</summary>
-    public GlobalShaderMode ShaderMode
-    {
-        get
-        {
-            lock (_gate) return ParseGlobal(LoadOrNew().GlobalShaderMode);
-        }
-    }
-
     /// <summary>The global shader pack set.</summary>
     public IReadOnlyList<string> GlobalShaderPackIds
     {
@@ -124,9 +104,6 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
             lock (_gate) return LoadOrNew().GlobalAddonIds.ToArray();
         }
     }
-
-    /// <summary>Saves the global shader mode. Throws <see cref="IOException"/> when it cannot be saved.</summary>
-    public void SetShaderMode(GlobalShaderMode mode) => Update(doc => doc.GlobalShaderMode = mode.ToString());
 
     /// <summary>Saves the global shader set. Throws <see cref="IOException"/> when it cannot be saved.</summary>
     public void SetGlobalShaderPackIds(IEnumerable<string> ids) => Update(doc => doc.GlobalShaderPackIds = Normalize(ids));
@@ -260,9 +237,6 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
 
     internal static ShaderAddonMode ParseMode(string? value)
         => Enum.TryParse<ShaderAddonMode>(value, ignoreCase: true, out var mode) && Enum.IsDefined(mode) ? mode : ShaderAddonMode.Global;
-
-    internal static GlobalShaderMode ParseGlobal(string? value)
-        => Enum.TryParse<GlobalShaderMode>(value, ignoreCase: true, out var mode) && Enum.IsDefined(mode) ? mode : GlobalShaderMode.Managed;
 
     private static ShaderAddonGameChoice ToChoice(GameEntry entry, bool saved)
         => new(ParseMode(entry.ShaderMode), (entry.ShaderPackIds ?? []).ToArray(), ParseMode(entry.AddonMode), (entry.AddonIds ?? []).ToArray(), saved);

@@ -48,8 +48,6 @@ public sealed class OptionListsTests
             // w7/smalls rows
             // w7/reshade rows
             // w7/shader-sets rows
-            AssertRoundTrips(OptionLists.ShaderAddonModes); // #179
-            AssertRoundTrips(OptionLists.GlobalShaderModes); // #179
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
         }

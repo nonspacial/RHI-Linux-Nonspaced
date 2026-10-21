@@ -2707,7 +2707,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     /// <summary>The packs <paramref name="game"/> gets now (null without a readable store).</summary>
     public IReadOnlyList<string>? EffectiveShaderPacks(DetectedGame game)
         => _shaderSets is { } sets && sets.ChoiceFor(game) is { } choice
-            ? ReShadeShaderPackService.EffectivePackIds(choice, sets.ShaderMode, sets.GlobalShaderPackIds)
+            ? ReShadeShaderPackService.EffectivePackIds(choice, sets.GlobalShaderPackIds)
             : null;
 
     /// <summary>The Addon Manager add-ons <paramref name="game"/> gets now (null without a readable store).</summary>

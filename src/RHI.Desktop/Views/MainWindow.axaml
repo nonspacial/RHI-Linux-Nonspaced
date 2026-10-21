@@ -517,7 +517,6 @@
                     <CheckBox Content="MaxG2D HDR" IsChecked="{Binding ReShadeProfile.ShaderMaxG2D}"/>
                     <Button Classes="rhi" Content="{DynamicResource Ui.FullShaderManager}" Click="ShadersAddons_Click" IsEnabled="{Binding HasConfirmedPatchTarget}" Padding="12,6"/>
                   </WrapPanel>
-                  <views:ShaderSetModesRow DataContext="{Binding ReShadeProfile}"/> <!-- w7/shader-sets (#179) -->
                   <TextBlock Text="{DynamicResource Ui.XdgSettingsNote}"
                              Classes="muted" TextWrapping="Wrap"/>
                 </StackPanel>

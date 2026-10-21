@@ -602,23 +602,18 @@ public sealed class ReShadeShaderPackService
 
     /// <summary>
     /// #179, the one answer to "which shader packs does this game get": Off → none; Select → the game's own list; Global →
-    /// the global set (global mode Off → none, Custom → the local custom folder only). Null when no store is attached or
-    /// its file cannot be read (the caller's list stands).
+    /// the global set (upstream's global Off is an empty set, its Custom mode the set holding only the local custom
+    /// folder). Null when no store is attached or its file cannot be read (the caller's list stands).
     /// </summary>
     public IReadOnlyList<string>? EffectivePackIds(DetectedGame game)
-        => Sets is { } sets && sets.ChoiceFor(game) is { } choice ? EffectivePackIds(choice, sets.ShaderMode, sets.GlobalShaderPackIds) : null;
+        => Sets is { } sets && sets.ChoiceFor(game) is { } choice ? EffectivePackIds(choice, sets.GlobalShaderPackIds) : null;
 
-    internal static IReadOnlyList<string> EffectivePackIds(ShaderAddonGameChoice choice, GlobalShaderMode globalMode, IReadOnlyList<string> globalSet)
+    internal static IReadOnlyList<string> EffectivePackIds(ShaderAddonGameChoice choice, IReadOnlyList<string> globalSet)
         => choice.ShaderMode switch
         {
             ShaderAddonMode.Off => [],
             ShaderAddonMode.Select => choice.ShaderPackIds,
-            _ => globalMode switch
-            {
-                GlobalShaderMode.Off => [],
-                GlobalShaderMode.Custom => [ReShadeShaderPackCatalog.CustomPackId],
-                _ => globalSet,
-            },
+            _ => globalSet,
         };
 
     /// <summary>
@@ -672,7 +667,7 @@ public sealed class ReShadeShaderPackService
     {
         await RefreshCatalogAsync(cancellationToken).ConfigureAwait(false);
         // #179: the global set's packs first, so a game that follows it finds them staged soonest.
-        IReadOnlyList<string> first = Sets is { ShaderMode: GlobalShaderMode.Managed } sets ? sets.GlobalShaderPackIds : [];
+        IReadOnlyList<string> first = Sets is { } sets ? sets.GlobalShaderPackIds : [];
         var fetched = 0;
         foreach (var pack in _packs.Where(pack => !pack.IsCustom)
                      .OrderBy(pack => first.Contains(pack.Id, StringComparer.OrdinalIgnoreCase) ? 0 : 1)
