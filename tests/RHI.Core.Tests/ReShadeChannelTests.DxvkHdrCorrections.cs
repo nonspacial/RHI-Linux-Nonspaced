@@ -330,6 +330,27 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(2, rig.Builds.Extractions);
     }
 
+    // Review nit 6: a release that ships the same d3d9.dll under a newer tag: Update says it is current and records the
+    // tag, so the check stops offering it.
+    [Fact]
+    public async Task DxvkHdr_SameD3d9UnderANewTag_UpdateRecordsTheTag_AndTheCheckStopsOffering()
+    {
+        var rig = Rig("dxvk-same-d3d9");
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var d3d9 = File.ReadAllBytes(rig.D3d9);
+        rig.Handler.Tag = "v10.0-HDR-mod-v1.0.0";
+        Assert.True((await rig.Dxvk.CheckUpdateAsync(rig.Game)).UpdateAvailable);
+
+        var updated = await rig.Dxvk.UpdateAsync(rig.Game);
+        var check = await rig.Dxvk.CheckUpdateAsync(rig.Game);
+
+        Assert.True(updated.Success, updated.Message);
+        Assert.Equal(DxvkHdrDeploymentService.AlreadyCurrentPrefix + "10.0-HDR-mod-v1.0.0", updated.Message);
+        Assert.Equal(d3d9, File.ReadAllBytes(rig.D3d9));
+        Assert.Equal("10.0-HDR-mod-v1.0.0", rig.Dxvk.GetRecord(rig.Game)!.Version);
+        Assert.False(check.UpdateAvailable, check.Message);
+    }
+
     // The listing parser against what the host tools really print for the release (7-Zip 26.04 `l -slt`, bsdtar 3.8
     // `-tvf` on dxvk_v3.1-HDR-mod-v0.3.4.7z): the archive's own block (its Path and Physical Size) is never taken for
     // the member, and a member the archive does not hold is null.

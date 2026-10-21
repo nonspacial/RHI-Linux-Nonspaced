@@ -442,7 +442,6 @@ public sealed partial class ReShadeChannelTests
         Assert.Single(layer.RegistryValues);
         Assert.All(layer.Files, file => Assert.True(File.Exists(file.Path), file.Path));
         var dxvk = rig.Dxvk.GetRecord(rig.Game)!;
-        Assert.Equal("1", dxvk.Metadata[DxvkHdrDeploymentService.MetaOverrideFromReShade]);
         Assert.Equal(proxyRecord.WineOverride!.WrittenValue, dxvk.WineOverride!.WrittenValue);
         Assert.Equal("vulkan-1", layer.WineOverride!.DllName);
 

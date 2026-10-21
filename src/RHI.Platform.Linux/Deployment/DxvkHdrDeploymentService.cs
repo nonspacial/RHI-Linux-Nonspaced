@@ -98,8 +98,6 @@ public sealed class DxvkHdrDeploymentService
 
     /// <summary>Record metadata: the preset index the dxvk.conf was written for.</summary>
     public const string MetaPreset = "DxvkHdr.Preset";
-    /// <summary>Record metadata: the d3d9 override came from ReShade's proxy (it goes back to ReShade on removal).</summary>
-    internal const string MetaOverrideFromReShade = "DxvkHdr.OverrideFromReShade";
 
     // Platform messages: fixed text first, values last (PT-BR presentation pairs in UiLocalizationService).
     public const string NotOfferedMessage = "DX9 HDR is offered only for Windows games that use DirectX 9 (not Xbox / Game Pass installs).";
@@ -278,7 +276,6 @@ public sealed class DxvkHdrDeploymentService
             {
                 [MetaPreset] = preset.ToString(System.Globalization.CultureInfo.InvariantCulture)
             };
-            if (!overrideCreated) metadata[MetaOverrideFromReShade] = "1";
             staged.Download.RecordIn(metadata);
             var record = scope.Stamp(new LinuxDeploymentRecord
             {
@@ -406,7 +403,18 @@ public sealed class DxvkHdrDeploymentService
             return new ComponentOperationResult(false, DownloadFailedPrefix + ex.Message, SourceUnavailable: ex is HttpRequestException or TaskCanceledException);
         }
         if (File.Exists(d3d9.Path) && FileHash.HexEquals(staged.D3d9Sha256, d3d9.Sha256 ?? ""))
+        {
+            // The same d3d9.dll under a newer tag (review nit 6): the record takes the tag, so the check stops offering
+            // it. No file changes, so no operation: only the version, source and download lines move.
+            if (!string.Equals(record.Version, staged.Version, StringComparison.Ordinal))
+            {
+                record.Version = staged.Version;
+                record.SourceUrl = staged.Url;
+                staged.Download.RecordIn(record.Metadata);
+                _records.Upsert(record);
+            }
             return ComponentOperationResult.Ok(AlreadyCurrentPrefix + staged.Version);
+        }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "DX9 HDR update: " + game.Name, game, ManagedComponentKind.DxvkHdr, cancellationToken).ConfigureAwait(false);
