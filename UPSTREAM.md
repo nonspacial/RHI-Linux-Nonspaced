@@ -527,6 +527,9 @@ build.
 - Which files get the game install follows upstream exactly. Dropped: every `.addon64`, `.addon32` and `.addon` except `renodx-dlss5*` and `renodx-dlss.*` (a Luma add-on keeps the Luma install). Watched: only a `renodx-*.addon64|.addon32` game add-on (not `renodx-universal_ue`, `-devkit`, `-dlssfix`, `-upgrade`, `-mfgunlock`, `-dlss5`, `-dlss.`). Where upstream has no game install for a file, it keeps the Custom Add-ons import (#130): every other watched add-on, the two DLSS names above, and an add-on downloaded through an nxm link (#99). A dropped add-on whose name belongs to one of RHI's own component rows (RenoDX Upgrade, MFG Unlock, the devkit, DoF Fix, ReLimiter, Display Commander, DLSS5's) or a plain `.addon` that is not RenoDX's also keeps the import, which says why (RHI's row installs it; Custom Add-ons needs the bitness in the name).
 - Linux, a RenoDX game add-on (`renodx-` name, as upstream's watcher) opens **Install RenoDX add-on**: the file, a list of the library games that can take it (native Linux games are left out) pre-selected by the RenoDX catalogue's add-on file for the game, then the game's whole name in the file name (the longest such name), then upstream's word match, then the selected game (otherwise nothing is pre-selected and Install is disabled, its 2 s tooltip pointing at the list), the folder it goes into, the RHI RenoDX add-on it replaces, and a note that the row's Remove takes it out and Update All cannot check it. Install goes through the operation gate, the install guards (patch target, Xbox write gate, an add-on turned off for No Addons) and the update history, into `RenoDxDeploymentService` as a local package: the RenoDX record (`Version` = the file name, `RenoDX.LocalPackage`), so Remove and Repair after move know it, and Update All counts it as "could not be checked". Refusals as a catalogue install (no ReShade, unknown bitness, a RenoDX add-on or same-named file RHI does not own, a changed RHI file, unreadable deployment records) plus the add-on's own bitness from its PE header (a file without an x86/x64 header — a saved web page, a cut-off download — is not an add-on): a 32-bit add-on for a 64-bit game or the reverse is refused with a plain reason. Only the add-on file is written (no INI, Engine.ini or Control UE step — Control's add-on is refused with a pointer to the row's Install); RHI's earlier RenoDX add-on of another name is removed only after the record is saved, and any failure before that puts the target back.
 - Linux, any other dropped add-on opens **Install add-on** (same list, matching and folder line): upstream copies it into the game beside RenoDX; Linux imports it into Custom Add-ons (never over a different file) and adds it to the game's Shaders/Add-ons selection, whose journaled apply places and records it, and unticking it there takes it out. RenoDX is left alone. Its bitness must fit the game (plain reason).
+- Linux (wave-7 integration with #179): the add-on is added to the game's own list. The add-ons the game gets now (from
+  the global set, its own list or none) plus the dropped one become its **Choose for this game** list, so a later global
+  change or Update All does not take it out again; the global set itself is never edited.
 - A watched file directly in the watch folder is removed after a successful install, as upstream (the status line says so), but only while it still has the bytes RHI copied (a newer download under the same name stays); a dropped file is never touched.
 - Not ported: upstream's dropped or watched archives (`.zip`, `.7z`, `.rar`) are extracted and their `renodx-`/Luma add-on offered; Linux keeps its rule that archives are never installed or deleted automatically (a status line says so).
 
@@ -592,6 +595,11 @@ build.
 - Older builds ignore the new file and keep using the records as before; a selection an older build changes after the
   migration is replaced by this build's saved choice at the next apply.
 
+- Linux (wave-7 integration with #201 and #207): the shaders-only sync also rewrites RHI's ReShade.ini copy in an XNA
+  game's .NET assembly folder (the game's ini plus `[INSTALL] BasePath`, kept when the user changed it), and writes a
+  ReShade.ini linked to the shared `~/.config/ReShade` file through the link, journaled at the shared file; a link to a
+  file outside the allowed folders is refused with "The shader packs were not changed: …".
+
 <!-- w7/nvapi-launch notes -->
 
 ### #211 — NVIDIA DLSS presets, render scale and RTX 50 frame generation through launch variables
@@ -637,3 +645,8 @@ build.
   options are not read). DX9 HDR and Luma Framework's / DLSS5 Feeder's DirectX 9 translation (dgVoodoo2) both need
   `d3d9.dll`: each refuses while the other is installed and names what to remove. The `d3d9.dll` taken from the archive
   is capped at 64 MiB before 7-Zip extracts it (the archive's listed size) and again after.
+- Linux additions (wave-7 integration): DX9 HDR is not offered on a game the RHI manifest lists as XNA (#201): XNA's
+  graphics assembly loads `d3d9.dll` only from the prefix's .NET assembly folder, so a game-folder `d3d9.dll` is never
+  loaded. An XNA (GAC) ReShade is never moved to the Vulkan layer, even once the manifest no longer lists the game, and a
+  listed XNA game's ReShade row keeps the GAC path beside an older DX9 HDR record. A ReShade DX9 HDR moved to its layer
+  has no DLL name to change (#196): the locked dropdown says to remove DX9 HDR first.

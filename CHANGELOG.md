@@ -11,9 +11,78 @@ The app still reports version `0.9.23.4-beta.1`; the fork has not published a re
 
 Not on `main` yet (upstream features still to port):
 
-- A global shader set and global add-ons, with each game choosing Global, its own selection or Off.
-- Installing a dropped or downloaded RenoDX add-on straight into the matching game.
-- Renaming an installed ReShade or OptiScaler DLL in place.
+- Global default DLSS presets for every game (upstream's Settings).
+- The Unreal Engine `Engine.ini` setting upstream adds when a RenoDX add-on is dropped onto an Unreal game.
+
+## Wave 7 — 2026-10-21: DX9 HDR, NVIDIA settings, global shader set, dropped add-ons, DLL renames
+
+> [!WARNING]
+> Before going back to the wave-6 build, do these first; it does not know what this build added:
+>
+> - Remove DX9 HDR from every game that has it. The wave-6 build drops DX9 HDR's install record the first time it saves
+>   RHI's install records; after that no build can remove its `d3d9.dll`, `dxvk.conf` and Wine override, and a ReShade
+>   that DX9 HDR moved to its Vulkan layer stays there. Removing DX9 HDR also puts that ReShade back as `d3d9.dll`.
+> - Remove ReShade from XNA games (Terraria and the like). The wave-6 build does not know the copies in the prefix's
+>   .NET assembly folder: it does not update them, and its removal leaves at least the ReShade.ini copy there.
+> - Remove OptiScaler from a game where you renamed its DLL while RHI's ReShade runs through it. The wave-6 build moves
+>   ReShade to OptiScaler's current name when it removes OptiScaler, and ReShade does not load under names such as
+>   `wininet.dll`. This build puts ReShade back under its own name. Other renamed DLLs need nothing.
+> - A RenoDX add-on installed from a dropped or downloaded file: leave RenoDX out of Update All for that game (card menu
+>   **Update inclusion…** there) or remove it, or the wave-6 build's Update All replaces it with the RenoDX list's build
+>   for the game.
+>
+> The wave-6 build forgets the NVIDIA settings the next time it saves the library and launches without them; a line you
+> pasted into Steam's launch options stays there until you remove it. It ignores the global shader set and add-ons
+> (`shader-addon-sets.json`): every game keeps the shader packs and add-ons it has. Back on this build, the next Apply
+> in a game's Shaders/Add-ons dialog or the next save of the global set brings each game back to the choice saved here,
+> replacing shader or add-on changes made on the wave-6 build.
+
+Components
+
+- **DX9 HDR**, a new row on DirectX 9 games (upstream's DXVK HDR for DX9): installs EndlesslyFlowering's DXVK HDR build
+  beside the game with a preset chosen from its ⚙ (Safest to Experimental), and the game's per-exe Wine override. The
+  download is verified and capped in size before it is unpacked. A ReShade already installed as `d3d9.dll` moves to its
+  Vulkan layer, and comes back when DX9 HDR is removed. Not offered on Xbox / Game Pass installs or on XNA games; the
+  row says when HDR launch is off or the game's launch command sets `PROTON_USE_WINED3D`, and still offers Remove when
+  you deleted its `d3d9.dll` by hand. Not yet confirmed in a real game.
+- **NVIDIA settings** (DLSS section → **NVIDIA settings…**, for DLSS games on NVIDIA GPUs with the NVIDIA driver): one
+  dialog per game with the DLSS preset, render scale, the Ray Reconstruction and Frame Generation presets where the game
+  has those files (Frame Generation on RTX 40 or newer), multi frame generation mode, frame count and target frame rate
+  on RTX 50 cards, and **Newest DLSS from NVIDIA**. They are passed to Proton's NVIDIA layer at launch (Proton 10 or
+  newer); for Steam games the dialog gives the launch-options line to paste into Steam. **Restore all** sets them back
+  to Default.
+- **Global shader set and add-ons**: Settings → Shaders/Add-ons → **Global shaders and add-ons…** sets the shader packs
+  and Addon Manager add-ons every game gets by default. Each tab of a game's **Shaders/Add-ons** dialog chooses **Use
+  the global set**, **Choose for this game** or **None**, and says when the game's files are not up to date with its
+  choice. A game RHI already manages keeps the packs and add-ons it has, as its own list.
+- Changing a game's shaders now changes only the shader files and ReShade.ini's search paths, never ReShade itself (its
+  version, channel and DLL stay), and is recorded in the update history. A change to the global set leaves alone games
+  you left out of Update All for ReShade (shaders) or the Addon Manager (add-ons).
+- **ReShade DLL names can be changed in place** once ReShade or OptiScaler is installed: the file is renamed, and the
+  Wine override and RHI's record follow in one step that rolls back as a whole. **Reset DLL names** beside the dropdown
+  puts every name back to automatic. Where another component decides the name (OptiScaler's chain, ShortFuse, the
+  DirectX 9 translation, DX9 HDR) the dropdown is locked and says why. OptiScaler can be renamed while RHI's ReShade
+  runs through it, and removing OptiScaler then puts ReShade back under its own name.
+- **ReShade for XNA games** (Terraria and the other games the RHI manifest lists): ReShade goes into the game folder
+  and, as copies, into the .NET assembly folder of the game's prefix, where XNA loads it. Updates replace both copies;
+  removal takes away only the copies RHI placed. Repair after move also re-points those copies when the prefix moved.
+- ReShade's install and update now fill in only the keys a `reshade.ini` template adds that the game's ReShade.ini does
+  not have yet; **Deploy** still writes every key.
+- A ReShade.ini linked to your shared file in `~/.config/ReShade` stays a link when a ReShade install, update or removal
+  fails or is cut short, and removing ReShade takes RHI's lines back out of the shared file.
+- **Dropped and downloaded add-ons**: a RenoDX add-on dropped on the window, or saved to the watched folder, installs
+  into the game you pick (the matching game is preselected; a file from the watched folder is removed from it once
+  installed). Update All cannot check it, and says so. Another ReShade add-on you drop (one that no RHI row installs
+  itself) goes into Custom Add-ons and is ticked in that game's Shaders/Add-ons list, which becomes the game's own list.
+  Bitness is checked first, with a plain reason.
+- **NR Cost Scaler** is updated by Update All; a scale you set in `nvngx_dlssnr.ini` is kept.
+
+Library and interface
+
+- The card menu's **Update inclusion…** is now **Choose what Update All changes…**, and the Update All summary says how
+  many components you left out.
+- A component row's ⓘ is highlighted where the selected game has notes of its own.
+- **Create shortcut** gives the shortcut the game's own icon (from its `.exe`, else its Steam art).
 
 ## Wave 6 — 2026-10-20: Addon Manager updates, non-Steam shortcuts, crash-safe Feeder and Luma
 
