@@ -40,8 +40,8 @@ public static class LinuxDroppedFileClassifier
         var withBitness = extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) || extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase);
         if (!withBitness && (watched || !extension.Equals(".addon", StringComparison.OrdinalIgnoreCase))) return DroppedAddonTarget.CustomAddonsImport;
         if (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.IsDroppedRenoDxAddon(name)) return DroppedAddonTarget.RenoDxInstall;
-        if (watched || name.StartsWith("renodx-dlss5", StringComparison.OrdinalIgnoreCase) || name.StartsWith("renodx-dlss.", StringComparison.OrdinalIgnoreCase))
-            return DroppedAddonTarget.CustomAddonsImport;
+        if (watched) return DroppedAddonTarget.CustomAddonsImport;
+        // Upstream's drop skips renodx-dlss5* and renodx-dlss.*: both are among the names RHI's own rows install.
         return withBitness && !RHI.Platform.Linux.Deployment.ReShadeAddonManagerService.IsReservedCustomFileName(name)
                            && !name.StartsWith("renodx-universal_ue", StringComparison.OrdinalIgnoreCase) // DoF Fix's row
             ? DroppedAddonTarget.GameAddonInstall
