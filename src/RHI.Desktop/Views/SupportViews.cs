@@ -95,7 +95,12 @@ internal static class ChangelogText
                 continue;
             }
             if (trimmed.StartsWith("> [!", StringComparison.Ordinal)) continue;
-            if (trimmed.StartsWith('>')) trimmed = trimmed.TrimStart('>').TrimStart();
+            if (trimmed.StartsWith('>'))
+            {
+                trimmed = trimmed.TrimStart('>').TrimStart();
+                // #219: a bare ">" is Markdown's paragraph break inside a blockquote: it ends the paragraph or list item.
+                if (trimmed.Length == 0) { Flush(); continue; }
+            }
             if (trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal))
             {
                 Flush();
