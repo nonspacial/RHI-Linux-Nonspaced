@@ -659,3 +659,14 @@ build.
 <!-- w8/renodx notes -->
 
 <!-- w8/commit-point notes -->
+
+### #204 — A ledger write that lands and then reports an error is finished, not undone
+- Fork-only crash safety (upstream has no journal). When the save that commits an install, update, change or removal
+  reaches disk and then reports an error (e.g. the folder sync after the new `deployments.json` is in place), RHI reads
+  the ledger file again — never its cache — with the rule start-up recovery uses: if the save landed, the operation is
+  finished as committed (nothing is rolled back: files, Wine overrides, DLL renames, ReShade's DX9 translation and the
+  second record of a two-record save all stay) and the result reads "Done; the deployment ledger reported an error after
+  the change was written, so nothing was undone: <component>" (or "Removed; …"); if it did not land, everything is rolled
+  back as before; if the ledger cannot be read, nothing is undone now and the next start decides. The row, Update All and
+  the update history then match the ledger (a DX9 Feeder/Luma install used to leave ReShade's record naming `dxgi.dll`
+  while ReShade was back at `d3d9.dll`, so every later removal failed).

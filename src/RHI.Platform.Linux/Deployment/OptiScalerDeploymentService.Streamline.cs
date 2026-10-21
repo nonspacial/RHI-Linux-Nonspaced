@@ -324,7 +324,8 @@ public sealed partial class OptiScalerDeploymentService
         {
             // Compensation must run even when the failure is a cancellation; never cancelled itself.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            CleanupDirectories(createdDirectories);
+            if (rollback.Committed) return DeploymentScope.Landed("OptiScaler Streamline/DLSS Enabler");
+            if (rollback.RolledBack) CleanupDirectories(createdDirectories);
             return ComponentOperationResult.Fail(rollback.Success
                 ? $"OptiScaler Streamline/DLSS Enabler deployment rolled back: {ex.Message}"
                 : $"OptiScaler Streamline/DLSS Enabler deployment failed ({ex.Message}) and the rollback is incomplete: {string.Join("; ", rollback.Failures)}");
@@ -441,6 +442,7 @@ public sealed partial class OptiScalerDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("OptiScaler Streamline/DLSS Enabler", removal: true);
             return ComponentOperationResult.Fail($"Could not remove OptiScaler Streamline/DLSS Enabler deployment: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The narrowed record carries the operation id: it is the commit point. The emptied folder goes after it.

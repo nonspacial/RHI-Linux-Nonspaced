@@ -364,6 +364,7 @@ public sealed partial class ReShadeAddonManagerService : IGameStateStore
                 var rollback = removal
                     ? await scope.RollbackRemovalAsync(_records, game, existing!, "addon-manager").ConfigureAwait(false)
                     : await scope.RollbackAsync().ConfigureAwait(false);
+                if (rollback.Committed) return DeploymentScope.Landed("ReShade Addon Manager", removal, [.. changed]);
                 if (!rollback.Success)
                     AppLog.Warn("addon-manager", $"Selection rollback did not complete: {string.Join("; ", rollback.Failures)}");
                 return ComponentOperationResult.Fail($"ReShade Addon Manager failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");

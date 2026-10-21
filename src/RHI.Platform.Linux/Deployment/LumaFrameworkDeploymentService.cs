@@ -687,16 +687,26 @@ public sealed class LumaFrameworkDeploymentService
                         AppLog.Warn("luma-rollback", $"Could not {what} for {game.Name}", stepError);
                     }
                 }
-                Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, readOnly: ReadOnlyUserFile.WriteKeepingLock));
-                if (engineIniSnapshotPath is not null && engineIniBeforeExisted && engineIniBefore is not null)
-                    Step("restore Engine.ini", () =>
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                        AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
-                    });
+                // #204: a commit write (with ReShade's translated record, after a DX9 translation) that landed and then threw
+                // is finished as committed — nothing below runs; a ledger that cannot tell keeps everything for the next start.
+                var settled = await scope.SettleAfterFailureAsync().ConfigureAwait(false);
+                if (settled == CommitDecision.Committed) return DeploymentScope.Landed("Luma Framework", changedFiles: [.. installedTargets]);
+                if (settled == CommitDecision.NotCommitted)
+                {
+                    Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, readOnly: ReadOnlyUserFile.WriteKeepingLock));
+                    if (engineIniSnapshotPath is not null && engineIniBeforeExisted && engineIniBefore is not null)
+                        Step("restore Engine.ini", () =>
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
+                            AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                        });
+                }
                 var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-                if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
-                Step("remove the folders the install created", () => FileCleanup.TryDeleteEmptyDirectories(createdDirectories));
+                if (rollback.RolledBack)
+                {
+                    if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
+                    Step("remove the folders the install created", () => FileCleanup.TryDeleteEmptyDirectories(createdDirectories));
+                }
                 if (!rollback.Success)
                 {
                     AppLog.Warn("luma-rollback", $"Rollback incomplete for {game.Name}: {string.Join("; ", rollback.Failures)}");
@@ -796,7 +806,9 @@ public sealed class LumaFrameworkDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "luma", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
-            if (dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated && game.PrefixPath is { } prefix)
+            // #204: the removal (with ReShade's record back at d3d9.dll) landed and then threw: it stays removed.
+            if (rollback.Committed) return DeploymentScope.Landed("Luma Framework", removal: true, [.. changed]);
+            if (rollback.RolledBack && dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated && game.PrefixPath is { } prefix)
                 _dx9ReShade!.Reapply(prefix, translated);
             return ComponentOperationResult.Fail($"Luma Framework removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }

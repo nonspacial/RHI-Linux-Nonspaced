@@ -13,7 +13,7 @@ namespace RHI.Core.Tests;
 /// whose file still matches its record, keeps the owner's runtime as nvngx_dlssnr_real.dll, rolls back as a whole, puts
 /// the owner's file back byte for byte on removal, and blocks the owner's changes while installed.
 /// </summary>
-public sealed class NrCostScalerTests : IDisposable
+public sealed partial class NrCostScalerTests : IDisposable
 {
     private const string ApiUrl = NrCostScalerService.ReleaseApiUrl;
     private const string AssetUrl = "https://github.com/xenmods/DLSSNR-Cost-Scaler/releases/download/v1.0.6/DLSSNR-Cost-Scaler-v1.0.6.zip";
@@ -329,9 +329,10 @@ public sealed class NrCostScalerTests : IDisposable
         Assert.NotNull(service.GetRecord(_game));
     }
 
-    // Merge review finding 1: the commit write takes the record out of the ledger and then reports failure. The rollback
-    // puts the files back, so the scaler's record must come back too (RollbackRemovalAsync); a plain rollback would
-    // leave the proxy and _real file in place with no record owning them.
+    // Merge review finding 1: the commit write takes the record out of the ledger and then reports failure. With a journal
+    // that cannot read the ledger again (this fixture's), the rollback puts the files back, so the scaler's record must come
+    // back too (RollbackRemovalAsync); a plain rollback would leave the proxy and _real file in place with no record owning
+    // them. The app's journal reads the ledger again and keeps the removal (#204: NrCostScalerTests.CommitPoint.cs).
     [Fact]
     public async Task Remove_CommitWriteLandsThenFails_PutsTheRecordBackWithTheFiles()
     {

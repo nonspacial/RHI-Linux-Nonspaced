@@ -303,14 +303,7 @@ public sealed class LinuxDeploymentRecordStore
 
         try
         {
-            var records = JsonSerializer.Deserialize<List<LinuxDeploymentRecord>>(File.ReadAllText(_path), JsonOptions) ?? [];
-            records.RemoveAll(record => record.Component == ManagedComponentKind.Unknown);
-            foreach (var record in records)
-            {
-                record.Metadata = record.Metadata is null
-                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : JsonStoreMaps.CaseInsensitive(record.Metadata);
-            }
+            var records = Parse(File.ReadAllText(_path));
             _cached = records;
             _cachedStamp = stamp;
             _corruptQuarantinePath = null;
@@ -322,6 +315,53 @@ public sealed class LinuxDeploymentRecordStore
             _cachedStamp = null;
             _corruptQuarantinePath ??= Quarantine();
             return [];
+        }
+    }
+
+    private static List<LinuxDeploymentRecord> Parse(string json)
+    {
+        var records = JsonSerializer.Deserialize<List<LinuxDeploymentRecord>>(json, JsonOptions) ?? [];
+        records.RemoveAll(record => record.Component == ManagedComponentKind.Unknown);
+        foreach (var record in records)
+        {
+            record.Metadata = record.Metadata is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : JsonStoreMaps.CaseInsensitive(record.Metadata);
+        }
+        return records;
+    }
+
+    /// <summary>Mark of a ledger file that does not exist (see <see cref="ReadFileFresh"/>).</summary>
+    internal const string MissingLedgerMark = "missing";
+
+    /// <summary>
+    /// The ledger as the FILE holds it now, read past the cache and without touching it (#204: after a save that failed,
+    /// the commit decision must see a write that landed even when the save threw before the store took it in — a failed
+    /// directory fsync). <c>Records</c> is null when the file cannot be read or parsed; <c>Sha256</c> is the bytes' hash
+    /// (<see cref="MissingLedgerMark"/> for no file, null when it could not be read at all). Never throws.
+    /// </summary>
+    internal (IReadOnlyList<LinuxDeploymentRecord>? Records, string? Sha256) ReadFileFresh()
+    {
+        byte[] bytes;
+        try
+        {
+            if (!File.Exists(_path)) return ([], MissingLedgerMark);
+            bytes = File.ReadAllBytes(_path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, null);
+        }
+        var sha = FileHash.Sha256HexOf(bytes);
+        try
+        {
+            // Decoded as File.ReadAllText does (byte-order marks honoured), as the cached read sees it.
+            using var reader = new StreamReader(new MemoryStream(bytes), detectEncodingFromByteOrderMarks: true);
+            return (Parse(reader.ReadToEnd()), sha);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
+        {
+            return (null, sha);
         }
     }
 
@@ -352,12 +392,21 @@ public sealed class LinuxDeploymentRecordStore
     /// </summary>
     internal Func<Exception?>? SaveWrittenFaultForTesting { get; set; }
 
+    /// <summary>
+    /// Test seam (#204): when set, every save asks it right after the new ledger was renamed into place and BEFORE the
+    /// store takes it in (cache and its stamp still hold the previous ledger), and fails with the exception it returns —
+    /// the shape of a real failure inside <see cref="AtomicFile.WriteStoreFile"/> (the directory fsync after the rename).
+    /// A decision that trusted the cache would see the old ledger here; null = this save succeeds.
+    /// </summary>
+    internal Func<Exception?>? SaveInsideWriteFaultForTesting { get; set; }
+
     private void SaveUnsafe(List<LinuxDeploymentRecord> records)
     {
         if (SaveFaultForTesting?.Invoke() is { } fault) throw fault;
         // The store-file writer (#31, #57): unique temp, fsync, full verify, rename, directory fsync; a symlinked
         // deployments.json stays a link (its target is replaced) and keeps its mode, as every other store does.
         AtomicFile.WriteStoreFile(_path, JsonSerializer.SerializeToUtf8Bytes(records, JsonOptions));
+        if (SaveInsideWriteFaultForTesting?.Invoke() is { } inside) throw inside;
         _cached = records;
         var info = new FileInfo(_path);
         _cachedStamp = (info.LastWriteTimeUtc, info.Length);

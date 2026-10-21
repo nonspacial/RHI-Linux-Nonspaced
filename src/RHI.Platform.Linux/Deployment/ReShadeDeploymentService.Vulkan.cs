@@ -256,13 +256,16 @@ public sealed partial class ReShadeDeploymentService
         }
         catch (Exception ex)
         {
-            ReShadeAddonSwitch.Undo(addonMoves);
+            // #204: a commit write that landed and then threw is finished as committed; nothing below runs.
+            var settled = await scope.SettleAfterFailureAsync().ConfigureAwait(false);
+            if (settled == CommitDecision.Committed) return DeploymentScope.Landed("ReShade", changedFiles: layerDll);
+            if (settled == CommitDecision.NotCommitted) ReShadeAddonSwitch.Undo(addonMoves);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
             // Journaled, the rollback already undid these; unjournaled (or a journal step that failed) they go here. Both act
             // only while the value is still RHI's.
-            if (valueCreated) RegistryValues.TryRestore(prefix, layerValue);
-            if (overrideCreated) _overrides.TryRestore(prefix, overrideRecord);
-            RemoveEmptyDirectories(createdDirectories);
+            if (rollback.RolledBack && valueCreated) RegistryValues.TryRestore(prefix, layerValue);
+            if (rollback.RolledBack && overrideCreated) _overrides.TryRestore(prefix, overrideRecord);
+            if (rollback.RolledBack) RemoveEmptyDirectories(createdDirectories);
             if (oldOptions is not null && scope.Operation is null) // journaled, the rollback put the packs back (#169)
             {
                 try

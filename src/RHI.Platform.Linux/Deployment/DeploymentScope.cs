@@ -113,14 +113,18 @@ public sealed class DeploymentScope : IAsyncDisposable
     }
 
     /// <summary>
-    /// The catch of a failed removal: first puts <paramref name="record"/> back when the ledger no longer has it (the
-    /// save that took it away failed after replacing the file), together with <paramref name="alongside"/> (records the
-    /// commit point changed in the same write, as they were before it) — still carrying this removal's stamp
-    /// (<see cref="LinuxDeploymentRecovery.RemovalOperationIdMetadataKey"/>) — and only then rolls back. Start-up
-    /// recovery therefore counts the removal uncommitted until the rollback has finished: a crash during it, or a rollback
-    /// left for the next start, puts the files back instead of releasing the copies the user was told were kept, and the
-    /// restored files are never left without their record. A rolled-back removal's stamp is inert (the journal entry is
-    /// gone), and the next removal stamps the record again. Putting the record back never throws (logged).
+    /// The catch of a failed removal. First reads the commit point again (#204, <see cref="SettleAfterFailureAsync"/>): a
+    /// removal whose commit write landed and then reported an error is finished as removed (no record is put back, no
+    /// file restored — the ledger already says removed, as start-up recovery would), and one the ledger cannot tell is
+    /// left for the next start. Otherwise it puts <paramref name="record"/> back when the ledger no longer has it (with a
+    /// journal that cannot read its commit point again: the save that took it away failed after replacing the file),
+    /// together with <paramref name="alongside"/> (records the commit point changed in the same write, as they were before
+    /// it) — still carrying this removal's stamp (<see cref="LinuxDeploymentRecovery.RemovalOperationIdMetadataKey"/>) —
+    /// and only then rolls back. Start-up recovery therefore counts the removal uncommitted until the rollback has
+    /// finished: a crash during it, or a rollback left for the next start, puts the files back instead of releasing the
+    /// copies the user was told were kept, and the restored files are never left without their record. A rolled-back
+    /// removal's stamp is inert (the journal entry is gone), and the next removal stamps the record again. Putting the
+    /// record back never throws (logged).
     /// </summary>
     public async Task<OwnedFileSetRollback> RollbackRemovalAsync(
         LinuxDeploymentRecordStore records, DetectedGame game, LinuxDeploymentRecord record, string logArea,
@@ -128,6 +132,8 @@ public sealed class DeploymentScope : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(records);
         ArgumentNullException.ThrowIfNull(record);
+        if (await SettleAfterFailureAsync().ConfigureAwait(false) != CommitDecision.NotCommitted)
+            return await RollbackAsync().ConfigureAwait(false);
         try
         {
             if (records.Find(game, record.Component) is null)
@@ -173,28 +179,80 @@ public sealed class DeploymentScope : IAsyncDisposable
     {
         if (_completed) return [];
         _completed = true;
+        _decision = CommitDecision.Committed;
         return Operation is not null ? await Operation.CommitAsync().ConfigureAwait(false) : Files.Release();
     }
 
     /// <summary>
     /// Puts every tracked file back (and, journaled, undoes every journaled Wine step). Never cancelled. A failure keeps
     /// every copy (and the journal entry, so the next start retries) and is returned.
+    /// <para>#204: journaled, the commit point is read again first (<see cref="SettleAfterFailureAsync"/>): when the commit
+    /// write landed and then reported an error nothing is undone and the result says
+    /// <see cref="OwnedFileSetRollback.Committed"/> (report <see cref="Landed"/>); when the ledger cannot tell, nothing is
+    /// undone and the next start decides (<see cref="CommitDecision.Undecided"/>). Run any further in-process undo step of
+    /// a catch only while <see cref="OwnedFileSetRollback.RolledBack"/>.</para>
     /// </summary>
     public async Task<OwnedFileSetRollback> RollbackAsync()
     {
-        if (_completed) return new([]);
+        if (_completed) return Settled(_decision);
         _completed = true;
-        return Operation is not null
+        var result = Operation is not null
             ? await Operation.RollbackAsync().ConfigureAwait(false)
             : await Files.RollbackAsync(RollbackMode.InProcess).ConfigureAwait(false);
+        _decision = result.Decision;
+        return result;
     }
+
+    /// <summary>
+    /// After a failure, before a catch undoes anything of its own (#204): reads the operation's commit point again from
+    /// the ledger file. <see cref="CommitDecision.Committed"/>: the commit write landed and then reported an error — the
+    /// scope is committed now (copies and journal entry dropped); report success (<see cref="Landed"/>) and undo nothing.
+    /// <see cref="CommitDecision.Undecided"/>: the ledger cannot be read — the journal entry and every copy stay for the
+    /// next start; undo nothing. <see cref="CommitDecision.NotCommitted"/>: roll back as usual. Unjournaled scopes (no
+    /// ledger to read) always answer NotCommitted. Never throws.
+    /// </summary>
+    public async Task<CommitDecision> SettleAfterFailureAsync()
+    {
+        if (_completed) return _decision;
+        if (Operation is null) return CommitDecision.NotCommitted;
+        var decision = await Operation.SettleAfterFailureAsync().ConfigureAwait(false);
+        if (decision != CommitDecision.NotCommitted)
+        {
+            _completed = true;
+            _decision = decision;
+        }
+        return decision;
+    }
+
+    private CommitDecision _decision;
+
+    private static OwnedFileSetRollback Settled(CommitDecision decision) => decision == CommitDecision.Undecided
+        ? new([DeploymentOperation.UndecidedNote]) { Decision = decision }
+        : new([]) { Decision = decision };
 
     /// <summary>The text a failure message appends for a rollback that could not finish (empty on success).</summary>
     public static string RollbackNote(OwnedFileSetRollback rollback)
-        => rollback.Success ? "" : $"{RollbackIncompletePrefix}{string.Join("; ", rollback.Failures)}); every copy was kept.";
+        => rollback.Decision == CommitDecision.Undecided ? " " + DeploymentOperation.UndecidedNote
+            : rollback.Success ? "" : $"{RollbackIncompletePrefix}{string.Join("; ", rollback.Failures)}); every copy was kept.";
 
     /// <summary>Fixed text before the failures of an incomplete rollback (PT-BR pair exists since w1).</summary>
     public const string RollbackIncompletePrefix = " Rollback was incomplete (";
+
+    /// <summary>
+    /// The result of an operation whose commit write landed and then reported an error (#204): it is finished as
+    /// committed, so it reports success — the row, Update All and the update history then match the ledger — with a note.
+    /// <paramref name="component"/> (a product name) follows the fixed text.
+    /// </summary>
+    public static ComponentOperationResult Landed(string component, bool removal = false, params string[] changedFiles)
+        => ComponentOperationResult.Ok((removal ? LandedRemovalPrefix : LandedChangePrefix) + component, changedFiles);
+
+    /// <summary>Fixed text of <see cref="Landed"/> for an install, update or change; the component follows (PT-BR pair).</summary>
+    public const string LandedChangePrefix =
+        "Done; the deployment ledger reported an error after the change was written, so nothing was undone: ";
+
+    /// <summary>Fixed text of <see cref="Landed"/> for a removal; the component follows (PT-BR pair).</summary>
+    public const string LandedRemovalPrefix =
+        "Removed; the deployment ledger reported an error after the removal was written, so nothing was undone: ";
 
     public async ValueTask DisposeAsync()
     {

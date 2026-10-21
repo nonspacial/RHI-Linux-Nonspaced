@@ -130,35 +130,43 @@ public sealed partial class ShortFuseDeploymentServiceTests
         Assert.Equal("native,builtin", Override(fixture, "winmm"));
     }
 
-    // Journal re-review minor 1: the commit write replaces the ledger (ShortFuse gone, ReShade renamed back to dxgi.dll)
-    // and then reports failure. The rollback moves ReShade's file back to ReShade64.asi, so ReShade's record must go back
-    // with it (the catch's `alongside:`), or it names a dxgi.dll that is no longer there.
-    [Fact]
-    public async Task Remove_CommitWriteLandsThenFails_PutsReShadesRecordBackWithItsFile()
+    // Journal re-review minor 1 / #204: the commit write replaces the ledger (ShortFuse gone, ReShade renamed back to
+    // dxgi.dll) and then reports failure. The removal is finished as committed: ShortFuse stays removed and ReShade's record
+    // names dxgi.dll, where its file is (it used to roll the rename back and put both records back as before the write).
+    [Theory]
+    [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
+    [Trait("Category", "CommitPoint")]
+    public async Task Remove_CommitWriteLandsThenFails_StaysRemoved_ReShadesRecordFollowsItsFile(LandedShape shape)
     {
-        using var fixture = CreateGame("commit-written-then-failed");
-        var (ctx, _, _, _, editor) = JournaledContext(fixture);
+        using var fixture = CreateGame("commit-written-then-failed-" + shape);
+        var (ctx, _, journalDir, _, editor) = JournaledContext(fixture);
         using var _ = ctx;
         AddManagedReShade(ctx.Records, fixture, withWineOverride: true);
         Assert.True((await ctx.ShortFuse.InstallAsync(fixture.Game, autoConfigEnabled: true)).Success);
         var asi = Path.Combine(fixture.Bin, ShortFuseDeploymentService.ReShadeAsiName);
+        var dxgi = Path.Combine(fixture.Bin, "dxgi.dll");
         // The first registry edit of the removal is ReShade's override re-enable; the next ledger save is the commit write.
-        editor.InsideLockForTesting = _ => ctx.Records.SaveWrittenFaultForTesting ??= () =>
+        var armed = false;
+        editor.InsideLockForTesting = _ =>
         {
-            ctx.Records.SaveWrittenFaultForTesting = () => null;
-            return new IOException("ledger written, then the directory sync failed");
+            if (armed) return;
+            armed = true;
+            LandedLedgerWrite.Arm(ctx.Records, shape, at: 1);
         };
 
         var remove = await ctx.ShortFuse.RemoveAsync(fixture.Game);
 
-        Assert.False(remove.Success);
-        Assert.True(File.Exists(asi));
-        Assert.False(File.Exists(Path.Combine(fixture.Bin, "dxgi.dll")));
+        LandedLedgerWrite.Disarm(ctx.Records);
+        Assert.True(remove.Success, remove.Message);
+        Assert.StartsWith(DeploymentScope.LandedRemovalPrefix, remove.Message);
+        Assert.False(File.Exists(asi));
+        Assert.True(File.Exists(dxgi));
         var after = new LinuxDeploymentRecordStore(Path.Combine(fixture.Root, "deployments.json"));
-        Assert.NotNull(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
+        Assert.Null(after.Find(fixture.Game, ManagedComponentKind.ShortFuse));
         var reshade = after.Find(fixture.Game, ManagedComponentKind.ReShade)!;
-        Assert.Equal(asi, reshade.Files.Single().Path);
-        Assert.True(File.Exists(reshade.Files.Single().Path));
+        Assert.Equal(dxgi, reshade.Files.Single().Path);
+        Assert.Equal("native,builtin", Override(fixture, "dxgi"));
+        Assert.Empty(Directory.GetFiles(journalDir, "*.json"));
     }
 
     // Review w3-journal #6: ShortFuse's record goes and ReShade's renamed-back record is saved in ONE ledger write. Split

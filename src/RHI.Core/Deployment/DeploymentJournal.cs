@@ -32,6 +32,22 @@ public sealed record CompensationResult(CompensationStatus Status, string? Note 
 }
 
 /// <summary>
+/// Reads an operation's commit point again after a failure (#204): the failure may have come from the commit write itself
+/// after it landed (a directory fsync that failed after the rename). The answer must come from a FRESH read of what holds
+/// the commit point (never a cache), with the same rule start-up recovery uses.
+/// </summary>
+public interface IDeploymentCommitCheck
+{
+    /// <summary>
+    /// Taken when an operation begins and handed back to <see cref="Decide"/>: tells an unreadable commit store that was
+    /// already unreadable then (no write of the operation can have landed) from one that changed since.
+    /// </summary>
+    string? Mark();
+
+    CommitDecision Decide(JournalEntryInfo entry, string? mark);
+}
+
+/// <summary>
 /// Write-ahead journal for deployment operations. An operation's owned files (pre-operation hashes)
 /// and compensations are written here, fsynced, before anything in the game or prefix changes;
 /// the entry is removed once the operation is committed or rolled back. Each live operation holds
@@ -50,13 +66,20 @@ public sealed class DeploymentJournal
 
     private readonly Dictionary<string, IDeploymentCompensator> _compensators;
 
-    public DeploymentJournal(string directory, IEnumerable<IDeploymentCompensator>? compensators = null)
+    /// <param name="commitCheck">
+    /// Reads a failed operation's commit point again (#204); without one, a failure always rolls back (as before).
+    /// </param>
+    public DeploymentJournal(string directory, IEnumerable<IDeploymentCompensator>? compensators = null, IDeploymentCommitCheck? commitCheck = null)
     {
         Directory = directory;
         _compensators = (compensators ?? []).ToDictionary(c => c.Kind, StringComparer.Ordinal);
+        CommitCheck = commitCheck;
     }
 
     public string Directory { get; }
+
+    /// <summary>Asked by <see cref="DeploymentOperation.SettleAfterFailureAsync"/>; null = every failure rolls back.</summary>
+    public IDeploymentCommitCheck? CommitCheck { get; }
 
     /// <summary>Test seam: every operation of this journal "crashes" when it reaches its commit (see <see cref="SimulatedCrashException"/>).</summary>
     internal bool CrashAtCommitForTesting { get; set; }
@@ -77,6 +100,8 @@ public sealed class DeploymentJournal
         var operation = new DeploymentOperation(this, id, description, commitProbe, lockStream);
         try
         {
+            // Before the first write of the operation (the entry itself is not part of the commit store).
+            operation.CommitMark = CommitCheck?.Mark();
             await operation.PersistAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -318,8 +343,14 @@ public sealed class DeploymentOperation : IAsyncDisposable
             AbandonAsIfCrashed();
             throw new SimulatedCrashException();
         }
+        return await FinishCommittedAsync().ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<string>> FinishCommittedAsync()
+    {
         _completed = true;
         _committed = true;
+        _settled = CommitDecision.Committed;
         var problems = new List<string>();
         try
         {
@@ -339,10 +370,20 @@ public sealed class DeploymentOperation : IAsyncDisposable
     /// <summary>
     /// Rolls back every tracked file and compensation. On success the entry is removed; on failure it
     /// is kept (and the lock released) so the next start retries, and the failures are returned.
+    /// <para>#204: first reads the commit point again (<see cref="SettleAfterFailureAsync"/>): a commit write that landed
+    /// and then reported an error is finished as committed (nothing undone), and one that cannot be told is left for
+    /// the next start; the returned <see cref="OwnedFileSetRollback.Decision"/> says which.</para>
     /// </summary>
     public async Task<OwnedFileSetRollback> RollbackAsync()
     {
-        if (_completed) return new([]);
+        if (_completed) return new([]) { Decision = _settled };
+        switch (await SettleAfterFailureAsync().ConfigureAwait(false))
+        {
+            case CommitDecision.Committed:
+                return new([]) { Decision = CommitDecision.Committed };
+            case CommitDecision.Undecided:
+                return new([UndecidedNote]) { Decision = CommitDecision.Undecided };
+        }
         _completed = true;
         var outcome = await _journal.RollbackAsync(Files, Document(), RollbackMode.InProcess).ConfigureAwait(false);
         // A deferred step is not done: the entry (narrowed to it) stays for the next start.
@@ -362,15 +403,68 @@ public sealed class DeploymentOperation : IAsyncDisposable
         return new(failures, outcome.Kept);
     }
 
+    /// <summary>
+    /// After a failure (#204), before anything is undone: reads the commit point again through the journal's
+    /// <see cref="DeploymentJournal.CommitCheck"/> (a fresh read, the rule start-up recovery uses).
+    /// <see cref="CommitDecision.Committed"/> — the commit write landed and then threw — finishes the operation as committed
+    /// (snapshots and entry dropped; nothing is rolled back). <see cref="CommitDecision.Undecided"/> — the commit store
+    /// changed since the operation began and cannot be read — keeps the entry and every copy and releases the lock, so the
+    /// next start decides. <see cref="CommitDecision.NotCommitted"/> changes nothing: roll back. Without a check, always
+    /// NotCommitted. Never throws.
+    /// </summary>
+    public async Task<CommitDecision> SettleAfterFailureAsync()
+    {
+        if (_completed) return _settled;
+        CommitDecision decision;
+        try
+        {
+            decision = _journal.CommitCheck?.Decide(Info(), CommitMark) ?? CommitDecision.NotCommitted;
+        }
+        catch (Exception ex)
+        {
+            // A check that cannot answer is an unreadable commit point: keep everything for the next start.
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"The commit point of {Description} could not be read again", ex);
+            decision = CommitDecision.Undecided;
+        }
+        switch (decision)
+        {
+            case CommitDecision.Committed:
+                await FinishCommittedAsync().ConfigureAwait(false);
+                break;
+            case CommitDecision.Undecided:
+                _completed = true;
+                _settled = CommitDecision.Undecided;
+                ReleaseLock(deleteLockFile: false);
+                break;
+        }
+        return decision;
+    }
+
+    /// <summary>Fixed text of a failure whose commit point could not be read again: nothing was undone now (PT-BR pair).</summary>
+    public const string UndecidedNote =
+        "The deployment ledger could not be read after the error, so nothing was undone now; RHI finishes or undoes this change at the next start.";
+
+    /// <summary>The value <see cref="IDeploymentCommitCheck.Mark"/> returned when the operation began.</summary>
+    internal string? CommitMark { get; set; }
+
+    private CommitDecision _settled;
+
+    private JournalEntryInfo Info() => new(Id, Description, CommitProbe, _committed, Files.Files.Select(file => file.Path).ToArray());
+
     public async ValueTask DisposeAsync()
     {
         if (!_completed) await RollbackAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Test seam: drops the lock without committing or rolling back, as a crash would.</summary>
+    /// <summary>
+    /// Test seam: drops the lock without committing or rolling back, as a crash would. A dead thread let go afterwards
+    /// finds its operation <see cref="CommitDecision.Undecided"/>, so its catch undoes nothing in process (the next start
+    /// owns the entry).
+    /// </summary>
     internal void AbandonAsIfCrashed()
     {
         _completed = true;
+        _settled = CommitDecision.Undecided;
         ReleaseLock(deleteLockFile: false);
     }
 

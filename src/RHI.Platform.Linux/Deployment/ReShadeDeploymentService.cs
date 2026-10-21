@@ -728,6 +728,16 @@ public sealed partial class ReShadeDeploymentService
         }
         catch (Exception ex)
         {
+            // #204: the commit write (ReShade's record with its add-on records) landed and then threw: the install is
+            // finished as committed and nothing below undoes it; a ledger that cannot tell keeps everything for the next start.
+            var settled = operation is null ? CommitDecision.NotCommitted : await operation.SettleAfterFailureAsync().ConfigureAwait(false);
+            if (settled == CommitDecision.Committed)
+            {
+                try { if (updateSnapshot is not null && File.Exists(updateSnapshot)) File.Delete(updateSnapshot); } catch { }
+                return DeploymentScope.Landed("ReShade", changedFiles: target);
+            }
+            if (settled == CommitDecision.Undecided)
+                return ComponentOperationResult.Fail($"ReShade install/update failed: {ex.Message} {DeploymentOperation.UndecidedNote}");
             ReShadeAddonSwitch.Undo(addonMoves); // #170: add-ons back under their names before anything else
             if (localGacFiles is not null) await localGacFiles.RollbackAsync(RollbackMode.InProcess).ConfigureAwait(false); // #201
             // Best-effort rollback. On an update, the long-lived .original is the real pre-RHI game file,
@@ -904,11 +914,12 @@ public sealed partial class ReShadeDeploymentService
             // record goes back as it was before, beside ReShade's, so it matches the INI the rollback restores.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reshade",
                 alongside: optiScalerAfter is not null && optiScalerBefore is not null ? [optiScalerBefore] : null).ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade", removal: true);
             foreach (var (overrideRecord, result) in overrideRestores.AsEnumerable().Reverse())
-                if (result.Outcome == WineOverrideRestoreOutcome.Restored)
+                if (rollback.RolledBack && result.Outcome == WineOverrideRestoreOutcome.Restored)
                     _overrides.TryReapply(game.PrefixPath, overrideRecord);
             foreach (var (valueRecord, result) in valueRestores.AsEnumerable().Reverse())
-                if (result.Outcome == WineOverrideRestoreOutcome.Restored)
+                if (rollback.RolledBack && result.Outcome == WineOverrideRestoreOutcome.Restored)
                     RegistryValues.TryReapply(game.PrefixPath, valueRecord);
             if (!rollback.Success)
                 AppLog.Warn("reshade", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");

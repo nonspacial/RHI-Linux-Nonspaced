@@ -522,6 +522,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        yield return DeploymentScope.Landed("ReShade").Message;
+        yield return DeploymentScope.Landed("DLSS5 Feeder Full", removal: true).Message;
+        yield return ReShadeDeploymentService.RemovalFailedPrefix + P + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

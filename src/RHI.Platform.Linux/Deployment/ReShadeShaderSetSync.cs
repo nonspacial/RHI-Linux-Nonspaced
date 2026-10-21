@@ -171,6 +171,7 @@ public sealed partial class ReShadeDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade");
             if (scope.Operation is null)
             {
                 // Unjournaled (tests, tools): the INI came back with the scope; the override and the packs go back here.

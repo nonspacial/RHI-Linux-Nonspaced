@@ -1542,6 +1542,14 @@ public static class UiLocalizationService
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        // #204: a ledger write that landed and then reported an error (finished as committed), or a ledger that could not be
+        // read again after the error (nothing undone; decided at the next start).
+        (RHI.Platform.Linux.Deployment.DeploymentScope.LandedChangePrefix,
+            "Concluído; o registro de implantações informou um erro depois que a alteração foi gravada, então nada foi desfeito: "),
+        (RHI.Platform.Linux.Deployment.DeploymentScope.LandedRemovalPrefix,
+            "Removido; o registro de implantações informou um erro depois que a remoção foi gravada, então nada foi desfeito: "),
+        (RHI.Core.Deployment.DeploymentOperation.UndecidedNote,
+            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora; o RHI conclui ou desfaz esta alteração na próxima inicialização."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

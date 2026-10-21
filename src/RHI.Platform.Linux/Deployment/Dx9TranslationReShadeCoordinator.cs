@@ -79,8 +79,11 @@ public sealed class Dx9TranslationReShadeCoordinator
         {
             // The proxy goes back to d3d9.dll from the scope's copies; one that cannot be put back is kept and logged.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // #204: the record save landed and then threw: the migration is done (the record names dxgi.dll, as on disk).
+            if (rollback.Committed) return new ReShadeDx9MigrationState(d3d9, dxgi, hash, d3d9Override!);
             if (!rollback.Success)
                 AppLog.Warn("dx9-translation", $"Migration rollback could not put d3d9.dll back: {string.Join("; ", rollback.Failures)}", ex);
+            if (!rollback.RolledBack) throw; // the ledger cannot tell: the next start decides, nothing more is undone here
             _overrides.TryRestore(game.PrefixPath!, dxgiOverride);
             if (originalRecordOverride is null) _overrides.TryRestore(game.PrefixPath!, d3d9Override);
             record.WineOverride = originalRecordOverride;
@@ -257,8 +260,11 @@ public sealed class Dx9TranslationReShadeCoordinator
         {
             // The proxy goes back to dxgi.dll from the scope's copies; one that cannot be put back is kept and logged.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // #204: the record save landed and then threw: the restore is done (the record names d3d9.dll, as on disk).
+            if (rollback.Committed) return;
             if (!rollback.Success)
                 AppLog.Warn("dx9-translation", $"Restore rollback could not put dxgi.dll back: {string.Join("; ", rollback.Failures)}", ex);
+            if (!rollback.RolledBack) throw; // the ledger cannot tell: the next start decides, nothing more is undone here
             // The record keeps the translated override, so put RHI's value back where this restore removed it (#30).
             if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath!, translatedOverride);

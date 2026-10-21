@@ -599,11 +599,17 @@ public sealed class Dlss5FeederFullDeploymentService
             // Every file, ReShade.ini and (journaled) every Wine override back from the scope; the overrides once more
             // for an unjournaled run (a no-op where the rollback already put the value back).
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (compilerOverride is not null && _overrides is not null)
-                RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
-            if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
-            FileCleanup.TryDeleteEmptyTree(t.IntegrationRoot);
-            if (t.Layout.Host64Directory is { } host64) FileCleanup.TryDeleteEmptyTree(host64);
+            // #204: the commit write (with ReShade's translated record, after a DX9 translation) landed and then threw:
+            // both records are kept and nothing is undone, the rename and its overrides included.
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS5 Feeder Full", changedFiles: [.. copied]);
+            if (rollback.RolledBack)
+            {
+                if (compilerOverride is not null && _overrides is not null)
+                    RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
+                if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
+                FileCleanup.TryDeleteEmptyTree(t.IntegrationRoot);
+                if (t.Layout.Host64Directory is { } host64) FileCleanup.TryDeleteEmptyTree(host64);
+            }
             return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -831,8 +837,10 @@ public sealed class Dlss5FeederFullDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss5-feeder", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
+            // #204: the removal (with ReShade's record back at d3d9.dll) landed and then threw: it stays removed.
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS5 Feeder Full", removal: true);
             // The record keeps its overrides: put RHI's value back where this removal took it away (#30).
-            if (game.PrefixPath is { } prefix)
+            if (rollback.RolledBack && game.PrefixPath is { } prefix)
             {
                 foreach (var (wineOverride, result) in overrideRestores.Where(o => o.Result.Outcome == WineOverrideRestoreOutcome.Restored))
                     _overrides?.TryReapply(prefix, wineOverride);

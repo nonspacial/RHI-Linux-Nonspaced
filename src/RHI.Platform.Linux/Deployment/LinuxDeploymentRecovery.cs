@@ -289,7 +289,10 @@ public static class LinuxDeploymentRecovery
 
     public static string LogPath => Path.Combine(LinuxPaths.LogDirectory, "recovery.log");
 
-    /// <param name="records">The app's ledger: lets a deferred override undo see a later install that now depends on it.</param>
+    /// <param name="records">
+    /// The app's ledger: lets a deferred override undo see a later install that now depends on it, and (#204) is the
+    /// commit point a failed operation reads again before it rolls back (<see cref="LedgerCommitCheck"/>).
+    /// </param>
     public static DeploymentJournal CreateJournal(
         WineDllOverrideService overrides, string? directory = null, Func<string, bool>? isPrefixInUse = null, LinuxDeploymentRecordStore? records = null)
         => new(directory ?? JournalDirectory,
@@ -298,7 +301,8 @@ public static class LinuxDeploymentRecovery
              new WineRegistryValueCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse, records),
              new WineRegistryValueReapplyCompensator(new WineRegistryValueService(overrides.Registry), isPrefixInUse),
              // w5/reshade-core (#92 review finding 3): folders an operation created (the layer's ProgramData folders)
-             new CreatedDirectoryCompensator()]);
+             new CreatedDirectoryCompensator()],
+            records is null ? null : new LedgerCommitCheck(records));
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)
@@ -466,7 +470,7 @@ public static class LinuxDeploymentRecovery
     public static async Task<JournalRecoveryReport?> RecoverAsync(DeploymentJournal journal, LinuxDeploymentRecordStore records)
     {
         if (records.CorruptLedgerPath is not null) return null;
-        return await journal.RecoverAsync(entry => IsCommitted(entry, records)).ConfigureAwait(false);
+        return await journal.RecoverAsync(entry => IsCommitted(entry, records.All())).ConfigureAwait(false);
     }
 
     /// <summary>Sweeps the recorded directories and the journal's own directory (its temporaries).</summary>
@@ -561,18 +565,40 @@ public static class LinuxDeploymentRecovery
     /// <para>A removal (<see cref="RecordRemovalProbe"/>) is committed once no record carries its id under
     /// <see cref="RemovalOperationIdMetadataKey"/>: the record it stamped was removed (or saved narrowed through
     /// <see cref="EndRemoval"/>). Matched on the id alone for the same reason.</para>
+    /// <para>One rule for start-up recovery and for an operation that failed in process (#204,
+    /// <see cref="LedgerCommitCheck"/>), so both always agree on what a landed commit write means.</para>
     /// </summary>
-    private static bool IsCommitted(JournalEntryInfo entry, LinuxDeploymentRecordStore records)
+    internal static bool IsCommitted(JournalEntryInfo entry, IReadOnlyList<LinuxDeploymentRecord> records)
     {
         if (entry.CommitProbe is not { } probe) return false;
         if (probe.StartsWith(RecordRemovedProbePrefix, StringComparison.Ordinal))
-            return !records.All().Any(record => CarriesId(record, RemovalOperationIdMetadataKey, entry.Id));
+            return !records.Any(record => CarriesId(record, RemovalOperationIdMetadataKey, entry.Id));
         if (!probe.StartsWith("record|", StringComparison.Ordinal)) return false;
-        return records.All().Any(record => CarriesId(record, OperationIdMetadataKey, entry.Id));
+        return records.Any(record => CarriesId(record, OperationIdMetadataKey, entry.Id));
     }
 
     private static bool CarriesId(LinuxDeploymentRecord record, string key, string id)
         => record.Metadata.TryGetValue(key, out var value) && value == id;
+}
+
+/// <summary>
+/// The commit decision of a failed operation (#204): reads the ledger FILE again (never the store's cache, which a real
+/// failure inside the write — a directory fsync after the rename — leaves holding the old ledger) and applies the rule
+/// start-up recovery applies (<see cref="LinuxDeploymentRecovery.IsCommitted"/>). An unreadable ledger that is byte for
+/// byte the one the operation began with cannot hold a write of it (it was already unreadable, so every save was refused):
+/// not committed, roll back as before. One that changed since and cannot be read is undecided: the next start decides.
+/// </summary>
+internal sealed class LedgerCommitCheck(LinuxDeploymentRecordStore records) : IDeploymentCommitCheck
+{
+    public string? Mark() => records.ReadFileFresh().Sha256;
+
+    public CommitDecision Decide(JournalEntryInfo entry, string? mark)
+    {
+        var (ledger, sha) = records.ReadFileFresh();
+        if (ledger is not null)
+            return LinuxDeploymentRecovery.IsCommitted(entry, ledger) ? CommitDecision.Committed : CommitDecision.NotCommitted;
+        return sha is not null && string.Equals(sha, mark, StringComparison.Ordinal) ? CommitDecision.NotCommitted : CommitDecision.Undecided;
+    }
 }
 
 /// <summary>What <see cref="LinuxDeploymentRecovery.RunAtStartupAsync"/> did.</summary>
