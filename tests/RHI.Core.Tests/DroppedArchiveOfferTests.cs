@@ -388,6 +388,34 @@ public sealed class DroppedArchiveOfferTests(ITestOutputHelper output) : IDispos
         Assert.True(ScratchIsEmpty(fx));
     }
 
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("pt-BR")]
+    public async Task TheDialogTexts_NameTheArchiveAndTheAddon_InBothLanguages(string language)
+    {
+        var (fx, _) = await StartAsync(language);
+        using var __ = fx;
+        var zip = Zip(Path.Combine(Folder(fx, "Downloads"), "pacote.zip"),
+            ("renodx-foogame.addon64", AddonBytes()), ("renodx-mfg_unlock.addon64", AddonBytes()), ("Luma-Foo.addon64", AddonBytes()));
+        fx.Managed.ArchiveLumaInstallForTesting = (_, _, _) => Task.FromResult(ComponentOperationResult.Ok("ok"));
+        using var archive = (await fx.Vm.DroppedRenoDx.OfferForArchiveAsync(fx.Vm, zip)).Offer!;
+        var pt = language == "pt-BR";
+
+        Assert.Equal(3, archive.AddOns.Count);
+        Assert.Equal(pt ? "Instalar renodx-foogame.addon64, do arquivo compactado pacote.zip, como o mod RenoDX deste jogo:"
+            : "Install renodx-foogame.addon64, from the archive pacote.zip, as this game's RenoDX mod:", archive.AddOns[0].Intro);
+        Assert.Equal(pt ? "Instalar renodx-mfg_unlock.addon64, do arquivo compactado pacote.zip, neste jogo, ao lado dos outros add-ons:"
+            : "Install renodx-mfg_unlock.addon64, from the archive pacote.zip, into this game, beside its other add-ons:", archive.AddOns[1].Intro);
+        Assert.Equal(pt ? "Instalar add-on do Luma" : "Install Luma add-on", archive.AddOns[2].Title);
+        Assert.Equal(pt ? "Instalar o pacote Luma pacote.zip (ele contém Luma-Foo.addon64) neste jogo:"
+            : "Install the Luma package pacote.zip (it holds Luma-Foo.addon64) into this game:", archive.AddOns[2].Intro);
+        Assert.Equal(pt ? "O RHI usa a mesma instalação gerenciada de um pacote Luma solto sobre ele; o botão Remover da linha do Luma o retira."
+            : "RHI uses the same managed install as for a Luma package dropped on it; the Luma row's Remove button takes it out.", archive.AddOns[2].Note);
+        Assert.Equal(pt ? "Os add-ons encontrados no arquivo compactado; escolha o que será instalado."
+            : "The add-ons found in the archive; choose the one to install.", archive.AddOnTip);
+        Assert.Equal(pt ? "Lendo o arquivo compactado pacote.zip…" : "Reading the archive pacote.zip…", UiLocalizationService.Format("Arc.Reading", "pacote.zip"));
+    }
+
     public static TheoryData<string, string> ArchiveFixedTexts => new()
     {
         { DroppedArchiveExtractor.ParentRefusal + "../x", "climbs out" },
