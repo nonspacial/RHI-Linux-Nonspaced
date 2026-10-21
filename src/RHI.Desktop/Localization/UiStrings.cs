@@ -1236,6 +1236,7 @@ internal static class UiStrings
         ("Nv.ApplyInOtherLauncher", "Outro launcher inicia este jogo, então o RHI não aplica as configurações NVIDIA ao Iniciar. Defina no launcher as variáveis de ambiente: {0}.", "Another launcher starts this game, so RHI does not apply the NVIDIA settings on Launch. Set these environment variables in that launcher: {0}."),
         ("Nv.Copied", "Opções de inicialização copiadas.", "Launch options copied."),
         ("Nv.LaunchingWithSettings", "Iniciando com configurações NVIDIA: {0}", "Launching with NVIDIA settings: {0}"),
+        ("Nv.RestoredToDefault", "Configurações NVIDIA de volta ao padrão: {0}.", "NVIDIA settings set back to Default: {0}."),
         ("Nv.LauncherCannotApply", "Há configurações NVIDIA escolhidas, mas este launcher não consegue aplicar opções de inicialização do Linux.", "NVIDIA settings are chosen, but this launcher cannot apply Linux launch options."),
         // w7/dxvk-hdr rows
     ];

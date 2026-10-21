@@ -51,10 +51,31 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             ? new NvidiaDlssFamilies(dlss.DlssPaths.Count > 0, dlss.DlssdPaths.Count > 0, dlss.DlssgPaths.Count > 0)
             : null;
 
-    /// <summary>#211: a NVIDIA settings control changed: save it with the launch profile.</summary>
-    internal void SaveNvidiaSettings()
+    /// <summary>
+    /// #211: a NVIDIA settings control changed (<paramref name="change"/>): save it with the launch profile. After a
+    /// restored library file only that change is applied to the restored settings (the others stay as restored).
+    /// </summary>
+    internal void SaveNvidiaSettings(Action<NvidiaGameSettings> change)
     {
-        if (SelectedGame is { } game) SaveHdrProfile(game, HdrControl.Nvidia);
+        if (SelectedGame is { } game)
+            SaveHdrProfile(game, HdrControl.Nvidia, restored =>
+            {
+                var merged = restored?.Copy() ?? new NvidiaGameSettings();
+                change(merged);
+                return merged.Normalize();
+            });
+    }
+
+    /// <summary>
+    /// #211: Restore all in the DLSS section: every NVIDIA setting of <paramref name="game"/> back to Default (as
+    /// upstream's Restore all clears its preset overrides). False when nothing was chosen or library writes wait.
+    /// </summary>
+    internal bool ResetNvidiaSettings(DetectedGame game)
+    {
+        if (!ReferenceEquals(game, SelectedGame) || !Nvidia.HasChoices || Host.LibraryWritesPaused()) return false;
+        Nvidia.Load(null);
+        SaveHdrProfile(game, HdrControl.Nvidia, _ => null);
+        return true;
     }
 
     /// <summary>
@@ -618,7 +639,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         NotifyHdrProfile();
     }
 
-    private void SaveHdrProfile(DetectedGame game, HdrControl touched)
+    /// <param name="nvidiaChange">#211: the NVIDIA change applied to the restored settings after a restored library file.</param>
+    private void SaveHdrProfile(DetectedGame game, HdrControl touched, Func<NvidiaGameSettings?, NvidiaGameSettings?>? nvidiaChange = null)
     {
         if (Host.LibraryWritesPaused())
         {
@@ -644,7 +666,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
                 EnableLegacyWsi = touched == HdrControl.LegacyWsi ? shown.EnableLegacyWsi : restored.EnableLegacyWsi,
                 ResolutionToggle = touched == HdrControl.Resolution ? shown.ResolutionToggle : restored.ResolutionToggle,
                 Resolution = touched == HdrControl.Resolution ? shown.Resolution : restored.Resolution,
-                Nvidia = touched == HdrControl.Nvidia ? shown.Nvidia : restored.Nvidia // #211
+                // #211: only the NVIDIA member the user changed (the restored ones stay).
+                Nvidia = touched == HdrControl.Nvidia ? nvidiaChange is null ? shown.Nvidia : nvidiaChange(restored.Nvidia) : restored.Nvidia
             }.Normalize();
         }
         if (profile.IsDefault()) Host.LibraryState.HdrProfiles.Remove(key);
@@ -661,6 +684,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     {
         OnPropertyChanged(nameof(CanEditHdrProfile));
         RaiseHdrPlanChanged();
+        (Host as MainWindowViewModel)?.Dlss?.NotifyDlssDefaults(); // #211: Restore all follows the NVIDIA choices
     }
 
     public string GetSelectedHdrLaunchOptions() => HdrLaunchOptions;

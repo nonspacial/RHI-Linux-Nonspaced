@@ -193,14 +193,116 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         }
     }
 
+    // ---- Restore all (finding 1: coordinator decision 4) -----------------------------------------------------------
+
+    [Fact]
+    public async Task RestoreAll_SetsTheNvidiaSettingsBackToDefault_BesideRhisDlssFiles()
+    {
+        var game = Game("Restore Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]);
+        File.WriteAllBytes(Path.Combine(game.InstallPath, "nvngx_dlss.dll.original"), [0x4D, 0x5A, 0x01]); // RHI swapped this one
+        using var fx = await StartAsync(game, Gpu(rtx50: false));
+        var nv = fx.Vm.Dlss.Nvidia;
+        var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame!);
+        nv.SelectedSuperResolutionPreset = nv.SuperResolutionPresetOptions.For(11);
+        nv.NewestDlss = true;
+        Assert.NotNull(fx.Library.Load().HdrProfiles[key].Nvidia);
+        Assert.True(fx.Vm.Dlss.DlssSrRestoreAvailable);
+
+        await fx.Vm.Dlss.RestoreAllDlssCommand.ExecuteAsync(null);
+
+        Assert.False(fx.Library.Load().HdrProfiles.TryGetValue(key, out var left) && left.Nvidia is not null);
+        Assert.DoesNotContain(fx.Vm.Runtime.SelectedHdrPlan.Environment.Keys,
+            k => k.StartsWith("DXVK_NVAPI_DRS_", StringComparison.Ordinal) || k == "PROTON_ENABLE_NGX_UPDATER");
+        Assert.Equal(DlssPresetCatalogue.Default, nv.SelectedSuperResolutionPreset.Value);
+        Assert.False(nv.NewestDlss);
+        Assert.False(nv.HasChoices);
+    }
+
+    [Fact]
+    public async Task RestoreAll_IsOfferedForNvidiaSettingsAlone_AndSaysSo()
+    {
+        using var fx = await StartAsync(Game("Only Nv Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]), Gpu(rtx50: false));
+        var nv = fx.Vm.Dlss.Nvidia;
+        var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame!);
+        Assert.False(fx.Vm.Dlss.CanRestoreAllDlss); // no RHI files, nothing chosen
+
+        nv.SelectedSuperResolutionScale = nv.SuperResolutionScaleOptions.For(67u);
+        Assert.True(fx.Vm.Dlss.CanRestoreAllDlss);
+        Assert.True(fx.Vm.Dlss.RestoreAllDlssCommand.CanExecute(null));
+
+        await fx.Vm.Dlss.RestoreAllDlssCommand.ExecuteAsync(null);
+
+        Assert.DoesNotContain(key, fx.Library.Load().HdrProfiles.Keys);
+        Assert.Equal(0u, nv.SelectedSuperResolutionScale.Value);
+        Assert.StartsWith("NVIDIA settings set back to Default: Only Nv Quest.", fx.Vm.StatusText, StringComparison.Ordinal);
+        Assert.False(fx.Vm.Dlss.CanRestoreAllDlss);
+    }
+
+    // ---- a restored library file (finding 6, Refs #149) ----------------------------------------------------------
+
+    [Fact]
+    public async Task FirstNvidiaChangeAfterARestoredLibrary_ChangesOnlyThatSetting()
+    {
+        var game = Game("Restored Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]);
+        using var fx = await StartAsync(game, Gpu(rtx50: false), seed: store => File.WriteAllText(store.LibraryPath, "{ not json"));
+        var nv = fx.Vm.Dlss.Nvidia;
+        var key = LinuxGameLibraryStore.GameKey(fx.Vm.SelectedGame!);
+        var restored = new LinuxGameLibraryState();
+        restored.HdrProfiles[key] = new LinuxHdrGameProfile { Nvidia = new NvidiaGameSettings { SuperResolutionPreset = 11, NewestDlss = true } };
+        var staged = Path.Combine(_root, "restored.json");
+        new LinuxGameLibraryStore(staged).Save(restored);
+        File.Copy(staged, fx.Library.LibraryPath, overwrite: true);
+
+        // The controls show the stand-in (nothing chosen); the user picks a render scale.
+        nv.SelectedSuperResolutionScale = nv.SuperResolutionScaleOptions.For(67u);
+
+        var saved = fx.Library.Load().HdrProfiles[key].Nvidia!;
+        Assert.Equal((11u, true, 67u), (saved.SuperResolutionPreset, saved.NewestDlss, saved.SuperResolutionRenderScale));
+        Assert.Equal(11u, nv.SelectedSuperResolutionPreset.Value); // the controls now show the restored choices
+        Assert.True(nv.NewestDlss);
+    }
+
+    // ---- hide rules (finding 5) and the hand-off hint (finding 2) --------------------------------------------------
+
+    [Fact]
+    public async Task TheFrameGenerationPreset_IsHiddenOnAnRtx30()
+    {
+        var files = new[] { "nvngx_dlss.dll", "nvngx_dlssg.dll" };
+        using (var fx = await StartAsync(Game("Fg30 Quest", "Manual", "umu-run Quest.exe", dlss: files), new NvidiaGpuFacts(true, false, "NVIDIA GeForce RTX 3080")))
+        {
+            Assert.True(fx.Vm.Dlss.Nvidia.IsShown);
+            Assert.False(fx.Vm.Dlss.Nvidia.ShowFrameGenerationPreset);
+        }
+        using (var fx = await StartAsync(Game("Fg40 Quest", "Manual", "umu-run Quest.exe", dlss: files), Gpu(rtx50: false)))
+            Assert.True(fx.Vm.Dlss.Nvidia.ShowFrameGenerationPreset);
+    }
+
+    [Fact]
+    public void TheHandoffHint_ListsWhatTheCopyLineHolds_NotABlockedHdrModesVariables()
+    {
+        var game = Game("Heroic Quest", "Heroic", "xdg-open heroic://launch/legendary/abc", dlss: ["nvngx_dlss.dll"]);
+        var x11 = new LinuxHdrHostSnapshot(false, "KDE", false, "610.57.04", true) { Gpu = Gpu(rtx50: false) };
+        var plan = Service(Gpu(rtx50: false)).BuildPlan(game, new LinuxHdrGameProfile
+        {
+            Mode = LinuxHdrModes.NativeWayland, EnableLegacyWsi = true, Nvidia = new NvidiaGameSettings { SuperResolutionPreset = 11 }
+        }, x11, new NvidiaDlssFamilies(true, false, false));
+
+        Assert.False(plan.CanApply); // native Wayland HDR on X11: blocked
+        var hint = NvidiaLaunchText.ApplyInLauncher(plan, game);
+        Assert.Contains("DXVK_NVAPI_DRS_NGX_DLSS_SR_OVERRIDE_RENDER_PRESET_SELECTION=11", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("ENABLE_HDR_WSI", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("ENABLE_HDR_WSI", plan.LaunchOptions, StringComparison.Ordinal);
+    }
+
     // ---- helpers ----------------------------------------------------------------------------------------------------
 
     private static NvidiaGpuFacts Gpu(bool rtx50) => new(true, rtx50, rtx50 ? "NVIDIA GeForce RTX 5090" : "NVIDIA GeForce RTX 4090");
 
     /// <summary>Starts the view model over one game, selects it and waits for its analysis (the DLSS files).</summary>
-    private static async Task<ViewModelFixture> StartAsync(DetectedGame game, NvidiaGpuFacts gpu, RecordingLauncher? launcher = null)
+    private static async Task<ViewModelFixture> StartAsync(DetectedGame game, NvidiaGpuFacts gpu, RecordingLauncher? launcher = null,
+        Action<LinuxGameLibraryStore>? seed = null)
     {
-        var fx = await ViewModelFixture.StartAsync([game], launcher: launcher ?? new RecordingLauncher(), hdrProfiles: Service(gpu));
+        var fx = await ViewModelFixture.StartAsync([game], launcher: launcher ?? new RecordingLauncher(), hdrProfiles: Service(gpu), seed: seed);
         var analysed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void OnCompleted(AnalysisOutcome outcome)
         {

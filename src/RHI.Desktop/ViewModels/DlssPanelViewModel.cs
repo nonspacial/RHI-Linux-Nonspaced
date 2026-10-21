@@ -215,9 +215,14 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         _dlssDetection.HasAny && !OrchestratedDlssStackManaged &&
         !string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase);
 
-    public bool CanRestoreAllDlss =>
-        SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy && !OrchestratedDlssStackManaged &&
+    /// <summary>RHI has swapped DLSS/Streamline files of the selected game that Restore all can put back.</summary>
+    private bool DlssFilesRestorable =>
+        SelectedGame is not null && HasConfirmedPatchTarget && !OrchestratedDlssStackManaged &&
         (DlssSrRestoreAvailable || DlssRrRestoreAvailable || DlssFgRestoreAvailable || DlssNrRestoreAvailable || StreamlineRestoreAvailable);
+
+    /// <summary>Restore all: RHI's swapped files, and (#211) the game's NVIDIA settings back to Default.</summary>
+    public bool CanRestoreAllDlss =>
+        SelectedGame is not null && !IsBusy && !IsSelectionProbeBusy && (DlssFilesRestorable || Nvidia.HasChoices);
 
     [RelayCommand(CanExecute = nameof(CanQuickApplyDlssDefaults))]
     private async Task QuickApplyDlssDefaultsAsync()
@@ -255,15 +260,24 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     {
         if (SelectedGame is null || !CanRestoreAllDlss) return;
         var game = SelectedGame;
+        var files = DlssFilesRestorable;
         using var op = BeginOperation("dlss-restore");
         if (op is null) return;
+        // #211: the NVIDIA settings go back to Default first (no files involved; kept even if a file restore fails).
+        var nvidiaLine = Shell.Runtime.ResetNvidiaSettings(game) ? TF("Nv.RestoredToDefault", game.Name) : null;
+        if (!files)
+        {
+            if (nvidiaLine is not null) StatusText = nvidiaLine;
+            NotifyDlssDefaults();
+            return;
+        }
         try
         {
             StatusText = TF("Vm.RestoringAllRHIDLSSStreamlineOriginals", game.Name);
-            IReadOnlyList<string>? files = Host.Session.CachedFiles(game)
+            IReadOnlyList<string>? indexed = Host.Session.CachedFiles(game)
                 ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
-            var result = await _dlssDefaults.RestoreAllAsync(game, files, op.Token);
-            StatusText = UiLocalizationService.Present(result.Summary);
+            var result = await _dlssDefaults.RestoreAllAsync(game, indexed, op.Token);
+            StatusText = nvidiaLine is null ? UiLocalizationService.Present(result.Summary) : UiLocalizationService.Present(result.Summary) + " " + nvidiaLine;
             if (result.ChangedCount > 0)
                 await ReprobeGameAsync(game);
         }

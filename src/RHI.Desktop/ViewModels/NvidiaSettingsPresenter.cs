@@ -72,7 +72,8 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
 
     public bool ShowSuperResolution => IsShown && Plan.Families.SuperResolution;
     public bool ShowRayReconstruction => IsShown && Plan.Families.RayReconstruction;
-    public bool ShowFrameGenerationPreset => IsShown && Plan.Families.FrameGeneration;
+    /// <summary>The Frame Generation preset: a frame-generation file and an RTX 40 or newer.</summary>
+    public bool ShowFrameGenerationPreset => IsShown && Plan.FrameGenerationPresetOffered;
 
     /// <summary>Multi frame generation: an RTX 50 GPU and a frame-generation file.</summary>
     public bool ShowFrameGeneration => IsShown && Plan.FrameGenerationOffered;
@@ -95,6 +96,9 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
     public bool ShowLaunchOptions => IsShown && Plan.HasVariables && HdrPlan.Handoff != LaunchHandoff.None;
 
     public string LaunchOptions => HdrPlan.LaunchOptions;
+
+    /// <summary>Something is chosen for this game (Restore all in the DLSS section sets it back to Default).</summary>
+    public bool HasChoices => !_shown.IsDefault();
 
     /// <summary>The frame-generation button's summary ("Default", "Fixed · 3×", "Dynamic · up to 4× · 138 FPS · 144 Hz VRR").</summary>
     public string FrameGenerationSummary
@@ -142,6 +146,7 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         OnPropertyChanged(nameof(ShowLaunchOptions));
         OnPropertyChanged(nameof(LaunchOptions));
         OnPropertyChanged(nameof(FrameGenerationSummary));
+        OnPropertyChanged(nameof(HasChoices));
     }
 
     /// <summary>The UI language changed: labels follow, selections stay.</summary>
@@ -224,7 +229,11 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
     private static OptionItem<uint> ScaleItem(OptionItems<uint> options, uint percent)
         => percent == 0 || OptionLists.NvidiaRenderScale.Values.Contains(percent) ? options.For(percent) : options.For(OptionLists.NvidiaCustom);
 
-    /// <summary>A control changed: apply it to the shown settings, save, and raise what depends on it.</summary>
+    /// <summary>
+    /// A control changed: apply it to the shown settings, save, and raise what depends on it. The runtime panel gets the
+    /// change itself (<paramref name="apply"/>), so after a restored library file it changes only that member of the
+    /// restored settings (Refs #149).
+    /// </summary>
     private void Change(Action<NvidiaGameSettings> apply)
     {
         if (_loading) return;
@@ -232,7 +241,8 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         apply(next);
         next.Normalize();
         _shown = next;
-        _runtime.SaveNvidiaSettings();
+        _runtime.SaveNvidiaSettings(apply);
+        OnPropertyChanged(nameof(HasChoices));
         OnPropertyChanged(nameof(ShowSuperResolutionCustomScale));
         OnPropertyChanged(nameof(ShowRayReconstructionCustomScale));
         OnPropertyChanged(nameof(ShowFixedFrameCount));
@@ -348,7 +358,10 @@ public static class NvidiaLaunchText
     public static string ApplyInLauncher(LinuxHdrLaunchPlan plan, DetectedGame game)
     {
         var entry = string.IsNullOrWhiteSpace(game.ParentLauncherName) ? game.Name : XboxCardText.AppName(game.ParentLauncherName)!;
-        var variables = string.Join(", ", plan.Environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"));
+        // The variables the Copy line holds: HDR's only when its profile applies (a blocked one adds nothing to the line).
+        var environment = plan.Enabled && plan.CanApply ? plan.Environment : plan.Nvidia.Environment;
+        // "; " between variables: a DXVK_NVAPI_DRS_SETTINGS value holds commas of its own.
+        var variables = string.Join("; ", environment.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"));
         return plan.Handoff switch
         {
             LaunchHandoff.Steam => TF("Nv.ApplyInSteam", plan.LaunchOptions),
