@@ -6,7 +6,8 @@ namespace RHI.Core.Tests;
 
 // #204: the DX9 Luma install and removal save Luma's record and ReShade's translated record in ONE ledger write. When it
 // lands and then throws, the operation is finished as committed: both records are kept and nothing is undone (no file, no
-// dxgi.dll/d3d9.dll rename, no ReShade.ini/Engine.ini step, no override).
+// dxgi.dll/d3d9.dll rename, no ReShade.ini/Engine.ini step, no override). #213: Luma's install and removal track the file
+// behind a linked ReShade.ini, and the install's rollback step writes it through the link rule.
 public sealed partial class LumaFrameworkDeploymentServiceTests
 {
     [Theory]
@@ -86,5 +87,55 @@ public sealed partial class LumaFrameworkDeploymentServiceTests
 
         Assert.True(install[^1].Success);
         Assert.Equal([false, true], removal.Select(r => r.Success));
+    }
+
+    // #213: ReShade.ini linked to the user's shared file. Luma's own ReShade.ini write refuses a link, so the install fails;
+    // the scope tracked the shared file (not the link) and the rollback step writes through the link rule, so the link stays
+    // a link and the shared file is byte for byte as before — for a failed ledger write and for a crash at it alike.
+    [Theory]
+    [MemberData(nameof(ReShadeLinkedIniJournalTests.Failures), MemberType = typeof(ReShadeLinkedIniJournalTests))]
+    [Trait("Category", "CommitPoint")]
+    public async Task Install_LinkedReShadeIni_TheLinkStaysALink_AndTheSharedFileIsBack(string failure)
+    {
+        var fx = CreateLumaCancelFixture("linked-ini-" + failure, journaled: true);
+        using var http = fx.Http;
+        File.Delete(Path.Combine(fx.Game.BinaryDirectory!, "ReShade.ini"));
+        var shared = ReShadeLinkedIniJournalTests.LinkSharedIni(fx.Game.BinaryDirectory!);
+        var before = System.Text.Encoding.UTF8.GetBytes(ReShadeLinkedIniJournalTests.SharedBefore);
+        try
+        {
+            var saves = 0;
+            var result = failure == "ledger-blocked"
+                ? await RunBlocked()
+                : await RunCrash();
+
+            async Task<ComponentOperationResult?> RunBlocked()
+            {
+                fx.Records.SaveFaultForTesting = () => ++saves == 1 ? new IOException("disk full (test)") : null;
+                var r = await fx.Service.InstallAsync(fx.Game);
+                fx.Records.SaveFaultForTesting = null;
+                Assert.False(r.Success);
+                return r;
+            }
+            async Task<ComponentOperationResult?> RunCrash()
+            {
+                using var death = new SimulatedDeath(fx.Journal!);
+                fx.Records.SaveFaultForTesting = () => ++saves == 1 ? death.Die() : null;
+                var (died, run) = await death.RunUntilDeathAsync(() => fx.Service.InstallAsync(fx.Game));
+                if (died) await SimulatedDeath.RecoverAsync(fx.JournalDirectory, fx.RecordsPath);
+                else Assert.False((await run).Success);
+                ReShadeLinkedIniJournalTests.AssertLinked(fx.Game.BinaryDirectory!, shared, before);
+                return null;
+            }
+
+            ReShadeLinkedIniJournalTests.AssertLinked(fx.Game.BinaryDirectory!, shared, before);
+            Assert.Null(new LinuxDeploymentRecordStore(fx.RecordsPath).Find(fx.Game, ManagedComponentKind.LumaFramework));
+            Assert.Empty(Directory.GetFiles(fx.JournalDirectory, "*.json"));
+        }
+        finally
+        {
+            fx.Records.SaveFaultForTesting = null;
+            Directory.Delete(Path.GetDirectoryName(shared)!, recursive: true);
+        }
     }
 }

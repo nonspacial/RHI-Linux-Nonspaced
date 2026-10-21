@@ -670,3 +670,10 @@ build.
   back as before; if the ledger cannot be read, nothing is undone now and the next start decides. The row, Update All and
   the update history then match the ledger (a DX9 Feeder/Luma install used to leave ReShade's record naming `dxgi.dll`
   while ReShade was back at `d3d9.dll`, so every later removal failed).
+
+### #213 — Luma and DLSS5 Feeder journal the file behind a linked ReShade.ini
+- Luma Framework's install and removal and the DLSS5 Feeder's install and removal journal the file a ReShade.ini link
+  leads to (the user's shared file in `~/.config/ReShade`), never the link: a failed or interrupted install keeps the link
+  a link and puts the shared file back byte for byte. Luma's own ReShade.ini write and the Feeder's preset edit still
+  refuse a linked ReShade.ini (unchanged), so such an install fails and is rolled back cleanly; the Feeder's rollback used
+  to replace the link with a plain copy and leave its search paths in the shared file.

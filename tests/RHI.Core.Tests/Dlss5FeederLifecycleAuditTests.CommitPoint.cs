@@ -8,6 +8,7 @@ namespace RHI.Core.Tests;
 // When that write lands and then throws (a failed directory fsync), the install is finished as committed: both records
 // are kept and nothing is undone — no file, no dxgi.dll/d3d9.dll rename, no Wine override (the in-process rollback used
 // to put ReShade back at d3d9.dll under a record naming dxgi.dll, so every later removal failed in PrepareRestoreAsync).
+// #213: the Feeder tracks the file behind a linked ReShade.ini, never the link.
 public sealed partial class Dlss5FeederLifecycleAuditTests
 {
     private static CommitPointCase FeederCase(FeederFixture f, Func<Task<ComponentOperationResult>> act)
@@ -104,6 +105,37 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         finally
         {
             foreach (var f in fixtures) f.Dispose();
+        }
+    }
+
+    // #213: ReShade.ini linked to the user's shared file. The Feeder's search-path write follows the link; its preset edit
+    // refuses a link, so the install fails — and its rollback must keep the link a link and put the shared file back byte
+    // for byte (it used to track the link: the rollback replaced it with a plain copy and left RHI's lines in the shared file).
+    [Trait("Category", "CommitPoint")]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Install_LinkedReShadeIni_FailsAndRollsBack_TheLinkStaysALink_AndTheSharedFileIsBack(bool dx9)
+    {
+        using var f = new FeederFixture(dx9: dx9, journaled: true);
+        File.Delete(f.IniPath);
+        var shared = ReShadeLinkedIniJournalTests.LinkSharedIni(f.Bin);
+        try
+        {
+            var before = System.Text.Encoding.UTF8.GetBytes(ReShadeLinkedIniJournalTests.SharedBefore);
+
+            var result = await f.Install(Dlss5FeederConsumer.RenoDxDlss5);
+
+            Assert.False(result.Success, result.Message);
+            ReShadeLinkedIniJournalTests.AssertLinked(f.Bin, shared, before);
+            Assert.Null(f.Records.Find(f.Game, ManagedComponentKind.Dlss5Feeder));
+            Assert.Empty(Directory.GetFiles(f.JournalDirectory, "*.json"));
+            if (dx9)
+                Assert.Equal(Path.Combine(f.Bin, "d3d9.dll"), Assert.Single(f.Records.Find(f.Game, ManagedComponentKind.ReShade)!.Files).Path);
+        }
+        finally
+        {
+            Directory.Delete(Path.GetDirectoryName(shared)!, recursive: true);
         }
     }
 }

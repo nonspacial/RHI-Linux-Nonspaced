@@ -582,12 +582,15 @@ public sealed class Dlss5FeederFullDeploymentService
             copied.Add(t.Preset);
 
             // ReShade.ini: tracked before its three edits and declared after them, so a rollback (or the next start after a
-            // crash) puts back exactly the file as it was.
-            await scope.TrackAsync(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), CancellationToken.None).ConfigureAwait(false);
+            // crash) puts back exactly the file as it was. #213: the file the writes land in is tracked — a ReShade.ini
+            // linked to a shared file (~/.config/ReShade) is followed by the search-path write — never the link, so a rollback
+            // keeps the link and puts the shared file's bytes back.
+            var iniTarget = ReShadeIniManager.ResolveWriteTarget(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), t.BinaryDirectory, gameRoot: null);
+            await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             var iniResult = ReShadeIniManager.Apply(t.BinaryDirectory, [EffectSearchPath], [TextureSearchPath]);
             var presetMutation = SetPresetPath(iniResult.Path, @".\RHI-DLSS5-Feeder.ini");
             var earlyLoadMutation = consumer == Dlss5FeederConsumer.DeepFriedChicken ? EnsureLoadFromDllMainToken(iniResult.Path, DeepFriedAddonName) : null;
-            await scope.DeclareWrittenContentAsync(iniResult.Path, CancellationToken.None).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
 
             record = BuildRecord(game, consumer, compilerPlan, t, staged, dx9?.State ?? staged.SharedDx9State, copied, createdDirs, compilerOverride,
                 iniResult, presetMutation, earlyLoadMutation);
@@ -786,7 +789,9 @@ public sealed class Dlss5FeederFullDeploymentService
                 // Cleanup search-path tokens first. If Feeder had to create ReShade.ini and the
                 // file stayed untouched, this can remove it entirely. Otherwise restore only the
                 // PresetPath value we changed, and only while it still points at our preset.
-                await scope.TrackAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                // #213: the file behind a linked ReShade.ini is tracked, never the link (see the install).
+                var iniTarget = ReShadeIniManager.ResolveWriteTarget(iniPath, Path.GetDirectoryName(iniPath)!, gameRoot: null);
+                await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
                 ReShadeIniManager.Cleanup(
                     iniPath,
                     record.Metadata.GetValueOrDefault(MetaIniCreated) == "1",
@@ -798,7 +803,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 RestorePresetPath(iniPath, mutation);
                 if (record.Metadata.GetValueOrDefault(MetaLoadFromDllMainAdded) == "1")
                     RemoveLoadFromDllMainToken(iniPath, new IniListTokenMutation(true, DeepFriedAddonName));
-                if (File.Exists(iniPath)) await scope.DeclareWrittenContentAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                if (File.Exists(iniTarget)) await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             }
 
             if (restoreDx9)
