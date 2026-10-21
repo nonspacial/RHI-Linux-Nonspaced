@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
@@ -81,7 +82,7 @@ public sealed partial class ReShadeProfileViewModel
             return ComponentOperationResult.Fail(ShowStatus(refused));
         try
         {
-            var result = _components.IsReShadeManaged(game) ? await SyncChoicesAsync(game, op) : await InstallWithChoicesAsync(game, op);
+            var result = _components.IsReShadeManaged(game) ? await SyncChoicesAsync(game, op, null) : await InstallWithChoicesAsync(game, op);
             if (result.Success) await ReprobeGameAsync(game);
             ShowEffectivePacks(game);
             return result;
@@ -96,8 +97,9 @@ public sealed partial class ReShadeProfileViewModel
         }
     }
 
-    // RHI's ReShade is installed: only the pack files and the Addon Manager's add-ons change (review major 3).
-    private async Task<ComponentOperationResult> SyncChoicesAsync(DetectedGame game, OperationScope op)
+    // RHI's ReShade is installed: only the pack files and the Addon Manager's add-ons change (review major 3). A part whose
+    // save reported an error after its change was written adds its note to the line (w8 final review 1), and to landedNote.
+    private async Task<ComponentOperationResult> SyncChoicesAsync(DetectedGame game, OperationScope op, StrongBox<string>? landedNote)
     {
         StatusText = T("Vm.ApplyingShaderPackSelection");
         var shaders = await _components.ApplyShaderSetAsync(game, op.Token);
@@ -107,7 +109,10 @@ public sealed partial class ReShadeProfileViewModel
         var addons = await _components.ApplyAddonSetAsync(game, op.Token);
         if (addons.Outcome == ShaderSetOutcome.Failed)
             return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
-        return ComponentOperationResult.Ok(ShowStatus(AppliedLine(game, fromCache: false)));
+        var line = AppliedLine(game, fromCache: false);
+        var landed = LandedLine.With(LandedLine.With(line, shaders), addons);
+        if (landedNote is not null) landedNote.Value = landed[line.Length..];
+        return ComponentOperationResult.Ok(ShowStatus(landed));
     }
 
     // No RHI ReShade yet: Apply installs it (warning first) with the game's set; its add-ons follow.
@@ -129,7 +134,7 @@ public sealed partial class ReShadeProfileViewModel
         var addons = await _components.ApplyAddonSetAsync(game, op.Token);
         if (addons.Outcome == ShaderSetOutcome.Failed)
             return ComponentOperationResult.Fail(ShowStatus(TF("Vm.ShadersAppliedButAddOnsFailed", UiLocalizationService.Present(addons.Message))));
-        return ComponentOperationResult.Ok(ShowStatus(AppliedLine(game, shaderResult.FromCachedSource)));
+        return ComponentOperationResult.Ok(ShowStatus(LandedLine.With(LandedLine.With(AppliedLine(game, shaderResult.FromCachedSource), shaderResult), addons)));
     }
 
     private string AppliedLine(DetectedGame game, bool fromCache)
@@ -212,6 +217,8 @@ public sealed partial class ReShadeProfileViewModel
         if (result.NotRun > 0) parts.Add(TF("Sets.SumCancelled", result.NotRun));
         if (result.Excluded > 0) parts.Add(TF("Sets.SumExcluded", result.Excluded));
         if (parts.Count == 0) parts.Add(T("Sets.SumNone"));
-        return $"{T(part == ShaderAddonSetPart.Shaders ? "Win.ShaderPacks" : "Win.ReShadeAddOns")}: {string.Join("; ", parts)}.";
+        // w8 final review 1: the games whose save reported an error after their change was written are named, as batches do.
+        return LandedLine.With($"{T(part == ShaderAddonSetPart.Shaders ? "Win.ShaderPacks" : "Win.ReShadeAddOns")}: {string.Join("; ", parts)}.",
+            result.Landed);
     }
 }

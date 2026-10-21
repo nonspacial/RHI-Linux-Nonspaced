@@ -137,7 +137,136 @@ public sealed class LandedLineViewModelTests : IDisposable
         Assert.Equal(UiLocalizationService.Format("Ini.BatchDone", "x", 2), IniPresetsPresenter.BatchSummary("x", new IniBatchResult(2, 0, 0)));
     }
 
+    // ── w8 final review 1: Shaders/Add-ons Apply, a preset with its packs, Save global set, Update All ─────────────────
+
+    // RHI's ReShade is installed: the packs change (journaled, landed) and so do the add-ons (landed): both notes.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task ShadersAddonsApply_PacksAndAddOnsLanded_TheLineSaysWhatWasApplied_AndThatEachSaveReportedAnError(string language)
+    {
+        using var rig = await RigAsync("sets-sync-" + language, language, shaderPacks: true);
+        rig.AddonSelectionLands();
+
+        var result = await rig.LandingResult(() => rig.Fx.Vm.ReShadeProfile.ApplyShaderAddonChoicesAsync(
+            new ShaderAddonSetSelection(ShaderAddonMode.Select, [], ShaderAddonMode.Select, ["custom-Alpha"])));
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(UiLocalizationService.ShaderAddonAppliedFor(language, 0, 1, false) + Note(language, "ReShade") + Note(language, AddonManager),
+            result.Message);
+        Assert.Empty(ReShadeDeploymentService.RecordedShaderPacks(rig.Fx.Records.Find(rig.Game, ManagedComponentKind.ReShade)));
+    }
+
+    // No RHI ReShade yet: Apply installs it (landed), then the game's add-ons (landed).
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task ShadersAddonsApply_ReShadeInstallLanded_TheLineSaysWhatWasApplied_AndThatEachSaveReportedAnError(string language)
+    {
+        using var rig = await RigAsync("sets-install-" + language, language);
+        rig.ReShadeInstallLands(removeRecordFirst: true);
+        rig.AddonSelectionLands();
+
+        var result = await rig.Fx.Vm.ReShadeProfile.ApplyShaderAddonChoicesAsync(
+            new ShaderAddonSetSelection(ShaderAddonMode.Select, [], ShaderAddonMode.Select, ["custom-Alpha"]));
+
+        // ReShade's install applies a game's add-ons after it (its own note), as upstream; Apply then brings them up to date.
+        var install = " " + UiLocalizationService.PresentFor(language, DeploymentScope.Landed("ReShade").Message + LinuxManagedComponentService.AddonSetAppliedNote);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(UiLocalizationService.ShaderAddonAppliedFor(language, 0, 1, false) + install + Note(language, AddonManager), result.Message);
+    }
+
+    // The explicit lists (the dialog without the shader-set store; a preset with its packs on the selected game): the line,
+    // and the note a preset adds to its own line.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task ExplicitListsApply_ReShadeInstallAndAddOnsLanded_TheLineSaysSo_AndHandsTheNoteOn(string language)
+    {
+        using var rig = await RigAsync("lists-" + language, language);
+        rig.Fx.Managed.ShaderSets = null;
+        rig.ReShadeInstallLands(removeRecordFirst: true);
+        rig.AddonSelectionLands();
+        var note = new System.Runtime.CompilerServices.StrongBox<string>("");
+
+        var result = await rig.Fx.Vm.ReShadeProfile.ApplyShaderAddonManagerAsync([], ["custom-Alpha"], note);
+
+        var notes = Note(language, "ReShade") + Note(language, AddonManager);
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(UiLocalizationService.ShaderAddonAppliedFor(language, 0, 1, false) + notes, result.Message);
+        Assert.Equal(notes, note.Value);
+    }
+
+    // The same lists with the shader-set store and RHI's ReShade (the packs sync, landed): the note is handed on too.
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task ExplicitListsApply_PackSyncLanded_HandsTheNoteOn(string language)
+    {
+        using var rig = await RigAsync("lists-sync-" + language, language, shaderPacks: true);
+        var note = new System.Runtime.CompilerServices.StrongBox<string>("");
+
+        var result = await rig.LandingResult(() => rig.Fx.Vm.ReShadeProfile.ApplyShaderAddonManagerAsync([], [], note));
+
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(Note(language, "ReShade"), note.Value);
+        Assert.EndsWith(note.Value, result.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task PresetWithItsPacks_OnAnotherGame_ReShadeInstallLanded_TheLineSaysSo(string language)
+    {
+        using var rig = await RigAsync("preset-packs-" + language, language);
+        rig.ReShadeInstallLands();
+        var (presets, preset) = rig.Preset();
+        rig.Fx.Vm.SelectedGame = null; // the preset goes to a game that is not the selected one
+
+        var line = await presets.InstallPresetAsync(preset, withShaderPacks: true, rig.Game);
+
+        Assert.True(line.EndsWith(" " + UiLocalizationService.Format("Ini.PresetPacksApplied", "CrosireMaster") + Note(language, "ReShade"), StringComparison.Ordinal), line);
+    }
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task PresetWithItsPacks_OnTheSelectedGame_ReShadeInstallLanded_TheLineSaysSo(string language)
+    {
+        using var rig = await RigAsync("preset-packs-sel-" + language, language);
+        rig.Fx.Managed.ShaderSets = null; // the explicit lists: Apply reinstalls ReShade with the preset's packs
+        rig.ReShadeInstallLands();
+        var (presets, preset) = rig.Preset();
+
+        var line = await presets.InstallPresetAsync(preset, withShaderPacks: true);
+
+        Assert.True(line.EndsWith(" " + UiLocalizationService.Format("Ini.PresetPacksApplied", "CrosireMaster") + Note(language, "ReShade"), StringComparison.Ordinal), line);
+    }
+
+    [Theory]
+    [MemberData(nameof(Languages))]
+    public async Task SaveGlobalSet_AGamesPackChangeLanded_TheLineNamesTheGame(string language)
+    {
+        using var rig = await RigAsync("sets-global-" + language, language, shaderPacks: true);
+        rig.Fx.Managed.ShaderSets!.SetShaderMode(rig.Game, ShaderAddonMode.Global);
+        rig.Fx.Managed.ShaderSets.SetAddonMode(rig.Game, ShaderAddonMode.Global);
+
+        var result = await rig.LandingResult(() => rig.Fx.Vm.ReShadeProfile.ApplyGlobalSetsAsync([], []));
+
+        Assert.True(result.Success, result.Message);
+        Assert.StartsWith(UiLocalizationService.Text("Win.ShaderPacks") + ": " + UiLocalizationService.Format("Sets.SumChanged", 1) + "."
+                          + Note(language, rig.Game.Name) + " ", result.Message, StringComparison.Ordinal);
+        Assert.Empty(ReShadeDeploymentService.RecordedShaderPacks(rig.Fx.Records.Find(rig.Game, ManagedComponentKind.ReShade)));
+    }
+
+    // Unit level: the batch line names the landed games; none adds nothing.
+    [Fact]
+    public void SetBatchSummary_NamesTheLandedGames()
+    {
+        var plain = new ShaderAddonSetBatchResult(2, 0, 0, 0, 0, 0, false, [], []);
+
+        Assert.Equal(ReShadeProfileViewModel.SummaryText(ShaderAddonSetPart.Shaders, plain) + Note("en-US", "A, B"),
+            ReShadeProfileViewModel.SummaryText(ShaderAddonSetPart.Shaders, plain with { Landed = ["A", "B"] }));
+        Assert.DoesNotContain(DeploymentScope.LandedChangePrefix, ReShadeProfileViewModel.SummaryText(ShaderAddonSetPart.Shaders, plain with { Landed = [] }));
+    }
+
     // ── fixture ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private const string AddonManager = "ReShade Addon Manager";
 
     private static string Note(string language, string component)
         => " " + UiLocalizationService.PresentFor(language, DeploymentScope.Landed(component).Message);
@@ -158,6 +287,51 @@ public sealed class LandedLineViewModelTests : IDisposable
             LandedLedgerWrite.Arm(Fx.Records, LandedShape.AfterCache, at: 1);
             try { return await action(); }
             finally { LandedLedgerWrite.Disarm(Fx.Records); }
+        }
+
+        /// <summary>As <see cref="Landing"/>, for an action that returns the operation's result.</summary>
+        public async Task<ComponentOperationResult> LandingResult(Func<Task<ComponentOperationResult>> action)
+        {
+            LandedLedgerWrite.Arm(Fx.Records, LandedShape.AfterCache, at: 1);
+            try { return await action(); }
+            finally { LandedLedgerWrite.Disarm(Fx.Records); }
+        }
+
+        /// <summary>
+        /// ReShade's own install (offline here) reports a commit write that landed and then threw. With
+        /// <paramref name="removeRecordFirst"/> the game has no RHI ReShade before, and the install records it.
+        /// </summary>
+        public void ReShadeInstallLands(bool removeRecordFirst = false)
+        {
+            var record = Fx.Records.Find(Game, ManagedComponentKind.ReShade)!;
+            if (removeRecordFirst) Fx.Records.Remove(Game, ManagedComponentKind.ReShade);
+            Fx.Managed.ReShadeInstallForTesting = (_, _, _) =>
+            {
+                Fx.Records.Upsert(record);
+                return Task.FromResult(DeploymentScope.Landed("ReShade"));
+            };
+        }
+
+        /// <summary>The Addon Manager's own apply (offline here) reports a commit write that landed and then threw.</summary>
+        public void AddonSelectionLands()
+            => Fx.Managed.AddonSelectionForTesting = (_, _, _) => Task.FromResult(DeploymentScope.Landed("ReShade Addon Manager"));
+
+        /// <summary>
+        /// A preset whose effects need one pack, and the presenter that installs it (the pack list is given; the real one
+        /// reads every pack's files).
+        /// </summary>
+        public (IniPresetsPresenter Presets, string Path) Preset()
+        {
+            var preset = System.IO.Path.Combine(Root, "Downloads", "Packs.ini");
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(preset)!);
+            File.WriteAllText(preset, "Techniques=SMAA@SMAA.fx\n");
+            // Packs need a native D3DCompiler_47 in the prefix (what the Winetricks verb leaves).
+            var compiler = System.IO.Path.Combine(Game.PrefixPath!, "drive_c", "windows", "system32", "d3dcompiler_47.dll");
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(compiler)!);
+            ReShadeChannelTests.WriteNativeD3DCompiler(compiler, 0x8664);
+            var presets = Fx.Vm.IniPresets;
+            presets.ResolvePacksForTesting = _ => Task.FromResult<(IReadOnlyList<string>, IReadOnlyList<string>, string?)>((["CrosireMaster"], [], null));
+            return (presets, preset);
         }
 
         /// <summary>Waits for the selected game's analysis (the per-game Apply reads it).</summary>
@@ -182,8 +356,9 @@ public sealed class LandedLineViewModelTests : IDisposable
 
     // One Unreal game with RHI's ReShade, Luma and RenoDX records (each service checks only its own), a ReShade.ini with
     // Luma's and RenoDX's sections, and an Engine.ini in the prefix holding RHI's RenoDX colour-grading line. The ⚙ services
-    // are journaled on the fixture's ledger, as the app's composition sets them.
-    private async Task<Rig> RigAsync(string name, string language)
+    // are journaled on the fixture's ledger, as the app's composition sets them; with shaderPacks, ReShade is journaled too
+    // and its record holds a deployed pack.
+    private async Task<Rig> RigAsync(string name, string language, bool shaderPacks = false)
     {
         var root = Path.Combine(_root, name);
         var bin = Directory.CreateDirectory(Path.Combine(root, "Proj", "Binaries", "Win64")).FullName;
@@ -203,14 +378,18 @@ public sealed class LandedLineViewModelTests : IDisposable
             Name = "Landed " + name, InstallPath = root, BinaryDirectory = bin, ExecutablePath = exe, PrefixPath = prefix, Runner = "Proton",
             Source = "Heroic", GraphicsApi = GraphicsApi.DirectX12, EngineHint = "Unreal Engine 5", EngineIniProjectOverride = "Proj"
         };
-        var fx = await ViewModelFixture.StartAsync([game], language);
+        var fx = await ViewModelFixture.StartAsync([game], language, journaledReShade: shaderPacks);
         UiLocalizationService.Apply(language);
         var card = fx.Vm.Games.Single(g => g.Game.Name == game.Name).Game;
         var key = LinuxDeploymentRecordStore.GameKey(card);
         fx.Records.Upsert(new LinuxDeploymentRecord
         {
             GameKey = key, GameName = card.Name, Component = ManagedComponentKind.ReShade, BinaryDirectory = bin, Version = "6.8.0",
-            Files = [new LinuxDeployedFile { Path = dxgi, Sha256 = FileHash.Sha256Hex(dxgi) }]
+            Files = [new LinuxDeployedFile { Path = dxgi, Sha256 = FileHash.Sha256Hex(dxgi) }],
+            // w8 final review 1: RHI's packs as deployed, so taking them out is a real (journaled) shader-pack change
+            Metadata = shaderPacks
+                ? new(StringComparer.OrdinalIgnoreCase) { ["ReShade.ShaderPacks"] = "[\"CrosireMaster\"]" }
+                : new(StringComparer.OrdinalIgnoreCase)
         });
         fx.Records.Upsert(new LinuxDeploymentRecord
         {

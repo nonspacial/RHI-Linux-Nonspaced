@@ -1715,9 +1715,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (guard is null && selectedIds.Count > 0 && ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade)))
             guard = ComponentOperationResult.Fail(ReShadeDeploymentService.NoAddonsBlocksAddonPrefix + "ReShade Addon Manager");
         return guard is null
-            ? _addonManager.ApplySelectionAsync(game, selectedIds, cancellationToken)
+            ? (AddonSelectionForTesting ?? _addonManager.ApplySelectionAsync)(game, selectedIds, cancellationToken)
             : Task.FromResult(guard);
     }
+
+    /// <summary>Test seam: the Addon Manager's own apply inside <see cref="ApplyReShadeAddonSelectionAsync"/> (VM tests run offline).</summary>
+    internal Func<DetectedGame, IReadOnlyList<string>, CancellationToken, Task<ComponentOperationResult>>? AddonSelectionForTesting { get; set; }
 
     public bool IsReShadeManaged(DetectedGame game) => _reshade.IsManaged(game);
 
@@ -1957,10 +1960,13 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
                         cancellationToken: cancellationToken).ConfigureAwait(false);
                     if (compiler is not null) return compiler;
                 }
-                return await _reshade.InstallAsync(game, options, cancellationToken).ConfigureAwait(false);
+                return await (ReShadeInstallForTesting ?? _reshade.InstallAsync)(game, options, cancellationToken).ConfigureAwait(false);
             },
             cancellationToken)).ConfigureAwait(false);
     }
+
+    /// <summary>Test seam: ReShade's own install inside <see cref="ApplyReShadeAsync"/> (VM tests run offline).</summary>
+    internal Func<DetectedGame, ReShadeInstallOptions, CancellationToken, Task<ComponentOperationResult>>? ReShadeInstallForTesting { get; set; }
 
     public Task<ReShadeUpdateStatus> CheckReShadeUpdateAsync(
         DetectedGame game,
@@ -3015,7 +3021,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         var result = await (_history is null
             ? Sync()
             : _history.TrackOwnedFileAsync(game, ManagedComponentKind.ReShade, ShaderPackHistoryLabel, ShaderPackHistoryVersion, Sync)).ConfigureAwait(false);
-        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
+        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message, result.Landed);
     }
 
     /// <summary>
@@ -3052,7 +3058,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (!AddonSetBehind(game)) return new(ShaderSetOutcome.Unchanged, "");
         var result = await Track(game, ManagedComponentKind.ReShadeAddonManager, ComponentUpdateAction.Update,
             () => ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken)).ConfigureAwait(false);
-        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
+        return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message, result.Landed);
     }
 
     /// <summary>The message when the shader and add-on choices cannot be read (PT-BR pair).</summary>
@@ -3117,8 +3123,12 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
 /// <summary>#179: what bringing one game to its effective shader or add-on set did.</summary>
 public enum ShaderSetOutcome { Changed, Unchanged, Held, NotApplicable, Failed }
 
-/// <summary>#179: one game's outcome and the message of the operation (empty when nothing ran).</summary>
-public sealed record ShaderSetApplyResult(ShaderSetOutcome Outcome, string Message);
+/// <summary>
+/// #179: one game's outcome and the message of the operation (empty when nothing ran). <paramref name="Landed"/> (w8 final
+/// review 1): the change was written and the save then reported an error; Message is the note saying so
+/// (<see cref="ComponentOperationResult.Landed"/>).
+/// </summary>
+public sealed record ShaderSetApplyResult(ShaderSetOutcome Outcome, string Message, bool Landed = false);
 
 /// <summary>Outcome of changing a Neural Rendering add-on pin (see <see cref="LinuxManagedComponentService.PlanNeuralPinChange"/>).</summary>
 public enum NeuralPinChange

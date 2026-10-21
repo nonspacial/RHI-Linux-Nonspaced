@@ -385,9 +385,21 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
     /// store). #179: a list that differs from what the game gets now makes that part Select with exactly it; with RHI's
     /// ReShade installed only the pack files and add-ons change (review major 3), otherwise ReShade is installed with them.
     /// </summary>
-    public async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
+    public Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
         IReadOnlyList<string> shaderIds,
         IReadOnlyList<string> addonIds,
+        CancellationToken cancellationToken = default)
+        => ApplyShaderAddonManagerAsync(shaderIds, addonIds, landedNote: null, cancellationToken);
+
+    /// <summary>
+    /// As <see cref="ApplyShaderAddonManagerAsync(IReadOnlyList{string}, IReadOnlyList{string}, CancellationToken)"/>; on
+    /// success <paramref name="landedNote"/> gets the note(s) the line ends with when a save reported an error after the
+    /// change was written ("" otherwise), for a caller that words its own line (a preset with its packs; w8 final review 1).
+    /// </summary>
+    internal async Task<ComponentOperationResult> ApplyShaderAddonManagerAsync(
+        IReadOnlyList<string> shaderIds,
+        IReadOnlyList<string> addonIds,
+        System.Runtime.CompilerServices.StrongBox<string>? landedNote,
         CancellationToken cancellationToken = default)
     {
         if (SelectedGame is null) return ComponentOperationResult.Fail(T("Vm.SelectGameFirst"));
@@ -401,7 +413,7 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
         {
             if (Sets is not null && _components.IsReShadeManaged(game))
             {
-                var synced = await SyncChoicesAsync(game, op);
+                var synced = await SyncChoicesAsync(game, op, landedNote);
                 if (synced.Success) await ReprobeGameAsync(game);
                 ShowEffectivePacks(game);
                 return synced;
@@ -445,8 +457,11 @@ public sealed partial class ReShadeProfileViewModel : PanelViewModel
             ShaderClshortfuse = _selectedShaderPackIds.Contains("ClshortfuseShaders");
             ShaderMaxG2D = _selectedShaderPackIds.Contains("MaxG2DSimpleHDR");
             await ReprobeGameAsync(game);
+            // w8 final review 1: ReShade's install or the add-ons whose save reported an error after the change was written.
+            var note = LandedLine.Note(shaderResult) + LandedLine.Note(addonResult);
+            if (landedNote is not null) landedNote.Value = note;
             return ComponentOperationResult.Ok(ShowStatus(UiLocalizationService.ShaderAddonAppliedFor(
-                UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource)));
+                UiLocalizationService.CurrentLanguage, options.ShaderPackIds.Count, addonIds.Count, shaderResult.FromCachedSource) + note));
         }
         catch (Exception ex) when (op.WasCancelled(ex) && op.CancelRequested)
         {

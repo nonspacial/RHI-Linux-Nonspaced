@@ -302,7 +302,7 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
         var line = UiLocalizationService.Present(result.Message);
         if (!result.Success || !withShaderPacks) return Report(line);
 
-        var (packs, unresolved, error) = await ResolvePacksAsync(presetPath);
+        var (packs, unresolved, error) = await (ResolvePacksForTesting ?? ResolvePacksAsync)(presetPath);
         if (error is not null) return Report(line + " " + error);
         var tail = unresolved.Count > 0 ? " " + UiLocalizationService.Format("Ini.PresetUnresolved", string.Join(", ", unresolved)) : "";
         if (packs.Count == 0) return Report(line + " " + UiLocalizationService.Text("Ini.PresetNoPacks") + tail);
@@ -311,10 +311,14 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
             return Report(line + " " + UiLocalizationService.Format("Ini.PresetPacksAlready", string.Join(", ", packs)) + tail);
         var shaderIds = current.Union(packs, StringComparer.OrdinalIgnoreCase).ToList();
         ComponentOperationResult applied;
+        // w8 final review 1: the note of a pack change whose save reported an error after the change was written.
+        string landedNote;
         if (ReferenceEquals(game, vm.SelectedGame))
         {
             var addons = (await vm.ReShadeProfile.GetShaderAddonManagerSnapshotAsync())?.SelectedAddonIds ?? [];
-            applied = await vm.ReShadeProfile.ApplyShaderAddonManagerAsync(shaderIds, addons);
+            var note = new System.Runtime.CompilerServices.StrongBox<string>("");
+            applied = await vm.ReShadeProfile.ApplyShaderAddonManagerAsync(shaderIds, addons, note);
+            landedNote = note.Value ?? "";
         }
         else
         {
@@ -323,11 +327,15 @@ public sealed class IniPresetsPresenter(MainWindowViewModel vm, LinuxManagedComp
             var options = managed.GetReShadeOptions(game);
             options.ShaderPackIds = shaderIds;
             applied = await managed.ApplyReShadeAsync(game, options, op.Token);
+            landedNote = LandedLine.Note(applied);
         }
         return Report(line + " " + (applied.Success
-            ? UiLocalizationService.Format("Ini.PresetPacksApplied", string.Join(", ", packs))
+            ? UiLocalizationService.Format("Ini.PresetPacksApplied", string.Join(", ", packs)) + landedNote
             : UiLocalizationService.Format("Ini.PresetPacksFailed", UiLocalizationService.Present(applied.Message))) + tail);
     }
+
+    /// <summary>Test seam: the packs a preset needs, instead of reading every pack's file list (VM tests run offline).</summary>
+    internal Func<string, Task<(IReadOnlyList<string> Packs, IReadOnlyList<string> Unresolved, string? Error)>>? ResolvePacksForTesting { get; set; }
 
     /// <summary>Removes a preset RHI installed in the selected game.</summary>
     public async Task<string> RemovePresetAsync(string fileName)

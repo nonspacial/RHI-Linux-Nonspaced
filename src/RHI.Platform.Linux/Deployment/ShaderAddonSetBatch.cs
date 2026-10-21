@@ -10,7 +10,8 @@ public enum ShaderAddonSetPart { Shaders, Addons }
 /// <summary>
 /// What a #179 batch did, counted per game: brought up to date, already up to date, held (No Addons), skipped because the
 /// game was running, failed (its files kept), not reached because Cancel stopped the batch, and (a global edit) left alone
-/// because the game is left out of Update All for that component.
+/// because the game is left out of Update All for that component. <paramref name="Landed"/> (w8 final review 1): the games
+/// brought up to date whose save reported an error after the change was written (counted in <paramref name="Changed"/>).
 /// </summary>
 public sealed record ShaderAddonSetBatchResult(
     int Changed,
@@ -22,7 +23,8 @@ public sealed record ShaderAddonSetBatchResult(
     bool Cancelled,
     IReadOnlyList<(string Game, string Reason)> Failures,
     IReadOnlyList<string> RunningGames,
-    int Excluded = 0);
+    int Excluded = 0,
+    IReadOnlyList<string>? Landed = null);
 
 /// <summary>
 /// #179 (upstream <c>DeployAllShaders</c> / <c>DeployAllAddons</c>): after the global shader set, its mode or the global
@@ -45,6 +47,7 @@ public sealed class ShaderAddonSetBatch(LinuxManagedComponentService managed, IG
         var cancelled = false;
         var failures = new List<(string, string)>();
         var runningGames = new List<string>();
+        var landed = new List<string>();
         var targets = games.Where(managed.HasRhiReShade).ToList();
         for (var index = 0; index < targets.Count; index++)
         {
@@ -108,7 +111,10 @@ public sealed class ShaderAddonSetBatch(LinuxManagedComponentService managed, IG
             }
             switch (result.Outcome)
             {
-                case ShaderSetOutcome.Changed: changed++; break;
+                case ShaderSetOutcome.Changed:
+                    changed++;
+                    if (result.Landed) landed.Add(game.Name);
+                    break;
                 case ShaderSetOutcome.Unchanged or ShaderSetOutcome.NotApplicable: unchanged++; break;
                 case ShaderSetOutcome.Held: held++; break;
                 default:
@@ -117,7 +123,7 @@ public sealed class ShaderAddonSetBatch(LinuxManagedComponentService managed, IG
                     break;
             }
         }
-        return new(changed, unchanged, held, runningGames.Count, failed, notRun, cancelled, failures, runningGames, excluded);
+        return new(changed, unchanged, held, runningGames.Count, failed, notRun, cancelled, failures, runningGames, excluded, landed);
     }
 
     // True when the game's choice for this part is Global; null when the choices cannot be read.

@@ -39,7 +39,9 @@ public sealed record LinuxUpdateItemResult(
     // #178: left out by the update inclusion (this game's, or Settings' for every game); never checked, never updated.
     bool Excluded = false,
     // #178: left out because the update-inclusion file cannot be read (Excluded is true too).
-    bool ExclusionUnreadable = false);
+    bool ExclusionUnreadable = false,
+    // w8 final review 1: the update was written and the save then reported an error (finished as committed; Message says so).
+    bool Landed = false);
 
 public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> Items)
 {
@@ -53,6 +55,8 @@ public sealed record LinuxUpdateAllResult(IReadOnlyList<LinuxUpdateItemResult> I
     /// <summary>#178: of <see cref="ExcludedCount"/>, those left out only because the inclusion file cannot be read.</summary>
     public int ExcludedUnreadableCount => Items.Count(item => item.Excluded && item.ExclusionUnreadable);
     public IReadOnlyList<LinuxUpdateItemResult> FailedItems => Items.Where(item => !item.Success && !item.Deferred).ToArray();
+    /// <summary>w8 final review 1: the games with an update whose save reported an error after it was written, once each.</summary>
+    public IReadOnlyList<string> LandedGames => Items.Where(item => item.Landed).Select(item => item.GameName).Distinct(StringComparer.Ordinal).ToArray();
 
     public string Summary => Items.Count == 0
         ? "No RHI-managed Update All components were found."
@@ -285,7 +289,8 @@ public sealed class LinuxUpdateAllService
                         results.Add(update.SourceUnavailable
                             ? new LinuxUpdateItemResult(game.Name, component, true, false, false, update.Message, Unchecked: true)
                             : new LinuxUpdateItemResult(game.Name, component, update.Success,
-                                update.Success && !string.Equals(before, PayloadOf(game, component), StringComparison.Ordinal), false, update.Message));
+                                update.Success && !string.Equals(before, PayloadOf(game, component), StringComparison.Ordinal), false, update.Message,
+                                Landed: update.Landed));
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {

@@ -201,6 +201,42 @@ public sealed class UpdateAllBackgroundTests
         Assert.Equal(noFailures.Summary, UiLocalizationService.UpdateAllSummaryFor("en-US", noFailures));
     }
 
+    // w8 final review 1: an update whose save reported an error after it was written counts as updated, and the summary
+    // names its game with the operation's note (EN + PT-BR), after the counts and the first failure.
+    [Fact]
+    public async Task LandedUpdate_IsCountedUpdated_AndTheSummaryNamesItsGame()
+    {
+        using var fixture = new Fixture();
+        var landed = fixture.Game("Landed Game");
+        var failing = fixture.Game("Failing Game");
+        fixture.Record(landed, ManagedComponentKind.RenoDX);
+        fixture.Record(failing, ManagedComponentKind.ReShade);
+        var backend = new FakeBackend();
+        backend.Checks[ManagedComponentKind.RenoDX] = new(true, true, "update");
+        backend.Checks[ManagedComponentKind.ReShade] = new(true, true, "update");
+        backend.UpdateResults[ManagedComponentKind.RenoDX] = DeploymentScope.Landed("RenoDX");
+        backend.UpdateResults[ManagedComponentKind.ReShade] = ComponentOperationResult.Fail("boom");
+        var service = fixture.Service(backend);
+
+        var result = await service.RunAsync([landed, failing], _ => [], LinuxUpdateRunMode.Manual);
+
+        Assert.True(result.Items.Single(i => i.GameName == landed.Name).Landed);
+        Assert.False(result.Items.Single(i => i.GameName == failing.Name).Landed);
+        Assert.Equal([landed.Name], result.LandedGames);
+        Assert.Equal((1, 1), (result.ChangedCount, result.FailedCount));
+        foreach (var language in new[] { "en-US", "pt-BR" })
+        {
+            var line = UiLocalizationService.UpdateAllSummaryFor(language, result);
+            var note = " " + UiLocalizationService.PresentFor(language, DeploymentScope.Landed(landed.Name).Message);
+            Assert.EndsWith(" — boom." + note, line, StringComparison.Ordinal);
+            Assert.Equal(UiLocalizationService.UpdateAllSummaryFor(language, new LinuxUpdateAllResult(
+                result.Items.Select(i => i with { Landed = false }).ToArray())) + note, line);
+            var noFailure = new LinuxUpdateAllResult(result.Items.Where(i => i.Landed).ToArray());
+            Assert.Equal(UiLocalizationService.UpdateAllSummaryFor(language, noFailure with { Items = [noFailure.Items[0] with { Landed = false }] }) + note,
+                UiLocalizationService.UpdateAllSummaryFor(language, noFailure));
+        }
+    }
+
     // Review up-129 #4: the Update All status line is built from counts in the UI language.
     [Fact]
     public void Summary_IsLocalisedFromCounts_EnglishMatchesPlatformSummary()

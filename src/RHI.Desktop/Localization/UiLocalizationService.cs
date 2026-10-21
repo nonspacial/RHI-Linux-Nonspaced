@@ -1645,9 +1645,11 @@ public static class UiLocalizationService
         if (result.ExcludedUnreadableCount > 0) // #178: the inclusion file cannot be read, so everything was left out
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Upd.UpdateAllExcludedUnreadable"), result.ExcludedUnreadableCount);
         text += ".";
+        // w8 final review 1: the games whose update was written although the save reported an error, named last, as batches do.
+        var landed = RHI.Desktop.ViewModels.LandedLine.BatchNote(language, result.LandedGames);
         // Name the first failure and its reason (the status-bar tooltip shows the whole line); per-item detail is #113.
         var failed = result.FailedItems;
-        if (failed.Count == 0) return text;
+        if (failed.Count == 0) return text + landed;
         var first = failed[0];
         var reason = first.Blocked
             ? TextFor(language, "Ui.UpdateAllBlocked")
@@ -1656,7 +1658,7 @@ public static class UiLocalizationService
             first.GameName, RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DisplayDependencyName(first.Component), reason);
         if (failed.Count > 1)
             text += string.Format(CultureInfo.InvariantCulture, TextFor(language, "Ui.UpdateAllMoreFailures"), failed.Count - 1);
-        return text + ".";
+        return text + "." + landed;
     }
 
     /// <summary>The Shaders/Add-ons manager's success line; keeps ReShade's "cached copy used" note (#132).</summary>

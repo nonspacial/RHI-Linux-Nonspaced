@@ -57,6 +57,8 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<string, bool>? wineRunning = null
         // w8/renodx rows
         // w8/commit-point rows
+        // w8 final review rows
+        , bool journaledReShade = false
         )
     {
         _hang.When = hangWhen;
@@ -91,6 +93,8 @@ internal sealed class ViewModelFixture : IDisposable
             , wineRunning
             // w8/renodx rows
             // w8/commit-point rows
+            // w8 final review rows
+            , journaledReShade
             );
         // w3/scan Settings row (#90): the fixture's own "Xbox / Game Pass folders" list (w3 integration).
         Vm.Settings.UseXboxFolders(new RHI.Platform.Linux.Detection.Xbox.XboxFolderStore(Path.Combine(ConfigDir, "xbox-folders.json")));
@@ -146,6 +150,8 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<string, bool>? wineRunning = null
         // w8/renodx rows
         // w8/commit-point rows
+        // w8 final review rows
+        , bool journaledReShade = false
         )
     {
         var fixture = new ViewModelFixture(games, uiLanguage, seed, httpFailure, httpResponse, launcher, hdrProfiles, probe, detectors
@@ -172,6 +178,8 @@ internal sealed class ViewModelFixture : IDisposable
             , wineRunning
             // w8/renodx rows
             // w8/commit-point rows
+            // w8 final review rows
+            , journaledReShade
             );
         await fixture.Vm.Initialization.WaitAsync(TimeSpan.FromSeconds(30));
         return fixture;
@@ -243,6 +251,8 @@ internal sealed class ViewModelFixture : IDisposable
         , Func<string, bool>? wineRunning
         // w8/renodx rows
         // w8/commit-point rows
+        // w8 final review rows
+        , bool journaledReShade
         )
     {
         var http = new HttpClient(new OfflineHandler(httpFailure, httpResponse, hang));
@@ -252,7 +262,9 @@ internal sealed class ViewModelFixture : IDisposable
         var wineOverrides = new WineDllOverrideService(wineRunning is null ? null : new WineRegistryEditor(wineRunning)); // w8/reshade-ini: a test says Wine runs (#214)
         var shaderPacks = new ReShadeShaderPackService(http, Path.Combine(LinuxPaths.CacheHome, "rhi-linux", "reshade", "shader-packs"), upstreamManifest); // w7/shader-sets (#179): the store reaches it
         var reshade = new ReShadeDeploymentService(http, deployment, records, wineOverrides, new ReShadeArchiveExtractor(), upstreamManifest: upstreamManifest,
-            dllNames: new DllNamePreferenceStore(Path.Combine(Path.GetDirectoryName(cacheDir)!, "config", "dll-names.json")), shaderPacks: shaderPacks); // w3/dllnames: per fixture
+            dllNames: new DllNamePreferenceStore(Path.Combine(Path.GetDirectoryName(cacheDir)!, "config", "dll-names.json")), shaderPacks: shaderPacks, // w3/dllnames: per fixture
+            // w8 final review 1: journaled on the fixture's ledger, as in the app, when a test needs a ReShade change to land
+            journal: journaledReShade ? SimulatedDeath.NewJournal(Path.Combine(Path.GetDirectoryName(cacheDir)!, "reshade-journal"), records).Journal : null);
         var renodxCatalog = new RenoDxCatalogService(http, upstreamManifest);
         var dlss = new DlssManagerService(http, deployment, cacheDir);
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
