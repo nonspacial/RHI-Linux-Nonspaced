@@ -155,6 +155,35 @@ public sealed class DxvkHdrRowTests
         Assert.DoesNotContain(DxvkHdrDeploymentService.HdrLaunchOffNote, Row(Decorated(fx, game))!.Note, StringComparison.Ordinal);
     }
 
+    // Coordinator decision 9: a launch command that turns on Proton's WineD3D (Wine's own DirectX 9, which beats the
+    // per-exe override) gets a plain note on the row, installed or not; off values and other variables do not.
+    [Theory]
+    [InlineData("PROTON_USE_WINED3D=1 %command%", true)]
+    [InlineData("env PROTON_USE_WINED3D=1 /opt/proton run Game.exe", true)]
+    [InlineData("PROTON_USE_WINED3D11=1 %command%", true)]
+    [InlineData("PROTON_USE_WINED3D=\"1\" %command%", true)]
+    [InlineData("sh -c 'PROTON_USE_WINED3D=yes %command%'", true)]
+    [InlineData("PROTON_USE_WINED3D=0 %command%", false)]
+    [InlineData("PROTON_USE_WINED3D= %command%", false)]
+    [InlineData("MY_PROTON_USE_WINED3D=1 %command%", false)]
+    [InlineData("PROTON_ENABLE_WAYLAND=1 %command%", false)]
+    public async Task ALaunchCommandWithProtonWineD3d_TheRowSaysDx9HdrHasNoEffect(string command, bool noted)
+    {
+        using var fx = await ViewModelFixture.StartAsync([]);
+        var available = Game(fx, "WineD3d");
+        available.LaunchCommand = command;
+        var installed = Game(fx, "WineD3dInstalled");
+        installed.LaunchCommand = command;
+        Installed(fx, installed);
+
+        foreach (var game in new[] { available, installed })
+        {
+            var note = Row(Decorated(fx, game))!.Note!;
+            Assert.StartsWith(DxvkHdrDeploymentService.RowNote, note, StringComparison.Ordinal);
+            Assert.Equal(noted, note.Contains(DxvkHdrDeploymentService.WineD3dNote, StringComparison.Ordinal));
+        }
+    }
+
     [Fact]
     public async Task WithADllReShade_TheRowAndTheConfirmationSayReShadeMovesToItsVulkanLayer()
     {

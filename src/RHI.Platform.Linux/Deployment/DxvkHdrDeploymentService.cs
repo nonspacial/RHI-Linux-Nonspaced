@@ -84,7 +84,7 @@ public static class DxvkHdrPresets
 /// ledger write. Everything is journaled; downloads come before the write gate; a user's own <c>d3d9.dll</c> or
 /// <c>dxvk.conf</c> is never replaced, and a <c>dxvk.conf</c> the user changed is kept on removal.</para>
 /// </summary>
-public sealed class DxvkHdrDeploymentService
+public sealed partial class DxvkHdrDeploymentService
 {
     public const string ReleaseApiUrl = "https://api.github.com/repos/EndlesslyFlowering/dxvk/releases/latest";
     /// <summary>The release's 7-Zip asset, not a <c>gplasync</c> one (upstream <c>EnsureStagingLiliumAsync</c>).</summary>
@@ -131,6 +131,7 @@ public sealed class DxvkHdrDeploymentService
     public const string RowNote = "Replaces the game's DirectX 9 with DXVK HDR for this game only (d3d9.dll and dxvk.conf beside the game). Remove puts everything back.";
     public const string RowReShadeNote = " ReShade on this game moves to its Vulkan layer while DX9 HDR is installed.";
     public const string HdrLaunchOffNote = " HDR launch is Off for this game: turn it on (HDR launch, in the game's details) to see HDR.";
+    public const string WineD3dNote = " The game's launch command sets PROTON_USE_WINED3D, so Proton uses Wine's own DirectX 9 and DX9 HDR has no effect: take it out of the launch command (Edit game) to use DX9 HDR.";
     public const string ExternalNote = "A DXVK HDR d3d9.dll RHI did not install is beside the game; RHI leaves it alone.";
     public const string MissingD3d9Note = "DX9 HDR's d3d9.dll is no longer beside the game, so DX9 HDR does nothing now. Remove takes away the rest RHI set up for it; then you can install it again.";
 
@@ -205,7 +206,7 @@ public sealed class DxvkHdrDeploymentService
         if (record is not null && row.Availability is ComponentAvailability.Available or ComponentAvailability.Unsupported)
             row.Availability = ComponentAvailability.Installed;
         if (!game.HasConfirmedPatchTarget) return; // the service's patch-target note stays
-        var hdrOff = ReadHdrLaunchOn(game) == false ? HdrLaunchOffNote : "";
+        var hdrOff = (LaunchUsesWineD3d(game) ? WineD3dNote : "") + (ReadHdrLaunchOn(game) == false ? HdrLaunchOffNote : "");
         if (row.Availability is ComponentAvailability.Installed or ComponentAvailability.UpdateAvailable)
         {
             row.ActionAllowed = record is not null;
@@ -501,6 +502,19 @@ public sealed class DxvkHdrDeploymentService
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(PresetSetMessage, conf.Path);
     }
+
+    /// <summary>
+    /// Coordinator decision 9: whether the game's launch command (detected, or typed in Edit game) sets Proton's
+    /// <c>PROTON_USE_WINED3D</c> (or its older name <c>PROTON_USE_WINED3D11</c>) to a value Proton takes as on (not empty,
+    /// not 0). Proton then sets <c>WINEDLLOVERRIDES=d3d9=b</c>, which beats the per-exe override on every runner
+    /// (reviews/w7-dxvk-hdr-wine.md), so DX9 HDR's d3d9.dll is never loaded. Steam's own launch options are not read.
+    /// </summary>
+    internal static bool LaunchUsesWineD3d(DetectedGame game)
+        => game.LaunchCommand is { } command
+           && WineD3dSetting().Matches(command).Any(match => match.Groups["value"].Value.Trim('"', '\'') is { Length: > 0 } value && value != "0");
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<![A-Za-z0-9_])PROTON_USE_WINED3D(?:11)?=(?<value>""[^""]*""|'[^']*'|[^\s;&|]*)")]
+    private static partial System.Text.RegularExpressions.Regex WineD3dSetting();
 
     /// <summary>Whether the record's d3d9.dll is gone from disk (the row then says Remove clears the rest).</summary>
     private static bool D3d9Missing(LinuxDeploymentRecord record)
