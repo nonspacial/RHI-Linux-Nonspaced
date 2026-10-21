@@ -107,6 +107,10 @@ public sealed partial class DxvkHdrDeploymentService
     public const string NotInstalledMessage = "DX9 HDR is not installed by RHI for this game.";
     public const string ForeignD3d9Prefix = "A d3d9.dll RHI did not install is beside the game; RHI does not replace it, so nothing was installed: ";
     public const string HeldByComponentPrefix = "d3d9.dll beside the game belongs to another RHI component, so DX9 HDR was not installed. Remove it first: ";
+    /// <summary>Review minor 5 / coordinator decision 8: DX9 HDR asked for while Luma's or DLSS5 Feeder's DirectX 9 translation holds d3d9.dll.</summary>
+    public const string Dx9TranslationPrefix = "This game uses the DirectX 9 translation (dgVoodoo2) of another RHI component, which needs the game's d3d9.dll just as DX9 HDR does, so nothing was changed. Remove that component from its row first, then install DX9 HDR. The component: ";
+    /// <summary>Coordinator decision 8, the other way round: the DirectX 9 translation asked for while DX9 HDR is installed.</summary>
+    public const string BlocksDx9TranslationMessage = "DX9 HDR is installed on this game and uses the game's d3d9.dll, which the DirectX 9 translation (dgVoodoo2) needs too, so nothing was changed. Remove DX9 HDR from its row first, then try again.";
     public const string ForeignConfPrefix = "A dxvk.conf RHI did not write is beside the game; RHI does not overwrite it, so nothing was installed. Move or delete it, then try again: ";
     public const string DownloadFailedPrefix = "DX9 HDR download failed; nothing was changed: ";
     public const string UntrustedAssetPrefix = "The DXVK HDR release link is not in EndlesslyFlowering's dxvk releases, so it was not downloaded: ";
@@ -214,7 +218,7 @@ public sealed partial class DxvkHdrDeploymentService
             row.InstalledVersion = record?.Version;
             return;
         }
-        if (OfferRefusal(game) is { } refusal)
+        if ((OfferRefusal(game) ?? Dx9TranslationRefusal(game)) is { } refusal)
         {
             row.ActionAllowed = false;
             row.Note = refusal;
@@ -238,6 +242,8 @@ public sealed partial class DxvkHdrDeploymentService
         var directory = game.BinaryDirectory;
         var d3d9 = Path.Combine(directory, D3d9FileName);
         var conf = Path.Combine(directory, ConfFileName);
+        // Before the ReShade checks: the translation moved ReShade to dxgi.dll, so its refusal would give the wrong advice.
+        if (Dx9TranslationRefusal(game) is { } translation) return ComponentOperationResult.Fail(translation);
         var reshade = _records.Find(game, ManagedComponentKind.ReShade);
         var moveReShade = reshade is not null && !ReShadeVulkanLayer.IsLayerRecord(reshade);
         if (moveReShade && _reshade.DxvkHdrMoveRefusal(game, reshade!) is { } notMovable) return ComponentOperationResult.Fail(notMovable);
@@ -515,6 +521,22 @@ public sealed partial class DxvkHdrDeploymentService
 
     [System.Text.RegularExpressions.GeneratedRegex(@"(?<![A-Za-z0-9_])PROTON_USE_WINED3D(?:11)?=(?<value>""[^""]*""|'[^']*'|[^\s;&|]*)")]
     private static partial System.Text.RegularExpressions.Regex WineD3dSetting();
+
+    /// <summary>
+    /// Review minor 5: Luma Framework's or DLSS5 Feeder's DirectX 9 translation (dgVoodoo2 as d3d9.dll, ReShade moved to
+    /// dxgi.dll) is on the game, read from the owner's own migration record; the refusal names the component to remove.
+    /// </summary>
+    private string? Dx9TranslationRefusal(DetectedGame game)
+    {
+        foreach (var (kind, key) in new[]
+                 {
+                     (ManagedComponentKind.LumaFramework, LumaFrameworkDeploymentService.MetaDx9Migration),
+                     (ManagedComponentKind.Dlss5Feeder, Dlss5FeederFullDeploymentService.MetaDx9Migration)
+                 })
+            if (_records.Find(game, kind)?.Metadata.GetValueOrDefault(key) is { Length: > 0 })
+                return Dx9TranslationPrefix + LinuxManagedComponentService.DisplayDependencyName(kind);
+        return null;
+    }
 
     /// <summary>Whether the record's d3d9.dll is gone from disk (the row then says Remove clears the rest).</summary>
     private static bool D3d9Missing(LinuxDeploymentRecord record)

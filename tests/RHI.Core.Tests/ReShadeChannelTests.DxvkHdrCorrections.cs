@@ -407,4 +407,72 @@ public sealed partial class ReShadeChannelTests
 
         Assert.Equal(expected, size);
     }
+
+    // Review minor 5 / coordinator decision 8: Luma Framework's or DLSS5 Feeder's DirectX 9 translation is on the game
+    // (dgVoodoo2 as D3D9.dll, RHI's ReShade moved to dxgi.dll by the translation, the owner's migration record). DX9 HDR
+    // names the component to remove (not ReShade's "another DLL name" advice), on the row and on Install; nothing changes.
+    [Theory]
+    [InlineData(ManagedComponentKind.LumaFramework, "Luma Framework")]
+    [InlineData(ManagedComponentKind.Dlss5Feeder, "DLSS5 Feeder")]
+    public async Task DxvkHdr_BesideADx9Translation_NamesTheComponentToRemove_AndChangesNothing(ManagedComponentKind owner, string name)
+    {
+        var rig = Rig("dxvk-dgvoodoo-" + owner);
+        await InstallDllReShadeAsync(rig);
+        var state = await new Dx9TranslationReShadeCoordinator(rig.Store, new WineDllOverrideService(new WineRegistryEditor(_ => false)))
+            .MigrateAsync(rig.Game);
+        var dgVoodoo = Path.Combine(rig.Bin, "D3D9.dll");
+        PeArchitectureDetectorTests.WritePe(dgVoodoo, 0x8664, 8192);
+        rig.Store.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(rig.Game), GameName = rig.Game.Name, Component = owner, BinaryDirectory = rig.Bin,
+            Files = [new LinuxDeployedFile { Path = dgVoodoo, Sha256 = FileHash.Sha256Hex(dgVoodoo) }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase)
+            {
+                [owner == ManagedComponentKind.LumaFramework ? LumaFrameworkDeploymentService.MetaDx9Migration : Dlss5FeederFullDeploymentService.MetaDx9Migration] =
+                    System.Text.Json.JsonSerializer.Serialize(state)
+            }
+        });
+        var before = CancelAtWritePhase.Snapshot(rig.Bin, rig.Game.PrefixPath!);
+        var requests = (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests);
+        var expected = DxvkHdrDeploymentService.Dx9TranslationPrefix + name;
+
+        var row = DecoratedDxvkRow(rig);
+        var result = await rig.Dxvk.InstallAsync(rig.Game);
+
+        Assert.False(row.ActionAllowed);
+        Assert.Equal(expected, row.Note);
+        Assert.False(result.Success);
+        Assert.Equal(expected, result.Message);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin, rig.Game.PrefixPath!);
+        Assert.Equal(requests, (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests));
+        var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", result.Message);
+        Assert.Contains("tradução DirectX 9 (dgVoodoo2)", portuguese, StringComparison.Ordinal);
+        Assert.EndsWith(name, portuguese, StringComparison.Ordinal);
+    }
+
+    // Coordinator decision 8, the other way round: the DirectX 9 translation (Luma Framework / DLSS5 Feeder, through the
+    // shared coordinator) on a game with DX9 HDR says plainly to remove DX9 HDR first; nothing changes. With ReShade the
+    // old text told the user to set ReShade's DLL name (ReShade sits on its Vulkan layer then); without it, that ReShade
+    // was needed.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Dx9Translation_BesideDxvkHdr_SaysRemoveDx9HdrFirst_AndChangesNothing(bool withReShade)
+    {
+        var rig = Rig("dgvoodoo-after-dxvk-" + withReShade);
+        if (withReShade) await InstallDllReShadeAsync(rig);
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin, rig.Game.PrefixPath!);
+        var ledger = File.ReadAllBytes(rig.Ledger);
+
+        var coordinator = new Dx9TranslationReShadeCoordinator(rig.Store, new WineDllOverrideService(new WineRegistryEditor(_ => false)));
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => coordinator.MigrateAsync(rig.Game));
+
+        Assert.Equal(DxvkHdrDeploymentService.BlocksDx9TranslationMessage, error.Message);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin, rig.Game.PrefixPath!);
+        Assert.Equal(ledger, File.ReadAllBytes(rig.Ledger));
+        var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", "Luma Framework installation rolled back: " + error.Message);
+        Assert.Contains("Remova primeiro o DX9 HDR", portuguese, StringComparison.Ordinal);
+        Assert.DoesNotContain(RHI.Desktop.Localization.UiLocalizationService.EnglishMarkersIn(portuguese), m => !m.Equals("no", StringComparison.OrdinalIgnoreCase));
+    }
 }

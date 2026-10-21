@@ -432,6 +432,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowReShadeNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.HdrLaunchOffNote;
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ExternalNote;
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.MissingD3d9Note;
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.Dx9TranslationPrefix + "Luma Framework";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.BlocksDx9TranslationMessage;
+        yield return "Luma Framework installation rolled back: " + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.BlocksDx9TranslationMessage;
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.RowNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.WineD3dNote + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.HdrLaunchOffNote;
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeNamePrefix + "dxgi.dll";
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeModifiedPrefix + P;

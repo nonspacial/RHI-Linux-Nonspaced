@@ -174,6 +174,8 @@ public sealed class Dx9TranslationReShadeCoordinator
     {
         if (game.EffectiveGraphicsApi != GraphicsApi.DirectX9)
             throw new InvalidOperationException("DX9 ReShade migration is only valid for DirectX 9 games.");
+        if (_records.Find(game, ManagedComponentKind.DxvkHdr) is not null) // w7/dxvk-hdr hook (#200, coordinator decision 8): say so plainly
+            throw new InvalidOperationException(DxvkHdrDeploymentService.BlocksDx9TranslationMessage);
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || string.IsNullOrWhiteSpace(game.PrefixPath) ||
             !Directory.Exists(game.BinaryDirectory) || !Directory.Exists(game.PrefixPath))
             throw new InvalidOperationException("DX9 ReShade migration requires a game binary directory and initialized Wine/Proton prefix.");
