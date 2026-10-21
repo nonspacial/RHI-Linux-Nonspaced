@@ -261,4 +261,23 @@ public sealed class PeIconReaderTests : IDisposable
         Assert.Equal(DesktopShortcutService.DefaultIcon, IconLine(fallback.FilePath!));
         Assert.True(File.Exists(IconLine(again.FilePath!)));
     }
+
+    [Fact]
+    public async Task WhileTheDesktopFolderIsUnknown_TheMenuShortcut_DeletesNoOtherIconCopy()
+    {
+        // w7 follow-up B7 (smalls re-review 3): the desktop shortcut's icon copy is kept while the desktop folder cannot be
+        // resolved (nothing tells whether that shortcut still names it).
+        var game = Game("Unknown Desktop", Enumerable.Repeat((byte)1, 512).ToArray(), appId: 79);
+        var desktop = await Service([SteamWithArt(79)]).CreateAsync(game, "steam:79", ShortcutPlace.Desktop); // Steam art
+        var art = IconLine(desktop.FilePath!);
+        Assert.EndsWith(".jpg", art, StringComparison.Ordinal);
+        File.WriteAllBytes(game.ExecutablePath!, WithIcons(new Icon(16, 16, 32, PngIcon(16, 5), Id: 1)));
+        var noDesktop = new DesktopShortcutService(_ => Task.FromResult<string?>(null), MenuDir, IconDir, () => ["/opt/rhi/RHI"], () => [SteamWithArt(79)]);
+
+        var menu = await noDesktop.CreateAsync(game, "steam:79", ShortcutPlace.ApplicationsMenu);
+
+        Assert.Equal(ShortcutOutcome.Created, menu.Outcome);
+        Assert.EndsWith(".png", IconLine(menu.FilePath!), StringComparison.Ordinal); // the exe icon for the menu
+        Assert.True(File.Exists(art), "the desktop shortcut's icon was deleted while the desktop folder was unknown");
+    }
 }

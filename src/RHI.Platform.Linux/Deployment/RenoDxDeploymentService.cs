@@ -608,6 +608,10 @@ public sealed class RenoDxDeploymentService
         var deployDir = ResolveAddonDeployPath(game.BinaryDirectory);
         var target = Path.Combine(deployDir, fileName);
         var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
+        // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger) — and before
+        // the foreign-file scan, which would take RHI's own add-on (its record unreadable) for someone else's (re-review 7).
+        if (_records.CorruptLedgerPath is { } quarantined)
+            return ComponentOperationResult.Fail(LocalLedgerUnreadablePrefix + quarantined);
         var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
         if (Directory.Exists(deployDir))
         {
@@ -628,9 +632,6 @@ public sealed class RenoDxDeploymentService
                 return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {managedOldPath}");
         }
 
-        // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger).
-        if (_records.CorruptLedgerPath is { } quarantined)
-            return ComponentOperationResult.Fail(LocalLedgerUnreadablePrefix + quarantined);
 
         var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
         var targetBefore = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : null;

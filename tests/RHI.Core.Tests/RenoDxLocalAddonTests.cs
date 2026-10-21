@@ -172,6 +172,23 @@ public sealed class RenoDxLocalAddonTests : IDisposable
     }
 
     [Fact]
+    public async Task AnUnreadableLedger_WithRhisOwnAddonInTheFolder_SaysTheRecordsAreUnreadable_NotForeign()
+    {
+        // w7 follow-up B11 (smalls re-review 7): RHI's own add-on is not taken for someone else's when its record cannot be read.
+        Assert.True((await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"))).Success);
+        File.WriteAllText(Path.Combine(_root, "records.json"), "{ not json");
+        var fresh = new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json"));
+        var http = new HttpClient();
+        var service = new RenoDxDeploymentService(http, fresh, new RenoDxCatalogService(http), Path.Combine(_root, "cache-b11"));
+        var before = Directory.EnumerateFiles(Bin).Select(f => (f, File.ReadAllBytes(f).Length)).ToArray();
+
+        var result = await service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64", size: 4096));
+
+        Assert.StartsWith(RenoDxDeploymentService.LocalLedgerUnreadablePrefix, result.Message, StringComparison.Ordinal);
+        Assert.Equal(before, Directory.EnumerateFiles(Bin).Select(f => (f, File.ReadAllBytes(f).Length)).ToArray());
+    }
+
+    [Fact]
     public async Task RhisOwnAddon_TheUserChanged_IsNotReplaced()
     {
         Assert.True((await _service.InstallLocalAddonAsync(_game, Addon(Downloads, "renodx-foogame.addon64"))).Success);
@@ -348,6 +365,42 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         var x86 = Addon(Path.Combine(fx.Root, "drop"), "Other.addon32", machine: 0x14c);
         Assert.Equal(LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage, (await fx.Managed.InstallDroppedAddonForGameAsync(game, x86)).Message);
         Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "Other.addon32")));
+    }
+
+    // w7 follow-up B10 (smalls re-review 6): "Install add-on" lists only games with ReShade with add-on support (hide what
+    // cannot apply); with none, the status line says why, and the install refuses before anything is copied.
+    [Fact]
+    public async Task AnotherDroppedAddon_IsOfferedOnlyForGamesWithReShade_AndRefusedBeforeAnyCopyOnOthers()
+    {
+        var with = Game(Path.Combine(_root, "offer"), "With ReShade", 0x8664);
+        var without = Game(Path.Combine(_root, "offer"), "Without ReShade", 0x8664, reshade: false);
+        using var fx = await ViewModelFixture.StartAsync([with, without]);
+        without = fx.Vm.AllLibraryGames.Single(g => g.Name == "Without ReShade");
+        var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
+
+        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped)!;
+
+        Assert.Equal(["With ReShade"], offer.GameNames);
+        var refused = await fx.Managed.InstallDroppedAddonForGameAsync(without, dropped);
+        Assert.False(refused.Success);
+        Assert.Equal(LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, refused.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "ShaderToggler.addon64"))); // nothing copied
+        Assert.False(File.Exists(Path.Combine(without.BinaryDirectory!, "ShaderToggler.addon64")));
+
+        // A RenoDX add-on still lists every Windows game (RenoDX installs ReShade itself where it is missing).
+        Assert.Equal(2, fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, Addon(Path.Combine(fx.Root, "drop"), "renodx-foo.addon64"))!.Games.Count);
+    }
+
+    [Fact]
+    public async Task AnotherDroppedAddon_NoGameWithReShade_NoDialog_AndTheLineSaysWhy()
+    {
+        var without = Game(Path.Combine(_root, "none"), "Without ReShade", 0x8664, reshade: false);
+        using var fx = await ViewModelFixture.StartAsync([without]);
+        var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
+
+        Assert.Null(fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped));
+        Assert.Equal(UiLocalizationService.Format("Sm.DropAddonNoGame", "ShaderToggler.addon64"), DroppedRenoDxPresenter.NoGameLine(dropped, watched: false));
+        Assert.Equal(UiLocalizationService.Format("Sm.DropNoGame", "renodx-foo.addon64"), DroppedRenoDxPresenter.NoGameLine("/x/renodx-foo.addon64", watched: false));
     }
 
     // w7 integration (#195 × #179): a dropped add-on "ticked in the game's Shaders/Add-ons list" switches a game that used

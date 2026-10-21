@@ -35,24 +35,32 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
+    /// <summary>The status line when <see cref="OfferFor"/> finds no game: says why for an add-on that needs RHI's ReShade.</summary>
+    public static string NoGameLine(string path, bool watched)
+        => LinuxDroppedFileClassifier.AddonTarget(path, watched) == DroppedAddonTarget.GameAddonInstall
+            ? TF("Sm.DropAddonNoGame", Path.GetFileName(path))
+            : TF("Sm.DropNoGame", Path.GetFileName(path));
+
     /// <summary>Whether a dropped (or, with <paramref name="watched"/>, watched) add-on gets this dialog.</summary>
     public static bool Handles(string? path, bool watched)
         => LinuxDroppedFileClassifier.AddonTarget(path, watched) != DroppedAddonTarget.CustomAddonsImport;
 
     /// <summary>
-    /// The dialog's content, or null when no library game can take a RenoDX add-on (native Linux games cannot). With
+    /// The dialog's content, or null when no library game can take the add-on (native Linux games cannot; another add-on
+    /// goes only into a game with RHI's ReShade with add-on support — w7 follow-up B10: the others are not listed). With
     /// <paramref name="watchFolder"/> set, a file directly in it is removed after a successful install (upstream's
     /// <c>deleteSourceAfterInstall</c>).
     /// </summary>
     public DroppedRenoDxOffer? OfferFor(MainWindowViewModel vm, string path, string? watchFolder = null)
     {
+        var isRenoDx = LinuxDroppedFileClassifier.AddonTarget(path, watched: watchFolder is not null) != DroppedAddonTarget.GameAddonInstall;
         var games = vm.AllLibraryGames
             .Where(game => !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
+            .Where(game => isRenoDx || components.DroppedAddonRefusal(game) is null)
             .OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (games.Length == 0) return null;
         var fileName = Path.GetFileName(path);
-        var isRenoDx = LinuxDroppedFileClassifier.AddonTarget(path, watched: watchFolder is not null) != DroppedAddonTarget.GameAddonInstall;
         return new DroppedRenoDxOffer(fileName, path, games, MatchIndex(games, fileName, vm.SelectedGame, components.RenoDxCatalogueFileName),
             watchFolder is not null && InFolder(path, watchFolder), isRenoDx);
     }

@@ -103,6 +103,35 @@ public sealed class DroppedAddonShaderSetChoiceTests(ITestOutputHelper output) :
         Assert.True(File.Exists(placed));                                     // the dropped add-on stays
     }
 
+    // w7 follow-up B6 (smalls re-review 2): a drop keeps every add-on the game already has (the list is its add-ons plus
+    // the new one, never the new one alone), with or without the shader-set store.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASecondDrop_KeepsTheFirst_BothSelectedAndBothInPlace(bool withSets)
+    {
+        var s = Fixture();
+        if (!withSets) { s.Managed.ShaderSets = null; s.Manager.Sets = null; }
+        var game = Game(s.Records, "drop-two-" + withSets, withSets ? 50 : 51);
+        if (withSets) s.Sets.SetAddonMode(game, ShaderAddonMode.Global);
+        Directory.CreateDirectory(P("drop3"));
+        var first = P("drop3", "First.addon64");
+        var second = P("drop3", "Second.addon64");
+        PeArchitectureDetectorTests.WritePe(first, 0x8664, 4096);
+        PeArchitectureDetectorTests.WritePe(second, 0x8664, 4096);
+
+        Assert.True((await s.Managed.InstallDroppedAddonForGameAsync(game, first)).Success);
+        var result = await s.Managed.InstallDroppedAddonForGameAsync(game, second);
+
+        Assert.True(result.Success, result.Message);
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "First.addon64")));
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "Second.addon64")));
+        var selected = (await s.Manager.GetSnapshotAsync(game)).SelectedIds;
+        Assert.Contains("custom-First", selected);
+        Assert.Contains("custom-Second", selected);
+        if (withSets) Assert.Equal(["custom-First", "custom-Second"], s.Sets.ChoiceFor(game)!.AddonIds);
+    }
+
     [Fact]
     public async Task DroppedAddon_UpdateAll_KeepsIt()
     {

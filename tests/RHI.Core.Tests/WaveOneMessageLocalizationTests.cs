@@ -415,6 +415,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage;
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonInstalledPrefix + "/jogos/Exemplo/bin/ShaderToggler.addon64";
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage;
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage; // w7 follow-up B10
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon64BitOn32BitMessage;
         // w7/reshade rows
         yield return ProxyRename.NotInstalledPrefix + "OptiScaler";
@@ -520,6 +521,8 @@ public sealed class WaveOneMessageLocalizationTests
         { "OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: " + P, "unexpectedly occupied" },
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "Foreign RenoDX protection" },
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "will not overwrite" },
+        // w7 follow-up
+        { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
     };
 
     [Theory]

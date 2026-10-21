@@ -1189,6 +1189,7 @@ internal static class UiStrings
         ("Sm.DropInstalling", "Instalando o add-on do RenoDX {0} em {1}…", "Installing the RenoDX add-on {0} for {1}…"),
         ("Sm.DropSourceRemoved", "O arquivo baixado foi retirado da pasta observada.", "The downloaded file was removed from the watch folder."),
         ("Sm.DropNoGame", "Nenhum jogo da biblioteca pode receber este add-on: {0}", "No game in the library can take this add-on: {0}"),
+        ("Sm.DropAddonNoGame", "Nenhum jogo da biblioteca tem ReShade com suporte a add-ons, então nada foi instalado nem copiado. Instale o ReShade (não a versão No Addons) em um jogo primeiro: {0}", "No game in the library has ReShade with add-on support, so nothing was installed or copied. Install ReShade (not the No Addons build) on a game first: {0}"),
         // #195 another ReShade add-on dropped on RHI (upstream installs it into the game too).
         ("Sm.DropAddonTitle", "Instalar add-on", "Install add-on"),
         ("Sm.DropAddonIntro", "Instalar {0} neste jogo, ao lado dos outros add-ons:", "Install {0} into this game, beside its other add-ons:"),

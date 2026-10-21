@@ -1624,6 +1624,22 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public const string DroppedAddon32BitOn64BitMessage = "This add-on is 32-bit and the game is 64-bit; it needs the add-on's .addon64 file.";
     public const string DroppedAddon64BitOn32BitMessage = "This add-on is 64-bit and the game is 32-bit; it needs the add-on's .addon32 file.";
 
+    /// <summary>w7 follow-up B10: the game has no ReShade with add-on support (PT-BR pair); nothing was copied.</summary>
+    public const string DroppedAddonNeedsReShadeMessage =
+        "This game has no ReShade with add-on support, so the add-on was not installed and nothing was copied. Install ReShade (not the No Addons build) on this game first.";
+
+    /// <summary>
+    /// Why a dropped non-RenoDX add-on cannot go into <paramref name="game"/> — no ReShade in its folder (the Addon
+    /// Manager's own test), or RHI's ReShade is the No Addons build — or null. The drop dialog lists only games where this
+    /// is null; the install asks it again before anything is copied (re-review smalls 6).
+    /// </summary>
+    public string? DroppedAddonRefusal(DetectedGame game)
+        => string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory)
+           || !GitHubReShadeAddonDeploymentService.HasReShade(game.BinaryDirectory)
+           || ReShadeDeploymentService.LacksAddonSupport(_records.Find(game, ManagedComponentKind.ReShade))
+            ? DroppedAddonNeedsReShadeMessage
+            : null;
+
     /// <summary>
     /// #195 (upstream <c>ProcessDroppedAddon</c> for an add-on that is not RenoDX's: copied into the game beside it): the
     /// file is imported into Custom Add-ons (never over a different one) and added to the game's Shaders/Add-ons selection,
@@ -1632,6 +1648,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
     public async Task<ComponentOperationResult> InstallDroppedAddonForGameAsync(DetectedGame game, string addonPath, CancellationToken cancellationToken = default)
     {
         if (InstallGuard(game) is { } guard) return guard;
+        if (DroppedAddonRefusal(game) is { } noReShade) return ComponentOperationResult.Fail(noReShade); // before the Custom Add-ons copy
         if (!string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase) && File.Exists(addonPath)
             && GameArchitecture.Of(game) is var architecture and (PeArchitecture.X86 or PeArchitecture.X64)
             && PeArchitectureDetector.Detect(addonPath) is var addon and (PeArchitecture.X86 or PeArchitecture.X64) && addon != architecture)

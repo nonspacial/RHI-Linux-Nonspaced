@@ -343,7 +343,7 @@ public sealed partial class MainWindow
         var presenter = vm.DroppedRenoDx;
         if (presenter.OfferFor(vm, path, watchFolder) is not { } offer)
         {
-            vm.StatusText = TF("Sm.DropNoGame", Path.GetFileName(path));
+            vm.StatusText = DroppedRenoDxPresenter.NoGameLine(path, watched: watchFolder is not null);
             return;
         }
         if (await ShowDroppedRenoDxDialogAsync(offer, presenter) is not { } game) return;

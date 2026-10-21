@@ -1369,6 +1369,7 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage, "Este add-on do RenoDX é de 32 bits e o jogo é de 64 bits; ele precisa do arquivo .addon64 do jogo."),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage, "Este add-on do RenoDX é de 64 bits e o jogo é de 32 bits; ele precisa do arquivo .addon32 do jogo."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonInstalledPrefix, "Add-on instalado para este jogo; Shaders/Add-ons o lista (desmarque-o lá para retirá-lo): "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "Este jogo não tem ReShade com suporte a add-ons, então o add-on não foi instalado e nada foi copiado. Instale o ReShade (não a versão No Addons) neste jogo primeiro."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage, "Este add-on é de 32 bits e o jogo é de 64 bits; ele precisa do arquivo .addon64 do add-on."),
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon64BitOn32BitMessage, "Este add-on é de 64 bits e o jogo é de 32 bits; ele precisa do arquivo .addon32 do add-on."),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage, "O add-on do RenoDX para Control precisa dos passos extras do RHI: instale-o com o botão Instalar da linha do RenoDX."),
