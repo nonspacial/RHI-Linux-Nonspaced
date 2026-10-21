@@ -12,8 +12,8 @@ namespace RHI.Desktop.ViewModels;
 /// </summary>
 public sealed partial class NvidiaSettingsDialogViewModel : ObservableObject
 {
+    /// <summary>The window's width; its height follows the rows shown (capped to the main window, then it scrolls).</summary>
     public const double Width = 560;
-    public const double Height = 560;
     public const double MinWidth = 360;
     public const double MinHeight = 320;
 

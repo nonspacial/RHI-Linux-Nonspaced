@@ -18,7 +18,7 @@ public sealed partial class MainWindow
         {
             Title = model.WindowTitle,
             Width = NvidiaSettingsDialogViewModel.Width,
-            Height = NvidiaSettingsDialogViewModel.Height,
+            SizeToContent = SizeToContent.Height, // as tall as the rows this game shows; FitDialogToOwner caps it
             MinWidth = NvidiaSettingsDialogViewModel.MinWidth,
             MinHeight = NvidiaSettingsDialogViewModel.MinHeight,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
