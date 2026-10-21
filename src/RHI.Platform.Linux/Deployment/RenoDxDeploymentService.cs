@@ -405,6 +405,7 @@ public sealed class RenoDxDeploymentService
         var engineKeysState = RenoDxEngineIni.Read(existingRecord);
         var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game)
             : engineKeysState?.Entries.Any(entry => engineKeysOff.Contains(entry.Group)) == true ? engineKeysState.IniPath : null;
+        var engineKeysSkipped = EngineKeysRefusal(ref engineKeysIni, engineKeysState); // review 2: optional, never fails RenoDX
         // #218: UE-Extended's [renodx] native-HDR keys (missing ones only, as upstream; its database upgrade key forced).
         var previousNative = RenoDxIniOverrideManager.Deserialize(existingRecord?.Metadata.GetValueOrDefault(RenoDxEngineIni.NativeHdrMetadataKey));
         var nativeRequested = isUeExtended ? NativeHdrRequest(game, ueExtendedEntry, previousNative) : new Dictionary<string, string>();
@@ -463,7 +464,10 @@ public sealed class RenoDxDeploymentService
                 engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
             }
             if (engineKeysIni is not null)
-                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, engineKeysOff, engineKeysState);
+            {
+                engineKeysState = RenoDxEngineIni.ApplyOptional(engineKeysIni, engineKeysOn, engineKeysOff, engineKeysState, out var keysFailure);
+                engineKeysSkipped ??= keysFailure;
+            }
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
 
             // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
@@ -556,7 +560,7 @@ public sealed class RenoDxDeploymentService
                 ? $" · {engineIniApply.PreservedUserEdits} user-edited Engine.ini key(s) preserved"
                 : "";
         var controlSummary = controlNotes.Count > 0 ? $" · Control UE: {string.Join(" ", controlNotes)}" : "";
-        return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}", target);
+        return ComponentOperationResult.Ok($"RenoDX installed: {mod.Name} → {target}{iniSummary}{engineIniSummary}{controlSummary}{EngineKeysNote(engineKeysSkipped)}", target);
     }
 
     // ── #217: RenoDX's own Engine.ini keys ─────────────────────────────────────────────────────────────────────────
@@ -620,6 +624,32 @@ public sealed class RenoDxDeploymentService
         if (previous?.IniPath is { Length: > 0 } old && File.Exists(old)) await inis.TrackEngineIniAsync(old, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Review 2: why RenoDX's Engine.ini keys cannot go into <paramref name="ini"/> (or come out of the file RHI's keys were in
+    /// before) on an install, update or drop — a link outside the prefix, an unreadable file — checked before anything is
+    /// tracked; then the step is skipped (<paramref name="ini"/> = null, the owned keys stay as they are), logged, and the
+    /// result says why. Null: the step runs.
+    /// </summary>
+    private static string? EngineKeysRefusal(ref string? ini, RenoDxEngineIniState? state)
+    {
+        if (ini is null) return null;
+        var refusal = RenoDxEngineIni.CannotEdit(ini);
+        if (refusal is null && state?.IniPath is { Length: > 0 } old && !PathsEqual(old, ini) && File.Exists(old)) refusal = RenoDxEngineIni.CannotEdit(old);
+        if (refusal is null) return null;
+        AppLog.Warn("renodx-engine-ini", $"RenoDX's Engine.ini line is not written to {ini}; RenoDX itself goes on: {refusal}");
+        ini = null;
+        return refusal;
+    }
+
+    /// <summary>The result's note when the Engine.ini keys were skipped (empty when they were not).</summary>
+    private static string EngineKeysNote(string? skipped) => skipped is null ? "" : " · " + EngineIniKeysNotWrittenPrefix + skipped;
+
+    /// <summary>Fixed text of the note when RenoDX installed but its Engine.ini keys could not be written (PT-BR pair); the reason follows.</summary>
+    public const string EngineIniKeysNotWrittenPrefix = "RenoDX's Unreal colour-grading/HDR lines were not written to Engine.ini: ";
+
+    /// <summary>Why the keys were not written when Engine.ini is not text RHI can edit byte for byte (PT-BR pair).</summary>
+    public const string EngineIniNotTextMessage = "Engine.ini is not UTF-8 or UTF-16 text, so RHI does not edit it.";
+
     /// <summary>A fresh record keeps the ⚙'s Engine.ini choices of the one it replaces, and the keys RHI owns now.</summary>
     private static void CarryEngineIniKeys(LinuxDeploymentRecord? existing, LinuxDeploymentRecord record, RenoDxEngineIniState? state)
     {
@@ -638,7 +668,9 @@ public sealed class RenoDxDeploymentService
     public static string EngineIniLutLines => string.Join(", ", RenoDxEngineIni.LutKeys.Select(key => $"{key.Key}={key.Value}"));
 
     /// <summary>Whether the RenoDX ⚙ offers the LUT row for <paramref name="game"/> (RHI's RenoDX, an Unreal game it applies to).</summary>
-    public bool OffersEngineIniLut(DetectedGame game) => IsManaged(game) && RenoDxEngineIni.LutApplies(game);
+    public bool OffersEngineIniLut(DetectedGame game)
+        => IsManaged(game) && RenoDxEngineIni.LutApplies(game)
+           && RenoDxEngineIni.RowUsable(game, _records.Find(game, ManagedComponentKind.RenoDX), RenoDxEngineIni.LutGroup);
 
     /// <summary>Whether the LUT key is in effect for the ⚙ (RHI's, or the user's own with the value 1).</summary>
     public bool EngineIniLutIsOn(DetectedGame game) => RenoDxEngineIni.LutIsOn(game, _records.Find(game, ManagedComponentKind.RenoDX));
@@ -662,7 +694,8 @@ public sealed class RenoDxDeploymentService
     private static bool HdrOffered(DetectedGame game, LinuxDeploymentRecord? record)
         => record is not null && IsUeExtendedInstalled(record)
            && record.Metadata.GetValueOrDefault(RenoDxEngineIni.HdrAppliesMetadataKey) == "1"
-           && string.IsNullOrWhiteSpace(game.EngineIniFileOverride) && RenoDxEngineIni.ResolvePath(game) is not null;
+           && string.IsNullOrWhiteSpace(game.EngineIniFileOverride) && RenoDxEngineIni.ResolvePath(game) is not null
+           && RenoDxEngineIni.RowUsable(game, record, RenoDxEngineIni.HdrGroup);
 
     /// <summary>#218: whether UE-Extended's HDR keys are in effect for the ⚙.</summary>
     public bool EngineIniHdrIsOn(DetectedGame game) => RenoDxEngineIni.HdrIsOn(game, _records.Find(game, ManagedComponentKind.RenoDX));
@@ -829,6 +862,7 @@ public sealed class RenoDxDeploymentService
         var engineKeysOn = EngineIniKeysFor(game, existingRecord, hdr: false); // UE-Extended's HDR keys stay as they are
         var engineKeysState = RenoDxEngineIni.Read(existingRecord);
         var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game) : null;
+        var engineKeysSkipped = EngineKeysRefusal(ref engineKeysIni, engineKeysState); // review 2: optional, never fails RenoDX
         // #205: one journaled operation on RenoDX's record; the stamped record is the commit point.
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(
             _journal, "RenoDX local add-on: " + game.Name, game, ManagedComponentKind.RenoDX, cancellationToken).ConfigureAwait(false);
@@ -843,7 +877,10 @@ public sealed class RenoDxDeploymentService
             Directory.CreateDirectory(deployDir);
             await scope.PlaceCopyAsync(addonPath, target, cancellationToken, sha).ConfigureAwait(false);
             if (engineKeysIni is not null)
-                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, NoGroups, engineKeysState);
+            {
+                engineKeysState = RenoDxEngineIni.ApplyOptional(engineKeysIni, engineKeysOn, NoGroups, engineKeysState, out var keysFailure);
+                engineKeysSkipped ??= keysFailure;
+            }
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
             // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
             if (managedOldPath is not null && !PathsEqual(managedOldPath, target) && File.Exists(managedOldPath))
@@ -874,7 +911,7 @@ public sealed class RenoDxDeploymentService
             return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
-        return ComponentOperationResult.Ok(LocalInstalledPrefix + target, target);
+        return ComponentOperationResult.Ok(LocalInstalledPrefix + target + EngineKeysNote(engineKeysSkipped), target);
     }
 
     private async Task<bool> HasSnapshotOverrideAsync(DetectedGame game, CancellationToken cancellationToken)

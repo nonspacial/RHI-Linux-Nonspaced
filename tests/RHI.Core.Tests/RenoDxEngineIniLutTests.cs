@@ -3,6 +3,7 @@ using System.Text;
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
@@ -231,10 +232,252 @@ public sealed class RenoDxEngineIniLutTests : IDisposable
         });
     }
 
+    // ── correction round (w8 review) ───────────────────────────────────────────────────────────────────────────
+
+    // Review 1: a manifest project override names a folder the game creates on its first launch. Before that launch the
+    // install succeeds without the key, creates no folder, and the ⚙ row is hidden (upstream's Engine.ini step logs and
+    // carries on; the fork creates no Engine.ini folder).
+    [Fact]
+    public async Task Install_ProjectOverride_ConfigFolderNotThereYet_InstallsWithoutTheKey_AndHidesTheRow()
+    {
+        var fx = Fixture("no-config-folder");
+        var project = ProjectFolder(fx);
+        Directory.Delete(project, recursive: true);
+
+        var installed = await fx.Service.InstallAsync(fx.Game, fx.Files);
+
+        Assert.True(installed.Success, installed.Message);
+        Assert.False(Directory.Exists(project));
+        Assert.DoesNotContain(RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix, installed.Message); // nothing went wrong
+        Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        Assert.False(fx.Service.OffersEngineIniLut(fx.Game));
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+        Assert.False(Directory.Exists(project));
+    }
+
+    [Theory]
+    [InlineData("update")]
+    [InlineData("update-all")]
+    [InlineData("drop")]
+    public async Task UpdateUpdateAllAndDrop_ProjectOverride_ConfigFolderNotThereYet_SucceedWithoutTheKey(string operation)
+    {
+        var fx = Fixture("no-config-folder-" + operation);
+        var project = ProjectFolder(fx);
+        Directory.Delete(project, recursive: true);
+        if (operation != "drop") Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+
+        if (operation == "update-all")
+        {
+            fx.Remote.Rebuild();
+            var all = await new LinuxUpdateAllService(fx.Records, new Backend(fx.Service), new NeverRunning())
+                .RunAsync([fx.Game], _ => fx.Files, LinuxUpdateRunMode.Manual);
+            Assert.True(all.ChangedCount == 1 && all.FailedCount == 0, all.Summary);
+        }
+        else
+        {
+            var result = operation == "update"
+                ? await fx.Service.UpdateAsync(fx.Game, fx.Files)
+                : await fx.Service.InstallLocalAddonAsync(fx.Game, fx.Dropped());
+            Assert.True(result.Success, result.Message);
+        }
+
+        Assert.False(Directory.Exists(project));
+        Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        Assert.False(fx.Service.OffersEngineIniLut(fx.Game));
+    }
+
+    // Review 2: the key is optional. A link outside the prefix or an Engine.ini RHI cannot read never fails RenoDX's install,
+    // update or drop: RenoDX goes in, the file is left as it is, and the result says plainly why the line is not there.
+    [Theory]
+    [InlineData("install")]
+    [InlineData("drop")]
+    public async Task SavedLinkedOutsideThePrefix_RenoDxStillInstalls_WithoutTheKey_AndSaysWhy(string operation)
+    {
+        var fx = Fixture("linked-saved-" + operation);
+        var saved = Path.Combine(ProjectFolder(fx), "Saved");
+        var outside = Path.Combine(fx.Root, "outside", "Saved");
+        Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+        Directory.Move(saved, outside);
+        Directory.CreateSymbolicLink(saved, outside);
+        var shared = Path.Combine(outside, "Config", "Windows", "Engine.ini");
+        File.WriteAllText(shared, Before);
+        File.SetUnixFileMode(shared, Open);
+
+        var result = operation == "install"
+            ? await fx.Service.InstallAsync(fx.Game, fx.Files)
+            : await fx.Service.InstallLocalAddonAsync(fx.Game, fx.Dropped());
+
+        Assert.True(result.Success, result.Message);
+        Assert.Contains(" · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + LumaEngineIniOverrideManager.LinkRefusalPrefix, result.Message);
+        Assert.Equal(Before, File.ReadAllText(shared));
+        Assert.Equal(Open, File.GetUnixFileMode(shared));
+        Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        Assert.DoesNotContain("not written", UiLocalizationService.PresentFor("pt-BR", result.Message)); // PT-BR says it too
+    }
+
+    [Fact]
+    public async Task UnreadableEngineIni_InstallAndUpdate_StillSucceed_WithoutTheKey_AndSayWhy()
+    {
+        var fx = Fixture("unreadable");
+        File.WriteAllText(fx.EngineIni, Before);
+        File.SetUnixFileMode(fx.EngineIni, UnixFileMode.None);
+
+        var installed = await fx.Service.InstallAsync(fx.Game, fx.Files);
+        var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files);
+
+        foreach (var result in new[] { installed, updated })
+        {
+            Assert.True(result.Success, result.Message);
+            Assert.Contains(" · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + "Access to the path", result.Message);
+        }
+        Assert.Equal(UnixFileMode.None, File.GetUnixFileMode(fx.EngineIni));
+        Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        Assert.Equal(Before, File.ReadAllText(fx.EngineIni));
+    }
+
+    // The write itself fails (a config folder RHI cannot write to) and nothing changed: RenoDX installs, says why, owns nothing.
+    [Fact]
+    public async Task ConfigFolderNotWritable_RenoDxStillInstalls_WithoutTheKey_AndSaysWhy()
+    {
+        var fx = Fixture("folder-read-only");
+        var folder = Path.GetDirectoryName(fx.EngineIni)!;
+        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        try
+        {
+            var installed = await fx.Service.InstallAsync(fx.Game, fx.Files);
+
+            Assert.True(installed.Success, installed.Message);
+            Assert.Contains(" · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix, installed.Message);
+            Assert.False(File.Exists(fx.EngineIni));
+            Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        }
+        finally { File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    // Only a failure that changed nothing is skipped: here RHI's line already came out of the old Engine.ini (the game's
+    // config moved) when the new one could not be written, so the whole update is undone and the old file keeps RHI's line.
+    [Fact]
+    public async Task EngineIniMoved_NewOneCannotBeWritten_AfterTheOldOneChanged_TheUpdateIsUndoneWhole()
+    {
+        var fx = Fixture("moved-then-failed");
+        File.WriteAllText(fx.EngineIni, Before);
+        File.SetUnixFileMode(fx.EngineIni, Open);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+        var oldBytes = File.ReadAllBytes(fx.EngineIni);
+        var oldMode = File.GetUnixFileMode(fx.EngineIni);
+        var recordBefore = RenoDxJournalTests.Describe(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX));
+        var moved = Path.Combine(fx.Game.PrefixPath!, "drive_c", "users", "steamuser", "AppData", "Local", "MovedProject", "Saved", "Config", "Windows");
+        Directory.CreateDirectory(moved);
+        File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        fx.Game.EngineIniProjectOverride = "MovedProject";
+        try
+        {
+            var updated = await fx.Service.UpdateAsync(fx.Game, fx.Files);
+
+            Assert.False(updated.Success, updated.Message);
+            Assert.Equal(oldBytes, File.ReadAllBytes(fx.EngineIni));
+            Assert.Equal(oldMode, File.GetUnixFileMode(fx.EngineIni));
+            Assert.Equal(recordBefore, RenoDxJournalTests.Describe(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)));
+        }
+        finally { File.SetUnixFileMode(moved, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    // Review 3: removal and the ⚙ Off give the file back byte for byte — a header or blank line the user had stays, and the
+    // file's line endings, encoding, byte order mark and missing final newline are kept.
+    public static TheoryData<string> UserFiles => new()
+    {
+        "header-already-there", "crlf", "no-final-newline", "trailing-blank-lines", "utf8-bom", "utf16-crlf", "empty-header-last-crlf", "empty"
+    };
+
+    private static byte[] UserFile(string name) => name switch
+    {
+        "header-already-there" => Encoding.UTF8.GetBytes("[/Script/Engine.RendererSettings]\n\n[SystemSettings]\nUserKeep=42\n"),
+        "crlf" => Encoding.UTF8.GetBytes("[SystemSettings]\r\nUserKeep=42\r\n"),
+        "no-final-newline" => Encoding.UTF8.GetBytes("[SystemSettings]\nUserKeep=42"),
+        "trailing-blank-lines" => Encoding.UTF8.GetBytes("[SystemSettings]\nUserKeep=42\n\n\n"),
+        "utf8-bom" => [0xEF, 0xBB, 0xBF, .. Encoding.UTF8.GetBytes("[SystemSettings]\nUserKeep=42\n")],
+        "utf16-crlf" => [0xFF, 0xFE, .. Encoding.Unicode.GetBytes("[SystemSettings]\r\nUserKeep=Ação\r\n")],
+        "empty-header-last-crlf" => Encoding.UTF8.GetBytes("[SystemSettings]\r\nUserKeep=42\r\n[/Script/Engine.RendererSettings]\r\n"),
+        _ => []
+    };
+
+    [Theory]
+    [MemberData(nameof(UserFiles))]
+    public async Task RemovalAndGearOff_GiveTheFileBackByteForByte(string name)
+    {
+        var fx = Fixture("bytes-" + name);
+        var before = UserFile(name);
+        File.WriteAllBytes(fx.EngineIni, before);
+        File.SetUnixFileMode(fx.EngineIni, Open);
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+        Assert.Single(RenoDxEngineIni.Read(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX))!.Entries);
+        Assert.True((await fx.Service.SetEngineIniLutAsync(fx.Game, on: false)).Success);
+        Assert.Equal(before, File.ReadAllBytes(fx.EngineIni));
+        Assert.True((await fx.Service.SetEngineIniLutAsync(fx.Game, on: true)).Success);
+        Assert.True(fx.Service.EngineIniLutIsOn(fx.Game));
+
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+
+        Assert.Equal(before, File.ReadAllBytes(fx.EngineIni));
+        Assert.Equal(Open, File.GetUnixFileMode(fx.EngineIni));
+    }
+
+    [Fact]
+    public async Task CrlfFile_RhisLineTakesTheFilesOwnLineEnding()
+    {
+        var fx = Fixture("crlf-ending");
+        File.WriteAllText(fx.EngineIni, "[SystemSettings]\r\nUserKeep=42");
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+
+        Assert.Equal("[SystemSettings]\r\nUserKeep=42\r\n\r\n[/Script/Engine.RendererSettings]\r\n" + Line, File.ReadAllText(fx.EngineIni));
+    }
+
+    // Review 4: an Engine.ini RHI cannot read never throws from the ⚙ (it reads as Off) and hides the row, unless RHI owns the
+    // key there (then Off can still be asked for).
+    [Fact]
+    public async Task GearRow_UnreadableEngineIni_ReadsAsOff_AndIsHidden_UnlessRhiOwnsTheKey()
+    {
+        var fx = Fixture("gear-unreadable");
+        File.WriteAllText(fx.EngineIni, Before + "[/Script/Engine.RendererSettings]\n" + Line + "\n"); // the user's own line
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+        Assert.True(fx.Service.EngineIniLutIsOn(fx.Game));
+        File.SetUnixFileMode(fx.EngineIni, UnixFileMode.None);
+
+        Assert.False(fx.Service.EngineIniLutIsOn(fx.Game));
+        Assert.False(fx.Service.OffersEngineIniLut(fx.Game));
+
+        var owned = Fixture("gear-unreadable-owned");
+        File.WriteAllText(owned.EngineIni, Before);
+        Assert.True((await owned.Service.InstallAsync(owned.Game, owned.Files)).Success);
+        File.SetUnixFileMode(owned.EngineIni, UnixFileMode.None);
+        Assert.True(owned.Service.OffersEngineIniLut(owned.Game));
+        Assert.True(owned.Service.EngineIniLutIsOn(owned.Game));
+    }
+
+    private static string ProjectFolder(LutFixture fx)
+        => Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(fx.EngineIni)!)!)!)!;
+
+    private sealed class Backend(RenoDxDeploymentService service) : ILinuxManagedUpdateBackend
+    {
+        public Task<ManagedUpdateCheck> CheckManagedUpdateAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+            => service.CheckUpdateAsync(game, indexedFiles, cancellationToken);
+
+        public Task<ComponentOperationResult> UpdateManagedAsync(DetectedGame game, ManagedComponentKind component, IReadOnlyList<string> indexedFiles, CancellationToken cancellationToken = default)
+            => service.UpdateAsync(game, indexedFiles, cancellationToken);
+    }
+
+    private sealed class NeverRunning : IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game) => false;
+    }
+
     // ── fixture ────────────────────────────────────────────────────────────────────────────────────────────────
 
     internal sealed record LutFixture(DetectedGame Game, string Root, string EngineIni, RenoDxJournalTests.JournalParts Journal,
-        LinuxDeploymentRecordStore Records, RenoDxDeploymentService Service, string[] Files)
+        LinuxDeploymentRecordStore Records, RenoDxDeploymentService Service, string[] Files, Handler Remote)
     {
         public string Dropped()
         {
@@ -262,16 +505,21 @@ public sealed class RenoDxEngineIniLutTests : IDisposable
         };
         change?.Invoke(game);
         var journal = RenoDxJournalTests.JournalParts.Create(Path.Combine(root, "state"));
-        var http = new HttpClient(new Handler());
+        var remote = new Handler();
+        var http = new HttpClient(remote);
         var manifest = new UpstreamRhiManifestService(http, Handler.ManifestUrl);
         var service = new RenoDxDeploymentService(http, journal.Records, new RenoDxCatalogService(http, manifest), Path.Combine(root, "state", "cache"), manifest,
             journal: journal.Journal);
-        return new LutFixture(game, root, engineIni, journal, journal.Records, service, [exe, Path.Combine(bin, "ReShade64.dll")]);
+        return new LutFixture(game, root, engineIni, journal, journal.Records, service, [exe, Path.Combine(bin, "ReShade64.dll")], remote);
     }
 
-    private sealed class Handler : HttpMessageHandler
+    internal sealed class Handler : HttpMessageHandler
     {
         public const string ManifestUrl = "https://github.com/rhi-tests/renodx-lut/raw/main/manifest.json";
+        private int _build;
+
+        /// <summary>A RenoDX snapshot rebuilt under the same URL (new bytes, new ETag): Update All finds an update.</summary>
+        public void Rebuild() => _build++;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -288,7 +536,10 @@ public sealed class RenoDxEngineIniLutTests : IDisposable
                 var bytes = new byte[120 * 1024];
                 bytes[0] = (byte)'M'; bytes[1] = (byte)'Z';
                 Encoding.ASCII.GetBytes("RenoDX").CopyTo(bytes, 256);
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
+                bytes[512] = (byte)_build;
+                var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) };
+                response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"lut-{_build}\"");
+                return Task.FromResult(response);
             }
             if (url == UpstreamEngineIniFileManager.BaseUrl + "lut-custom.ini")
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[SystemSettings]\nr.Custom=1\n") });

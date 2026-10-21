@@ -101,6 +101,27 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
         Assert.Equal(["Fix colour grading updates (Unreal)"], fx.Vm.RenoDxEngineIni.RowsFor(_ => { }).Select(row => row.Label));
     }
 
+    // Correction round, review 4: an Engine.ini RHI cannot read never stops the ⚙ from opening: the row is hidden (nothing
+    // it could do), or — where RHI's key is in that file — shown as On so Off can still be asked for.
+    [Fact]
+    public async Task AnUnreadableEngineIni_TheDialogStillOpens_TheRowHidden_UnlessRhiOwnsTheKey()
+    {
+        var notOwned = Game("Unreadable Lut", "Unreal Engine 5");
+        var owned = Game("Unreadable Owned", "Unreal Engine 5");
+        using var fx = await ViewModelFixture.StartAsync([notOwned, owned]);
+        Seed(fx, notOwned, lutKey: false);
+        Seed(fx, owned);
+        File.SetUnixFileMode(EngineIni(notOwned), UnixFileMode.None);
+        File.SetUnixFileMode(EngineIni(owned), UnixFileMode.None);
+
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == notOwned.Name).Game;
+        Assert.Empty(fx.Vm.RenoDxEngineIni.RowsFor(_ => { }));
+
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == owned.Name).Game;
+        var row = Assert.Single(fx.Vm.RenoDxEngineIni.RowsFor(_ => { }));
+        Assert.Equal(1, row.SelectedIndex);
+    }
+
     private DetectedGame Game(string name, string engine)
     {
         var root = Path.Combine(_root, name);
@@ -122,7 +143,7 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
         => Path.Combine(game.PrefixPath!, "drive_c", "users", "steamuser", "AppData", "Local", "Proj", "Saved", "Config", "Windows", "Engine.ini");
 
     /// <summary>RHI's RenoDX on the game: its add-on and record, with RHI's LUT key in Engine.ini where it applies.</summary>
-    private static void Seed(ViewModelFixture fx, DetectedGame game, bool ueExtended = false)
+    private static void Seed(ViewModelFixture fx, DetectedGame game, bool ueExtended = false, bool lutKey = true)
     {
         var addon = Path.Combine(game.BinaryDirectory!, "renodx-lut.addon64");
         PeArchitectureDetectorTests.WritePe(addon, 0x8664, 96 * 1024);
@@ -134,7 +155,7 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
             Files = [new LinuxDeployedFile { Path = addon, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(addon) }]
         };
         if (ueExtended) record.Metadata[RenoDxEngineIni.HdrAppliesMetadataKey] = "1";
-        if (RenoDxEngineIni.LutApplies(game))
+        if (lutKey && RenoDxEngineIni.LutApplies(game))
             RenoDxEngineIni.Write(record, RenoDxEngineIni.Apply(EngineIni(game),
                 new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> { [RenoDxEngineIni.LutGroup] = RenoDxEngineIni.LutKeys },
                 new HashSet<string>(), null));

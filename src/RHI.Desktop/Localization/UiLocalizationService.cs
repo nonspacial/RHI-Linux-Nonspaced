@@ -1545,6 +1545,10 @@ public static class UiLocalizationService
             "As configurações do Engine.ini do RenoDX precisam do RenoDX instalado pelo RHI: "),
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotOfferedPrefix,
             "Esta configuração do Engine.ini não se aplica a este jogo: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix, // #217 review 2
+            "As linhas de gradação de cor/HDR do Unreal do RenoDX não foram gravadas no Engine.ini: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage,
+            "O Engine.ini não é texto UTF-8 nem UTF-16, então o RHI não o edita."),
         // w8/commit-point rows
     ];
 

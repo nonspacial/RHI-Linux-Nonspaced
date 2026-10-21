@@ -195,6 +195,44 @@ public sealed class RenoDxUeExtendedHdrTests : IDisposable
         Assert.Equal(ReShadeIni, File.ReadAllText(Path.Combine(fx.Bin, "ReShade.ini")));
     }
 
+    // Correction round, review 1: the project's config folder is not there yet (the game was never launched): UE-Extended
+    // installs without its Engine.ini keys, creates no folder, and neither ⚙ row is offered.
+    [Fact]
+    public async Task UeExtended_ConfigFolderNotThereYet_InstallsWithoutTheEngineIniKeys_AndHidesBothRows()
+    {
+        var fx = Fixture("no-config-folder");
+        var project = Path.Combine(fx.Root, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "UeeProject");
+        Directory.Delete(project, recursive: true);
+
+        var installed = await fx.Service.InstallAsync(fx.Game, fx.Files, ueExtendedChoice: "on");
+
+        Assert.True(installed.Success, installed.Message);
+        Assert.False(Directory.Exists(project));
+        Assert.False(fx.Records.Find(fx.Game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(RenoDxEngineIni.StateMetadataKey));
+        Assert.False(fx.Service.OffersEngineIniHdr(fx.Game));
+        Assert.False(fx.Service.OffersEngineIniLut(fx.Game));
+    }
+
+    // Review 3: an empty [SystemSettings] the user had, CRLF endings and no final newline all come back byte for byte.
+    [Fact]
+    public async Task HdrKeys_IntoAnEmptySectionTheUserHad_RemovalAndOff_GiveTheFileBackByteForByte()
+    {
+        var fx = Fixture("bytes");
+        var before = Encoding.UTF8.GetBytes("[SystemSettings]\r\n\r\n[Other]\r\nA=1");
+        File.WriteAllBytes(fx.EngineIni, before);
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files, ueExtendedChoice: "on")).Success);
+        Assert.Contains("[SystemSettings]\r\nr.AllowHDR=1\r\n", File.ReadAllText(fx.EngineIni));
+        Assert.True((await fx.Service.SetEngineIniHdrAsync(fx.Game, on: false)).Success);
+        Assert.True((await fx.Service.SetEngineIniLutAsync(fx.Game, on: false)).Success);
+        Assert.Equal(before, File.ReadAllBytes(fx.EngineIni));
+        Assert.True((await fx.Service.SetEngineIniHdrAsync(fx.Game, on: true)).Success);
+
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+
+        Assert.Equal(before, File.ReadAllBytes(fx.EngineIni));
+    }
+
     public static TheoryData<string, string> CommitPoints() => new()
     {
         { "ledger-blocked", "install" }, { "crash", "install" }, { "ledger-blocked", "gear-off" }, { "crash", "gear-off" }

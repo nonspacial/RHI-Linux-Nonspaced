@@ -499,6 +499,11 @@ internal static class LumaEngineIniOverrideManager
     internal static UserFileWriteResult WriteUserEngineIni(string path, IEnumerable<string> lines)
         => AtomicFile.ReplaceUserFileLines(path, lines, linkPolicy: LinkPolicy(path), readOnly: ReadOnlyUserFile.WriteKeepingLock);
 
+    /// <summary>w8/renodx (#217 review 3): <see cref="WriteUserEngineIni"/> with the file's exact bytes (RenoDX's keys keep
+    /// the file's own line endings and encoding).</summary>
+    internal static UserFileWriteResult WriteUserEngineIniBytes(string path, byte[] bytes)
+        => AtomicFile.ReplaceUserFile(path, bytes, linkPolicy: LinkPolicy(path), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+
     /// <summary>
     /// w8/renodx (#205): the file a <see cref="WriteUserEngineIni"/> to <paramref name="path"/> replaces — the path itself, or
     /// the target of a link <see cref="LinkPolicy"/> allows — which is what a journal tracks; throws the write's refusal.

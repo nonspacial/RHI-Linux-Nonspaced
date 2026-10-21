@@ -523,6 +523,10 @@ public sealed class WaveOneMessageLocalizationTests
         // w8/renodx rows
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotManagedPrefix + "Hogwarts Legacy"; // #217
         yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotOfferedPrefix + "Hogwarts Legacy";
+        yield return "RenoDX installed: Lut → " + P + " · " + RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix
+            + "Access to the path '" + P + "' is denied."; // #217 review 2
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix + P + " · "
+            + RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage;
         // w8/commit-point rows
     }
 
