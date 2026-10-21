@@ -108,6 +108,34 @@ public sealed partial class Dlss5FeederLifecycleAuditTests
         }
     }
 
+    // A simulated death abandons the operation: once the test lets the dead thread go, its catch finds the operation
+    // undecided and undoes nothing in process (it used to restore the overrides the recovered, committed install depends on).
+    [Fact]
+    [Trait("Category", "CommitPoint")]
+    public async Task Dx9Install_DeathRightAfterTheCommitWrite_TheLetGoThreadUndoesNothing()
+    {
+        using var f = new FeederFixture(dx9: true, journaled: true);
+        Task<ComponentOperationResult> run;
+        using (var death = new SimulatedDeath(f.Journal!))
+        {
+            f.Records.SaveWrittenFaultForTesting = death.Die;
+            (var died, run) = await death.RunUntilDeathAsync(() => f.Install(Dlss5FeederConsumer.RenoDxDlss5));
+            Assert.True(died);
+            await SimulatedDeath.RecoverAsync(f.JournalDirectory, f.RecordsPath);
+        }
+        var result = await run;
+        f.Records.SaveWrittenFaultForTesting = null;
+
+        Assert.False(result.Success);
+        Assert.Equal(" " + DeploymentOperation.UndecidedNote, result.Message[^(DeploymentOperation.UndecidedNote.Length + 1)..]);
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(f), "dxgi", "Game.exe"));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(f), "d3d9", "Game.exe"));
+        Assert.Equal("native,builtin", WineDllOverrideService.TryReadOverride(UserReg(f), "d3dcompiler_47", "Game.exe"));
+        var fresh = new LinuxDeploymentRecordStore(f.RecordsPath);
+        Assert.NotNull(fresh.Find(f.Game, ManagedComponentKind.Dlss5Feeder));
+        Assert.Equal(Path.Combine(f.Bin, "dxgi.dll"), Assert.Single(fresh.Find(f.Game, ManagedComponentKind.ReShade)!.Files).Path);
+    }
+
     // #213: ReShade.ini linked to the user's shared file. The Feeder's search-path write follows the link; its preset edit
     // refuses a link, so the install fails — and its rollback must keep the link a link and put the shared file back byte
     // for byte (it used to track the link: the rollback replaced it with a plain copy and left RHI's lines in the shared file).
