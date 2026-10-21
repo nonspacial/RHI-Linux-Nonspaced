@@ -192,6 +192,7 @@ public sealed class DofFixDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal UE DOF Fix", changedFiles: target);
             if (rollback.Success) throw;
             throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
         }
@@ -245,6 +246,7 @@ public sealed class DofFixDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dof-fix").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal UE DOF Fix", removal: true);
             return ComponentOperationResult.Fail($"{RemovalRolledBackPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

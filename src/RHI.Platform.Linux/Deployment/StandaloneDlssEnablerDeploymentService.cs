@@ -226,7 +226,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
         {
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS Enabler Standalone", changedFiles: targetPath);
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
@@ -282,7 +283,8 @@ public sealed class StandaloneDlssEnablerDeploymentService
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss-enabler").ConfigureAwait(false);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS Enabler Standalone", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
@@ -383,6 +385,7 @@ public sealed class StandaloneDlssEnablerDeploymentService
             if (staged is not null) FileCleanup.TryDelete(staged);
             // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS Enabler Standalone", changedFiles: targetPath);
             return ComponentOperationResult.Fail($"DLSS Enabler Standalone update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

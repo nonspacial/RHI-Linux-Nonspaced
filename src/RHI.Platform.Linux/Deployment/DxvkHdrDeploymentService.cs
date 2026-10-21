@@ -340,9 +340,10 @@ public sealed partial class DxvkHdrDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DX9 HDR", changedFiles: [d3d9, conf]);
             // Journaled, the rollback already undid these; unjournaled they go here (each only while it is still RHI's).
-            if (overrideCreated) _overrides.TryRestore(prefix, d3d9Override);
-            if (moved is not null) _reshade.UndoDxvkHdrMoveInside(game, moved);
+            if (rollback.RolledBack && overrideCreated) _overrides.TryRestore(prefix, d3d9Override);
+            if (rollback.RolledBack && moved is not null) _reshade.UndoDxvkHdrMoveInside(game, moved);
             AppLog.Warn("dxvk-hdr", "DX9 HDR install failed; rolled back" + (rollback.Success ? "" : ": " + string.Join("; ", rollback.Failures)), ex);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
@@ -405,9 +406,10 @@ public sealed partial class DxvkHdrDeploymentService
             // DX9 HDR's record (and ReShade's layer record, when the commit write took both) goes back before the files.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dxvk-hdr",
                 alongside: back is not null && reshade is not null ? [reshade] : null).ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DX9 HDR", removal: true);
             foreach (var (overrideRecord, result) in overrideRestores.AsEnumerable().Reverse())
-                if (result.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, overrideRecord);
-            if (back is not null) _reshade.UndoDxvkHdrMoveBackInside(game, back);
+                if (rollback.RolledBack && result.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, overrideRecord);
+            if (rollback.RolledBack && back is not null) _reshade.UndoDxvkHdrMoveBackInside(game, back);
             AppLog.Warn("dxvk-hdr", "DX9 HDR removal failed; rolled back" + (rollback.Success ? "" : ": " + string.Join("; ", rollback.Failures)), ex);
             return ComponentOperationResult.Fail(RemovalFailedPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
@@ -473,6 +475,7 @@ public sealed partial class DxvkHdrDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DX9 HDR", changedFiles: d3d9.Path);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -526,6 +529,7 @@ public sealed partial class DxvkHdrDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("DX9 HDR", changedFiles: conf.Path);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);

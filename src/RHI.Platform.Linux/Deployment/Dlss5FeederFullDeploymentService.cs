@@ -582,12 +582,15 @@ public sealed class Dlss5FeederFullDeploymentService
             copied.Add(t.Preset);
 
             // ReShade.ini: tracked before its three edits and declared after them, so a rollback (or the next start after a
-            // crash) puts back exactly the file as it was.
-            await scope.TrackAsync(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), CancellationToken.None).ConfigureAwait(false);
+            // crash) puts back exactly the file as it was. #213: the file the writes land in is tracked — a ReShade.ini
+            // linked to a shared file (~/.config/ReShade) is followed by the search-path write — never the link, so a rollback
+            // keeps the link and puts the shared file's bytes back.
+            var iniTarget = ReShadeIniManager.ResolveWriteTarget(ReShadeIniManager.ResolveIniPath(t.BinaryDirectory), t.BinaryDirectory, gameRoot: null);
+            await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             var iniResult = ReShadeIniManager.Apply(t.BinaryDirectory, [EffectSearchPath], [TextureSearchPath]);
             var presetMutation = SetPresetPath(iniResult.Path, @".\RHI-DLSS5-Feeder.ini");
             var earlyLoadMutation = consumer == Dlss5FeederConsumer.DeepFriedChicken ? EnsureLoadFromDllMainToken(iniResult.Path, DeepFriedAddonName) : null;
-            await scope.DeclareWrittenContentAsync(iniResult.Path, CancellationToken.None).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
 
             record = BuildRecord(game, consumer, compilerPlan, t, staged, dx9?.State ?? staged.SharedDx9State, copied, createdDirs, compilerOverride,
                 iniResult, presetMutation, earlyLoadMutation);
@@ -599,11 +602,17 @@ public sealed class Dlss5FeederFullDeploymentService
             // Every file, ReShade.ini and (journaled) every Wine override back from the scope; the overrides once more
             // for an unjournaled run (a no-op where the rollback already put the value back).
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (compilerOverride is not null && _overrides is not null)
-                RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
-            if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
-            FileCleanup.TryDeleteEmptyTree(t.IntegrationRoot);
-            if (t.Layout.Host64Directory is { } host64) FileCleanup.TryDeleteEmptyTree(host64);
+            // #204: the commit write (with ReShade's translated record, after a DX9 translation) landed and then threw:
+            // both records are kept and nothing is undone, the rename and its overrides included.
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS5 Feeder Full", changedFiles: [.. copied]);
+            if (rollback.RolledBack)
+            {
+                if (compilerOverride is not null && _overrides is not null)
+                    RollbackStep("d3dcompiler_47 override restore", () => _overrides.TryRestore(prefix, compilerOverride));
+                if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
+                FileCleanup.TryDeleteEmptyTree(t.IntegrationRoot);
+                if (t.Layout.Host64Directory is { } host64) FileCleanup.TryDeleteEmptyTree(host64);
+            }
             return ComponentOperationResult.Fail($"DLSS5 Feeder Full install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -780,7 +789,9 @@ public sealed class Dlss5FeederFullDeploymentService
                 // Cleanup search-path tokens first. If Feeder had to create ReShade.ini and the
                 // file stayed untouched, this can remove it entirely. Otherwise restore only the
                 // PresetPath value we changed, and only while it still points at our preset.
-                await scope.TrackAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                // #213: the file behind a linked ReShade.ini is tracked, never the link (see the install).
+                var iniTarget = ReShadeIniManager.ResolveWriteTarget(iniPath, Path.GetDirectoryName(iniPath)!, gameRoot: null);
+                await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
                 ReShadeIniManager.Cleanup(
                     iniPath,
                     record.Metadata.GetValueOrDefault(MetaIniCreated) == "1",
@@ -792,7 +803,7 @@ public sealed class Dlss5FeederFullDeploymentService
                 RestorePresetPath(iniPath, mutation);
                 if (record.Metadata.GetValueOrDefault(MetaLoadFromDllMainAdded) == "1")
                     RemoveLoadFromDllMainToken(iniPath, new IniListTokenMutation(true, DeepFriedAddonName));
-                if (File.Exists(iniPath)) await scope.DeclareWrittenContentAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                if (File.Exists(iniTarget)) await scope.DeclareWrittenContentAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
             }
 
             if (restoreDx9)
@@ -831,8 +842,10 @@ public sealed class Dlss5FeederFullDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "dlss5-feeder", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
+            // #204: the removal (with ReShade's record back at d3d9.dll) landed and then threw: it stays removed.
+            if (rollback.Committed) return DeploymentScope.Landed("DLSS5 Feeder Full", removal: true);
             // The record keeps its overrides: put RHI's value back where this removal took it away (#30).
-            if (game.PrefixPath is { } prefix)
+            if (rollback.RolledBack && game.PrefixPath is { } prefix)
             {
                 foreach (var (wineOverride, result) in overrideRestores.Where(o => o.Result.Outcome == WineOverrideRestoreOutcome.Restored))
                     _overrides?.TryReapply(prefix, wineOverride);

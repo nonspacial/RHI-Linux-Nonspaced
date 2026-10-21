@@ -234,6 +234,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed(_definition.DisplayName, changedFiles: target);
             return ComponentOperationResult.Fail($"{_definition.DisplayName} install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: the commit point.
@@ -273,6 +274,7 @@ public sealed class GitHubReShadeAddonDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "github-addon").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed(_definition.DisplayName, removal: true);
             return ComponentOperationResult.Fail($"{_definition.DisplayName} removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

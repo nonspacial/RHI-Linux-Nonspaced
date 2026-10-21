@@ -86,6 +86,7 @@ public static class ManagedFileSwap
             {
                 // Compensation never honours cancellation: a half-swapped component must be restored.
                 var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+                if (rollback.Committed) return swapped; // #204: the record landed; the swap is done
                 if (!rollback.Success)
                     throw new ManagedFileRestoreException(
                         plan.Select(item => scope.Files.SnapshotPathOf(item.File.Path)).Where(File.Exists).ToArray(), failure);

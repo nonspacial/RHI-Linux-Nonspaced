@@ -578,11 +578,12 @@ public sealed class ShortFuseDeploymentService
             // pre-install bytes from the scope's verified copies; ReShade's record was never saved. A copy that cannot be
             // put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ShortFuse");
             if (!rollback.Success)
                 AppLog.Warn("shortfuse", $"Install rollback did not complete: {string.Join("; ", rollback.Failures)}");
-            if (overrideSuspended)
+            if (rollback.RolledBack && overrideSuspended)
                 _overrides.TryReapply(game.PrefixPath, reshadeRecord.WineOverride);
-            if (ualInstalledByUs)
+            if (rollback.RolledBack && ualInstalledByUs)
             {
                 try { await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false); }
                 catch (Exception ualError) { AppLog.Warn("shortfuse", "Install rollback could not remove the ASI Loader it installed", ualError); }
@@ -754,26 +755,35 @@ public sealed class ShortFuseDeploymentService
             // ReShade's record goes back as it was when the commit write had renamed it (one write with ShortFuse's).
             var rollback = await scope.RollbackRemovalAsync(
                 _records, game, record, "shortfuse", alongside: reshadeAfter is null ? null : [reshadeRecord!]).ConfigureAwait(false);
+            // Landed: ShortFuse is removed, so the ASI Loader it installed goes too, as below (review w8 finding 4).
+            if (rollback.Committed)
+                return ComponentOperationResult.Ok(DeploymentScope.Landed("ShortFuse", removal: true).Message
+                    + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack) + await RemoveUalInstalledByShortFuseAsync(game, ualByUs).ConfigureAwait(false));
             if (!rollback.Success)
                 AppLog.Warn("shortfuse", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");
             // Registry: undo exactly what this removal changed, per key (atomic, locked, refused while Wine runs).
-            if (reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.RolledBack && reshadeOverrideBack?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryRestore(game.PrefixPath, reshadeRecord!.WineOverride);
             return ComponentOperationResult.Fail($"{RemovalFailedPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
 
-        // The ASI Loader ShortFuse installed is removed last, as its own operation: if that fails, ShortFuse is gone and
-        // the loader stays installed with its own record (removable on its own), never half-removed.
         // When the loader stays, the success line does not claim its state was restored (review w3-journal #8).
-        var ualNote = "";
-        if (ualByUs && _ual.GetRecord(game) is not null)
-        {
-            var ualResult = await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false);
-            if (!ualResult.Success) ualNote = $" {UalKeptPrefix}{ualResult.Message}";
-        }
+        var ualNote = await RemoveUalInstalledByShortFuseAsync(game, ualByUs).ConfigureAwait(false);
         return ComponentOperationResult.Ok((ualNote.Length == 0 ? RemovedMessage : RemovedUalKeptMessage)
             + WineDllOverrideService.KeptValueNotes(reshadeOverrideBack) + ualNote);
+    }
+
+    /// <summary>
+    /// After ShortFuse's removal committed: removes the ASI Loader ShortFuse installed, last and as its own operation. If
+    /// that fails, ShortFuse is gone and the loader stays installed with its own record (removable on its own), never
+    /// half-removed; returns the note that says so (<see cref="UalKeptPrefix"/>, the loader's reason), else "".
+    /// </summary>
+    private async Task<string> RemoveUalInstalledByShortFuseAsync(DetectedGame game, bool ualByUs)
+    {
+        if (!ualByUs || _ual.GetRecord(game) is null) return "";
+        var ualResult = await _ual.RemoveAsync(game, CancellationToken.None).ConfigureAwait(false);
+        return ualResult.Success ? "" : $" {UalKeptPrefix}{ualResult.Message}";
     }
 
     /// <summary>Success line of a removal (PT-BR rows under the journal anchor).</summary>

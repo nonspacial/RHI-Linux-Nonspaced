@@ -96,12 +96,20 @@ public static class AtomicFile
     /// asks for another (e.g. 0600). The folder is created when missing.
     /// </summary>
     public static void WriteStoreFile(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode = null)
+        => WriteStoreFile(path, bytes, mode, renamed: null);
+
+    /// <param name="renamed">
+    /// Runs right after the new file was renamed into place, before the folder's fsync (#204: a store that must tell a
+    /// write that landed from one that never got there counts here; nothing before the rename changes the file, and
+    /// nothing after it throws — a failed folder fsync is reported by its return value, see <see cref="FsyncDirectory"/>).
+    /// </param>
+    public static void WriteStoreFile(string path, ReadOnlySpan<byte> bytes, UnixFileMode? mode, Action? renamed)
     {
         var target = FinalLinkTarget(Path.GetFullPath(path));
         mode ??= ExistingMode(target);
         var directory = Path.GetDirectoryName(target) ?? throw new IOException(NoFolderPrefix + target);
         CreateDirectoryDurable(directory);
-        WriteVerified(target, bytes, mode, null);
+        WriteVerified(target, bytes, mode, null, renamed);
     }
 
     /// <summary>
@@ -145,7 +153,7 @@ public static class AtomicFile
     /// <paramref name="wrapOutput"/> when given — a test seam), fsync, full verify, exact mode, rename,
     /// directory fsync. Returns whether the directory fsync succeeded (the data is durable either way).
     /// </summary>
-    private static bool WriteVerified(string target, ReadOnlySpan<byte> bytes, UnixFileMode? exactMode, Func<Stream, Stream>? wrapOutput)
+    private static bool WriteVerified(string target, ReadOnlySpan<byte> bytes, UnixFileMode? exactMode, Func<Stream, Stream>? wrapOutput, Action? renamed = null)
     {
         var temp = TempPathFor(target);
         try
@@ -179,6 +187,9 @@ public static class AtomicFile
                 throw new IOException($"{failure.Message}{TempLeftoverFragment}{temp} ({leftover!.Message})", failure);
             throw;
         }
+        renamed?.Invoke();
+        // A failed folder fsync is returned, never thrown: the new file is in place, so a throw here would report a write
+        // that landed as failed (#204), and some file systems refuse directory fsync outright (FUSE/network: EINVAL).
         return FsyncDirectoryOf(target);
     }
 

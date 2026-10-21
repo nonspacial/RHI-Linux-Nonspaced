@@ -289,7 +289,10 @@ public static class LinuxDeploymentRecovery
 
     public static string LogPath => Path.Combine(LinuxPaths.LogDirectory, "recovery.log");
 
-    /// <param name="records">The app's ledger: lets a deferred override undo see a later install that now depends on it.</param>
+    /// <param name="records">
+    /// The app's ledger: lets a deferred override undo see a later install that now depends on it, and (#204) is the
+    /// commit point a failed operation reads again before it rolls back (<see cref="LedgerCommitCheck"/>).
+    /// </param>
     public static DeploymentJournal CreateJournal(
         WineDllOverrideService overrides, string? directory = null, Func<string, bool>? isPrefixInUse = null, LinuxDeploymentRecordStore? records = null)
         => new(directory ?? JournalDirectory,
@@ -300,7 +303,8 @@ public static class LinuxDeploymentRecovery
              // w5/reshade-core (#92 review finding 3): folders an operation created (the layer's ProgramData folders)
              new CreatedDirectoryCompensator(),
              // w8/renodx hook (#205): a user file's mode (a locked Engine.ini) back after the file rollback
-             new UserFileModeCompensator()]);
+             new UserFileModeCompensator()],
+            records is null ? null : new LedgerCommitCheck(records));
 
     /// <summary>Commit probe for an operation whose commit point is saving <paramref name="component"/>'s record.</summary>
     public static string RecordCommitProbe(DetectedGame game, ManagedComponentKind component)
@@ -352,6 +356,10 @@ public static class LinuxDeploymentRecovery
         {
             operation = await journal.BeginAsync(description, RecordRemovalProbe(game, component), cancellationToken).ConfigureAwait(false);
         }
+        catch (DeploymentDecisionPendingException ex)
+        {
+            return (null, ex.Message);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
@@ -396,6 +404,10 @@ public static class LinuxDeploymentRecovery
         {
             return (await journal.BeginAsync(description, RecordCommitProbe(game, component), cancellationToken).ConfigureAwait(false), null);
         }
+        catch (DeploymentDecisionPendingException ex)
+        {
+            return (null, ex.Message);
+        }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return (null, $"{JournalUnavailablePrefix}{ex.Message}); nothing was changed.");
@@ -436,7 +448,13 @@ public static class LinuxDeploymentRecovery
         try
         {
             recovery = await RecoverAsync(journal, records).ConfigureAwait(false);
-            if (recovery is null) deferred = journal.ReferencedOperationIds().Count;
+            if (recovery is null)
+            {
+                deferred = journal.ReferencedOperationIds().Count;
+                // Review w8 finding 2: once the ledger reads again in this session, each kept entry is settled before its
+                // game's next operation (a retry would otherwise be undone by the start that finally recovers it).
+                journal.WaitOnKeptEntries();
+            }
         }
         catch (Exception ex)
         {
@@ -468,7 +486,7 @@ public static class LinuxDeploymentRecovery
     public static async Task<JournalRecoveryReport?> RecoverAsync(DeploymentJournal journal, LinuxDeploymentRecordStore records)
     {
         if (records.CorruptLedgerPath is not null) return null;
-        return await journal.RecoverAsync(entry => IsCommitted(entry, records)).ConfigureAwait(false);
+        return await journal.RecoverAsync(entry => IsCommitted(entry, records.All())).ConfigureAwait(false);
     }
 
     /// <summary>Sweeps the recorded directories and the journal's own directory (its temporaries).</summary>
@@ -563,18 +581,56 @@ public static class LinuxDeploymentRecovery
     /// <para>A removal (<see cref="RecordRemovalProbe"/>) is committed once no record carries its id under
     /// <see cref="RemovalOperationIdMetadataKey"/>: the record it stamped was removed (or saved narrowed through
     /// <see cref="EndRemoval"/>). Matched on the id alone for the same reason.</para>
+    /// <para>One rule for start-up recovery and for an operation that failed in process (#204,
+    /// <see cref="LedgerCommitCheck"/>), so both always agree on what a landed commit write means.</para>
     /// </summary>
-    private static bool IsCommitted(JournalEntryInfo entry, LinuxDeploymentRecordStore records)
+    internal static bool IsCommitted(JournalEntryInfo entry, IReadOnlyList<LinuxDeploymentRecord> records)
     {
         if (entry.CommitProbe is not { } probe) return false;
         if (probe.StartsWith(RecordRemovedProbePrefix, StringComparison.Ordinal))
-            return !records.All().Any(record => CarriesId(record, RemovalOperationIdMetadataKey, entry.Id));
+            return !records.Any(record => CarriesId(record, RemovalOperationIdMetadataKey, entry.Id));
         if (!probe.StartsWith("record|", StringComparison.Ordinal)) return false;
-        return records.All().Any(record => CarriesId(record, OperationIdMetadataKey, entry.Id));
+        return records.Any(record => CarriesId(record, OperationIdMetadataKey, entry.Id));
     }
 
     private static bool CarriesId(LinuxDeploymentRecord record, string key, string id)
         => record.Metadata.TryGetValue(key, out var value) && value == id;
+}
+
+/// <summary>
+/// The commit decision of a failed operation (#204): reads the ledger FILE again (never the store's cache, which a real
+/// failure inside the write — a directory fsync after the rename — leaves holding the old ledger) and applies the rule
+/// start-up recovery applies (<see cref="LinuxDeploymentRecovery.IsCommitted"/>). When the file cannot be read (damaged,
+/// permission, I/O error) the decision comes from the store, not the bytes (review w8 finding 1): no write of the ledger
+/// renamed into place since the operation began (<see cref="LinuxDeploymentRecordStore.LandedWrites"/>; every save
+/// refused or failed before its rename) means nothing of it can have landed — not committed, roll back now; otherwise
+/// undecided, and the entry waits (settled before the game's next operation, or at the next start). An operation of this
+/// session whose commit point is not a ledger record (no record probe) is never committed by the ledger: rolled back as
+/// before. An entry kept by a deferred start-up (no mark) is decided only by a readable ledger, as start-up would.
+/// </summary>
+internal sealed class LedgerCommitCheck(LinuxDeploymentRecordStore records) : IDeploymentCommitCheck
+{
+    public string? Mark() => records.LandedWrites.ToString(CultureInfo.InvariantCulture);
+
+    public CommitDecision Decide(JournalEntryInfo entry, string? mark)
+    {
+        if (records.ReadFileFresh() is { } ledger)
+            return LinuxDeploymentRecovery.IsCommitted(entry, ledger) ? CommitDecision.Committed : CommitDecision.NotCommitted;
+        // No mark: an entry a deferred start-up kept (begun in an earlier session) — only a readable ledger decides it.
+        if (!long.TryParse(mark, NumberStyles.None, CultureInfo.InvariantCulture, out var landedAtBegin)) return CommitDecision.Undecided;
+        if (LinuxDeploymentRecovery.GameKeyOfCommitProbe(entry.CommitProbe) is null) return CommitDecision.NotCommitted;
+        return landedAtBegin == records.LandedWrites ? CommitDecision.NotCommitted : CommitDecision.Undecided;
+    }
+
+    /// <summary>
+    /// Same game (the record key in both probes). A new operation without a record probe (a plain file transaction) is
+    /// not held up: the ledger does not commit it, and start-up recovery keeps what it writes as a later change.
+    /// </summary>
+    public bool HoldsUp(string? waitingProbe, string? newProbe)
+    {
+        if (LinuxDeploymentRecovery.GameKeyOfCommitProbe(newProbe) is not { } game) return false;
+        return LinuxDeploymentRecovery.GameKeyOfCommitProbe(waitingProbe) is not { } waiting || string.Equals(waiting, game, StringComparison.Ordinal);
+    }
 }
 
 /// <summary>What <see cref="LinuxDeploymentRecovery.RunAtStartupAsync"/> did.</summary>

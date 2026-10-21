@@ -272,9 +272,10 @@ public sealed class UltimateAsiLoaderDeploymentService
             // Every file back to its pre-install bytes from the scope's copies (a copy that cannot be put back is kept
             // and named), then the override.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Ultimate ASI Loader");
             if (!rollback.Success)
                 AppLog.Warn("ual", $"Install rollback could not put {proxyName} back: {string.Join("; ", rollback.Failures)}");
-            _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
 
             return ComponentOperationResult.Fail($"Ultimate ASI Loader install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
@@ -350,6 +351,7 @@ public sealed class UltimateAsiLoaderDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Ultimate ASI Loader");
             return ComponentOperationResult.Fail($"Ultimate ASI Loader update failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -421,7 +423,8 @@ public sealed class UltimateAsiLoaderDeploymentService
             // Back to the managed-installed state so a retry remains possible: files from the scope's copies, and the
             // override this removal restored (only where it did, #30) since the record stays.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "ual").ConfigureAwait(false);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.Committed) return DeploymentScope.Landed("Ultimate ASI Loader", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             if (!rollback.Success)
                 AppLog.Warn("ual", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");

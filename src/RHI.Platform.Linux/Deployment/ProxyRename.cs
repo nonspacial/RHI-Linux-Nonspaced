@@ -166,6 +166,7 @@ public static class ProxyRename
             // Never cancelled: files (the DLL under its old name, the saved choice) come back from the scope's copies,
             // the journaled override steps are undone; without a journal the two override steps are undone here.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed($"{oldName} → {request.NewName}", changedFiles: target);
             if (scope.Operation is null && prefix is not null)
             {
                 if (newOverride is not null) overrides.TryRestore(prefix, newOverride);

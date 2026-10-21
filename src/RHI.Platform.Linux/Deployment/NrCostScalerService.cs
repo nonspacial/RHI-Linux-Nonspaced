@@ -204,8 +204,9 @@ public sealed class NrCostScalerService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             var rollback = await operation.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("NR Cost Scaler");
             AppLog.Warn("nr-cost-scaler", "NR Cost Scaler install failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
-            return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message);
+            return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         // The stamped record is saved: the commit point. Nothing after it rolls back (w3/journal order).
         await operation.CommitAsync().ConfigureAwait(false);
@@ -247,6 +248,7 @@ public sealed class NrCostScalerService
         {
             // The record goes back still stamped, before the files roll back (never files without their record).
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "nr-cost-scaler").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("NR Cost Scaler", removal: true);
             AppLog.Warn("nr-cost-scaler", "NR Cost Scaler removal failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
@@ -363,6 +365,7 @@ public sealed class NrCostScalerService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("NR Cost Scaler");
             AppLog.Warn("nr-cost-scaler", "NR Cost Scaler update failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }

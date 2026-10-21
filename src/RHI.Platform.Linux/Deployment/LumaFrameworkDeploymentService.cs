@@ -511,6 +511,9 @@ public sealed class LumaFrameworkDeploymentService
                 StringComparer.OrdinalIgnoreCase);
             var iniPath = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory)!;
             var iniBefore = await File.ReadAllBytesAsync(iniPath, cancellationToken).ConfigureAwait(false);
+            // #213: the scope tracks (and the rollback step writes) the file behind a ReShade.ini linked to a shared file, never
+            // the link: a rollback then keeps the link and puts the shared file's bytes back.
+            var iniLinkPolicy = ReShadeIniManager.LinkPolicy(iniPath, game.BinaryDirectory, game.InstallPath);
             var previousIniState = existingRecord is not null &&
                 existingRecord.Metadata.TryGetValue(LumaIniOverrideManager.MetadataKey, out var previousIniJson)
                     ? LumaIniOverrideManager.Deserialize(previousIniJson)
@@ -575,7 +578,8 @@ public sealed class LumaFrameworkDeploymentService
                     installedTargets.Add(Path.GetFullPath(effectiveTarget));
                 }
 
-                await scope.TrackAsync(iniPath, CancellationToken.None).ConfigureAwait(false);
+                var iniTarget = AtomicFile.ResolveUserFileTarget(iniPath, iniLinkPolicy);
+                await scope.TrackAsync(iniTarget, CancellationToken.None).ConfigureAwait(false);
                 await scope.TrackAllAsync(engineIniTargets, CancellationToken.None).ConfigureAwait(false);
                 var iniState = LumaIniOverrideManager.Apply(game.BinaryDirectory, previousIniState);
                 // A transient wiki failure must not destructively erase Engine.ini ownership from a
@@ -586,7 +590,7 @@ public sealed class LumaFrameworkDeploymentService
                     : previousEngineIniState;
                 if (engineIniState is not null && !engineIniTargets.Contains(Path.GetFullPath(engineIniState.IniPath), StringComparer.Ordinal))
                     throw new InvalidOperationException($"Engine.ini was written at a path the install did not track: {engineIniState.IniPath}");
-                foreach (var written in engineIniTargets.Prepend(iniPath).Where(File.Exists))
+                foreach (var written in engineIniTargets.Prepend(iniTarget).Where(File.Exists))
                     await scope.DeclareWrittenContentAsync(written, CancellationToken.None).ConfigureAwait(false);
 
                 // Remove old RHI-owned files no longer present in the new package only after replacement + INI succeeded.
@@ -687,16 +691,27 @@ public sealed class LumaFrameworkDeploymentService
                         AppLog.Warn("luma-rollback", $"Could not {what} for {game.Name}", stepError);
                     }
                 }
-                Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, readOnly: ReadOnlyUserFile.WriteKeepingLock));
-                if (engineIniSnapshotPath is not null && engineIniBeforeExisted && engineIniBefore is not null)
-                    Step("restore Engine.ini", () =>
-                    {
-                        Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
-                        AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
-                    });
+                // #204: a commit write (with ReShade's translated record, after a DX9 translation) that landed and then threw
+                // is finished as committed — nothing below runs; a ledger that cannot tell keeps everything for the next start.
+                var settled = await scope.SettleAfterFailureAsync().ConfigureAwait(false);
+                if (settled == CommitDecision.Committed) return DeploymentScope.Landed("Luma Framework", changedFiles: [.. installedTargets]);
+                if (settled == CommitDecision.NotCommitted)
+                {
+                    // #213: written through ReShade.ini's link rule, so a link to a shared file stays a link.
+                    Step("restore ReShade.ini", () => AtomicFile.ReplaceUserFile(iniPath, iniBefore, iniLinkPolicy, readOnly: ReadOnlyUserFile.WriteKeepingLock));
+                    if (engineIniSnapshotPath is not null && engineIniBeforeExisted && engineIniBefore is not null)
+                        Step("restore Engine.ini", () =>
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(engineIniSnapshotPath)!);
+                            AtomicFile.ReplaceUserFile(engineIniSnapshotPath, engineIniBefore, LumaEngineIniOverrideManager.LinkPolicy(engineIniSnapshotPath), readOnly: ReadOnlyUserFile.WriteKeepingLock);
+                        });
+                }
                 var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-                if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
-                Step("remove the folders the install created", () => FileCleanup.TryDeleteEmptyDirectories(createdDirectories));
+                if (rollback.RolledBack)
+                {
+                    if (dx9 is not null) _dx9ReShade!.UndoInside(game, dx9);
+                    Step("remove the folders the install created", () => FileCleanup.TryDeleteEmptyDirectories(createdDirectories));
+                }
                 if (!rollback.Success)
                 {
                     AppLog.Warn("luma-rollback", $"Rollback incomplete for {game.Name}: {string.Join("; ", rollback.Failures)}");
@@ -762,7 +777,11 @@ public sealed class LumaFrameworkDeploymentService
             var engineIniState = record.Metadata.TryGetValue(LumaEngineIniOverrideManager.MetadataKey, out var engineIniJson)
                 ? LumaEngineIniOverrideManager.Deserialize(engineIniJson)
                 : null;
-            var iniFiles = new[] { iniState?.IniPath, engineIniState?.IniPath }.OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+            // #213: the file behind a linked ReShade.ini is tracked, never the link.
+            var lumaIni = iniState?.IniPath is { Length: > 0 } recordedIni
+                ? ReShadeIniManager.ResolveWriteTarget(recordedIni, Path.GetDirectoryName(recordedIni)!, game.InstallPath)
+                : null;
+            var iniFiles = new[] { lumaIni, engineIniState?.IniPath }.OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
             await scope.TrackAllAsync(iniFiles, CancellationToken.None).ConfigureAwait(false);
             LumaIniOverrideManager.Cleanup(iniState);
             LumaEngineIniOverrideManager.Cleanup(engineIniState);
@@ -796,7 +815,9 @@ public sealed class LumaFrameworkDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "luma", alongside: reShadeBefore is null ? null : [reShadeBefore]).ConfigureAwait(false);
-            if (dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated && game.PrefixPath is { } prefix)
+            // #204: the removal (with ReShade's record back at d3d9.dll) landed and then threw: it stays removed.
+            if (rollback.Committed) return DeploymentScope.Landed("Luma Framework", removal: true, [.. changed]);
+            if (rollback.RolledBack && dx9OverrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored && reShadeBefore?.WineOverride is { } translated && game.PrefixPath is { } prefix)
                 _dx9ReShade!.Reapply(prefix, translated);
             return ComponentOperationResult.Fail($"Luma Framework removal failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }

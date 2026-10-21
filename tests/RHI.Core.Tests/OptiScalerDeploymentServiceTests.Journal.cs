@@ -220,42 +220,38 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.NotNull(ledger.Find(game, ManagedComponentKind.OptiScaler));
     }
 
-    // Review nit 4: the chain's commit write saves OptiScaler's record (LoadReshade=false INI hash) with ReShade's
-    // removal. When that write lands and then reports failure, the rollback puts OptiScaler's original record back
-    // beside ReShade's, so the ledger matches the INI the rollback restores (LoadReshade=true).
-    [Fact]
-    public async Task ReShadeRemove_InTheOptiScalerChain_CommitWriteLandsThenFails_OptiScalersRecordGoesBackWithTheIni()
+    // Review nit 4 / #204: the chain's commit write saves OptiScaler's record (LoadReshade=false INI hash) with ReShade's
+    // removal. When that write lands and then reports failure, the removal is finished as committed (as start-up recovery
+    // would): ReShade stays removed and OptiScaler's record keeps the hash of the INI on disk (LoadReshade off). It used to
+    // roll back and put both records back, although the ledger had already taken ReShade away.
+    [Theory]
+    [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
+    [Trait("Category", "CommitPoint")]
+    public async Task ReShadeRemove_InTheOptiScalerChain_CommitWriteLandsThenFails_StaysRemoved_OptiScalersRecordMatchesTheIni(LandedShape shape)
     {
-        var (game, store) = CreateGame("journal-reshade-written-fault", GraphicsApi.DirectX12);
+        var name = "journal-reshade-written-fault-" + shape;
+        var (game, store) = CreateGame(name, GraphicsApi.DirectX12);
         SeedManagedReShade(game, store);
-        var j = NewJournaled("journal-reshade-written-fault", store);
-        var opti = NewJournaledService(store, new FakePackageProvider(CreatePackage("journal-reshade-written-fault-package")), j);
+        var j = NewJournaled(name, store);
+        var opti = NewJournaledService(store, new FakePackageProvider(CreatePackage(name + "-package")), j);
         Assert.True((await opti.InstallAsync(game)).Success);
         var optiIni = Path.Combine(game.BinaryDirectory!, "OptiScaler.ini");
-        var iniBefore = File.ReadAllBytes(optiIni);
-        var optiRecordBefore = store.Find(game, ManagedComponentKind.OptiScaler)!;
-        var iniEntry = optiRecordBefore.Files.Single(file => Path.GetFileName(file.Path) == "OptiScaler.ini");
-        Assert.Equal(FileHash.Sha256HexOf(iniBefore), iniEntry.Sha256, ignoreCase: true);
         var reshade = NewReShadeService(store, j);
         // Save 1 stamps ReShade's record; save 2 is the commit write, which replaces the ledger and then fails.
-        var saves = 0;
-        store.SaveWrittenFaultForTesting = () => ++saves == 2 ? new IOException("directory fsync failed (test)") : null;
+        LandedLedgerWrite.Arm(store, shape, at: 2);
 
-        var failed = await reshade.RemoveAsync(game);
+        var removed = await reshade.RemoveAsync(game);
 
-        store.SaveWrittenFaultForTesting = null;
-        Assert.False(failed.Success);
-        Assert.StartsWith(ReShadeDeploymentService.RemovalFailedPrefix, failed.Message);
-        Assert.Equal(iniBefore, File.ReadAllBytes(optiIni));
-        var ledger = new LinuxDeploymentRecordStore(j.Ledger);
-        Assert.NotNull(ledger.Find(game, ManagedComponentKind.ReShade));
-        var optiRecord = ledger.Find(game, ManagedComponentKind.OptiScaler)!;
-        Assert.Equal(FileHash.Sha256HexOf(iniBefore),
-            optiRecord.Files.Single(file => Path.GetFileName(file.Path) == "OptiScaler.ini").Sha256, ignoreCase: true);
-
-        var retry = await reshade.RemoveAsync(game);
-        Assert.True(retry.Success, retry.Message);
+        LandedLedgerWrite.Disarm(store);
+        Assert.True(removed.Success, removed.Message);
+        Assert.StartsWith(DeploymentScope.LandedRemovalPrefix, removed.Message);
         Assert.DoesNotContain("LoadReshade=true", File.ReadAllText(optiIni), StringComparison.OrdinalIgnoreCase);
+        var ledger = new LinuxDeploymentRecordStore(j.Ledger);
+        Assert.Null(ledger.Find(game, ManagedComponentKind.ReShade));
+        var optiRecord = ledger.Find(game, ManagedComponentKind.OptiScaler)!;
+        Assert.Equal(FileHash.Sha256Hex(optiIni),
+            optiRecord.Files.Single(file => Path.GetFileName(file.Path) == "OptiScaler.ini").Sha256, ignoreCase: true);
+        Assert.Empty(Directory.GetFiles(j.Dir, "*.json"));
     }
 
     [Fact]

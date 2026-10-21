@@ -303,7 +303,8 @@ public sealed class Dlssg2030UnlockDeploymentService
             foreach (var leftover in FileCleanup.TryDeleteAll(new[] { proxyTemp, iniTemp }.OfType<string>()))
                 AppLog.Warn("fg2030", $"Install rollback could not remove {leftover}");
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
@@ -371,7 +372,8 @@ public sealed class Dlssg2030UnlockDeploymentService
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "fg2030").ConfigureAwait(false);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
@@ -475,6 +477,7 @@ public sealed class Dlssg2030UnlockDeploymentService
             if (staged is not null) FileCleanup.TryDelete(staged);
             // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX 20 FG Unlock legado");
             return ComponentOperationResult.Fail($"RTX 20 FG Unlock legado update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

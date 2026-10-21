@@ -258,7 +258,8 @@ public sealed partial class OptiScalerDeploymentService
         {
             // Compensation must run even when the failure *is* a cancellation; never cancelled itself.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            CleanupDirectories(createdDirs);
+            if (rollback.Committed) return DeploymentScope.Landed("OptiScaler");
+            if (rollback.RolledBack) CleanupDirectories(createdDirs);
             return ComponentOperationResult.Fail($"OptiScaler update rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point.
@@ -526,9 +527,10 @@ public sealed partial class OptiScalerDeploymentService
             // Compensation must run even when the failure *is* a cancellation; never cancelled itself. Files (ReShade's
             // name included) come back from the scope's copies, then the override this install wrote.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            if (overrideCreatedHere && overrideRecord is not null)
+            if (rollback.Committed) return DeploymentScope.Landed("OptiScaler");
+            if (rollback.RolledBack && overrideCreatedHere && overrideRecord is not null)
                 _overrides.TryRestore(prefix, overrideRecord);
-            CleanupDirectories(createdDirectories);
+            if (rollback.RolledBack) CleanupDirectories(createdDirectories);
             if (!rollback.Success)
                 AppLog.Warn("optiscaler", $"Install rollback did not complete: {string.Join("; ", rollback.Failures)}");
             return ComponentOperationResult.Fail($"OptiScaler install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
@@ -782,9 +784,10 @@ public sealed partial class OptiScalerDeploymentService
             // OptiScaler's record goes back (still stamped) with ReShade's as it was, before the files roll back.
             var rollback = await scope.RollbackRemovalAsync(
                 _records, game, record, "optiscaler", alongside: reShadeAfter is null ? null : [reShadeRecord!]).ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("OptiScaler", removal: true);
             if (scope.Operation is null && reShadeOverride is not null && game.PrefixPath is { } reShadePrefix)
                 _overrides.TryRestore(reShadePrefix, reShadeOverride);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             if (!rollback.Success)
                 AppLog.Warn("optiscaler", $"Removal rollback did not complete: {string.Join("; ", rollback.Failures)}");

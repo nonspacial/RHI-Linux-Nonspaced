@@ -141,7 +141,8 @@ public sealed class REFrameworkDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            _overrides.TryRestore(game.PrefixPath, overrideRecord);
+            if (rollback.Committed) return DeploymentScope.Landed("RE Framework", changedFiles: target);
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, overrideRecord);
             if (rollback.Success) throw;
             // The copies a failed rollback kept are named, never dropped (#31).
             throw new IOException($"{ex.Message}{DeploymentScope.RollbackNote(rollback)}", ex);
@@ -217,6 +218,7 @@ public sealed class REFrameworkDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RE Framework", changedFiles: owned.Path);
             if (!rollback.Success)
                 AppLog.Warn("reframework", $"Update rollback could not restore {owned.Path}: {string.Join("; ", rollback.Failures)}");
             return ComponentOperationResult.Fail($"RE Framework update rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
@@ -268,8 +270,9 @@ public sealed class REFrameworkDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "reframework").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RE Framework", removal: true);
             // Keep the game usable: put RHI's value back where this removal restored it (a value set since stays, #30).
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"RE Framework removal failed and was rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }

@@ -304,7 +304,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
         {
             if (tempPath is not null) FileCleanup.TryDelete(tempPath);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", changedFiles: targetPath);
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
             return ComponentOperationResult.Fail($"Universal MFG install rolled back: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         // The record carries the operation id: it is the commit point. Nothing after it rolls back.
@@ -360,7 +361,8 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             // Files back from the scope's verified copies; RHI's value back only where this removal restored it (a later
             // value stays, #30); the record kept so the restored files stay owned.
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "universal-mfg").ConfigureAwait(false);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored)
                 _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail($"Universal MFG removal failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
@@ -461,6 +463,7 @@ public sealed class Rtx40MfgStandaloneDeploymentService
             if (staged is not null) FileCleanup.TryDelete(staged);
             // The previous DLL goes back from the scope's verified copy; a copy that cannot be put back is kept and named.
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("Universal MFG", changedFiles: targetPath);
             return ComponentOperationResult.Fail($"Universal MFG update failed and was rolled back as far as possible: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

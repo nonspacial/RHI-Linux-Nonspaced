@@ -1557,6 +1557,17 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage,
             "O Engine.ini não é texto UTF-8 nem UTF-16, então o RHI não o edita."),
         // w8/commit-point rows
+        // #204: a ledger write that landed and then reported an error (finished as committed), or a ledger that could not be
+        // read again after the error (nothing undone; decided at the next start).
+        (RHI.Platform.Linux.Deployment.DeploymentScope.LandedChangePrefix,
+            "Concluído; o registro de implantações informou um erro depois que a alteração foi gravada, então nada foi desfeito: "),
+        (RHI.Platform.Linux.Deployment.DeploymentScope.LandedRemovalPrefix,
+            "Removido; o registro de implantações informou um erro depois que a remoção foi gravada, então nada foi desfeito: "),
+        (RHI.Core.Deployment.DeploymentOperation.UndecidedNote,
+            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora; o RHI conclui ou desfaz esta alteração na próxima inicialização."),
+        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided.
+        (RHI.Core.Deployment.DeploymentJournal.EarlierChangeUndecidedMessage,
+            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Repare o registro ou reinicie o RHI e tente novamente."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

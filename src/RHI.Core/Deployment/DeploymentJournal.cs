@@ -32,6 +32,35 @@ public sealed record CompensationResult(CompensationStatus Status, string? Note 
 }
 
 /// <summary>
+/// Reads an operation's commit point again after a failure (#204): the failure may have come from the commit write itself
+/// after it landed (a directory fsync that failed after the rename). The answer must come from a FRESH read of what holds
+/// the commit point (never a cache), with the same rule start-up recovery uses.
+/// </summary>
+public interface IDeploymentCommitCheck
+{
+    /// <summary>
+    /// Taken when an operation begins and handed back to <see cref="Decide"/>: tells an unreadable commit store that no
+    /// write has landed in since (none of the operation can be there: roll back) from one written to since (undecided).
+    /// Null for an entry an earlier session left (only a readable commit store decides it).
+    /// </summary>
+    string? Mark();
+
+    CommitDecision Decide(JournalEntryInfo entry, string? mark);
+
+    /// <summary>
+    /// Whether an undecided operation with commit probe <paramref name="waitingProbe"/> must be settled before a new
+    /// operation with <paramref name="newProbe"/> may begin (they change the same game).
+    /// </summary>
+    bool HoldsUp(string? waitingProbe, string? newProbe);
+}
+
+/// <summary>
+/// An operation was refused before it changed anything: an earlier operation on the same game is still undecided (its
+/// commit point could not be read after it failed). The message is <see cref="DeploymentJournal.EarlierChangeUndecidedMessage"/>.
+/// </summary>
+public sealed class DeploymentDecisionPendingException() : IOException(DeploymentJournal.EarlierChangeUndecidedMessage);
+
+/// <summary>
 /// Write-ahead journal for deployment operations. An operation's owned files (pre-operation hashes)
 /// and compensations are written here, fsynced, before anything in the game or prefix changes;
 /// the entry is removed once the operation is committed or rolled back. Each live operation holds
@@ -50,13 +79,20 @@ public sealed class DeploymentJournal
 
     private readonly Dictionary<string, IDeploymentCompensator> _compensators;
 
-    public DeploymentJournal(string directory, IEnumerable<IDeploymentCompensator>? compensators = null)
+    /// <param name="commitCheck">
+    /// Reads a failed operation's commit point again (#204); without one, a failure always rolls back (as before).
+    /// </param>
+    public DeploymentJournal(string directory, IEnumerable<IDeploymentCompensator>? compensators = null, IDeploymentCommitCheck? commitCheck = null)
     {
         Directory = directory;
         _compensators = (compensators ?? []).ToDictionary(c => c.Kind, StringComparer.Ordinal);
+        CommitCheck = commitCheck;
     }
 
     public string Directory { get; }
+
+    /// <summary>Asked by <see cref="DeploymentOperation.SettleAfterFailureAsync"/>; null = every failure rolls back.</summary>
+    public IDeploymentCommitCheck? CommitCheck { get; }
 
     /// <summary>Test seam: every operation of this journal "crashes" when it reaches its commit (see <see cref="SimulatedCrashException"/>).</summary>
     internal bool CrashAtCommitForTesting { get; set; }
@@ -69,14 +105,19 @@ public sealed class DeploymentJournal
 
     /// <summary>Starts an operation: takes its lock and writes an empty pending entry.</summary>
     /// <param name="commitProbe">Opaque marker handed to the recovery's <c>isCommitted</c> check (e.g. the record that commits it).</param>
+    /// <exception cref="DeploymentDecisionPendingException">An earlier operation on the same game is still undecided.</exception>
     public async Task<DeploymentOperation> BeginAsync(string description, string? commitProbe = null, CancellationToken cancellationToken = default)
     {
+        if (await SettleWaitingAsync(commitProbe).ConfigureAwait(false))
+            throw new DeploymentDecisionPendingException();
         AtomicFile.CreateDirectoryDurable(Directory);
         var id = Guid.NewGuid().ToString("N");
         var lockStream = new FileStream(LockPath(id), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
         var operation = new DeploymentOperation(this, id, description, commitProbe, lockStream);
         try
         {
+            // Before the first write of the operation (the entry itself is not part of the commit store).
+            operation.CommitMark = CommitCheck?.Mark();
             await operation.PersistAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -87,6 +128,139 @@ public sealed class DeploymentJournal
         }
         OperationStartedForTesting?.Invoke(operation);
         return operation;
+    }
+
+    // Review w8 finding 2: operations of this session left undecided (and entries a deferred start-up recovery kept), by id,
+    // with the commit check's mark taken when they began (null: unknown, e.g. a previous session's).
+    private readonly Dictionary<string, string?> _waiting = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _settling = new(1, 1);
+
+    /// <summary>Operation <paramref name="id"/> ended undecided: its entry waits, settled before its game's next operation.</summary>
+    internal void Wait(string id, string? mark)
+    {
+        lock (_waiting) _waiting[id] = mark;
+    }
+
+    /// <summary>
+    /// Start-up recovery could not run (its commit store could not be read): every entry on disk waits, as an undecided
+    /// operation of this session does, so it is settled before its game's next operation once the store reads again.
+    /// No-op without a <see cref="CommitCheck"/>.
+    /// </summary>
+    public void WaitOnKeptEntries()
+    {
+        if (CommitCheck is null || !System.IO.Directory.Exists(Directory)) return;
+        foreach (var entry in System.IO.Directory.EnumerateFiles(Directory, "*" + EntryExtension))
+        {
+            var id = Path.GetFileNameWithoutExtension(entry);
+            lock (_waiting) _waiting.TryAdd(id, null);
+        }
+    }
+
+    /// <summary>Ids of the entries waiting to be settled (tests).</summary>
+    internal IReadOnlyCollection<string> WaitingForTesting
+    {
+        get { lock (_waiting) return _waiting.Keys.ToArray(); }
+    }
+
+    /// <summary>
+    /// Before a new operation (review w8 finding 2): settles every waiting entry as start-up recovery would — from the
+    /// commit store as it reads now; committed → copies and entry dropped, not committed → rolled back in crash-recovery
+    /// mode (a file changed since keeps its change). One that still cannot be decided (or whose rollback failed) keeps
+    /// waiting; returns true when such an entry holds up an operation with <paramref name="newProbe"/> (same game).
+    /// </summary>
+    private async Task<bool> SettleWaitingAsync(string? newProbe)
+    {
+        if (CommitCheck is not { } check) return false;
+        KeyValuePair<string, string?>[] waiting;
+        lock (_waiting)
+        {
+            if (_waiting.Count == 0) return false;
+        }
+        await _settling.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            lock (_waiting) waiting = _waiting.ToArray();
+            var heldUp = false;
+            foreach (var (id, mark) in waiting)
+            {
+                var (settled, probe) = await SettleWaitingEntryAsync(id, mark, check).ConfigureAwait(false);
+                if (settled)
+                {
+                    lock (_waiting) _waiting.Remove(id);
+                }
+                else if (check.HoldsUp(probe, newProbe))
+                {
+                    heldUp = true;
+                }
+            }
+            return heldUp;
+        }
+        finally
+        {
+            _settling.Release();
+        }
+    }
+
+    private async Task<(bool Settled, string? Probe)> SettleWaitingEntryAsync(string id, string? mark, IDeploymentCommitCheck check)
+    {
+        var entryPath = EntryPath(id);
+        if (!File.Exists(entryPath)) return (true, null); // recovered elsewhere (another instance's start)
+        FileStream lockStream;
+        try
+        {
+            lockStream = new FileStream(LockPath(id), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (false, ProbeOf(entryPath)); // another process works on it now
+        }
+        try
+        {
+            await using (lockStream.ConfigureAwait(false))
+            {
+                if (!File.Exists(entryPath)) return (true, null);
+                var (outcome, probe) = await RecoverEntryAsync(id, entryPath, info =>
+                {
+                    try
+                    {
+                        return check.Decide(info, mark);
+                    }
+                    catch (Exception ex)
+                    {
+                        RHI.Core.Services.AppLog.Warn("deployment-journal", $"The commit point of {info.Description} could not be read again", ex);
+                        return CommitDecision.Undecided;
+                    }
+                }).ConfigureAwait(false);
+                if (outcome is null) return (false, probe);
+                RHI.Core.Services.AppLog.Warn("deployment-journal",
+                    $"Earlier undecided operation settled before the next one: {outcome.Outcome}: {outcome.Description} [{id}]"
+                    + (outcome.Problems.Count > 0 ? " " + string.Join("; ", outcome.Problems) : ""));
+                // A rollback that failed keeps its entry for the next start, and keeps holding up its game meanwhile.
+                return (outcome.Outcome != JournalRecoveryOutcome.RollbackFailed, probe);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"An earlier undecided operation could not be settled: {id}", ex);
+            return (false, ProbeOf(entryPath));
+        }
+        finally
+        {
+            if (!File.Exists(entryPath)) FileCleanup.TryDelete(LockPath(id));
+        }
+    }
+
+    /// <summary>The commit probe of the entry at <paramref name="entryPath"/>, or null when it cannot be read.</summary>
+    private static string? ProbeOf(string entryPath)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<JournalDocument>(File.ReadAllBytes(entryPath), JsonOptions)?.CommitProbe;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -141,7 +315,8 @@ public sealed class DeploymentJournal
                 {
                     // Another process may have recovered it between the listing and the lock.
                     if (File.Exists(entryPath))
-                        results.Add(await RecoverEntryAsync(id, entryPath, isCommitted).ConfigureAwait(false));
+                        results.Add((await RecoverEntryAsync(id, entryPath,
+                            info => isCommitted?.Invoke(info) ?? false ? CommitDecision.Committed : CommitDecision.NotCommitted).ConfigureAwait(false)).Entry!);
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
@@ -153,7 +328,12 @@ public sealed class DeploymentJournal
         return new(results);
     }
 
-    private async Task<JournalRecoveryEntry> RecoverEntryAsync(string id, string entryPath, Func<JournalEntryInfo, bool>? isCommitted)
+    /// <summary>
+    /// Recovers one entry (its lock held): unreadable → kept as evidence; committed → cleaned; not committed → rolled back
+    /// in crash-recovery mode. <paramref name="decide"/> answering <see cref="CommitDecision.Undecided"/> leaves the entry as
+    /// it is and returns no entry (with the entry's probe).
+    /// </summary>
+    private async Task<(JournalRecoveryEntry? Entry, string? Probe)> RecoverEntryAsync(string id, string entryPath, Func<JournalEntryInfo, CommitDecision> decide)
     {
         JournalDocument? document;
         try
@@ -167,28 +347,30 @@ public sealed class DeploymentJournal
             // Keep the evidence; never guess at what an unreadable entry owned.
             var kept = entryPath + UnreadableExtension;
             File.Move(entryPath, kept, overwrite: true);
-            return new(id, "", JournalRecoveryOutcome.Unreadable, [$"Unreadable journal entry kept at {kept}: {ex.Message}"], []);
+            return (new(id, "", JournalRecoveryOutcome.Unreadable, [$"Unreadable journal entry kept at {kept}: {ex.Message}"], []), null);
         }
 
         var set = new OwnedFileSet(id, document.Files);
         var paths = document.Files.Select(file => file.Path).ToArray();
         var info = new JournalEntryInfo(id, document.Description, document.CommitProbe, document.Committed, paths);
-        if (document.Committed || (isCommitted?.Invoke(info) ?? false))
+        var decision = document.Committed ? CommitDecision.Committed : decide(info);
+        if (decision == CommitDecision.Undecided) return (null, document.CommitProbe);
+        if (decision == CommitDecision.Committed)
         {
             set.Release();
             Delete(id);
-            return new(id, document.Description, JournalRecoveryOutcome.AlreadyCommitted, [], paths);
+            return (new(id, document.Description, JournalRecoveryOutcome.AlreadyCommitted, [], paths), document.CommitProbe);
         }
 
         var outcome = await RollbackAsync(set, document, RollbackMode.CrashRecovery).ConfigureAwait(false);
         if (outcome.Failures.Count > 0)
-            return new(id, document.Description, JournalRecoveryOutcome.RollbackFailed, outcome.Failures, paths, outcome.Kept);
+            return (new(id, document.Description, JournalRecoveryOutcome.RollbackFailed, outcome.Failures, paths, outcome.Kept), document.CommitProbe);
         if (outcome.Deferred.Count > 0)
-            return new(id, document.Description, JournalRecoveryOutcome.Deferred, outcome.Deferred, paths, outcome.Kept);
+            return (new(id, document.Description, JournalRecoveryOutcome.Deferred, outcome.Deferred, paths, outcome.Kept), document.CommitProbe);
         Delete(id);
-        return new(id, document.Description,
+        return (new(id, document.Description,
             outcome.Kept.Count > 0 ? JournalRecoveryOutcome.KeptLaterChanges : JournalRecoveryOutcome.RolledBack,
-            [], paths, outcome.Kept);
+            [], paths, outcome.Kept), document.CommitProbe);
     }
 
     internal sealed record RollbackOutcome(IReadOnlyList<string> Failures, IReadOnlyList<string> Kept, IReadOnlyList<string> Deferred);
@@ -257,6 +439,13 @@ public sealed class DeploymentJournal
 
     internal void Delete(string id) => AtomicFile.Delete(EntryPath(id));
 
+    /// <summary>
+    /// Fixed text of the refusal of an operation on a game whose earlier change is still undecided (PT-BR pair): the
+    /// deployment ledger could not be read after that change failed, so RHI cannot yet tell whether to finish or undo it.
+    /// </summary>
+    public const string EarlierChangeUndecidedMessage =
+        "RHI has not yet finished or undone an earlier change to this game, because the deployment ledger cannot be read. Nothing was changed. Repair the ledger or restart RHI, then try again.";
+
     internal string EntryPath(string id) => Path.Combine(Directory, id + EntryExtension);
 
     internal string LockPath(string id) => Path.Combine(Directory, id + LockExtension);
@@ -318,8 +507,14 @@ public sealed class DeploymentOperation : IAsyncDisposable
             AbandonAsIfCrashed();
             throw new SimulatedCrashException();
         }
+        return await FinishCommittedAsync().ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<string>> FinishCommittedAsync()
+    {
         _completed = true;
         _committed = true;
+        _settled = CommitDecision.Committed;
         var problems = new List<string>();
         try
         {
@@ -339,10 +534,20 @@ public sealed class DeploymentOperation : IAsyncDisposable
     /// <summary>
     /// Rolls back every tracked file and compensation. On success the entry is removed; on failure it
     /// is kept (and the lock released) so the next start retries, and the failures are returned.
+    /// <para>#204: first reads the commit point again (<see cref="SettleAfterFailureAsync"/>): a commit write that landed
+    /// and then reported an error is finished as committed (nothing undone), and one that cannot be told is left for
+    /// the next start; the returned <see cref="OwnedFileSetRollback.Decision"/> says which.</para>
     /// </summary>
     public async Task<OwnedFileSetRollback> RollbackAsync()
     {
-        if (_completed) return new([]);
+        if (_completed) return new([]) { Decision = _settled };
+        switch (await SettleAfterFailureAsync().ConfigureAwait(false))
+        {
+            case CommitDecision.Committed:
+                return new([]) { Decision = CommitDecision.Committed };
+            case CommitDecision.Undecided:
+                return new([UndecidedNote]) { Decision = CommitDecision.Undecided };
+        }
         _completed = true;
         var outcome = await _journal.RollbackAsync(Files, Document(), RollbackMode.InProcess).ConfigureAwait(false);
         // A deferred step is not done: the entry (narrowed to it) stays for the next start.
@@ -362,15 +567,71 @@ public sealed class DeploymentOperation : IAsyncDisposable
         return new(failures, outcome.Kept);
     }
 
+    /// <summary>
+    /// After a failure (#204), before anything is undone: reads the commit point again through the journal's
+    /// <see cref="DeploymentJournal.CommitCheck"/> (a fresh read, the rule start-up recovery uses).
+    /// <see cref="CommitDecision.Committed"/> — the commit write landed and then threw — finishes the operation as committed
+    /// (snapshots and entry dropped; nothing is rolled back). <see cref="CommitDecision.Undecided"/> — the commit store
+    /// cannot be read and a write of it landed since the operation began — keeps the entry and every copy and releases the
+    /// lock; the entry waits: settled before the same game's next operation of this session (refused while it still
+    /// cannot be decided), or at the next start. <see cref="CommitDecision.NotCommitted"/> changes nothing: roll back. Without a check, always
+    /// NotCommitted. Never throws.
+    /// </summary>
+    public async Task<CommitDecision> SettleAfterFailureAsync()
+    {
+        if (_completed) return _settled;
+        CommitDecision decision;
+        try
+        {
+            decision = _journal.CommitCheck?.Decide(Info(), CommitMark) ?? CommitDecision.NotCommitted;
+        }
+        catch (Exception ex)
+        {
+            // A check that cannot answer is an unreadable commit point: keep everything for the next start.
+            RHI.Core.Services.AppLog.Warn("deployment-journal", $"The commit point of {Description} could not be read again", ex);
+            decision = CommitDecision.Undecided;
+        }
+        switch (decision)
+        {
+            case CommitDecision.Committed:
+                await FinishCommittedAsync().ConfigureAwait(false);
+                break;
+            case CommitDecision.Undecided:
+                _completed = true;
+                _settled = CommitDecision.Undecided;
+                ReleaseLock(deleteLockFile: false);
+                // Review w8 finding 2: settled before this game's next operation in this session (or refuses it).
+                _journal.Wait(Id, CommitMark);
+                break;
+        }
+        return decision;
+    }
+
+    /// <summary>Fixed text of a failure whose commit point could not be read again: nothing was undone now (PT-BR pair).</summary>
+    public const string UndecidedNote =
+        "The deployment ledger could not be read after the error, so nothing was undone now; RHI finishes or undoes this change at the next start.";
+
+    /// <summary>The value <see cref="IDeploymentCommitCheck.Mark"/> returned when the operation began.</summary>
+    internal string? CommitMark { get; set; }
+
+    private CommitDecision _settled;
+
+    private JournalEntryInfo Info() => new(Id, Description, CommitProbe, _committed, Files.Files.Select(file => file.Path).ToArray());
+
     public async ValueTask DisposeAsync()
     {
         if (!_completed) await RollbackAsync().ConfigureAwait(false);
     }
 
-    /// <summary>Test seam: drops the lock without committing or rolling back, as a crash would.</summary>
+    /// <summary>
+    /// Test seam: drops the lock without committing or rolling back, as a crash would. A dead thread let go afterwards
+    /// finds its operation <see cref="CommitDecision.Undecided"/>, so its catch undoes nothing in process (the next start
+    /// owns the entry).
+    /// </summary>
     internal void AbandonAsIfCrashed()
     {
         _completed = true;
+        _settled = CommitDecision.Undecided;
         ReleaseLock(deleteLockFile: false);
     }
 

@@ -13,7 +13,7 @@ namespace RHI.Core.Tests;
 /// <c>addon-manager.json</c> is kept as the copy older builds read; a copy an older build changed, or a ledger an older
 /// build saved without the record kind it does not know, is imported again.
 /// </summary>
-public sealed class AddonManagerLedgerTests : IDisposable
+public sealed partial class AddonManagerLedgerTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-addon-ledger-" + Guid.NewGuid().ToString("N"));
 

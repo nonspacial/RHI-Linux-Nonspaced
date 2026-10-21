@@ -713,3 +713,25 @@ build.
 - Linux deviations: every key is owned per key on RenoDX's record inside RenoDX's journaled operation (#205): removal, Off and switching UE-Extended off take out only keys RHI added and that still hold RHI's value (upstream removes the whole `[renodx]` section and every HDR key, whoever wrote them), and the Engine.ini lock state is put back as for #217 (upstream leaves the file writable after its HDR removal). `r.LUT.UpdateEveryFrame`, part of upstream's HDR list, is #217's own line and setting here, so HDR Off leaves it. The database is read like the ⓘ dialog's (cached, last good copy; an unreadable database falls back to the manifest / engine rule); upstream's developer-only "database source" setting is not ported (the database is always used). The ⚙ row reflects the last install's decision (a database change shows after the next update).
 
 <!-- w8/commit-point notes -->
+
+### #204 — A ledger write that lands and then reports an error is finished, not undone
+- Fork-only crash safety (upstream has no journal). When the save that commits an install, update, change or removal
+  reaches disk and then reports an error (e.g. the folder sync after the new `deployments.json` is in place), RHI reads
+  the ledger file again — never its cache — with the rule start-up recovery uses: if the save landed, the operation is
+  finished as committed (nothing is rolled back: files, Wine overrides, DLL renames, ReShade's DX9 translation and the
+  second record of a two-record save all stay) and the result reads "Done; the deployment ledger reported an error after
+  the change was written, so nothing was undone: <component>" (or "Removed; …"); if it did not land, everything is rolled
+  back as before. If the ledger cannot be read (damaged, no permission, a disk error): when no save of the operation got
+  as far as replacing the file, it is rolled back at once as before; otherwise nothing is undone now and the change waits
+  — RHI finishes or undoes it before the next install, update or removal on that game in the same session (as soon as the
+  ledger reads again; until then that game's next change is refused: "RHI has not yet finished or undone an earlier change
+  to this game…"), or at the next start. The row, Update All and the update history then match the ledger (a DX9
+  Feeder/Luma install used to leave ReShade's record naming `dxgi.dll` while ReShade was back at `d3d9.dll`, so every
+  later removal failed).
+
+### #213 — Luma and DLSS5 Feeder journal the file behind a linked ReShade.ini
+- Luma Framework's install and removal and the DLSS5 Feeder's install and removal journal the file a ReShade.ini link
+  leads to (the user's shared file in `~/.config/ReShade`), never the link: a failed or interrupted install keeps the link
+  a link and puts the shared file back byte for byte. Luma's own ReShade.ini write and the Feeder's preset edit still
+  refuse a linked ReShade.ini (unchanged), so such an install fails and is rolled back cleanly; the Feeder's rollback used
+  to replace the link with a plain copy and leave its search paths in the shared file.

@@ -301,6 +301,38 @@ public sealed record OwnedFileSetRollback(IReadOnlyList<string> Failures, IReadO
 
     /// <summary>Paths left as someone else changed them after a crash, and where RHI's copy went.</summary>
     public IReadOnlyList<string> Kept => KeptChanges ?? [];
+
+    /// <summary>
+    /// What the rollback found about the operation's commit point (#204): a failure at or after the commit write may
+    /// come from a write that landed. <see cref="CommitDecision.NotCommitted"/> (the default) = the files were put back.
+    /// </summary>
+    public CommitDecision Decision { get; init; }
+
+    /// <summary>The commit write had landed: nothing was undone and the operation was finished as committed.</summary>
+    public bool Committed => Decision == CommitDecision.Committed;
+
+    /// <summary>
+    /// The files were put back (or tried to be). A caller's own in-process undo steps after the rollback (Wine overrides,
+    /// records, renames) run only then: after a commit that landed, or while it cannot be told, they would undo what the
+    /// ledger keeps.
+    /// </summary>
+    public bool RolledBack => Decision == CommitDecision.NotCommitted;
+}
+
+/// <summary>What a failed operation's commit point says when it is read again (#204).</summary>
+public enum CommitDecision
+{
+    /// <summary>The commit write did not land: roll back.</summary>
+    NotCommitted,
+
+    /// <summary>The commit write landed and then reported an error: the operation is finished as committed.</summary>
+    Committed,
+
+    /// <summary>
+    /// The ledger cannot be read, so it cannot be told: nothing is undone in process; the journal entry and every copy
+    /// stay, and start-up recovery decides at the next start.
+    /// </summary>
+    Undecided
 }
 
 public enum RollbackMode

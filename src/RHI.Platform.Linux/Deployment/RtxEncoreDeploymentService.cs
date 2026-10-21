@@ -286,7 +286,8 @@ public sealed class RtxEncoreDeploymentService
         {
             if (staged is not null) FileCleanup.TryDelete(staged);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            _overrides.TryRestore(game.PrefixPath, wineOverride);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX Encore", changedFiles: target);
+            if (rollback.RolledBack) _overrides.TryRestore(game.PrefixPath, wineOverride);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         // The record carries the operation id: the commit point. Nothing after it rolls back.
@@ -329,7 +330,8 @@ public sealed class RtxEncoreDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "rtx-encore").ConfigureAwait(false);
-            if (overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, record.WineOverride);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX Encore", removal: true);
+            if (rollback.RolledBack && overrideRestore?.Outcome == WineOverrideRestoreOutcome.Restored) _overrides.TryReapply(game.PrefixPath, record.WineOverride);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -404,6 +406,7 @@ public sealed class RtxEncoreDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX Encore");
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -498,6 +501,7 @@ public sealed class RtxEncoreDeploymentService
         {
             if (staged is not null) FileCleanup.TryDelete(staged);
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RTX Encore", changedFiles: file.Path);
             return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
