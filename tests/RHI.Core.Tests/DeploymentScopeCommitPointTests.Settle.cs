@@ -240,6 +240,45 @@ public sealed partial class DeploymentScopeCommitPointTests
         Assert.NotNull(new LinuxDeploymentRecordStore(Ledger).Find(Game, ManagedComponentKind.ReShade));
         Assert.Equal(After, File.ReadAllBytes(Payload));
     }
+
+    // w8 final review 3: an earlier change that is still undecided says so even when an undo that failed was settled first
+    // for the same game (the undecided one can still go either way; the failed undo's message would send the user to
+    // the wrong fix). Here the undecided one is an entry another RHI works on now (its lock is taken), which a deferred
+    // start-up hands over after the failed undo; it holds up every game (it has no record probe).
+    [Fact]
+    public async Task AnUndecidedChange_WinsOverAFailedUndoSettledBeforeIt()
+    {
+        var (_, journal, _) = await UndecidedInstallAsync();
+        File.Delete(Ledger); // reads again: not committed, so the settle rolls back, and fails below
+        var folder = P("game");
+        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        DeploymentOperation? busy = null;
+        try
+        {
+            try
+            {
+                File.WriteAllBytes(P("game", "probe"), []);
+                return; // the folder is writable anyway (root): nothing to prove here
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            busy = await journal.BeginAsync("another RHI's change"); // holds its entry's lock while it runs
+            journal.WaitOnKeptEntries(); // waits after the failed undo's entry
+
+            var (refused, refusal) = await DeploymentScope.BeginAsync(journal, "retry", Game, ManagedComponentKind.ReShade, CancellationToken.None);
+
+            Assert.Null(refused);
+            Assert.Equal(DeploymentJournal.EarlierChangeUndecidedMessage, refusal);
+            Assert.Equal(2, JournalEntries().Length);
+        }
+        finally
+        {
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (busy is not null) await busy.RollbackAsync();
+        }
+    }
+
     // An operation whose commit point is not a ledger record (a plain file transaction: no record probe) is never committed
     // by the ledger, so an unreadable ledger leaves nothing to decide: rolled back at once, even after another save landed
     // (left undecided it would wait with no game to tell, holding up every game's next operation).
