@@ -20,7 +20,15 @@ public sealed record RelocatedRecord(LinuxDeploymentRecord Record, string OldRoo
     public string MovedFolder => Folder ?? Record.BinaryDirectory;
 }
 
-public sealed record RelocationRepairResult(bool Success, int Repaired, string Message);
+public sealed record RelocationRepairResult(bool Success, int Repaired, string Message)
+{
+    /// <summary>
+    /// #214 (review 1): what the user still has to do after a successful repair (e.g. ReShade's XNA settings file that was
+    /// not rewritten), English platform text, "" when nothing; also appended to <see cref="Message"/>. The app shows it
+    /// beside its own repair line and logs it.
+    /// </summary>
+    public string Note { get; init; } = "";
+}
 
 /// <summary>
 /// Finds and repairs deployment records left pointing at a game's previous location after the game

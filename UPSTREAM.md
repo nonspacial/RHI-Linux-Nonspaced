@@ -685,10 +685,12 @@ build.
   game's records, RHI's ReShade.ini copy in the prefix's .NET assembly folder gets `[INSTALL] BasePath` set to the game's
   new folder as the game sees it (the install's own mapping), journaled on ReShade's record with the new hash, so ReShade
   keeps finding its shaders, presets and settings after a library move without an update. Only while that copy still
-  holds RHI's last write: a copy the user (or ReShade) changed is kept, and the Repair line says to set BasePath in it to
-  the new folder (ticket option 2 named "update ReShade", which leaves a changed copy as it is). While Wine runs for
-  the prefix the rewrite (not the repair) is skipped and the line says to use Apply / Update in the ReShade section once
-  the game is closed. A crash during the rewrite leaves the old or the new file and a record that agrees.
+  holds RHI's last write: a copy the user (or ReShade) changed is kept, and the Repair line names that file and says to
+  set BasePath in it to the new folder (ticket option 2 named "update ReShade", which leaves a changed copy as it is).
+  While Wine runs for the prefix the rewrite (not the repair) is skipped and the line says to use Apply / Update in the
+  ReShade section once the game is closed; a copy that cannot be read or rewritten gets the same advice with the reason.
+  The repair itself is never undone: these notes ride the app's "records now point to the new folder" line and go to
+  `rhi.log`. A crash during the rewrite leaves the old or the new file and a record that agrees.
 
 <!-- w8/renodx notes -->
 

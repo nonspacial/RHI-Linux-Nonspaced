@@ -84,7 +84,7 @@ public sealed partial class ReShadeDeploymentService
         if (service is null || !result.Success) return result;
         // Repair after move is synchronous (the view model runs it off the UI thread); the rewrite is one journaled step.
         var note = service.RepointGacIniAsync(game, CancellationToken.None).GetAwaiter().GetResult();
-        return note.Length == 0 ? result : result with { Message = result.Message + note };
+        return note.Length == 0 ? result : result with { Message = result.Message + XnaGacReShade.AfterMoveNoteSeparator + note, Note = note };
     }
 
     /// <summary>
@@ -104,10 +104,20 @@ public sealed partial class ReShadeDeploymentService
         var gacIni = Path.Combine(record!.Metadata[XnaGacReShade.FolderMetadataKey], "ReShade.ini");
         if (!File.Exists(gacIni)) return ""; // no copy (installed without managing ReShade.ini): nothing names a folder
         var basePath = XnaGacReShade.WindowsPathOf(game.PrefixPath, game.BinaryDirectory);
-        var current = await File.ReadAllBytesAsync(gacIni, CancellationToken.None).ConfigureAwait(false);
-        if (string.Equals(IniLines.Get(IniLines.FromBytes(current), "INSTALL", "BasePath"), basePath, StringComparison.Ordinal)) return "";
-        if (!GacIniIsRhis(gacIni, record.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey)))
-            return XnaGacReShade.GacIniChangedAfterMovePrefix + basePath;
+        byte[] current;
+        bool rhis;
+        try
+        {
+            // Review 2: the repair has already saved; a copy that cannot be read (permissions, I/O) is a note, never a throw.
+            current = await File.ReadAllBytesAsync(gacIni, CancellationToken.None).ConfigureAwait(false);
+            if (string.Equals(IniLines.Get(IniLines.FromBytes(current), "INSTALL", "BasePath"), basePath, StringComparison.Ordinal)) return "";
+            rhis = GacIniIsRhis(gacIni, record.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return XnaGacReShade.GacIniNotUpdatedAfterMovePrefix + ex.Message;
+        }
+        if (!rhis) return XnaGacReShade.GacIniChangedAfterMove(gacIni, basePath);
         if (_overrides.EditRefusal(game.PrefixPath) is not null) return XnaGacReShade.GacIniWineRunningAfterMoveMessage;
 
         var bytes = ReShadeIniManager.WithInstallBasePath(current, basePath);

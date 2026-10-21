@@ -1940,9 +1940,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
             repaired = true;
             // Raised as a notice: the new folder's probe starts right after the repair and its "Ready" line would replace a
             // plain status line within milliseconds; the notice rides on that line instead (review w2-stores #3).
-            StatusText = _statusNotice.Raise(result.Repaired == 0
+            var repairedLine = result.Repaired == 0
                 ? TF("Vm.GameSettingsNowPointNewFolder", game.Name)
-                : TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired));
+                : TF("Vm.RHISRecordsSettingsNowPoint", game.Name, result.Repaired);
+            if (result.Note.Length > 0)
+            {
+                // w8/reshade-ini hook (#214 review 1): what the user still has to do (ReShade's XNA settings file) rides the
+                // line and goes to the log.
+                AppLog.Warn("repair-after-move", $"{game.Name}: {result.Note}");
+                repairedLine += " " + UiLocalizationService.Present(result.Note);
+            }
+            StatusText = _statusNotice.Raise(repairedLine);
             // The library file now holds the game's favourite/hidden/edits/HDR under its new key.
             _libraryState = _libraryStore.Load(out _libraryStateUnreadable);
             var libraryKey = LinuxGameLibraryStore.GameKey(game);

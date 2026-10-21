@@ -99,10 +99,16 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
 
         Assert.True(result.Success, result.Message); // the repair itself is done
         var newBase = XnaGacReShade.WindowsPathOf(moved.Game.PrefixPath!, moved.Game.BinaryDirectory!);
-        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.GacIniChangedAfterMovePrefix + newBase, result.Message);
+        // Review 6: the note names the file (the GAC folder is hard to find) and the value to set.
+        var note = XnaGacReShade.GacIniChangedAfterMovePrefix + moved.GacIni + XnaGacReShade.GacIniChangedAfterMoveBasePathInfix + newBase;
+        Assert.Equal(note, result.Note);
+        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.AfterMoveNoteSeparator + note, result.Message);
         Assert.Equal(changed, File.ReadAllBytes(moved.GacIni));
         Assert.Equal(recordedHash, Record(fx.LedgerPath, moved.Game).Metadata[XnaGacReShade.IniSha256MetadataKey]); // still not RHI's
-        Assert.DoesNotContain("still names the game's old folder", UiLocalizationService.PresentFor("pt-BR", result.Message), StringComparison.Ordinal);
+        var pt = UiLocalizationService.PresentFor("pt-BR", result.Message);
+        Assert.DoesNotContain("still names the game's old folder", pt, StringComparison.Ordinal);
+        Assert.DoesNotContain("new BasePath", pt, StringComparison.Ordinal);
+        Assert.EndsWith(moved.GacIni + " — novo BasePath: " + newBase, pt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -117,6 +123,7 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
         var result = fx.Components().RepairAfterMove(moved.Game);
 
         Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1", result.Message);
+        Assert.Equal("", result.Note);
         Assert.Equal(changed, File.ReadAllBytes(moved.GacIni));
     }
 
@@ -131,7 +138,8 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
         var result = fx.Components(running).RepairAfterMove(moved.Game);
 
         Assert.True(result.Success, result.Message);
-        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.GacIniWineRunningAfterMoveMessage, result.Message);
+        Assert.Equal(XnaGacReShade.GacIniWineRunningAfterMoveMessage, result.Note);
+        Assert.Equal(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.AfterMoveNoteSeparator + XnaGacReShade.GacIniWineRunningAfterMoveMessage, result.Message);
         Assert.Equal(before, File.ReadAllBytes(moved.GacIni));
         AssertRecordMatchesTheCopy(fx.LedgerPath, moved);
         Assert.False(new DeploymentRelocation(fx.Records).NeedsRepair(moved.Game)); // the records were repaired
@@ -167,10 +175,42 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
         using (LedgerWriteBlocker.Block(fx.Records, fx.LedgerPath)) result = components.RepairAfterMove(moved.Game);
 
         Assert.True(result.Success, result.Message);
-        Assert.StartsWith(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.GacIniNotUpdatedAfterMovePrefix, result.Message, StringComparison.Ordinal);
+        Assert.StartsWith(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.AfterMoveNoteSeparator + XnaGacReShade.GacIniNotUpdatedAfterMovePrefix, result.Message, StringComparison.Ordinal);
+        Assert.StartsWith(XnaGacReShade.GacIniNotUpdatedAfterMovePrefix, result.Note, StringComparison.Ordinal);
         Assert.Equal(before, File.ReadAllBytes(moved.GacIni));
         AssertRecordMatchesTheCopy(fx.LedgerPath, moved);
         Assert.Empty(Directory.GetFiles(fx.JournalDir));
+    }
+
+    [Fact]
+    public async Task ACopyThatCannotBeRead_TheRepairStands_AndTheLineSaysWhatToDo()
+    {
+        // Review 2: the repair has saved before the copy is read; an unreadable copy is a note, never a throw (which the
+        // app would show as "could not save" and leave the library unreloaded).
+        var fx = await InstalledAsync("unreadable");
+        var moved = fx.MoveLibrary();
+        File.SetUnixFileMode(moved.GacIni, UnixFileMode.None);
+        try
+        {
+            if (CanRead(moved.GacIni)) return; // running as root: the mode does not stop a read
+
+            var result = fx.Components().RepairAfterMove(moved.Game);
+
+            Assert.True(result.Success, result.Message);
+            Assert.StartsWith(XnaGacReShade.GacIniNotUpdatedAfterMovePrefix, result.Note, StringComparison.Ordinal);
+            Assert.StartsWith(DeploymentRelocation.RepairDonePrefix + "1" + XnaGacReShade.AfterMoveNoteSeparator + XnaGacReShade.GacIniNotUpdatedAfterMovePrefix,
+                result.Message, StringComparison.Ordinal);
+            Assert.False(new DeploymentRelocation(fx.Records).NeedsRepair(moved.Game)); // the records were repaired
+            Assert.Equal(moved.Gac, Record(fx.LedgerPath, moved.Game).Metadata[XnaGacReShade.FolderMetadataKey]);
+            Assert.Empty(Directory.GetFiles(fx.JournalDir));
+        }
+        finally { File.SetUnixFileMode(moved.GacIni, UnixFileMode.UserRead | UnixFileMode.UserWrite); }
+    }
+
+    private static bool CanRead(string path)
+    {
+        try { using var _ = File.OpenRead(path); return true; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 
     public static TheoryData<string> Crashes => new() { "dies-before-the-write", "write-lands-then-dies" };
@@ -216,12 +256,12 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
             "the record's GAC ReShade.ini hash is the file's");
     }
 
-    private sealed record Located(DetectedGame Game, string Gac)
+    internal sealed record Located(DetectedGame Game, string Gac)
     {
         public string GacIni => Path.Combine(Gac, "ReShade.ini");
     }
 
-    private sealed class Fixture
+    internal sealed class Fixture
     {
         public required string Root { get; init; }
         public required DetectedGame Game { get; init; }
@@ -294,9 +334,12 @@ public sealed class XnaGacIniAfterMoveTests : IDisposable
     }
 
     // A Steam-layout library (game folder and prefix under one steamapps folder), ReShade installed for XNA by RHI.
-    private async Task<Fixture> InstalledAsync(string name)
+    private Task<Fixture> InstalledAsync(string name) => InstalledAsync(_root, name);
+
+    // Also the view-model tests' fixture (XnaGacIniAfterMoveViewModelTests): the ledger it writes is copied into theirs.
+    internal static async Task<Fixture> InstalledAsync(string parent, string name)
     {
-        var root = Path.Combine(_root, name);
+        var root = Path.Combine(parent, name);
         var bin = Directory.CreateDirectory(Path.Combine(root, "lib1", "steamapps", "common", "Terraria")).FullName;
         var prefix = Directory.CreateDirectory(Path.Combine(root, "lib1", "steamapps", "compatdata", "105600", "pfx")).FullName;
         var gac = Directory.CreateDirectory(Path.Combine(prefix, "drive_c", "windows", "Microsoft.NET", "assembly", "GAC_32",
