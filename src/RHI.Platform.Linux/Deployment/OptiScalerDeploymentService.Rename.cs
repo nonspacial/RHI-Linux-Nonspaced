@@ -36,6 +36,12 @@ public sealed partial class OptiScalerDeploymentService
             ? reShade
             : null;
 
+    // Re-review 3 (w7/reshade): the refusal for a record that lacks its proxy names the full path (the picker's tooltip reads
+    // whether that file is still there); a bare name was read relative to the working directory, so the tip always said
+    // the DLL was gone.
+    private static string RecordedProxyPath(LinuxDeploymentRecord record)
+        => Path.Combine(record.BinaryDirectory, GetProxyName(record));
+
     /// <summary>
     /// What OptiScaler's DLL-name dropdown offers while it is installed (#196): the names of <paramref name="candidates"/>
     /// it can be renamed to now, or the refusal that keeps the name (read only).
@@ -44,7 +50,7 @@ public sealed partial class OptiScalerDeploymentService
     {
         if (RenameBlocker(game) is { } blocked) return ([], blocked);
         var record = _records.Find(game, ManagedComponentKind.OptiScaler)!;
-        if (ProxyFile(record) is not { } payload) return ([], ProxyRename.ChangedPrefix + GetProxyName(record));
+        if (ProxyFile(record) is not { } payload) return ([], ProxyRename.ChangedPrefix + RecordedProxyPath(record));
         if (ProxyRename.PayloadRefusal(payload) is { } refused) return ([], refused);
         var current = GetProxyName(record);
         return (candidates.Where(name => !name.Equals(current, StringComparison.OrdinalIgnoreCase)
@@ -64,7 +70,7 @@ public sealed partial class OptiScalerDeploymentService
         var target = ProxyNames.FirstOrDefault(known => known.Equals(name, StringComparison.OrdinalIgnoreCase));
         if (target is null) return ComponentOperationResult.Fail(ProxyNameNotOfferedPrefix + name);
         var record = _records.Find(game, ManagedComponentKind.OptiScaler)!;
-        if (ProxyFile(record) is not { } payload) return ComponentOperationResult.Fail(ProxyRename.ChangedPrefix + GetProxyName(record));
+        if (ProxyFile(record) is not { } payload) return ComponentOperationResult.Fail(ProxyRename.ChangedPrefix + RecordedProxyPath(record));
         // RHI's ReShade chained as ReShade64.dll stays where it is (OptiScaler loads it by that name, whatever its own);
         // its record keeps the name it goes back to on OptiScaler's removal, saved in the same write (#196 decision).
         LinuxDeploymentRecord? chained = null;

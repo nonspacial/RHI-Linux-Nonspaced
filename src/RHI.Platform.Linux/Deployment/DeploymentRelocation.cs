@@ -12,7 +12,13 @@ namespace RHI.Platform.Linux.Deployment;
 /// <param name="OldRoot">The folder its paths are under (the part of the old location that moved).</param>
 /// <param name="NewRoot">Where that folder is now.</param>
 /// <param name="Adopted">True for a folder-keyed record of the same game found by its files (no store id to match it by).</param>
-public sealed record RelocatedRecord(LinuxDeploymentRecord Record, string OldRoot, string NewRoot, bool Adopted);
+/// <param name="Folder">The folder whose files moved, for messages: the record's binary directory, or for an XNA ReShade
+/// record whose prefix moved on its own, the recorded .NET assembly (GAC) folder (re-review 1).</param>
+public sealed record RelocatedRecord(LinuxDeploymentRecord Record, string OldRoot, string NewRoot, bool Adopted, string? Folder = null)
+{
+    /// <summary>The folder named in the Guard and Repair messages.</summary>
+    public string MovedFolder => Folder ?? Record.BinaryDirectory;
+}
 
 public sealed record RelocationRepairResult(bool Success, int Repaired, string Message);
 
@@ -56,7 +62,7 @@ public sealed class DeploymentRelocation
     /// <summary>Refusal for any install, update or removal while the game has moved records; null when none.</summary>
     public ComponentOperationResult? Guard(DetectedGame game)
         => FindMoved(game).FirstOrDefault() is { } moved
-            ? ComponentOperationResult.Fail(GuardPrefix + moved.Record.BinaryDirectory + GuardSuffix)
+            ? ComponentOperationResult.Fail(GuardPrefix + moved.MovedFolder + GuardSuffix)
             : null;
 
     /// <summary>
@@ -88,7 +94,7 @@ public sealed class DeploymentRelocation
             {
                 // w7/reshade (#201, review 3): an XNA ReShade record's GAC copies live in the prefix, which moved on its own.
                 if (XnaGacReShade.MovedFolder(record, null, game) is { } gac)
-                    result.Add(new RelocatedRecord(record, gac.Old, gac.New, Adopted: false));
+                    result.Add(new RelocatedRecord(record, gac.Old, gac.New, Adopted: false, Folder: gac.Old));
                 continue;
             }
             result.Add(TryMap(record, game, out var oldRoot, out var newRoot)
@@ -188,8 +194,12 @@ public sealed class DeploymentRelocation
 
             // The old folder may still exist (an emptied leftover, or a backup copy). Only one
             // that still holds RHI's files unchanged is a live copy RHI cannot choose between.
-            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, MapPath, gameRecords))
-                return new(false, 0, $"{RepairOldFolderExistsPrefix}{record.BinaryDirectory}{RepairOldFolderExistsSuffix}");
+            if (Directory.Exists(record.BinaryDirectory) && StillHoldsOwnedFiles(record, MapPath, gameRecords) is { } held)
+            {
+                // Re-review 1: name the folder that still holds them (the old GAC folder for a prefix that moved on its own).
+                var folder = gac is { } g && IsUnder(held, g.Old) ? g.Old : record.BinaryDirectory;
+                return new(false, 0, $"{RepairOldFolderExistsPrefix}{folder}{RepairOldFolderExistsSuffix}");
+            }
 
             var copy = LinuxDeploymentRecordStore.Clone(record);
             copy.GameKey = key;
@@ -309,14 +319,16 @@ public sealed class DeploymentRelocation
         => !file.AllowUserChanges && !string.IsNullOrWhiteSpace(file.Sha256) && !string.IsNullOrWhiteSpace(file.Path);
 
     /// <summary>
-    /// True when any owned file is still at its old (unmapped) path with its recorded hash; an NR runtime owner's content
+    /// The first owned file still at its old (unmapped) path with its recorded hash, or null; an NR runtime owner's content
     /// is read where it really is under an NR Cost Scaler (<see cref="NrCostScalerService.ContentPath"/>).
     /// </summary>
-    private static bool StillHoldsOwnedFiles(LinuxDeploymentRecord record, Func<string, string> map, IReadOnlyList<LinuxDeploymentRecord> gameRecords)
+    private static string? StillHoldsOwnedFiles(LinuxDeploymentRecord record, Func<string, string> map, IReadOnlyList<LinuxDeploymentRecord> gameRecords)
         => record.Files.Where(IsOwnedHashedFile)
             .Where(f => !string.Equals(map(f.Path), f.Path, StringComparison.Ordinal))
             .Select(f => (Content: NrCostScalerService.ContentPath(record, f, gameRecords), f.Sha256))
-            .Any(f => File.Exists(f.Content) && string.Equals(FileHash.Sha256Hex(f.Content), f.Sha256, StringComparison.OrdinalIgnoreCase));
+            .Where(f => File.Exists(f.Content) && string.Equals(FileHash.Sha256Hex(f.Content), f.Sha256, StringComparison.OrdinalIgnoreCase))
+            .Select(f => f.Content)
+            .FirstOrDefault();
 
     private static IReadOnlyList<string> RecordedExecutables(LinuxDeploymentRecord record)
         => new[] { record.WineOverride }.Concat(record.AdditionalWineOverrides ?? [])

@@ -127,7 +127,10 @@ public sealed class XnaGacReShadeTests : IDisposable
         var relocation = new DeploymentRelocation(fx.Records);
 
         Assert.True(relocation.NeedsRepair(moved));
-        Assert.NotNull(relocation.Guard(moved));
+        var guard = relocation.Guard(moved);
+        Assert.NotNull(guard);
+        // Re-review 1: the message names the folder that moved (the old GAC folder when only the prefix moved).
+        Assert.Contains(gameFolderMovedToo ? fx.Bin : fx.Gac, guard!.Message);
         var repair = relocation.Repair(moved, [], out _);
 
         Assert.True(repair.Success, repair.Message);
@@ -144,6 +147,54 @@ public sealed class XnaGacReShadeTests : IDisposable
         Assert.Empty(Directory.GetFileSystemEntries(newGac));
         Assert.Equal(userRegBefore, File.ReadAllBytes(Path.Combine(newPrefix, "user.reg")));
         Assert.Equal([Path.Combine(newBin, "Terraria.exe")], Directory.GetFiles(newBin));
+    }
+
+    [Theory]
+    [InlineData("switched-prefix")]
+    [InlineData("manifest-folder-changed")]
+    [InlineData("symlinked-prefix-spelling")]
+    public async Task NotMoved_WhileTheRecordedGacFolderStillHoldsRhisCopies_GuardIsNull_AndRemovalWorks(string scenario)
+    {
+        // Re-review 1 (reviewer's probes a–c): the game counts as moved only when RHI's GAC copies left the recorded folder
+        // and the current one holds them. A switched prefix (old one intact), a manifest path naming another existing folder,
+        // or the same prefix through a symlinked spelling leave the records describing where the files are.
+        var fx = Fixture("not-moved-" + scenario);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions())).Success);
+        var root = Path.Combine(_root, "not-moved-" + scenario);
+        DetectedGame game;
+        switch (scenario)
+        {
+            case "switched-prefix":
+                var other = Path.Combine(root, "prefixes", "other", "pfx");
+                Directory.CreateDirectory(Path.Combine(other, "drive_c", "windows", "Microsoft.NET", "assembly", "GAC_32",
+                    "Microsoft.Xna.Framework.Graphics", "v4.0_4.0.0.0__842cf8be1de50553"));
+                File.WriteAllText(Path.Combine(other, "user.reg"), "WINE REGISTRY Version 2\n");
+                game = Keyed(Copy(fx.Game, prefix: other));
+                break;
+            case "manifest-folder-changed":
+                const string otherWindows = @"C:\Windows\Microsoft.NET\assembly\GAC_32\Microsoft.Xna.Framework.Graphics\v4.0_4.0.0.1__842cf8be1de50553";
+                Directory.CreateDirectory(Path.Combine(fx.Prefix, "drive_c", "windows", "Microsoft.NET", "assembly", "GAC_32",
+                    "Microsoft.Xna.Framework.Graphics", "v4.0_4.0.0.1__842cf8be1de50553"));
+                game = Keyed(Copy(fx.Game, gac: otherWindows));
+                break;
+            default:
+                var link = Path.Combine(root, "pfx-link");
+                File.CreateSymbolicLink(link, fx.Prefix);
+                game = Keyed(Copy(fx.Game, prefix: link));
+                break;
+        }
+        DetectedGame Keyed(DetectedGame copy) { copy.SteamAppId = fx.Game.SteamAppId; return copy; } // the same store id: the game's records
+        if (scenario == "switched-prefix")
+            File.Copy(Path.Combine(fx.Gac, "d3d9.dll"), Path.Combine(XnaGacReShade.ResolveFolder(game).Folder!, "d3d9.dll")); // the new folder holds the name too
+        var relocation = new DeploymentRelocation(fx.Records);
+
+        Assert.Null(relocation.Guard(game));
+        Assert.False(relocation.NeedsRepair(game));
+        var removed = await fx.Service.RemoveAsync(game);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Gac, "d3d9.dll")));
+        Assert.Null(fx.Records.Find(game, ManagedComponentKind.ReShade));
     }
 
     [Fact]

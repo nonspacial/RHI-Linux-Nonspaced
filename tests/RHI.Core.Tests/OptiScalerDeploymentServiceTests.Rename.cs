@@ -205,4 +205,53 @@ public sealed partial class OptiScalerDeploymentServiceTests
         Assert.DoesNotContain("version.dll", targets);
         Assert.DoesNotContain("dxgi.dll", targets);
     }
+
+    [Fact]
+    public async Task RenameOptions_RecordWithoutItsProxy_NamesTheFullPath_AndThePickerTipReadsTheRealFile()
+    {
+        // w7 follow-up B3 (re-review 3): the refusal names the file by its full path, so the locked dropdown's tooltip tells
+        // a DLL still in the folder (changed tip) from one that is gone (missing tip) — a bare name was read relative to
+        // the working directory and always said "gone".
+        var (game, store) = CreateGame("rename-os-noproxy", GraphicsApi.DirectX12);
+        var service = NewService(store, CreatePackage("rename-os-noproxy-package"));
+        Assert.True((await service.InstallAsync(game, OptiScalerVariant.Stable, null, "dxgi.dll")).Success);
+        var dxgi = Path.Combine(game.BinaryDirectory!, "dxgi.dll");
+        var record = store.Find(game, ManagedComponentKind.OptiScaler)!;
+        record.Files.RemoveAll(file => file.Path == dxgi);
+        store.Upsert(record);
+
+        var (targets, refusal) = service.RenameOptions(game, OptiScalerDeploymentService.ProxyNames);
+        var renamed = await service.RenameProxyAsync(game, "winmm.dll", choice: null);
+
+        Assert.Empty(targets);
+        Assert.Equal(ProxyRename.ChangedPrefix + dxgi, refusal);
+        Assert.Equal(ProxyRename.ChangedPrefix + dxgi, renamed.Message);
+        Assert.True(File.Exists(refusal![ProxyRename.ChangedPrefix.Length..])); // what the picker's LockedHint reads
+    }
+
+    [Fact]
+    public async Task Remove_AfterAChainedRename_Unjournaled_LedgerBlocked_PutsUserRegBackAsItWas()
+    {
+        // w7 follow-up B4 (re-review 4): without a journal (tests, tools) a failed removal after a chained rename takes
+        // ReShade's new override back by hand (OptiScaler's own override is re-applied), so user.reg keeps its shape.
+        var (game, store) = CreateGame("rename-os-chain-unjournaled", GraphicsApi.DirectX12);
+        SeedManagedReShade(game, store);
+        var service = NewService(store, CreatePackage("rename-os-chain-unjournaled-package"));
+        Assert.True((await service.InstallAsync(game, OptiScalerVariant.Stable, null, "dxgi.dll")).Success);
+        Assert.True((await service.RenameProxyAsync(game, "winmm.dll", choice: null)).Success);
+        var userReg = Path.Combine(game.PrefixPath!, "user.reg");
+        var shapeBefore = RegistryShape(userReg);
+        Assert.Equal("native,builtin", Override(game, "winmm"));
+        Assert.Null(Override(game, "dxgi"));
+
+        store.SaveFaultForTesting = () => new IOException("disk full (test)");
+        var removed = await service.RemoveAsync(game);
+        store.SaveFaultForTesting = null;
+
+        Assert.False(removed.Success);
+        Assert.Null(Override(game, "dxgi")); // ReShade's override the removal set is gone again
+        Assert.Equal("native,builtin", Override(game, "winmm"));
+        Assert.Equal(shapeBefore, RegistryShape(userReg));
+        Assert.True(File.Exists(Path.Combine(game.BinaryDirectory!, "ReShade64.dll")));
+    }
 }

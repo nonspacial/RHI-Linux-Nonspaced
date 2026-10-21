@@ -108,7 +108,10 @@ public static class XnaGacReShade
     /// current) when the recorded folder, after <paramref name="mapGameFolder"/> (the game-folder move; null = none), is not
     /// the folder the game's prefix holds now, because the prefix moved on its own (a custom, Heroic or Lutris prefix).
     /// Null for any other record, an unlisted game, or a prefix whose GAC folder cannot be found (nothing to re-point to).
-    /// Reads folder existence only.
+    /// <para>Re-review 1: the copies count as moved only when they really left: the recorded folder no longer holds RHI's
+    /// <c>d3d9.dll</c> and the current folder does, and the two folders differ after links are resolved. A game switched
+    /// to another prefix (the old one intact), a manifest naming another folder, or the same prefix reached through a
+    /// symlinked spelling is not moved: the records still describe where RHI's files are. Reads file existence only.</para>
     /// </summary>
     internal static (string Old, string New)? MovedFolder(LinuxDeploymentRecord record, Func<string, string>? mapGameFolder, DetectedGame game)
     {
@@ -116,9 +119,9 @@ public static class XnaGacReShade
         var recorded = record.Metadata[FolderMetadataKey];
         if (mapGameFolder is not null) recorded = mapGameFolder(recorded);
         if (ResolveFolder(game).Folder is not { } current) return null;
-        return Path.TrimEndingDirectorySeparator(Path.GetFullPath(recorded)) == Path.TrimEndingDirectorySeparator(Path.GetFullPath(current))
-            ? null
-            : (recorded, current);
+        if (PathIdentity.Canonicalize(recorded) == PathIdentity.Canonicalize(current)) return null;
+        if (File.Exists(Path.Combine(recorded, ProxyName)) || !File.Exists(Path.Combine(current, ProxyName))) return null;
+        return (recorded, current);
     }
 
     /// <summary>The bitness the GAC folder declares (<c>GAC_32</c> = x86, <c>GAC_64</c> = x64), else the game's.</summary>
