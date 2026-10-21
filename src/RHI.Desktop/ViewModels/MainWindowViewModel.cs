@@ -172,6 +172,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w8 lane rows: shell hooks (one member each; logic lives in your presenter)
     // w8/reshade-ini rows
     // w8/renodx rows
+    public RenoDxEngineIniPresenter RenoDxEngineIni => new(this, _managedComponents); // #217: the RenoDX ⚙'s Engine.ini rows
     // w8/commit-point rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>

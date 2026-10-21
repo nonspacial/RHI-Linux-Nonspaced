@@ -141,7 +141,7 @@ internal sealed class AppComposition
         var dlss = new DlssManagerService(http, deployment, Path.Combine(LinuxPaths.CacheHome, "rhi-linux"));
         var renodx = new RenoDxDeploymentService(http, records, renodxCatalog, upstreamManifest: upstreamManifest,
             unityDatabase: new RenoDxUnityDatabaseService(http),
-            controlUe: new ControlUePostInstallService(deployment, dlss));
+            controlUe: new ControlUePostInstallService(deployment, dlss), journal: journal); // w8/renodx (#205): journaled
         var renodxUpgrade = new RenoDxUpgradeDeploymentService(http, records, upstreamManifest, journal: journal);
         var relimiter = new GitHubReShadeAddonDeploymentService(http, records, journal: journal, definition: new GitHubReShadeAddonDefinition(
             ManagedComponentKind.ReLimiter,
@@ -325,6 +325,7 @@ internal sealed class AppComposition
         // w8/reshade-ini rows
         reshade.IniDefaults = ReShadePresetService.KeepingSelection(reshade.IniDefaults, records); // #206: a regenerated ReShade.ini keeps RHI's preset
         // w8/renodx rows
+        renodx.UnrealDatabase = renodxUnrealDatabase; // #218: UE-Extended's install settings (Method, Upgrades)
         // w8/commit-point rows
         return new AppComposition
         {

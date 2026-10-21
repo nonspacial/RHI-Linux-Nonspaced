@@ -139,41 +139,6 @@ public sealed class RenoDxIniSafetyTests : IDisposable
         Assert.Null(store.Find(detected, ManagedComponentKind.RenoDX));
     }
 
-    [Fact]
-    public void RestoreSnapshots_OneSnapshotThrowingSomethingElse_StillRestoresTheRestAndKeepsItsBytes()
-    {
-        var good = Path.Combine(_root, "good.ini");
-        File.WriteAllText(good, "changed");
-        var bad = Path.Combine(_root, "bad\0dir", "ReShade.ini"); // ArgumentException, not an IOException
-        var fallback = Path.Combine(_root, "fallback");
-
-        var notes = RenoDxDeploymentService.RestoreSnapshots(
-        [
-            new(bad, "bad original"u8.ToArray()),
-            new(good, "good original"u8.ToArray())
-        ], fallback);
-
-        Assert.Equal("good original", File.ReadAllText(good));
-        var note = Assert.Single(notes);
-        Assert.StartsWith($"Could not restore {bad}", note, StringComparison.Ordinal);
-        var kept = Assert.Single(Directory.EnumerateFiles(fallback));
-        Assert.EndsWith(kept, note, StringComparison.Ordinal);
-        Assert.Equal("bad original", File.ReadAllText(kept));
-    }
-
-    [Fact]
-    public void RestoreSnapshots_FileStillHoldingItsSnapshot_IsLeftAlone()
-    {
-        var ini = Path.Combine(_root, "ReShade.ini");
-        File.WriteAllText(ini, "unchanged");
-        File.SetUnixFileMode(ini, ReadOnly);
-
-        var notes = RenoDxDeploymentService.RestoreSnapshots([new(ini, "unchanged"u8.ToArray())], Path.Combine(_root, "fallback"));
-
-        Assert.Empty(notes);
-        Assert.Single(Directory.EnumerateFileSystemEntries(_root));
-    }
-
     public void Dispose()
     {
         try { Directory.Delete(_root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }

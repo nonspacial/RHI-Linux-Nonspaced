@@ -64,12 +64,14 @@ public sealed partial class RenoDxSettingsDialogViewModel : ObservableObject
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
     internal static RenoDxSettingsDialogViewModel For(MainWindowViewModel shell, RenoDxCompatibilitySnapshot snapshot)
-        => new(snapshot, shell.SelectedGame?.Name, shell.SetRenoDxCompatibilitySetting, shell.IniPresets);
+        => new(snapshot, shell.SelectedGame?.Name, shell.SetRenoDxCompatibilitySetting, shell.IniPresets, shell.RenoDxEngineIni);
 
     internal RenoDxSettingsDialogViewModel(RenoDxCompatibilitySnapshot snapshot, string? gameName,
-        Func<string, string, ComponentOperationResult> set, IniPresetsPresenter? iniPresets = null)
+        Func<string, string, ComponentOperationResult> set, IniPresetsPresenter? iniPresets = null, RenoDxEngineIniPresenter? engineIni = null)
     {
         IniPresets = iniPresets;
+        // w8/renodx (#217): the Engine.ini rows do not depend on ReShade.ini; shown only where they apply.
+        EngineIniRows = engineIni?.RowsFor(line => Message = line) ?? [];
         WindowTitle = TF("Win.RenoDxCompatibilityTitle", gameName ?? T("Win.Game"));
         Warning = string.IsNullOrWhiteSpace(snapshot.Warning) ? null : UiLocalizationService.Present(snapshot.Warning);
         IniPath = string.IsNullOrWhiteSpace(snapshot.IniPath) ? null : snapshot.IniPath;
@@ -89,6 +91,10 @@ public sealed partial class RenoDxSettingsDialogViewModel : ObservableObject
     public bool HasRows => Rows.Count > 0;
     public string? IniPath { get; }
     public bool HasIniPath => IniPath is not null;
+
+    /// <summary>w8/renodx (#217): the Engine.ini On/Off rows (none where nothing applies).</summary>
+    public IReadOnlyList<RenoDxEngineIniRow> EngineIniRows { get; }
+    public bool HasEngineIniRows => EngineIniRows.Count > 0;
 
     /// <summary>The #182 rows' presenter (hosted by the view); null in tests.</summary>
     public IniPresetsPresenter? IniPresets { get; }

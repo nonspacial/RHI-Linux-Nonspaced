@@ -243,7 +243,8 @@ internal sealed class UpstreamEngineIniFileManager
 
         if (!changed) return;
         TrimTrailingBlankLines(lines);
-        if (state.FileCreatedByRhi && lines.All(string.IsNullOrWhiteSpace))
+        // A file RHI created and left empty goes; never a link (the user put a file of theirs behind it since).
+        if (state.FileCreatedByRhi && lines.All(string.IsNullOrWhiteSpace) && new FileInfo(state.IniPath).LinkTarget is null)
         {
             File.Delete(state.IniPath);
             return;
@@ -366,8 +367,40 @@ internal sealed class UpstreamEngineIniFileManager
 
     internal static string? ResolveTargetPath(DetectedGame game)
     {
-        var resolved = LumaEngineIniOverrideManager.ResolveEngineIniPath(game);
+        // w8/renodx (#217): upstream's ResolveEngineIniDir also looks in Documents\My Games\<game name>\Saved\Config (UE4 games
+        // such as Borderlands 3 keep their config there), after the project's LocalAppData folder.
+        var resolved = LumaEngineIniOverrideManager.ResolveEngineIniPath(game) ?? ResolveMyGamesEngineIni(game);
         return resolved is null ? null : ResolveExistingCaseInsensitive(resolved);
+    }
+
+    /// <summary>
+    /// <c>Documents/My Games/&lt;game name&gt;/Saved/Config/&lt;platform&gt;/Engine.ini</c> in the game's prefix (the name as is, then
+    /// without ™/®/©, as upstream), only where that platform folder exists (WinGDK, Windows, WindowsNoEditor).
+    /// </summary>
+    private static string? ResolveMyGamesEngineIni(DetectedGame game)
+    {
+        if (string.IsNullOrWhiteSpace(game.PrefixPath) || string.IsNullOrWhiteSpace(game.Name)) return null;
+        var users = Path.Combine(game.PrefixPath, "drive_c", "users");
+        if (!Directory.Exists(users)) return null;
+        var names = new[] { game.Name.Trim(), game.Name.Replace("®", "").Replace("™", "").Replace("©", "").Trim() }
+            .Where(name => name.Length > 0 && name == Path.GetFileName(name) && !name.Contains("..", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal).ToArray();
+        IEnumerable<string> userDirs;
+        try { userDirs = Directory.EnumerateDirectories(users).ToArray(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("engine-ini", $"Could not list the prefix users in {users}", ex);
+            return null;
+        }
+        foreach (var user in userDirs.OrderByDescending(path => Path.GetFileName(path).Equals("steamuser", StringComparison.OrdinalIgnoreCase))
+                     .ThenBy(path => path, StringComparer.OrdinalIgnoreCase))
+            foreach (var name in names)
+                foreach (var platform in new[] { "WinGDK", "Windows", "WindowsNoEditor" })
+                {
+                    var folder = Path.Combine(user, "Documents", "My Games", name, "Saved", "Config", platform);
+                    if (Directory.Exists(folder)) return Path.Combine(folder, "Engine.ini");
+                }
+        return null;
     }
 
     private static string ResolveExistingCaseInsensitive(string path)

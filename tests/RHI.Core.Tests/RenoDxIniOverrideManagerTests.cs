@@ -206,39 +206,6 @@ public sealed class RenoDxIniOverrideManagerTests : IDisposable
         Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(real));
     }
 
-    [Fact]
-    [SupportedOSPlatform("linux")]
-    public void RestoreSnapshots_RestoresAtomicallyAndKeepsWhatItCannotRestore()
-    {
-        var writable = Path.Combine(_root, "writable.ini");
-        File.WriteAllText(writable, "changed");
-        var locked = Path.Combine(_root, "locked");
-        Directory.CreateDirectory(locked);
-        var lockedIni = Path.Combine(locked, "ReShade.ini");
-        File.WriteAllText(lockedIni, "changed");
-        var fallback = Path.Combine(_root, "fallback");
-        File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        try
-        {
-            var notes = RenoDxDeploymentService.RestoreSnapshots(
-            [
-                new(writable, "original"u8.ToArray()),
-                new(lockedIni, "locked original"u8.ToArray())
-            ], fallback);
-
-            Assert.Equal("original", File.ReadAllText(writable));
-            var note = Assert.Single(notes);
-            Assert.StartsWith($"Could not restore {lockedIni}", note, StringComparison.Ordinal);
-            var kept = Assert.Single(Directory.EnumerateFiles(fallback));
-            Assert.EndsWith(kept, note, StringComparison.Ordinal);
-            Assert.Equal("locked original", File.ReadAllText(kept));
-        }
-        finally
-        {
-            File.SetUnixFileMode(locked, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-    }
-
     private static Func<Stream, Stream> DiskFullAfter(int bytes) => inner => new FailingStream(inner, bytes);
 
     private sealed class FailingStream(Stream inner, int allowed) : Stream

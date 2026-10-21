@@ -133,21 +133,33 @@ public sealed class UpstreamEngineIniFileManagerTests : IDisposable
         Assert.Equal(locked, File.GetUnixFileMode(ini));
     }
 
-    [Fact]
-    public void RenoDxRollback_RestoresALockedEngineIniAndKeepsItLocked()
+    // #205: RenoDX's rollback runs through its journaled operation; a locked Engine.ini comes back with its bytes AND its lock.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RenoDxRollback_RestoresALockedEngineIniAndKeepsItLocked(bool journaled)
     {
         const UnixFileMode locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
         var game = CreateGame("RollbackProject");
         var ini = LumaEngineIniOverrideManager.ResolveEngineIniPath(game)!;
         Directory.CreateDirectory(Path.GetDirectoryName(ini)!);
-        File.WriteAllText(ini, "changed by the failed install");
+        File.WriteAllText(ini, "[SystemSettings]\nUserKeep=42\n");
         File.SetUnixFileMode(ini, locked);
+        var journal = journaled
+            ? SimulatedDeath.NewJournal(Path.Combine(_root, "journal"), new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json"))).Journal
+            : null;
+        var (opened, refusal) = await DeploymentScope.BeginAsync(journal, "test", game, ManagedComponentKind.RenoDX, default);
+        Assert.Null(refusal);
+        await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
+        await inis.TrackEngineIniAsync(ini, default);
+        LumaEngineIniOverrideManager.WriteUserEngineIni(ini, ["changed by the failed install"]);
+        File.SetUnixFileMode(ini, UnixFileMode.UserRead | UnixFileMode.UserWrite); // and its lock lifted
 
-        var notes = RenoDxDeploymentService.RestoreSnapshots(
-            [RenoDxDeploymentService.FileSnapshot.EngineIni(ini, "[SystemSettings]\nUserKeep=42\n"u8.ToArray())],
-            Path.Combine(_root, "fallback"));
+        var rollback = await scope.RollbackAsync();
+        inis.RestoreModesAfterRollback();
 
-        Assert.Empty(notes);
+        Assert.True(rollback.Success, string.Join("; ", rollback.Failures));
         Assert.Equal("[SystemSettings]\nUserKeep=42\n", File.ReadAllText(ini));
         Assert.Equal(locked, File.GetUnixFileMode(ini));
     }

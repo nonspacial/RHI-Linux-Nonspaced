@@ -1548,6 +1548,14 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.XnaGacReShade.GacIniNotUpdatedAfterMovePrefix,
             "O arquivo de configurações do ReShade na pasta de assemblies .NET do prefixo não pôde ser atualizado e ainda indica a pasta antiga do jogo: use Aplicar / Atualizar na seção do ReShade uma vez. Motivo: "),
         // w8/renodx rows
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotManagedPrefix,
+            "As configurações do Engine.ini do RenoDX precisam do RenoDX instalado pelo RHI: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotOfferedPrefix,
+            "Esta configuração do Engine.ini não se aplica a este jogo: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix, // #217 review 2
+            "As linhas de gradação de cor/HDR do Unreal do RenoDX não foram gravadas no Engine.ini: "),
+        (RHI.Platform.Linux.Deployment.RenoDxDeploymentService.EngineIniNotTextMessage,
+            "O Engine.ini não é texto UTF-8 nem UTF-16, então o RHI não o edita."),
         // w8/commit-point rows
     ];
 
