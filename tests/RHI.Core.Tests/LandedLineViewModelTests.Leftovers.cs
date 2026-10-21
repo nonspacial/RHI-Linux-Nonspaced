@@ -46,7 +46,7 @@ public sealed partial class LandedLineViewModelTests
         Assert.Equal(IniPresetsPresenter.BatchSummary("Packs.ini", expected), line);
         Assert.EndsWith(Note(language, pair.First.Name), line, StringComparison.Ordinal);
         Assert.DoesNotContain(pair.Second.Name, line, StringComparison.Ordinal);
-        Assert.True(File.Exists(Path.Combine(pair.First.BinaryDirectory, "Packs.ini")));
+        Assert.True(File.Exists(Path.Combine(pair.First.BinaryDirectory!, "Packs.ini")));
     }
 
     // ── item 2: ReShade's install applies the game's add-ons after it ───────────────────────────────────────────
