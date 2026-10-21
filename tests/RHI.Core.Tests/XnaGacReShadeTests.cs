@@ -199,11 +199,12 @@ public sealed class XnaGacReShadeTests : IDisposable
 
     // W7 final review 1 and 2: the "arrived there" half of the move rule. A game switched to a fresh prefix after the old one
     // was deleted is not a move when the new GAC folder has no d3d9.dll, nor when its d3d9.dll is not RHI's bytes (only the
-    // name matches): the Guard stays off, so the game is not blocked behind a Repair that could only fail.
+    // name matches): the Guard stays off, so the game is not blocked behind a Repair that could only fail. Removal then
+    // works and leaves that file alone; a reinstall refuses it plainly (or, with none, installs into the new prefix).
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task NotMoved_OldPrefixDeleted_NewPrefixWithoutRhisCopy_GuardIsNull(bool foreignD3d9InTheNewFolder)
+    public async Task NotMoved_OldPrefixDeleted_NewPrefixWithoutRhisCopy_GuardIsNull_AndRemovalWorks(bool foreignD3d9InTheNewFolder)
     {
         var name = foreignD3d9InTheNewFolder ? "fresh-prefix-foreign" : "fresh-prefix-empty";
         var fx = Fixture(name);
@@ -218,6 +219,14 @@ public sealed class XnaGacReShadeTests : IDisposable
 
         Assert.Null(relocation.Guard(game));
         Assert.False(relocation.NeedsRepair(game));
+        var removed = await fx.Service.RemoveAsync(game);
+        Assert.True(removed.Success, removed.Message);
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "d3d9.dll")));
+        Assert.Null(fx.Records.Find(game, ManagedComponentKind.ReShade));
+        if (foreignD3d9InTheNewFolder) Assert.Equal("MZ not RHI's ReShade", File.ReadAllText(Path.Combine(newGac, "d3d9.dll")));
+        var again = await fx.Service.InstallAsync(game, new ReShadeInstallOptions());
+        Assert.True(foreignD3d9InTheNewFolder ? !again.Success : again.Success, again.Message);
+        if (foreignD3d9InTheNewFolder) Assert.StartsWith(XnaGacReShade.ForeignFilePrefix, again.Message);
     }
 
     // W7 final review 2: the game folder moved too (so Repair after move runs), the old prefix is gone and the prefix in use
