@@ -542,7 +542,9 @@ public sealed class RenoDxDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            inis.RestoreModesAfterRollback();
+            // #204 (w8 integration): the stamped record landed and then the save reported an error: finished as committed.
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX" + EngineKeysNote(engineKeysSkipped), false, target);
+            if (rollback.RolledBack) inis.RestoreModesAfterRollback();
             return ComponentOperationResult.Fail($"RenoDX install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -741,7 +743,8 @@ public sealed class RenoDxDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            inis.RestoreModesAfterRollback();
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX", false, ini); // #204: the switch's record landed
+            if (rollback.RolledBack) inis.RestoreModesAfterRollback();
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -907,7 +910,8 @@ public sealed class RenoDxDeploymentService
         catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts everything back
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
-            inis.RestoreModesAfterRollback();
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX" + EngineKeysNote(engineKeysSkipped), false, target); // #204
+            if (rollback.RolledBack) inis.RestoreModesAfterRollback();
             return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -1206,7 +1210,9 @@ public sealed class RenoDxDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "renodx").ConfigureAwait(false);
-            inis.RestoreModesAfterRollback();
+            // #204: the record's removal landed and then the save reported an error: the removal stands (Control UE included).
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX", removal: true);
+            if (rollback.RolledBack) inis.RestoreModesAfterRollback();
             return ComponentOperationResult.Fail(
                 $"{(inControlStep ? ControlUeRestoreIncompletePrefix : "RenoDX removal failed: ")}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }

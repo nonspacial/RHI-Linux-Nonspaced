@@ -71,12 +71,26 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         await using var scope = opened!;
         // A failure propagates as before (the batch counts it as failed); the undisposed scope rolls the file back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
-        var hashBefore = File.Exists(written) ? FileHash.Sha256Hex(written) : null;
-        var result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], defaults, game.InstallPath);
-        await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
-        if (ReShadeDeploymentService.RecordIniWrite(record, result, hashBefore))
-            records.Upsert(scope.Stamp(record));
+        ReShadeIniApplyResult result;
+        try
+        {
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+            var hashBefore = File.Exists(written) ? FileHash.Sha256Hex(written) : null;
+            result = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], defaults, game.InstallPath);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+            if (ReShadeDeploymentService.RecordIniWrite(record, result, hashBefore))
+                records.Upsert(scope.Stamp(record));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // #204 (w8 integration): ReShade's record landed and then the save reported an error: the deploy stands.
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade.ini", false, written);
+            // Not committed: propagates as before; a rollback that could not finish, or a ledger that cannot tell (nothing
+            // undone, decided before the game's next operation), is said in the message.
+            if (DeploymentScope.RollbackNote(rollback) is { Length: > 0 } note) throw new IOException(ex.Message + note, ex);
+            throw;
+        }
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(DeployedPrefix + result.Path, result.Path);
     }
@@ -193,6 +207,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed(AddonIniName(kind)!, false, target); // #204: the record landed
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -259,6 +274,7 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed(AddonIniName(kind)!, false, target); // #204: the record landed
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -336,17 +352,31 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade settings: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
-        // A failure propagates (the batch counts it as failed); the undisposed scope puts every tracked file back.
+        // A failure propagates (the batch counts it as failed); the scope puts every tracked file back.
         cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-        await scope.TrackAllAsync(plan.Targets, cancellationToken).ConfigureAwait(false);
-        var mainTarget = plan.MainTarget;
-        var hashBefore = File.Exists(mainTarget) ? FileHash.Sha256Hex(mainTarget) : null;
-        plan.CreateScreenshotFolder();
-        IniLines.WriteAll(plan.Writes);
-        foreach (var target in plan.Targets.Where(File.Exists))
-            await scope.DeclareWrittenContentAsync(target, cancellationToken).ConfigureAwait(false);
-        if (plan.WritesMainIni) ReShadeDeploymentService.RecordSettingsWrite(record, plan.MainIni, mainTarget, hashBefore);
-        records.Upsert(scope.Stamp(record));
+        try
+        {
+            await scope.TrackAllAsync(plan.Targets, cancellationToken).ConfigureAwait(false);
+            var mainTarget = plan.MainTarget;
+            var hashBefore = File.Exists(mainTarget) ? FileHash.Sha256Hex(mainTarget) : null;
+            plan.CreateScreenshotFolder();
+            IniLines.WriteAll(plan.Writes);
+            foreach (var target in plan.Targets.Where(File.Exists))
+                await scope.DeclareWrittenContentAsync(target, cancellationToken).ConfigureAwait(false);
+            if (plan.WritesMainIni) ReShadeDeploymentService.RecordSettingsWrite(record, plan.MainIni, mainTarget, hashBefore);
+            records.Upsert(scope.Stamp(record));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // #204 (w8 integration): ReShade's record landed and then the save reported an error: the settings stand
+            // (Apply to all counts the game as updated).
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade.ini", false, plan.MainIni);
+            // Not committed: propagates as before; a rollback that could not finish, or a ledger that cannot tell (nothing
+            // undone, decided before the game's next operation), is said in the message.
+            if (DeploymentScope.RollbackNote(rollback) is { Length: > 0 } note) throw new IOException(ex.Message + note, ex);
+            throw;
+        }
         await scope.CommitAsync().ConfigureAwait(false);
         return ComponentOperationResult.Ok(plan.MainIni, plan.MainIni);
     }

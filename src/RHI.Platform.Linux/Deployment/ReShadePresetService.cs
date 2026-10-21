@@ -272,6 +272,7 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade", false, target); // #204: the preset's record landed
             return Refused(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -324,6 +325,7 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("ReShade", removal: true); // #204: the preset's removal landed
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);

@@ -149,8 +149,9 @@ public sealed class ControlUeFrameGenerationService
                 previous, gameRoot: game.InstallPath, section: HdrSection);
             if (applied.State is null)
             {
-                await scope.RollbackAsync().ConfigureAwait(false);
-                return HdrNotSetPrefix + HdrNoIniMessage;
+                // Before the commit write: never Committed; an Undecided ledger (another save landed, then it broke) says so.
+                var nothingWritten = await scope.RollbackAsync().ConfigureAwait(false);
+                return HdrNotSetPrefix + HdrNoIniMessage + DeploymentScope.RollbackNote(nothingWritten);
             }
             await scope.DeclareWrittenContentAsync(written, CancellationToken.None).ConfigureAwait(false);
             renoDx.Metadata[HdrMetadataKey] = RenoDxIniOverrideManager.Serialize(applied.State);
@@ -160,6 +161,8 @@ public sealed class ControlUeFrameGenerationService
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // #204 (w8 integration): RenoDX's record with the key's ownership landed and then the save reported an error.
+            if (rollback.Committed) return " " + DeploymentScope.Landed(HdrKey + "=" + value).Message; // a note: leading space, as HdrSetPrefix
             if (!rollback.Success)
                 AppLog.Warn("control-ue", $"FgSlHdr10 rollback did not complete: {string.Join("; ", rollback.Failures)}");
             return HdrNotSetPrefix + ex.Message + DeploymentScope.RollbackNote(rollback);

@@ -159,6 +159,7 @@ public sealed class RenoDxUpgradeDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX Upgrade", false, target); // #204
             return ComponentOperationResult.Fail($"RenoDX Upgrade install failed: {ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);
@@ -208,6 +209,7 @@ public sealed class RenoDxUpgradeDeploymentService
         catch (Exception ex)
         {
             var rollback = await scope.RollbackRemovalAsync(_records, game, record, "renodx-upgrade").ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX Upgrade", true, changed.ToArray()); // #204
             return ComponentOperationResult.Fail($"{RemovalRolledBackPrefix}{ex.Message}{DeploymentScope.RollbackNote(rollback)}");
         }
         await scope.CommitAsync().ConfigureAwait(false);

@@ -49,4 +49,30 @@ public sealed partial class RenoDxUpgradeDeploymentServiceTests
         Assert.Equal(JournalRecoveryOutcome.RolledBack, Assert.Single(report!.Entries).Outcome);
         Assert.Equal(bytes, File.ReadAllBytes(target));
     }
+
+    // w8 integration (#204): RenoDX Upgrade's install and removal with their commit write landing and then throwing are
+    // finished as committed in both seam shapes (the add-on stays with its record / stays gone with no record).
+    [Theory]
+    [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
+    [Trait("Category", "CommitPoint")]
+    public async Task InstallAndRemoval_CommitWriteLandsThenThrows_AreKept(LandedShape shape)
+    {
+        var game = CreateGame(0x8664, withReShade: true);
+        var ledger = Path.Combine(_root, "landed-" + Guid.NewGuid().ToString("N") + ".json");
+        var store = new LinuxDeploymentRecordStore(ledger);
+        using var http = NewInstallHttp(CreatePe(0x8664, 96 * 1024, 0x97));
+        var journalDir = Path.Combine(_root, "journal-" + Guid.NewGuid().ToString("N"));
+        var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+        var service = new RenoDxUpgradeDeploymentService(http, store, new UpstreamRhiManifestService(http, "https://example.test/manifest.json"),
+            Path.Combine(_root, "cache-" + Guid.NewGuid().ToString("N")), journal);
+
+        await LandedRow.RunAsync(store, shape, at: 1, () => service.InstallAsync(game));
+        var target = new LinuxDeploymentRecordStore(ledger).Find(game, ManagedComponentKind.RenoDXUpgrade)!.Files.Single().Path;
+        Assert.True(File.Exists(target));
+
+        await LandedRow.RunAsync(store, shape, at: 2, () => service.RemoveAsync(game), removal: true); // 1 = the removal's stamp
+        Assert.Null(new LinuxDeploymentRecordStore(ledger).Find(game, ManagedComponentKind.RenoDXUpgrade));
+        Assert.False(File.Exists(target));
+        Assert.Empty(Directory.GetFiles(journalDir));
+    }
 }

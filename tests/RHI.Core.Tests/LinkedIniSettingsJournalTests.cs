@@ -13,7 +13,7 @@ namespace RHI.Core.Tests;
 /// byte for byte, so no other game linked to it keeps a line no record lists. Same shape as
 /// <see cref="ReShadeLinkedIniJournalTests"/> (#207, ReShade's own install/update/removal).
 /// </summary>
-public sealed class LinkedIniSettingsJournalTests : IDisposable
+public sealed partial class LinkedIniSettingsJournalTests : IDisposable
 {
     private const string Preset = "[GENERAL]\nTechniques=Bloom@Bloom.fx\n";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-linked-settings-" + Guid.NewGuid().ToString("N"));

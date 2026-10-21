@@ -13,7 +13,7 @@ namespace RHI.Core.Tests;
 /// UE4), Engine.ini's HDR keys with the ⚙ HDR switch — owned per key on RenoDX's record, inside its journaled operation:
 /// removal, Off and switching UE-Extended off take out only RHI's keys.
 /// </summary>
-public sealed class RenoDxUeExtendedHdrTests : IDisposable
+public sealed partial class RenoDxUeExtendedHdrTests : IDisposable
 {
     private const string ReShadeIni = "[GENERAL]\nEffectSearchPaths=.\\mine\\**\n";
     private const string EngineIniBefore = "[SystemSettings]\nUserKeep=42\n";

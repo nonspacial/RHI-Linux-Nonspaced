@@ -32,7 +32,7 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
     }
 
     public Task<ComponentOperationResult> SetHdrAsync(DetectedGame game, LumaHdrMode mode, CancellationToken cancellationToken = default)
-        => ChangeAsync(game, "HDR", async (record, scope, token) =>
+        => ChangeAsync(game, "HDR", async (record, scope, _, token) =>
         {
             var ini = RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory!)
                       ?? throw new InvalidOperationException("ReShade.ini is required before enabling Luma Framework.");
@@ -48,15 +48,15 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
         }, cancellationToken);
 
     public Task<ComponentOperationResult> SetTaaAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
-        => ChangeAsync(game, "TAA", async (record, scope, token) =>
+        => ChangeAsync(game, "TAA", async (record, scope, inis, token) =>
         {
             var previous = LumaEngineIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(LumaEngineIniOverrideManager.MetadataKey));
             var ini = previous?.IniPath ?? LumaEngineIniOverrideManager.ResolveEngineIniPath(game)
                       ?? throw new InvalidOperationException(NoEngineIniPrefix + game.Name);
             // #213: Engine.ini follows its own link rule (a file named Engine.ini in the same prefix or UE project):
-            // tracked at the file the write replaces, never the link.
-            var written = AtomicFile.ResolveUserFileTarget(ini, LumaEngineIniOverrideManager.LinkPolicy(ini));
-            await scope.TrackAsync(written, token).ConfigureAwait(false);
+            // tracked at the file the write replaces, never the link. w8 integration: through RenoDX's one Engine.ini
+            // tracker (#205), so its Unix mode (a user's read-only lock) and any folder the write creates are journaled too.
+            var written = await inis.TrackEngineIniAsync(ini, token).ConfigureAwait(false);
             var state = LumaEngineIniOverrideManager.SetTaa(ini, previous, on);
             if (File.Exists(written)) await scope.DeclareWrittenContentAsync(written, token).ConfigureAwait(false);
             record.Metadata[LumaEngineIniOverrideManager.MetadataKey] = state is null ? "" : LumaEngineIniOverrideManager.Serialize(state);
@@ -64,7 +64,7 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
         }, cancellationToken);
 
     private async Task<ComponentOperationResult> ChangeAsync(DetectedGame game, string what,
-        Func<LinuxDeploymentRecord, DeploymentScope, CancellationToken, Task<string>> change, CancellationToken cancellationToken)
+        Func<LinuxDeploymentRecord, DeploymentScope, RenoDxIniTracking, CancellationToken, Task<string>> change, CancellationToken cancellationToken)
     {
         if (writeRefusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
         // Find hands out a copy; the ledger changes only through the stamped Upsert below.
@@ -73,16 +73,21 @@ public sealed class LumaSettingsService(LinuxDeploymentRecordStore records, Depl
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"Luma {what}: {game.Name}", game, ManagedComponentKind.LumaFramework, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
         await using var scope = opened!;
+        var inis = new RenoDxIniTracking(scope);
         string message;
+        string? changed = null;
         try
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
-            message = await change(record, scope, cancellationToken).ConfigureAwait(false);
+            message = changed = await change(record, scope, inis, cancellationToken).ConfigureAwait(false);
             records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            // #204 (w8 integration): Luma's record landed and then the save reported an error: the change stands.
+            if (rollback.Committed) return DeploymentScope.Landed("Luma", false, changed!);
+            if (rollback.RolledBack) inis.RestoreModesAfterRollback(); // unjournaled: the Engine.ini lock back
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);

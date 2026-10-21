@@ -160,6 +160,7 @@ public sealed class RenoDxPeakNits(LinuxDeploymentRecordStore records, Deploymen
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
         {
             var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            if (rollback.Committed) return DeploymentScope.Landed("RenoDX", false, ini); // #204: the peak brightness landed
             return ComponentOperationResult.Fail(ex.Message + DeploymentScope.RollbackNote(rollback));
         }
         await scope.CommitAsync().ConfigureAwait(false);

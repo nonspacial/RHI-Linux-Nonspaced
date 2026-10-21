@@ -542,6 +542,13 @@ public sealed class WaveOneMessageLocalizationTests
         yield return NrCostScalerService.FailedRolledBackPrefix + E + DeploymentScope.RollbackNote(
             new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
         yield return $"{DeploymentScope.Landed("ShortFuse", removal: true).Message} {ShortFuseDeploymentService.UalKeptPrefix}{E}";
+        // w8 integration rows (#204 on the operations the other wave-8 lanes journaled)
+        yield return DeploymentScope.Landed("RenoDX · " + RenoDxDeploymentService.EngineIniKeysNotWrittenPrefix + E).Message;
+        yield return DeploymentScope.Landed("ReShade", removal: true).Message;
+        yield return ControlUeFrameGenerationService.NotSetUpPrefix + E + " " + DeploymentScope.Landed(ControlUeFrameGenerationService.HdrKey + "=1").Message;
+        yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
+        yield return E + DeploymentScope.RollbackNote(new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

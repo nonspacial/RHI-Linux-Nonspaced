@@ -17,7 +17,7 @@ namespace RHI.Core.Tests;
 /// runs for the prefix the rewrite (not the repair) is refused with a plain note. A crash during the rewrite leaves the
 /// old or the new file, never a mix, and the record agrees.
 /// </summary>
-public sealed class XnaGacIniAfterMoveTests : IDisposable
+public sealed partial class XnaGacIniAfterMoveTests : IDisposable
 {
     private const string GacWindows = @"C:\Windows\Microsoft.NET\assembly\GAC_32\Microsoft.Xna.Framework.Graphics\v4.0_4.0.0.0__842cf8be1de50553";
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-xna-gac-move-" + Guid.NewGuid().ToString("N"));

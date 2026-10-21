@@ -6,7 +6,7 @@ using RHI.Platform.Linux.Settings;
 namespace RHI.Core.Tests;
 
 /// <summary>#181: user INI templates, the template merge into ReShade.ini, Deploy X.ini and the "all games" batches.</summary>
-public sealed class UserIniTests : IDisposable
+public sealed partial class UserIniTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rhi-user-ini-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -683,6 +683,32 @@ public sealed class UserIniTests : IDisposable
         Assert.True((await service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true)).Success);
         Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(relimiter));
         Assert.False(File.GetUnixFileMode(relimiter).HasFlag(UnixFileMode.UserWrite));
+    }
+
+    // w8 integration (#204): Deploy and Restore of an add-on INI, each with its commit write landing and then throwing, are
+    // finished as committed in both seam shapes (the file, the backup and the record agree; nothing is undone).
+    [Theory]
+    [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
+    [Trait("Category", "CommitPoint")]
+    public async Task AddonIni_DeployAndRestore_CommitWriteLandsThenThrows_AreKept(LandedShape shape)
+    {
+        var game = Game("Landed " + shape);
+        var relimiter = Path.Combine(game.BinaryDirectory!, "relimiter.ini");
+        File.WriteAllText(relimiter, "[FrameLimiter]\nmine=1\n");
+        ReLimiterTemplate("[FrameLimiter]\ntarget_fps=117\n");
+        var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "records-" + shape + ".json")).Manage(game, ManagedComponentKind.ReLimiter);
+        var journalDir = Path.Combine(_root, "journal-landed-" + shape);
+        var service = new UserIniService(Templates(), records, _ => null, SimulatedDeath.NewJournal(journalDir, records).Journal);
+
+        await LandedRow.RunAsync(records, shape, at: 1, () => service.DeployAddonIniAsync(game, ManagedComponentKind.ReLimiter, replaceChanged: true));
+        Assert.Equal("[FrameLimiter]\ntarget_fps=117\n", File.ReadAllText(relimiter));
+        Assert.NotNull(service.AddonIniBackup(game, ManagedComponentKind.ReLimiter)); // the record names the backup it kept
+        Assert.Equal(UserIniService.AddonIniState.Template, service.InspectAddonIni(game, ManagedComponentKind.ReLimiter));
+
+        await LandedRow.RunAsync(records, shape, at: 1, () => service.RestoreAddonIniAsync(game, ManagedComponentKind.ReLimiter));
+        Assert.Equal("[FrameLimiter]\nmine=1\n", File.ReadAllText(relimiter));
+        Assert.Null(service.AddonIniBackup(game, ManagedComponentKind.ReLimiter));
+        Assert.Empty(Directory.GetFiles(journalDir));
     }
 
     [Fact]

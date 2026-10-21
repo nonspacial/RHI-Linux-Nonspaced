@@ -8,7 +8,7 @@ using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Core.Tests;
 
-public sealed class ControlUePostInstallTests : IDisposable
+public sealed partial class ControlUePostInstallTests : IDisposable
 {
     private const string RendererIni =
         "{\r\n  \"m_bSkipIntroVideos\": false,\r\n  \"m_eHDRPreset\": 0,\r\n  \"m_fHDRMaxNitsOverride\": -1.0\r\n}\r\n";
@@ -588,6 +588,32 @@ public sealed class ControlUePostInstallTests : IDisposable
         Assert.Equal(ControlUeFrameGenerationService.HdrNotSetPrefix + "disk full (test)", note);
         Assert.Equal(original, File.ReadAllText(ini));
         Assert.False(store.Find(game, ManagedComponentKind.RenoDX)!.Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
+        Assert.Empty(Directory.GetFiles(journalDir));
+    }
+
+    // w8 integration (#204): the FgSlHdr10 write's commit write (RenoDX's record with the key's ownership) lands and then
+    // throws: the key and its owner stay, and the note says it was done, not "not set".
+    [Theory]
+    [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
+    [Trait("Category", "CommitPoint")]
+    public async Task FrameGenerationHdrKey_RecordSaveLandsThenThrows_TheKeyAndItsOwnerStay(LandedShape shape)
+    {
+        var (game, service, store) = Arrange(ControlUePostInstallService.GameName);
+        var ini = Path.Combine(game.BinaryDirectory!, "reshade.ini");
+        File.WriteAllText(ini, "[GENERAL]\nEffectSearchPaths=.\\reshade-shaders\\Shaders\n");
+        Assert.True((await service.InstallAsync(game, [game.ExecutablePath!])).Success);
+        var journalDir = Path.Combine(_root, "journal-landed-" + shape);
+        var (journal, _) = SimulatedDeath.NewJournal(journalDir, store);
+        var frameGeneration = new ControlUeFrameGenerationService(null!, store, journal);
+        LandedLedgerWrite.Arm(store, shape, at: 1);
+
+        var note = await frameGeneration.SetHdrKeyAsync(game, useHdr: true);
+        LandedLedgerWrite.Disarm(store);
+
+        Assert.Equal(" " + DeploymentScope.LandedChangePrefix + "FgSlHdr10=1", note);
+        Assert.Contains("FgSlHdr10=1", File.ReadAllText(ini));
+        Assert.True(new LinuxDeploymentRecordStore(Path.Combine(_root, "records.json")).Find(game, ManagedComponentKind.RenoDX)!
+            .Metadata.ContainsKey(ControlUeFrameGenerationService.HdrMetadataKey));
         Assert.Empty(Directory.GetFiles(journalDir));
     }
 

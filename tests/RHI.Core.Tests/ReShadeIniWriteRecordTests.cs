@@ -16,7 +16,7 @@ namespace RHI.Core.Tests;
 /// file that was there before (the Apply's settings stay: the user asked for them, as with Deploy ReShade.ini). A crash at
 /// the commit point puts the files and the record back as before the Apply; one after it keeps both.
 /// </summary>
-public sealed class ReShadeIniWriteRecordTests : IDisposable
+public sealed partial class ReShadeIniWriteRecordTests : IDisposable
 {
     private const string Template = "[GENERAL]\nEffectSearchPaths=.\\rhi-test\\**\nTextureSearchPaths=.\\rhi-test-tex\\**\n";
     private const string Preset = "[GENERAL]\nTechniques=Bloom@Bloom.fx\n";

@@ -15,7 +15,7 @@ namespace RHI.Core.Tests;
 /// RHI's line, and put back the lock state the file had (upstream makes Engine.ini read-only once its key is in). Not for a
 /// non-Unreal game, a game the manifest marks <c>lut: false</c>, or one with a custom Engine.ini file.
 /// </summary>
-public sealed class RenoDxEngineIniLutTests : IDisposable
+public sealed partial class RenoDxEngineIniLutTests : IDisposable
 {
     internal const string Before = "[SystemSettings]\nUserKeep=42\n";
     private const UnixFileMode Open = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;

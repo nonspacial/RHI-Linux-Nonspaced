@@ -15,7 +15,7 @@ namespace RHI.Core.Tests;
 /// the prefix and the shared file byte for byte as before, the link a link, the Engine.ini lock in place, and the ledger
 /// describing the files on disk.
 /// </summary>
-public sealed class RenoDxJournalTests : IDisposable
+public sealed partial class RenoDxJournalTests : IDisposable
 {
     private const string EngineIniBefore = "[SystemSettings]\nUserKeep=42\n";
     private const UnixFileMode Locked = UnixFileMode.UserRead | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
