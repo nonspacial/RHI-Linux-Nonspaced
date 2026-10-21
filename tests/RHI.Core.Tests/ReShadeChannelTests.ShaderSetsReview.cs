@@ -387,4 +387,65 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(firstRecord, JsonSerializer.Serialize(store.Find(first, ManagedComponentKind.ReShade)));
         Assert.True(File.Exists(PackFile(second)));
     }
+
+    // ── Review minors 5 and 7 ──────────────────────────────────────────────────────────────────────────────────
+
+    // Minor 5: with the ledger unreadable (records read as none) an install that ReShade then refuses must not save the
+    // game as Global: once the ledger is back, its recorded packs are adopted as Select, as before.
+    [Fact]
+    public async Task Review_R5_UnreadableLedger_NeverPinsTheChoice()
+    {
+        var (game, store) = SetGame("r5");
+        var cache = Path.Combine(_root, "r5-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r5");
+        var service = SetService(store, cache, null); // installed by a build before #179: no choice saved
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false, ShaderPackIds = ["CrosireMaster"] })).Success);
+        var ledger = Path.Combine(_root, "r5", "records.json");
+        var good = File.ReadAllBytes(ledger);
+        File.WriteAllText(ledger, "{ not json");
+        var withSets = SetService(new LinuxDeploymentRecordStore(ledger), cache, sets);
+
+        _ = await withSets.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false }); // refused or not: nothing pinned
+
+        Assert.Null(sets.ChoiceFor(game)); // cannot be told while the ledger is unreadable
+        Assert.Throws<IOException>(() => sets.SetAddonMode(game, ShaderAddonMode.Off)); // nor saved
+        File.WriteAllBytes(ledger, good);
+        var back = sets.ChoiceFor(game)!;
+        Assert.Equal((ShaderAddonMode.Select, false), (back.ShaderMode, back.Saved));
+        Assert.Equal(["CrosireMaster"], back.ShaderPackIds);
+    }
+
+    private sealed class CancelsWhenAsked(CancellationTokenSource cancel) : IGameRunningProbe
+    {
+        public bool IsRunning(DetectedGame game)
+        {
+            cancel.Cancel(); // the user's Cancel arrives as this game's unit starts
+            return false;
+        }
+    }
+
+    // Nit 7: a Cancel accepted during a game's compiler step comes back from the service as a failed result; the batch
+    // counts that game (and the rest) as not changed (cancelled), never as “failed, files kept”.
+    [Fact]
+    public async Task Review_R7_CancelDuringTheCompilerStep_CountsAsCancelled_NotFailed()
+    {
+        var (game, store) = CreateGame("r7");
+        var cache = Path.Combine(_root, "r7-cache");
+        SeedShaderCache(cache, "CrosireMaster");
+        var sets = Sets(store, "r7");
+        var service = SetService(store, cache, sets);
+        Assert.True((await service.InstallAsync(game, new ReShadeInstallOptions { ManageIni = false })).Success);
+        var tool = new CompilerTool();
+        var managed = ManagedWithCompilerTool(store, service, tool.Installer(game, succeeds: true));
+        managed.ShaderSets = sets;
+        sets.SetGlobalShaderPackIds(["CrosireMaster"]);
+        using var cancel = new CancellationTokenSource();
+
+        var result = await new ShaderAddonSetBatch(managed, new CancelsWhenAsked(cancel)).ApplyAsync([game], ShaderAddonSetPart.Shaders, cancel.Token);
+
+        Assert.Equal((0, 0, 1, true), (result.Changed, result.Failed, result.NotRun, result.Cancelled));
+        Assert.Equal(0, tool.Runs);
+        Assert.False(File.Exists(PackFile(game)));
+    }
 }

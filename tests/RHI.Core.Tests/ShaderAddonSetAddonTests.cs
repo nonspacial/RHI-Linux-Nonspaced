@@ -268,4 +268,49 @@ public sealed class ShaderAddonSetAddonTests : IDisposable
         Assert.Equal(depth3DFirst, handler.Requests[0] == depth3D);
         Assert.Contains(depth3D, handler.Requests);
     }
+
+    // Review minor 6: a selection that still lives only in the older build's addon-manager.json (upgrade from a build
+    // before #168) is brought into the ledger before the choices are adopted, so it becomes Select, never Global.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void StartUpAdoption_ReconcilesTheOlderBuildsCopyFirst(bool withManager)
+    {
+        var s = Fixture();
+        var game = Game(s, "older-copy", 30);
+        var copy = P("state", "addon-manager.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+        File.WriteAllText(copy, JsonSerializer.Serialize(new
+        {
+            Schema = 1,
+            Games = new Dictionary<string, object> { [LinuxDeploymentRecordStore.GameKey(game)] = new { SelectedIds = new[] { "01" }, Files = Array.Empty<object>() } },
+        }));
+
+        s.Sets.AdoptFromLedger(withManager ? s.Manager : null);
+
+        var choice = s.Sets.ChoiceFor(game)!;
+        if (withManager)
+        {
+            Assert.Equal((ShaderAddonMode.Select, true), (choice.AddonMode, choice.Saved));
+            Assert.Equal(["01"], choice.AddonIds);
+        }
+        else
+        {
+            Assert.Equal(ShaderAddonMode.Global, choice.AddonMode); // the review's finding, without the reconcile
+        }
+    }
+
+    // Review minor 6: an unreadable older copy adopts nothing this time (the next start retries).
+    [Fact]
+    public void StartUpAdoption_WithAnUnreadableCopy_AdoptsNothing()
+    {
+        var s = Fixture();
+        var game = Game(s, "unreadable-copy", 31);
+        var copy = P("state", "addon-manager.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+        File.WriteAllText(copy, "{ not json");
+
+        Assert.Empty(s.Sets.AdoptFromLedger(s.Manager));
+        Assert.False(s.Sets.ChoiceFor(game)!.Saved);
+    }
 }

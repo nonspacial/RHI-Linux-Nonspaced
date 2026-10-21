@@ -619,6 +619,8 @@ public static class UiLocalizationService
         // w7/shader-sets rows
         (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderSetsUnreadableMessage,
             "As escolhas de shaders e add-ons não podem ser lidas; nada foi alterado."),
+        (RHI.Platform.Linux.Settings.GlobalShaderAddonStore.LedgerUnreadableMessage,
+            "Os registros de implantação não podem ser lidos, então a escolha de shaders e add-ons do jogo ainda não pode ser salva."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncNotInstalledMessage,
             "O RHI não instalou o ReShade neste jogo, então ele não tem pacotes de shaders do RHI para alterar."),
         (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncNoneMessage,

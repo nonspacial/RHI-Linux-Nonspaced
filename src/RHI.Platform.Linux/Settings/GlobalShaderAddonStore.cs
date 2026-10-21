@@ -57,6 +57,9 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
 
     internal const string ReShadeShaderPacksKey = "ReShade.ShaderPacks";
 
+    /// <summary>A game's first choice cannot be saved while the deployment records cannot be read (PT-BR pair).</summary>
+    public const string LedgerUnreadableMessage = "The deployment records cannot be read, so the game's shader and add-on choice cannot be saved yet.";
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly JsonFileStore<Document> _file;
@@ -135,7 +138,8 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
 
     /// <summary>
     /// The game's choice: its saved entry, else what the ledger says (migration rule, see the class summary). Null when the
-    /// file cannot be read (callers then keep what the records say).
+    /// file cannot be read, or when the game has no entry and the ledger cannot be read either (review minor 5: its records
+    /// read as none, so the answer would be a wrong “Global”); callers then keep what the records say.
     /// </summary>
     public ShaderAddonGameChoice? ChoiceFor(DetectedGame game)
     {
@@ -145,9 +149,10 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
             var load = _file.Load();
             if (load.IsUnreadable) return null;
             var games = JsonStoreMaps.CaseInsensitive(load.Value?.Games);
-            return GameRecordIdentity.TryGet(games, game, out var entry) && entry is not null
-                ? ToChoice(entry, saved: true)
-                : ToChoice(Adopted(LinuxDeploymentRecordStore.GameKey(game), _records.FindAll(game)), saved: false);
+            if (GameRecordIdentity.TryGet(games, game, out var entry) && entry is not null) return ToChoice(entry, saved: true);
+            return _records.CorruptLedgerPath is null
+                ? ToChoice(Adopted(LinuxDeploymentRecordStore.GameKey(game), _records.FindAll(game)), saved: false)
+                : null;
         }
     }
 
@@ -191,11 +196,17 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
     /// Migration: saves an entry for every game the ledger has a ReShade or Addon Manager record for and this file has no
     /// entry for, with the ledger's packs/add-ons as Select. Returns the keys adopted (empty when nothing changed); throws
     /// <see cref="IOException"/> when the file cannot be read or written.
+    /// <para>Review minor 6: with <paramref name="addonManager"/> (the app's start-up) the Addon Manager first brings its
+    /// older-build copy (<c>addon-manager.json</c>) into the ledger, so a selection that still lives only there is adopted
+    /// as Select rather than as Global; when it cannot (either file unreadable) nothing is adopted this time (the next start
+    /// retries; until then every read computes the same answer).</para>
     /// </summary>
-    public IReadOnlyList<string> AdoptFromLedger()
+    public IReadOnlyList<string> AdoptFromLedger(ReShadeAddonManagerService? addonManager = null)
     {
+        if (addonManager is not null && !addonManager.ReconcileSavedList()) return [];
         lock (_gate)
         {
+            if (_records.CorruptLedgerPath is not null) return []; // records read as none: adopting would save “Global”
             var load = _file.Load();
             if (load.IsUnreadable) throw new JsonStoreUnavailableException(Path.GetFullPath(FilePath), load.QuarantinePath);
             var doc = load.Value ?? new Document();
@@ -282,12 +293,16 @@ public sealed class GlobalShaderAddonStore : IGameStateStore
         }
     }
 
-    // Edits the game's entry (adopted from the ledger first when it has none) and saves.
+    // Edits the game's entry (adopted from the ledger first when it has none) and saves. With no entry and an unreadable
+    // ledger the other half of the choice cannot be told, so nothing is saved (review minor 5).
     private void Change(DetectedGame game, Action<GameEntry> change)
         => Update(doc =>
         {
             if (!GameRecordIdentity.TryGet(doc.Games, game, out var entry) || entry is null)
+            {
+                if (_records.CorruptLedgerPath is not null) throw new IOException(LedgerUnreadableMessage);
                 entry = Adopted(LinuxDeploymentRecordStore.GameKey(game), _records.FindAll(game));
+            }
             entry.ShaderPackIds ??= [];
             entry.AddonIds ??= [];
             change(entry);

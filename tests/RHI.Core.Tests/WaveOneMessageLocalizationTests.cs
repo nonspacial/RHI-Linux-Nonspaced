@@ -412,6 +412,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ReShadeDeploymentService.ShaderSyncNotInstalledMessage;
         yield return ReShadeDeploymentService.ShaderSyncDonePrefix + "Lilium, Prod80";
         yield return ReShadeDeploymentService.ShaderSyncNoneMessage;
+        yield return RHI.Platform.Linux.Settings.GlobalShaderAddonStore.LedgerUnreadableMessage;
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
     }

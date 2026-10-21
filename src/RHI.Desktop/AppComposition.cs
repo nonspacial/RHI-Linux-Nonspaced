@@ -236,7 +236,7 @@ internal sealed class AppComposition
         // w7/shader-sets rows
         var shaderSets = new GlobalShaderAddonStore(records); // #179: global shader/add-on sets, per-game Global / Select / Off
         shaderPacks.Sets = shaderSets; // ReShade's install and update read the game's effective packs from it
-        try { shaderSets.AdoptFromLedger(); } // #179 migration: saved per-game selections become Select, unchanged
+        try { shaderSets.AdoptFromLedger(addonManager); } // #179 migration: saved per-game selections become Select, unchanged (the Addon Manager's older copy reconciled first)
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { AppLog.Warn("shader-sets", "Could not save the shader and add-on choices taken from the deployment records", ex); }
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows

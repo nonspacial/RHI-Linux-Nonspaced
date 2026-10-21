@@ -2797,6 +2797,20 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);
     }
 
+    /// <summary>
+    /// Review minor 4: the game's deployed packs are not its effective set (a batch was cancelled, the game was running, or
+    /// a crash rolled a change back). The Shaders/Add-ons dialog says so; its Apply, or the global set's Save, catches up.
+    /// </summary>
+    public bool ShaderSetBehind(DetectedGame game)
+        => _records.Find(game, ManagedComponentKind.ReShade) is { } record && EffectiveShaderPacks(game) is { } packs
+           && !SamePacks(ReShadeDeploymentService.RecordedShaderPacks(record), packs);
+
+    /// <summary>As <see cref="ShaderSetBehind"/>, for the game's Addon Manager add-ons (never while No Addons holds them).</summary>
+    public bool AddonSetBehind(DetectedGame game)
+        => _addonManager is not null && _records.Find(game, ManagedComponentKind.ReShade) is not null
+           && EffectiveAddons(game) is { HeldByNoAddons: false } effective
+           && !(SameIds(_addonManager.RecordedSelection(game), effective.Ids) && (effective.Ids.Count == 0 || _addonManager.HasRecord(game)));
+
     /// <summary>The update history's name for ReShade's shader packs ("ReShade (reshade-shaders)"; the folder's own name).</summary>
     internal const string ShaderPackHistoryLabel = "reshade-shaders";
 
@@ -2814,8 +2828,7 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         if (_records.Find(game, ManagedComponentKind.ReShade) is null) return new(ShaderSetOutcome.NotApplicable, "");
         if (EffectiveAddons(game) is not { } effective) return new(ShaderSetOutcome.Failed, ShaderSetsUnreadableMessage);
         if (effective.HeldByNoAddons) return new(ShaderSetOutcome.Held, ReShadeAddonSwitch.HeldPrefix + ReShadeAddonManagerService.DisplayName);
-        if (SameIds(_addonManager.RecordedSelection(game), effective.Ids) && (effective.Ids.Count == 0 || _addonManager.HasRecord(game)))
-            return new(ShaderSetOutcome.Unchanged, "");
+        if (!AddonSetBehind(game)) return new(ShaderSetOutcome.Unchanged, "");
         var result = await Track(game, ManagedComponentKind.ReShadeAddonManager, ComponentUpdateAction.Update,
             () => ApplyReShadeAddonSelectionAsync(game, effective.Ids, cancellationToken)).ConfigureAwait(false);
         return new(result.Success ? ShaderSetOutcome.Changed : ShaderSetOutcome.Failed, result.Message);

@@ -41,4 +41,22 @@ public sealed partial class ReShadeAddonManagerService
 
     /// <summary>True when the game has an Addon Manager record.</summary>
     public bool HasRecord(DetectedGame game) => _records.Find(game, RecordKind) is not null;
+
+    /// <summary>
+    /// #179 review minor 6: brings the older-build copy (<c>addon-manager.json</c>) into the ledger before the shader and
+    /// add-on choices are adopted from it at start-up. False when it cannot (the copy or the ledger is unreadable, or the
+    /// write failed): adoption then waits for the next start.
+    /// </summary>
+    public bool ReconcileSavedList()
+    {
+        _gate.Wait();
+        try
+        {
+            return TryReconcile(out _) is ReconcileOutcome.Unchanged or ReconcileOutcome.CopyWritten or ReconcileOutcome.Imported;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 }
