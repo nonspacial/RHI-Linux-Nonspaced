@@ -1,7 +1,28 @@
+using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Platform.Linux.Deployment;
 
 namespace RHI.Platform.Linux.Settings;
+
+/// <summary>
+/// One game's "Apply" of the ReShade Settings values (#206): <see cref="MainIni"/> (the game's ReShade.ini, which may be
+/// a link), the planned writes and, index for index, the file each one replaces (<see cref="Targets"/>).
+/// </summary>
+internal sealed record ReShadeSettingsPlan(string MainIni, IReadOnlyList<IniFileWrite> Writes, IReadOnlyList<string> Targets, string ScreenshotFolder)
+{
+    /// <summary>Whether the main ReShade.ini is written (its numbered siblings may be written without it).</summary>
+    public bool WritesMainIni => Writes.Any(write => write.Path.Equals(MainIni, StringComparison.Ordinal));
+
+    /// <summary>The file a write to the main ReShade.ini replaces (the main file itself when it is not written).</summary>
+    public string MainTarget => Writes.Select((write, i) => (write, i)).Where(x => x.write.Path.Equals(MainIni, StringComparison.Ordinal))
+        .Select(x => Targets[x.i]).FirstOrDefault() ?? MainIni;
+
+    /// <summary>The screenshot folder the settings name (created at the write phase, as upstream does).</summary>
+    public void CreateScreenshotFolder()
+    {
+        if (!string.IsNullOrWhiteSpace(ScreenshotFolder)) Directory.CreateDirectory(ScreenshotFolder);
+    }
+}
 
 public static class ReShadeGlobalSettingsApplier
 {
@@ -53,6 +74,20 @@ public static class ReShadeGlobalSettingsApplier
     /// </summary>
     public static string ApplyToGame(LinuxAppSettings settings, DetectedGame game)
     {
+        var plan = PlanForGame(settings, game);
+        plan.CreateScreenshotFolder();
+        IniLines.WriteAll(plan.Writes);
+        return plan.MainIni;
+    }
+
+    /// <summary>
+    /// What <see cref="ApplyToGame"/> writes into one game, worked out without writing anything (#206: the journaled
+    /// apply tracks every target first): the main file, the planned writes (only files whose lines change) and the file
+    /// each write replaces under the one ReShade.ini link rule (a shared <c>~/.config/ReShade</c> file, never the link).
+    /// Throws, before any write, for a missing folder, an Xbox title RHI must not change, or a link the rule refuses.
+    /// </summary>
+    internal static ReShadeSettingsPlan PlanForGame(LinuxAppSettings settings, DetectedGame game)
+    {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(game);
         var root = game.BinaryDirectory ?? game.InstallPath;
@@ -62,8 +97,6 @@ public static class ReShadeGlobalSettingsApplier
         // Refs #90: nothing of an Xbox title the installer app is working on (or cannot be checked) is changed.
         var mainIni = RHI.Core.Services.XboxWriteGate.Checked(FindCaseInsensitive(root, "ReShade.ini") ?? Path.Combine(root, "ReShade.ini")); // w3/scan hook
         var defaults = SettingsFor(settings, game);
-        var screenshotPath = ResolveScreenshotPath(settings, game);
-        if (!string.IsNullOrWhiteSpace(screenshotPath)) Directory.CreateDirectory(screenshotPath);
 
         // Every file of the game is planned first and written whole or not at all (review finding 6), under the one
         // ReShade.ini link rule (review finding 8).
@@ -76,8 +109,8 @@ public static class ReShadeGlobalSettingsApplier
             if (before is null || !lines.SequenceEqual(before, StringComparer.Ordinal))
                 writes.Add(ReShadeIniManager.PlannedWrite(iniPath, lines, root, game.InstallPath));
         }
-        IniLines.WriteAll(writes);
-        return mainIni;
+        var targets = writes.Select(write => AtomicFile.ResolveUserFileTarget(write.Path, write.Policy)).ToList();
+        return new ReShadeSettingsPlan(mainIni, writes, targets, ResolveScreenshotPath(settings, game));
     }
 
     /// <summary>The Settings values "Apply to all games" writes (upstream <c>ApplyScreenshotSettingsToIni</c>).</summary>

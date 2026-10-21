@@ -25,6 +25,12 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
     /// <summary>ReShade record metadata: JSON list of <see cref="InstalledReShadePreset"/>.</summary>
     public const string MetadataKey = "ReShade.Presets";
 
+    /// <summary>
+    /// #206: ReShade record metadata: the file name of the preset RHI last selected in ReShade.ini (set by an install; no
+    /// longer counted once that preset is removed). A ReShade.ini RHI regenerates keeps it (<see cref="KeepingSelection"/>).
+    /// </summary>
+    public const string SelectedMetadataKey = "ReShade.PresetSelected";
+
     /// <summary>The largest preset RHI copies (presets are a few KiB).</summary>
     public const long MaxPresetBytes = 1024 * 1024;
 
@@ -161,6 +167,31 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
     public IReadOnlyList<InstalledReShadePreset> Installed(DetectedGame game)
         => Read(records.Find(game, ManagedComponentKind.ReShade));
 
+    /// <summary>The preset RHI selected in the game's ReShade.ini (still one RHI installed there), or null.</summary>
+    internal static string? Selected(LinuxDeploymentRecord? record)
+        => record?.Metadata.GetValueOrDefault(SelectedMetadataKey) is { Length: > 0 } name
+           && Read(record).Any(p => p.FileName.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ? name
+            : null;
+
+    /// <summary>
+    /// #206: ReShade's install defaults plus RHI's preset selection. Recording a preset's <c>PresetPath</c> write as RHI's
+    /// lets ReShade's removal delete a ReShade.ini RHI created; the same rule makes an update (and a shader change)
+    /// regenerate that unchanged file from the template, so the regenerated file must get the selection back. Wraps
+    /// <c>ReShadeDeploymentService.IniDefaults</c> (the app wires it once, AppComposition).
+    /// </summary>
+    public static Func<DetectedGame, bool, ReShadeIniDefaults?> KeepingSelection(Func<DetectedGame, bool, ReShadeIniDefaults?>? defaults, LinuxDeploymentRecordStore records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        return (game, vulkan) =>
+        {
+            var inner = defaults?.Invoke(game, vulkan);
+            return Selected(records.Find(game, ManagedComponentKind.ReShade)) is { } selected
+                ? (inner ?? new ReShadeIniDefaults()) with { PresetFileName = selected }
+                : inner;
+        };
+    }
+
     internal static IReadOnlyList<InstalledReShadePreset> Read(LinuxDeploymentRecord? record)
     {
         if (record?.Metadata.GetValueOrDefault(MetadataKey) is not { Length: > 0 } json) return [];
@@ -224,13 +255,18 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var sha = await scope.PlaceBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
             await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+            var iniHashBefore = File.Exists(written) ? FileHash.Sha256Hex(written) : null;
             ReShadeIniManager.SetPresetPath(game.BinaryDirectory, fileName, game.InstallPath);
             await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+            // #206: the PresetPath write is RHI's on ReShade's record (#203 rule), so ReShade's removal still deletes a
+            // ReShade.ini RHI created and nobody changed since.
+            ReShadeDeploymentService.RecordSettingsWrite(record, ini, written, iniHashBefore);
 
             installed.RemoveAll(p => p.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
             installed.Add(new InstalledReShadePreset(fileName, sha));
             // Find hands out a copy: changing it touches the ledger only through Upsert, after the files are in place.
             record.Metadata[MetadataKey] = JsonSerializer.Serialize(installed);
+            record.Metadata[SelectedMetadataKey] = fileName;
             records.Upsert(scope.Stamp(record));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
@@ -273,8 +309,12 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             if (written is not null && File.Exists(written))
             {
                 await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
+                var iniHashBefore = FileHash.Sha256Hex(written);
                 if (ReShadeIniManager.ClearPresetPath(game.BinaryDirectory, preset.FileName, game.InstallPath))
+                {
                     await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
+                    ReShadeDeploymentService.RecordSettingsWrite(record, ini, written, iniHashBefore); // #206
+                }
             }
             installed.Remove(preset);
             if (installed.Count == 0) record.Metadata.Remove(MetadataKey);

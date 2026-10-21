@@ -300,18 +300,56 @@ public sealed class UserIniService(UserIniTemplates templates, LinuxDeploymentRe
     /// <summary>
     /// "Apply to all games" (upstream <c>ApplyScreenshotPath_Click</c>): screenshot folder, hotkeys and effect list style
     /// into every game whose ReShade RHI installed and that has a ReShade.ini (main and numbered files). A ReShade the
-    /// user installed is left alone (review finding 1).
+    /// user installed is left alone (review finding 1). Each game is one journaled operation (<see cref="ApplyReShadeSettingsAsync"/>).
     /// </summary>
     public Task<IniBatchResult> ApplyReShadeSettingsToAllAsync(IReadOnlyList<DetectedGame> games, LinuxAppSettings settings, CancellationToken cancellationToken = default)
         => RunBatchAsync(
             ReShadeSettingsTargets(games),
-            (game, token) =>
-            {
-                if (Refusal(game) is { } refused) return Task.FromResult(ComponentOperationResult.Fail(refused));
-                _ = OperationCancellation.BeginWrites(token);
-                return Task.FromResult(ComponentOperationResult.Ok(ReShadeGlobalSettingsApplier.ApplyToGame(settings, game)));
-            },
+            (game, token) => ApplyReShadeSettingsAsync(game, settings, token),
             "reshade-settings", cancellationToken);
+
+    /// <summary>
+    /// One game's Apply of the ReShade Settings values (one game of "Apply to all games", and Settings' "Apply to the
+    /// selected game"; upstream <c>ApplyScreenshotSettingsToIni</c>): the game's ReShade.ini and numbered siblings, written
+    /// whole or not at all. Where ReShade is RHI's (#206) it is one journaled operation on ReShade's record: every file is
+    /// tracked at the file the write replaces (a linked shared ReShade.ini at its target, never the link) before anything
+    /// is written, and the write is recorded with the #203 rule (<see cref="ReShadeDeploymentService.RecordSettingsWrite"/>:
+    /// the new hash only while the file still held RHI's last write), so ReShade's removal still knows a ReShade.ini RHI
+    /// created; the stamped record save is the commit point. Refused before any write (failed result) where an install
+    /// would be or the journal cannot be written; an Xbox title RHI must not change or a link the rule refuses throws
+    /// before any write. A failure after the first write throws and the scope puts every file back. A ReShade RHI did not
+    /// install (the per-game Apply only) is written as before, unjournaled and unrecorded.
+    /// </summary>
+    public async Task<ComponentOperationResult> ApplyReShadeSettingsAsync(DetectedGame game, LinuxAppSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (Refusal(game) is { } refused) return ComponentOperationResult.Fail(refused);
+        var plan = ReShadeGlobalSettingsApplier.PlanForGame(settings, game);
+        // Find hands out a copy: the ledger changes only through the stamped Upsert below.
+        if (records.Find(game, ManagedComponentKind.ReShade) is not { } record || plan.Writes.Count == 0)
+        {
+            cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+            plan.CreateScreenshotFolder();
+            IniLines.WriteAll(plan.Writes);
+            return ComponentOperationResult.Ok(plan.MainIni, plan.MainIni);
+        }
+
+        var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade settings: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
+        if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
+        await using var scope = opened!;
+        // A failure propagates (the batch counts it as failed); the undisposed scope puts every tracked file back.
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        await scope.TrackAllAsync(plan.Targets, cancellationToken).ConfigureAwait(false);
+        var mainTarget = plan.MainTarget;
+        var hashBefore = File.Exists(mainTarget) ? FileHash.Sha256Hex(mainTarget) : null;
+        plan.CreateScreenshotFolder();
+        IniLines.WriteAll(plan.Writes);
+        foreach (var target in plan.Targets.Where(File.Exists))
+            await scope.DeclareWrittenContentAsync(target, cancellationToken).ConfigureAwait(false);
+        if (plan.WritesMainIni) ReShadeDeploymentService.RecordSettingsWrite(record, plan.MainIni, mainTarget, hashBefore);
+        records.Upsert(scope.Stamp(record));
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(plan.MainIni, plan.MainIni);
+    }
 
     /// <summary>
     /// ReLimiter "Apply to all games" (#188; upstream <c>ApplyUlOsdHotkey_Click</c>): the four globals go into every game's

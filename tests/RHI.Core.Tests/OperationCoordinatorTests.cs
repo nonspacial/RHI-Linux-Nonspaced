@@ -112,7 +112,10 @@ public sealed class OperationCoordinatorTests
             Assert.False(fx.Vm.SetRenoDxCompatibilitySetting("x", "y").Success);
             Assert.False(fx.Vm.SetDlssg2030Preferences("RTX 20", "dxgi.dll").Success);
             Assert.False(fx.Vm.SetStandaloneDlssEnablerPreferences("dxgi.dll").Success);
-            refusal = fx.Vm.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGame(new());
+            // The refusal returns before the first await: the task has already ended.
+            var applying = fx.Vm.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGameAsync(new(), fx.Vm.IniPresets.Service);
+            Assert.True(applying.IsCompleted);
+            refusal = applying.Result;
         });
         Assert.False((await fx.Vm.UpdateDlssg2030Async()).Success);
         Assert.Equal("Another RHI operation is already running.", refusal);

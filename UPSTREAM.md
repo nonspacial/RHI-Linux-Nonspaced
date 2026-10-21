@@ -665,6 +665,20 @@ build.
   a game whose ReShade.ini links somewhere RHI does not write is refused before anything changes; a preset removal there
   still takes the preset out and leaves that file alone.
 
+### #206 — Apply to all games and presets record RHI's ReShade.ini writes
+
+- Fork-only (journaling and ownership; upstream records nothing). Where RHI installed ReShade, each game of **Apply to
+  all games**, Settings' **Apply to the selected game** (the same method) and a preset's install and removal is one
+  journaled operation on ReShade's record: every file (ReShade.ini and its numbered siblings) is tracked at the file the
+  write replaces before anything is written, and the write is recorded as Deploy ReShade.ini's is (#203): the file's new
+  hash counts as RHI's only while the file still held RHI's last write. So removing ReShade still deletes a ReShade.ini
+  RHI created that nobody changed since (before, an Apply or a preset made RHI keep it as the user's), keeps one the user
+  changed, and from a ReShade.ini that was there before RHI (or the user's shared `~/.config/ReShade` file) takes only
+  RHI's search paths back: the screenshot folder, hotkeys and effect list style the user applied stay, as after Deploy
+  ReShade.ini. An update or shader change that regenerates RHI's unchanged file from the template keeps the preset RHI
+  selected (kept on ReShade's record). A crash before a game's record is saved puts that game's files and record back;
+  one after it keeps both. Cancel stops between games; a game whose journal cannot be written is counted as skipped.
+
 <!-- w8/renodx notes -->
 
 <!-- w8/commit-point notes -->

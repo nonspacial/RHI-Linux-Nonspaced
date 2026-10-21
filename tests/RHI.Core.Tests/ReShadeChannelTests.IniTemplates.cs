@@ -43,6 +43,9 @@ public sealed partial class ReShadeChannelTests
         PeArchitectureDetectorTests.WritePe(custom, 0x8664, 1_100_000);
         StampReShadeSignature(custom);
         var service = NewService(store, new MutableHandler(), Path.Combine(_root, "preset-keep-cache"));
+        // #206: as the app wires it (AppComposition; pinned by ReShadeIniWriteRecordTests.App_WiresThePresetSelectionIntoReShadesIniDefaults):
+        // the preset's PresetPath is RHI's write now, so the reinstall regenerates RHI's unchanged file and must keep it.
+        service.IniDefaults = ReShadePresetService.KeepingSelection(service.IniDefaults, store);
         var options = new ReShadeInstallOptions { Channel = ReShadeChannel.Custom, CustomDllPath = custom, ManageIni = true };
         Assert.True((await service.InstallAsync(game, options)).Success);
         var preset = Path.Combine(_root, "preset-keep", "Look.ini");

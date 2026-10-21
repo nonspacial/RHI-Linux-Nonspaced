@@ -211,14 +211,14 @@ public sealed partial class SettingsDialogViewModel : ObservableObject
 
     /// <summary>Saves, then writes the ReShade capture and hotkey defaults into the selected game's ReShade.ini.</summary>
     [RelayCommand]
-    private void ApplyToGame()
+    private async Task ApplyToGame()
     {
         try
         {
             var current = Read();
             _shell.Settings.SaveLinuxSettings(current);
             Applied?.Invoke();
-            Status = _shell.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGame(current);
+            Status = await _shell.ReShadeProfile.ApplyGlobalReShadeSettingsToSelectedGameAsync(current, _shell.IniPresets.Service); // w8/reshade-ini (#206): journaled
         }
         catch (Exception ex) { Status = TF("Win.CouldNotApplyReShadeDefaults", UiLocalizationService.Present(ex.Message)); }
     }
