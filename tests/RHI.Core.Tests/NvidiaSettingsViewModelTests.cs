@@ -241,6 +241,47 @@ public sealed class NvidiaSettingsViewModelTests : IDisposable
         Assert.False(fx.Vm.Dlss.CanRestoreAllDlss);
     }
 
+    // w7 follow-up B20 (re-review nit 3): an NVIDIA choice re-evaluates Restore all at once (NotifyHdrProfile tells the
+    // DLSS panel), so the button enables without waiting for another refresh.
+    [Fact]
+    public async Task ANvidiaChoice_RaisesRestoreAllAtOnce()
+    {
+        using var fx = await StartAsync(Game("Notify Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]), Gpu(rtx50: false));
+        var nv = fx.Vm.Dlss.Nvidia;
+        var raised = 0;
+        var canExecute = 0;
+        fx.Vm.Dlss.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.Dlss.CanRestoreAllDlss)) raised++; };
+        fx.Vm.Dlss.RestoreAllDlssCommand.CanExecuteChanged += (_, _) => canExecute++;
+
+        nv.SelectedSuperResolutionScale = nv.SuperResolutionScaleOptions.For(67u);
+
+        Assert.True(raised > 0, "CanRestoreAllDlss was not raised");
+        Assert.True(canExecute > 0, "Restore all's CanExecuteChanged was not raised");
+        Assert.True(fx.Vm.Dlss.RestoreAllDlssCommand.CanExecute(null));
+    }
+
+    // w7 follow-up B21 (re-review nit 4): Restore all with only NVIDIA settings while library writes wait (Repair after
+    // move rewriting the library file) says why nothing happened, and keeps the settings.
+    [Fact]
+    public async Task RestoreAll_NvidiaSettingsOnly_WhileLibraryWritesWait_SaysWhy_AndKeepsThem()
+    {
+        using var fx = await StartAsync(Game("Paused Quest", "Manual", "umu-run Quest.exe", dlss: ["nvngx_dlss.dll"]), Gpu(rtx50: false));
+        var nv = fx.Vm.Dlss.Nvidia;
+        nv.SelectedSuperResolutionScale = nv.SuperResolutionScaleOptions.For(67u);
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
+        fx.Vm.LibraryRepairRunning = true;
+        try
+        {
+            await fx.Vm.Dlss.RestoreAllDlssCommand.ExecuteAsync(null);
+
+            Assert.True(nv.HasChoices);
+            Assert.Equal(67u, nv.SelectedSuperResolutionScale.Value);
+            Assert.StartsWith(UiLocalizationService.Text("Vm.WaitForRepairAfterMove"), fx.Vm.StatusText, StringComparison.Ordinal);
+        }
+        finally { fx.Vm.LibraryRepairRunning = false; }
+    }
+
     // ---- a restored library file (finding 6, Refs #149) ----------------------------------------------------------
 
     [Fact]

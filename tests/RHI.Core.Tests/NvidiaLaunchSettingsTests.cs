@@ -190,6 +190,8 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
     [InlineData("NVIDIA GeForce RTX 4060 Laptop GPU", true)]
     [InlineData("NVIDIA RTX 2000 Ada Generation", true)]
     [InlineData("NVIDIA GeForce RTX 5090", true)]
+    [InlineData("Quadro RTX 5000", false)]                 // Turing (re-review 1)
+    [InlineData("NVIDIA RTX 5000 Ada Generation", true)]   // Ada: FG yes, multi frame generation no
     [InlineData(null, true)] // model unknown (PCI fallback): kept
     public void TheFrameGenerationPreset_IsOfferedAndWrittenOnlyOnAGpuThatRunsFrameGeneration(string? model, bool offered)
     {
@@ -385,6 +387,11 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
     [InlineData("NVIDIA GeForce RTX 4090", false)]
     [InlineData("NVIDIA GeForce RTX 3050", false)]
     [InlineData("NVIDIA GeForce GTX 1050 Ti", false)]
+    [InlineData("NVIDIA GeForce RTX 5050", true)]
+    [InlineData("NVIDIA GeForce RTX 5060 Laptop GPU", true)]
+    [InlineData("Quadro RTX 5000", false)]                       // Turing (re-review 1)
+    [InlineData("NVIDIA RTX 5000 Ada Generation", false)]        // Ada (re-review 1)
+    [InlineData("NVIDIA RTX 5000 Ada Generation Laptop GPU", false)]
     public void GpuProbe_ReadsTheDriversModelName(string model, bool rtx50)
     {
         var proc = Path.Combine(_root, "proc");
@@ -394,6 +401,24 @@ public sealed class NvidiaLaunchSettingsTests : IDisposable
         var facts = NvidiaGpuProbe.Read(proc, Path.Combine(_root, "sys"));
 
         Assert.Equal((true, rtx50, model), (facts.Present, facts.Rtx50, facts.Model));
+    }
+
+    [Theory]
+    [InlineData("NVIDIA GeForce RTX 3080", "NVIDIA GeForce RTX 4070", true)]   // re-review 5: any RTX 40 runs FG
+    [InlineData("NVIDIA GeForce RTX 4070", "NVIDIA GeForce RTX 3080", true)]
+    [InlineData("NVIDIA GeForce RTX 3080", "NVIDIA GeForce RTX 2060", false)]
+    public void GpuProbe_TwoGpus_FrameGenerationFollowsAnyModelThatRunsIt_NotTheOrder(string first, string second, bool frameGeneration)
+    {
+        var proc = Path.Combine(_root, "proc");
+        foreach (var (slot, model) in new[] { ("0000:01:00.0", first), ("0000:65:00.0", second) })
+        {
+            var gpu = Directory.CreateDirectory(Path.Combine(proc, "driver", "nvidia", "gpus", slot)).FullName;
+            File.WriteAllText(Path.Combine(gpu, "information"), $"Model: \t\t {model}\nIRQ:   \t\t 70\n");
+        }
+
+        var facts = NvidiaGpuProbe.Read(proc, Path.Combine(_root, "sys"));
+
+        Assert.Equal((true, false, frameGeneration), (facts.Present, facts.Rtx50, facts.FrameGeneration));
     }
 
     [Theory]

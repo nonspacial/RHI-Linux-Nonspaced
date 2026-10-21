@@ -36,8 +36,10 @@ public static partial class NvidiaGpuProbe
         var models = ProcModels(procRoot);
         if (models.Count > 0)
         {
+            // Re-review 5: with several GPUs, any RTX 50 decides, then any model that runs frame generation — never the
+            // enumeration order (an RTX 30 listed before an RTX 40 hid the FG preset).
             var rtx50 = models.FirstOrDefault(IsRtx50);
-            return new NvidiaGpuFacts(true, rtx50 is not null, rtx50 ?? models[0]);
+            return new NvidiaGpuFacts(true, rtx50 is not null, rtx50 ?? models.FirstOrDefault(model => !IsBeforeFrameGeneration(model)) ?? models[0]);
         }
         // Without NVIDIA's driver (nouveau/NVK) there is no DLSS: the PCI device alone is not enough.
         if (!File.Exists(Path.Combine(procRoot, "driver", "nvidia", "version"))) return NvidiaGpuFacts.None;
@@ -51,7 +53,11 @@ public static partial class NvidiaGpuProbe
     public static bool IsBeforeFrameGeneration(string? model)
         => !string.IsNullOrWhiteSpace(model) && !AdaOrNewerRegex().IsMatch(model) && BeforeAdaRegex().IsMatch(model);
 
-    /// <summary>An RTX 50-series (Blackwell) model name: "NVIDIA GeForce RTX 5080", "… RTX 5070 Ti Laptop GPU", "RTX PRO 6000 Blackwell …".</summary>
+    /// <summary>
+    /// An RTX 50-series (Blackwell) model name: "NVIDIA GeForce RTX 5080", "… RTX 5070 Ti Laptop GPU", "RTX PRO 6000 Blackwell …".
+    /// GeForce 5050–5090 by number; workstation cards only by the word Blackwell (re-review 1: "Quadro RTX 5000" is Turing
+    /// and "NVIDIA RTX 5000 Ada Generation" is Ada).
+    /// </summary>
     public static bool IsRtx50(string? model)
         => !string.IsNullOrWhiteSpace(model) && Rtx50Regex().IsMatch(model);
 
@@ -119,7 +125,7 @@ public static partial class NvidiaGpuProbe
         }
     }
 
-    [GeneratedRegex(@"\bRTX\s*50[0-9]{2}\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\bRTX\s*50[5-9]0\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
     private static partial Regex Rtx50Regex();
 
     [GeneratedRegex(@"\bAda\b|\bBlackwell\b", RegexOptions.IgnoreCase)]
