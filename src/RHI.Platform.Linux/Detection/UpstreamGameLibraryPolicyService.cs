@@ -199,6 +199,7 @@ public sealed class UpstreamGameLibraryPolicyService(
         if (TryGet(policy.XnaGacFolders, canonical, out var xnaGac)) game.ManifestXnaGacFolder = xnaGac; // #201
         // w7/shader-sets rows
         // w7/nvapi-launch rows
+        RHI.Platform.Linux.Hdr.DlssPresetCatalogue.Observe(policy); // #211: the manifest's DLSS preset lists (global, not per game)
         // w7/dxvk-hdr rows
     }
 

@@ -33,7 +33,60 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         SelectedOptiScalerVariant = FormatOptiScalerVariant(OptiScalerVariant.Stable);
         SelectedLumaModePreference = FormatLumaModePreference(LumaModePreference.Auto);
         SelectedHdrMode = FormatHdrMode(LinuxHdrModes.Off);
+        Nvidia = new NvidiaSettingsPresenter(this);
     }
+
+    /// <summary>#211: the per-game NVIDIA settings (shown in the DLSS section, saved with this panel's launch profile).</summary>
+    public NvidiaSettingsPresenter Nvidia { get; }
+
+    /// <summary>#211: the selected game, for the NVIDIA settings' wording.</summary>
+    internal DetectedGame? SelectedGameForNvidia => SelectedGame;
+
+    /// <summary>
+    /// #211: the DLSS features the selected game ships, from its published analysis (null while it is worked out: a
+    /// saved NVIDIA choice then applies as it is, but the settings are not offered).
+    /// </summary>
+    private NvidiaDlssFamilies? NvidiaFamilies()
+        => CurrentAnalysis?.Dlss is { } dlss
+            ? new NvidiaDlssFamilies(dlss.DlssPaths.Count > 0, dlss.DlssdPaths.Count > 0, dlss.DlssgPaths.Count > 0)
+            : null;
+
+    /// <summary>
+    /// #211: a NVIDIA settings control changed (<paramref name="change"/>): save it with the launch profile. After a
+    /// restored library file only that change is applied to the restored settings (the others stay as restored).
+    /// </summary>
+    internal void SaveNvidiaSettings(Action<NvidiaGameSettings> change)
+    {
+        if (SelectedGame is { } game)
+            SaveHdrProfile(game, HdrControl.Nvidia, restored =>
+            {
+                var merged = restored?.Copy() ?? new NvidiaGameSettings();
+                change(merged);
+                return merged.Normalize();
+            });
+    }
+
+    /// <summary>
+    /// #211: Restore all in the DLSS section: every NVIDIA setting of <paramref name="game"/> back to Default (as
+    /// upstream's Restore all clears its preset overrides). False when nothing was chosen or library writes wait.
+    /// </summary>
+    internal bool ResetNvidiaSettings(DetectedGame game)
+    {
+        if (!ReferenceEquals(game, SelectedGame) || !Nvidia.HasChoices || Host.LibraryWritesPaused()) return false;
+        Nvidia.Load(null);
+        SaveHdrProfile(game, HdrControl.Nvidia, _ => null);
+        return true;
+    }
+
+    /// <summary>
+    /// #211 (shell hook): the status line of a launch RHI applies a profile to — the HDR mode's, or the NVIDIA settings'
+    /// when HDR is Off.
+    /// </summary>
+    internal string ProfileLaunchLine(DetectedGame game, LinuxHdrLaunchPlan plan)
+        => plan.Enabled ? TF("Vm.LaunchingHDRProfile", game.Name, SelectedHdrMode.Display) : NvidiaLaunchText.Launching(game);
+
+    /// <summary>#211: a status line from the NVIDIA settings (Copy launch options).</summary>
+    internal void ReportNvidiaStatus(string text) => StatusText = text;
 
     /// <summary>
     /// The OptiScaler ⚙ "Nightly build" row (sync #156): follows this panel's OptiScaler channel; one instance per shell.
@@ -89,6 +142,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OptiScalerVariantOptions.Relabel();
         HdrModeOptions.Relabel();
         LumaModeOptions.Relabel();
+        Nvidia.RefreshLocalized(); // #211
     }
 
     public OptionItems<GraphicsApi?> GraphicsApiOverrideOptions { get; } = OptionLists.GraphicsApiOverride.Options();
@@ -194,7 +248,8 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     private LinuxHdrGameProfile ShownProfile() => new LinuxHdrGameProfile
     {
         Mode = ParseHdrMode(SelectedHdrMode), EnableLegacyWsi = HdrLegacyWsi,
-        ResolutionToggle = ResolutionToggle, Resolution = SelectedResolution?.Value
+        ResolutionToggle = ResolutionToggle, Resolution = SelectedResolution?.Value,
+        Nvidia = Nvidia?.Shown // #211 (null only while the constructor runs)
     }.Normalize();
 
     /// <summary>#191: what happens to the display when Play starts the selected game.</summary>
@@ -318,7 +373,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
 
     public LinuxHdrLaunchPlan SelectedHdrPlan => SelectedGame is null
         ? LinuxHdrLaunchPlan.NoGame
-        : _hdrProfiles.BuildPlan(SelectedGame, ShownProfile(), HdrHost);
+        : _hdrProfiles.BuildPlan(SelectedGame, ShownProfile(), HdrHost, NvidiaFamilies());
 
     /// <summary>
     /// The HDR host the plan is built for: the selected game's analysis probed it off the UI thread; before the first
@@ -458,6 +513,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         OnPropertyChanged(nameof(SelectedResolutionPlan));
         OnPropertyChanged(nameof(ResolutionHint));
         OnPropertyChanged(nameof(ShowResolutionToggle));
+        Nvidia?.Notify(); // #211
     }
 
     partial void OnResolutionToggleChanged(bool value)
@@ -562,6 +618,7 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             if (profile.Resolution is { } savedSize && !_resolutionList.Values.Contains(savedSize, StringComparer.OrdinalIgnoreCase))
                 RebuildResolutionOptions(savedSize);
             SelectedResolution = ResolutionOptions.For(profile.Resolution ?? _resolutionList.Fallback);
+            Nvidia.Load(profile.Nvidia); // #211
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();
@@ -576,12 +633,14 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
             HdrLegacyWsi = false;
             ResolutionToggle = false;
             SelectedResolution = ResolutionOptions.For(_resolutionList.Fallback);
+            Nvidia.Load(null); // #211
         }
         finally { _loadingHdrProfile = false; }
         NotifyHdrProfile();
     }
 
-    private void SaveHdrProfile(DetectedGame game, HdrControl touched)
+    /// <param name="nvidiaChange">#211: the NVIDIA change applied to the restored settings after a restored library file.</param>
+    private void SaveHdrProfile(DetectedGame game, HdrControl touched, Func<NvidiaGameSettings?, NvidiaGameSettings?>? nvidiaChange = null)
     {
         if (Host.LibraryWritesPaused())
         {
@@ -606,7 +665,9 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
                 Mode = touched == HdrControl.Mode ? shown.Mode : restored.Mode,
                 EnableLegacyWsi = touched == HdrControl.LegacyWsi ? shown.EnableLegacyWsi : restored.EnableLegacyWsi,
                 ResolutionToggle = touched == HdrControl.Resolution ? shown.ResolutionToggle : restored.ResolutionToggle,
-                Resolution = touched == HdrControl.Resolution ? shown.Resolution : restored.Resolution
+                Resolution = touched == HdrControl.Resolution ? shown.Resolution : restored.Resolution,
+                // #211: only the NVIDIA member the user changed (the restored ones stay).
+                Nvidia = touched == HdrControl.Nvidia ? nvidiaChange is null ? shown.Nvidia : nvidiaChange(restored.Nvidia) : restored.Nvidia
             }.Normalize();
         }
         if (profile.IsDefault()) Host.LibraryState.HdrProfiles.Remove(key);
@@ -617,12 +678,13 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     }
 
     /// <summary>The HDR control a save comes from (<see cref="SaveHdrProfile"/>).</summary>
-    private enum HdrControl { Mode, LegacyWsi, Resolution }
+    private enum HdrControl { Mode, LegacyWsi, Resolution, Nvidia }
 
     private void NotifyHdrProfile()
     {
         OnPropertyChanged(nameof(CanEditHdrProfile));
         RaiseHdrPlanChanged();
+        (Host as MainWindowViewModel)?.Dlss?.NotifyDlssDefaults(); // #211: Restore all follows the NVIDIA choices
     }
 
     public string GetSelectedHdrLaunchOptions() => HdrLaunchOptions;

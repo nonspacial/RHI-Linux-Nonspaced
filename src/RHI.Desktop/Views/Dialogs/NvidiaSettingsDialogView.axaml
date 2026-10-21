@@ -1,0 +1,130 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:RHI.Desktop.ViewModels"
+             xmlns:views="using:RHI.Desktop.Views"
+             xmlns:l="using:RHI.Desktop.Localization"
+             x:Class="RHI.Desktop.Views.Dialogs.NvidiaSettingsDialogView"
+             x:DataType="vm:NvidiaSettingsDialogViewModel">
+  <!-- #211 (owner layout B): every NVIDIA setting of the selected game, one label + control per row; rows that cannot
+       apply are hidden (the presenter's Show* rules). Below the row's minimum the control moves under its label. -->
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+  </UserControl.DataTemplates>
+  <Grid RowDefinitions="*,Auto">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="10" Margin="18,18,18,8">
+        <TextBlock Text="{l:T Nv.DialogTitle}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap"/>
+        <TextBlock Text="{l:T Nv.DialogIntro}" TextWrapping="Wrap" Opacity="0.76" Margin="0,0,0,4"/>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowSuperResolution}">
+          <TextBlock Text="{l:T Nv.SrPreset}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding SrPresetTip}" ToolTip.ShowDelay="2000"/>
+          <ComboBox Grid.Column="1" x:Name="NvidiaSrPreset" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                    ItemsSource="{Binding Settings.SuperResolutionPresetOptions}" SelectedItem="{Binding Settings.SelectedSuperResolutionPreset, Mode=TwoWay}"
+                    IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding SrPresetTip}" ToolTip.ShowDelay="2000"/>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowSuperResolution}">
+          <TextBlock Text="{l:T Nv.SrScale}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding ScaleTip}" ToolTip.ShowDelay="2000"/>
+          <StackPanel Grid.Column="1" Spacing="4">
+            <ComboBox x:Name="NvidiaSrScale" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                      ItemsSource="{Binding Settings.SuperResolutionScaleOptions}" SelectedItem="{Binding Settings.SelectedSuperResolutionScale, Mode=TwoWay}"
+                      IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding ScaleTip}" ToolTip.ShowDelay="2000"/>
+            <NumericUpDown x:Name="NvidiaSrCustomScale" Minimum="33" Maximum="100" Increment="1" FormatString="0" HorizontalAlignment="Stretch"
+                           Value="{Binding Settings.SuperResolutionCustomScale, Mode=TwoWay}" IsVisible="{Binding Settings.ShowSuperResolutionCustomScale}"
+                           IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding CustomScaleTip}" ToolTip.ShowDelay="2000"/>
+          </StackPanel>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowRayReconstruction}">
+          <TextBlock Text="{l:T Nv.RrPreset}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding RrPresetTip}" ToolTip.ShowDelay="2000"/>
+          <ComboBox Grid.Column="1" x:Name="NvidiaRrPreset" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                    ItemsSource="{Binding Settings.RayReconstructionPresetOptions}" SelectedItem="{Binding Settings.SelectedRayReconstructionPreset, Mode=TwoWay}"
+                    IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding RrPresetTip}" ToolTip.ShowDelay="2000"/>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowRayReconstruction}">
+          <TextBlock Text="{l:T Nv.RrScale}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding ScaleTip}" ToolTip.ShowDelay="2000"/>
+          <StackPanel Grid.Column="1" Spacing="4">
+            <ComboBox x:Name="NvidiaRrScale" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                      ItemsSource="{Binding Settings.RayReconstructionScaleOptions}" SelectedItem="{Binding Settings.SelectedRayReconstructionScale, Mode=TwoWay}"
+                      IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding ScaleTip}" ToolTip.ShowDelay="2000"/>
+            <NumericUpDown x:Name="NvidiaRrCustomScale" Minimum="33" Maximum="100" Increment="1" FormatString="0" HorizontalAlignment="Stretch"
+                           Value="{Binding Settings.RayReconstructionCustomScale, Mode=TwoWay}" IsVisible="{Binding Settings.ShowRayReconstructionCustomScale}"
+                           IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding CustomScaleTip}" ToolTip.ShowDelay="2000"/>
+          </StackPanel>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowFrameGenerationPreset}">
+          <TextBlock Text="{l:T Nv.FgPreset}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding FgPresetTip}" ToolTip.ShowDelay="2000"/>
+          <ComboBox Grid.Column="1" x:Name="NvidiaFgPreset" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                    ItemsSource="{Binding Settings.FrameGenerationPresetOptions}" SelectedItem="{Binding Settings.SelectedFrameGenerationPreset, Mode=TwoWay}"
+                    IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding FgPresetTip}" ToolTip.ShowDelay="2000"/>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowFrameGeneration}">
+          <TextBlock Text="{l:T Nv.MultiFrameGeneration}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding FgModeTip}" ToolTip.ShowDelay="2000"/>
+          <ComboBox Grid.Column="1" x:Name="NvidiaFgMode" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                    ItemsSource="{Binding Settings.FrameGenerationModeOptions}" SelectedItem="{Binding Settings.SelectedFrameGenerationMode, Mode=TwoWay}"
+                    IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding FgModeTip}" ToolTip.ShowDelay="2000"/>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowFrameCount}">
+          <TextBlock Text="{l:T Nv.FrameCount}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding FrameCountTip}" ToolTip.ShowDelay="2000"/>
+          <Panel Grid.Column="1">
+            <ComboBox x:Name="NvidiaFixedFrameCount" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                      ItemsSource="{Binding Settings.FixedFrameCountOptions}" SelectedItem="{Binding Settings.SelectedFixedFrameCount, Mode=TwoWay}"
+                      IsVisible="{Binding Settings.ShowFixedFrameCount}"
+                      IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding FrameCountTip}" ToolTip.ShowDelay="2000"/>
+            <ComboBox x:Name="NvidiaDynamicFrameCount" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                      ItemsSource="{Binding Settings.DynamicFrameCountOptions}" SelectedItem="{Binding Settings.SelectedDynamicFrameCount, Mode=TwoWay}"
+                      IsVisible="{Binding Settings.ShowDynamicFrameCount}"
+                      IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding FrameCountTip}" ToolTip.ShowDelay="2000"/>
+          </Panel>
+        </views:ResponsiveRow>
+
+        <views:ResponsiveRow Columns="190,*" ColumnSpacing="12" LineSpacing="4" HeadColumns="1" MinStarWidth="160"
+                             IsVisible="{Binding Settings.ShowTargetFrameRate}">
+          <TextBlock Text="{l:T Nv.TargetFrameRate}" VerticalAlignment="Center" TextWrapping="Wrap"
+                     ToolTip.Tip="{Binding TargetFrameRateTip}" ToolTip.ShowDelay="2000"/>
+          <StackPanel Grid.Column="1" Spacing="4">
+            <ComboBox x:Name="NvidiaTargetFrameRate" HorizontalAlignment="Stretch" MaxDropDownHeight="300"
+                      ItemsSource="{Binding Settings.TargetFrameRateOptions}" SelectedItem="{Binding Settings.SelectedTargetFrameRate, Mode=TwoWay}"
+                      IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding TargetFrameRateTip}" ToolTip.ShowDelay="2000"/>
+            <NumericUpDown x:Name="NvidiaCustomTargetFrameRate" Minimum="20" Maximum="1000" Increment="1" FormatString="0" HorizontalAlignment="Stretch"
+                           Value="{Binding Settings.CustomTargetFrameRate, Mode=TwoWay}" IsVisible="{Binding Settings.ShowCustomTargetFrameRate}"
+                           IsEnabled="{Binding Settings.CanEdit}" ToolTip.Tip="{Binding CustomFpsTip}" ToolTip.ShowDelay="2000"/>
+          </StackPanel>
+        </views:ResponsiveRow>
+
+        <CheckBox x:Name="NvidiaNewestDlss" IsChecked="{Binding Settings.NewestDlss, Mode=TwoWay}" IsEnabled="{Binding Settings.CanEdit}"
+                  ToolTip.Tip="{Binding NewestDlssTip}" ToolTip.ShowDelay="2000">
+          <TextBlock Text="{l:T Nv.NewestDlss}" TextWrapping="Wrap"/>
+        </CheckBox>
+
+        <TextBlock x:Name="NvidiaHint" Text="{Binding Settings.Hint}" TextWrapping="Wrap" FontSize="12" Opacity="0.72" Margin="0,4,0,0"/>
+      </StackPanel>
+    </ScrollViewer>
+    <views:ResponsiveRow Grid.Row="1" Columns="*,Auto,Auto" ColumnSpacing="8" LineSpacing="6" HeadColumns="1" MinStarWidth="120" Margin="18,4,18,16">
+      <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Opacity="0.72" VerticalAlignment="Center"/>
+      <Button Grid.Column="1" x:Name="NvidiaCopyLaunchOptions" Classes="rhi" Padding="12,6" Click="Copy_Click"
+              IsVisible="{Binding Settings.ShowLaunchOptions}">
+        <TextBlock Text="{l:T Nv.CopyLaunchOptions}" TextWrapping="Wrap"/>
+      </Button>
+      <Button Grid.Column="2" x:Name="NvidiaClose" Classes="rhi" Padding="14,6" Content="{l:T Win.Close}" Command="{Binding CloseCommand}"/>
+    </views:ResponsiveRow>
+  </Grid>
+</UserControl>
