@@ -45,7 +45,8 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
     public async Task Update_FailsOrDies_TheLinkStaysALink_AndTheSharedFileIsBackByteForByte(string failure)
     {
         var fx = Fixture("update-" + failure);
-        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true });
+        Assert.True(installed.Success, installed.Message);
         var afterInstall = File.ReadAllBytes(fx.Shared);
         Assert.Contains(".\\rhi-test\\**", Encoding.UTF8.GetString(afterInstall)); // RHI's line went into the shared file
         fx.Template = "[GENERAL]\nEffectSearchPaths=.\\rhi-test-2\\**\n"; // the update writes another line
@@ -59,7 +60,8 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
     public async Task Removal_FailsOrDies_TheLinkStaysALink_AndTheSharedFileKeepsRhisLines(string failure)
     {
         var fx = Fixture("remove-" + failure);
-        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true });
+        Assert.True(installed.Success, installed.Message);
         var afterInstall = File.ReadAllBytes(fx.Shared);
 
         // The removal's stamp is the first ledger save; the commit write (the record removed) is the second.
@@ -72,7 +74,8 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
     public async Task Removal_TakesRhisLinesOutOfTheSharedFile_ByteForByte_AndKeepsTheLink()
     {
         var fx = Fixture("remove-ok");
-        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true });
+        Assert.True(installed.Success, installed.Message);
         Assert.NotEqual(SharedBefore, File.ReadAllText(fx.Shared));
 
         var removed = await fx.Service.RemoveAsync(fx.Game);
@@ -87,7 +90,8 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
         // RHI created the game's ReShade.ini; the user then replaced it with a link to a shared file of the same content.
         // A link is never RHI's file: removal leaves the link and the file it points to.
         var fx = Fixture("remove-created", link: false);
-        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true });
+        Assert.True(installed.Success, installed.Message);
         var ini = Path.Combine(fx.Bin, "ReShade.ini");
         var bytes = File.ReadAllBytes(ini);
         File.WriteAllBytes(fx.Shared, bytes);
