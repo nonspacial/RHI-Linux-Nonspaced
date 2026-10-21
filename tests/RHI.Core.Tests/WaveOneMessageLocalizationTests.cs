@@ -503,6 +503,30 @@ public sealed class WaveOneMessageLocalizationTests
         yield return "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.";
     }
 
+    // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must
+    // be gone from the PT-BR presentation (a removed pair otherwise passes the generic check above).
+    public static TheoryData<string, string> IntegrationFixedTexts => new()
+    {
+        { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage, "This is an XNA game" },
+        { RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage, "is installed for XNA" },
+        { RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage, "cannot be changed while DX9 HDR" },
+        { "Game executable was not detected.", "Game executable" },
+        { "RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.", "require the Windows" },
+        { "Could not determine game bitness for the RenoDX add-on.", "Could not determine" },
+        { "Could not determine whether the game executable is 32-bit or 64-bit.", "Could not determine" },
+        { "Install ReShade with full add-on support first. RenoDX is a ReShade add-on.", "full add-on support" },
+        { "The shader packs were not changed: Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.", "is not initialized" },
+        { "ReShade shader compiler compatibility check failed: " + P, "compatibility check failed" },
+        { "OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: " + P, "unexpectedly occupied" },
+        { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "Foreign RenoDX protection" },
+        { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "will not overwrite" },
+    };
+
+    [Theory]
+    [MemberData(nameof(IntegrationFixedTexts))]
+    public void IntegrationMessage_LeavesNoEnglishFixedText_InPortuguese(string message, string englishFixedText)
+        => Assert.DoesNotContain(englishFixedText, UiLocalizationService.PresentFor("pt-BR", message), StringComparison.Ordinal);
+
     [Theory]
     [MemberData(nameof(Messages))]
     public void WaveOneMessage_HasAPortuguesePresentation_AndStaysAsIsInEnglish(string message)
