@@ -13,6 +13,10 @@ Not on `main` yet (upstream features still to port):
 
 - Global default DLSS presets for every game (upstream's Settings).
 
+## Wave 9 — 2026-10-21: internal tidy-up
+
+- An internal tidy-up of the component code; nothing changes in how RHI looks or behaves.
+
 ## Wave 8 — 2026-10-21: RenoDX Engine.ini settings for Unreal games, safer RenoDX and ReShade.ini changes
 
 > [!WARNING]
