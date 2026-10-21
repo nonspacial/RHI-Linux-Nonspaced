@@ -1,5 +1,9 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Desktop.Diagnostics;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
 
@@ -52,8 +56,91 @@ public sealed class ComponentInfoPresenter(ComponentInfoCatalogue catalogue)
     public static bool HasInfo(ManagedComponentKind kind, ComponentAvailability availability)
         => ComponentInfoCatalogue.HasInfo(kind) && availability != ComponentAvailability.Unsupported;
 
-    /// <summary>Full Refresh: the ⓘ dialogs' lists and texts are fetched again (never awaited).</summary>
-    public Task RefreshListsAsync() => catalogue.RefreshAsync();
+    /// <summary>Full Refresh: the ⓘ dialogs' lists and texts are fetched again (never awaited); the highlights are worked out again.</summary>
+    public Task RefreshListsAsync()
+    {
+        lock (_highlightSync) _knownHighlights.Clear();
+        return catalogue.RefreshAsync();
+    }
+
+    // ── #210: the highlighted ⓘ ────────────────────────────────────────────────────────────────────────────────
+
+    private readonly object _highlightSync = new();
+    private readonly Dictionary<string, ComponentInfoHighlight> _knownHighlights = new(StringComparer.Ordinal);
+    private readonly HashSet<object> _followedRows = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The UI thread the rows are bound to (Avalonia's dispatcher while an application runs; none in plain view-model
+    /// tests, where a highlight is applied where it was worked out). Test seam.
+    /// </summary>
+    internal (Func<bool> IsCurrent, Action<Action> Post)? UiThread { get; set; } = Avalonia.Application.Current is null
+        ? null
+        : (() => Avalonia.Threading.Dispatcher.UIThread.CheckAccess(), action => Avalonia.Threading.Dispatcher.UIThread.Post(action));
+
+    /// <summary>Every highlight still being worked out (tests await it).</summary>
+    public Task Highlighting { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// #210 (upstream <c>ApplyInfoButtonStyle</c>/<c>HasRealInfoContent</c>): every component row added to
+    /// <paramref name="rows"/> gets its ⓘ highlight for <paramref name="selectedGame"/> — at once from what this session
+    /// already worked out, then from the shared lists in the background (never in a getter, never a per-game request). A
+    /// row shown before the lists have loaded stays plain and turns highlighted when they arrive, while the same game is
+    /// still selected. Following the same list twice is a no-op. UI thread.
+    /// </summary>
+    public void FollowRows(ObservableCollection<ComponentRowViewModel> rows, Func<DetectedGame?> selectedGame)
+    {
+        if (!_followedRows.Add(rows)) return;
+        rows.CollectionChanged += (_, e) =>
+        {
+            if (e.Action is NotifyCollectionChangedAction.Add or NotifyCollectionChangedAction.Replace && e.NewItems is { Count: > 0 } added)
+                Highlight(rows, selectedGame, added.OfType<ComponentRowViewModel>().ToArray());
+        };
+        if (rows.Count > 0) Highlight(rows, selectedGame, rows.ToArray());
+    }
+
+    private void Highlight(ObservableCollection<ComponentRowViewModel> rows, Func<DetectedGame?> selectedGame, IReadOnlyList<ComponentRowViewModel> added)
+    {
+        if (selectedGame() is not { } game) return;
+        var key = HighlightKey(game);
+        var kinds = new HashSet<ManagedComponentKind>();
+        foreach (var row in added.Where(row => row.HasInfo))
+        {
+            lock (_highlightSync)
+                if (_knownHighlights.TryGetValue(key + "|" + row.Kind, out var known)) row.InfoHighlight.Set(known);
+            kinds.Add(row.Kind);
+        }
+        if (kinds.Count == 0) return;
+        var work = HighlightAsync(rows, selectedGame, game, key, kinds.ToArray());
+        Highlighting = Highlighting.IsCompleted ? work : Task.WhenAll(Highlighting, work);
+        UiExceptionGuard.Forget(work, "component-info highlight");
+    }
+
+    private async Task HighlightAsync(ObservableCollection<ComponentRowViewModel> rows, Func<DetectedGame?> selectedGame, DetectedGame game,
+        string key, ManagedComponentKind[] kinds)
+    {
+        var answers = await Task.Run(async () =>
+        {
+            var work = kinds.Select(async kind => (Kind: kind, Highlight: await catalogue.HighlightAsync(game, kind).ConfigureAwait(false)));
+            return await Task.WhenAll(work).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+        lock (_highlightSync)
+            foreach (var (kind, highlight) in answers) _knownHighlights[key + "|" + kind] = highlight;
+
+        void Apply()
+        {
+            // Only while the same game is selected: the rows then belong to it (a later selection rebuilt them).
+            if (selectedGame() is not { } now || HighlightKey(now) != key) return;
+            foreach (var row in rows.ToArray())
+                foreach (var (kind, highlight) in answers)
+                    if (row.Kind == kind && row.HasInfo) row.InfoHighlight.Set(highlight);
+        }
+        if (UiThread is { } ui && !ui.IsCurrent()) ui.Post(Apply);
+        else Apply();
+    }
+
+    /// <summary>What the answer depends on: the game's record key and the names the manifest and wiki lists are read by.</summary>
+    private static string HighlightKey(DetectedGame game)
+        => string.Join("\u001f", LinuxDeploymentRecordStore.GameKey(game), game.Name, game.CanonicalManifestName ?? "", game.WikiNameOverride ?? "");
 
     /// <summary>The ⓘ button's tooltip.</summary>
     public static string TipFor(string componentName) => TF("Cat.InfoTip", componentName);
@@ -171,4 +258,35 @@ public sealed class ComponentInfoPresenter(ComponentInfoCatalogue catalogue)
         ManagedComponentKind.REFramework => "Cat.InfoAboutReFramework",
         _ => "Cat.InfoAboutReShade"
     });
+}
+
+/// <summary>
+/// #210: a component row's ⓘ highlight (set by <see cref="ComponentInfoPresenter.FollowRows"/>): highlighted when the dialog
+/// has content for this game (manifest note, wiki/database entry, or ReLimiter / Display Commander's change log, as
+/// upstream), with a tooltip that says so; plain with the general tooltip otherwise.
+/// </summary>
+public sealed class ComponentInfoHighlightState(string componentName) : INotifyPropertyChanged
+{
+    private ComponentInfoHighlight _highlight;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>True when the ⓘ dialog has something for this game (the button is highlighted).</summary>
+    public bool IsGameSpecific => _highlight != ComponentInfoHighlight.None;
+
+    /// <summary>The ⓘ button's tooltip: why it is highlighted, else the general one.</summary>
+    public string Tip => _highlight switch
+    {
+        ComponentInfoHighlight.GameNotes => UiLocalizationService.Format("Sm.InfoTipGameNotes", componentName),
+        ComponentInfoHighlight.Changelog => UiLocalizationService.Format("Sm.InfoTipChangelog", componentName),
+        _ => ComponentInfoPresenter.TipFor(componentName)
+    };
+
+    internal void Set(ComponentInfoHighlight highlight)
+    {
+        if (_highlight == highlight) return;
+        _highlight = highlight;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsGameSpecific)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Tip)));
+    }
 }

@@ -55,8 +55,11 @@ public sealed record ShortcutResult(ShortcutOutcome Outcome, string? FilePath = 
 /// hand-off and starts the game through its normal Play path (HDR plan included). The key is the library key
 /// (<c>steam:&lt;AppID&gt;</c>, <c>heroic:&lt;app&gt;</c>, else source + folder), which survives a Steam/Heroic library move
 /// (#147). The file is <c>rhi-linux-game-&lt;name&gt;-&lt;key hash&gt;.desktop</c> with an <c>X-RHI-Linux-GameKey</c> line: creating
-/// it again rewrites RHI's own file, and a same-named file without that line is never overwritten. Icon: the game's
-/// Steam library art when Steam has it (copied into RHI's data folder so it outlives Steam's cache), else RHI's icon.
+/// it again rewrites RHI's own file, and a same-named file without that line is never overwritten. Icon (#202, upstream
+/// <c>ShortcutService</c>'s order): the largest icon of the game's exe (<see cref="PeIconReader"/>, written as PNG), else the
+/// game's Steam library art when Steam has it, both kept in RHI's data folder (they outlive the game folder and Steam's
+/// cache), else RHI's icon. An exe without a readable icon (an encrypted Game Pass exe, a native Linux binary) falls back
+/// silently. RHI's icon files of shortcuts that no longer exist are removed whenever a shortcut is created.
 /// </summary>
 public sealed class DesktopShortcutService
 {
@@ -102,9 +105,14 @@ public sealed class DesktopShortcutService
         {
             var existed = File.Exists(path);
             if (existed && !IsOurs(path, gameKey)) return new ShortcutResult(ShortcutOutcome.ForeignFileInTheWay, path);
-            var icon = SteamIcon(game, gameKey) ?? DefaultIcon;
+            // The exe is read off the caller's thread (bounded, but it is the game's file).
+            var icon = await Task.Run(() => ExeIcon(game, gameKey)).ConfigureAwait(false) ?? SteamIcon(game, gameKey) ?? DefaultIcon;
+            var desktop = place == ShortcutPlace.Desktop ? folder : await _desktopFolder(cancellationToken).ConfigureAwait(false);
+            var otherFolder = place == ShortcutPlace.Desktop ? _applicationsFolder : desktop;
+            ForgetOtherIcons(game, gameKey, keep: icon, otherEntry: otherFolder is null ? null : Path.Combine(otherFolder, FileName(game.Name, gameKey)));
             var entry = BuildEntry(game.Name, command, icon, gameKey);
             AtomicFile.WriteStoreFile(path, Encoding.UTF8.GetBytes(entry), place == ShortcutPlace.Desktop ? DesktopMode : MenuMode);
+            RemoveUnusedIcons(desktop);
             return new ShortcutResult(existed ? ShortcutOutcome.Updated : ShortcutOutcome.Created, path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -152,6 +160,83 @@ public sealed class DesktopShortcutService
         return File.ReadLines(path).Any(line => line.Trim() == marker);
     }
 
+    /// <summary>The icon file RHI keeps for this shortcut, with the given extension (one per game key, both places).</summary>
+    private string IconPath(DetectedGame game, string gameKey, string extension)
+        => Path.Combine(_iconFolder, FileName(game.Name, gameKey).Replace(".desktop", extension, StringComparison.Ordinal));
+
+    /// <summary>
+    /// #202: the largest icon of the game's exe as PNG in RHI's icon folder (rewritten on every creation); null when the exe
+    /// is unknown or has no icon RHI can read (encrypted Game Pass exe, native binary, malformed resource) or the write failed.
+    /// </summary>
+    internal string? ExeIcon(DetectedGame game, string gameKey)
+    {
+        var exe = game.ExecutablePath;
+        if (string.IsNullOrWhiteSpace(exe) || !Path.IsPathRooted(exe)) return null;
+        if (PeIconReader.ReadLargestIconPng(exe) is not { } png) return null;
+        var target = IconPath(game, gameKey, ".png");
+        try
+        {
+            Directory.CreateDirectory(_iconFolder);
+            AtomicFile.WriteStoreFile(target, png, IconMode);
+            return target;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("shortcut", $"Could not write the game's icon {target}; the shortcut uses the next icon", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Removes RHI's other icon copy of this shortcut (the Steam art after an exe icon, or both for RHI's own icon), but never
+    /// the one the game's shortcut in the other place (<paramref name="otherEntry"/>) still names; nothing while that place
+    /// is unknown (null).
+    /// </summary>
+    private void ForgetOtherIcons(DetectedGame game, string gameKey, string keep, string? otherEntry)
+    {
+        if (otherEntry is null) return;
+        var usedThere = IconOf(otherEntry, gameKey);
+        foreach (var extension in IconExtensions)
+        {
+            var candidate = IconPath(game, gameKey, extension);
+            if (candidate != keep && DesktopEntryFormat.EscapeString(candidate) != usedThere && File.Exists(candidate)) FileCleanup.TryDelete(candidate);
+        }
+    }
+
+    /// <summary>The <c>Icon=</c> value of RHI's shortcut for this key at <paramref name="entry"/>, else null.</summary>
+    private static string? IconOf(string entry, string gameKey)
+    {
+        if (!File.Exists(entry) || !IsOurs(entry, gameKey)) return null;
+        var line = File.ReadLines(entry).FirstOrDefault(l => l.StartsWith("Icon=", StringComparison.Ordinal));
+        return line?["Icon=".Length..].Trim();
+    }
+
+    /// <summary>
+    /// Removes RHI's icon files (<c>rhi-linux-game-*.png|.jpg</c> in RHI's own icon folder) whose shortcut is in neither the
+    /// desktop nor the applications folder any more. Skipped while the desktop folder is unknown (it cannot be told).
+    /// </summary>
+    private void RemoveUnusedIcons(string? desktopFolder)
+    {
+        if (desktopFolder is null || !Directory.Exists(_iconFolder)) return;
+        try
+        {
+            foreach (var icon in Directory.EnumerateFiles(_iconFolder, "rhi-linux-game-*"))
+            {
+                if (!IconExtensions.Contains(Path.GetExtension(icon), StringComparer.Ordinal)) continue;
+                var entry = Path.GetFileNameWithoutExtension(icon) + ".desktop";
+                if (File.Exists(Path.Combine(desktopFolder, entry)) || File.Exists(Path.Combine(_applicationsFolder, entry))) continue;
+                FileCleanup.TryDelete(icon);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AppLog.Warn("shortcut", $"Could not tidy the shortcut icons in {_iconFolder}", ex);
+        }
+    }
+
+    private static readonly string[] IconExtensions = [".png", ".jpg"];
+    private static readonly UnixFileMode IconMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+
     /// <summary>
     /// The game's Steam icon (librarycache: the small <c>&lt;sha1&gt;.jpg</c> in <c>&lt;AppID&gt;/</c>, the older
     /// <c>&lt;AppID&gt;_icon.jpg</c>, else the header art), copied into RHI's icon folder; null for non-Steam games or none found.
@@ -176,7 +261,7 @@ public sealed class DesktopShortcutService
             foreach (var source in candidates)
             {
                 if (!File.Exists(source) || new FileInfo(source).Length is 0 or > 4 * 1024 * 1024) continue;
-                var target = Path.Combine(_iconFolder, FileName(game.Name, gameKey).Replace(".desktop", ".jpg", StringComparison.Ordinal));
+                var target = IconPath(game, gameKey, ".jpg");
                 try
                 {
                     Directory.CreateDirectory(_iconFolder);

@@ -257,6 +257,7 @@ internal sealed class ViewModelFixture : IDisposable
         // w5/shell-launch rows
         // w5/reshade-core rows
         // w7/smalls rows
+        var nrCostScaler = new NrCostScalerService(http, records, new RHI.Core.Deployment.DeploymentJournal(Path.Combine(prefs, "nr-cost-scaler-journal")), Path.Combine(cacheDir, "nr-cost-scaler")); // #199
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows
@@ -277,6 +278,7 @@ internal sealed class ViewModelFixture : IDisposable
             // w5/shell-launch rows
             // w5/reshade-core rows
             // w7/smalls rows
+            , nrCostScaler: nrCostScaler // #199
             // w7/reshade rows
             // w7/shader-sets rows
             // w7/nvapi-launch rows

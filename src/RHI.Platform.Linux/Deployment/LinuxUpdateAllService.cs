@@ -161,6 +161,7 @@ public sealed class LinuxUpdateAllService
         ManagedComponentKind.ReShadeAddonManager,
         // w7 lane rows: Update All families (each row ends with a comma)
         // w7/smalls rows
+        ManagedComponentKind.NrCostScaler, // #199 (upstream re-stages it in the background pass); updated after the owners
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

@@ -24,6 +24,8 @@ public sealed class UpdateCheckCouldNotCheckTests
         data.Add(ManagedComponentKind.Dlss5Feeder, "legacy-addon-only");
         // ReShade No Addons (#91): its own reshade.me lookup, offline here.
         data.Add(ManagedComponentKind.ReShade, "no-addons");
+        // #195: a RenoDX add-on dropped on RHI (or found by the watch folder) has no source to compare with.
+        data.Add(ManagedComponentKind.RenoDX, "renodx-local-package");
         return data;
     }
 
@@ -41,6 +43,7 @@ public sealed class UpdateCheckCouldNotCheckTests
         if (kind == ManagedComponentKind.Dlss5Feeder && variant != "legacy-addon-only") record.Metadata["Feeder.FullStack"] = "1";
         if (variant == "local-package") record.Metadata[LumaFrameworkDeploymentService.MetaLocalPackage] = "1";
         if (variant == "no-addons") record.Metadata["ReShade.Channel"] = nameof(ReShadeChannel.NoAddons);
+        if (variant == "renodx-local-package") record.Metadata[RenoDxDeploymentService.LocalPackageMetadataKey] = "1";
         fx.Records.Upsert(record);
 
         var check = await fx.Managed.CheckManagedUpdateAsync(game, kind, []);

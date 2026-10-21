@@ -44,6 +44,13 @@ public sealed class NrCostScalerService
     public const string FailedRolledBackPrefix = "NR Cost Scaler failed and was rolled back: ";
     public const string OwnerBlockedPrefix = "Remove NR Cost Scaler first: it wraps nvngx_dlssnr.dll for ";
     public const string RtxEncoreOwnerMessage = "NR Cost Scaler cannot wrap RTX Encore's Neural Rendering file: RTX Encore accepts only NVIDIA's own 310.8.0 file.";
+    // #199: Update All.
+    public const string CouldNotCheckPrefix = "NR Cost Scaler: the latest release could not be checked: ";
+    public const string UpToDatePrefix = "NR Cost Scaler is up to date: ";
+    public const string UpdateAvailablePrefix = "NR Cost Scaler update available: ";
+    public const string UpdatedPrefix = "NR Cost Scaler updated: ";
+    public const string NotUpdatedModifiedPrefix = "NR Cost Scaler not updated: its files changed since RHI installed them (left as they are): ";
+    public const string IniKeptNote = " Your own nvngx_dlssnr.ini was kept.";
 
     private const string MetaOwner = "NrCostScaler.Owner";
     private const string MetaOwnerSha = "NrCostScaler.OwnerSha256";
@@ -248,10 +255,126 @@ public sealed class NrCostScalerService
         return ComponentOperationResult.Ok(RemovedMessage, record.Files.Select(f => f.Path).ToArray());
     }
 
-    private sealed record Staged(string Folder, string Proxy, string Ini, string? Addon, string Version, string Url, string ArchiveSha256, bool DigestVerified);
+    // ── #199: Update All ──────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Latest release, its zip through the stamped cache (digest checked), the three files extracted fresh.</summary>
-    private async Task<Staged> StageAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// #199 (upstream <c>CheckForUpdateAsync</c>): the latest xenmods/DLSSNR-Cost-Scaler release against the version RHI
+    /// recorded. A release list that cannot be read is <see cref="ManagedUpdateCheck.CouldNotCheck"/>, never "current".
+    /// </summary>
+    public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (GetRecord(game) is not { } record) return new ManagedUpdateCheck(false, false, NotInstalledMessage);
+        Release latest;
+        try
+        {
+            latest = await LatestReleaseAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested
+                                   && ex is HttpRequestException or IOException or InvalidDataException or JsonException or UntrustedDownloadException or TaskCanceledException)
+        {
+            AppLog.Warn("nr-cost-scaler", "The NR Cost Scaler release could not be checked", ex);
+            return new ManagedUpdateCheck(true, false, CouldNotCheckPrefix + ex.Message, record.Version, CouldNotCheck: true);
+        }
+        var update = !string.Equals(latest.Version, record.Version, StringComparison.Ordinal);
+        return new ManagedUpdateCheck(true, update, (update ? UpdateAvailablePrefix + latest.Version : UpToDatePrefix + record.Version),
+            record.Version, latest.Version);
+    }
+
+    /// <summary>
+    /// #199 (upstream re-stages and re-installs the scaler where it is installed): swaps the proxy and add-on for the latest
+    /// release's in place, journaled (<see cref="DeploymentScope"/>, download before the first change). The owner's runtime
+    /// (<c>nvngx_dlssnr_real.dll</c>) is never touched; the INI is replaced only while it still holds what RHI wrote (a
+    /// scale the user set is kept, unlike upstream, which overwrites it). A proxy or add-on that changed since RHI wrote it
+    /// refuses the update before anything changes.
+    /// </summary>
+    public async Task<ComponentOperationResult> UpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
+    {
+        if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
+        // ReShade's No Addons holds a turned-off companion add-on (#170; Update All asks AddonOffGuard first, too).
+        if (ReShadeAddonSwitch.IsOff(record)) return ComponentOperationResult.Fail(ReShadeAddonSwitch.HeldPrefix + DisplayName);
+        var directory = record.BinaryDirectory;
+        var realPath = Path.Combine(directory, RealDllName);
+        LinuxDeployedFile? Named(string name) => record.Files.FirstOrDefault(f => Path.GetFileName(f.Path).Equals(name, StringComparison.OrdinalIgnoreCase));
+        var proxy = Named(ProxyDllName);
+        var ini = Named(IniFileName);
+        var addon = Named(CompanionAddonName);
+        if (proxy is null || ini is null || record.Files.All(f => f.Path != realPath)) return ComponentOperationResult.Fail(NotInstalledMessage);
+        var changed = new[] { proxy, addon }.OfType<LinuxDeployedFile>()
+            .Where(f => !File.Exists(f.Path) || f.Sha256 is null || !FileHash.HexEquals(FileHash.Sha256Hex(f.Path), f.Sha256))
+            .Select(f => f.Path).ToList();
+        if (changed.Count > 0) return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + string.Join(", ", changed));
+        var addonPath = addon?.Path ?? Path.Combine(directory, CompanionAddonName);
+        if (addon is null && (File.Exists(addonPath) || Directory.Exists(addonPath))) return ComponentOperationResult.Fail(NotUpdatedModifiedPrefix + addonPath);
+        var iniIsRhis = File.Exists(ini.Path) && ini.Sha256 is { Length: > 0 } && FileHash.HexEquals(FileHash.Sha256Hex(ini.Path), ini.Sha256);
+
+        Staged staged;
+        try
+        {
+            staged = await StageAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested
+                                   && ex is HttpRequestException or IOException or InvalidDataException or JsonException or UntrustedDownloadException or TaskCanceledException)
+        {
+            AppLog.Warn("nr-cost-scaler", "The NR Cost Scaler update download failed", ex);
+            return new ComponentOperationResult(false, DownloadFailedPrefix + ex.Message, SourceUnavailable: ex is HttpRequestException or TaskCanceledException);
+        }
+        try
+        {
+            return await SwapAsync(game, record, staged, proxy, ini, iniIsRhis, addon, addonPath, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (FileCleanup.TryDeleteAll(Directory.EnumerateFiles(staged.Folder)).Count > 0 || !FileCleanup.TryDeleteEmptyDirectory(staged.Folder))
+                AppLog.Warn("nr-cost-scaler", $"Could not remove the staging folder {staged.Folder}");
+        }
+    }
+
+    private async Task<ComponentOperationResult> SwapAsync(DetectedGame game, LinuxDeploymentRecord record, Staged staged, LinuxDeployedFile proxy,
+        LinuxDeployedFile ini, bool iniIsRhis, LinuxDeployedFile? addon, string addonPath, CancellationToken cancellationToken)
+    {
+        var (opened, refusal) = await DeploymentScope.BeginAsync(_journal, "NR Cost Scaler update: " + game.Name, game,
+            ManagedComponentKind.NrCostScaler, cancellationToken).ConfigureAwait(false);
+        if (refusal is not null) return ComponentOperationResult.Fail(refusal);
+        await using var scope = opened!;
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        var updated = LinuxDeploymentRecordStore.Clone(record);
+        try
+        {
+            LinuxDeployedFile Entry(string path) => updated.Files.First(f => string.Equals(f.Path, path, StringComparison.Ordinal));
+            Entry(proxy.Path).Sha256 = await scope.PlaceCopyAsync(staged.Proxy, proxy.Path, CancellationToken.None).ConfigureAwait(false);
+            if (iniIsRhis) Entry(ini.Path).Sha256 = await scope.PlaceCopyAsync(staged.Ini, ini.Path, CancellationToken.None).ConfigureAwait(false);
+            if (staged.Addon is not null)
+            {
+                var sha = await scope.PlaceCopyAsync(staged.Addon, addonPath, CancellationToken.None, overwrite: addon is not null).ConfigureAwait(false);
+                if (addon is not null) Entry(addon.Path).Sha256 = sha;
+                else updated.Files.Add(new LinuxDeployedFile { Path = addonPath, Sha256 = sha, ExistedBeforeInstall = false });
+            }
+            else if (addon is not null)
+            {
+                // The release no longer ships the companion add-on: RHI's copy goes with it.
+                await scope.DeleteAsync(addon.Path, CancellationToken.None).ConfigureAwait(false);
+                updated.Files.RemoveAll(f => string.Equals(f.Path, addon.Path, StringComparison.Ordinal));
+            }
+            updated.Version = staged.Version;
+            updated.SourceUrl = staged.Url;
+            VerifiedDownload.Record(updated.Metadata, staged.ArchiveSha256, staged.DigestVerified);
+            _records.Upsert(scope.Stamp(updated)); // the commit point
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            var rollback = await scope.RollbackAsync().ConfigureAwait(false);
+            AppLog.Warn("nr-cost-scaler", "NR Cost Scaler update failed; rolled back" + (rollback.Failures.Count > 0 ? ": " + string.Join("; ", rollback.Failures) : ""), ex);
+            return ComponentOperationResult.Fail(FailedRolledBackPrefix + ex.Message + DeploymentScope.RollbackNote(rollback));
+        }
+        // Nothing after the commit point rolls back.
+        await scope.CommitAsync().ConfigureAwait(false);
+        return ComponentOperationResult.Ok(UpdatedPrefix + staged.Version + "." + (iniIsRhis ? "" : IniKeptNote), updated.Files.Select(f => f.Path).ToArray());
+    }
+
+    private sealed record Release(string Version, string Url, string? Digest, string AssetName);
+
+    /// <summary>The latest release's tag and zip asset (GitHub API, conditional-cache aware).</summary>
+    private async Task<Release> LatestReleaseAsync(CancellationToken cancellationToken)
     {
         var json = await TrustedDownload.GetStringAsync(_http, ReleaseApiUrl, DownloadSources.GitHubApi, accept: "application/vnd.github+json",
             cancellationToken: cancellationToken).ConfigureAwait(false);
@@ -273,7 +396,15 @@ public sealed class NrCostScalerService
             }
         }
         if (url is null || assetName is null) throw new InvalidDataException(PackageIncompleteMessage);
+        return new Release(version, url, digest, assetName);
+    }
 
+    private sealed record Staged(string Folder, string Proxy, string Ini, string? Addon, string Version, string Url, string ArchiveSha256, bool DigestVerified);
+
+    /// <summary>Latest release, its zip through the stamped cache (digest checked), the three files extracted fresh.</summary>
+    private async Task<Staged> StageAsync(CancellationToken cancellationToken)
+    {
+        var (version, url, digest, assetName) = await LatestReleaseAsync(cancellationToken).ConfigureAwait(false);
         var safeVersion = string.Concat(version.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_'));
         var entry = Path.Combine(_cacheDir, safeVersion, string.Concat(assetName.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_')));
         var verified = await TrustedDownload.EnsureVerifiedAsync(_http, url, entry, DownloadSources.NrCostScaler, version, digest,

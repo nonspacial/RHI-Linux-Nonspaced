@@ -154,8 +154,8 @@ public sealed class UpdateInclusionTests : IDisposable
 
     // w5 review finding 5: an unreadable inclusion file is named in the summary, not counted as the user's choice.
     [Theory]
-    [InlineData("en-US", "Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 left out (update inclusion) · 2 left out: the update-inclusion file cannot be read.")]
-    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (inclusão em atualizações) · 2 deixado(s) de fora: não é possível ler o arquivo de inclusão em atualizações.")]
+    [InlineData("en-US", "Update All: 0 updated · 0 current · 0 deferred · 0 failed · 1 left out (your choice) · 2 left out: the update-inclusion file cannot be read.")]
+    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 0 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (sua escolha) · 2 deixado(s) de fora: não é possível ler o arquivo de inclusão em atualizações.")]
     public void UpdateAllSummary_SaysWhenTheInclusionFileCannotBeRead(string language, string expected)
     {
         var result = new LinuxUpdateAllResult([
@@ -182,8 +182,8 @@ public sealed class UpdateInclusionTests : IDisposable
     }
 
     [Theory]
-    [InlineData("en-US", "Update All: 0 updated · 1 current · 0 deferred · 0 failed · 1 left out (update inclusion).")]
-    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 1 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (inclusão em atualizações).")]
+    [InlineData("en-US", "Update All: 0 updated · 1 current · 0 deferred · 0 failed · 1 left out (your choice).")]
+    [InlineData("pt-BR", "Atualizar tudo: 0 atualizado(s) · 1 em dia · 0 adiado(s) · 0 com falha · 1 deixado(s) de fora (sua escolha).")]
     public void UpdateAllSummary_NamesWhatWasLeftOut(string language, string expected)
     {
         var result = new LinuxUpdateAllResult([
@@ -313,7 +313,7 @@ public sealed class UpdateInclusionTests : IDisposable
         // The line the save wrote (the selection analysis' "Ready" line may replace it a moment later).
         var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
         fx.Vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(fx.Vm.StatusText)) lines.Enqueue(fx.Vm.StatusText); };
-        Assert.Equal("Update inclusion…", entry.Label);
+        Assert.Equal("Choose what Update All changes…", entry.Label);
         await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)entry.Command).ExecuteAsync(null);
 
         Assert.NotNull(shown);
@@ -321,7 +321,7 @@ public sealed class UpdateInclusionTests : IDisposable
         Assert.Equal("Left out of Update All in every game (Settings → Maintenance): ReShade", shown.AllGamesNote);
         Assert.Equal(UpdateExclusion.ThisGame, fx.Managed.UpdateExclusionFor(Row(fx, "Managed Quest").Game, ManagedComponentKind.OptiScaler));
         Assert.Equal(UpdateExclusion.AllGames, fx.Managed.UpdateExclusionFor(Row(fx, "Managed Quest").Game, ManagedComponentKind.ReShade));
-        Assert.Contains(lines, line => line.StartsWith("Update inclusion saved for Managed Quest.", StringComparison.Ordinal)); // a pending notice may ride along
+        Assert.Contains(lines, line => line.StartsWith("Saved what Update All changes for Managed Quest.", StringComparison.Ordinal)); // a pending notice may ride along
     }
 
     [Fact]
@@ -420,7 +420,7 @@ public sealed class UpdateInclusionTests : IDisposable
         await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)entry.Command).ExecuteAsync(null);
 
         Assert.Empty(fx.Vm.UpdatePolicy.Inclusion!.ExcludedFor(game));
-        Assert.DoesNotContain(lines, line => line.Contains("Update inclusion saved", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines, line => line.Contains("Saved what Update All changes", StringComparison.Ordinal));
     }
 
     // ---- settings ----

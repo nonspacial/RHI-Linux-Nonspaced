@@ -401,6 +401,21 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.DllOnlyOnVulkanGameMessage;
         yield return RHI.Platform.Linux.Deployment.ReShadeVulkanLayer.LoaderMissingNotRestoredPrefix + RHI.Platform.Linux.Deployment.VulkanRuntimeProvider.LatestUnavailableMessage;
         // w7/smalls rows
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.CouldNotCheckPrefix + RHI.Platform.Linux.Network.NexusApiClient.UnreachableMessage; // #199
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.UpToDatePrefix + "v1.0.6";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.UpdateAvailablePrefix + "v1.0.7";
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.UpdatedPrefix + "v1.0.7." + RHI.Platform.Linux.Deployment.NrCostScalerService.IniKeptNote;
+        yield return RHI.Platform.Linux.Deployment.NrCostScalerService.NotUpdatedModifiedPrefix + "/jogos/Exemplo/nvngx_dlssnr.dll";
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalPackageCheckMessage; // #195
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalInstalledPrefix + "/jogos/Exemplo/renodx-exemplo.addon64";
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalNotAnAddonPrefix + "renodx-exemplo.txt";
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalLedgerUnreadablePrefix + "/dados/rhi-linux/deployments.json.corrupt";
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local32BitOn64BitMessage;
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.Local64BitOn32BitMessage;
+        yield return RHI.Platform.Linux.Deployment.RenoDxDeploymentService.LocalControlUeMessage;
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonInstalledPrefix + "/jogos/Exemplo/bin/ShaderToggler.addon64";
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage;
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon64BitOn32BitMessage;
         // w7/reshade rows
         // w7/shader-sets rows
         // w7/nvapi-launch rows

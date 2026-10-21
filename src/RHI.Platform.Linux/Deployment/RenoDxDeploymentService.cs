@@ -118,6 +118,8 @@ public sealed class RenoDxDeploymentService
     {
         var record = _records.Find(game, ManagedComponentKind.RenoDX);
         if (record is null) return new ManagedUpdateCheck(false, false, "RenoDX is not managed by RHI Linux.");
+        // #195: an add-on the user dropped (or the watch folder found) has no source to compare with: never "current".
+        if (IsLocalPackage(record)) return new ManagedUpdateCheck(true, false, LocalPackageCheckMessage, record.Version, CouldNotCheck: true);
         if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
             return new ManagedUpdateCheck(true, false, "Game executable is unavailable; RenoDX update check skipped.", record.Version, CouldNotCheck: true);
         var architecture = GameArchitecture.Of(game);
@@ -530,6 +532,142 @@ public sealed class RenoDxDeploymentService
         }
     }
 
+    // ── #195: a dropped or watched RenoDX add-on ─────────────────────────────────────────────────────────────────
+
+    /// <summary>Record metadata of a RenoDX installed from a local file (#195): Update All cannot check it.</summary>
+    public const string LocalPackageMetadataKey = "RenoDX.LocalPackage";
+    public const string LocalPackageCheckMessage = "RenoDX was installed from a local file; Update All cannot check it.";
+    public const string LocalInstalledPrefix = "RenoDX installed from a local file: ";
+    public const string LocalNotAnAddonPrefix = "Not a RenoDX add-on RHI can install (a ReShade add-on file: .addon64, .addon32 or .addon): ";
+    public const string LocalLedgerUnreadablePrefix = "RenoDX install refused: RHI's deployment records cannot be read, so nothing was written. Copy of the records: ";
+    public const string Local32BitOn64BitMessage = "This RenoDX add-on is 32-bit and the game is 64-bit; it needs the game's .addon64 file.";
+    public const string Local64BitOn32BitMessage = "This RenoDX add-on is 64-bit and the game is 32-bit; it needs the game's .addon32 file.";
+    public const string LocalControlUeMessage = "Control's RenoDX add-on needs RHI's extra steps: install it with the RenoDX row's Install button.";
+
+    /// <summary>Whether the record is a RenoDX installed from a local file (#195).</summary>
+    public static bool IsLocalPackage(LinuxDeploymentRecord? record)
+        => record?.Metadata.TryGetValue(LocalPackageMetadataKey, out var value) == true && value == "1";
+
+    /// <summary>
+    /// #195: whether a dropped or watched file is a RenoDX game add-on (upstream <c>AddonFileWatcher</c>: a
+    /// <c>renodx-*</c> name other than <c>renodx-universal_ue</c>, <c>-devkit</c>, <c>-dlssfix</c>, <c>-upgrade</c>,
+    /// <c>-mfgunlock</c>, <c>-dlss5</c> and <c>-dlss.</c>; ending in <c>.addon64</c>, <c>.addon32</c> or, as upstream's drop,
+    /// <c>.addon</c>) rather than another ReShade add-on or an auxiliary one other components own.
+    /// </summary>
+    public static bool IsDroppedRenoDxAddon(string? path)
+    {
+        var name = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(name) || !name.StartsWith("renodx-", StringComparison.OrdinalIgnoreCase)) return false;
+        var extension = Path.GetExtension(name);
+        return (extension.Equals(".addon64", StringComparison.OrdinalIgnoreCase) || extension.Equals(".addon32", StringComparison.OrdinalIgnoreCase)
+                || extension.Equals(".addon", StringComparison.OrdinalIgnoreCase))
+               && !IsAuxiliaryRenoDxAddon(name)
+               && !UpstreamWatcherSkips.Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>The <c>renodx-</c> names upstream's watcher leaves alone (global or other components' add-ons).</summary>
+    private static readonly string[] UpstreamWatcherSkips =
+        ["renodx-universal_ue", "renodx-devkit", "renodx-dlssfix", "renodx-upgrade", "renodx-mfgunlock", "renodx-dlss5", "renodx-dlss."];
+
+    /// <summary>
+    /// #195 (upstream <c>DragDropHandler.ProcessDroppedAddon</c>): installs a local RenoDX add-on file as the game's RenoDX
+    /// mod, recorded like a catalogue install (removal and Repair after move know it; <c>Version</c> = the file name; Update
+    /// All reports it as "could not be checked"). The same refusals as an install from the catalogue (native Linux game,
+    /// no ReShade, unknown bitness, a RenoDX add-on or a same-named file RHI does not own, a managed file the user changed),
+    /// plus a 32-bit add-on for a 64-bit game (and the reverse) and Control's add-on (its extra steps run from the row).
+    /// Only the add-on file is written (no INI or Engine.ini step): the source is copied verified, the record saved, and
+    /// only then the RenoDX add-on RHI installed before (another name) removed; a failed save puts the target back. The
+    /// source file is never changed.
+    /// </summary>
+    public async Task<ComponentOperationResult> InstallLocalAddonAsync(DetectedGame game, string addonPath, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
+            return ComponentOperationResult.Fail("RenoDX add-ons require the Windows ReShade add-on API and are not deployed to native Linux games.");
+        var fileName = Path.GetFileName(addonPath);
+        if (!IsDroppedRenoDxAddon(addonPath) || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || !File.Exists(addonPath)
+            || new FileInfo(addonPath).Length is 0 or > TrustedDownloadPolicy.AddonMaxBytes)
+            return ComponentOperationResult.Fail(LocalNotAnAddonPrefix + fileName);
+        if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || !Directory.Exists(game.BinaryDirectory))
+            return ComponentOperationResult.Fail("O diretório de binários do jogo ainda não é conhecido.");
+        if (string.IsNullOrWhiteSpace(game.ExecutablePath) || !File.Exists(game.ExecutablePath))
+            return ComponentOperationResult.Fail("Game executable was not detected.");
+        if (!HasReShade(game.BinaryDirectory))
+            return ComponentOperationResult.Fail("Install ReShade with full add-on support first. RenoDX is a ReShade add-on.");
+        var architecture = GameArchitecture.Of(game);
+        if (architecture is PeArchitecture.Unknown or PeArchitecture.Arm64)
+            return ComponentOperationResult.Fail("Could not determine game bitness for the RenoDX add-on.");
+        // The add-on's own PE header decides its bitness; a file without a readable x86/x64 header (a saved web page,
+        // a cut-off download) is not an add-on.
+        var addonArchitecture = PeArchitectureDetector.Detect(addonPath);
+        if (addonArchitecture is not (PeArchitecture.X86 or PeArchitecture.X64))
+            return ComponentOperationResult.Fail(LocalNotAnAddonPrefix + fileName);
+        if (addonArchitecture != architecture)
+            return ComponentOperationResult.Fail(addonArchitecture == PeArchitecture.X86 ? Local32BitOn64BitMessage : Local64BitOn32BitMessage);
+        if (ControlUePostInstallService.Applies(game, fileName)) return ComponentOperationResult.Fail(LocalControlUeMessage);
+
+        var deployDir = ResolveAddonDeployPath(game.BinaryDirectory);
+        var target = Path.Combine(deployDir, fileName);
+        var existingRecord = _records.Find(game, ManagedComponentKind.RenoDX);
+        var managedOldPath = existingRecord?.Files.FirstOrDefault()?.Path;
+        if (Directory.Exists(deployDir))
+        {
+            foreach (var existing in Directory.EnumerateFiles(deployDir, "renodx*.addon*", CaseInsensitiveTopLevel))
+            {
+                var existingName = Path.GetFileName(existing);
+                if (IsAuxiliaryRenoDxAddon(existingName)) continue;
+                if (managedOldPath is not null && PathsEqual(existing, managedOldPath)) continue;
+                // A same-named file RHI does not own is caught here too: every accepted name is a renodx-* add-on.
+                return ComponentOperationResult.Fail($"Foreign RenoDX protection: another RenoDX add-on already exists at {existing}. RHI Linux will not overwrite or stack it automatically.");
+            }
+        }
+        if (managedOldPath is not null && File.Exists(managedOldPath))
+        {
+            var owned = existingRecord!.Files.First();
+            if (string.IsNullOrWhiteSpace(owned.Sha256)
+                || !string.Equals(await FileHash.Sha256HexAsync(managedOldPath, cancellationToken).ConfigureAwait(false), owned.Sha256, StringComparison.OrdinalIgnoreCase))
+                return ComponentOperationResult.Fail($"Managed RenoDX file was modified outside RHI and will not be replaced: {managedOldPath}");
+        }
+
+        // The record is the commit point: refuse before the copy when it cannot be saved (an unreadable ledger).
+        if (_records.CorruptLedgerPath is { } quarantined)
+            return ComponentOperationResult.Fail(LocalLedgerUnreadablePrefix + quarantined);
+
+        var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
+        var targetBefore = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken).ConfigureAwait(false) : null;
+        // Checks are done: from the copy on, Cancel is refused (#205: RenoDX's install is not journaled yet).
+        cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
+        try
+        {
+            Directory.CreateDirectory(deployDir);
+            await AtomicFile.CopyAsync(addonPath, target, sha, CancellationToken.None).ConfigureAwait(false);
+            var record = existingRecord is null ? new LinuxDeploymentRecord() : LinuxDeploymentRecordStore.Clone(existingRecord);
+            record.GameKey = LinuxDeploymentRecordStore.GameKey(game);
+            record.GameName = game.Name;
+            record.Component = ManagedComponentKind.RenoDX;
+            record.BinaryDirectory = game.BinaryDirectory;
+            record.SourceUrl = null;
+            record.Version = fileName;
+            record.InstalledAtUtc = DateTime.UtcNow;
+            record.Files = [new LinuxDeployedFile { Path = target, ExistedBeforeInstall = false, Sha256 = sha }];
+            // The INI / Engine.ini / Control UE / peak-brightness ownership of an earlier install stays, so removal still
+            // puts those values back; what described the downloaded file goes.
+            record.Metadata.Remove(RemoteStampMetadataKey);
+            record.Metadata.Remove(UeExtendedMetadataKey);
+            VerifiedDownload.Forget(record.Metadata);
+            record.Metadata[LocalPackageMetadataKey] = "1";
+            record.Metadata[AddonVersionMetadataKey] = ReadAddonVersion(target);
+            _records.Upsert(record);
+        }
+        catch (Exception failure) // any failure up to the saved record (the ledger refusing the save too) puts the target back
+        {
+            var notes = RestoreSnapshots([new FileSnapshot(target, targetBefore)], SnapshotFallbackDirectory);
+            return ComponentOperationResult.Fail("RenoDX install failed: " + failure.Message + (notes.Count > 0 ? " Rollback incomplete: " + string.Join(" ", notes) : ""));
+        }
+        // After the commit point: RHI's earlier add-on under another name goes (a leftover is only logged).
+        if (managedOldPath is not null && !PathsEqual(managedOldPath, target) && File.Exists(managedOldPath) && !FileCleanup.TryDelete(managedOldPath, out var error))
+            AppLog.Warn("renodx", $"Could not remove the earlier RenoDX add-on {managedOldPath}", error);
+        return ComponentOperationResult.Ok(LocalInstalledPrefix + target, target);
+    }
 
     private async Task<bool> HasSnapshotOverrideAsync(DetectedGame game, CancellationToken cancellationToken)
     {
