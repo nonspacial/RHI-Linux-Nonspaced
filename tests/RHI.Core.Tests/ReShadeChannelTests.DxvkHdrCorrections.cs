@@ -75,4 +75,166 @@ public sealed partial class ReShadeChannelTests
         var after = DecoratedDxvkRow(rig);
         Assert.Equal(noLongerDx9 ? ComponentAvailability.Unsupported : ComponentAvailability.Available, after.Availability);
     }
+
+    // Reviewer probes adopted (reviews/w7-review-dxvk-hdr-probes/ReviewDxvkProbes.cs).
+    // Review minor 3 (probe P1; pins the install's own BeginWrites, mutant M8): a Cancel honoured late
+    // (CancelAtWritePhase) with NO forced rollback: the install must run to completion.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Review_DxvkHdr_LateCancel_RunsToCompletion(bool withReShade)
+    {
+        var rig = Rig("rv-latecancel-" + withReShade);
+        if (withReShade) await InstallDllReShadeAsync(rig);
+        var outcome = await CancelAtWritePhase.RunAsync(token => rig.Dxvk.InstallAsync(rig.Game, token), [rig.Bin, rig.Game.PrefixPath! + "/drive_c"]);
+        Assert.True(outcome.Result.Success, outcome.Result.Message);
+        Assert.Equal(rig.Builds.Bytes(false), File.ReadAllBytes(rig.D3d9));
+        Assert.NotNull(rig.Dxvk.GetRecord(rig.Game));
+    }
+
+    // P2: journaled cancel-after-first-write (forced rollback), retry, then the next start's recovery keeps the retry.
+    [Fact]
+    public async Task Review_DxvkHdr_CancelRollback_Retry_Restart_KeepsTheRetry()
+    {
+        var rig = Rig("rv-cancel-retry", journaled: true);
+        await InstallDllReShadeAsync(rig);
+        var userReShade = File.ReadAllBytes(rig.UserReg);
+        var systemReShade = File.ReadAllBytes(rig.SystemReg);
+        var outcome = await CancelAtWritePhase.RunAsync(token => rig.Dxvk.InstallAsync(rig.Game, token), [rig.Bin, rig.Game.PrefixPath! + "/drive_c"],
+            atWritePhase: () => rig.Store.SaveFaultForTesting = () => new IOException("disk full"));
+        rig.Store.SaveFaultForTesting = null;
+        Assert.False(outcome.Result.Success);
+        CancelAtWritePhase.AssertUnchanged(outcome.Before, rig.Bin);
+        Assert.Equal(userReShade, File.ReadAllBytes(rig.UserReg));
+        Assert.Equal(systemReShade, File.ReadAllBytes(rig.SystemReg));
+
+        var retried = await rig.Dxvk.InstallAsync(rig.Game);
+        Assert.True(retried.Success, retried.Message);
+        var files = CancelAtWritePhase.Snapshot(rig.Bin, LayerFolder(rig.Game));
+        var user = File.ReadAllBytes(rig.UserReg);
+        var system = File.ReadAllBytes(rig.SystemReg);
+        var ledger = File.ReadAllBytes(rig.Ledger);
+
+        await SimulatedDeath.RecoverAsync(rig.JournalDirectory!, rig.Ledger); // the next start
+
+        CancelAtWritePhase.AssertUnchanged(files, rig.Bin, LayerFolder(rig.Game));
+        Assert.Equal(user, File.ReadAllBytes(rig.UserReg));
+        Assert.Equal(system, File.ReadAllBytes(rig.SystemReg));
+        Assert.Equal(ledger, File.ReadAllBytes(rig.Ledger));
+    }
+
+    // P2b: crash at the install's commit write, restart (recovery), retry with fresh services, restart again.
+    [Fact]
+    public async Task Review_DxvkHdr_CrashAtCommit_Recover_Retry_RecoverAgain_KeepsTheRetry()
+    {
+        var rig = Rig("rv-crash-retry", journaled: true);
+        await InstallDllReShadeAsync(rig);
+        var withReShade = CancelAtWritePhase.Snapshot(rig.Bin);
+        using (var death = new SimulatedDeath(rig.Journal!))
+        {
+            rig.Store.SaveFaultForTesting = () => death.Die();
+            var (died, _) = await death.RunUntilDeathAsync(() => rig.Dxvk.InstallAsync(rig.Game));
+            Assert.True(died);
+            await SimulatedDeath.RecoverAsync(rig.JournalDirectory!, rig.Ledger);
+            CancelAtWritePhase.AssertUnchanged(withReShade, rig.Bin);
+
+            // Retry through fresh services (the dead thread still holds the old store's lock).
+            var store = new LinuxDeploymentRecordStore(rig.Ledger);
+            var (journal, overrides) = SimulatedDeath.NewJournal(rig.JournalDirectory!, store);
+            var http = new HttpClient(new DxvkHdrHandler(new LunarGHandler()));
+            var cache = Path.Combine(_root, "rv-crash-retry-cache2");
+            var reshade = new ReShadeDeploymentService(http, new TransactionalFileDeploymentService(journal), store, overrides,
+                new FakeExtractor(), cache, new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")),
+                journal: journal);
+            var dxvk = new DxvkHdrDeploymentService(http, store, overrides, reshade, journal, Path.Combine(cache, "dxvk-hdr"));
+            var retried = await dxvk.InstallAsync(rig.Game);
+            Assert.True(retried.Success, retried.Message);
+            var files = CancelAtWritePhase.Snapshot(rig.Bin, LayerFolder(rig.Game));
+            var user = File.ReadAllBytes(rig.UserReg);
+            var system = File.ReadAllBytes(rig.SystemReg);
+            var ledger = File.ReadAllBytes(rig.Ledger);
+
+            await SimulatedDeath.RecoverAsync(rig.JournalDirectory!, rig.Ledger);
+
+            CancelAtWritePhase.AssertUnchanged(files, rig.Bin, LayerFolder(rig.Game));
+            Assert.Equal(user, File.ReadAllBytes(rig.UserReg));
+            Assert.Equal(system, File.ReadAllBytes(rig.SystemReg));
+            Assert.Equal(ledger, File.ReadAllBytes(rig.Ledger));
+        }
+        rig.Store.SaveFaultForTesting = null;
+    }
+
+    // P5: ReShade's own update/reinstall on the moved layer (no DX9 HDR view): stays the layer, d3d9.dll untouched, removal still moves back.
+    [Fact]
+    public async Task Review_DxvkHdr_ReShadeUpdateOnMovedLayer_StaysLayer()
+    {
+        var rig = Rig("rv-reshade-update");
+        await InstallDllReShadeAsync(rig);
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var d3d9 = File.ReadAllBytes(rig.D3d9);
+        var updated = await rig.ReShade.InstallAsync(rig.Game, new ReShadeInstallOptions());
+        Assert.True(updated.Success, updated.Message);
+        Assert.True(ReShadeVulkanLayer.IsLayerRecord(rig.Store.Find(rig.Game, ManagedComponentKind.ReShade)));
+        Assert.Equal(d3d9, File.ReadAllBytes(rig.D3d9));
+        var removed = await rig.Dxvk.RemoveAsync(rig.Game);
+        Assert.True(removed.Success, removed.Message);
+        var back = rig.Store.Find(rig.Game, ManagedComponentKind.ReShade)!;
+        Assert.False(ReShadeVulkanLayer.IsLayerRecord(back));
+        Assert.All(back.Files, file => Assert.True(File.Exists(file.Path), file.Path));
+        Assert.False(File.Exists(Path.Combine(rig.Bin, "vulkan-1.dll")));
+    }
+
+    // P7: a foreign D3D9.DLL / DXVK.CONF in another spelling is refused and left alone.
+    [Theory]
+    [InlineData("D3D9.DLL")]
+    [InlineData("DXVK.CONF")]
+    public async Task Review_DxvkHdr_ForeignOtherSpelling_Refused(string name)
+    {
+        var rig = Rig("rv-upper-" + name);
+        var path = Path.Combine(rig.Bin, name);
+        File.WriteAllBytes(path, [1, 2, 3]);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin, rig.Game.PrefixPath!);
+        var result = await rig.Dxvk.InstallAsync(rig.Game);
+        Assert.False(result.Success, result.Message);
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin, rig.Game.PrefixPath!);
+    }
+
+    // P8: a per-exe section the user already has (another override) comes back byte for byte.
+    [Fact]
+    public async Task Review_DxvkHdr_ExistingPerExeSection_ByteForByte()
+    {
+        var rig = Rig("rv-section");
+        var user = new WineDllOverrideService(new WineRegistryEditor(_ => false));
+        user.EnsureNativeBuiltin(rig.Game.PrefixPath!, "dinput8", "Game.exe");
+        var before = File.ReadAllBytes(rig.UserReg);
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        Assert.Equal("native,builtin", rig.Override("d3d9"));
+        Assert.True((await rig.Dxvk.RemoveAsync(rig.Game)).Success);
+        Assert.Equal(before, File.ReadAllBytes(rig.UserReg));
+    }
+
+    // P9: crash right after d3d9.dll is placed (mid-operation, not a ledger write), with ReShade moving: recovery puts all back.
+    [Fact]
+    public async Task Review_DxvkHdr_CrashMidInstall_WithReShade_RecoversByteForByte()
+    {
+        var rig = Rig("rv-crash-mid", journaled: true);
+        await InstallDllReShadeAsync(rig);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin);
+        var user = File.ReadAllBytes(rig.UserReg);
+        var system = File.ReadAllBytes(rig.SystemReg);
+        using (var death = new SimulatedDeath(rig.Journal!))
+        {
+            rig.Dxvk.AfterD3d9PlacedForTesting = () => throw death.Die();
+            var (died, _) = await death.RunUntilDeathAsync(() => rig.Dxvk.InstallAsync(rig.Game));
+            Assert.True(died);
+            await SimulatedDeath.RecoverAsync(rig.JournalDirectory!, rig.Ledger);
+            CancelAtWritePhase.AssertUnchanged(before, rig.Bin);
+            Assert.Equal(user, File.ReadAllBytes(rig.UserReg));
+            Assert.Equal(system, File.ReadAllBytes(rig.SystemReg));
+            Assert.False(Directory.Exists(LayerFolder(rig.Game)), "layer folder left");
+            var fresh = new LinuxDeploymentRecordStore(rig.Ledger);
+            Assert.Null(fresh.Find(rig.Game, ManagedComponentKind.DxvkHdr));
+            Assert.False(ReShadeVulkanLayer.IsLayerRecord(fresh.Find(rig.Game, ManagedComponentKind.ReShade)));
+        }
+    }
 }
