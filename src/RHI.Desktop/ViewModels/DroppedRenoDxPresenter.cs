@@ -35,7 +35,7 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
     private static string T(string key) => UiLocalizationService.Text(key);
     private static string TF(string key, params object?[] args) => UiLocalizationService.Format(key, args);
 
-    /// <summary>The status line when <see cref="OfferFor"/> finds no game: says why for an add-on that needs RHI's ReShade.</summary>
+    /// <summary>The status line when <see cref="OfferForAsync"/> finds no game: says why for an add-on that needs RHI's ReShade.</summary>
     public static string NoGameLine(string path, bool watched)
         => LinuxDroppedFileClassifier.AddonTarget(path, watched) == DroppedAddonTarget.GameAddonInstall
             ? TF("Sm.DropAddonNoGame", Path.GetFileName(path))
@@ -50,20 +50,27 @@ public sealed class DroppedRenoDxPresenter(LinuxManagedComponentService componen
     /// goes only into a game with RHI's ReShade with add-on support — w7 follow-up B10: the others are not listed). With
     /// <paramref name="watchFolder"/> set, a file directly in it is removed after a successful install (upstream's
     /// <c>deleteSourceAfterInstall</c>).
+    /// <para>W7 final review 7: the ReShade check reads every game's folder and DLL signatures, so it runs off the UI
+    /// thread; the library and the selected game are read before, the offer is built after, on the caller's thread.</para>
     /// </summary>
-    public DroppedRenoDxOffer? OfferFor(MainWindowViewModel vm, string path, string? watchFolder = null)
+    public async Task<DroppedRenoDxOffer?> OfferForAsync(MainWindowViewModel vm, string path, string? watchFolder = null)
     {
         var isRenoDx = LinuxDroppedFileClassifier.AddonTarget(path, watched: watchFolder is not null) != DroppedAddonTarget.GameAddonInstall;
-        var games = vm.AllLibraryGames
+        var library = vm.AllLibraryGames
             .Where(game => !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase))
-            .Where(game => isRenoDx || components.DroppedAddonRefusal(game) is null)
-            .OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        var selected = vm.SelectedGame;
+        var refusal = Refusal;
+        var games = isRenoDx ? library : await Task.Run(() => library.Where(game => refusal(game) is null).ToArray());
+        games = games.OrderBy(game => game.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         if (games.Length == 0) return null;
         var fileName = Path.GetFileName(path);
-        return new DroppedRenoDxOffer(fileName, path, games, MatchIndex(games, fileName, vm.SelectedGame, components.RenoDxCatalogueFileName),
+        return new DroppedRenoDxOffer(fileName, path, games, MatchIndex(games, fileName, selected, components.RenoDxCatalogueFileName),
             watchFolder is not null && InFolder(path, watchFolder), isRenoDx);
     }
+
+    /// <summary>Why a dropped non-RenoDX add-on cannot go into a game, or null (tests watch the thread it runs on).</summary>
+    internal Func<DetectedGame, string?> Refusal { get; set; } = components.DroppedAddonRefusal;
 
     /// <summary>The folder the add-on would go into for <paramref name="game"/> (beside ReShade).</summary>
     public static string FolderFor(DetectedGame game)

@@ -341,7 +341,7 @@ public sealed partial class MainWindow
     {
         if (DataContext is not MainWindowViewModel vm || !File.Exists(path)) return;
         var presenter = vm.DroppedRenoDx;
-        if (presenter.OfferFor(vm, path, watchFolder) is not { } offer)
+        if (await presenter.OfferForAsync(vm, path, watchFolder) is not { } offer)
         {
             vm.StatusText = DroppedRenoDxPresenter.NoGameLine(path, watched: watchFolder is not null);
             return;

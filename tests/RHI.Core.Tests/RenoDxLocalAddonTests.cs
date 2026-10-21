@@ -308,14 +308,14 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         var watch = Directory.CreateDirectory(Path.Combine(fx.Root, "watch")).FullName;
 
         var wrongBitness = Addon(watch, "renodx-foogame.addon32", machine: 0x14c);
-        var refusedOffer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, wrongBitness, watch)!;
+        var refusedOffer = (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, wrongBitness, watch))!;
         Assert.True(refusedOffer.DeleteSourceAfterInstall);
         Assert.False(await fx.Vm.DroppedRenoDx.InstallAsync(fx.Vm, refusedOffer, refusedOffer.Games[0]));
         Assert.True(File.Exists(wrongBitness));
 
         // The browser saves a new download under the same name while RHI installs the first one.
         var watched = Addon(watch, "renodx-foogame.addon64");
-        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, watched, watch)!;
+        var offer = (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, watched, watch))!;
         var rewritten = false;
         fx.Records.SaveFaultForTesting = () =>
         {
@@ -338,7 +338,7 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
         var bytes = File.ReadAllBytes(dropped);
 
-        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped)!;
+        var offer = (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, dropped))!;
         Assert.False(offer.IsRenoDx);
         Assert.Equal(UiLocalizationService.Text("Sm.DropAddonTitle"), offer.Title);
         Assert.Null(fx.Vm.DroppedRenoDx.ReplacesFor(offer, offer.Games[0])); // it replaces nothing
@@ -374,21 +374,34 @@ public sealed class RenoDxLocalAddonTests : IDisposable
     {
         var with = Game(Path.Combine(_root, "offer"), "With ReShade", 0x8664);
         var without = Game(Path.Combine(_root, "offer"), "Without ReShade", 0x8664, reshade: false);
-        using var fx = await ViewModelFixture.StartAsync([with, without]);
+        var noAddons = Game(Path.Combine(_root, "offer"), "No Addons ReShade", 0x8664);
+        using var fx = await ViewModelFixture.StartAsync([with, without, noAddons]);
         without = fx.Vm.AllLibraryGames.Single(g => g.Name == "Without ReShade");
+        noAddons = fx.Vm.AllLibraryGames.Single(g => g.Name == "No Addons ReShade");
+        // W7 final review 4: RHI's ReShade there is the No Addons build (ReShade is in the folder, add-ons are not loaded).
+        fx.Records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(noAddons), GameName = noAddons.Name, Component = ManagedComponentKind.ReShade,
+            BinaryDirectory = noAddons.BinaryDirectory!, Version = "6.8.0",
+            Files = [new LinuxDeployedFile { Path = Path.Combine(noAddons.BinaryDirectory!, "ReShade64.dll") }],
+            Metadata = new(StringComparer.OrdinalIgnoreCase) { ["ReShade.Channel"] = nameof(ReShadeChannel.NoAddons) }
+        });
         var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
 
-        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped)!;
+        var offer = (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, dropped))!;
 
         Assert.Equal(["With ReShade"], offer.GameNames);
-        var refused = await fx.Managed.InstallDroppedAddonForGameAsync(without, dropped);
-        Assert.False(refused.Success);
-        Assert.Equal(LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, refused.Message);
-        Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "ShaderToggler.addon64"))); // nothing copied
-        Assert.False(File.Exists(Path.Combine(without.BinaryDirectory!, "ShaderToggler.addon64")));
+        foreach (var refusedGame in new[] { without, noAddons })
+        {
+            var refused = await fx.Managed.InstallDroppedAddonForGameAsync(refusedGame, dropped);
+            Assert.False(refused.Success);
+            Assert.Equal(LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, refused.Message);
+            Assert.False(File.Exists(Path.Combine(fx.Managed.CustomAddonRoot, "ShaderToggler.addon64"))); // nothing copied
+            Assert.False(File.Exists(Path.Combine(refusedGame.BinaryDirectory!, "ShaderToggler.addon64")));
+        }
 
         // A RenoDX add-on still lists every Windows game (RenoDX installs ReShade itself where it is missing).
-        Assert.Equal(2, fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, Addon(Path.Combine(fx.Root, "drop"), "renodx-foo.addon64"))!.Games.Count);
+        Assert.Equal(3, (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, Addon(Path.Combine(fx.Root, "drop"), "renodx-foo.addon64")))!.Games.Count);
     }
 
     [Fact]
@@ -398,9 +411,35 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         using var fx = await ViewModelFixture.StartAsync([without]);
         var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
 
-        Assert.Null(fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, dropped));
+        Assert.Null((await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, dropped)));
         Assert.Equal(UiLocalizationService.Format("Sm.DropAddonNoGame", "ShaderToggler.addon64"), DroppedRenoDxPresenter.NoGameLine(dropped, watched: false));
         Assert.Equal(UiLocalizationService.Format("Sm.DropNoGame", "renodx-foo.addon64"), DroppedRenoDxPresenter.NoGameLine("/x/renodx-foo.addon64", watched: false));
+    }
+
+    // W7 final review 7: the ReShade check of every library game runs off the UI thread (it reads folders and DLL
+    // signatures); the offer itself is built back on the caller's (UI) thread, with the same games as before.
+    [Fact]
+    public async Task AnotherDroppedAddon_TheReShadeCheckRunsOffTheUiThread_AndTheOfferIsBuiltBackOnIt()
+    {
+        var with = Game(Path.Combine(_root, "thread"), "With ReShade", 0x8664);
+        var without = Game(Path.Combine(_root, "thread"), "Without ReShade", 0x8664, reshade: false);
+        using var fx = await ViewModelFixture.StartAsync([with, without]);
+        var dropped = Addon(Directory.CreateDirectory(Path.Combine(fx.Root, "drop")).FullName, "ShaderToggler.addon64");
+        var presenter = fx.Vm.DroppedRenoDx;
+        var checkedOn = new System.Collections.Concurrent.ConcurrentBag<int>();
+        presenter.Refusal = game => { checkedOn.Add(Environment.CurrentManagedThreadId); return fx.Managed.DroppedAddonRefusal(game); };
+        using var ui = new UiThreadStandIn();
+
+        var (offer, builtOnUi) = await ui.RunAsync(async () =>
+        {
+            var made = await presenter.OfferForAsync(fx.Vm, dropped);
+            return (made, ui.IsCurrent);
+        }).WaitAsync(TimeSpan.FromMinutes(1));
+
+        Assert.Equal(["With ReShade"], offer!.GameNames);
+        Assert.Equal(2, checkedOn.Count);
+        Assert.DoesNotContain(ui.ThreadId, checkedOn);
+        Assert.True(builtOnUi);
     }
 
     // w7 integration (#195 × #179): a dropped add-on "ticked in the game's Shaders/Add-ons list" switches a game that used
@@ -444,11 +483,11 @@ public sealed class RenoDxLocalAddonTests : IDisposable
         var watch = Directory.CreateDirectory(Path.Combine(fx.Root, "watch")).FullName;
         var watched = Addon(watch, "renodx-foogame.addon64");
 
-        var offer = fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, watched, watch)!;
+        var offer = (await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, watched, watch))!;
         Assert.Equal(["Foo Game"], offer.GameNames); // a native Linux game cannot take a RenoDX add-on
         Assert.Equal(0, offer.MatchedIndex);
         Assert.True(offer.DeleteSourceAfterInstall);
-        Assert.False(fx.Vm.DroppedRenoDx.OfferFor(fx.Vm, Addon(fx.Root, "renodx-foogame.addon64"), watch)!.DeleteSourceAfterInstall); // dropped, not watched
+        Assert.False((await fx.Vm.DroppedRenoDx.OfferForAsync(fx.Vm, Addon(fx.Root, "renodx-foogame.addon64"), watch))!.DeleteSourceAfterInstall); // dropped, not watched
         Assert.EndsWith(Path.Combine("Foo Game", "bin"), DroppedRenoDxPresenter.FolderFor(offer.Games[0]), StringComparison.Ordinal);
 
         // The lines the install writes (a selection analysis' "Ready" line may replace them a moment later).
