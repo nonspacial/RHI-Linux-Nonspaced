@@ -265,6 +265,34 @@ public sealed class SupportBundleTests : IDisposable
         Assert.DoesNotContain(blocks, block => block.Text.Contains("**", StringComparison.Ordinal) || block.Text.Contains("[!NOTE]", StringComparison.Ordinal));
     }
 
+    // W7 final re-review 1: body blocks set Foreground = null, which overrides the theme's inherited brush and paints
+    // nothing. Every block of the real changelog must end up with a brush: headings their own, the rest the inherited one.
+    [Fact]
+    public void WhatsNew_EveryBlockHasAForeground_BodyTextInheritsTheTheme()
+    {
+        var theme = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#E8ECF2"));
+        var panel = new Avalonia.Controls.StackPanel();
+        panel.SetValue(Avalonia.Controls.Documents.TextElement.ForegroundProperty, theme);
+        // The changelog has no ### heading today; add one so that level is covered too.
+        var blocks = RHI.Desktop.Views.ChangelogText.Blocks(RHI.Desktop.Views.ChangelogText.Load()).Append((Level: 3, Text: "Third-level heading")).ToArray();
+        foreach (var (level, text) in blocks) panel.Children.Add(RHI.Desktop.Views.ChangelogText.View(level, text));
+
+        var views = panel.Children.OfType<Avalonia.Controls.SelectableTextBlock>().ToArray();
+        Assert.Equal(blocks.Length, views.Length);
+        Assert.Contains(blocks, block => block.Level == 0);
+        for (var i = 0; i < views.Length; i++)
+        {
+            Assert.NotNull(views[i].Foreground);
+            if (blocks[i].Level is 1 or 2)
+                Assert.Same(Avalonia.Media.Brushes.LightSkyBlue, views[i].Foreground);
+            else
+            {
+                Assert.False(views[i].IsSet(Avalonia.Controls.TextBlock.ForegroundProperty), blocks[i].Text);
+                Assert.Same(theme, views[i].Foreground);
+            }
+        }
+    }
+
     [Fact]
     public void PortugueseUi_HasTheSupportLines()
     {

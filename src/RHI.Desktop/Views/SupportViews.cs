@@ -108,6 +108,26 @@ internal static class ChangelogText
         return blocks;
     }
 
+    /// <summary>
+    /// One block as the What's new dialog shows it. Only <c>#</c>/<c>##</c> headings get a brush of their own; every other
+    /// block keeps the theme's inherited foreground (w7 final re-review 1: a local <c>null</c> Foreground overrides the
+    /// inherited brush and Avalonia paints the text with nothing, so body text was invisible).
+    /// </summary>
+    public static SelectableTextBlock View(int level, string text)
+    {
+        var block = new SelectableTextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            FontWeight = level > 0 ? FontWeight.SemiBold : FontWeight.Normal,
+            FontSize = level switch { 1 => 20, 2 => 16, 3 => 14, _ => 12 },
+            Margin = new Thickness(0, level is 1 or 2 ? 10 : 0, 0, 0),
+            Opacity = level > 0 ? 1 : 0.86
+        };
+        if (level is 1 or 2) block.Foreground = Brushes.LightSkyBlue;
+        return block;
+    }
+
     private static string Plain(string text)
     {
         text = System.Text.RegularExpressions.Regex.Replace(text, @"\[([^\]]+)\]\([^)]+\)", "$1");
@@ -241,16 +261,7 @@ public sealed partial class MainWindow
     {
         var panel = new StackPanel { Spacing = 8, Margin = new Thickness(18) };
         foreach (var (level, text) in ChangelogText.Blocks(ChangelogText.Load()))
-            panel.Children.Add(new SelectableTextBlock
-            {
-                Text = text,
-                TextWrapping = TextWrapping.Wrap,
-                FontWeight = level > 0 ? FontWeight.SemiBold : FontWeight.Normal,
-                FontSize = level switch { 1 => 20, 2 => 16, 3 => 14, _ => 12 },
-                Foreground = level is 1 or 2 ? Brushes.LightSkyBlue : null,
-                Margin = new Thickness(0, level is 1 or 2 ? 10 : 0, 0, 0),
-                Opacity = level > 0 ? 1 : 0.86
-            });
+            panel.Children.Add(ChangelogText.View(level, text));
         var close = new Button { Content = T("Win.Close"), Padding = new Thickness(14, 7), HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12) };
         var root = new Grid { RowDefinitions = new RowDefinitions("*,Auto") };
         root.Children.Add(new ScrollViewer { Content = panel, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
