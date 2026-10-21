@@ -96,15 +96,18 @@ internal static class ChangelogText
         foreach (var raw in markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
         {
             var line = raw.TrimEnd();
-            var (depth, content) = Unquote(line);
             if (code is not null)
             {
-                // The fence ends at its closing marker, or where its blockquote ends (a line of a lower quote depth).
-                if (depth >= fenceDepth && !IsClosingFence(content.TrimStart(), fence)) { code.Add(content); continue; }
-                var closed = depth >= fenceDepth;
+                // Inside a fence only the fence's own quote markers come off (w8 follow-up C2): deeper ">" are code text, so a
+                // "> > ```" line does not close a depth-1 fence. The fence ends at its closing marker, or where its blockquote
+                // ends (a line of a lower quote depth).
+                var (inner, codeText) = Unquote(line, fenceDepth);
+                if (inner == fenceDepth && !IsClosingFence(codeText.TrimStart(), fence)) { code.Add(codeText); continue; }
+                var closed = inner == fenceDepth;
                 FlushCode();
-                if (closed) { lastDepth = depth; continue; }
+                if (closed) { lastDepth = inner; continue; }
             }
+            var (depth, content) = Unquote(line);
             var trimmed = content.TrimStart();
             // #219: a bare ">" (any depth) is Markdown's paragraph break inside a blockquote: it ends the paragraph or list item.
             if (trimmed.Length == 0) { Flush(); lastDepth = depth; continue; }
@@ -138,19 +141,23 @@ internal static class ChangelogText
         return blocks;
     }
 
-    // The blockquote depth of a line and its text after the markers: each ">" takes at most one following space, so a fenced
-    // code line inside a quote keeps its own indentation.
-    private static (int Depth, string Content) Unquote(string line)
+    // The blockquote depth of a line (at most maxDepth markers taken) and its text after the markers: each ">" takes at most
+    // one following space, so a fenced code line inside a quote keeps its own indentation. One index scan and one Substring
+    // (w8 follow-up C1: re-slicing per marker was quadratic in the depth).
+    private static (int Depth, string Content) Unquote(string line, int maxDepth = int.MaxValue)
     {
         var depth = 0;
-        var rest = line;
-        while (rest.TrimStart() is { Length: > 0 } t && t[0] == '>')
+        var start = 0;
+        while (depth < maxDepth)
         {
+            var i = start;
+            while (i < line.Length && char.IsWhiteSpace(line[i])) i++;
+            if (i >= line.Length || line[i] != '>') break;
             depth++;
-            rest = t[1..];
-            if (rest.StartsWith(' ')) rest = rest[1..];
+            start = i + 1;
+            if (start < line.Length && line[start] == ' ') start++;
         }
-        return (depth, rest);
+        return (depth, start == 0 ? line : line[start..]);
     }
 
     // "```" or "~~~" (three or more) opens a fence; the marker run is returned so only the same kind of run closes it.

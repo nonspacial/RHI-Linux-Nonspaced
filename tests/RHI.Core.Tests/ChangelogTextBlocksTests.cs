@@ -116,4 +116,43 @@ public sealed class ChangelogTextBlocksTests
 
         Assert.Equal(new (int, string)[] { (0, "Before."), (0, "first\n\n```\nlast"), (2, "Heading") }, blocks);
     }
+
+    // ── w8 follow-up C1–C3 ─────────────────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AVeryDeepQuoteLine_IsReadInLinearTime()
+    {
+        // C1: 200 000 markers took tens of seconds with a re-slice per marker; one index scan takes milliseconds. Bounded wait,
+        // so a quadratic scan fails here instead of hanging the suite.
+        var line = string.Concat(Enumerable.Repeat("> ", 200_000)) + "deep text";
+        var read = Task.Run(() => ChangelogText.Blocks(line));
+
+        var finished = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.True(finished == read, "a 200 000-deep quote line was not read within 5 s");
+        Assert.Equal(new (int, string)[] { (0, "deep text") }, await read);
+    }
+
+    [Fact]
+    public void FencedCodeOutsideAQuote_KeepsQuoteMarkersAsCode()
+    {
+        var blocks = ChangelogText.Blocks("```\n> prompt\n  > indented\n```\n");
+
+        Assert.Equal(new (int, string)[] { (0, "> prompt\n  > indented") }, blocks);
+    }
+
+    [Fact]
+    public void FencedCodeInsideAQuote_KeepsDeeperMarkers_AndADeeperFenceDoesNotCloseIt()
+    {
+        var blocks = ChangelogText.Blocks("> ```\n> > inner\n> > ```\n> still code\n> ```\n>\n> After.\n");
+
+        Assert.Equal(new (int, string)[] { (0, "> inner\n> ```\nstill code"), (0, "After.") }, blocks);
+    }
+
+    [Fact]
+    public void AHashInsideAQuote_IsNotAHeading()
+    {
+        var blocks = ChangelogText.Blocks("> # not a heading\n");
+
+        Assert.Equal(new (int, string)[] { (0, "# not a heading") }, blocks);
+    }
 }
