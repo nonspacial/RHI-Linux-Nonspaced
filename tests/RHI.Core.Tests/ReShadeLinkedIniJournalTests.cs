@@ -173,6 +173,55 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
         AssertLinked(fx.Bin, fx.Shared, bytes);
     }
 
+    // Re-review 2 (#207): a ReShade.ini linked to a folder RHI does not write through (outside the game's folders and
+    // ~/.config/ReShade) must not fail an install that does not manage ReShade.ini, nor the removal of a record whose
+    // ReShade.ini the user linked there since: RHI writes nothing through such a link, so it is left exactly as it is.
+    [Fact]
+    public async Task Install_ManageIniOff_LinkOutsideTheAllowedFolders_Installs_AndLeavesTheLinkAlone()
+    {
+        var fx = Fixture("manage-off-outside", link: false);
+        var ini = Path.Combine(fx.Bin, "ReShade.ini");
+        var outside = Path.Combine(Directory.CreateDirectory(Path.Combine(_root, "manage-off-outside", "Documents")).FullName, "ReShade.ini");
+        File.WriteAllText(outside, SharedBefore);
+        File.CreateSymbolicLink(ini, outside);
+        fx.Records.SaveFaultForTesting = () => new IOException("disk full (test)");
+        var failed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+        fx.Records.SaveFaultForTesting = null;
+        Assert.False(failed.Success);
+        Assert.Equal(outside, new FileInfo(ini).LinkTarget); // a rolled-back install leaves the link a link
+        Assert.Equal(SharedBefore, File.ReadAllText(outside));
+
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = false });
+
+        Assert.True(installed.Success, installed.Message);
+        Assert.Equal(outside, new FileInfo(ini).LinkTarget);
+        Assert.Equal(SharedBefore, File.ReadAllText(outside));
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+        Assert.Equal(outside, new FileInfo(ini).LinkTarget);
+        Assert.Equal(SharedBefore, File.ReadAllText(outside));
+    }
+
+    [Fact]
+    public async Task Removal_RecordedIniLinkedOutsideTheAllowedFoldersSince_Succeeds_AndLeavesTheLinkAlone()
+    {
+        var fx = Fixture("remove-outside", link: false);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+        var ini = Path.Combine(fx.Bin, "ReShade.ini");
+        var outside = Path.Combine(Directory.CreateDirectory(Path.Combine(_root, "remove-outside", "Documents")).FullName, "ReShade.ini");
+        File.Copy(ini, outside);
+        File.Delete(ini);
+        File.CreateSymbolicLink(ini, outside);
+        var outsideBefore = File.ReadAllBytes(outside);
+
+        var removed = await fx.Service.RemoveAsync(fx.Game);
+
+        Assert.True(removed.Success, removed.Message);
+        Assert.Null(fx.Records.Find(fx.Game, ManagedComponentKind.ReShade));
+        Assert.Equal(outside, new FileInfo(ini).LinkTarget);
+        Assert.Equal(outsideBefore, File.ReadAllBytes(outside));
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "dxgi.dll")));
+    }
+
     /// <summary>
     /// Runs <paramref name="run"/> with the <paramref name="saveThatFails"/>-th ledger save failing (ledger-blocked: an
     /// IOException, the operation rolls back in process) or dying (crash: the next start's recovery rolls it back), then

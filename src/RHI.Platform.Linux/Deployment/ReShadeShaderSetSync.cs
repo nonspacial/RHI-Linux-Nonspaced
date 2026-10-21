@@ -99,7 +99,8 @@ public sealed partial class ReShadeDeploymentService
         {
             // Inside the try (as ReShade's install does): #207's link-aware target refuses a ReShade.ini linked outside the
             // allowed folders by throwing, which must come back as a failed result that says the packs were not changed.
-            inis = IniPathsTouchedByInstall(game, record, coexist: false).ToArray();
+            var writesIni = layer || record.Files.Any(file => IsReShadeIni(file.Path));
+            inis = IniPathsTouchedByInstall(game, record, coexist: false, writesCurrentIni: writesIni).ToArray();
             await scope.TrackAllAsync(inis, cancellationToken).ConfigureAwait(false);
             CleanupManagedIni(record, game.InstallPath);
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
@@ -125,9 +126,15 @@ public sealed partial class ReShadeDeploymentService
 
             shaderResult = await _shaderPacks.ApplySyncAsync(prepared, scope.Operation, cancellationToken).ConfigureAwait(false);
             ReShadeIniApplyResult? iniResult = null;
-            if (layer || record.Files.Any(file => IsReShadeIni(file.Path)))
+            if (writesIni)
+            {
+                // Re-review 1 (shader-sets): the Settings defaults (hotkeys, screenshot folder, template keys) go in only when
+                // the sync (re)creates the file — it was missing, or the cleanup took out RHI's unchanged file — so a key the
+                // user changed (an in-game hotkey) survives a shader toggle.
+                var recreates = !File.Exists(ReShadeIniManager.ResolveIniPath(binaryDirectory));
                 iniResult = ReShadeIniManager.Apply(binaryDirectory, shaderResult.EffectSearchPaths, shaderResult.TextureSearchPaths,
-                    IniDefaults?.Invoke(game, layer), game.InstallPath);
+                    recreates ? IniDefaults?.Invoke(game, layer) : null, game.InstallPath);
+            }
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
             // w7 integration (#179 × #201): an XNA game's ReShade runs from the prefix's .NET assembly folder and reads the
