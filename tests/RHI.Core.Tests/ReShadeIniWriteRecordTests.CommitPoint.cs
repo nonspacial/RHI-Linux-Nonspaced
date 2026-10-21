@@ -66,7 +66,7 @@ public sealed partial class ReShadeIniWriteRecordTests
     }
 
     // One game of a two-game "Apply to all games": its commit write lands and then throws. It counts as updated (its file
-    // and record are kept), and the next game is applied as usual.
+    // and record are kept) and is named for the line's landed note (w8 follow-up C11), and the next game is applied as usual.
     [Theory]
     [MemberData(nameof(LandedLedgerWrite.Shapes), MemberType = typeof(LandedLedgerWrite))]
     [Trait("Category", "CommitPoint")]
@@ -79,7 +79,7 @@ public sealed partial class ReShadeIniWriteRecordTests
         var batch = await a.Ini.ApplyReShadeSettingsToAllAsync([a.Game, b.Game], Settings);
         LandedLedgerWrite.Disarm(a.Records);
 
-        Assert.Equal(new IniBatchResult(2, 0, 0), batch);
+        Assert.Equal(new IniBatchResult(2, 0, 0) { Landed = [a.Game.Name] }, batch);
         foreach (var fx in new[] { a, b })
         {
             Assert.Contains("VariableListUseTabs=0", File.ReadAllText(fx.IniPath));
