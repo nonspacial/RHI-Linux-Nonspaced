@@ -5,6 +5,7 @@ using RHI.Core.Models;
 using RHI.Core.Services;
 using RHI.Desktop.Localization;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Hdr;
 
 namespace RHI.Desktop.ViewModels;
 
@@ -200,18 +201,30 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
 
     public bool HasDlssVersionDefaults => DlssVersionDefaults.HasAny;
 
+    /// <summary>#215: the Settings default presets Quick Apply copies (a Default default copies nothing).</summary>
+    public NvidiaPresetChoice DlssPresetDefaults => NvidiaPresetChoice.FromDefaults(
+        Host.Settings.DefaultSrPreset, Host.Settings.DefaultRrPreset, Host.Settings.DefaultFgPreset);
+
+    /// <summary>A version or (#215, upstream <c>hasDefaults</c>) a preset default is set: Quick Apply has something to do.</summary>
+    public bool HasDlssDefaults => HasDlssVersionDefaults || DlssPresetDefaults.HasAny;
+
     public string DlssDefaultsSummary
     {
         get
         {
             static string Show(string value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
             var d = DlssVersionDefaults;
-            return TF("Vm.DefaultsSRRRFGNRSL", Show(d.SuperResolution), Show(d.RayReconstruction), Show(d.FrameGeneration), Show(d.NeuralRendering), Show(d.Streamline));
+            var versions = TF("Vm.DefaultsSRRRFGNRSL", Show(d.SuperResolution), Show(d.RayReconstruction), Show(d.FrameGeneration), Show(d.NeuralRendering), Show(d.Streamline));
+            var presets = DlssPresetDefaults;
+            if (!presets.HasAny) return versions;
+            // #215 (upstream's Settings summary names the preset defaults too).
+            return versions + "\n" + TF("Dp.PresetSummary", ShowPreset(NvidiaPresetSlot.SuperResolution, presets.SuperResolution),
+                ShowPreset(NvidiaPresetSlot.RayReconstruction, presets.RayReconstruction), ShowPreset(NvidiaPresetSlot.FrameGeneration, presets.FrameGeneration));
         }
     }
 
     public bool CanQuickApplyDlssDefaults =>
-        SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy && HasDlssVersionDefaults &&
+        SelectedGame is not null && HasConfirmedPatchTarget && !IsBusy && !IsSelectionProbeBusy && HasDlssDefaults &&
         _dlssDetection.HasAny && !OrchestratedDlssStackManaged &&
         !string.Equals(SelectedGame.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase);
 
@@ -234,11 +247,23 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         try
         {
             StatusText = TF("Vm.QuickApplyApplyingDLSSStreamlineDefaults", game.Name);
-            IReadOnlyList<string>? files = Host.Session.CachedFiles(game)
-                ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
-            var result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
-            StatusText = UiLocalizationService.Present(result.Summary);
-            if (result.ChangedCount > 0)
+            var presets = DlssPresetDefaults;
+            var detection = _dlssDetection;
+            var lines = new List<string>();
+            LinuxDlssBatchResult? result = null;
+            if (HasDlssVersionDefaults)
+            {
+                IReadOnlyList<string>? files = Host.Session.CachedFiles(game)
+                    ?? await Task.Run(() => GameFileIndexer.Build(game.InstallPath, 8, op.Token), op.Token);
+                result = await _dlssDefaults.ApplyDefaultsAsync(game, DlssVersionDefaults, files, op.Token);
+                lines.Add(UiLocalizationService.Present(result.Summary));
+            }
+            // #215 (upstream's Apply defaults): after the DLL swaps, the preset defaults go into the game's own NVIDIA
+            // settings, only where its NVIDIA settings… dialog shows the row.
+            if (presets.HasAny)
+                lines.Add(await CopyPresetsAsync(game, detection, presets, op.Token));
+            StatusText = string.Join(" ", lines.Where(line => line.Length > 0));
+            if (result?.ChangedCount > 0)
                 await ReprobeGameAsync(game);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
@@ -332,25 +357,33 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         }
     }
 
-    public async Task<LinuxDlssBatchResult> ApplyDlssBatchAsync(
+    /// <param name="presets">#215: the batch's preset dropdowns (null or none chosen = presets untouched).</param>
+    public async Task<DlssBatchOutcome> ApplyDlssBatchAsync(
         IReadOnlyList<DetectedGame> games,
         LinuxDlssVersionDefaults defaults,
+        NvidiaPresetChoice? presets = null,
         CancellationToken cancellationToken = default)
     {
-        if (games.Count == 0) return new LinuxDlssBatchResult([]);
+        if (games.Count == 0) return new(new LinuxDlssBatchResult([]), "");
         using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
         if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchPreparingGameS", games.Count);
             var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
-            var result = await _dlssDefaults.ApplyBatchAsync(
-                games, defaults,
-                game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-                op.Token);
+            // #215: the presets first, in one library write (launch-profile settings only, no file): Cancel during the
+            // DLL swaps below then never leaves some ticked games with presets and others without.
+            var presetLine = presets is { HasAny: true } ? await CopyBatchPresetsAsync(games, indexes, presets, op.Token) : "";
+            var result = defaults.HasAny
+                ? await _dlssDefaults.ApplyBatchAsync(
+                    games, defaults,
+                    game => indexes.TryGetValue(Key(game), out var files) ? files : null,
+                    op.Token)
+                : null;
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            StatusText = UiLocalizationService.Present(result.Summary);
-            return result;
+            var line = Join(result is null ? "" : UiLocalizationService.Present(result.Summary), presetLine);
+            StatusText = line;
+            return new(result ?? new LinuxDlssBatchResult([]), line);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -364,24 +397,36 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         }
     }
 
-    public async Task<LinuxDlssBatchResult> RestoreDlssBatchAsync(
+    public async Task<DlssBatchOutcome> RestoreDlssBatchAsync(
         IReadOnlyList<DetectedGame> games,
         CancellationToken cancellationToken = default)
     {
-        if (games.Count == 0) return new LinuxDlssBatchResult([]);
+        if (games.Count == 0) return new(new LinuxDlssBatchResult([]), "");
         using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
         if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchRestorePreparingGame", games.Count);
+            // #215 (upstream's mass restore): every ticked game's DLSS presets back to Default and the newest-DLSS
+            // driver override off; its render scale and frame-generation settings stay. One library write, first.
+            var reset = Shell.Runtime.WriteNvidiaSettings(games, (_, saved) =>
+            {
+                if (saved is null) return null;
+                var next = saved.Copy();
+                next.SuperResolutionPreset = next.RayReconstructionPreset = next.FrameGenerationPreset = DlssPresetCatalogue.Default;
+                next.NewestDlss = false;
+                return next;
+            });
             var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
             var result = await _dlssDefaults.RestoreBatchAsync(
                 games,
                 game => indexes.TryGetValue(Key(game), out var files) ? files : null,
                 op.Token);
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            StatusText = UiLocalizationService.Present(result.Summary);
-            return result;
+            var line = Join(UiLocalizationService.Present(result.Summary),
+                reset.Changed > 0 ? TF("Dp.BatchPresetsReset", reset.Changed) : "", reset.Refused ?? "");
+            StatusText = line;
+            return new(result, line);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
@@ -394,6 +439,88 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             NotifyDlssDefaults();
         }
     }
+
+    // ---- #215: default presets into a game's own NVIDIA settings ---------------------------------------------------
+
+    /// <summary>
+    /// Quick Apply: copies <paramref name="presets"/> into <paramref name="game"/>'s NVIDIA settings where its dialog
+    /// shows the row (<see cref="LinuxDlssDefaultsService.NvidiaPresetRowsFor(DetectedGame, DlssDetectionResult, Platform.Linux.Hdr.LinuxHdrHostSnapshot)"/>);
+    /// the line says what was set and what was not, and why.
+    /// </summary>
+    private async Task<string> CopyPresetsAsync(DetectedGame game, DlssDetectionResult detection, NvidiaPresetChoice presets, CancellationToken token)
+    {
+        var host = Shell.Runtime.NvidiaHost;
+        var rows = await Task.Run(() => LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, host), token);
+        NvidiaPresetCopyResult? copy = null;
+        var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) => (copy = NvidiaPresetCopy.Apply(saved, presets, rows)).Settings);
+        copy ??= NvidiaPresetCopy.Apply(null, presets, rows);
+        return Join(PresetCopyLine(game, copy, presets), write.Refused ?? "");
+    }
+
+    /// <summary>The batch: the same rule per ticked game; the line counts the games set and skipped.</summary>
+    private async Task<string> CopyBatchPresetsAsync(IReadOnlyList<DetectedGame> games, IReadOnlyDictionary<string, IReadOnlyList<string>> indexes,
+        NvidiaPresetChoice presets, CancellationToken token)
+    {
+        var host = Shell.Runtime.NvidiaHost;
+        var rows = await Task.Run(() =>
+        {
+            var byGame = new Dictionary<string, NvidiaPresetRows>(StringComparer.Ordinal);
+            foreach (var game in games)
+            {
+                token.ThrowIfCancellationRequested();
+                var detection = game.HasConfirmedPatchTarget && indexes.TryGetValue(Key(game), out var files)
+                    ? _dlssDefaults.DetectTargets(game, files, token)
+                    : new DlssDetectionResult();
+                byGame[Key(game)] = LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, host);
+            }
+            return byGame;
+        }, token);
+        int set = 0, skipped = 0;
+        var write = Shell.Runtime.WriteNvidiaSettings(games, (game, saved) =>
+        {
+            var copy = NvidiaPresetCopy.Apply(saved, presets, rows[Key(game)]);
+            if (copy.AnySet) set++;
+            if (copy.AnySkipped) skipped++;
+            return copy.Settings;
+        });
+        return Join(TF("Dp.BatchPresets", set, skipped), write.Refused ?? "");
+    }
+
+    private static string PresetCopyLine(DetectedGame game, NvidiaPresetCopyResult copy, NvidiaPresetChoice presets)
+    {
+        var parts = new List<string>();
+        if (copy.AnySet)
+            parts.Add(TF("Dp.PresetsSet", game.Name, string.Join(", ", copy.Set.Select(slot => $"{PresetLabel(slot)}: {ShowPreset(slot, presets[slot])}"))));
+        var notShown = copy.Skipped.Where(s => s.Why == NvidiaPresetRowState.NotShown).Select(s => PresetLabel(s.Slot)).ToArray();
+        if (notShown.Length > 0) parts.Add(TF("Dp.PresetsNotShown", string.Join(", ", notShown)));
+        var legacy = copy.Skipped.Where(s => s.Why == NvidiaPresetRowState.Dlss1x).Select(s => PresetLabel(s.Slot)).ToArray();
+        if (legacy.Length > 0) parts.Add(TF("Dp.PresetsDlss1x", string.Join(", ", legacy)));
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>The row's label, as the NVIDIA settings… dialog names it.</summary>
+    private static string PresetLabel(NvidiaPresetSlot slot) => T(slot switch
+    {
+        NvidiaPresetSlot.SuperResolution => "Nv.SrPreset",
+        NvidiaPresetSlot.RayReconstruction => "Nv.RrPreset",
+        _ => "Nv.FgPreset"
+    });
+
+    /// <summary>A preset's label in the current manifest lists ("—" for none chosen).</summary>
+    private static string ShowPreset(NvidiaPresetSlot slot, uint? value)
+    {
+        if (value is not { } preset) return "—";
+        var lists = DlssPresetCatalogue.Current;
+        var list = slot switch
+        {
+            NvidiaPresetSlot.SuperResolution => lists.SuperResolution,
+            NvidiaPresetSlot.RayReconstruction => lists.RayReconstruction,
+            _ => lists.FrameGeneration
+        };
+        return OptionLists.DlssPresetsWithSaved(list, preset).Display(preset);
+    }
+
+    private static string Join(params string[] lines) => string.Join(" ", lines.Where(line => !string.IsNullOrWhiteSpace(line)));
 
     private async Task<Dictionary<string, IReadOnlyList<string>>> PrepareDlssBatchIndexesAsync(
         IReadOnlyList<DetectedGame> games,
@@ -641,6 +768,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     {
         OnPropertyChanged(nameof(DlssVersionDefaults));
         OnPropertyChanged(nameof(HasDlssVersionDefaults));
+        OnPropertyChanged(nameof(DlssPresetDefaults));
+        OnPropertyChanged(nameof(HasDlssDefaults));
         OnPropertyChanged(nameof(DlssDefaultsSummary));
         OnPropertyChanged(nameof(CanQuickApplyDlssDefaults));
         OnPropertyChanged(nameof(CanRestoreAllDlss));
@@ -665,3 +794,6 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
     private static string FirstOrNotFound(IReadOnlyList<string> paths, string dll)
         => paths.FirstOrDefault() ?? TF("Vm.MissingDirectSwapBlocked", dll);
 }
+
+/// <summary>#215: a DLSS batch's result and the line the dialog shows (the DLL summary and, if any, the presets').</summary>
+public sealed record DlssBatchOutcome(LinuxDlssBatchResult Result, string Line);

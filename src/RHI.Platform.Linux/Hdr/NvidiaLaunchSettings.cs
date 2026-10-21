@@ -116,6 +116,107 @@ public sealed class NvidiaGameSettings
         => value is >= MinTargetFrameRate and <= MaxTargetFrameRate || value == TargetFrameRateMaxRefresh;
 
     private static uint Preset(uint value) => value <= DlssPresetCatalogue.MaxValue ? value : 0;
+
+    /// <summary>
+    /// #215: a preset value as the driver takes it (0 = Default for one it would not take). The global default presets
+    /// normalise with the same rule as the game's own, so a default is never a value the game's settings would drop.
+    /// </summary>
+    public static uint NormalizePreset(uint value) => Preset(value);
+}
+
+/// <summary>#215: one of the three DLSS preset rows of the NVIDIA settings.</summary>
+public enum NvidiaPresetSlot { SuperResolution, RayReconstruction, FrameGeneration }
+
+/// <summary>#215: whether a game's NVIDIA settings take a preset row (the dialog shows it), and why not.</summary>
+public enum NvidiaPresetRowState
+{
+    Shown,
+    /// <summary>The game's NVIDIA settings do not show the row (no GPU for it, no feature file, launcher takes no variables…).</summary>
+    NotShown,
+    /// <summary>The row shows, but the game's DLSS file is 1.x (upstream never sets a preset there).</summary>
+    Dlss1x
+}
+
+/// <summary>#215: the state of each preset row for one game (<see cref="NvidiaLaunchPlan.PresetRows"/>).</summary>
+public sealed record NvidiaPresetRows(NvidiaPresetRowState SuperResolution, NvidiaPresetRowState RayReconstruction, NvidiaPresetRowState FrameGeneration)
+{
+    public static NvidiaPresetRows None { get; } = new(NvidiaPresetRowState.NotShown, NvidiaPresetRowState.NotShown, NvidiaPresetRowState.NotShown);
+
+    public NvidiaPresetRowState this[NvidiaPresetSlot slot] => slot switch
+    {
+        NvidiaPresetSlot.SuperResolution => SuperResolution,
+        NvidiaPresetSlot.RayReconstruction => RayReconstruction,
+        _ => FrameGeneration
+    };
+}
+
+/// <summary>
+/// #215: preset values to copy into a game's NVIDIA settings; null = leave that row as it is. Quick Apply copies the
+/// global defaults (<see cref="FromDefaults"/>: a Default default copies nothing); the DLSS batch copies what its three
+/// dropdowns show ("Do not change" = null, Default = set the row back to Default).
+/// </summary>
+public sealed record NvidiaPresetChoice(uint? SuperResolution, uint? RayReconstruction, uint? FrameGeneration)
+{
+    public static NvidiaPresetChoice None { get; } = new(null, null, null);
+
+    /// <summary>The Settings defaults: Default (0) leaves the game's own choice.</summary>
+    public static NvidiaPresetChoice FromDefaults(uint superResolution, uint rayReconstruction, uint frameGeneration)
+        => new(Chosen(superResolution), Chosen(rayReconstruction), Chosen(frameGeneration));
+
+    public bool HasAny => SuperResolution is not null || RayReconstruction is not null || FrameGeneration is not null;
+
+    public uint? this[NvidiaPresetSlot slot] => slot switch
+    {
+        NvidiaPresetSlot.SuperResolution => SuperResolution,
+        NvidiaPresetSlot.RayReconstruction => RayReconstruction,
+        _ => FrameGeneration
+    };
+
+    private static uint? Chosen(uint value) => NvidiaGameSettings.NormalizePreset(value) is var preset && preset != DlssPresetCatalogue.Default ? preset : null;
+}
+
+/// <summary>#215: what <see cref="NvidiaPresetCopy.Apply"/> did to one game's NVIDIA settings.</summary>
+/// <param name="Settings">The settings after the copy (null when nothing is chosen any more).</param>
+public sealed record NvidiaPresetCopyResult(
+    NvidiaGameSettings? Settings,
+    IReadOnlyList<NvidiaPresetSlot> Set,
+    IReadOnlyList<(NvidiaPresetSlot Slot, NvidiaPresetRowState Why)> Skipped)
+{
+    public bool AnySet => Set.Count > 0;
+    public bool AnySkipped => Skipped.Count > 0;
+}
+
+/// <summary>
+/// #215 (upstream's Apply defaults and mass deploy): copies chosen preset values into one game's NVIDIA settings, only
+/// into the rows that game's NVIDIA settings… dialog shows (<see cref="NvidiaPresetRows"/>). A chosen value replaces the
+/// game's own as upstream does; every other setting of the game stays as it was.
+/// </summary>
+public static class NvidiaPresetCopy
+{
+    private static readonly NvidiaPresetSlot[] Slots = [NvidiaPresetSlot.SuperResolution, NvidiaPresetSlot.RayReconstruction, NvidiaPresetSlot.FrameGeneration];
+
+    public static NvidiaPresetCopyResult Apply(NvidiaGameSettings? current, NvidiaPresetChoice choice, NvidiaPresetRows rows)
+    {
+        ArgumentNullException.ThrowIfNull(choice);
+        ArgumentNullException.ThrowIfNull(rows);
+        var next = (current?.Copy() ?? new NvidiaGameSettings()).Normalize();
+        var set = new List<NvidiaPresetSlot>();
+        var skipped = new List<(NvidiaPresetSlot, NvidiaPresetRowState)>();
+        foreach (var slot in Slots)
+        {
+            if (choice[slot] is not { } value) continue;
+            if (rows[slot] != NvidiaPresetRowState.Shown) { skipped.Add((slot, rows[slot])); continue; }
+            var preset = NvidiaGameSettings.NormalizePreset(value);
+            switch (slot)
+            {
+                case NvidiaPresetSlot.SuperResolution: next.SuperResolutionPreset = preset; break;
+                case NvidiaPresetSlot.RayReconstruction: next.RayReconstructionPreset = preset; break;
+                default: next.FrameGenerationPreset = preset; break;
+            }
+            set.Add(slot);
+        }
+        return new NvidiaPresetCopyResult(next.IsDefault() ? null : next, set, skipped);
+    }
 }
 
 /// <summary>#211: which DLSS features the game ships (its <c>nvngx_dlss</c>/<c>nvngx_dlssd</c>/<c>nvngx_dlssg</c> files).</summary>
@@ -168,6 +269,17 @@ public sealed record NvidiaLaunchPlan(
         => new(reason, new Dictionary<string, string>(StringComparer.Ordinal), new NvidiaDlssFamilies(false, false, false), false);
 
     public bool Shown => Reason == NvidiaPlanReason.Ready;
+
+    /// <summary>
+    /// #215: the preset rows the game's NVIDIA settings… dialog shows — the one rule the dialog, Quick Apply and the DLSS
+    /// batch share: Super Resolution and Ray Reconstruction with their file, Frame Generation with its file on an RTX 40 or
+    /// newer; none while the settings are hidden.
+    /// </summary>
+    public NvidiaPresetRows PresetRows => !Shown
+        ? NvidiaPresetRows.None
+        : new NvidiaPresetRows(Row(Families.SuperResolution), Row(Families.RayReconstruction), Row(FrameGenerationPresetOffered));
+
+    private static NvidiaPresetRowState Row(bool shown) => shown ? NvidiaPresetRowState.Shown : NvidiaPresetRowState.NotShown;
 
     /// <summary>Something is chosen and applies.</summary>
     public bool HasVariables => Environment.Count > 0;

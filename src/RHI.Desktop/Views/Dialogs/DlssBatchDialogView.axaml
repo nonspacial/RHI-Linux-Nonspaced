@@ -5,6 +5,9 @@
              x:Class="RHI.Desktop.Views.Dialogs.DlssBatchDialogView"
              x:DataType="vm:DlssBatchDialogViewModel">
   <!-- The DLSS / Streamline batch dialog (epic #89). Narrow dialogs put the versions under the games (code-behind). -->
+  <UserControl.DataTemplates>
+    <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+  </UserControl.DataTemplates>
   <Grid RowDefinitions="*,Auto">
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
       <Grid x:Name="Body" ColumnDefinitions="*,Auto,*" ColumnSpacing="18" Margin="16">
@@ -57,6 +60,27 @@
           <StackPanel Spacing="4" DataContext="{Binding Streamline}" x:DataType="vm:VersionChoice">
             <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
             <ComboBox ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220"/>
+          </StackPanel>
+          <!-- #215 (upstream MassDlssDeployDialog): the presets under the versions, after a 1 px divider. -->
+          <Border x:Name="PresetsDivider" Height="1" Background="#2A3038" Margin="0,4"/>
+          <TextBlock Text="{l:T Dp.BatchPresetsHeading}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <StackPanel Spacing="4" DataContext="{Binding SuperResolutionPreset}" x:DataType="vm:PresetChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextWrapping="Wrap"
+                       ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+            <ComboBox x:Name="BatchSrPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220" MaxDropDownHeight="300"
+                      ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding RayReconstructionPreset}" x:DataType="vm:PresetChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextWrapping="Wrap"
+                       ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+            <ComboBox x:Name="BatchRrPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220" MaxDropDownHeight="300"
+                      ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+          </StackPanel>
+          <StackPanel Spacing="4" DataContext="{Binding FrameGenerationPreset}" x:DataType="vm:PresetChoice">
+            <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11" TextWrapping="Wrap"
+                       ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+            <ComboBox x:Name="BatchFgPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="220" MaxDropDownHeight="300"
+                      ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
           </StackPanel>
         </StackPanel>
       </Grid>

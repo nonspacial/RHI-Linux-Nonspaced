@@ -1,13 +1,15 @@
 using RHI.Core.Deployment;
 using RHI.Core.Models;
 using RHI.Core.Services;
+using RHI.Platform.Linux.Hdr;
 
 namespace RHI.Platform.Linux.Deployment;
 
 /// <summary>
 /// Linux-native adaptation of upstream RHI's DLSS/Streamline defaults, Quick Apply and
-/// batch deployment. Only game-local DLL versions are managed here; NVIDIA driver-profile
-/// presets/render scales remain Windows/NVAPI-only and are intentionally out of scope.
+/// batch deployment. Game-local DLL versions are managed here; the default DLSS presets (#215)
+/// are copied into a game's NVIDIA settings by the desktop through <see cref="NvidiaPresetRowsFor"/>
+/// (launch variables only, never a driver profile or a game file).
 /// </summary>
 public sealed record LinuxDlssVersionDefaults(
     string SuperResolution = "",
@@ -463,9 +465,37 @@ public sealed class LinuxDlssDefaultsService
         ]);
 
     private static bool IsDlss1x(string path)
+        => DlssAutoFollowService.PeFileVersion(path)?.StartsWith("1.", StringComparison.Ordinal) == true;
+
+    /// <summary>
+    /// #215: the preset rows Quick Apply and the DLSS batch may copy a preset into — the one rule both use: the rows
+    /// <paramref name="plan"/> (that game's NVIDIA settings… dialog) shows, minus Super Resolution / Ray Reconstruction
+    /// when the game's <c>nvngx_dlss.dll</c> / <c>nvngx_dlssd.dll</c> is DLSS 1.x (upstream's guard). Reads the DLLs'
+    /// version resources: call it off the UI thread.
+    /// </summary>
+    public static NvidiaPresetRows NvidiaPresetRowsFor(NvidiaLaunchPlan plan, DlssDetectionResult detection)
     {
-        var version = DlssManagerService.TryGetDllVersion(path);
-        return version?.StartsWith("1.", StringComparison.OrdinalIgnoreCase) == true;
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(detection);
+        var rows = plan.PresetRows;
+        static NvidiaPresetRowState Guard(NvidiaPresetRowState row, IReadOnlyList<string> files)
+            => row == NvidiaPresetRowState.Shown && files.Any(IsDlss1x) ? NvidiaPresetRowState.Dlss1x : row;
+        return rows with
+        {
+            SuperResolution = Guard(rows.SuperResolution, detection.DlssPaths),
+            RayReconstruction = Guard(rows.RayReconstruction, detection.DlssdPaths)
+        };
+    }
+
+    /// <summary>#215: the same rule for any game (not only the selected one) on <paramref name="host"/>.</summary>
+    public static NvidiaPresetRows NvidiaPresetRowsFor(DetectedGame game, DlssDetectionResult detection, LinuxHdrHostSnapshot host)
+        => NvidiaPresetRowsFor(NvidiaLaunchSettings.Plan(game, null, host, Families(detection)), detection);
+
+    /// <summary>#215: the DLSS features <paramref name="detection"/> found (the families the NVIDIA settings follow).</summary>
+    public static NvidiaDlssFamilies Families(DlssDetectionResult detection)
+    {
+        ArgumentNullException.ThrowIfNull(detection);
+        return new NvidiaDlssFamilies(detection.DlssPaths.Count > 0, detection.DlssdPaths.Count > 0, detection.DlssgPaths.Count > 0);
     }
 
     private static string BuildDetectionSummary(DlssDetectionResult detection)

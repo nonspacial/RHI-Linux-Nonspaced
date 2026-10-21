@@ -63,6 +63,8 @@ public sealed class OptionListsTests
             // w8/renodx rows
             // w8/commit-point rows
             // w10/dlss-presets rows
+            AssertRoundTrips(OptionLists.DlssPresetChoices(RHI.Platform.Linux.Hdr.DlssPresetCatalogue.Fallback.SuperResolution, 99, doNotChange: true)); // #215 batch
+            AssertRoundTrips(OptionLists.DlssPresetChoices(RHI.Platform.Linux.Hdr.DlssPresetCatalogue.Fallback.FrameGeneration, 0, doNotChange: false)); // #215 Settings
             // w10/archives rows
             // w10/journal-holds rows
         }

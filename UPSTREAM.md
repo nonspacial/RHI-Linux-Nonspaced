@@ -611,7 +611,7 @@ build.
 - Placement (owner's layout B): one **NVIDIA settings…** button beside Apply defaults / Restore all in the DLSS section opens one dialog with every setting (one label + control per row, Close), instead of upstream's rows and separate MFG dialog. Shown only where it can apply: NVIDIA's own driver with an NVIDIA GPU (read-only `/proc/driver/nvidia/gpus/*/information`, else a PCI display device of vendor 0x10de while `/proc/driver/nvidia/version` exists; nouveau/NVK have no DLSS; RHI never runs `nvidia-smi`), a Windows game, a DLSS file of that feature in the game; the Frame Generation preset only on an RTX 40 or newer, multi frame generation only on an RTX 50 (driver model name), both with a frame-generation file. Hidden for standalone Wine-prefix entries (started with the runner's `wine`, not the `proton` script, so Proton's NVAPI layer is not set up) and for launchers that take no variables (store clients, the app that installed an Xbox title).
 - Restore all in the DLSS section also sets the game's NVIDIA settings back to Default (as upstream's Restore All clears its preset overrides), and is offered when only NVIDIA settings are chosen.
 - Store hand-offs (Steam, Heroic, Lutris, other launchers): RHI applies nothing; the dialog says where to paste the launch options or variables and has a Copy button, as HDR does; RHI never edits a launcher's configuration.
-- Not ported: the SR "preset override mode" companion setting 0x00634291 (not in NVIDIA's public settings header nor in NVIDIA's or dxvk-nvapi's Linux recipe), the developer-only NR presets and `dlssPresetsDev`, ReBAR, the FPS limiter and the other driver-profile pages (no launch-variable route). Global default presets (upstream Settings → DLSS defaults, written by Apply defaults): follow-up #215 (the owner picks Apply-defaults copy vs launch fallback).
+- Not ported: the SR "preset override mode" companion setting 0x00634291 (not in NVIDIA's public settings header nor in NVIDIA's or dxvk-nvapi's Linux recipe), the developer-only NR presets and `dlssPresetsDev`, ReBAR, the FPS limiter and the other driver-profile pages (no launch-variable route). Global default presets (upstream Settings → DLSS defaults, written by Apply defaults): built in wave 10 (#215, below).
 
 <!-- w7/dxvk-hdr notes -->
 
@@ -752,6 +752,32 @@ build.
 ## Parity notes (wave 10: DLSS default presets, archive offer, journal holds)
 
 <!-- w10/dlss-presets notes -->
+### #215 — Global default DLSS presets (Settings → DLSS/Streamline, Apply defaults, DLSS batch)
+- Upstream (RHI-2.8.7): `DlssDefaultsDialog` holds `DefaultSrPreset/DefaultRrPreset/DefaultFgPreset` beside the version
+  defaults; Apply defaults (`DetailPanelBuilder.Overrides.NvidiaProfile.cs`) writes them into the game's driver profile
+  after the DLL swaps (SR not for a DLSS 1.x `nvngx_dlss.dll`, RR likewise for `nvngx_dlssd.dll`, FG when the game ships
+  dlssg); `hasDefaults` also counts a non-Default preset; the Settings summary names them; `MassDlssDeployDialog` puts
+  three preset dropdowns (None + the lists, pre-filled from the defaults) under the versions after a divider; its
+  Restore resets the three presets to Default and clears the NVIDIA driver override on every ticked game.
+- Linux (owner decision 2026-10-21: upstream's way): Settings → DLSS/Streamline shows a "Default presets" group with the
+  three lists (the NVIDIA settings' own lists and labels, Default first; a saved value the manifest no longer lists stays
+  shown). Apply defaults copies each non-Default default into the selected game's own NVIDIA settings (the per-game
+  launch profile of #211), only into a row that game's NVIDIA settings… dialog shows (`NvidiaLaunchPlan.PresetRows`: NVIDIA
+  GPU, a launch RHI or the store passes variables to, the feature's file, FG preset on an RTX 40 or newer) and never over a
+  DLSS 1.x file (`LinuxDlssDefaultsService.NvidiaPresetRowsFor`, read from the DLL's version resource). A copied preset
+  replaces the game's own (upstream sets it unconditionally); a Default default writes nothing. Apply defaults is offered
+  when only preset defaults are set (upstream `hasDefaults`). The status line names what was set and what was not, and why.
+- DLSS batch: three preset dropdowns ("Do not change" first, pre-filled from the defaults) under the versions after a
+  1 px divider; Apply copies them into every ticked game (also games other than the selected one) by the same row rule,
+  before the DLL swaps and in one library write, and the line counts the games set and skipped. Restore selected follows
+  upstream's mass restore: the three presets back to Default and "Newest DLSS from the driver" (upstream's NVIDIA
+  Override) off on every ticked game; render scale and frame-generation settings stay.
+- Restore all (one game) already set every NVIDIA setting of the game back to Default (#211) and so clears the copied presets.
+- Not ported: a launch-time fallback (owner rejected option 2: a game whose preset is Default never picks up a global
+  default); upstream's NR preset default (developer-only list), the render-scale and driver-override defaults (no
+  Settings rows on Linux yet), the batch's "Auto-create NVIDIA profiles" box (no driver profile under Proton).
+- Also fixed: the DLSS 1.x guard of the Super Resolution swap (Apply defaults, batch) read the version through
+  `FileVersionInfo`, which reads no PE resource on Linux, so it never fired; it now reads the version resource.
 
 <!-- w10/archives notes -->
 

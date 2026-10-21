@@ -47,9 +47,50 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     /// saved NVIDIA choice then applies as it is, but the settings are not offered).
     /// </summary>
     private NvidiaDlssFamilies? NvidiaFamilies()
-        => CurrentAnalysis?.Dlss is { } dlss
-            ? new NvidiaDlssFamilies(dlss.DlssPaths.Count > 0, dlss.DlssdPaths.Count > 0, dlss.DlssgPaths.Count > 0)
-            : null;
+        => CurrentAnalysis?.Dlss is { } dlss ? LinuxDlssDefaultsService.Families(dlss) : null;
+
+    /// <summary>#215: the host the NVIDIA settings are planned for (the same for every game; never probed here).</summary>
+    internal LinuxHdrHostSnapshot NvidiaHost => HdrHost;
+
+    /// <summary>
+    /// #215: changes the NVIDIA settings of each of <paramref name="games"/> (any game, not only the selected one) in the
+    /// launch profiles, in one library write: <paramref name="change"/> gets a game's saved settings (null = none) and
+    /// returns the new ones (null = none). A game whose settings come back unchanged is left alone. The selected game's
+    /// controls follow. <see cref="NvidiaSettingsWrite.Refused"/> says why nothing was written (library writes wait) or
+    /// why the save was refused (the change is then kept for this session, as every launch-profile change).
+    /// </summary>
+    internal NvidiaSettingsWrite WriteNvidiaSettings(IReadOnlyList<DetectedGame> games, Func<DetectedGame, NvidiaGameSettings?, NvidiaGameSettings?> change)
+    {
+        if (games.Count == 0) return new(0, null);
+        if (Host.LibraryWritesPaused()) return new(0, StatusText);
+        Host.AdoptRestoredLibraryFile(reloadHdrControls: false);
+        var changed = 0;
+        foreach (var game in games)
+        {
+            var key = LinuxGameLibraryStore.GameKey(game);
+            Host.LibraryState.HdrProfiles.TryGetValue(key, out var saved);
+            var before = saved?.Nvidia?.Copy().Normalize() is { } b && !b.IsDefault() ? b : null;
+            var after = change(game, before?.Copy())?.Copy().Normalize() is { } a && !a.IsDefault() ? a : null;
+            if (SameNvidia(before, after)) continue;
+            // The stored profile is changed in place: its other settings (and any a later build adds) stay as they are.
+            var profile = saved ?? new LinuxHdrGameProfile();
+            profile.Nvidia = after;
+            profile.Normalize();
+            if (profile.IsDefault()) Host.LibraryState.HdrProfiles.Remove(key);
+            else Host.LibraryState.HdrProfiles[key] = profile;
+            changed++;
+        }
+        if (changed == 0) return new(0, null);
+        var refused = Host.PersistLibraryState("Ui.WhatHdrProfile");
+        if (SelectedGame is { } selected && games.Any(game => LinuxGameLibraryStore.GameKey(game) == LinuxGameLibraryStore.GameKey(selected)))
+            LoadHdrProfile(selected);
+        return new(changed, refused);
+    }
+
+    private static bool SameNvidia(NvidiaGameSettings? a, NvidiaGameSettings? b)
+        => a is null || b is null
+            ? a is null && b is null
+            : System.Text.Json.JsonSerializer.Serialize(a) == System.Text.Json.JsonSerializer.Serialize(b);
 
     /// <summary>
     /// #211: a NVIDIA settings control changed (<paramref name="change"/>): save it with the launch profile. After a
@@ -734,3 +775,6 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
         _ => T("Vm.Unknown")
     };
 }
+
+/// <summary>#215: games whose NVIDIA settings changed, and the line saying why they were not (all) saved, if any.</summary>
+internal sealed record NvidiaSettingsWrite(int Changed, string? Refused);

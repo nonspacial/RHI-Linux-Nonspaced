@@ -2,6 +2,7 @@ using RHI.Core.Models;
 using RHI.Desktop.Localization;
 using RHI.Desktop.ViewModels;
 using RHI.Platform.Linux.Deployment;
+using RHI.Platform.Linux.Hdr;
 
 namespace RHI.Core.Tests;
 
@@ -21,17 +22,20 @@ public sealed class DlssBatchDialogTests
 
     private sealed class Batch
     {
-        public readonly List<(IReadOnlyList<DetectedGame> Games, LinuxDlssVersionDefaults? Chosen)> Calls = [];
-        public TaskCompletionSource<LinuxDlssBatchResult> Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly List<(IReadOnlyList<DetectedGame> Games, LinuxDlssVersionDefaults? Chosen, NvidiaPresetChoice? Presets)> Calls = [];
+        public TaskCompletionSource<DlssBatchOutcome> Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Cancels;
 
-        public DlssBatchDialogViewModel Dialog(IReadOnlyList<LinuxDlssBatchCandidate> eligible, LinuxDlssVersionDefaults? defaults = null)
+        public DlssBatchDialogViewModel Dialog(IReadOnlyList<LinuxDlssBatchCandidate> eligible, LinuxDlssVersionDefaults? defaults = null,
+            NvidiaPresetChoice? presets = null)
             => new(eligible,
                 [["310.1.0", "310.2.0"], ["310.1.0"], ["310.1.0"], [], ["2.7.0"]],
                 defaults ?? new LinuxDlssVersionDefaults(),
-                (games, chosen) => { Calls.Add((games, chosen)); return Pending.Task; },
-                games => { Calls.Add((games, null)); return Pending.Task; },
-                () => Cancels++);
+                (games, chosen, chosenPresets) => { Calls.Add((games, chosen, chosenPresets)); return Pending.Task; },
+                games => { Calls.Add((games, null, null)); return Pending.Task; },
+                () => Cancels++,
+                presets,
+                DlssPresetCatalogue.Fallback);
     }
 
     [Fact]
@@ -82,7 +86,7 @@ public sealed class DlssBatchDialogTests
         Assert.Empty(batch.Calls);
 
         // Restore needs no version.
-        batch.Pending.SetResult(new LinuxDlssBatchResult([]));
+        batch.Pending.SetResult(new DlssBatchOutcome(new LinuxDlssBatchResult([]), ""));
         await dialog.RestoreCommand.ExecuteAsync(null).WaitAsync(Hang);
         Assert.Single(batch.Calls);
         Assert.Null(batch.Calls[0].Chosen);
@@ -142,9 +146,40 @@ public sealed class DlssBatchDialogTests
 
         batch.Pending = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var result = new LinuxDlssBatchResult([new LinuxDlssBatchItemResult("Alpha", LinuxDlssBatchComponent.SuperResolution, true, true, false, false, "ok")]);
-        batch.Pending.SetResult(result);
+        batch.Pending.SetResult(new DlssBatchOutcome(result, "the panel's line"));
         await dialog.ApplyCommand.ExecuteAsync(null).WaitAsync(Hang);
-        Assert.Equal(UiLocalizationService.Present(result.Summary), dialog.Status);
+        Assert.Equal("the panel's line", dialog.Status);
+    }
+
+    [Fact]
+    public async Task Presets_StartFromSettings_UnderDoNotChange_AndAPresetAloneIsEnoughToApply()
+    {
+        UiLocalizationService.Apply("en-US");
+        var batch = new Batch();
+        var dialog = batch.Dialog([Candidate("Alpha")], presets: new NvidiaPresetChoice(11, null, 99));
+
+        Assert.Equal(OptionLists.DoNotChangeDisplay(), dialog.RayReconstructionPreset.Selected!.Display);
+        Assert.Null(dialog.RayReconstructionPreset.Value);
+        Assert.Equal([OptionLists.DoNotChangeDisplay(), "Default", .. DlssPresetCatalogue.Fallback.SuperResolution.Skip(1).Take(1).Select(p => p.Name)],
+            dialog.SuperResolutionPreset.Items.Take(3).Select(i => i.Display)); // the NVIDIA settings' list and labels, after "Do not change"
+        Assert.Equal(11u, dialog.SuperResolutionPreset.Value);
+        Assert.Equal("99", dialog.FrameGenerationPreset.Selected!.Display); // a saved value the lists do not name stays shown
+        dialog.SuperResolutionPreset.Selected = null; // the dropdown's items reset: not a choice
+        Assert.Equal(11u, dialog.SuperResolutionPreset.Value);
+
+        dialog.Games[0].IsChecked = true;
+        batch.Pending.SetResult(new DlssBatchOutcome(new LinuxDlssBatchResult([]), "presets line"));
+        await dialog.ApplyCommand.ExecuteAsync(null).WaitAsync(Hang);
+        var call = Assert.Single(batch.Calls);
+        Assert.False(call.Chosen!.HasAny);
+        Assert.Equal(new NvidiaPresetChoice(11, null, 99), call.Presets);
+        Assert.Equal("presets line", dialog.Status);
+
+        // Every preset on "Do not change" and no version: refused before anything runs.
+        foreach (var preset in dialog.Presets) preset.Clear();
+        await dialog.ApplyCommand.ExecuteAsync(null).WaitAsync(Hang);
+        Assert.Single(batch.Calls);
+        Assert.Equal(UiLocalizationService.Text("Win.SelectAtLeastOneVersionUsing"), dialog.Status);
     }
 
     [Fact]

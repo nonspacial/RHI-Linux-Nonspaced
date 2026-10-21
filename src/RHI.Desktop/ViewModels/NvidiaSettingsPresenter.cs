@@ -71,10 +71,11 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
     /// <summary>The settings apply to this game (owner rule: hidden where they cannot).</summary>
     public bool IsShown => Plan.Shown;
 
-    public bool ShowSuperResolution => IsShown && Plan.Families.SuperResolution;
-    public bool ShowRayReconstruction => IsShown && Plan.Families.RayReconstruction;
+    // #215: the preset rows follow the plan's one row rule (Quick Apply and the DLSS batch copy presets by the same rule).
+    public bool ShowSuperResolution => Plan.PresetRows.SuperResolution == NvidiaPresetRowState.Shown;
+    public bool ShowRayReconstruction => Plan.PresetRows.RayReconstruction == NvidiaPresetRowState.Shown;
     /// <summary>The Frame Generation preset: a frame-generation file and an RTX 40 or newer.</summary>
-    public bool ShowFrameGenerationPreset => IsShown && Plan.FrameGenerationPresetOffered;
+    public bool ShowFrameGenerationPreset => Plan.PresetRows.FrameGeneration == NvidiaPresetRowState.Shown;
 
     /// <summary>Multi frame generation: an RTX 50 GPU and a frame-generation file.</summary>
     public bool ShowFrameGeneration => IsShown && Plan.FrameGenerationOffered;
@@ -177,9 +178,9 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         _loading = true;
         try
         {
-            SuperResolutionPresetOptions = WithSaved(lists.SuperResolution, _shown.SuperResolutionPreset).Options();
-            RayReconstructionPresetOptions = WithSaved(lists.RayReconstruction, _shown.RayReconstructionPreset).Options();
-            FrameGenerationPresetOptions = WithSaved(lists.FrameGeneration, _shown.FrameGenerationPreset).Options();
+            SuperResolutionPresetOptions = OptionLists.DlssPresetsWithSaved(lists.SuperResolution, _shown.SuperResolutionPreset).Options();
+            RayReconstructionPresetOptions = OptionLists.DlssPresetsWithSaved(lists.RayReconstruction, _shown.RayReconstructionPreset).Options();
+            FrameGenerationPresetOptions = OptionLists.DlssPresetsWithSaved(lists.FrameGeneration, _shown.FrameGenerationPreset).Options();
             OnPropertyChanged(nameof(SuperResolutionPresetOptions));
             OnPropertyChanged(nameof(RayReconstructionPresetOptions));
             OnPropertyChanged(nameof(FrameGenerationPresetOptions));
@@ -189,17 +190,6 @@ public sealed partial class NvidiaSettingsPresenter : ObservableObject
         }
         finally { _loading = loading; }
     }
-
-    /// <summary>A saved preset the manifest no longer lists stays visible and selected (never silently dropped).</summary>
-    private static OptionList<uint> WithSaved(IReadOnlyList<DlssPreset> presets, uint saved)
-    {
-        if (saved == DlssPresetCatalogue.Default || presets.Any(p => p.Value == saved)) return OptionLists.DlssPresets(presets);
-        var list = presets.ToList();
-        list.Insert(Math.Max(1, list.Count - 1), new DlssPreset(Format(saved), saved));
-        return OptionLists.DlssPresets(list);
-    }
-
-    private static string Format(uint value) => NvidiaLaunchSettings.Format(value);
 
     private void ShowControls(NvidiaGameSettings settings)
     {

@@ -95,6 +95,36 @@
               <TextBlock FontWeight="SemiBold" Text="Streamline"/>
               <ComboBox ItemsSource="{Binding DefaultStreamline.Items}" SelectedItem="{Binding DefaultStreamline.Selected}" MinWidth="230"/>
             </StackPanel>
+            <!-- #215: the default presets Quick Apply and the DLSS batch copy into a game's own NVIDIA settings. -->
+            <TextBlock FontSize="16" FontWeight="SemiBold" Text="{l:T Dp.DefaultPresets}" TextWrapping="Wrap"
+                       ToolTip.Tip="{Binding DefaultPresetsTip}" ToolTip.ShowDelay="2000"/>
+            <StackPanel Spacing="5" DataContext="{Binding DefaultSrPreset}" x:DataType="vm:PresetChoice">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Label}" TextWrapping="Wrap" ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+              <ComboBox x:Name="SettingsSrPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="230" MaxDropDownHeight="300"
+                        ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Spacing="5" DataContext="{Binding DefaultRrPreset}" x:DataType="vm:PresetChoice">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Label}" TextWrapping="Wrap" ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+              <ComboBox x:Name="SettingsRrPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="230" MaxDropDownHeight="300"
+                        ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Spacing="5" DataContext="{Binding DefaultFgPreset}" x:DataType="vm:PresetChoice">
+              <TextBlock FontWeight="SemiBold" Text="{Binding Label}" TextWrapping="Wrap" ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000"/>
+              <ComboBox x:Name="SettingsFgPreset" ItemsSource="{Binding Items}" SelectedItem="{Binding Selected}" MinWidth="230" MaxDropDownHeight="300"
+                        ToolTip.Tip="{Binding Tip}" ToolTip.ShowDelay="2000">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:OptionItem"><TextBlock Text="{Binding Display}"/></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
             <Panel x:Name="OptiScalerTemplatesSlot" IsVisible="False"/>
             <Panel x:Name="FollowNewestSlot" IsVisible="False"/>
             <Panel x:Name="OptiScalerMenuKeySlot" IsVisible="False"/>
