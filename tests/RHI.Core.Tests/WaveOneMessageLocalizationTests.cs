@@ -486,6 +486,10 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeModifiedPrefix + P;
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeOriginalPrefix + P;
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeShortFuseMessage;
+        // w7 integration rows
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage;
+        yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage;
     }
 
     [Theory]

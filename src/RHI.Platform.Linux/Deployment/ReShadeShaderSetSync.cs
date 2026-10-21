@@ -127,9 +127,27 @@ public sealed partial class ReShadeDeploymentService
                     IniDefaults?.Invoke(game, layer), game.InstallPath);
             foreach (var ini in inis) await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
 
+            // w7 integration (#179 × #201): an XNA game's ReShade runs from the prefix's .NET assembly folder and reads the
+            // ReShade.ini copy there, so that copy takes the new search paths too (the game's ini + [INSTALL] BasePath, as
+            // the install writes it; tracked and declared first), unless the user changed it since RHI placed it.
+            string? gacIniSha = null;
+            if (iniResult is not null && XnaGacReShade.IsGacRecord(record))
+            {
+                var gacIni = Path.Combine(record.Metadata[XnaGacReShade.FolderMetadataKey], "ReShade.ini");
+                if (GacIniIsRhis(gacIni, record.Metadata.GetValueOrDefault(XnaGacReShade.IniSha256MetadataKey)))
+                {
+                    var gacIniBytes = ReShadeIniManager.WithInstallBasePath(
+                        await File.ReadAllBytesAsync(iniResult.Path, CancellationToken.None).ConfigureAwait(false),
+                        XnaGacReShade.WindowsPathOf(game.PrefixPath!, binaryDirectory));
+                    gacIniSha = await PlaceGacBytesAsync(scope.Operation, scope.Operation is null ? scope.Files : null, gacIni, gacIniBytes,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+
             // The record as it was, with the new pack list and ReShade.ini state: version, channel, download and the DLL stay.
             record.Metadata[MetaShaderPacks] = JsonSerializer.Serialize(shaderResult.PackIds);
             WriteIniMetadata(record.Metadata, iniResult);
+            if (gacIniSha is not null) record.Metadata[XnaGacReShade.IniSha256MetadataKey] = gacIniSha;
             record.Files.RemoveAll(file => IsReShadeIni(file.Path));
             if (iniResult is not null)
                 record.Files.Add(new LinuxDeployedFile

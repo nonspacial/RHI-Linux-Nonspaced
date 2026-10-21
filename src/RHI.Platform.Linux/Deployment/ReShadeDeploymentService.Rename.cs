@@ -13,6 +13,13 @@ public sealed partial class ReShadeDeploymentService
     public const string RenameNotInPlacePrefix =
         "ReShade's DLL cannot be renamed in place while another component decides its name (OptiScaler, ShortFuse or the DirectX 9 translation); remove ReShade and install it again to change it: ";
 
+    /// <summary>
+    /// DX9 HDR moved ReShade to its Vulkan layer on this game (#200), so ReShade has no DLL name while DX9 HDR is there (PT-BR
+    /// presentation pair). Removing DX9 HDR puts ReShade back as d3d9.dll.
+    /// </summary>
+    public const string RenameMovedByDxvkHdrMessage =
+        "ReShade's DLL name cannot be changed while DX9 HDR is installed on this game: DX9 HDR moved ReShade to its Vulkan layer, which has no DLL name. Remove DX9 HDR from its row first (ReShade goes back to d3d9.dll), then choose the name.";
+
     /// <summary>Fixed text before the name when ReShade is not offered under it for this game (PT-BR presentation pair).</summary>
     public const string RenameNameNotOfferedPrefix = "The DLL was not renamed: ReShade is not offered under this name for this game: ";
 
@@ -40,6 +47,8 @@ public sealed partial class ReShadeDeploymentService
             return ProxyRename.NotInstalledPrefix + "ReShade";
         var payload = ProxyPayloadLocator.ReShadePayload(record);
         var current = payload is null ? "ReShade" : Path.GetFileName(payload.Path);
+        // w7 integration (#196 × #200): DX9 HDR moved ReShade to its Vulkan layer; it decides ReShade's place, so say so.
+        if (record.Metadata.ContainsKey(MetaMovedByDxvkHdr)) return RenameMovedByDxvkHdrMessage;
         if (payload is null || ReShadeVulkanLayer.IsLayerRecord(record)
             || record.Metadata.TryGetValue(MetaShortFuseOriginalPayloadPath, out var shortFuse) && !string.IsNullOrWhiteSpace(shortFuse)
             || current.Equals(ProxyDllNames.ShortFuseAsiName, StringComparison.OrdinalIgnoreCase)

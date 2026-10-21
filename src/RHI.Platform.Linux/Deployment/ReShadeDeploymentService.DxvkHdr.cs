@@ -49,6 +49,12 @@ public sealed partial class ReShadeDeploymentService
         "RHI's ReShade DLL was changed outside RHI, so DX9 HDR did not move it and nothing was changed: ";
     public const string DxvkHdrReShadeOriginalPrefix =
         "ReShade took the place of a d3d9.dll that was there before RHI installed it, so DX9 HDR cannot take that name and nothing was changed. Remove ReShade from its row first: ";
+    /// <summary>
+    /// RHI's ReShade is an XNA install (#201), loaded from the prefix's .NET assembly folder, which DX9 HDR's d3d9.dll in
+    /// the game folder never reaches (PT-BR pair).
+    /// </summary>
+    public const string DxvkHdrReShadeXnaGacMessage =
+        "ReShade on this game is installed for XNA, which loads d3d9.dll only from the .NET assembly folder of its prefix, so DX9 HDR cannot work beside it and nothing was changed.";
     public const string DxvkHdrReShadeShortFuseMessage =
         "ReShade on this game is loaded through ShortFuse's ASI loader, which DX9 HDR cannot move, so nothing was changed. Remove ShortFuse first.";
 
@@ -59,6 +65,7 @@ public sealed partial class ReShadeDeploymentService
     internal string? DxvkHdrMoveRefusal(DetectedGame game, LinuxDeploymentRecord record)
     {
         if (ReShadeVulkanLayer.IsLayerRecord(record)) return null;
+        if (XnaGacReShade.IsGacRecord(record)) return DxvkHdrReShadeXnaGacMessage; // w7 integration (#200 × #201)
         if (record.Metadata.ContainsKey(MetaShortFuseOriginalPayloadPath)) return DxvkHdrReShadeShortFuseMessage;
         var proxy = ProxyPayloadLocator.ReShadePayload(record);
         var d3d9 = Path.Combine(game.BinaryDirectory!, "d3d9.dll");
@@ -264,6 +271,7 @@ public sealed partial class ReShadeDeploymentService
     /// </summary>
     public DetectedGame ViewForDxvkHdr(DetectedGame game)
     {
+        if (XnaGacReShade.IsListed(game)) return game; // w7 integration (#200 × #201): an XNA game's ReShade goes to the GAC, never the layer
         if (_records.Find(game, ManagedComponentKind.DxvkHdr) is null || _records.Find(game, ManagedComponentKind.ReShade) is not null) return game;
         var view = game.ShallowClone();
         view.UserGraphicsApiOverride = GraphicsApi.Vulkan;

@@ -1485,6 +1485,13 @@ public static class UiLocalizationService
             "O ReShade deste jogo é carregado pelo ASI loader do ShortFuse, que o DX9 HDR não consegue mover, então nada foi alterado. Remova primeiro o ShortFuse."),
         (RHI.Platform.Linux.Deployment.DownloadSources.DxvkHdr.RefusalPrefix,
             "Download recusado: links do DXVK HDR devem ser HTTPS em um host confiável (GitHub). Link recusado: "),
+        // w7 integration rows
+        (RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.XnaGameMessage,
+            "Este é um jogo XNA: ele carrega o d3d9.dll apenas da pasta de assemblies .NET do prefixo Wine/Proton, nunca da pasta do jogo, então o DX9 HDR não funciona nele."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.DxvkHdrReShadeXnaGacMessage,
+            "O ReShade deste jogo está instalado para XNA, que carrega o d3d9.dll apenas da pasta de assemblies .NET do prefixo, então o DX9 HDR não funciona junto dele e nada foi alterado."),
+        (RHI.Platform.Linux.Deployment.ReShadeDeploymentService.RenameMovedByDxvkHdrMessage,
+            "O nome da DLL do ReShade não pode ser mudado enquanto o DX9 HDR estiver instalado neste jogo: o DX9 HDR moveu o ReShade para a camada Vulkan dele, que não tem nome de DLL. Remova primeiro o DX9 HDR na linha dele (o ReShade volta a ser d3d9.dll) e depois escolha o nome."),
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

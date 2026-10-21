@@ -101,6 +101,9 @@ public sealed partial class DxvkHdrDeploymentService
 
     // Platform messages: fixed text first, values last (PT-BR presentation pairs in UiLocalizationService).
     public const string NotOfferedMessage = "DX9 HDR is offered only for Windows games that use DirectX 9 (not Xbox / Game Pass installs).";
+    /// <summary>A manifest-listed XNA game (#201): its d3d9.dll is loaded from the prefix's .NET assembly folder only (PT-BR pair).</summary>
+    public const string XnaGameMessage =
+        "This is an XNA game: it loads d3d9.dll only from the .NET assembly folder of its Wine/Proton prefix, never from the game folder, so DX9 HDR cannot work on it.";
     public const string PrefixNotStartedMessage = "The game's Wine/Proton prefix is not set up yet. Start the game once and close it, then install DX9 HDR.";
     public const string BitnessUnknownMessage = "RHI cannot tell whether the game is 32-bit or 64-bit, so DX9 HDR was not installed. Set the bitness in Edit game.";
     public const string AlreadyInstalledMessage = "DX9 HDR is already installed for this game.";
@@ -190,6 +193,7 @@ public sealed partial class DxvkHdrDeploymentService
     /// <summary>Why DX9 HDR cannot be installed on <paramref name="game"/> now (plain reason), or null.</summary>
     public static string? OfferRefusal(DetectedGame game)
     {
+        if (XnaGacReShade.IsListed(game)) return XnaGameMessage; // w7 integration (#200 × #201): XNA never loads it
         if (!ComponentProbe.IsDxvkHdrCandidate(game)) return NotOfferedMessage;
         if (string.IsNullOrWhiteSpace(game.PrefixPath) || !Directory.Exists(game.PrefixPath) || !WineRegistryEditor.HasUserHive(game.PrefixPath))
             return PrefixNotStartedMessage;

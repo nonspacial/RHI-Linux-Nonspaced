@@ -156,12 +156,15 @@ public static class ComponentProbe
     /// <summary>
     /// #200: where DX9 HDR can apply: a Windows game (not native Linux, not an Xbox / Game Pass install) whose effective
     /// graphics API is DirectX 9 (detected, or the user's / manifest's override). DirectX 8 is left out: upstream places
-    /// only d3d9.dll, which a DirectX 8 game does not load itself.
+    /// only d3d9.dll, which a DirectX 8 game does not load itself. A game the RHI manifest lists as an XNA game (#201) is
+    /// left out too: XNA's graphics assembly loads d3d9.dll only from the .NET assembly folder of the prefix, never from
+    /// the game folder, so DX9 HDR's d3d9.dll there would never be loaded.
     /// </summary>
     public static bool IsDxvkHdrCandidate(DetectedGame game)
         => !string.Equals(game.Runner, "Native Linux", StringComparison.OrdinalIgnoreCase)
            && game.XboxPackage is null
-           && game.EffectiveGraphicsApi == GraphicsApi.DirectX9;
+           && game.EffectiveGraphicsApi == GraphicsApi.DirectX9
+           && string.IsNullOrWhiteSpace(game.ManifestXnaGacFolder); // w7 integration (#200 × #201)
 
     /// <summary>#200: a d3d9.dll beside the executable that carries <see cref="DxvkHdrMarker"/>.</summary>
     private static bool HasDxvkHdrFootprint(IReadOnlyList<string> indexedFiles, string? binaryDirectory)
