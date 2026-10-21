@@ -725,7 +725,7 @@ build.
   as far as replacing the file, it is rolled back at once as before; otherwise nothing is undone now and the change waits
   — RHI finishes or undoes it before the next install, update or removal on that game in the same session (as soon as the
   ledger reads again; until then that game's next change is refused: "RHI has not yet finished or undone an earlier change
-  to this game…"), or at the next start. The row, Update All and the update history then match the ledger (a DX9
+  to this game… Restart RHI to finish it, then try again." — #221), or at the next start. The row, Update All and the update history then match the ledger (a DX9
   Feeder/Luma install used to leave ReShade's record naming `dxgi.dll` while ReShade was back at `d3d9.dll`, so every
   later removal failed).
 
@@ -756,3 +756,9 @@ build.
 <!-- w10/archives notes -->
 
 <!-- w10/journal-holds notes -->
+
+### #221 — The unreadable-ledger hold says plainly to restart RHI
+- Fork-only wording (behaviour unchanged since #204): while the deployment ledger cannot be read after a change failed,
+  that game's next change is still refused and other games carry on. The refusal now leads with the restart — "…Nothing
+  was changed. Restart RHI to finish it, then try again." — and the note a failed change adds says "…so nothing was undone
+  now. Restart RHI to finish it." (PT-BR: "Reinicie o RHI para concluir."). The old "Repair the ledger" advice is gone.

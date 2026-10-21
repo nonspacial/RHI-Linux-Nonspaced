@@ -1578,10 +1578,11 @@ public static class UiLocalizationService
         (RHI.Platform.Linux.Deployment.DeploymentScope.LandedRemovalPrefix,
             "Removido; o registro de implantações informou um erro depois que a remoção foi gravada, então nada foi desfeito: "),
         (RHI.Core.Deployment.DeploymentOperation.UndecidedNote,
-            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora; o RHI conclui ou desfaz esta alteração antes da próxima alteração do jogo, ou na próxima inicialização."),
-        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided.
+            "O registro de implantações não pôde ser lido depois do erro, então nada foi desfeito agora. Reinicie o RHI para concluir."),
+        // w8 commit-point review, finding 2: an operation refused while an earlier change to the same game is undecided
+        // (#221: both texts say plainly to restart RHI).
         (RHI.Core.Deployment.DeploymentJournal.EarlierChangeUndecidedMessage,
-            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Repare o registro ou reinicie o RHI e tente novamente."),
+            "O RHI ainda não concluiu nem desfez uma alteração anterior neste jogo, porque o registro de implantações não pode ser lido. Nada foi alterado. Reinicie o RHI para concluir e tente novamente."),
         // w8 follow-up C8: the undo of that earlier change failed (the ledger reads).
         (RHI.Core.Deployment.DeploymentJournal.EarlierUndoFailedMessage,
             "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então ainda não faz nenhuma alteração nova aqui. Nada foi alterado. Verifique se o RHI pode gravar nas pastas e nos arquivos do jogo (o rhi.log indica o arquivo que falhou) e tente novamente: o RHI tenta desfazer a alteração primeiro."),

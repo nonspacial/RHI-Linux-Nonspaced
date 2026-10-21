@@ -304,12 +304,35 @@ public sealed partial class DeploymentScopeCommitPointTests
 
     // ── w8 follow-up C9, C10 ───────────────────────────────────────────────────────────────────────────────────────
 
-    // C9: the note says when RHI finishes or undoes the change: before the game's next change too, not only at the next start.
-    [Fact]
-    public void TheUndecidedNote_SaysTheChangeIsSettledBeforeTheGamesNextChange_OrAtTheNextStart()
+    // #221 (owner wording rule, 2026-10-21; replaces C9's "before the game's next change, or at the next start"): the
+    // unreadable-ledger refusal and the note a failure appends say plainly that RHI has to be restarted, in both languages,
+    // and the refusal still says nothing was changed.
+    public static TheoryData<string> UnreadableLedgerHoldTexts => new()
     {
-        Assert.Contains("before the game's next change, or at the next start", DeploymentOperation.UndecidedNote, StringComparison.Ordinal);
-        Assert.Contains("antes da próxima alteração do jogo, ou na próxima inicialização",
+        DeploymentJournal.EarlierChangeUndecidedMessage,
+        DeploymentOperation.UndecidedNote,
+        ReShadeDeploymentService.RemovalFailedPrefix + "/games/Example/dxgi.dll" + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided }),
+    };
+
+    [Theory]
+    [MemberData(nameof(UnreadableLedgerHoldTexts))]
+    public void TheUnreadableLedgerHoldTexts_SayPlainlyToRestartRHI(string message)
+    {
+        Assert.Contains("Restart RHI to finish it", message, StringComparison.Ordinal);
+        Assert.Contains("Reinicie o RHI para concluir", UiLocalizationService.PresentFor("pt-BR", message), StringComparison.Ordinal);
+        Assert.DoesNotContain("Restart RHI", UiLocalizationService.PresentFor("pt-BR", message), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheUnreadableLedgerRefusal_LeadsWithTheRestart_AndKeepsNothingWasChanged()
+    {
+        Assert.EndsWith("Nothing was changed. Restart RHI to finish it, then try again.", DeploymentJournal.EarlierChangeUndecidedMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("Repair the ledger", DeploymentJournal.EarlierChangeUndecidedMessage, StringComparison.Ordinal);
+        Assert.EndsWith("Nada foi alterado. Reinicie o RHI para concluir e tente novamente.",
+            UiLocalizationService.PresentFor("pt-BR", DeploymentJournal.EarlierChangeUndecidedMessage), StringComparison.Ordinal);
+        Assert.EndsWith("nothing was undone now. Restart RHI to finish it.", DeploymentOperation.UndecidedNote, StringComparison.Ordinal);
+        Assert.EndsWith("nada foi desfeito agora. Reinicie o RHI para concluir.",
             UiLocalizationService.PresentFor("pt-BR", DeploymentOperation.UndecidedNote), StringComparison.Ordinal);
     }
 

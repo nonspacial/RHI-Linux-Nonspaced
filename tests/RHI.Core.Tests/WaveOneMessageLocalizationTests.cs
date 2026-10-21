@@ -595,9 +595,15 @@ public sealed class WaveOneMessageLocalizationTests
         { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", "more than once" },
         { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
-        // w8 follow-up C8/C9
+        // w8 follow-up C8/C9 (#221 replaced C9's fragment: the note now says to restart RHI)
         { DeploymentJournal.EarlierUndoFailedMessage, "could not finish undoing" },
-        { DeploymentOperation.UndecidedNote, "before the game's next change" },
+        { DeploymentOperation.UndecidedNote, "Restart RHI to finish it" },
+        // #221: the unreadable-ledger refusal, and the note appended to a prefixed refusal
+        { DeploymentJournal.EarlierChangeUndecidedMessage, "Restart RHI to finish it" },
+        { ReShadeDeploymentService.RemovalFailedPrefix + P + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided }), "Restart RHI to finish it" },
+        { NrCostScalerService.FailedRolledBackPrefix + E + DeploymentScope.RollbackNote(
+            new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided }), "nothing was undone now" },
         // w8 follow-up C4/C5
         { RenoDxDeploymentService.EngineIniFolderNotWritablePrefix + P, "cannot write to the folder" },
         { RenoDxDeploymentService.EngineIniNotTextMessage + RenoDxDeploymentService.EngineIniNotTextOffHint + "r.LUT.UpdateEveryFrame=1", "try again, or delete" },

@@ -453,9 +453,10 @@ public sealed class DeploymentJournal
     /// <summary>
     /// Fixed text of the refusal of an operation on a game whose earlier change is still undecided (PT-BR pair): the
     /// deployment ledger could not be read after that change failed, so RHI cannot yet tell whether to finish or undo it.
+    /// #221 (owner wording rule): says plainly that RHI has to be restarted to finish it.
     /// </summary>
     public const string EarlierChangeUndecidedMessage =
-        "RHI has not yet finished or undone an earlier change to this game, because the deployment ledger cannot be read. Nothing was changed. Repair the ledger or restart RHI, then try again.";
+        "RHI has not yet finished or undone an earlier change to this game, because the deployment ledger cannot be read. Nothing was changed. Restart RHI to finish it, then try again.";
 
     /// <summary>
     /// w8 follow-up C8: fixed text of the refusal while the undo of an earlier change to this game failed (PT-BR pair): the
@@ -625,9 +626,12 @@ public sealed class DeploymentOperation : IAsyncDisposable
         return decision;
     }
 
-    /// <summary>Fixed text of a failure whose commit point could not be read again: nothing was undone now (PT-BR pair).</summary>
+    /// <summary>
+    /// Fixed text of a failure whose commit point could not be read again: nothing was undone now (PT-BR pair). #221 (owner
+    /// wording rule): says plainly that RHI has to be restarted to finish it.
+    /// </summary>
     public const string UndecidedNote =
-        "The deployment ledger could not be read after the error, so nothing was undone now; RHI finishes or undoes this change before the game's next change, or at the next start.";
+        "The deployment ledger could not be read after the error, so nothing was undone now. Restart RHI to finish it.";
 
     /// <summary>The value <see cref="IDeploymentCommitCheck.Mark"/> returned when the operation began.</summary>
     internal string? CommitMark { get; set; }
