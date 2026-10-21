@@ -129,7 +129,10 @@ public sealed partial class ReShadeDeploymentService
         var record = LinuxDeploymentRecordStore.Clone(plan.Record);
         if (plan.NeedsIni)
         {
-            var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!);
+            // #213 (w8 integration): the file the write replaces under the one ReShade.ini link rule — a dangling link to a
+            // shared ~/.config/ReShade file not made yet is tracked at its target, so a rollback deletes the new shared file
+            // and the link stays a link (tracking the link deleted it).
+            var ini = ReShadeIniWriteTarget(game, ReShadeIniManager.ResolveIniPath(game.BinaryDirectory!));
             await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
             var iniResult = ReShadeIniManager.Apply(game.BinaryDirectory!, [], [], IniDefaults?.Invoke(game, true), game.InstallPath);
             await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
