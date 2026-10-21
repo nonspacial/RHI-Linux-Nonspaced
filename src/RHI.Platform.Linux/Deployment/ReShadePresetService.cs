@@ -208,6 +208,13 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             if (!ours && !same) return Refused(NameTakenPrefix + target);
         }
         if (XboxWriteGate.Refusal(target) is { } protectedFile) return Refused(protectedFile);
+        // #213: ReShade.ini may link to the user's shared file in ~/.config/ReShade (the one ReShade.ini link rule): the
+        // journal tracks the file the write replaces, never the link, so a rollback keeps the link and puts the shared
+        // file back. A link the rule refuses is refused here, before anything is written.
+        var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
+        string written;
+        try { written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory, game.InstallPath); }
+        catch (IOException ex) { return Refused(ex.Message); }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade preset: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return Refused(journalRefusal);
@@ -216,10 +223,9 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             var sha = await scope.PlaceBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
-            var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
-            await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
+            await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
             ReShadeIniManager.SetPresetPath(game.BinaryDirectory, fileName, game.InstallPath);
-            await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+            await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
 
             installed.RemoveAll(p => p.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase));
             installed.Add(new InstalledReShadePreset(fileName, sha));
@@ -250,6 +256,12 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
             return ComponentOperationResult.Fail(NotInstalledPrefix + fileName);
         var target = Path.Combine(game.BinaryDirectory, preset.FileName);
         var unchanged = File.Exists(target) && new FileInfo(target).LinkTarget is null && FileHash.HexEquals(FileHash.Sha256Hex(target), preset.Sha256);
+        // #213: the file a PresetPath edit replaces (a linked shared file, never the link). A link the rule refuses was
+        // made by the user since (RHI never writes through it): it is left as it is, and the preset still comes out.
+        var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
+        string? written;
+        try { written = ReShadeIniManager.ResolveWriteTarget(ini, game.BinaryDirectory, game.InstallPath); }
+        catch (IOException) { written = null; }
 
         var (opened, journalRefusal) = await DeploymentScope.BeginAsync(journal, $"ReShade preset removal: {game.Name}", game, ManagedComponentKind.ReShade, cancellationToken).ConfigureAwait(false);
         if (journalRefusal is not null) return ComponentOperationResult.Fail(journalRefusal);
@@ -258,12 +270,11 @@ public sealed class ReShadePresetService(LinuxDeploymentRecordStore records, Dep
         {
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             if (unchanged) await scope.DeleteAsync(target, cancellationToken).ConfigureAwait(false);
-            var ini = ReShadeIniManager.ResolveIniPath(game.BinaryDirectory);
-            if (File.Exists(ini))
+            if (written is not null && File.Exists(written))
             {
-                await scope.TrackAsync(ini, cancellationToken).ConfigureAwait(false);
+                await scope.TrackAsync(written, cancellationToken).ConfigureAwait(false);
                 if (ReShadeIniManager.ClearPresetPath(game.BinaryDirectory, preset.FileName, game.InstallPath))
-                    await scope.DeclareWrittenContentAsync(ini, cancellationToken).ConfigureAwait(false);
+                    await scope.DeclareWrittenContentAsync(written, cancellationToken).ConfigureAwait(false);
             }
             installed.Remove(preset);
             if (installed.Count == 0) record.Metadata.Remove(MetadataKey);
