@@ -14,6 +14,7 @@ internal sealed class SimulatedDeath : IDisposable
     private readonly List<DeploymentOperation> _started = [];
     private readonly ManualResetEventSlim _dead = new();
     private readonly ManualResetEventSlim _release = new();
+    private readonly List<Task> _runs = [];
 
     public SimulatedDeath(DeploymentJournal journal)
     {
@@ -38,15 +39,33 @@ internal sealed class SimulatedDeath : IDisposable
     public async Task<(bool Died, Task<T> Run)> RunUntilDeathAsync<T>(Func<Task<T>> act)
     {
         var run = Task.Run(act);
+        lock (_runs) _runs.Add(run);
         var deadline = DateTime.UtcNow.AddSeconds(180); // generous: parallel mutant/suite runs slow a full-stack install down
         while (!_dead.IsSet && !run.IsCompleted && DateTime.UtcNow < deadline) await Task.Delay(10);
         return (_dead.IsSet, run);
     }
 
+    /// <summary>
+    /// Lets the parked thread go and waits until every run it parked has finished (w7 follow-up gate flake: the let-go
+    /// thread's in-process catch wrote into the game/prefix folders while the test's fixture was deleting them —
+    /// "Directory not empty" in <c>Dlss5FeederLifecycleAuditTests</c>). Nothing a test does after this races that thread.
+    /// The wait is a hang guard only: the runs end within milliseconds once released.
+    /// </summary>
     public void Dispose()
     {
         _journal.OperationStartedForTesting = null;
         _release.Set();
+        Task[] runs;
+        lock (_runs) runs = [.. _runs];
+        try
+        {
+            if (!Task.WaitAll(runs, TimeSpan.FromMinutes(2)))
+                throw new TimeoutException("A run let go by SimulatedDeath did not finish within the hang guard.");
+        }
+        catch (AggregateException)
+        {
+            // The let-go run failing (the seam's "process gone" IOException) is expected; only its end matters here.
+        }
     }
 
     /// <summary>A journal (and its override service) the way the app builds it, with Wine never running.</summary>
