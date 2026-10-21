@@ -1093,7 +1093,7 @@ public sealed partial class ReShadeChannelTests : IDisposable
             new ReShadeShaderPackService(http, Path.Combine(cache, "shader-packs"), customRoot: Path.Combine(cache, "custom-shaders")));
     }
 
-    private static void SeedShaderCache(string cache, string packId)
+    internal static void SeedShaderCache(string cache, string packId)
     {
         var pack = Path.Combine(cache, "shader-packs", packId);
         var shaders = Path.Combine(pack, "extracted", "Shaders");
@@ -1117,7 +1117,7 @@ public sealed partial class ReShadeChannelTests : IDisposable
         CacheStamp.Write(Path.Combine(pack, "extracted"), sourceIdentity, sourceIdentity);
     }
 
-    private static void WriteNativeD3DCompiler(string path, ushort machine)
+    internal static void WriteNativeD3DCompiler(string path, ushort machine)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         PeArchitectureDetectorTests.WritePe(path, machine, 1_100_000);

@@ -70,6 +70,41 @@ public sealed class ReShadeLinkedIniJournalTests : IDisposable
         Assert.NotNull(new LinuxDeploymentRecordStore(fx.LedgerPath).Find(fx.Game, ManagedComponentKind.ReShade));
     }
 
+    // w7 integration (#207 × #179): the shaders-only sync writes ReShade.ini's search paths through the same link-aware
+    // target, so a failed or interrupted pack change keeps the link and puts the shared file back byte for byte.
+    [Theory]
+    [MemberData(nameof(Failures))]
+    public async Task ShaderSync_FailsOrDies_TheLinkStaysALink_AndTheSharedFileIsBackByteForByte(string failure)
+    {
+        var fx = Fixture("sync-" + failure);
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(fx.Bin))!;
+        ReShadeChannelTests.SeedShaderCache(Path.Combine(root, "cache"), "CrosireMaster");
+        ReShadeChannelTests.WriteNativeD3DCompiler(Path.Combine(fx.Game.PrefixPath!, "drive_c", "windows", "system32", "d3dcompiler_47.dll"), 0x8664);
+        var installed = await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true });
+        Assert.True(installed.Success, installed.Message);
+        var afterInstall = File.ReadAllBytes(fx.Shared);
+
+        await FailAsync(fx, failure, saveThatFails: 1, () => fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]), afterInstall);
+
+        Assert.False(File.Exists(Path.Combine(fx.Bin, "reshade-shaders", "RHI", "CrosireMaster", "Shaders", "Test.fx")));
+    }
+
+    [Fact]
+    public async Task ShaderSync_WritesTheSearchPathsIntoTheSharedFile_ThroughTheLink()
+    {
+        var fx = Fixture("sync-ok");
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(fx.Bin))!;
+        ReShadeChannelTests.SeedShaderCache(Path.Combine(root, "cache"), "CrosireMaster");
+        ReShadeChannelTests.WriteNativeD3DCompiler(Path.Combine(fx.Game.PrefixPath!, "drive_c", "windows", "system32", "d3dcompiler_47.dll"), 0x8664);
+        Assert.True((await fx.Service.InstallAsync(fx.Game, new ReShadeInstallOptions { ManageIni = true })).Success);
+
+        var synced = await fx.Service.SyncShaderPacksAsync(fx.Game, ["CrosireMaster"]);
+
+        Assert.True(synced.Success, synced.Message);
+        Assert.Equal(fx.Shared, new FileInfo(Path.Combine(fx.Bin, "ReShade.ini")).LinkTarget);
+        Assert.Contains("CrosireMaster", File.ReadAllText(fx.Shared));
+    }
+
     [Fact]
     public async Task Removal_TakesRhisLinesOutOfTheSharedFile_ByteForByte_AndKeepsTheLink()
     {
