@@ -532,3 +532,9 @@ build.
   later on a DX9 HDR game takes the layer path; removing DX9 HDR then gives it the `d3d9.dll` name. A ReShade under
   another DLL name, one loaded through ShortFuse, or one that replaced a pre-existing `d3d9.dll` is refused with what to
   do.
+- Linux additions (wave-7 review): RHI's record keeps the row's Remove whatever is left on disk (a `d3d9.dll` the user
+  deleted, a game no longer DirectX 9), and Remove takes back `dxvk.conf`, the override and ReShade's move. The row notes
+  when the game's launch command turns on `PROTON_USE_WINED3D` (DX9 HDR then has no effect; Steam's own launch
+  options are not read). DX9 HDR and Luma Framework's / DLSS5 Feeder's DirectX 9 translation (dgVoodoo2) both need
+  `d3d9.dll`: each refuses while the other is installed and names what to remove. The `d3d9.dll` taken from the archive
+  is capped at 64 MiB before 7-Zip extracts it (the archive's listed size) and again after.
