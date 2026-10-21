@@ -558,6 +558,18 @@ public sealed class WaveOneMessageLocalizationTests
         yield return E + DeploymentScope.RollbackNote(new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
         // w10/dlss-presets rows
         // w10/archives rows
+        // #216: why a dropped or watched archive was refused, and the install-time failures.
+        foreach (var reason in new[]
+                 {
+                     DroppedArchiveExtractor.NotAFileRefusal, DroppedArchiveExtractor.ArchiveTooLargeRefusal, DroppedArchiveExtractor.UnreadableRefusal,
+                     DroppedArchiveExtractor.TooManyFilesRefusal, DroppedArchiveExtractor.AbsoluteRefusal, DroppedArchiveExtractor.ParentRefusal,
+                     DroppedArchiveExtractor.EmptyPartRefusal, DroppedArchiveExtractor.DuplicateRefusal, DroppedArchiveExtractor.LinkRefusal,
+                     DroppedArchiveExtractor.NameRefusal, DroppedArchiveExtractor.AddonTooLargeRefusal, DroppedArchiveExtractor.TotalTooLargeRefusal,
+                     DroppedArchiveExtractor.RatioRefusal, DroppedArchiveExtractor.SizeMismatchRefusal, DroppedArchiveExtractor.NotExtractedRefusal,
+                 })
+            yield return reason + "renodx-exemplo.addon64";
+        yield return LinuxManagedComponentService.ArchiveExtractFailedPrefix + DroppedArchiveExtractor.SizeMismatchRefusal + "renodx-exemplo.addon64";
+        yield return LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix + "luma-exemplo.7z";
         // w10/journal-holds rows
     }
 

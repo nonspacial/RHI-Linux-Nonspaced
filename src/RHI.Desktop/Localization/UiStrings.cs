@@ -390,12 +390,12 @@ internal static class UiStrings
         ("Win.InstallLumaAdd", "🌙 Instalar add-on Luma", "🌙 Install Luma add-on"),
         ("Win.AddDroppedWindow", "Add-on solto na janela", "Add-on dropped on window"),
         ("Win.InstallLumaPackage", "🌙 Instalar pacote Luma", "🌙 Install Luma package"),
-        ("Win.ArchiveDetectedRHILinuxDoesNot", "Arquivo compactado detectado: {0}. O RHI-Linux não instala arquivos compactados automaticamente ao arrastar e soltar; use o instalador do componente ou o gerenciador de Shaders/Add-ons.", "Archive detected: {0}. RHI-Linux does not automatically install archives on drag-and-drop; use the component installer or the Shaders/Add-ons manager."),
+        ("Win.ArchiveDetectedRHILinuxDoesNot", "{0} não contém nenhum add-on que o RHI possa instalar (um add-on do RenoDX ou do Luma), então nada foi instalado.", "{0} holds no add-on RHI can install (a RenoDX or Luma add-on), so nothing was installed."),
         ("Win.AddWatcherCouldNotOpen", "O monitor de add-ons não conseguiu abrir: {0}", "The add-on watcher could not open: {0}"),
         ("Win.LumaAddDetectedByWatcher", "🌙 Add-on Luma detectado pelo monitor", "🌙 Luma add-on detected by watcher"),
         ("Win.AddDetectedByWatcher", "Add-on detectado pelo monitor", "Add-on detected by watcher"),
         ("Win.LumaPackageDetectedByWatcher", "🌙 Pacote Luma detectado pelo monitor", "🌙 Luma package detected by watcher"),
-        ("Win.WatcherDetectedGenericArchivesNeverInstalled", "O monitor detectou {0}. Arquivos compactados genéricos nunca são instalados nem apagados automaticamente; abra o fluxo do componente correspondente para aplicá-lo.", "The watcher detected {0}. Generic archives are never installed or deleted automatically; open the corresponding component flow to apply it."),
+        ("Win.WatcherDetectedGenericArchivesNeverInstalled", "O monitor detectou {0}, mas ele não contém nenhum add-on que o RHI possa instalar (um add-on do RenoDX ou do Luma); nada foi instalado e o arquivo continua na pasta.", "The watcher found {0}, but it holds no add-on RHI can install (a RenoDX or Luma add-on); nothing was installed and it stays in the folder."),
         ("Win.SelectGameWillReceiveLumaAdd", "Selecione o jogo que receberá o add-on Luma e solte o arquivo novamente.", "Select the game that will receive the Luma add-on and drop the file again."),
         ("Win.InstallLumaPackageRHIWillUse", "{0}\n\nInstalar este pacote Luma em {1}?\n\nO RHI aplicará o mesmo fluxo gerenciado de Luma (ReShade, proteção/restauração de arquivos e dgVoodoo2 quando o jogo DX9 exigir). O arquivo de origem será preservado.", "{0}\n\nInstall this Luma package in {1}?\n\nRHI will use the same managed Luma flow (ReShade, file protection/restore and dgVoodoo2 when required by a DX9 game). The source file will be preserved."),
         ("Win.InstallLuma", "Instalar Luma", "Install Luma"),
@@ -470,7 +470,7 @@ internal static class UiStrings
         ("Win.ShaderCache", "Cache de shaders", "Shader cache"),
         ("Win.KeepsDownloadedShaderPacksRHIXDG", "Mantém os pacotes de shaders baixados no cache XDG do RHI para reutilização.", "Keeps downloaded shader packs in the RHI XDG cache for reuse."),
         ("Win.WatchedAddFolder", "Pasta monitorada de add-ons", "Watched add-on folder"),
-        ("Win.NativeLinuxWatcherNeverDeletesSource", "Monitor nativo do Linux. Um add-on do RenoDX baixado é instalado no jogo que você confirmar e então retirado da pasta; outros arquivos .addon32/.addon64 são importados para Add-ons personalizados após confirmação; arquivos compactados geram somente uma notificação.", "Native Linux watcher. A downloaded RenoDX add-on is installed into the game you confirm, then removed from the folder; other .addon32/.addon64 files are imported into Custom Add-ons after confirmation; archives only generate a notification."),
+        ("Win.NativeLinuxWatcherNeverDeletesSource", "Monitor nativo do Linux. Um add-on do RenoDX baixado, ou um .zip, .7z ou .rar com \"renodx\" ou \"luma\" no nome que contenha um add-on do RenoDX ou do Luma, é instalado no jogo que você confirmar e então retirado da pasta, somente se ainda for o arquivo que o RHI leu; um .zip com \"luma\" no nome vai para o Luma do jogo selecionado e continua na pasta. Outros arquivos .addon32/.addon64 são importados para Add-ons personalizados após confirmação.", "Native Linux watcher. A downloaded RenoDX add-on, or a .zip, .7z or .rar with \"renodx\" or \"luma\" in its name that holds a RenoDX or Luma add-on, is installed into the game you confirm, then removed from the folder only while it is still the file RHI read; a .zip with \"luma\" in its name goes to the selected game's Luma and stays. Other .addon32/.addon64 files are imported into Custom Add-ons after confirmation."),
         ("Win.PreferencePersistedComponentLogsRemainUnder", "A preferência é persistida; os logs dos componentes permanecem nos caminhos XDG de dados/configuração do RHI.", "The preference is persisted; component logs remain under RHI XDG data/config paths."),
         ("Win.DLSSStreamlineDefaults", "Padrões de DLSS / Streamline", "DLSS / Streamline defaults"),
         ("Win.QuickApplyBatchApplyReplaceOnly", "Aplicação rápida e aplicação em lote substituem apenas DLLs locais que já existem no jogo. ‘Não alterar’ ignora o componente. Predefinições de perfil do driver NVIDIA e escala de renderização dependem de NVAPI e não são emuladas no Linux.", "Quick apply and batch apply replace only local DLLs that already exist in the game. “Do not change” skips the component. NVIDIA driver profile presets and render scaling depend on NVAPI and are not emulated on Linux."),
@@ -1320,6 +1320,17 @@ internal static class UiStrings
         // w8/commit-point rows
         // w10/dlss-presets rows
         // w10/archives rows
+        // #216 dropped / watched archives
+        ("Arc.Reading", "Lendo o arquivo compactado {0}…", "Reading the archive {0}…"),
+        ("Arc.Refused", "O RHI não abriu {0}, então nada foi instalado: {1}", "RHI did not open {0}, so nothing was installed: {1}"),
+        ("Arc.LumaNeedsZip", "{0} contém um add-on do Luma, mas o RHI instala pacotes Luma somente de arquivos .zip; nada foi instalado.", "{0} holds a Luma add-on, but RHI installs Luma packages from .zip files only; nothing was installed."),
+        ("Arc.DropIntro", "Instalar {0}, do arquivo compactado {1}, como o mod RenoDX deste jogo:", "Install {0}, from the archive {1}, as this game's RenoDX mod:"),
+        ("Arc.DropAddonIntro", "Instalar {0}, do arquivo compactado {1}, neste jogo, ao lado dos outros add-ons:", "Install {0}, from the archive {1}, into this game, beside its other add-ons:"),
+        ("Arc.LumaTitle", "Instalar add-on do Luma", "Install Luma add-on"),
+        ("Arc.LumaIntro", "Instalar o pacote Luma {1} (ele contém {0}) neste jogo:", "Install the Luma package {1} (it holds {0}) into this game:"),
+        ("Arc.LumaNote", "O RHI usa a mesma instalação gerenciada de um pacote Luma solto sobre ele; o botão Remover da linha do Luma o retira.", "RHI uses the same managed install as for a Luma package dropped on it; the Luma row's Remove button takes it out."),
+        ("Arc.AddonChoiceTip", "Os add-ons encontrados no arquivo compactado; escolha o que será instalado.", "The add-ons found in the archive; choose the one to install."),
+        ("Arc.SourceKept", "O arquivo compactado continua na pasta observada: ele mudou depois que o RHI o leu.", "The archive stays in the watch folder: it changed after RHI read it."),
         // w10/journal-holds rows
     ];
 }

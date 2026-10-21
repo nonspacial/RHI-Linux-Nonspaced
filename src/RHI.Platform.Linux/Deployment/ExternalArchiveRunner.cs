@@ -59,6 +59,8 @@ public static class ExternalArchiveRunner
     /// and needs 7-Zip. Throws on a missing tool, a failed or timed-out run, or a refused result
     /// (<see cref="InvalidDataException"/> starting with <see cref="ReShadeArchiveExtractor.ArchiveRefusedPrefix"/>).
     /// </summary>
+    /// <param name="literalMembers">#216: <paramref name="members"/> are exact stored names, never wildcard patterns
+    /// (7-Zip <c>-spd</c>; bsdtar: <c>\ * ? [</c> escaped), so a member named <c>renodx-*.addon64</c> extracts only itself.</param>
     public static async Task ExtractAsync(
         string archivePath,
         string outputDirectory,
@@ -66,14 +68,15 @@ public static class ExternalArchiveRunner
         IReadOnlyList<string>? members = null,
         string? password = null,
         TimeSpan? timeout = null,
-        ExternalArchiveTool? tool = null)
+        ExternalArchiveTool? tool = null,
+        bool literalMembers = false)
     {
         tool ??= FindTool() ?? throw new InvalidOperationException(NoToolPrefix + Path.GetFileName(archivePath));
         if (password is not null && tool.Kind != ExternalArchiveToolKind.SevenZip)
             throw new InvalidOperationException(SevenZipRequiredPrefix + Path.GetFileName(archivePath));
 
         Directory.CreateDirectory(outputDirectory);
-        var startInfo = BuildStartInfo(tool, archivePath, outputDirectory, members);
+        var startInfo = BuildStartInfo(tool, archivePath, outputDirectory, members, literalMembers);
         ExternalProcessResult result;
         try
         {
@@ -101,7 +104,7 @@ public static class ExternalArchiveRunner
     }
 
     internal static ProcessStartInfo BuildStartInfo(
-        ExternalArchiveTool tool, string archivePath, string outputDirectory, IReadOnlyList<string>? members)
+        ExternalArchiveTool tool, string archivePath, string outputDirectory, IReadOnlyList<string>? members, bool literalMembers = false)
     {
         var startInfo = new ProcessStartInfo(tool.Command) { WorkingDirectory = outputDirectory };
         if (tool.Kind == ExternalArchiveToolKind.SevenZip)
@@ -112,6 +115,7 @@ public static class ExternalArchiveRunner
                 foreach (var member in members) startInfo.ArgumentList.Add(member);
             startInfo.ArgumentList.Add($"-o{outputDirectory}");
             startInfo.ArgumentList.Add("-y");
+            if (literalMembers) startInfo.ArgumentList.Add("-spd"); // no wildcard matching of the member names
             // No -p switch: a password prompt reads stdin, which carries the password or is closed (EOF).
         }
         else
@@ -121,10 +125,15 @@ public static class ExternalArchiveRunner
             startInfo.ArgumentList.Add("-C");
             startInfo.ArgumentList.Add(outputDirectory);
             if (members is not null)
-                foreach (var member in members) startInfo.ArgumentList.Add(member);
+                foreach (var member in members) startInfo.ArgumentList.Add(literalMembers ? LiteralBsdTarPattern(member) : member);
         }
         return startInfo;
     }
+
+    /// <summary>A bsdtar member pattern that matches only <paramref name="member"/> itself (backslash first).</summary>
+    internal static string LiteralBsdTarPattern(string member)
+        => member.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("*", "\\*", StringComparison.Ordinal)
+            .Replace("?", "\\?", StringComparison.Ordinal).Replace("[", "\\[", StringComparison.Ordinal);
 
     /// <summary>
     /// Examines every entry under <paramref name="outputDirectory"/> without following links. A symbolic link

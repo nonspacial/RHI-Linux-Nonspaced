@@ -48,6 +48,27 @@ public static class LinuxDroppedFileClassifier
             : DroppedAddonTarget.CustomAddonsImport;
     }
 
+    /// <summary>
+    /// #216, upstream 2.8.7 <c>ProcessDroppedArchive</c>'s candidates: an <c>.addon64</c>, <c>.addon32</c> or <c>.addon</c>
+    /// inside a dropped or watched archive whose name starts <c>renodx-</c> or holds "luma". A Luma add-on takes the
+    /// Luma package install; a <c>renodx-</c> one takes the dropped file's own path (<see cref="AddonTarget"/>, dropped
+    /// set): the game's RenoDX mod, or another add-on beside it. Names a dropped file would only import into Custom
+    /// Add-ons (and every other file) are not offered: null.
+    /// </summary>
+    public static RHI.Platform.Linux.Deployment.DroppedArchiveAddonKind? ArchiveAddonKind(string? fileName)
+    {
+        var name = Path.GetFileName(fileName);
+        if (string.IsNullOrEmpty(name)) return null;
+        if (IsLikelyLumaAddon(name)) return RHI.Platform.Linux.Deployment.DroppedArchiveAddonKind.Luma;
+        if (!name.StartsWith("renodx-", StringComparison.OrdinalIgnoreCase)) return null;
+        return AddonTarget(name, watched: false) switch
+        {
+            DroppedAddonTarget.RenoDxInstall => RHI.Platform.Linux.Deployment.DroppedArchiveAddonKind.RenoDx,
+            DroppedAddonTarget.GameAddonInstall => RHI.Platform.Linux.Deployment.DroppedArchiveAddonKind.GameAddon,
+            _ => null,
+        };
+    }
+
     public static LinuxDroppedFileKind Classify(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return LinuxDroppedFileKind.Unsupported;

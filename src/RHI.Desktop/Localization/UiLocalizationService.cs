@@ -1587,6 +1587,24 @@ public static class UiLocalizationService
             "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então ainda não faz nenhuma alteração nova aqui. Nada foi alterado. Verifique se o RHI pode gravar nas pastas e nos arquivos do jogo (o rhi.log indica o arquivo que falhou) e tente novamente: o RHI tenta desfazer a alteração primeiro."),
         // w10/dlss-presets rows
         // w10/archives rows
+        // #216: why a dropped or watched archive was refused (the UI line names the archive), and the install-time failures.
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.NotAFileRefusal, "não é um arquivo comum: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.ArchiveTooLargeRefusal, "o arquivo compactado tem mais de 1 GiB: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.UnreadableRefusal, "não foi possível lê-lo (danificado, incompleto ou não é um arquivo compactado): "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.TooManyFilesRefusal, "ele lista arquivos demais para serem verificados: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.AbsoluteRefusal, "um arquivo interno tem um caminho absoluto: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.ParentRefusal, "um arquivo interno sai da pasta do arquivo compactado com \"..\": "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.EmptyPartRefusal, "um arquivo interno tem uma parte vazia no caminho: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.DuplicateRefusal, "um arquivo interno aparece duas vezes: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.LinkRefusal, "um arquivo interno é um link ou um dispositivo, não um arquivo comum: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.NameRefusal, "um arquivo interno tem um nome que o RHI não consegue ler com segurança: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.AddonTooLargeRefusal, "um add-on interno tem mais de 256 MiB: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.TotalTooLargeRefusal, "os arquivos internos somam mais de 2 GiB: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.RatioRefusal, "ele se expande para mais de 100 vezes o próprio tamanho: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.SizeMismatchRefusal, "um add-on interno tem tamanho diferente do que o arquivo compactado lista: "),
+        (RHI.Platform.Linux.Deployment.DroppedArchiveExtractor.NotExtractedRefusal, "a ferramenta de arquivos não devolveu o add-on: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ArchiveExtractFailedPrefix, "Não foi possível tirar o add-on do arquivo compactado, então nada foi instalado: "),
+        (RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ArchiveLumaNeedsZipPrefix, "O RHI instala um pacote Luma somente de um arquivo .zip, então nada foi instalado: "),
         // w10/journal-holds rows
     ];
 
