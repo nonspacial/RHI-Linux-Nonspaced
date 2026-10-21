@@ -174,6 +174,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
     // w8/renodx rows
     public RenoDxEngineIniPresenter RenoDxEngineIni => new(this, _managedComponents); // #217: the RenoDX ⚙'s Engine.ini rows
     // w8/commit-point rows
+    // w10 lane rows: shell hooks (one member each; logic lives in your presenter)
+    // w10/dlss-presets rows
+    // w10/archives rows
+    // w10/journal-holds rows
 
     /// <summary>The selected game's published analysis, or null while it is being worked out.</summary>
     private GameAnalysis? CurrentAnalysis => SelectedGame is { } game && ReferenceEquals(_session.Game, game) ? _session.Analysis : null;
@@ -1599,6 +1603,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable, ILibra
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
         return items;
     }
 

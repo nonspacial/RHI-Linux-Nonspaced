@@ -191,5 +191,8 @@ internal static class PlatformMessageTranslations
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     ];
 }

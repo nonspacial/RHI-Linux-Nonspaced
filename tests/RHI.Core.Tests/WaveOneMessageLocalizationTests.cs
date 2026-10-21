@@ -556,6 +556,9 @@ public sealed class WaveOneMessageLocalizationTests
         yield return ControlUeFrameGenerationService.HdrNotSetPrefix + ControlUeFrameGenerationService.HdrNoIniMessage + DeploymentScope.RollbackNote(
             new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
         yield return E + DeploymentScope.RollbackNote(new OwnedFileSetRollback([DeploymentOperation.UndecidedNote]) { Decision = CommitDecision.Undecided });
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     }
 
     // w7 integration: the English marker list does not know every word, so for these the fixed English text itself must

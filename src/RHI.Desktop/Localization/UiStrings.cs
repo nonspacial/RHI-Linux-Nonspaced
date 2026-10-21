@@ -1318,5 +1318,8 @@ internal static class UiStrings
         ("Rdx.HdrOff", "Engine.ini: as linhas de HDR do RHI foram removidas.", "Engine.ini: RHI's HDR lines were removed."),
         ("Rdx.HdrOffKept", "Engine.ini: as linhas de HDR já estavam lá antes do RHI e continuam.", "Engine.ini: the HDR lines were there before RHI and stay."),
         // w8/commit-point rows
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     ];
 }

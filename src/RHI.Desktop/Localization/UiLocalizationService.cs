@@ -639,6 +639,9 @@ public static class UiLocalizationService
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     ];
 
     private static readonly (string En, string Pt)[] PresentationPairs =
@@ -1582,6 +1585,9 @@ public static class UiLocalizationService
         // w8 follow-up C8: the undo of that earlier change failed (the ledger reads).
         (RHI.Core.Deployment.DeploymentJournal.EarlierUndoFailedMessage,
             "O RHI não conseguiu terminar de desfazer uma alteração anterior neste jogo, então ainda não faz nenhuma alteração nova aqui. Nada foi alterado. Verifique se o RHI pode gravar nas pastas e nos arquivos do jogo (o rhi.log indica o arquivo que falhou) e tente novamente: o RHI tenta desfazer a alteração primeiro."),
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     ];
 
     public static string CurrentLanguage { get; private set; } = "en-US";

@@ -136,6 +136,10 @@ public sealed class ComponentRowViewModel(ManagedComponent component, ICommand c
     // w8/reshade-ini rows
     // w8/renodx rows
     // w8/commit-point rows
+    // w10 lane rows: component-row members (one member each)
+    // w10/dlss-presets rows
+    // w10/archives rows
+    // w10/journal-holds rows
     public ICommand Command => command;
     public ManagedComponentKind CommandParameter => component.Kind;
 }

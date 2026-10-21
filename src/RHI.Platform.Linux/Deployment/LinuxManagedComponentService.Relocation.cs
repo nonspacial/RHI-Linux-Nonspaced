@@ -52,6 +52,9 @@ public sealed partial class LinuxManagedComponentService
             _shaderSets, // #179 per-game Global / Select / Off and Select lists
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
         ];
         return owned.OfType<IGameStateStore>().Concat(libraryStores ?? []).ToArray();
     }

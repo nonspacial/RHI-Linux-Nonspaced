@@ -74,6 +74,9 @@ internal sealed class AppComposition
     // w8/reshade-ini rows
     // w8/renodx rows
     // w8/commit-point rows
+    // w10/dlss-presets rows
+    // w10/archives rows
+    // w10/journal-holds rows
 
     public MainWindowViewModel CreateViewModel()
     {
@@ -249,6 +252,10 @@ internal sealed class AppComposition
         // w8/reshade-ini rows
         // w8/renodx rows
         // w8/commit-point rows
+        // w10 lane rows: services LinuxManagedComponentService takes (named args below)
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
         var managedComponents = new LinuxManagedComponentService(
             records, reshade, addonManager, renodx, renodxUpgrade, optiscaler, relimiter, displayCommander,
             mfgAdaUnlock, dlssg2030, dlssEnablerStandalone, rtx40Mfg, dlss5Feeder, dlss5Bridge, d3dCompilerTools, ultimateAsiLoader, shortFuse, dofFix, reFramework, lumaFramework, lumaPolicy, neuralAddonVersionStore,
@@ -273,6 +280,10 @@ internal sealed class AppComposition
             // w8/reshade-ini rows
             // w8/renodx rows
             // w8/commit-point rows
+            // w10 lane rows: named arguments, each line starting with a comma
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
             );
         // w3/sync rows
         var renodxUnityDatabase = new RenoDxUnityDatabaseService(http);
@@ -327,6 +338,9 @@ internal sealed class AppComposition
         // w8/renodx rows
         renodx.UnrealDatabase = renodxUnrealDatabase; // #218: UE-Extended's install settings (Method, Upgrades)
         // w8/commit-point rows
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
         return new AppComposition
         {
             Scanner = scanner,
@@ -381,6 +395,9 @@ internal sealed class AppComposition
             // w8/reshade-ini rows
             // w8/renodx rows
             // w8/commit-point rows
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
         };
     }
 }

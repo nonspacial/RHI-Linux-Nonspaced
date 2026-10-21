@@ -111,6 +111,10 @@ public sealed partial class SettingsDialogView : UserControl
         Fill("ShaderSetsSlot", shaderSets.Control);
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w10 lane rows: Settings rows (build the row, Fill its slot, Host its values)
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
 
         // Tabs other lanes added, after Maintenance.
         if (this.FindControl<TabControl>("Tabs") is not { } tabs) return;
@@ -127,5 +131,9 @@ public sealed partial class SettingsDialogView : UserControl
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w10 lane rows: Settings tabs (after Maintenance)
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
     }
 }

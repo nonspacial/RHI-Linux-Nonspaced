@@ -76,6 +76,10 @@ public sealed class LinuxAppSettings
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    // w10 lane rows: settings fields (one per line; add its Normalize line below)
+    // w10/dlss-presets rows
+    // w10/archives rows
+    // w10/journal-holds rows
 
     /// <summary>
     /// Runs on every load and save. The ReShade channel keeps only the values the channel list offers (Settings uses the
@@ -126,6 +130,10 @@ public sealed class LinuxAppSettings
         // w7/shader-sets rows
         // w7/nvapi-launch rows
         // w7/dxvk-hdr rows
+        // w10 lane rows: Normalize
+        // w10/dlss-presets rows
+        // w10/archives rows
+        // w10/journal-holds rows
         return this;
     }
 

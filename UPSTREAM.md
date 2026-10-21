@@ -748,3 +748,11 @@ build.
 - DX9 HDR's ReShade.ini write (when the game has none) tracks the link-rule target like every other ReShade.ini writer.
   The audit's narrow case (a dangling link to a shared file not made yet) does not occur: .NET counts a dangling link as
   an existing file, so no ReShade.ini is written there.
+
+## Parity notes (wave 10: DLSS default presets, archive offer, journal holds)
+
+<!-- w10/dlss-presets notes -->
+
+<!-- w10/archives notes -->
+
+<!-- w10/journal-holds notes -->

@@ -60,6 +60,10 @@ public sealed class SettingsViewModel : PanelViewModel
     // w7/shader-sets rows
     // w7/nvapi-launch rows
     // w7/dxvk-hdr rows
+    // w10 lane rows: Settings hooks (one member each)
+    // w10/dlss-presets rows
+    // w10/archives rows
+    // w10/journal-holds rows
 
     public LinuxSettingsUiSnapshot GetLinuxSettingsSnapshot()
     {
@@ -116,6 +120,10 @@ public sealed class SettingsViewModel : PanelViewModel
             // w7/shader-sets rows
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
+            // w10 lane rows: snapshot copy (every new LinuxAppSettings property, or Save resets it)
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
         };
         return new(copy, _settingsStore.SettingsPath, _settingsStore.ConfigRoot, _settingsStore.CacheRoot, _settingsStore.DataRoot);
     }

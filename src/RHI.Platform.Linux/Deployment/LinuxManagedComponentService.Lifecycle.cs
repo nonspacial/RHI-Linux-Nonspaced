@@ -64,6 +64,10 @@ public sealed partial class LinuxManagedComponentService
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => await _dxvkHdr.CheckUpdateAsync(game, cancellationToken).ConfigureAwait(false),
+            // w10 lane rows: update checks (one arm each)
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
             _ => new ManagedUpdateCheck(true, false, $"{component} não participa do fluxo Atualizar tudo.")
         });
     }
@@ -121,6 +125,10 @@ public sealed partial class LinuxManagedComponentService
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.UpdateAsync(game, cancellationToken),
+            // w10 lane rows: updates (one arm each)
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} não participa do fluxo Atualizar tudo."))
         });
     }
@@ -175,6 +183,10 @@ public sealed partial class LinuxManagedComponentService
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.InstallAsync(game, cancellationToken),
+            // w10 lane rows: installs (one arm each)
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} installation is not available yet."))
         };
 
@@ -244,6 +256,10 @@ public sealed partial class LinuxManagedComponentService
             // w7/nvapi-launch rows
             // w7/dxvk-hdr rows
             ManagedComponentKind.DxvkHdr when _dxvkHdr is not null => _dxvkHdr.RemoveAsync(game, cancellationToken),
+            // w10 lane rows: removals (one arm each)
+            // w10/dlss-presets rows
+            // w10/archives rows
+            // w10/journal-holds rows
             _ => Task.FromResult(ComponentOperationResult.Fail($"{component} removal is not available yet."))
         });
     }
