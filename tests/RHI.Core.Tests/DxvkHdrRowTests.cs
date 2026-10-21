@@ -164,6 +164,11 @@ public sealed class DxvkHdrRowTests
     [InlineData("PROTON_USE_WINED3D=\"1\" %command%", true)]
     [InlineData("sh -c 'PROTON_USE_WINED3D=yes %command%'", true)]
     [InlineData("PROTON_USE_WINED3D=0 %command%", false)]
+    [InlineData("PROTON_USE_WINED3D=\"0\" %command%", false)]                         // w7 follow-up B28: quoted 0 is off
+    [InlineData("PROTON_USE_WINED3D='0' %command%", false)]
+    [InlineData("PROTON_USE_WINED3D=1 PROTON_USE_WINED3D=0 %command%", false)]         // the last assignment wins
+    [InlineData("PROTON_USE_WINED3D=0 PROTON_USE_WINED3D=1 %command%", true)]
+    [InlineData("PROTON_USE_WINED3D11=1 PROTON_USE_WINED3D=0 %command%", true)]       // either name on counts
     [InlineData("PROTON_USE_WINED3D= %command%", false)]
     [InlineData("MY_PROTON_USE_WINED3D=1 %command%", false)]
     [InlineData("PROTON_ENABLE_WAYLAND=1 %command%", false)]

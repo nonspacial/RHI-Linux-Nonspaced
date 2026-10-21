@@ -311,6 +311,10 @@ public sealed class Dlss5FeederFullDeploymentService
             return ComponentOperationResult.Fail(wineRunning);
         if (_records.Find(game, ManagedComponentKind.ShortFuse) is not null)
             return ComponentOperationResult.Fail("Remove ShortFuse before installing DLSS5 Feeder Full. Both workflows own the DLSS/Streamline stack and must not be stacked.");
+        // w7 follow-up B29: a DirectX 9 game's Feeder needs the dgVoodoo2 translation, which DX9 HDR's d3d9.dll rules out:
+        // refused here, before any download or write.
+        if (game.EffectiveGraphicsApi == GraphicsApi.DirectX9 && Dx9TranslationReShadeCoordinator.DxvkHdrRefusal(_records, game) is { } dxvkHdr)
+            return ComponentOperationResult.Fail(dxvkHdr);
         var gameArchitecture = GameArchitecture.Of(game);
         FeederCompilerPlan compilerPlan;
         try

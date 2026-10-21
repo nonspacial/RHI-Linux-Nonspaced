@@ -1428,12 +1428,23 @@ public sealed class LinuxManagedComponentService : ILinuxManagedUpdateBackend
         return ComponentOperationResult.Ok("Dependencies ready.");
     }
 
+    /// <summary>
+    /// w7 follow-up B31 (merge review O1): ReShade is not installed automatically for another component on a game with DX9
+    /// HDR (PT-BR pair) — beside DX9 HDR it goes to its Vulkan layer, which the user chooses on ReShade's row.
+    /// </summary>
+    public const string ReShadeDependencyBesideDxvkHdrMessage =
+        "DX9 HDR is installed on this game, so RHI does not add ReShade to it on its own: beside DX9 HDR, ReShade goes to its Vulkan layer. Install ReShade on its own row first, then try again.";
+
     private Task<ComponentOperationResult> InstallDependencyCoreAsync(
         DetectedGame game,
         ManagedComponentKind dependency,
         CancellationToken cancellationToken)
         => dependency switch
         {
+            // B31: the view the ReShade row would install through (its Vulkan layer beside DX9 HDR) differs: say so plainly
+            // instead of the DLL-name refusal the raw game ran into ("choose another DLL name" was wrong there).
+            ManagedComponentKind.ReShade when !ReferenceEquals(ReShadeViewForDxvkHdr(game), game)
+                => Task.FromResult(ComponentOperationResult.Fail(ReShadeDependencyBesideDxvkHdrMessage)),
             ManagedComponentKind.ReShade => InstallReShadeForShaderSetAsync(game, ReShadeDeploymentService.DefaultOptionsFor(game), update: false, cancellationToken), // w7/shader-sets hook (#179 review major 2)
             ManagedComponentKind.REFramework => _reFramework.InstallAsync(game, cancellationToken),
             _ => Task.FromResult(ComponentOperationResult.Fail(

@@ -1010,6 +1010,17 @@ public sealed partial class ReShadeDeploymentService
     public const string NoAddonsCurrentPrefix = "ReShade No Addons is current: ";
     public const string NoAddonsLinkMissingMessage = "Could not find the current ReShade download without add-on support on reshade.me.";
 
+    // w7 follow-up B30: the compiler check's refusals (ReShade's install and the shaders-only sync), fixed text first, each
+    // with a PT-BR presentation pair.
+    public const string CompilerGameFilesUnknownMessage = "The game's executable or binary folder is not known yet, so RHI cannot check its shader compiler.";
+    public const string CompilerManagedMissingPrefix = "RHI installed D3DCompiler_47.dll for this game, but the file is gone: ";
+    public const string CompilerManagedInvalidPrefix = "The D3DCompiler_47.dll RHI installed is no longer a native Microsoft compiler: ";
+    public const string CompilerForeignBesideGamePrefix = "A D3DCompiler_47.dll beside the game is not a native Microsoft compiler, and RHI does not overwrite a DLL it did not install: ";
+    public const string CompilerSelectedInvalidPrefix = "The chosen D3DCompiler_47.dll is missing, has the wrong bitness, or is not the native Microsoft HLSL compiler: ";
+    public const string CompilerNeededMessage = "RHI's shader packs under Wine/Proton need a native Microsoft D3DCompiler_47.dll; Wine's own compiler cannot build every ReShade effect.";
+    public const string CompilerSteamHintPrefix = " For this Steam game, install it into the prefix with the D3DCompiler 47 row's Protontricks button, or run: protontricks ";
+    public const string CompilerWinetricksHint = " Install it into this prefix with the D3DCompiler 47 row's Winetricks button, or choose a Microsoft D3DCompiler_47.dll there with Browse.";
+
     private D3DCompilerPlan BuildD3DCompilerPlan(
         DetectedGame game,
         PeArchitecture architecture,
@@ -1019,16 +1030,16 @@ public sealed partial class ReShadeDeploymentService
         if (game.PrefixPath is not { } prefix || !Directory.Exists(prefix))
             throw new InvalidOperationException("Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.");
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || string.IsNullOrWhiteSpace(game.ExecutablePath))
-            throw new InvalidOperationException("Game executable/binary directory is not available.");
+            throw new InvalidOperationException(CompilerGameFilesUnknownMessage);
 
         var target = Path.Combine(game.BinaryDirectory, D3DCompilerFileName);
         var existingManaged = existingRecord?.Files.FirstOrDefault(file => IsD3DCompilerPath(file.Path));
         if (existingManaged is not null)
         {
             if (!File.Exists(target))
-                throw new InvalidOperationException($"RHI previously managed {D3DCompilerFileName}, but the file is missing: {target}");
+                throw new InvalidOperationException(CompilerManagedMissingPrefix + target);
             if (!LooksLikeNativeD3DCompiler(target, architecture))
-                throw new InvalidOperationException($"RHI-managed {D3DCompilerFileName} is no longer a valid native Microsoft compiler: {target}");
+                throw new InvalidOperationException(CompilerManagedInvalidPrefix + target);
             return new(target, null, false, "RHI-managed app-local compiler", existingRecord?.Metadata.GetValueOrDefault(MetaD3DCompilerSource));
         }
 
@@ -1036,9 +1047,7 @@ public sealed partial class ReShadeDeploymentService
         if (existingAppLocal is not null)
         {
             if (!LooksLikeNativeD3DCompiler(existingAppLocal, architecture))
-                throw new InvalidOperationException(
-                    $"{Path.GetFileName(existingAppLocal)} already exists beside the game but is not recognized as a native Microsoft compiler. " +
-                    "RHI will not overwrite an external DLL.");
+                throw new InvalidOperationException(CompilerForeignBesideGamePrefix + existingAppLocal);
             return new(existingAppLocal, null, true, "existing app-local Microsoft compiler", null);
         }
 
@@ -1046,8 +1055,7 @@ public sealed partial class ReShadeDeploymentService
         if (!string.IsNullOrWhiteSpace(userSource))
         {
             if (!LooksLikeNativeD3DCompiler(userSource, architecture))
-                throw new InvalidOperationException(
-                    $"The selected {D3DCompilerFileName} is missing, has the wrong architecture, or is not recognized as the native Microsoft HLSL compiler: {userSource}");
+                throw new InvalidOperationException(CompilerSelectedInvalidPrefix + userSource);
             return new(target, userSource, false, "RHI app-local compiler from selected Microsoft DLL", userSource);
         }
 
@@ -1058,11 +1066,9 @@ public sealed partial class ReShadeDeploymentService
         }
 
         var appIdHint = game.SteamAppId.HasValue
-            ? $" For this Steam game you can install it into the prefix with: protontricks {game.SteamAppId.Value} d3dcompiler_47"
-            : " Install the native d3dcompiler_47 verb with winetricks for this prefix, or select a Microsoft D3DCompiler_47.dll in the ReShade profile.";
-        throw new InvalidOperationException(
-            $"RHI shader packs under Wine/Proton need a native Microsoft {D3DCompilerFileName}; Wine's built-in compiler is not sufficient for all ReShade effects." +
-            appIdHint);
+            ? $"{CompilerSteamHintPrefix}{game.SteamAppId.Value} d3dcompiler_47"
+            : CompilerWinetricksHint;
+        throw new InvalidOperationException(CompilerNeededMessage + appIdHint);
     }
 
     internal static bool LooksLikeNativeD3DCompiler(string path, PeArchitecture architecture)

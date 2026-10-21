@@ -263,6 +263,38 @@ public sealed partial class LumaFrameworkDeploymentServiceTests : IDisposable
         Assert.Contains("Drop", update.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    // w7 follow-up B29 (dxvk-hdr re-review nit 6): a DX9 Luma that needs the dgVoodoo2 translation is refused in Luma's own
+    // pre-check while DX9 HDR is installed — before any network or write — with the plain "remove DX9 HDR first" reason.
+    [Fact]
+    public async Task InstallLocalPackage_Dx9TranslationBesideDxvkHdr_RefusesBeforeAnyChange()
+    {
+        var game = CreateGame();
+        game.Name = "Borderlands 2";
+        game.GraphicsApi = GraphicsApi.DirectX9;
+        var records = NewRecords("dx9-dxvk-records.json");
+        SeedManagedReShade(records, game);
+        records.Upsert(new LinuxDeploymentRecord
+        {
+            GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.DxvkHdr,
+            BinaryDirectory = game.BinaryDirectory!, Version = "10.0-HDR-mod-v1.0.0"
+        });
+        Directory.CreateDirectory(Path.Combine(game.BinaryDirectory!, "addons"));
+        var iniPath = Path.Combine(game.BinaryDirectory!, "ReShade.ini");
+        File.WriteAllText(iniPath, "[ADDON]\nAddonPath=.\\addons\n");
+        var before = CancelAtWritePhase.Snapshot(game.BinaryDirectory!);
+        var package = Path.Combine(_root, "Luma-Dx9.addon");
+        File.WriteAllBytes(package, MakePePayload(0x8664, 96 * 1024));
+        using var http = new HttpClient(new FakeHandler(_ => throw new InvalidOperationException("The DX9 HDR refusal must come before any network.")));
+        var service = new LumaFrameworkDeploymentService(http, records, Path.Combine(_root, "cache-dx9-dxvk"));
+
+        var install = await service.InstallLocalPackageAsync(game, package);
+
+        Assert.False(install.Success);
+        Assert.Equal(DxvkHdrDeploymentService.BlocksDx9TranslationMessage, install.Message);
+        CancelAtWritePhase.AssertUnchanged(before, game.BinaryDirectory!);
+        Assert.Null(records.Find(game, ManagedComponentKind.LumaFramework));
+    }
+
     [Fact]
     public async Task InstallLocalPackage_RejectsArchitectureMismatchBeforeMutatingManagedState()
     {

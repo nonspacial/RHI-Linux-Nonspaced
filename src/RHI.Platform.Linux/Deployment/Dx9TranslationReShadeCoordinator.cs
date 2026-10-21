@@ -169,13 +169,21 @@ public sealed class Dx9TranslationReShadeCoordinator
         return (record, overrideRestore);
     }
 
+    /// <summary>
+    /// DX9 HDR is on the game: the DirectX 9 translation (dgVoodoo2 as d3d9.dll) cannot be added. Luma Framework and the
+    /// DLSS5 Feeder ask this in their own pre-checks, before any download or write (w7 follow-up B29); the migration asks it
+    /// again. Null when DX9 HDR is not installed.
+    /// </summary>
+    internal static string? DxvkHdrRefusal(LinuxDeploymentRecordStore records, DetectedGame game)
+        => records.Find(game, ManagedComponentKind.DxvkHdr) is not null ? DxvkHdrDeploymentService.BlocksDx9TranslationMessage : null;
+
     private async Task<(LinuxDeploymentRecord Record, LinuxDeployedFile File, string D3d9, string Dxgi, string Hash)> PrepareMigrationAsync(
         DetectedGame game, CancellationToken cancellationToken)
     {
         if (game.EffectiveGraphicsApi != GraphicsApi.DirectX9)
             throw new InvalidOperationException("DX9 ReShade migration is only valid for DirectX 9 games.");
-        if (_records.Find(game, ManagedComponentKind.DxvkHdr) is not null) // w7/dxvk-hdr hook (#200, coordinator decision 8): say so plainly
-            throw new InvalidOperationException(DxvkHdrDeploymentService.BlocksDx9TranslationMessage);
+        if (DxvkHdrRefusal(_records, game) is { } dxvkHdr) // w7/dxvk-hdr hook (#200, coordinator decision 8): say so plainly
+            throw new InvalidOperationException(dxvkHdr);
         if (string.IsNullOrWhiteSpace(game.BinaryDirectory) || string.IsNullOrWhiteSpace(game.PrefixPath) ||
             !Directory.Exists(game.BinaryDirectory) || !Directory.Exists(game.PrefixPath))
             throw new InvalidOperationException("DX9 ReShade migration requires a game binary directory and initialized Wine/Proton prefix.");

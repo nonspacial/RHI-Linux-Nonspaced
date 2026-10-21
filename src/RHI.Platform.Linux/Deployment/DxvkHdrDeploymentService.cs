@@ -120,6 +120,9 @@ public sealed partial class DxvkHdrDeploymentService
     public const string PackageIncompletePrefix = "The DXVK HDR release does not hold the d3d9.dll this game needs: ";
     public const string NotDxvkHdrPrefix = "The d3d9.dll in the DXVK HDR release is not a DXVK HDR build for this game: ";
     public const string D3d9TooLargePrefix = "The d3d9.dll in the DXVK HDR release is larger than RHI accepts (64 MiB), so it was not used: ";
+
+    /// <summary>w7 follow-up B24: the archive lists the member more than once (PT-BR pair); nothing was extracted.</summary>
+    public const string DuplicateMemberPrefix = "The DXVK HDR release lists the d3d9.dll this game needs more than once, so RHI did not use it: ";
     public const string InstalledPrefix = "DX9 HDR installed (d3d9.dll and dxvk.conf beside the game). Version: ";
     public const string ReShadeMovedNote = " ReShade moved to its Vulkan layer for this game; removing DX9 HDR puts it back as d3d9.dll.";
     public const string UpdatedPrefix = "DX9 HDR updated. Version: ";
@@ -141,6 +144,17 @@ public sealed partial class DxvkHdrDeploymentService
     public const string WineD3dNote = " The game's launch command sets PROTON_USE_WINED3D, so Proton uses Wine's own DirectX 9 and DX9 HDR has no effect: take it out of the launch command (Edit game) to use DX9 HDR.";
     public const string ExternalNote = "A DXVK HDR d3d9.dll RHI did not install is beside the game; RHI leaves it alone.";
     public const string MissingD3d9Note = "DX9 HDR's d3d9.dll is no longer beside the game, so DX9 HDR does nothing now. Remove takes away the rest RHI set up for it; then you can install it again.";
+
+    /// <summary>
+    /// w7 follow-up B25: Update (and Update All) never puts back a d3d9.dll the user deleted, nor updates a game that no
+    /// longer takes DX9 HDR (PT-BR pair).
+    /// </summary>
+    public const string UpdateNeedsReinstallMessage =
+        "DX9 HDR was not updated: its d3d9.dll is no longer beside the game, or the game no longer takes DX9 HDR. Remove DX9 HDR, then install it again if you still want it.";
+
+    /// <summary>Why DX9 HDR on <paramref name="game"/> (record <paramref name="record"/>) must not be updated, or null.</summary>
+    private static string? UpdateRefusal(DetectedGame game, LinuxDeploymentRecord record)
+        => D3d9Missing(record) || OfferRefusal(game) is not null ? UpdateNeedsReinstallMessage : null;
 
     private readonly HttpClient _http;
     private readonly LinuxDeploymentRecordStore _records;
@@ -169,12 +183,13 @@ public sealed partial class DxvkHdrDeploymentService
     /// <summary>
     /// <see cref="HdrLaunchOn"/> for the row note. The selection analysis decorates rows off the UI thread while the HDR
     /// control may change the library on it: a read that meets that write counts as unknown (no note) rather than failing
-    /// the analysis; the next selection reads it again.
+    /// the analysis; the next selection reads it again. Any exception counts (re-review nit 4): a read during the
+    /// dictionary's first insert can throw NullReferenceException, not only the "collection was modified" one.
     /// </summary>
-    private bool? ReadHdrLaunchOn(DetectedGame game)
+    internal bool? ReadHdrLaunchOn(DetectedGame game)
     {
         try { return HdrLaunchOn?.Invoke(game); }
-        catch (InvalidOperationException) { return null; }
+        catch (Exception) { return null; }
     }
 
     /// <summary>Test seam: runs inside the install right after d3d9.dll is placed (to fail or kill it mid-way).</summary>
@@ -411,6 +426,7 @@ public sealed partial class DxvkHdrDeploymentService
         if (GetRecord(game) is not { } record) return ComponentOperationResult.Fail(NotInstalledMessage);
         var d3d9 = record.Files.FirstOrDefault(file => Path.GetFileName(file.Path).Equals(D3d9FileName, StringComparison.OrdinalIgnoreCase));
         if (d3d9 is null) return ComponentOperationResult.Fail(NotInstalledMessage);
+        if (UpdateRefusal(game, record) is { } reinstall) return ComponentOperationResult.Fail(reinstall); // before any download
         var architecture = GameArchitecture.Of(game);
         if (architecture is not (PeArchitecture.X86 or PeArchitecture.X64)) return ComponentOperationResult.Fail(BitnessUnknownMessage);
         if (_overrides.EditRefusal(game.PrefixPath) is { } running) return ComponentOperationResult.Fail(running);
@@ -467,6 +483,9 @@ public sealed partial class DxvkHdrDeploymentService
     public async Task<ManagedUpdateCheck> CheckUpdateAsync(DetectedGame game, CancellationToken cancellationToken = default)
     {
         if (GetRecord(game) is not { } record) return new ManagedUpdateCheck(false, false, NotInstalledMessage);
+        // B25: a deleted d3d9.dll or a game that no longer takes DX9 HDR is never "updated" back: a failure that says why.
+        if (UpdateRefusal(game, record) is { } reinstall)
+            return new ManagedUpdateCheck(true, false, reinstall, record.Version, Blocked: true);
         GitHubResolvedReleaseAsset release;
         try
         {
@@ -519,11 +538,15 @@ public sealed partial class DxvkHdrDeploymentService
     /// not 0). Proton then sets <c>WINEDLLOVERRIDES=d3d9=b</c>, which beats the per-exe override on every runner
     /// (reviews/w7-dxvk-hdr-wine.md), so DX9 HDR's d3d9.dll is never loaded. Steam's own launch options are not read.
     /// </summary>
+    /// <para>Re-review nit 5: per variable the last assignment in the command wins (<c>…=1 … PROTON_USE_WINED3D=0</c> is
+    /// off), as the shell leaves it; Proton reads both names, so either one on counts.</para>
     internal static bool LaunchUsesWineD3d(DetectedGame game)
         => game.LaunchCommand is { } command
-           && WineD3dSetting().Matches(command).Any(match => match.Groups["value"].Value.Trim('"', '\'') is { Length: > 0 } value && value != "0");
+           && WineD3dSetting().Matches(command)
+               .GroupBy(match => match.Groups["name"].Value, StringComparer.Ordinal)
+               .Any(name => name.Last().Groups["value"].Value.Trim('"', '\'') is { Length: > 0 } value && value != "0");
 
-    [System.Text.RegularExpressions.GeneratedRegex(@"(?<![A-Za-z0-9_])PROTON_USE_WINED3D(?:11)?=(?<value>""[^""]*""|'[^']*'|[^\s;&|]*)")]
+    [System.Text.RegularExpressions.GeneratedRegex(@"(?<![A-Za-z0-9_])(?<name>PROTON_USE_WINED3D(?:11)?)=(?<value>""[^""]*""|'[^']*'|[^\s;&|]*)")]
     private static partial System.Text.RegularExpressions.Regex WineD3dSetting();
 
     /// <summary>
@@ -632,7 +655,8 @@ public sealed partial class DxvkHdrDeploymentService
     /// <summary>
     /// The size <paramref name="member"/> has in <paramref name="archive"/> as the host tool lists it (7-Zip
     /// <c>l -slt</c>, bsdtar <c>-tvf</c>), through <see cref="ExternalProcess"/> (time limit, tree kill); null when the
-    /// archive does not list it.
+    /// archive does not list it (or lists it without a size). A member listed twice is refused (re-review 1: the tool
+    /// writes the last copy, so the first one's size would bound nothing).
     /// </summary>
     internal static async Task<long?> ListedSizeAsync(ExternalArchiveTool tool, string archive, string member, CancellationToken cancellationToken)
     {
@@ -642,30 +666,50 @@ public sealed partial class DxvkHdrDeploymentService
         var result = await ExternalProcess.RunAsync(start, ExternalArchiveRunner.DefaultTimeout, cancellationToken).ConfigureAwait(false);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"{ExternalArchiveRunner.FailedPrefix}{Path.GetFileName(tool.Command)} ({result.ExitCode}): {result.LastMeaningfulLine()}");
-        var lines = result.StandardOutput.Split('\n', StringSplitOptions.TrimEntries);
-        if (tool.Kind == ExternalArchiveToolKind.SevenZip)
+        var sizes = ListedSizes(tool.Kind, result.StandardOutput, member);
+        return sizes.Count switch
         {
-            // Entries follow the "----------" line as "Key = value" blocks; the archive's own block comes before it.
+            0 => null,
+            1 => sizes[0],
+            _ => throw new InvalidDataException(DuplicateMemberPrefix + member),
+        };
+    }
+
+    /// <summary>
+    /// Every entry of <paramref name="member"/> in a host tool's listing, with its size (null for an entry the listing
+    /// gives no size for). 7-Zip: the entries follow the "----------" line as "Key = value" blocks ending at a blank line
+    /// (the archive's own block comes before it); bsdtar <c>-tv</c>: the size is the fifth field.
+    /// </summary>
+    internal static IReadOnlyList<long?> ListedSizes(ExternalArchiveToolKind kind, string output, string member)
+    {
+        var lines = output.Split('\n', StringSplitOptions.TrimEntries);
+        var sizes = new List<long?>();
+        if (kind == ExternalArchiveToolKind.SevenZip)
+        {
             var entries = lines.SkipWhile(line => !line.StartsWith("----------", StringComparison.Ordinal)).ToArray();
             for (var i = 0; i < entries.Length; i++)
             {
                 if (!entries[i].StartsWith("Path = ", StringComparison.Ordinal)
                     || !entries[i]["Path = ".Length..].Replace('\\', '/').Equals(member, StringComparison.Ordinal)) continue;
+                long? size = null;
                 for (var j = i + 1; j < entries.Length && entries[j].Length > 0; j++)
                     if (entries[j].StartsWith("Size = ", StringComparison.Ordinal))
-                        return long.TryParse(entries[j]["Size = ".Length..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size) ? size : null;
+                    {
+                        size = long.TryParse(entries[j]["Size = ".Length..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+                        break;
+                    }
+                sizes.Add(size);
             }
-            return null;
+            return sizes;
         }
         // bsdtar -tv: "-rwxr-xr-x  0 0      0     7311374 Sep  7 11:44 normal/x64/d3d9.dll" (size is the fifth field).
         foreach (var line in lines)
         {
             var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (fields.Length >= 9 && fields[^1].Equals(member, StringComparison.Ordinal)
-                && long.TryParse(fields[4], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size))
-                return size;
+            if (fields.Length >= 9 && fields[^1].Equals(member, StringComparison.Ordinal))
+                sizes.Add(long.TryParse(fields[4], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var size) ? size : null);
         }
-        return null;
+        return sizes;
     }
 
     private static string Safe(string value) => string.Concat(value.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_'));

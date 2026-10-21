@@ -28,8 +28,15 @@ public sealed class FeederConflictRegressionTests : IDisposable
         Dlss5FeederConsumer consumer, string externalFileName)
         => await AssertExternalConsumerGuardAsync(consumer, externalFileName, "External or pre-existing");
 
+    // w7 follow-up B29 (dxvk-hdr re-review nit 6): a DirectX 9 game's Feeder needs the dgVoodoo2 translation, which DX9
+    // HDR rules out: refused in the Feeder's own pre-check, before any download or write.
+    [Fact]
+    public async Task Install_Dx9GameWithDxvkHdr_RefusesBeforeNetwork()
+        => await AssertExternalConsumerGuardAsync(Dlss5FeederConsumer.RenoDxDlss5, externalFileName: null,
+            DxvkHdrDeploymentService.BlocksDx9TranslationMessage, GraphicsApi.DirectX9, dxvkHdr: true);
+
     private async Task AssertExternalConsumerGuardAsync(
-        Dlss5FeederConsumer consumer, string externalFileName, string expectedMessage)
+        Dlss5FeederConsumer consumer, string? externalFileName, string expectedMessage, GraphicsApi api = GraphicsApi.DirectX12, bool dxvkHdr = false)
     {
         var binary = Path.Combine(_root, "game");
         var prefix = Path.Combine(_root, "prefix");
@@ -44,9 +51,9 @@ public sealed class FeederConflictRegressionTests : IDisposable
         File.WriteAllText(ini, "[GENERAL]\nPresetPath=UserPreset.ini\n[ADDON]\nLoadFromDllMain=user-addon.addon64\n");
         var iniBefore = File.ReadAllBytes(ini);
         var registryBefore = File.ReadAllBytes(Path.Combine(prefix, "user.reg"));
-        var externalPath = Path.Combine(binary, externalFileName);
-        PeArchitectureDetectorTests.WritePe(externalPath, 0x8664, 70 * 1024);
-        var externalBefore = File.ReadAllBytes(externalPath);
+        var externalPath = Path.Combine(binary, externalFileName ?? "none.addon64");
+        if (externalFileName is not null) PeArchitectureDetectorTests.WritePe(externalPath, 0x8664, 70 * 1024);
+        var externalBefore = externalFileName is null ? Array.Empty<byte>() : File.ReadAllBytes(externalPath);
         var package = Path.Combine(_root, "consumer.zip");
         CreateDfcPackage(package);
 
@@ -59,9 +66,15 @@ public sealed class FeederConflictRegressionTests : IDisposable
             PrefixPath = prefix,
             Source = "Test",
             Runner = "Wine",
-            GraphicsApi = GraphicsApi.DirectX12
+            GraphicsApi = api
         };
         var records = new LinuxDeploymentRecordStore(Path.Combine(_root, "deployments.json"));
+        if (dxvkHdr)
+            records.Upsert(new LinuxDeploymentRecord
+            {
+                GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.DxvkHdr,
+                BinaryDirectory = binary, Version = "10.0-HDR-mod-v1.0.0"
+            });
         using var handler = new CountingNetworkHandler();
         using var http = new HttpClient(handler);
         var dlss = new DlssManagerService(http, new TransactionalFileDeploymentService(), Path.Combine(_root, "cache-dlss"));
@@ -77,7 +90,7 @@ public sealed class FeederConflictRegressionTests : IDisposable
         Assert.False(result.Success);
         Assert.Contains(expectedMessage, result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, handler.RequestCount);
-        Assert.Equal(externalBefore, File.ReadAllBytes(externalPath));
+        if (externalFileName is not null) Assert.Equal(externalBefore, File.ReadAllBytes(externalPath));
         Assert.Equal(iniBefore, File.ReadAllBytes(ini));
         Assert.Equal(registryBefore, File.ReadAllBytes(Path.Combine(prefix, "user.reg")));
         Assert.Null(records.Find(game, ManagedComponentKind.Dlss5Feeder));

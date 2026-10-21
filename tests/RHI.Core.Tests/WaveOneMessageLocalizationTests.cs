@@ -416,6 +416,7 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonInstalledPrefix + "/jogos/Exemplo/bin/ShaderToggler.addon64";
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon32BitOn64BitMessage;
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage; // w7 follow-up B10
+        yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ReShadeDependencyBesideDxvkHdrMessage; // w7 follow-up B31
         yield return RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddon64BitOn32BitMessage;
         // w7/reshade rows
         yield return ProxyRename.NotInstalledPrefix + "OptiScaler";
@@ -464,6 +465,8 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.PackageIncompletePrefix + "normal/x32/d3d9.dll";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.NotDxvkHdrPrefix + "normal/x64/d3d9.dll";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.D3d9TooLargePrefix + "normal/x64/d3d9.dll";
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DownloadFailedPrefix + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll"; // w7 follow-up B24
+        yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdateNeedsReinstallMessage; // w7 follow-up B25
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.InstalledPrefix + "3.1-HDR-mod-v0.3.4" + RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.ReShadeMovedNote;
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdatedPrefix + "3.1-HDR-mod-v0.3.4";
         yield return RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.AlreadyCurrentPrefix + "3.1-HDR-mod-v0.3.4";
@@ -500,6 +503,18 @@ public sealed class WaveOneMessageLocalizationTests
         yield return RHI.Platform.Linux.Deployment.ReShadeDeploymentService.ShaderSyncFailedPrefix
             + "Wine/Proton prefix is not initialized; start the game once before enabling ReShade shader packs.";
         yield return "ReShade shader compiler compatibility check failed: " + P;
+        // w7 follow-up B30: the compiler check's own refusals, as the shaders-only sync (and ReShade's install) show them
+        foreach (var refusal in new[]
+                 {
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerGameFilesUnknownMessage,
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerManagedMissingPrefix + P,
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerManagedInvalidPrefix + P,
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerForeignBesideGamePrefix + P,
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerSelectedInvalidPrefix + P,
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerNeededMessage + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerSteamHintPrefix + "4242 d3dcompiler_47",
+                     RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerNeededMessage + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerWinetricksHint,
+                 })
+            yield return "ReShade shader compiler compatibility check failed: " + refusal;
         yield return "OptiScaler files were removed, but the name ReShade64.dll goes back to is unexpectedly occupied; RHI did not move ReShade back over it: " + P;
         yield return "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.";
     }
@@ -522,6 +537,20 @@ public sealed class WaveOneMessageLocalizationTests
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "Foreign RenoDX protection" },
         { "Foreign RenoDX protection: another RenoDX add-on already exists at " + P + ". RHI Linux will not overwrite or stack it automatically.", "will not overwrite" },
         // w7 follow-up
+        { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ReShadeDependencyBesideDxvkHdrMessage, "does not add ReShade" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerGameFilesUnknownMessage, "is not known yet" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerManagedMissingPrefix + P, "the file is gone" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerManagedInvalidPrefix + P, "no longer a native" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerForeignBesideGamePrefix + P, "does not overwrite a DLL" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerSelectedInvalidPrefix + P, "has the wrong bitness" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerNeededMessage
+            + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerSteamHintPrefix + "4242 d3dcompiler_47", "For this Steam game" },
+        { "ReShade shader compiler compatibility check failed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerNeededMessage
+            + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerWinetricksHint, "cannot build every" },
+        { "The shader packs were not changed: " + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerNeededMessage
+            + RHI.Platform.Linux.Deployment.ReShadeDeploymentService.CompilerWinetricksHint, "Winetricks button" },
+        { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.UpdateNeedsReinstallMessage, "no longer beside the game" },
+        { RHI.Platform.Linux.Deployment.DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", "more than once" },
         { "ReShade 6.8.0 [Stable] applied as dxgi.dll; no RHI shader packs. Existing ReShade.ini customizations are preserved." + RHI.Platform.Linux.Deployment.LinuxManagedComponentService.ShaderPacksNotInstalledNote, "takes effect with the ReShade profile" },
         { RHI.Platform.Linux.Deployment.LinuxManagedComponentService.DroppedAddonNeedsReShadeMessage, "nothing was copied" },
     };

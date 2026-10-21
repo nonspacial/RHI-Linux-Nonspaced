@@ -408,6 +408,119 @@ public sealed partial class ReShadeChannelTests
         Assert.Equal(expected, size);
     }
 
+    // w7 follow-up B25 (re-review minor 2): Update and Update All never put back a d3d9.dll the user deleted, nor update a
+    // game that no longer takes DX9 HDR: the check is a failure that says "Remove, then install again", and Update refuses
+    // before any download.
+    [Theory]
+    [InlineData("deleted")]
+    [InlineData("not-dx9")]
+    public async Task DxvkHdr_DeletedD3d9OrNoLongerDx9_IsNotUpdatedBack(string why)
+    {
+        var rig = Rig("dxvk-no-update-" + why);
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var game = rig.Game;
+        if (why == "deleted") File.Delete(rig.D3d9);
+        else game.GraphicsApi = GraphicsApi.DirectX11;
+        rig.Handler.Tag = "v10.0-HDR-mod-v9.9.9";
+
+        var check = await rig.Dxvk.CheckUpdateAsync(game);
+        var requests = (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests);
+        var updated = await rig.Dxvk.UpdateAsync(game);
+
+        Assert.False(check.UpdateAvailable);
+        Assert.True(check.Blocked);
+        Assert.Equal(DxvkHdrDeploymentService.UpdateNeedsReinstallMessage, check.Message);
+        Assert.False(updated.Success);
+        Assert.Equal(DxvkHdrDeploymentService.UpdateNeedsReinstallMessage, updated.Message);
+        Assert.Equal(requests, (rig.Handler.ApiRequests, rig.Handler.ArchiveRequests)); // nothing downloaded
+        Assert.Equal(why != "deleted", File.Exists(rig.D3d9));
+        Assert.NotEqual("10.0-HDR-mod-v9.9.9", rig.Dxvk.GetRecord(game)!.Version);
+    }
+
+    // w7 follow-up B27 (re-review nit 4): the row reads the game's HDR launch setting through ReadHdrLaunchOn — Off adds
+    // the note, On or unknown does not — and a read that meets the library being written (any exception, e.g. the
+    // NullReferenceException of a dictionary's first insert) counts as unknown instead of failing the analysis.
+    [Fact]
+    public async Task DxvkHdr_HdrLaunchSetting_OffAddsTheNote_AndAFailedReadCountsAsUnknown()
+    {
+        var rig = Rig("dxvk-hdr-read");
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+
+        rig.Dxvk.HdrLaunchOn = _ => false;
+        Assert.EndsWith(DxvkHdrDeploymentService.HdrLaunchOffNote, DecoratedDxvkRow(rig).Note);
+        rig.Dxvk.HdrLaunchOn = _ => true;
+        Assert.DoesNotContain(DxvkHdrDeploymentService.HdrLaunchOffNote, DecoratedDxvkRow(rig).Note);
+        foreach (var failure in new Exception[] { new NullReferenceException(), new InvalidOperationException(), new IndexOutOfRangeException() })
+        {
+            rig.Dxvk.HdrLaunchOn = _ => throw failure;
+            Assert.Null(rig.Dxvk.ReadHdrLaunchOn(rig.Game));
+            Assert.DoesNotContain(DxvkHdrDeploymentService.HdrLaunchOffNote, DecoratedDxvkRow(rig).Note);
+        }
+    }
+
+    // w7 follow-up B31 (merge review O1): RenoDX (any component needing ReShade) on a game with DX9 HDR and no ReShade:
+    // ReShade is not added on its own — the refusal names DX9 HDR and points at ReShade's row (whose install takes the
+    // Vulkan layer), not "choose another DLL name"; nothing changes and the target never runs.
+    [Fact]
+    public async Task DependencyReShade_BesideDxvkHdr_IsRefusedNamingDx9Hdr_AndNothingChanges()
+    {
+        var rig = Rig("dep-reshade-dxvk");
+        Assert.True((await rig.Dxvk.InstallAsync(rig.Game)).Success);
+        var before = CancelAtWritePhase.Snapshot(rig.Bin, rig.Game.PrefixPath!);
+        var ledger = File.ReadAllBytes(rig.Ledger);
+        var components = ManagedComponents(rig.Store, rig.ReShade);
+        var targetRan = false;
+
+        var result = await components.InstallWithManagedDependenciesAsync(rig.Game, ManagedComponentKind.RenoDX, null,
+            () => { targetRan = true; return Task.FromResult(ComponentOperationResult.Ok("target installed")); }, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.False(targetRan);
+        Assert.EndsWith(LinuxManagedComponentService.ReShadeDependencyBesideDxvkHdrMessage, result.Message, StringComparison.Ordinal);
+        Assert.Null(rig.Store.Find(rig.Game, ManagedComponentKind.ReShade));
+        CancelAtWritePhase.AssertUnchanged(before, rig.Bin, rig.Game.PrefixPath!);
+        Assert.Equal(ledger, File.ReadAllBytes(rig.Ledger));
+        var portuguese = RHI.Desktop.Localization.UiLocalizationService.PresentFor("pt-BR", result.Message);
+        Assert.Contains("ao lado do DX9 HDR", portuguese, StringComparison.Ordinal);
+    }
+
+    // w7 follow-up B26 (re-review nit 3): a 7-Zip entry block ends at its blank line, so an entry the listing gives no
+    // size for never takes the next entry's size.
+    [Fact]
+    public void DxvkHdr_ListedSizes_SevenZipBlockStopsAtTheBlankLine()
+    {
+        const string listing = "----------\nPath = normal/x64/d3d9.dll\nAttributes = A\n\nPath = normal/x32/d3d9.dll\nSize = 999\n\n";
+
+        Assert.Equal([null], DxvkHdrDeploymentService.ListedSizes(ExternalArchiveToolKind.SevenZip, listing, "normal/x64/d3d9.dll"));
+        Assert.Equal([999L], DxvkHdrDeploymentService.ListedSizes(ExternalArchiveToolKind.SevenZip, listing, "normal/x32/d3d9.dll"));
+    }
+
+    // w7 follow-up B24 (re-review minor 1): a member listed twice is refused before anything is extracted — the tool
+    // writes the last copy, so the first one's size would bound nothing.
+    [Theory]
+    [InlineData(ExternalArchiveToolKind.SevenZip)]
+    [InlineData(ExternalArchiveToolKind.BsdTar)]
+    public async Task DxvkHdr_ListedSize_AMemberListedTwice_IsRefused(ExternalArchiveToolKind kind)
+    {
+        var listing = kind == ExternalArchiveToolKind.SevenZip
+            ? "----------\nPath = normal/x64/d3d9.dll\nSize = 10\n\nPath = normal/x64/d3d9.dll\nSize = 5000\n\n"
+            : "-rwxr-xr-x  0 0      0     10 Sep  7 11:45 normal/x64/d3d9.dll\n-rwxr-xr-x  0 0      0     5000 Sep  7 11:45 normal/x64/d3d9.dll\n";
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "listing-twice-" + kind)).FullName;
+        var output = Path.Combine(folder, "output.txt");
+        File.WriteAllText(output, listing);
+        var tool = Path.Combine(folder, "tool");
+        File.WriteAllText(tool, $"#!/bin/sh\ncat '{output}'\n");
+        File.SetUnixFileMode(tool, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var archive = Path.Combine(folder, "dxvk.7z");
+        File.WriteAllBytes(archive, [0]);
+
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            DxvkHdrDeploymentService.ListedSizeAsync(new ExternalArchiveTool(tool, kind), archive, "normal/x64/d3d9.dll", CancellationToken.None));
+
+        Assert.Equal(DxvkHdrDeploymentService.DuplicateMemberPrefix + "normal/x64/d3d9.dll", error.Message);
+        Assert.Equal(2, DxvkHdrDeploymentService.ListedSizes(kind, listing, "normal/x64/d3d9.dll").Count);
+    }
+
     // Review minor 5 / coordinator decision 8: Luma Framework's or DLSS5 Feeder's DirectX 9 translation is on the game
     // (dgVoodoo2 as D3D9.dll, RHI's ReShade moved to dxgi.dll by the translation, the owner's migration record). DX9 HDR
     // names the component to remove (not ReShade's "another DLL name" advice), on the row and on Install; nothing changes.

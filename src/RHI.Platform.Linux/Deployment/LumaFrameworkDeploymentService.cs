@@ -394,6 +394,8 @@ public sealed class LumaFrameworkDeploymentService
         LinuxDeploymentRecord? sharedDx9Record = null;
         if (requiresDgVoodoo)
         {
+            // w7 follow-up B29: DX9 HDR holds the game's d3d9.dll; refused here, before the package is fetched or anything written.
+            if (Dx9TranslationReShadeCoordinator.DxvkHdrRefusal(_records, game) is { } dxvkHdr) return ComponentOperationResult.Fail(dxvkHdr);
             dx9Migration = ReadDx9Migration(existingRecord, MetaDx9Migration);
             sharedDx9Record = dx9Migration is not null ? existingRecord : null;
             if (dx9Migration is null)
