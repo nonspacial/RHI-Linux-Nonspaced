@@ -293,21 +293,21 @@ public sealed class DeploymentScopeCommitPointTests : IDisposable
             var journal = SimulatedDeath.NewJournal(journalDir, records).Journal;
             async Task<ComponentOperationResult> Act()
             {
-                var (scope, refusal) = removal
+                var (opened, refusal) = removal
                     ? await DeploymentScope.BeginRemovalAsync(journal, records, "removal", detected, ManagedComponentKind.ReShade, CancellationToken.None)
                     : await DeploymentScope.BeginAsync(journal, "install", detected, ManagedComponentKind.ReShade, CancellationToken.None);
                 if (refusal is not null) return ComponentOperationResult.Fail(refusal);
-                await using var _ = scope!;
+                await using var scope = opened!;
                 try
                 {
                     if (removal)
                     {
-                        await scope!.DeleteAsync(payload);
+                        await scope.DeleteAsync(payload);
                         records.Remove(detected, ManagedComponentKind.ReShade);
                     }
                     else
                     {
-                        await scope!.PlaceBytesAsync(payload, After);
+                        await scope.PlaceBytesAsync(payload, After);
                         records.Upsert(scope.Stamp(Rec()));
                     }
                 }
