@@ -237,9 +237,10 @@ public sealed partial class DlssBatchDialogViewModel : ObservableObject
         {
             Status = refused.Message;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException cancelled)
         {
-            Status = T("Vm.OperationCancelled");
+            // #215: the batch's own line names the games whose presets were already set or reset.
+            Status = cancelled is DlssBatchCancelledException batch ? batch.Line : T("Vm.OperationCancelled");
         }
         catch (Exception ex)
         {

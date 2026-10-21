@@ -360,7 +360,7 @@ public sealed class LinuxDlssDefaultsService
             return;
         }
 
-        if (kind == DlssComponentKind.SuperResolution && targets.Any(IsDlss1x))
+        if (kind == DlssComponentKind.SuperResolution && targets.Any(DlssAutoFollowService.IsDlss1xFile))
         {
             results.Add(new(game.Name, batchComponent, true, false, false, true,
                 "DLSS Super Resolution 1.x target detected; newer manifest DLLs are not applied over DLSS 1.x."));
@@ -464,9 +464,6 @@ public sealed class LinuxDlssDefaultsService
                 true, false, true, false, message)
         ]);
 
-    private static bool IsDlss1x(string path)
-        => DlssAutoFollowService.PeFileVersion(path)?.StartsWith("1.", StringComparison.Ordinal) == true;
-
     /// <summary>
     /// #215: the preset rows Quick Apply and the DLSS batch may copy a preset into — the one rule both use: the rows
     /// <paramref name="plan"/> (that game's NVIDIA settings… dialog) shows, minus Super Resolution / Ray Reconstruction
@@ -479,7 +476,7 @@ public sealed class LinuxDlssDefaultsService
         ArgumentNullException.ThrowIfNull(detection);
         var rows = plan.PresetRows;
         static NvidiaPresetRowState Guard(NvidiaPresetRowState row, IReadOnlyList<string> files)
-            => row == NvidiaPresetRowState.Shown && files.Any(IsDlss1x) ? NvidiaPresetRowState.Dlss1x : row;
+            => row == NvidiaPresetRowState.Shown && files.Any(DlssAutoFollowService.IsDlss1xFile) ? NvidiaPresetRowState.Dlss1x : row;
         return rows with
         {
             SuperResolution = Guard(rows.SuperResolution, detection.DlssPaths),

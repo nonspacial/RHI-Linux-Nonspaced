@@ -367,29 +367,34 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         if (games.Count == 0) return new(new LinuxDlssBatchResult([]), "");
         using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
         if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var tally = new BatchPresetTally();
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchPreparingGameS", games.Count);
             var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
-            // #215: the presets first, in one library write (launch-profile settings only, no file): Cancel during the
-            // DLL swaps below then never leaves some ticked games with presets and others without.
-            var presetLine = presets is { HasAny: true } ? await CopyBatchPresetsAsync(games, indexes, presets, op.Token) : "";
-            var result = defaults.HasAny
-                ? await _dlssDefaults.ApplyBatchAsync(
-                    games, defaults,
-                    game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-                    op.Token)
-                : null;
+            // #215, upstream's order (MassDlssDeployDialog): game by game, that game's DLL swaps, then its presets. Cancel
+            // stops between games, so a game not reached yet keeps its presets, and one whose swaps ran gets its presets too.
+            var items = new List<LinuxDlssBatchItemResult>();
+            foreach (var game in games)
+            {
+                op.Token.ThrowIfCancellationRequested();
+                if (defaults.HasAny)
+                    items.AddRange((await _dlssDefaults.ApplyBatchAsync([game], defaults, Files(indexes), op.Token)).Items);
+                if (presets is { HasAny: true })
+                    await CopyBatchPresetsAsync(game, indexes, presets, tally);
+            }
+            var result = defaults.HasAny ? new LinuxDlssBatchResult(items) : null;
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
-            var line = Join(result is null ? "" : UiLocalizationService.Present(result.Summary), presetLine);
+            var line = Join(result is null ? "" : UiLocalizationService.Present(result.Summary), presets is { HasAny: true } ? tally.Line() : "");
             StatusText = line;
             return new(result ?? new LinuxDlssBatchResult([]), line);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
             await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were changed
-            StatusText = OperationCancelledText();
-            throw;
+            var line = Join(OperationCancelledText(), tally.Reached.Count > 0 ? TF("Dp.BatchPresetsBeforeCancel", string.Join(", ", tally.Reached)) : "");
+            StatusText = line;
+            throw new DlssBatchCancelledException(line, ex);
         }
         finally
         {
@@ -404,41 +409,52 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         if (games.Count == 0) return new(new LinuxDlssBatchResult([]), "");
         using var op = BeginOperation("dlss-batch", linkedToken: cancellationToken);
         if (op is null) throw new OperationRefusedException(T("Vm.AnotherRHIOperationAlreadyRunning"));
+        var reset = new List<string>();
+        string? refused = null;
         try
         {
             StatusText = TF("Vm.DLSSStreamlineBatchRestorePreparingGame", games.Count);
-            // #215 (upstream's mass restore): every ticked game's DLSS presets back to Default and the newest-DLSS
-            // driver override off; its render scale and frame-generation settings stay. One library write, first.
-            var reset = Shell.Runtime.WriteNvidiaSettings(games, (_, saved) =>
-            {
-                if (saved is null) return null;
-                var next = saved.Copy();
-                next.SuperResolutionPreset = next.RayReconstructionPreset = next.FrameGenerationPreset = DlssPresetCatalogue.Default;
-                next.NewestDlss = false;
-                return next;
-            });
             var indexes = await PrepareDlssBatchIndexesAsync(games, op.Token);
-            var result = await _dlssDefaults.RestoreBatchAsync(
-                games,
-                game => indexes.TryGetValue(Key(game), out var files) ? files : null,
-                op.Token);
+            // #215 (upstream's mass restore, game by game): that game's DLLs back, then its DLSS presets back to Default
+            // and the newest-DLSS driver override off; its render scale and frame-generation settings stay.
+            var items = new List<LinuxDlssBatchItemResult>();
+            foreach (var game in games)
+            {
+                op.Token.ThrowIfCancellationRequested();
+                items.AddRange((await _dlssDefaults.RestoreBatchAsync([game], Files(indexes), op.Token)).Items);
+                var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) =>
+                {
+                    if (saved is null) return null;
+                    var next = saved.Copy();
+                    next.SuperResolutionPreset = next.RayReconstructionPreset = next.FrameGenerationPreset = DlssPresetCatalogue.Default;
+                    next.NewestDlss = false;
+                    return next;
+                });
+                if (write.Changed > 0) reset.Add(game.Name);
+                refused ??= write.Refused;
+            }
+            var result = new LinuxDlssBatchResult(items);
             await InvalidateAllAndReprobeSelectedAsync(); // Refs #72
             var line = Join(UiLocalizationService.Present(result.Summary),
-                reset.Changed > 0 ? TF("Dp.BatchPresetsReset", reset.Changed) : "", reset.Refused ?? "");
+                reset.Count > 0 ? TF("Dp.BatchPresetsReset", reset.Count) : "", refused ?? "");
             StatusText = line;
             return new(result, line);
         }
         catch (Exception ex) when (op.WasCancelled(ex))
         {
             await InvalidateAllAndReprobeSelectedAsync(); // games finished before the cancel were changed
-            StatusText = OperationCancelledText();
-            throw;
+            var line = Join(OperationCancelledText(), reset.Count > 0 ? TF("Dp.BatchPresetsResetBeforeCancel", string.Join(", ", reset)) : "");
+            StatusText = line;
+            throw new DlssBatchCancelledException(line, ex);
         }
         finally
         {
             NotifyDlssDefaults();
         }
     }
+
+    private Func<DetectedGame, IReadOnlyList<string>?> Files(IReadOnlyDictionary<string, IReadOnlyList<string>> indexes)
+        => game => indexes.TryGetValue(Key(game), out var files) ? files : null;
 
     // ---- #215: default presets into a game's own NVIDIA settings ---------------------------------------------------
 
@@ -458,36 +474,57 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         return Join(PresetCopyLine(game, copy, presets), write.Refused ?? "");
     }
 
-    /// <summary>The batch: the same rule per ticked game; the line counts the games set and skipped.</summary>
-    private async Task<string> CopyBatchPresetsAsync(IReadOnlyList<DetectedGame> games, IReadOnlyDictionary<string, IReadOnlyList<string>> indexes,
-        NvidiaPresetChoice presets, CancellationToken token)
+    /// <summary>
+    /// The batch: the same rule for one ticked game, right after its DLL swaps; <paramref name="tally"/> counts the games
+    /// set and skipped (by reason) for the line. Runs to the end once called (the game's swaps already ran), so a
+    /// Cancel pressed meanwhile still leaves the game with both. A game without a confirmed patch target has no index
+    /// (<see cref="PrepareDlssBatchIndexesAsync"/> skips it), so its files are unknown and no row is offered.
+    /// </summary>
+    private async Task CopyBatchPresetsAsync(DetectedGame game, IReadOnlyDictionary<string, IReadOnlyList<string>> indexes,
+        NvidiaPresetChoice presets, BatchPresetTally tally)
     {
         var host = Shell.Runtime.NvidiaHost;
         var rows = await Task.Run(() =>
         {
-            var byGame = new Dictionary<string, NvidiaPresetRows>(StringComparer.Ordinal);
-            foreach (var game in games)
-            {
-                token.ThrowIfCancellationRequested();
-                var detection = game.HasConfirmedPatchTarget && indexes.TryGetValue(Key(game), out var files)
-                    ? _dlssDefaults.DetectTargets(game, files, token)
-                    : new DlssDetectionResult();
-                byGame[Key(game)] = LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, host);
-            }
-            return byGame;
-        }, token);
-        int set = 0, skipped = 0, copied = 0;
-        var write = Shell.Runtime.WriteNvidiaSettings(games, (game, saved) =>
-        {
-            var copy = NvidiaPresetCopy.Apply(saved, presets, rows[Key(game)]);
-            copied++;
-            if (copy.AnySet) set++;
-            if (copy.AnySkipped) skipped++;
-            return copy.Settings;
+            var detection = indexes.TryGetValue(Key(game), out var files)
+                ? _dlssDefaults.DetectTargets(game, files)
+                : new DlssDetectionResult();
+            return LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, host);
         });
-        // Library writes wait (Repair after move): nothing was copied, the line says why.
-        if (copied == 0) return write.Refused ?? "";
-        return Join(TF("Dp.BatchPresets", set, skipped), write.Refused ?? "");
+        NvidiaPresetCopyResult? copy = null;
+        var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) => (copy = NvidiaPresetCopy.Apply(saved, presets, rows)).Settings);
+        tally.Add(game, copy, write);
+    }
+
+    /// <summary>#215: what the batch's preset copies did, per game: set, skipped by reason, the games reached.</summary>
+    private sealed class BatchPresetTally
+    {
+        private int _copied, _set, _notShown, _dlss1x;
+        private string? _refused;
+
+        /// <summary>The games whose NVIDIA settings now hold a copied preset, in batch order (the Cancel line names them).</summary>
+        public List<string> Reached { get; } = [];
+
+        public void Add(DetectedGame game, NvidiaPresetCopyResult? copy, NvidiaSettingsWrite write)
+        {
+            _refused ??= write.Refused;
+            // Library writes wait (Repair after move): nothing was copied.
+            if (copy is null) return;
+            _copied++;
+            if (copy.AnySet) _set++;
+            if (copy.Skipped.Any(s => s.Why == NvidiaPresetRowState.NotShown)) _notShown++;
+            if (copy.Skipped.Any(s => s.Why == NvidiaPresetRowState.Dlss1x)) _dlss1x++;
+            if (copy.AnySet) Reached.Add(game.Name);
+        }
+
+        /// <summary>The batch line: games set, skipped because the row is not offered, skipped over DLSS 1.x; or why nothing was copied.</summary>
+        public string Line()
+            => _copied == 0
+                ? _refused ?? ""
+                : Join(TF("Dp.BatchPresets", _set),
+                    _notShown > 0 ? TF("Dp.BatchPresetsNotShown", _notShown) : "",
+                    _dlss1x > 0 ? TF("Dp.BatchPresetsDlss1x", _dlss1x) : "",
+                    _refused ?? "");
     }
 
     private static string PresetCopyLine(DetectedGame game, NvidiaPresetCopyResult copy, NvidiaPresetChoice presets)
@@ -801,3 +838,13 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
 
 /// <summary>#215: a DLSS batch's result and the line the dialog shows (the DLL summary and, if any, the presets').</summary>
 public sealed record DlssBatchOutcome(LinuxDlssBatchResult Result, string Line);
+
+/// <summary>
+/// #215: a DLSS batch stopped by Cancel; <see cref="Line"/> is the line the dialog shows ("Operation cancelled." and the
+/// games whose presets were already set or reset).
+/// </summary>
+public sealed class DlssBatchCancelledException(string line, Exception inner)
+    : OperationCanceledException(line, inner, (inner as OperationCanceledException)?.CancellationToken ?? default)
+{
+    public string Line { get; } = line;
+}

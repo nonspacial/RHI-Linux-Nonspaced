@@ -63,7 +63,10 @@ public sealed partial class RuntimePanelViewModel : PanelViewModel
     {
         if (games.Count == 0) return new(0, null);
         if (Host.LibraryWritesPaused()) return new(0, StatusText);
-        Host.AdoptRestoredLibraryFile(reloadHdrControls: false);
+        // A restored library file becomes the in-memory state here: the selected game's controls reload from it even when
+        // that game is not among the written ones, or its next control change would save the stand-in over its
+        // restored profile (w10 review 1, Refs #149).
+        Host.AdoptRestoredLibraryFile(reloadHdrControls: true);
         var changed = 0;
         foreach (var game in games)
         {

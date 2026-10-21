@@ -769,9 +769,11 @@ build.
   when only preset defaults are set (upstream `hasDefaults`). The status line names what was set and what was not, and why.
 - DLSS batch: three preset dropdowns ("Do not change" first, pre-filled from the defaults) under the versions after a
   1 px divider; Apply copies them into every ticked game (also games other than the selected one) by the same row rule,
-  before the DLL swaps and in one library write, and the line counts the games set and skipped. Restore selected follows
-  upstream's mass restore: the three presets back to Default and "Newest DLSS from the driver" (upstream's NVIDIA
-  Override) off on every ticked game; render scale and frame-generation settings stay.
+  in upstream's order: game by game, that game's DLL swaps, then its presets. Cancel stops between games (a game whose
+  swaps ran gets its presets too; games not reached keep theirs) and the line names the games that got presets. The
+  line counts the games set and those skipped, by reason (row not offered / DLSS 1.x file). Restore selected follows
+  upstream's mass restore, game by game: that game's DLLs back, then its three presets back to Default and "Newest DLSS
+  from the driver" (upstream's NVIDIA Override) off; render scale and frame-generation settings stay.
 - Restore all (one game) already set every NVIDIA setting of the game back to Default (#211) and so clears the copied presets.
 - Not ported: a launch-time fallback (owner rejected option 2: a game whose preset is Default never picks up a global
   default); upstream's NR preset default (developer-only list), the render-scale and driver-override defaults (no

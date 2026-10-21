@@ -160,6 +160,27 @@ public sealed partial class LinuxDlssDefaultsServiceTests
         Assert.False(File.Exists(target + ".original"));
     }
 
+    // w10 review 6: one DLSS 1.x rule for auto-follow, Apply defaults, the batch and the preset rows — the version's first
+    // number is 1, however the version is spelt; a version that only starts with "1" (10.x, 100.x) is not 1.x.
+    [Theory]
+    [InlineData("1.0.13.0", true)]
+    [InlineData("1,0,13,0", true)]
+    [InlineData("1", true)]
+    [InlineData("1.7", true)]
+    [InlineData("10.0.0.0", false)]
+    [InlineData("100.1", false)]
+    [InlineData("310.1.0", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void TheDlss1xRule_IsOneRule_ReadFromTheVersionsFirstNumber(string? version, bool expected)
+    {
+        Assert.Equal(expected, DlssAutoFollowService.IsDlss1x(version));
+        var game = Game("rule-" + Guid.NewGuid().ToString("N"));
+        var file = Path.Combine(game.InstallPath, "nvngx_dlss.dll");
+        File.WriteAllBytes(file, string.IsNullOrEmpty(version) ? [0x4D, 0x5A] : PeVersionReaderTests.BuildVersionedPe(version, version, size: 8192));
+        Assert.Equal(expected, DlssAutoFollowService.IsDlss1xFile(file));
+    }
+
     // ---- helpers -----------------------------------------------------------------------------------------------------
 
     /// <summary>A Proton game started by its own command (the NVIDIA settings apply); a null version = no such file, "" = a bare stub.</summary>
