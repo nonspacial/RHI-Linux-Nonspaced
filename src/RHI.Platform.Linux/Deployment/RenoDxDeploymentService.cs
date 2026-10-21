@@ -357,6 +357,9 @@ public sealed class RenoDxDeploymentService
         ControlUeSources? controlSources;
         UpstreamEngineIniTemplate? engineIniTemplate;
         LinuxDeployedFile? oldManagedFile = null;
+        // #218: a UE-Extended install reads the game's UE-Extended database entry (upstream's priority over the manifest).
+        var isUeExtended = ModAuthorCredit.IsUeExtendedUrl(url);
+        var ueExtendedEntry = isUeExtended ? await FindUnrealEntryAsync(game, cancellationToken).ConfigureAwait(false) : null;
         try
         {
             (cached, remoteStamp) = await DownloadAsync(url, fileName, cancellationToken).ConfigureAwait(false);
@@ -394,10 +397,18 @@ public sealed class RenoDxDeploymentService
                 ? UpstreamEngineIniFileManager.Deserialize(previousEngineIniJson)
                 : null;
         var peak = PeakNits?.Invoke() is { Applies: true } global ? global : null; // #182
-        // #217: RenoDX's own Engine.ini keys (r.LUT.UpdateEveryFrame on Unreal games), as the user's ⚙ choice and the manifest allow.
-        var engineKeysOn = EngineIniKeysFor(game, existingRecord);
+        // #217/#218: RenoDX's own Engine.ini keys (r.LUT.UpdateEveryFrame on Unreal games; UE-Extended's HDR keys), as the
+        // user's ⚙ choices, the database and the manifest allow. A RenoDX that is no longer UE-Extended takes its HDR keys out.
+        var hdrApplies = isUeExtended && RenoDxEngineIni.HdrApplies(game, ueExtendedEntry);
+        var engineKeysOn = EngineIniKeysFor(game, existingRecord, hdrApplies);
+        var engineKeysOff = isUeExtended ? NoGroups : HdrOnly;
         var engineKeysState = RenoDxEngineIni.Read(existingRecord);
-        var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game) : null;
+        var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game)
+            : engineKeysState?.Entries.Any(entry => engineKeysOff.Contains(entry.Group)) == true ? engineKeysState.IniPath : null;
+        // #218: UE-Extended's [renodx] native-HDR keys (missing ones only, as upstream; its database upgrade key forced).
+        var previousNative = RenoDxIniOverrideManager.Deserialize(existingRecord?.Metadata.GetValueOrDefault(RenoDxEngineIni.NativeHdrMetadataKey));
+        var nativeRequested = isUeExtended ? NativeHdrRequest(game, ueExtendedEntry, previousNative) : new Dictionary<string, string>();
+        var nativeCleanup = !isUeExtended && previousNative is not null;
 
         // #205: one journaled operation on RenoDX's record — the add-on, its [renodx] keys, peak brightness, the Engine.ini
         // template, RHI's earlier add-on under another name and the Control UE steps; the stamped record is the commit point.
@@ -417,8 +428,10 @@ public sealed class RenoDxDeploymentService
             cancellationToken = OperationCancellation.BeginWrites(cancellationToken);
             // The INI files first, at the files a write through them replaces (a refused ReShade.ini link changes nothing).
             if (RenoDxIniOverrideManager.ResolveIniPath(game.BinaryDirectory) is { } reshadeIni && File.Exists(reshadeIni)
-                && (requestedIniOverrides.Count > 0 || peak is not null))
+                && (requestedIniOverrides.Count > 0 || peak is not null || nativeRequested.Count > 0))
                 await inis.TrackReShadeIniAsync(reshadeIni, game.BinaryDirectory, game.InstallPath, cancellationToken).ConfigureAwait(false);
+            if (nativeCleanup && previousNative!.IniPath is { Length: > 0 } nativeIni && File.Exists(nativeIni))
+                await inis.TrackReShadeIniAsync(nativeIni, Path.GetDirectoryName(nativeIni) ?? nativeIni, game.InstallPath, cancellationToken).ConfigureAwait(false);
             foreach (var engineIni in EngineIniPathsTouched(game, engineIniTemplate, previousEngineIniState))
                 await inis.TrackEngineIniAsync(engineIni, cancellationToken).ConfigureAwait(false);
             await TrackEngineKeysAsync(inis, engineKeysIni, engineKeysState, cancellationToken).ConfigureAwait(false);
@@ -426,6 +439,15 @@ public sealed class RenoDxDeploymentService
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? throw new InvalidOperationException("RenoDX target directory is invalid."));
             // The verified copy returns the hash of what it placed: no second read of the target.
             var newHash = await scope.PlaceCopyAsync(cached, target, cancellationToken).ConfigureAwait(false);
+            // #218: the native-HDR keys first, then the manifest's [renodx] values (upstream's order: the manifest wins).
+            var nativeState = previousNative;
+            if (nativeRequested.Count > 0)
+                nativeState = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, nativeRequested, previousNative, gameRoot: game.InstallPath).State;
+            else if (nativeCleanup)
+            {
+                RenoDxIniOverrideManager.Cleanup(previousNative, gameRoot: game.InstallPath);
+                nativeState = null;
+            }
             iniApply = RenoDxIniOverrideManager.Apply(game.BinaryDirectory, requestedIniOverrides, previousIniState, gameRoot: game.InstallPath);
             // #182: the global peak brightness into the chosen presets (kept where the user changed it since RHI's write).
             peakStates = RenoDxPeakNits.Read(existingRecord);
@@ -441,7 +463,7 @@ public sealed class RenoDxDeploymentService
                 engineIniApply = new UpstreamEngineIniApplyResult(null, 0, 0, null);
             }
             if (engineKeysIni is not null)
-                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, NoGroups, engineKeysState);
+                engineKeysState = RenoDxEngineIni.Apply(engineKeysIni, engineKeysOn, engineKeysOff, engineKeysState);
             await inis.DeclareWrittenAsync(cancellationToken).ConfigureAwait(false);
 
             // RHI's earlier add-on under another name goes before the commit point, so a rollback brings it back.
@@ -508,6 +530,8 @@ public sealed class RenoDxDeploymentService
             if ((ueExtendedChoice ?? existingRecord?.Metadata.GetValueOrDefault(UeExtendedMetadataKey)) is { Length: > 0 } ueChoice)
                 record.Metadata[UeExtendedMetadataKey] = ueChoice; // #182: the UE-Extended choice stays across updates; a new one is saved here, in the update's own record
             CarryEngineIniKeys(existingRecord, record, engineKeysState); // #217: the ⚙ choices stay, the keys stay owned
+            if (hdrApplies) record.Metadata[RenoDxEngineIni.HdrAppliesMetadataKey] = "1"; // #218: the ⚙ offers the HDR row
+            if (nativeState is not null) record.Metadata[RenoDxEngineIni.NativeHdrMetadataKey] = RenoDxIniOverrideManager.Serialize(nativeState);
             // The commit point: nothing above survives without this record (the rollback, or the next start, undoes it all).
             _records.Upsert(scope.Stamp(record));
         }
@@ -544,11 +568,48 @@ public sealed class RenoDxDeploymentService
     /// user turned it off in the ⚙, the manifest's <c>ueExtendedCompatibility</c> says <c>lut: false</c> or a custom Engine.ini
     /// file manages Engine.ini).
     /// </summary>
-    private static Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> EngineIniKeysFor(DetectedGame game, LinuxDeploymentRecord? existing)
+    private static Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> EngineIniKeysFor(
+        DetectedGame game, LinuxDeploymentRecord? existing, bool hdr)
     {
         var on = new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>>(StringComparer.Ordinal);
         if (RenoDxEngineIni.LutApplies(game) && RenoDxEngineIni.LutChosen(existing)) on[RenoDxEngineIni.LutGroup] = RenoDxEngineIni.LutKeys;
+        if (hdr && RenoDxEngineIni.HdrChosen(existing)) on[RenoDxEngineIni.HdrGroup] = RenoDxEngineIni.HdrKeys; // #218
         return on;
+    }
+
+    private static readonly IReadOnlySet<string> HdrOnly = new HashSet<string> { RenoDxEngineIni.HdrGroup };
+
+    /// <summary>#218: upstream's UE-Extended database (<c>RenoDXdb-unreal.json</c>); null (tests) = the manifest / engine rule only.</summary>
+    public RenoDxUnrealDatabaseService? UnrealDatabase { get; set; }
+
+    // Enrichment only, as upstream: a database that cannot be read leaves the manifest / engine rule.
+    private async Task<RenoDxUnrealDbEntry?> FindUnrealEntryAsync(DetectedGame game, CancellationToken cancellationToken)
+    {
+        if (UnrealDatabase is null) return null;
+        try { return await UnrealDatabase.FindAsync(game.Name).WaitAsync(cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            AppLog.Warn("renodx", "The UE-Extended database could not be read; the manifest decides the HDR settings", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// #218 (upstream <c>ApplyRenoDxNativeHdrSettings</c>): the <c>[renodx]</c> keys UE-Extended needs that the section does not
+    /// have yet (a value already there is never overwritten; keys RHI added before stay requested, so they stay owned), with
+    /// <c>Set_Path</c> from the database (<c>Method</c>) or the engine (Unreal Engine 4 = the SDR path), plus the database's
+    /// upgrade key, which is written whatever is there (upstream's one forced key).
+    /// </summary>
+    private static Dictionary<string, string> NativeHdrRequest(DetectedGame game, RenoDxUnrealDbEntry? entry, RenoDxIniOverrideState? previous)
+    {
+        var section = string.IsNullOrWhiteSpace(game.BinaryDirectory) ? null : RenoDxIniOverrideManager.ReadRenoDxSection(game.BinaryDirectory);
+        var owned = (previous?.Entries ?? []).Select(item => item.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var request = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in RenoDxEngineIni.NativeHdrKeys(entry?.UsesSdrPath ?? RenoDxEngineIni.IsUnreal4(game)))
+            if (section is null || !section.ContainsKey(key) || owned.Contains(key)) request[key] = value;
+        if (entry is { UpgradeIniKey: { Length: > 0 } upgradeKey, UpgradeIniValue: { Length: > 0 } upgradeValue })
+            request[upgradeKey] = upgradeValue;
+        return request;
     }
 
     /// <summary>Tracks the Engine.ini the keys go into, and the one RHI's keys were in when the game's Engine.ini moved since.</summary>
@@ -562,7 +623,7 @@ public sealed class RenoDxDeploymentService
     /// <summary>A fresh record keeps the ⚙'s Engine.ini choices of the one it replaces, and the keys RHI owns now.</summary>
     private static void CarryEngineIniKeys(LinuxDeploymentRecord? existing, LinuxDeploymentRecord record, RenoDxEngineIniState? state)
     {
-        foreach (var choice in new[] { RenoDxEngineIni.LutChoiceMetadataKey })
+        foreach (var choice in new[] { RenoDxEngineIni.LutChoiceMetadataKey, RenoDxEngineIni.HdrChoiceMetadataKey })
             if (existing?.Metadata.GetValueOrDefault(choice) is { Length: > 0 } value) record.Metadata[choice] = value;
         RenoDxEngineIni.Write(record, state);
     }
@@ -590,6 +651,32 @@ public sealed class RenoDxDeploymentService
     public Task<ComponentOperationResult> SetEngineIniLutAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
         => SetEngineIniKeysAsync(game, RenoDxEngineIni.LutGroup, RenoDxEngineIni.LutKeys, RenoDxEngineIni.LutChoiceMetadataKey,
             RenoDxEngineIni.LutApplies(game), on, cancellationToken);
+
+    /// <summary>
+    /// #218: whether the RenoDX ⚙ offers the HDR row (upstream's "Engine.ini HDR"): RHI's UE-Extended RenoDX on a game whose
+    /// last install found the HDR keys apply (database <c>Method: ini</c>, or the manifest / engine rule), with no custom
+    /// Engine.ini file and an Engine.ini location.
+    /// </summary>
+    public bool OffersEngineIniHdr(DetectedGame game) => HdrOffered(game, _records.Find(game, ManagedComponentKind.RenoDX));
+
+    private static bool HdrOffered(DetectedGame game, LinuxDeploymentRecord? record)
+        => record is not null && IsUeExtendedInstalled(record)
+           && record.Metadata.GetValueOrDefault(RenoDxEngineIni.HdrAppliesMetadataKey) == "1"
+           && string.IsNullOrWhiteSpace(game.EngineIniFileOverride) && RenoDxEngineIni.ResolvePath(game) is not null;
+
+    /// <summary>#218: whether UE-Extended's HDR keys are in effect for the ⚙.</summary>
+    public bool EngineIniHdrIsOn(DetectedGame game) => RenoDxEngineIni.HdrIsOn(game, _records.Find(game, ManagedComponentKind.RenoDX));
+
+    /// <summary>The HDR keys as written (the ⚙ row's tooltip).</summary>
+    public static string EngineIniHdrLines => string.Join(", ", RenoDxEngineIni.HdrKeys.Select(key => $"{key.Key}={key.Value}"));
+
+    /// <summary>
+    /// #218: the RenoDX ⚙ HDR switch (upstream's "Engine.ini HDR" Off / On): On adds UE-Extended's HDR keys where the file
+    /// lacks them, Off takes RHI's out (keys the user had stay). One journaled operation on RenoDX's record.
+    /// </summary>
+    public Task<ComponentOperationResult> SetEngineIniHdrAsync(DetectedGame game, bool on, CancellationToken cancellationToken = default)
+        => SetEngineIniKeysAsync(game, RenoDxEngineIni.HdrGroup, RenoDxEngineIni.HdrKeys, RenoDxEngineIni.HdrChoiceMetadataKey,
+            OffersEngineIniHdr(game), on, cancellationToken);
 
     private async Task<ComponentOperationResult> SetEngineIniKeysAsync(DetectedGame game, string group,
         IReadOnlyList<(string Section, string Key, string Value)> keys, string choiceKey, bool applies, bool on, CancellationToken cancellationToken)
@@ -739,7 +826,7 @@ public sealed class RenoDxDeploymentService
 
         var sha = await FileHash.Sha256HexAsync(addonPath, cancellationToken).ConfigureAwait(false);
         // #217: a dropped add-on gets RenoDX's Engine.ini key on an Unreal game too (upstream DragDropHandler.ProcessDroppedAddon).
-        var engineKeysOn = EngineIniKeysFor(game, existingRecord);
+        var engineKeysOn = EngineIniKeysFor(game, existingRecord, hdr: false); // UE-Extended's HDR keys stay as they are
         var engineKeysState = RenoDxEngineIni.Read(existingRecord);
         var engineKeysIni = engineKeysOn.Count > 0 ? RenoDxEngineIni.ResolvePath(game) : null;
         // #205: one journaled operation on RenoDX's record; the stamped record is the commit point.
@@ -1057,7 +1144,8 @@ public sealed class RenoDxDeploymentService
                 ? UpstreamEngineIniFileManager.Deserialize(engineIniJson)
                 : null;
             // Every INI the clean-up edits, at the file a write through it replaces (a shared ReShade.ini, not its link).
-            foreach (var ini in new[] { iniState?.IniPath, fgHdrState?.IniPath }.Concat(peakStates.Values.Select(state => state.IniPath))
+            var nativeState = RenoDxIniOverrideManager.Deserialize(record.Metadata.GetValueOrDefault(RenoDxEngineIni.NativeHdrMetadataKey)); // #218
+            foreach (var ini in new[] { iniState?.IniPath, fgHdrState?.IniPath, nativeState?.IniPath }.Concat(peakStates.Values.Select(state => state.IniPath))
                          .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path)).Distinct(StringComparer.Ordinal))
                 await inis.TrackReShadeIniAsync(ini!, Path.GetDirectoryName(ini!) ?? ini!, game.InstallPath, cancellationToken).ConfigureAwait(false);
             if (engineIniState?.IniPath is { Length: > 0 } engineIni && File.Exists(engineIni))
@@ -1067,6 +1155,7 @@ public sealed class RenoDxDeploymentService
                 await inis.TrackEngineIniAsync(keysIni, cancellationToken).ConfigureAwait(false);
 
             RenoDxIniOverrideManager.Cleanup(iniState, gameRoot: game.InstallPath);
+            RenoDxIniOverrideManager.Cleanup(nativeState, gameRoot: game.InstallPath); // #218: after the manifest's values, as installed before them
             RenoDxIniOverrideManager.Cleanup(fgHdrState, gameRoot: game.InstallPath);
             RenoDxPeakNits.Cleanup(peakStates, game.InstallPath); // #182
             UpstreamEngineIniFileManager.Cleanup(engineIniState);

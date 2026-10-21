@@ -324,6 +324,7 @@ internal sealed class AppComposition
         // w7/dxvk-hdr rows
         // w8/reshade-ini rows
         // w8/renodx rows
+        renodx.UnrealDatabase = renodxUnrealDatabase; // #218: UE-Extended's install settings (Method, Upgrades)
         // w8/commit-point rows
         return new AppComposition
         {

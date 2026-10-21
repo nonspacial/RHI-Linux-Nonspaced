@@ -7,9 +7,10 @@ using RHI.Platform.Linux.Deployment;
 namespace RHI.Desktop.ViewModels;
 
 /// <summary>
-/// w8/renodx (#217): the RenoDX ⚙'s Engine.ini rows for the selected game: "Fix colour grading updates (Unreal)"
-/// (RenoDX's <c>r.LUT.UpdateEveryFrame=1</c>). Shown only where the setting applies (an Unreal game whose RenoDX RHI
-/// installed, no custom Engine.ini file, not excluded by the manifest, an Engine.ini location found). Each change is one
+/// w8/renodx (#217, #218): the RenoDX ⚙'s Engine.ini rows for the selected game: "Fix colour grading updates (Unreal)"
+/// (RenoDX's <c>r.LUT.UpdateEveryFrame=1</c>; an Unreal game whose RenoDX RHI installed, no custom Engine.ini file, not
+/// excluded by the manifest, an Engine.ini location found) and "Turn on the game's HDR output (UE-Extended)" (UE-Extended's
+/// Engine.ini HDR keys, where its install found they apply). Each row is shown only where it applies. Each change is one
 /// journaled RenoDX operation behind the busy gate; the line it shows says what changed.
 /// </summary>
 public sealed class RenoDxEngineIniPresenter(MainWindowViewModel vm, LinuxManagedComponentService managed)
@@ -26,6 +27,12 @@ public sealed class RenoDxEngineIniPresenter(MainWindowViewModel vm, LinuxManage
                 UiLocalizationService.Format("Rdx.LutTip", RenoDxDeploymentService.EngineIniLutLines),
                 renodx.EngineIniLutIsOn(game),
                 on => SetAsync(game, on, renodx.SetEngineIniLutAsync, () => renodx.EngineIniLutIsOn(game), "Rdx.LutOn", "Rdx.LutOff", "Rdx.LutOffKept"),
+                show));
+        if (renodx.OffersEngineIniHdr(game)) // #218
+            rows.Add(new RenoDxEngineIniRow("RenoDxEngineIniHdr", T("Rdx.HdrLabel"),
+                UiLocalizationService.Format("Rdx.HdrTip", RenoDxDeploymentService.EngineIniHdrLines),
+                renodx.EngineIniHdrIsOn(game),
+                on => SetAsync(game, on, renodx.SetEngineIniHdrAsync, () => renodx.EngineIniHdrIsOn(game), "Rdx.HdrOn", "Rdx.HdrOff", "Rdx.HdrOffKept"),
                 show));
         return rows;
     }

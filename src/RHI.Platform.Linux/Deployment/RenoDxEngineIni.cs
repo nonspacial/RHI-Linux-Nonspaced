@@ -42,6 +42,68 @@ internal static class RenoDxEngineIni
     public static readonly IReadOnlyList<(string Section, string Key, string Value)> LutKeys =
         [("/Script/Engine.RendererSettings", "r.LUT.UpdateEveryFrame", "1")];
 
+    // ── #218: UE-Extended's Engine.ini HDR keys (upstream ApplyEngineIniHdrSettings; its LUT line is the LUT group's) ──
+
+    /// <summary>Record metadata: "off" when the user turned the HDR keys off in the RenoDX ⚙ (absent = on, upstream's default).</summary>
+    public const string HdrChoiceMetadataKey = "RenoDX.EngineIniHdr";
+
+    /// <summary>Record metadata: "1" when the last install found the HDR keys apply to the game (UE-Extended, the database's
+    /// <c>Method: ini</c> or the manifest / engine rule); the ⚙ shows its HDR row only then.</summary>
+    public const string HdrAppliesMetadataKey = "RenoDX.EngineIniHdrApplies";
+
+    public const string HdrGroup = "hdr";
+
+    public static readonly IReadOnlyList<(string Section, string Key, string Value)> HdrKeys =
+    [
+        ("SystemSettings", "r.AllowHDR", "1"),
+        ("SystemSettings", "r.HDR.EnableHDROutput", "1"),
+        ("SystemSettings", "r.HDR.Display.OutputDevice", "3"),
+        ("SystemSettings", "r.HDR.Display.ColorGamut", "2"),
+        ("SystemSettings", "r.HDR.UI.CompositeMode", "1")
+    ];
+
+    /// <summary>An Unreal Engine 4 game (upstream's <c>EngineHint.Contains("Unreal Engine 4")</c>: the SDR path by default).</summary>
+    public static bool IsUnreal4(DetectedGame game) => game.EngineHint?.Contains("Unreal Engine 4", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>
+    /// Whether UE-Extended's Engine.ini HDR keys apply (upstream's install): a game with no custom Engine.ini file and an
+    /// Engine.ini location, where the UE-Extended database entry says <c>Method: ini</c>, or — without an entry — the
+    /// manifest's <c>ueExtendedCompatibility[game].hdr</c>, else every game but Unreal Engine 4.
+    /// </summary>
+    public static bool HdrApplies(DetectedGame game, RenoDxUnrealDbEntry? database)
+        => string.IsNullOrWhiteSpace(game.EngineIniFileOverride) && ResolvePath(game) is not null
+           && (database is not null ? database.DeployEngineIniHdr : game.UeExtendedHdrByManifest ?? !IsUnreal4(game));
+
+    public static bool HdrChosen(LinuxDeploymentRecord? record)
+        => !string.Equals(record?.Metadata.GetValueOrDefault(HdrChoiceMetadataKey), Off, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether the HDR keys are in effect for the ⚙: RHI owns them, or the file already holds all of them as RHI would.</summary>
+    public static bool HdrIsOn(DetectedGame game, LinuxDeploymentRecord? record) => GroupIsOn(game, record, HdrGroup, HdrKeys, HdrChosen(record));
+
+    /// <summary>The <c>[renodx]</c> keys upstream's <c>ApplyRenoDxNativeHdrSettings</c> fills in for UE-Extended (missing ones only).</summary>
+    public static IReadOnlyList<KeyValuePair<string, string>> NativeHdrKeys(bool usesSdrPath) =>
+    [
+        new("DumpLUTShaders", "0"), new("ForceBorderless", "1"), new("FxUpgradeRender", "1"), new("PreventFullscreen", "1"),
+        new("SettingsMode", "2"), new("Set_Path", usesSdrPath ? "1" : "0"),
+        new("Upgrade_B10G10R10A2_UNORM", ""), new("Upgrade_B8G8R8A8_TYPELESS", ""), new("Upgrade_B8G8R8A8_UNORM", ""),
+        new("Upgrade_B8G8R8A8_UNORM_SRGB", ""), new("Upgrade_CopyDestinations", ""), new("Upgrade_R10G10B10A2_TYPELESS", ""),
+        new("Upgrade_R10G10B10A2_UNORM", ""), new("Upgrade_R11G11B10_FLOAT", ""), new("Upgrade_R16G16B16A16_TYPELESS", ""),
+        new("Upgrade_R8G8B8A8_SNORM", ""), new("Upgrade_R8G8B8A8_TYPELESS", ""), new("Upgrade_R8G8B8A8_UNORM", ""),
+        new("Upgrade_R8G8B8A8_UNORM_SRGB", ""), new("Upgrade_SwapChainCompatibility", ""), new("Upgrade_UseSCRGB", "")
+    ];
+
+    /// <summary>Record metadata: RHI's native-HDR <c>[renodx]</c> keys (a <see cref="RenoDxIniOverrideState"/>).</summary>
+    public const string NativeHdrMetadataKey = "RenoDX.NativeHdrIni";
+
+    private static bool GroupIsOn(DetectedGame game, LinuxDeploymentRecord? record, string group,
+        IReadOnlyList<(string Section, string Key, string Value)> keys, bool chosen)
+    {
+        if (Read(record)?.Entries.Any(entry => entry.Group == group) == true) return true;
+        if (!chosen || ResolvePath(game) is not { } path || !File.Exists(path)) return false;
+        var lines = File.ReadAllLines(path);
+        return keys.All(item => FindKeyAnywhere(lines, item.Key) is var index and >= 0 && Value(lines[index]) == item.Value);
+    }
+
     private const UnixFileMode WriteBits = UnixFileMode.UserWrite | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
     private const UnixFileMode DefaultMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
 
@@ -82,13 +144,7 @@ internal static class RenoDxEngineIni
     }
 
     /// <summary>Whether the LUT key is in effect for the ⚙: RHI owns it, or the file already holds it with the value 1.</summary>
-    public static bool LutIsOn(DetectedGame game, LinuxDeploymentRecord? record)
-    {
-        if (Read(record)?.Entries.Any(entry => entry.Group == LutGroup) == true) return true;
-        if (!LutChosen(record) || ResolvePath(game) is not { } path || !File.Exists(path)) return false;
-        var lines = File.ReadAllLines(path);
-        return LutKeys.All(item => FindKeyAnywhere(lines, item.Key) is var index and >= 0 && Value(lines[index]) == item.Value);
-    }
+    public static bool LutIsOn(DetectedGame game, LinuxDeploymentRecord? record) => GroupIsOn(game, record, LutGroup, LutKeys, LutChosen(record));
 
     /// <summary>
     /// Changes the file at <paramref name="iniPath"/> from <paramref name="state"/>: each key of the <paramref name="on"/>

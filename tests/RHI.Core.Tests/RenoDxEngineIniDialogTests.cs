@@ -81,6 +81,26 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
         Assert.Contains("r.LUT.UpdateEveryFrame=1", File.ReadAllText(EngineIni(unreal)));
     }
 
+    // #218: UE-Extended RenoDX whose install found the HDR keys apply gets the HDR row too; a generic Unreal add-on does not.
+    [Fact]
+    public async Task TheHdrRow_ShowsOnlyForUeExtended_WhereItsKeysApply()
+    {
+        var uee = Game("Uee Rows", "Unreal Engine 5");
+        var generic = Game("Generic Rows", "Unreal Engine 5");
+        using var fx = await ViewModelFixture.StartAsync([uee, generic]);
+        Seed(fx, uee, ueExtended: true);
+        Seed(fx, generic);
+
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == uee.Name).Game;
+        var rows = fx.Vm.RenoDxEngineIni.RowsFor(_ => { });
+        Assert.Equal(["Fix colour grading updates (Unreal)", "Turn on the game's HDR output (UE-Extended)"], rows.Select(row => row.Label));
+        Assert.Contains("r.HDR.EnableHDROutput=1", rows[1].Tooltip);
+        Assert.Equal(0, rows[1].SelectedIndex); // nothing written yet: Off
+
+        fx.Vm.SelectedGame = fx.Vm.Games.Single(g => g.Game.Name == generic.Name).Game;
+        Assert.Equal(["Fix colour grading updates (Unreal)"], fx.Vm.RenoDxEngineIni.RowsFor(_ => { }).Select(row => row.Label));
+    }
+
     private DetectedGame Game(string name, string engine)
     {
         var root = Path.Combine(_root, name);
@@ -102,7 +122,7 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
         => Path.Combine(game.PrefixPath!, "drive_c", "users", "steamuser", "AppData", "Local", "Proj", "Saved", "Config", "Windows", "Engine.ini");
 
     /// <summary>RHI's RenoDX on the game: its add-on and record, with RHI's LUT key in Engine.ini where it applies.</summary>
-    private static void Seed(ViewModelFixture fx, DetectedGame game)
+    private static void Seed(ViewModelFixture fx, DetectedGame game, bool ueExtended = false)
     {
         var addon = Path.Combine(game.BinaryDirectory!, "renodx-lut.addon64");
         PeArchitectureDetectorTests.WritePe(addon, 0x8664, 96 * 1024);
@@ -110,8 +130,10 @@ public sealed class RenoDxEngineIniDialogTests : IDisposable
         {
             GameKey = LinuxDeploymentRecordStore.GameKey(game), GameName = game.Name, Component = ManagedComponentKind.RenoDX,
             BinaryDirectory = game.BinaryDirectory!, Version = "Lut",
+            SourceUrl = ueExtended ? RenoDxDeploymentService.DefaultUeExtendedUrl : RenoDxCatalogService.GenericUnrealUrl,
             Files = [new LinuxDeployedFile { Path = addon, Sha256 = RHI.Core.Deployment.FileHash.Sha256Hex(addon) }]
         };
+        if (ueExtended) record.Metadata[RenoDxEngineIni.HdrAppliesMetadataKey] = "1";
         if (RenoDxEngineIni.LutApplies(game))
             RenoDxEngineIni.Write(record, RenoDxEngineIni.Apply(EngineIni(game),
                 new Dictionary<string, IReadOnlyList<(string Section, string Key, string Value)>> { [RenoDxEngineIni.LutGroup] = RenoDxEngineIni.LutKeys },

@@ -1311,6 +1311,12 @@ internal static class UiStrings
         ("Rdx.LutOn", "Engine.ini: a gradação de cor agora é atualizada a cada quadro.", "Engine.ini: colour grading now updates every frame."),
         ("Rdx.LutOff", "Engine.ini: a linha de gradação de cor do RHI foi removida.", "Engine.ini: RHI's colour grading line was removed."),
         ("Rdx.LutOffKept", "Engine.ini: essa linha já estava lá antes do RHI e continua.", "Engine.ini: that line was there before RHI and stays."),
+        // #218 RenoDX ⚙: UE-Extended's Engine.ini HDR keys
+        ("Rdx.HdrLabel", "Ligar a saída HDR do jogo (UE-Extended)", "Turn on the game's HDR output (UE-Extended)"),
+        ("Rdx.HdrTip", "Para jogos sem opção de HDR no jogo: grava {0} no Engine.ini do jogo. Enquanto as linhas do RHI estiverem lá, o Engine.ini fica somente leitura (como faz o RHI original); Desligado tira as linhas do RHI (as que já estavam lá antes continuam) e devolve o bloqueio que o arquivo tinha antes.", "For games without an in-game HDR option: writes {0} into the game's Engine.ini. While RHI's lines are there, Engine.ini is read-only (as upstream RHI does); Off takes RHI's lines out (any that were there before stay) and puts back the lock the file had before."),
+        ("Rdx.HdrOn", "Engine.ini: a saída HDR do jogo está ligada.", "Engine.ini: the game's HDR output is on."),
+        ("Rdx.HdrOff", "Engine.ini: as linhas de HDR do RHI foram removidas.", "Engine.ini: RHI's HDR lines were removed."),
+        ("Rdx.HdrOffKept", "Engine.ini: as linhas de HDR já estavam lá antes do RHI e continuam.", "Engine.ini: the HDR lines were there before RHI and stay."),
         // w8/commit-point rows
     ];
 }
