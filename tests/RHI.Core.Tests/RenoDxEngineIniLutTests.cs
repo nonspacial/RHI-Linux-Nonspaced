@@ -122,6 +122,23 @@ public sealed class RenoDxEngineIniLutTests : IDisposable
         Assert.Single(RenoDxEngineIni.Read(dropFx.Records.Find(dropFx.Game, ManagedComponentKind.RenoDX))!.Entries);
     }
 
+    // Upstream's resolver also finds Documents/My Games/<game>/Saved/Config (Borderlands 3 keeps its Engine.ini there).
+    [Fact]
+    public async Task Install_EngineIniUnderMyGames_IsFound_AsUpstreamDoes()
+    {
+        var fx = Fixture("my-games", game => game.EngineIniProjectOverride = null);
+        Directory.Delete(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(fx.EngineIni)!)!)!)!, recursive: true);
+        var myGames = Path.Combine(fx.Game.PrefixPath!, "drive_c", "users", "steamuser", "Documents", "My Games", "Lut Game", "Saved", "Config", "WindowsNoEditor", "Engine.ini");
+        Directory.CreateDirectory(Path.GetDirectoryName(myGames)!);
+        File.WriteAllText(myGames, Before);
+
+        Assert.True((await fx.Service.InstallAsync(fx.Game, fx.Files)).Success);
+
+        Assert.Contains(Line, File.ReadAllText(myGames));
+        Assert.True((await fx.Service.RemoveAsync(fx.Game)).Success);
+        Assert.Equal(Before, File.ReadAllText(myGames));
+    }
+
     public static TheoryData<string> NotApplicable => new() { "unity", "manifest-lut-false", "custom-engine-file" };
 
     [Theory]
