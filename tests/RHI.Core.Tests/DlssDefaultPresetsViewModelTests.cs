@@ -164,6 +164,29 @@ public sealed class DlssDefaultPresetsViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task QuickApply_WhileRepairAfterMoveRewritesTheLibrary_CopiesNothing_AndSaysWhy()
+    {
+        UiLocalizationService.Apply("en-US");
+        using var fx = await StartAsync([Game("Repair Quest", ["nvngx_dlss.dll"])], Rtx40);
+        SetDefaults(fx, sr: 11);
+        fx.Vm.LibraryRepairRunning = true;
+        try
+        {
+            await fx.Vm.Dlss.QuickApplyDlssDefaultsCommand.ExecuteAsync(null).WaitAsync(HangGuard);
+
+            Assert.Null(SavedNvidia(fx, fx.Vm.SelectedGame!));
+            Assert.Equal(DlssPresetCatalogue.Default, fx.Vm.Dlss.Nvidia.SelectedSuperResolutionPreset.Value);
+            Assert.StartsWith(UiLocalizationService.Text("Vm.WaitForRepairAfterMove"), fx.Vm.StatusText, StringComparison.Ordinal);
+            Assert.DoesNotContain("set:", fx.Vm.StatusText, StringComparison.Ordinal);
+
+            var batch = await fx.Vm.Dlss.ApplyDlssBatchAsync([fx.Vm.SelectedGame!], new LinuxDlssVersionDefaults(), new NvidiaPresetChoice(11, null, null)).WaitAsync(HangGuard);
+            Assert.Null(SavedNvidia(fx, fx.Vm.SelectedGame!));
+            Assert.StartsWith(UiLocalizationService.Text("Vm.WaitForRepairAfterMove"), batch.Line, StringComparison.Ordinal);
+        }
+        finally { fx.Vm.LibraryRepairRunning = false; }
+    }
+
+    [Fact]
     public async Task NoLaunchFallback_AGameWhosePresetIsDefault_LaunchesWithoutTheGlobalOne()
     {
         UiLocalizationService.Apply("en-US");

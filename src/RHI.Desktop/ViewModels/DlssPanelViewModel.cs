@@ -453,7 +453,8 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
         var rows = await Task.Run(() => LinuxDlssDefaultsService.NvidiaPresetRowsFor(game, detection, host), token);
         NvidiaPresetCopyResult? copy = null;
         var write = Shell.Runtime.WriteNvidiaSettings([game], (_, saved) => (copy = NvidiaPresetCopy.Apply(saved, presets, rows)).Settings);
-        copy ??= NvidiaPresetCopy.Apply(null, presets, rows);
+        // Library writes wait (Repair after move): nothing was copied, the line says why.
+        if (copy is null) return write.Refused ?? "";
         return Join(PresetCopyLine(game, copy, presets), write.Refused ?? "");
     }
 
@@ -475,14 +476,17 @@ public sealed partial class DlssPanelViewModel : PanelViewModel
             }
             return byGame;
         }, token);
-        int set = 0, skipped = 0;
+        int set = 0, skipped = 0, copied = 0;
         var write = Shell.Runtime.WriteNvidiaSettings(games, (game, saved) =>
         {
             var copy = NvidiaPresetCopy.Apply(saved, presets, rows[Key(game)]);
+            copied++;
             if (copy.AnySet) set++;
             if (copy.AnySkipped) skipped++;
             return copy.Settings;
         });
+        // Library writes wait (Repair after move): nothing was copied, the line says why.
+        if (copied == 0) return write.Refused ?? "";
         return Join(TF("Dp.BatchPresets", set, skipped), write.Refused ?? "");
     }
 
